@@ -2290,7 +2290,12 @@ struct SetupWindow::Native {
         endpointForm.model = ComboBox();
         endpointForm.model.IsEditable(true);
         endpointForm.model.MinWidth(200);
-        endpointForm.model.Text(win::hs(saved.model));
+        // An editable ComboBox drops Text set before it loads, and a save
+        // would then clear the model; the saved one goes in as an item.
+        if (!saved.model.isEmpty()) {
+            endpointForm.model.Items().Append(box_value(win::hs(saved.model)));
+            endpointForm.model.SelectedIndex(0);
+        }
         AutomationProperties::SetName(endpointForm.model, L"Endpoint model");
         modelControls.Children().Append(endpointForm.model);
         Button connect;
@@ -2332,10 +2337,15 @@ struct SetupWindow::Native {
         }
         settings.endpoint.format = endpointForm.format.SelectedIndex() == 1 ? QStringLiteral("anthropic")
                                                                             : QStringLiteral("openai");
-        const auto picked = endpointForm.model.SelectedItem();
-        settings.endpoint.model = (picked ? win::qs(unbox_value<hstring>(picked))
-                                          : win::qs(endpointForm.model.Text())).trimmed();
+        settings.endpoint.model = endpointModel();
         return settings;
+    }
+
+    // The model picked from the server's list, or typed.
+    QString endpointModel() const
+    {
+        const auto picked = endpointForm.model.SelectedItem();
+        return (picked ? win::qs(unbox_value<hstring>(picked)) : win::qs(endpointForm.model.Text())).trimmed();
     }
 
     void showEndpointCheck()
@@ -2350,19 +2360,17 @@ struct SetupWindow::Native {
             return;
         }
         endpointForm.shownModels = facts.refinementEndpointModels;
-        const QString typed = win::qs(endpointForm.model.Text()).trimmed();
+        const QString typed = endpointModel();
+        // A typed model the server does not list stays on offer, first.
+        QStringList models = facts.refinementEndpointModels;
+        if (!typed.isEmpty() && !models.contains(typed)) {
+            models.prepend(typed);
+        }
         endpointForm.model.Items().Clear();
-        for (const QString &model : facts.refinementEndpointModels) {
+        for (const QString &model : models) {
             endpointForm.model.Items().Append(box_value(win::hs(model)));
         }
-        const qsizetype index = facts.refinementEndpointModels.indexOf(typed.isEmpty()
-                                                                           ? facts.refinementEndpointModels.first()
-                                                                           : typed);
-        if (index >= 0) {
-            endpointForm.model.SelectedIndex(int(index));
-        } else {
-            endpointForm.model.Text(win::hs(typed));
-        }
+        endpointForm.model.SelectedIndex(typed.isEmpty() ? 0 : int(models.indexOf(typed)));
     }
 
     void showProfiles()
