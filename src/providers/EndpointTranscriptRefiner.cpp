@@ -8,9 +8,8 @@ namespace speecher {
 
 EndpointTranscriptRefiner::EndpointTranscriptRefiner(QObject *parent)
     : TranscriptRefiner(parent)
-    , m_chat(new ChatCompletionsRefiner(QStringLiteral("Custom endpoint"),
-                                        ChatCompletionsRefiner::Audience::Server, this))
-    , m_messages(new AnthropicApiRefiner(this, 60000, 120000))
+    , m_chat(new ChatCompletionsRefiner(label(), ChatCompletionsRefiner::Audience::Server, this))
+    , m_messages(new AnthropicApiRefiner(this, 60000, 120000, label()))
 {
     connect(m_chat, &ChatCompletionsRefiner::delta, this, &TranscriptRefiner::delta);
     connect(m_chat, &ChatCompletionsRefiner::completed, this, &TranscriptRefiner::completed);

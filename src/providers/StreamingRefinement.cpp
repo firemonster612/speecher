@@ -16,7 +16,7 @@ StreamingRefinement::StreamingRefinement(QString provider, DecodeEvent decodeEve
                                          int deadlineMs, QObject *parent)
     : QObject(parent)
     , m_provider(std::move(provider))
-    , m_decodeEvent(decodeEvent)
+    , m_decodeEvent(std::move(decodeEvent))
     , m_decodeError(decodeError)
     , m_inactivityMs(inactivityMs)
     , m_deadlineMs(deadlineMs)

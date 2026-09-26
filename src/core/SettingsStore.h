@@ -26,7 +26,9 @@ public:
 
     explicit SettingsStore(QObject *parent = nullptr);
     // The snapshot carries the endpoint and CLI Proxy API keys, which live
-    // in the keyring; reading them may wait for it.
+    // in the keyring. It waits for the keyring only for keys the chosen
+    // providers send, and only when SecretStore::prefetch has not yet
+    // cached them.
     AppSettings snapshot() const;
     void applySnapshot(const AppSettings &draft);
     SecretStore *secrets() const;

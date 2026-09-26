@@ -23,20 +23,47 @@ QJsonObject jsonObject(const HttpResult &result)
     return result.status == 200 ? QJsonDocument::fromJson(result.body).object() : QJsonObject{};
 }
 
+struct Runner {
+    const char *id;
+    const char *name;
+    const char *origin;
+    std::optional<DetectedRunner> (*probe)(const QString &origin, int timeoutMs);
+};
+
+// Ollama first: detectLocalRunners lists in this order.
+const Runner runners[] = {
+    {"ollama", "Ollama", "http://127.0.0.1:11434", &probeOllama},
+    {"lmstudio", "LM Studio", "http://127.0.0.1:1234", &probeLmStudio},
+    {"llama-server", "llama-server", "http://127.0.0.1:8080", &probeLlamaServer},
+};
+
+// Unknown ids read as Ollama, as LocalRunnerSettings stores them.
+const Runner &runnerFor(const QString &runnerId)
+{
+    for (const Runner &runner : runners) {
+        if (runnerId == QLatin1String(runner.id)) return runner;
+    }
+    return runners[0];
+}
+
+DetectedRunner detected(const QString &runnerId, const QString &version, const QString &origin,
+                        const QStringList &models)
+{
+    const Runner &runner = runnerFor(runnerId);
+    return {QString::fromLatin1(runner.id), QString::fromLatin1(runner.name), version,
+            origin + QStringLiteral("/v1"), models};
+}
+
 QString runnerName(const QString &runnerId)
 {
-    if (runnerId == QStringLiteral("lmstudio")) return QStringLiteral("LM Studio");
-    if (runnerId == QStringLiteral("llama-server")) return QStringLiteral("llama-server");
-    return QStringLiteral("Ollama");
+    return QString::fromLatin1(runnerFor(runnerId).name);
 }
 
 } // namespace
 
 QString localRunnerOrigin(const QString &runnerId)
 {
-    if (runnerId == QStringLiteral("lmstudio")) return QStringLiteral("http://127.0.0.1:1234");
-    if (runnerId == QStringLiteral("llama-server")) return QStringLiteral("http://127.0.0.1:8080");
-    return QStringLiteral("http://127.0.0.1:11434");
+    return QString::fromLatin1(runnerFor(runnerId).origin);
 }
 
 std::optional<DetectedRunner> probeOllama(const QString &origin, int timeoutMs)
@@ -48,58 +75,72 @@ std::optional<DetectedRunner> probeOllama(const QString &origin, int timeoutMs)
     const QString version = jsonObject(get(origin + QStringLiteral("/api/version"), timeoutMs))
                                 .value(QStringLiteral("version")).toString();
     const HttpResult tags = get(origin + QStringLiteral("/api/tags"), timeoutMs);
-    return DetectedRunner{QStringLiteral("ollama"), runnerName(QStringLiteral("ollama")), version,
-                          origin + QStringLiteral("/v1"),
-                          tags.status == 200 ? modelIdsFromListing(tags.body) : QStringList{}};
+    return detected(QStringLiteral("ollama"), version, origin,
+                    tags.status == 200 ? modelIdsFromListing(tags.body) : QStringList{});
 }
 
 std::optional<DetectedRunner> probeLmStudio(const QString &origin, int timeoutMs)
 {
-    // LM Studio's native listing (0.4.0 and later) keys models by "key" and
-    // types them; OpenAI-style listings have neither.
-    const QJsonArray entries = jsonObject(get(origin + QStringLiteral("/api/v1/models"), timeoutMs))
-                                   .value(QStringLiteral("models")).toArray();
-    if (entries.isEmpty() || !entries.first().toObject().contains(QStringLiteral("key"))) {
-        return std::nullopt;
-    }
-    QStringList models;
-    for (const QJsonValue &entry : entries) {
-        const QJsonObject model = entry.toObject();
-        if (model.value(QStringLiteral("type")).toString() == QStringLiteral("llm")) {
-            models << model.value(QStringLiteral("key")).toString();
+    // LM Studio's native listings type each model, which OpenAI-style ones
+    // do not: /api/v1/models (0.4.0 and later) keys them by "key", the older
+    // /api/v0/models (0.3.6 and later) by "id" with "compatibility_type".
+    struct Listing {
+        const char *path;
+        const char *array;
+        const char *idField;
+        const char *marker;
+    };
+    for (const Listing &listing : {Listing{"/api/v1/models", "models", "key", "key"},
+                                   Listing{"/api/v0/models", "data", "id", "compatibility_type"}}) {
+        const QJsonArray entries = jsonObject(get(origin + QLatin1String(listing.path), timeoutMs))
+                                       .value(QLatin1String(listing.array)).toArray();
+        if (entries.isEmpty() || !entries.first().toObject().contains(QLatin1String(listing.marker))) {
+            continue;
         }
+        QStringList models;
+        for (const QJsonValue &entry : entries) {
+            const QJsonObject model = entry.toObject();
+            const QString type = model.value(QStringLiteral("type")).toString();
+            if (type == QStringLiteral("llm") || type == QStringLiteral("vlm")) {
+                models << model.value(QLatin1String(listing.idField)).toString();
+            }
+        }
+        return detected(QStringLiteral("lmstudio"), {}, origin, models);
     }
-    return DetectedRunner{QStringLiteral("lmstudio"), runnerName(QStringLiteral("lmstudio")), {},
-                          origin + QStringLiteral("/v1"), models};
+    return std::nullopt;
 }
 
 std::optional<DetectedRunner> probeLlamaServer(const QString &origin, int timeoutMs)
 {
-    // 503 means it is still loading its model: it is there, just not ready.
-    const int health = get(origin + QStringLiteral("/health"), timeoutMs).status;
-    if (health != 200 && health != 503) return std::nullopt;
-    // whisper.cpp's server shares the port and /health; KoboldCpp serves a
-    // /props without build_info.
+    // whisper.cpp's server shares the port and /health but answers it with
+    // {"status":...}; llama-server says "Loading model" in an error object
+    // until its model is ready, and /props with build_info after that.
+    // KoboldCpp serves a /props without build_info.
+    const HttpResult health = get(origin + QStringLiteral("/health"), timeoutMs);
+    const QJsonObject healthError = QJsonDocument::fromJson(health.body).object()
+                                        .value(QStringLiteral("error")).toObject();
+    if (health.status == 503
+        && healthError.value(QStringLiteral("message")).toString() == QStringLiteral("Loading model")) {
+        return detected(QStringLiteral("llama-server"), {}, origin, {});
+    }
+    if (health.status != 200) return std::nullopt;
     const QJsonObject props = jsonObject(get(origin + QStringLiteral("/props"), timeoutMs));
     const QString build = props.value(QStringLiteral("build_info")).toString();
     if (build.isEmpty()) return std::nullopt;
     const QString modelPath = props.value(QStringLiteral("model_path")).toString();
-    return DetectedRunner{QStringLiteral("llama-server"), runnerName(QStringLiteral("llama-server")), build,
-                          origin + QStringLiteral("/v1"),
-                          modelPath.isEmpty() ? QStringList{} : QStringList{QFileInfo(modelPath).fileName()}};
+    return detected(QStringLiteral("llama-server"), build, origin,
+                    modelPath.isEmpty() ? QStringList{} : QStringList{QFileInfo(modelPath).fileName()});
 }
 
 QList<DetectedRunner> detectLocalRunners(int timeoutMs)
 {
-    QList<DetectedRunner> runners;
-    for (const auto &probe : {std::pair{QStringLiteral("ollama"), &probeOllama},
-                              std::pair{QStringLiteral("lmstudio"), &probeLmStudio},
-                              std::pair{QStringLiteral("llama-server"), &probeLlamaServer}}) {
-        if (std::optional<DetectedRunner> runner = probe.second(localRunnerOrigin(probe.first), timeoutMs)) {
-            runners << *runner;
+    QList<DetectedRunner> found;
+    for (const Runner &runner : runners) {
+        if (std::optional<DetectedRunner> answer = runner.probe(QString::fromLatin1(runner.origin), timeoutMs)) {
+            found << *answer;
         }
     }
-    return runners;
+    return found;
 }
 
 CleanupHardware cleanupHardwareFor(const HardwareProfile &hardware)

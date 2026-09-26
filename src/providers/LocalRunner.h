@@ -20,11 +20,13 @@ struct DetectedRunner {
     // "ollama", "lmstudio" or "llama-server", as LocalRunnerSettings stores it.
     QString id;
     QString name;
-    // Empty where the runner does not report one (LM Studio).
+    // Empty where the runner does not report one (LM Studio, or llama-server
+    // while it loads its model).
     QString version;
     // Where its Chat Completions API lives, e.g. http://127.0.0.1:11434/v1.
     QString apiBase;
-    // Chat models it can serve; for llama-server the one it loaded.
+    // Chat models it can serve; for llama-server the one it loaded, or none
+    // while it is still loading.
     QStringList models;
 };
 

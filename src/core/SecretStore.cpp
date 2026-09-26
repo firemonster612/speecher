@@ -7,6 +7,8 @@
 #include <QDebug>
 #include <QStandardPaths>
 
+#include <iterator>
+
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #if __has_include(<qt6keychain/keychain.h>)
 #include <qt6keychain/keychain.h>
@@ -24,12 +26,31 @@ namespace {
 
 constexpr int keyringTimeoutMs = 1500;
 constexpr int keyringRetryDelayMs = 5000;
-constexpr SecretStore::Secret allSecrets[] = {
-    SecretStore::Secret::OpenAiApiKey,
-    SecretStore::Secret::CliproxyApiKey,
-    SecretStore::Secret::SpeechEndpointKey,
-    SecretStore::Secret::RefinementEndpointKey,
+
+struct SecretEntry {
+    SecretStore::Secret secret;
+    const char *keyringEntry;
+    const QString &settingsKey;
 };
+
+// In enum order, one row per Secret.
+const SecretEntry secretEntries[] = {
+    {SecretStore::Secret::OpenAiApiKey, "openai-api-key", SettingsKeys::OpenAiApiKey},
+    {SecretStore::Secret::CliproxyApiKey, "cliproxy-api-key", SettingsKeys::CliproxyApiKey},
+    {SecretStore::Secret::SpeechEndpointKey, "speech-endpoint-key", SettingsKeys::SpeechEndpointApiKey},
+    {SecretStore::Secret::RefinementEndpointKey, "refinement-endpoint-key", SettingsKeys::RefinementEndpointApiKey},
+};
+static_assert(std::size(secretEntries) == size_t(SecretStore::Secret::RefinementEndpointKey) + 1);
+
+const SecretEntry &entryFor(SecretStore::Secret secret)
+{
+    return secretEntries[size_t(secret)];
+}
+
+QString keyringEntry(SecretStore::Secret secret)
+{
+    return QString::fromLatin1(entryFor(secret).keyringEntry);
+}
 
 // Test runs keep their entries apart from a real install's, the way test mode
 // already keeps their settings file apart.
@@ -39,36 +60,18 @@ QString keyringService()
                                                : QStringLiteral("speecher");
 }
 
-QString keyringEntry(SecretStore::Secret secret)
+// Tests stand in for a keyring that does not answer.
+bool keyringReadsTimeOut()
 {
-    switch (secret) {
-    case SecretStore::Secret::OpenAiApiKey:
-        return QStringLiteral("openai-api-key");
-    case SecretStore::Secret::CliproxyApiKey:
-        return QStringLiteral("cliproxy-api-key");
-    case SecretStore::Secret::SpeechEndpointKey:
-        return QStringLiteral("speech-endpoint-key");
-    case SecretStore::Secret::RefinementEndpointKey:
-        break;
-    }
-    return QStringLiteral("refinement-endpoint-key");
+    return QStandardPaths::isTestModeEnabled()
+        && qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_READ_TIMEOUT") == 1;
 }
 
 } // namespace
 
 QString SecretStore::settingsKey(Secret secret)
 {
-    switch (secret) {
-    case SecretStore::Secret::OpenAiApiKey:
-        return SettingsKeys::OpenAiApiKey;
-    case SecretStore::Secret::CliproxyApiKey:
-        return SettingsKeys::CliproxyApiKey;
-    case SecretStore::Secret::SpeechEndpointKey:
-        return SettingsKeys::SpeechEndpointApiKey;
-    case SecretStore::Secret::RefinementEndpointKey:
-        break;
-    }
-    return SettingsKeys::RefinementEndpointApiKey;
+    return entryFor(secret).settingsKey;
 }
 
 namespace {
@@ -122,6 +125,38 @@ SecretStore::CachedSecret &SecretStore::cached(Secret secret) const
     return m_cache[static_cast<size_t>(secret)];
 }
 
+void SecretStore::cacheValue(Secret secret, const QString &value) const
+{
+    CachedSecret &entry = cached(secret);
+    entry.value = value;
+    entry.known = true;
+    entry.retryTimer.invalidate();
+}
+
+void SecretStore::prefetch()
+{
+#ifdef SPEECHER_WITH_QKEYCHAIN
+    for (const SecretEntry &row : secretEntries) {
+        if (row.secret == Secret::OpenAiApiKey || !mayBeInKeyring(row.secret) || cached(row.secret).known
+            || keyringReadsTimeOut()) {
+            continue;
+        }
+        auto *job = new QKeychain::ReadPasswordJob(keyringService(), this);
+        job->setKey(keyringEntry(row.secret));
+        connect(job, &QKeychain::Job::finished, this, [this, job, secret = row.secret] {
+            // A value saved or read meanwhile is newer than this answer.
+            if (cached(secret).known) return;
+            if (job->error() == QKeychain::NoError) {
+                cacheValue(secret, job->textData().trimmed());
+            } else if (job->error() == QKeychain::EntryNotFound) {
+                cacheValue(secret, settingsFallback(secret));
+            }
+        });
+        job->start();
+    }
+#endif
+}
+
 QString SecretStore::settingsFallback(Secret secret) const
 {
     return m_settings ? m_settings->raw().value(settingsKey(secret)).toString().trimmed() : QString();
@@ -169,12 +204,20 @@ QString SecretStore::secret(Secret secret) const
     if (entry.value.isEmpty()) {
         entry.value = settingsFallback(secret);
     }
-    entry.known = m_lastError.isEmpty();
-    if (entry.known) {
-        entry.retryTimer.invalidate();
+    if (m_lastError.isEmpty()) {
+        cacheValue(secret, entry.value);
     } else {
         entry.retryTimer.start();
     }
+    return entry.value;
+}
+
+QString SecretStore::cachedSecret(Secret secret) const
+{
+    const CachedSecret &entry = cached(secret);
+    if (entry.known || mayBeInKeyring(secret)) return entry.value;
+    // Not in the keyring, so the settings file is the whole answer.
+    cacheValue(secret, settingsFallback(secret));
     return entry.value;
 }
 
@@ -196,17 +239,18 @@ bool SecretStore::saveToKeyring(Secret secret, const QString &value)
     if (m_settings) {
         m_settings->raw().remove(settingsKey(secret));
     }
-    entry.value = cleaned;
-    entry.known = true;
-    entry.retryTimer.invalidate();
+    cacheValue(secret, cleaned);
     return true;
 }
 
 bool SecretStore::saveSecret(Secret secret, const QString &value)
 {
     const QString cleaned = value.trimmed();
-    CachedSecret &entry = cached(secret);
+    const CachedSecret &entry = cached(secret);
     if (entry.known && cleaned == entry.value) {
+        return true;
+    }
+    if (!entry.known && cleaned.isEmpty()) {
         return true;
     }
     if (saveToKeyring(secret, cleaned)) {
@@ -218,8 +262,7 @@ bool SecretStore::saveSecret(Secret secret, const QString &value)
     qWarning().noquote() << "keyring unavailable, keeping" << keyringEntry(secret)
                          << "in the settings file:" << m_lastError;
     m_settings->raw().setValue(settingsKey(secret), cleaned);
-    entry.value = cleaned;
-    entry.known = true;
+    cacheValue(secret, cleaned);
     return true;
 }
 
@@ -265,6 +308,10 @@ bool SecretStore::usesInsecureSettingsFallback() const
 QString SecretStore::keyringSecret(Secret secret) const
 {
 #ifdef SPEECHER_WITH_QKEYCHAIN
+    if (keyringReadsTimeOut()) {
+        m_lastError = QStringLiteral("Desktop keyring request timed out");
+        return {};
+    }
     QKeychain::ReadPasswordJob job(keyringService());
     job.setKey(keyringEntry(secret));
     QString error;
@@ -327,8 +374,8 @@ bool SecretStore::deleteKeyringSecrets() const
 {
     bool ok = true;
     QString firstError;
-    for (Secret secret : allSecrets) {
-        if (!deleteKeyringSecret(secret) && ok) {
+    for (const SecretEntry &row : secretEntries) {
+        if (!deleteKeyringSecret(row.secret) && ok) {
             ok = false;
             firstError = m_lastError;
         }
@@ -343,14 +390,16 @@ bool SecretStore::deleteKeyringSecrets() const
 // keys were only ever stored there.
 void SecretStore::migrateSettingsFallbacks()
 {
-    for (Secret secret : allSecrets) {
-        const QString legacy = settingsFallback(secret);
+    for (const SecretEntry &row : secretEntries) {
+        const QString legacy = settingsFallback(row.secret);
         if (legacy.isEmpty()) {
             continue;
         }
         m_lastError.clear();
-        if (writeKeyringSecret(secret, legacy)) {
-            m_settings->raw().remove(settingsKey(secret));
+        if (writeKeyringSecret(row.secret, legacy)) {
+            m_settings->raw().remove(row.settingsKey);
+            // The value is in hand, so this run never needs to read it back.
+            cacheValue(row.secret, legacy);
         }
     }
 }

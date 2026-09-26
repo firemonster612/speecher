@@ -5,6 +5,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QPointer>
+#include <QTimer>
 
 class QHttpMultiPart;
 class QNetworkReply;
@@ -26,7 +27,12 @@ class EndpointSpeechTranscriber final : public SpeechTranscriber {
     Q_OBJECT
 
 public:
-    explicit EndpointSpeechTranscriber(QObject *parent = nullptr, int responseTimeoutMs = 60000);
+    // A batch server sends nothing while it transcribes, so the inactivity
+    // limit allows a long recording on a slow machine; the deadline caps a
+    // server that keeps trickling.
+    explicit EndpointSpeechTranscriber(QObject *parent = nullptr,
+                                       int inactivityTimeoutMs = 60000,
+                                       int deadlineMs = 300000);
 
     QString id() const override;
     QString label() const override;
@@ -42,7 +48,11 @@ private:
     void finishReply(QNetworkReply *reply, quint64 attemptId);
     void fail(quint64 attemptId, const QString &message);
 
-    int m_responseTimeoutMs;
+    int m_inactivityTimeoutMs;
+    int m_deadlineMs;
+    QTimer m_inactivityTimer;
+    QTimer m_deadlineTimer;
+    QString m_timeoutReason;
     QNetworkAccessManager m_network;
     QPointer<QNetworkReply> m_reply;
     SpeechEndpointSettings m_endpoint;

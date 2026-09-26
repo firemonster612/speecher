@@ -7,7 +7,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
-#include <QTimer>
 
 namespace speecher {
 namespace {
@@ -57,10 +56,28 @@ SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint
     return {request, parts};
 }
 
-EndpointSpeechTranscriber::EndpointSpeechTranscriber(QObject *parent, int responseTimeoutMs)
+EndpointSpeechTranscriber::EndpointSpeechTranscriber(QObject *parent,
+                                                     int inactivityTimeoutMs,
+                                                     int deadlineMs)
     : SpeechTranscriber(parent)
-    , m_responseTimeoutMs(responseTimeoutMs)
+    , m_inactivityTimeoutMs(inactivityTimeoutMs)
+    , m_deadlineMs(deadlineMs)
 {
+    m_inactivityTimer.setSingleShot(true);
+    m_deadlineTimer.setSingleShot(true);
+    // Aborting leaves m_reply set, so the finished handler reports a failure.
+    const auto timeout = [this](const QString &reason) {
+        if (m_reply) {
+            m_timeoutReason = reason;
+            m_reply->abort();
+        }
+    };
+    connect(&m_inactivityTimer, &QTimer::timeout, this, [this, timeout] {
+        timeout(QStringLiteral("the server sent nothing for %1 s").arg(m_inactivityTimeoutMs / 1000));
+    });
+    connect(&m_deadlineTimer, &QTimer::timeout, this, [this, timeout] {
+        timeout(QStringLiteral("no complete answer within %1 s").arg(m_deadlineMs / 1000));
+    });
 }
 
 QString EndpointSpeechTranscriber::id() const
@@ -115,13 +132,18 @@ void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
     m_streamedText.clear();
     m_doneText.clear();
     m_streaming = false;
+    m_timeoutReason.clear();
     QNetworkReply *reply = m_network.post(upload.request, upload.parts);
     upload.parts->setParent(reply);
     m_reply = reply;
-    // Aborting leaves m_reply set, so the finished handler reports a failure.
-    QTimer::singleShot(m_responseTimeoutMs, reply, [reply] { reply->abort(); });
+    m_inactivityTimer.start(m_inactivityTimeoutMs);
+    m_deadlineTimer.start(m_deadlineMs);
+    connect(reply, &QNetworkReply::uploadProgress, this, [this, reply] {
+        if (reply == m_reply) m_inactivityTimer.start(m_inactivityTimeoutMs);
+    });
     connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
         if (reply != m_reply) return;
+        m_inactivityTimer.start(m_inactivityTimeoutMs);
         m_streaming = reply->header(QNetworkRequest::ContentTypeHeader).toString()
                           .startsWith(QStringLiteral("text/event-stream"));
         if (m_streaming) readStream();
@@ -153,12 +175,23 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
     }
     if (m_streaming) readStream();
     m_reply.clear();
+    m_inactivityTimer.stop();
+    m_deadlineTimer.stop();
     const QByteArray body = m_streaming ? QByteArray() : reply->readAll();
     if (reply->error() != QNetworkReply::NoError) {
-        const QString detail = reply->error() == QNetworkReply::OperationCanceledError
-            ? QStringLiteral("no answer within %1 s").arg(m_responseTimeoutMs / 1000)
+        const QString detail = !m_timeoutReason.isEmpty()
+            ? m_timeoutReason
             : endpointErrorMessage(body, reply->errorString());
-        fail(attemptId, QStringLiteral("Speech endpoint failed: %1").arg(detail));
+        const QString message = QStringLiteral("Speech endpoint failed: %1").arg(detail);
+        // Text the stream already produced is the dictation, cut short; the
+        // audio is not sent again (rule A7), so keep what arrived.
+        if (m_streaming && !m_streamedText.trimmed().isEmpty()) {
+            qWarning().noquote() << message << "- keeping the text streamed so far";
+            emit attemptTranscript(attemptId, m_streamedText.trimmed());
+            emit attemptCompleted(attemptId);
+            return;
+        }
+        fail(attemptId, message);
         return;
     }
     const QString text = m_streaming
@@ -182,6 +215,8 @@ void EndpointSpeechTranscriber::cancelAttempt(quint64 attemptId)
         return;
     }
     m_pcm.clear();
+    m_inactivityTimer.stop();
+    m_deadlineTimer.stop();
     if (QNetworkReply *reply = m_reply) {
         m_reply.clear();
         reply->abort();

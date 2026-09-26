@@ -12,9 +12,11 @@ class AnthropicApiRefiner final : public QObject {
     Q_OBJECT
 
 public:
+    // label names the provider in failure messages.
     explicit AnthropicApiRefiner(QObject *parent = nullptr,
                                  int requestTimeoutMs = 20000,
-                                 int absoluteDeadlineMs = 120000);
+                                 int absoluteDeadlineMs = 120000,
+                                 const QString &label = QStringLiteral("Anthropic"));
 
     void refine(const QString &rawTranscript,
                 const QStringList &vocabulary,
