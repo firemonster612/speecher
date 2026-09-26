@@ -22,6 +22,9 @@ constexpr int kCellGap = 3;
 constexpr int kDot = 10;
 constexpr int kBarGap = 2;
 constexpr int kMutedBarPercent = 42;
+// The badge's fill: the heatmap's lightest active level, so it reads as a
+// tag in the same ramp without competing with the bars beside it.
+constexpr int kBadgePercent = 30;
 
 QColor mix(const QColor &from, const QColor &to, int percent)
 {
@@ -346,6 +349,41 @@ void InsightsBarChart::paintEvent(QPaintEvent *)
     for (int hour : {0, 6, 12, 18}) {
         painter.drawText(QPointF(slot(hour).left(), height() - fontMetrics().descent()), hourLabel(hour));
     }
+}
+
+InsightsBadge::InsightsBadge(const QString &text, QWidget *parent)
+    : QWidget(parent)
+    , m_text(text)
+{
+    setFont(settings::smallFont(font()));
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    setAccessibleName(text);
+}
+
+QSize InsightsBadge::sizeHint() const
+{
+    // Padding from the text's own height, so the pill scales with the font.
+    const QFontMetrics metrics = fontMetrics();
+    const int vertical = metrics.height() / 6;
+    return {metrics.horizontalAdvance(m_text) + metrics.height(), metrics.height() + 2 * vertical};
+}
+
+QSize InsightsBadge::minimumSizeHint() const
+{
+    return sizeHint();
+}
+
+void InsightsBadge::paintEvent(QPaintEvent *)
+{
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const QRectF pill = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+    const qreal radius = pill.height() / 2;
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(accentTint(palette(), kBadgePercent));
+    painter.drawRoundedRect(pill, radius, radius);
+    painter.setPen(palette().color(QPalette::Text));
+    painter.drawText(rect(), Qt::AlignCenter, m_text);
 }
 
 } // namespace speecher

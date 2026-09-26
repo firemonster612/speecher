@@ -67,6 +67,24 @@ private:
     HeatScale m_scale{{}, HeatMeasure::Dictations};
 };
 
+// A Writing Profile shown as a badge beside an app's name: its label on a
+// rounded pill of the insights tint. Qt Widgets has no badge or chip widget.
+class InsightsBadge final : public QWidget {
+    Q_OBJECT
+
+public:
+    explicit InsightsBadge(const QString &text, QWidget *parent = nullptr);
+
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    QString m_text;
+};
+
 // Dictations by hour of day: 24 bars, the peak in the accent colour. Painted
 // for the same reason as the heatmap.
 class InsightsBarChart final : public QWidget {

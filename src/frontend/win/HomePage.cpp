@@ -689,7 +689,27 @@ UIElement paceCard(const InsightsSummary &summary, const PaneHost &host)
     return cardContainer(body);
 }
 
-UIElement appsCard(const InsightsSummary &summary, const PaneHost &host)
+// A Writing Profile as a badge: its label on a pill of the chart accent at the
+// heatmap's lightest level, as the Linux and macOS badges are.
+Grid profileBadge(const QString &label, const Brush &accent)
+{
+    // The tint is its own layer so its opacity leaves the label at full
+    // strength; the label's margin is the pill's padding.
+    Border tint;
+    tint.Background(accent);
+    tint.Opacity(kHeatStrengths.at(1));
+    tint.CornerRadius({9, 9, 9, 9});
+    TextBlock text = styledTextBlock(label, L"CaptionTextBlockStyle");
+    text.Margin({8, 1, 8, 2});
+    Grid pill;
+    pill.HorizontalAlignment(HorizontalAlignment::Left);
+    pill.VerticalAlignment(VerticalAlignment::Center);
+    pill.Children().Append(tint);
+    pill.Children().Append(text);
+    return pill;
+}
+
+UIElement appsCard(const InsightsSummary &summary, const PaneHost &host, const Brush &accent)
 {
     if (summary.apps.isEmpty()) {
         return emptyPeriodCard(QStringLiteral("Where your words go"), host);
@@ -699,9 +719,13 @@ UIElement appsCard(const InsightsSummary &summary, const PaneHost &host)
     std::vector<BarEntry> entries;
     for (const AppShare &app : summary.apps) {
         StackPanel name;
-        name.Children().Append(styledTextBlock(app.name, L"SettingsCardBodyStyle"));
+        name.Orientation(Orientation::Horizontal);
+        name.Spacing(8);
+        TextBlock appName = styledTextBlock(app.name, L"SettingsCardBodyStyle");
+        appName.VerticalAlignment(VerticalAlignment::Center);
+        name.Children().Append(appName);
         if (!app.profileLabel.isEmpty()) {
-            name.Children().Append(secondaryCaption(app.profileLabel, host));
+            name.Children().Append(profileBadge(app.profileLabel, accent));
         }
         entries.push_back({name, double(app.words), double(summary.apps.first().words),
                            QStringLiteral("%1%").arg(app.percent),
@@ -873,7 +897,7 @@ UIElement buildHomePage(PaneHost &host)
     insights.Children().Append(statTiles(summary, today, host, accent, empty));
     insights.Children().Append(activityCard(summary, host, accent, empty));
     insights.Children().Append(adaptiveRow({hoursCard(summary, host, accent), paceCard(summary, host)}, 320));
-    insights.Children().Append(adaptiveRow({appsCard(summary, host), correctionsCard(host)}, 320));
+    insights.Children().Append(adaptiveRow({appsCard(summary, host, accent), correctionsCard(host)}, 320));
     column.Children().Append(insights);
 
     column.Children().Append(styledTextBlock(QStringLiteral("Records"), L"SettingsSectionHeaderStyle"));

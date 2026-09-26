@@ -383,8 +383,10 @@ struct HomePane: View {
                 Text(caption).monospacedDigit()
             }
         } label: {
-            Text(title)
-            if !detail.isEmpty { Text(detail) }
+            HStack(spacing: 6) {
+                Text(title)
+                if !detail.isEmpty { ProfileBadge(label: detail) }
+            }
         }
     }
 
@@ -558,4 +560,18 @@ private func duration(_ milliseconds: Int) -> String {
     let seconds = Double(milliseconds) / 1000
     if seconds < 60 { return "\(Int(seconds.rounded()))s" }
     return minutes(Int((seconds / 60).rounded()))
+}
+
+/// A Writing Profile as a badge: its label on a capsule of the accent at the
+/// heatmap's lightest level, as the Linux and Windows badges are.
+private struct ProfileBadge: View {
+    let label: String
+
+    var body: some View {
+        Text(label)
+            .font(.caption)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color(nsColor: .controlAccentColor).opacity(0.3)))
+    }
 }
