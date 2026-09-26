@@ -211,6 +211,99 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 @property (nonatomic, readonly, copy) NSString *setupHint;
 @end
 
+// The period Home's totals cover. Mirrors speecher::InsightsRange.
+typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
+    SpeecherInsightsRangeLast7Days,
+    SpeecherInsightsRangeLast30Days,
+    SpeecherInsightsRangeThisYear,
+    SpeecherInsightsRangeAllTime,
+};
+
+// One day of the activity heatmap, with its colour level 0..4 under each
+// measure the heatmap can show (speecher::heatLevel among the active days).
+@interface SpeecherInsightsDayModel : NSObject
+@property (nonatomic, readonly, copy) NSDate *date;
+@property (nonatomic, readonly) NSInteger dictations;
+@property (nonatomic, readonly) NSInteger words;
+@property (nonatomic, readonly) NSInteger audioMs;
+@property (nonatomic, readonly) NSInteger dictationsLevel;
+@property (nonatomic, readonly) NSInteger wordsLevel;
+@property (nonatomic, readonly) NSInteger audioLevel;
+@end
+
+// One row of "Where your words go". The "N other apps" fold has no profile.
+@interface SpeecherInsightsAppModel : NSObject
+@property (nonatomic, readonly, copy) NSString *name;
+@property (nonatomic, readonly, copy) NSString *profileLabel;
+@property (nonatomic, readonly) NSInteger words;
+@property (nonatomic, readonly) NSInteger percent;
+@end
+
+// Everything Home shows for one period, as speecher::summarize computed it.
+// Days the page words relative to today ("yesterday", "Mar 1, 2026") arrive
+// already worded, and are empty where the summary has no such day.
+@interface SpeecherInsightsModel : NSObject
+// Every record in the log, whatever the period: 0 means Home has nothing yet.
+@property (nonatomic, readonly) NSInteger recordCount;
+
+// The period.
+@property (nonatomic, readonly) NSInteger words;
+@property (nonatomic, readonly) NSInteger dictations;
+@property (nonatomic, readonly) NSInteger audioMs;
+@property (nonatomic, readonly) NSInteger averageAudioMs;
+@property (nonatomic, readonly) double dictationsPerActiveDay;
+// Percent change against the previous period, or nil when there is none.
+@property (nonatomic, readonly, strong, nullable) NSNumber *wordsDelta;
+@property (nonatomic, readonly, strong, nullable) NSNumber *dictationsDelta;
+@property (nonatomic, readonly, copy) NSString *deltaPeriodLabel;
+@property (nonatomic, readonly, copy) NSString *bookComparison;
+@property (nonatomic, readonly, copy) NSString *bookComparisonTip;
+
+// Streak.
+@property (nonatomic, readonly) NSInteger currentStreak;
+@property (nonatomic, readonly) NSInteger bestStreak;
+@property (nonatomic, readonly, copy) NSString *bestStreakEnd;
+@property (nonatomic, readonly) BOOL bestStreakEndsToday;
+@property (nonatomic, readonly) NSInteger brokenStreakLength;
+@property (nonatomic, readonly, copy) NSString *brokenStreakEnded;
+// Seven BOOLs, Monday first, and today's slot among them.
+@property (nonatomic, readonly, copy) NSArray<NSNumber *> *weekActivity;
+@property (nonatomic, readonly) NSInteger todayIndex;
+
+// Every day of the last 53 Monday-first weeks up to today, oldest first.
+@property (nonatomic, readonly, copy) NSArray<SpeecherInsightsDayModel *> *heatmap;
+@property (nonatomic, readonly) NSInteger activeDaysLastYear;
+
+// The period by local hour: 24 counts.
+@property (nonatomic, readonly, copy) NSArray<NSNumber *> *hourCounts;
+@property (nonatomic, readonly) NSInteger peakHour;
+// The weekday's name, such as "Tuesday".
+@property (nonatomic, readonly, copy) NSString *busiestWeekday;
+@property (nonatomic, readonly, copy) NSString *persona;
+@property (nonatomic, readonly) BOOL hasHourData;
+
+@property (nonatomic, readonly) NSInteger wordsPerMinute;
+@property (nonatomic, readonly) NSInteger minutesSavedVersusTyping;
+
+@property (nonatomic, readonly, copy) NSArray<SpeecherInsightsAppModel *> *apps;
+
+// Records, all time.
+@property (nonatomic, readonly) NSInteger allTimeWords;
+// 0 once every milestone is passed.
+@property (nonatomic, readonly) NSInteger nextMilestone;
+@property (nonatomic, readonly, strong, nullable) NSNumber *passedMilestone;
+@property (nonatomic, readonly) NSInteger longestAudioMs;
+@property (nonatomic, readonly) NSInteger longestWords;
+@property (nonatomic, readonly, copy) NSString *longestApp;
+@property (nonatomic, readonly, copy) NSString *longestDay;
+@property (nonatomic, readonly, copy) NSString *busiestDay;
+@property (nonatomic, readonly) NSInteger busiestDayDictations;
+@property (nonatomic, readonly, copy) NSString *wordiestDay;
+@property (nonatomic, readonly) NSInteger wordiestDayWords;
+@property (nonatomic, readonly, copy, nullable) NSDate *firstDictation;
+@property (nonatomic, readonly) NSInteger firstDictationDaysAgo;
+@end
+
 @interface SpeecherBridge : NSObject
 @property (nonatomic, readonly, strong) SettingsSchemaModel *settingsSchema;
 @property (nonatomic, readonly, copy) NSString *stateName;
@@ -269,6 +362,22 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 // again. Empty until one exists.
 @property (nonatomic, readonly, copy) NSString *lastTranscript;
 @property (nonatomic, copy, nullable) void (^transcriptChanged)(NSString *transcript);
+// The last transcript's word count (speecher::countWords), and the app and
+// relative day of the newest insights record. Empty strings with no record.
+@property (nonatomic, readonly) NSInteger lastTranscriptWords;
+@property (nonatomic, readonly, copy) NSString *lastTranscriptApp;
+@property (nonatomic, readonly, copy) NSString *lastTranscriptDay;
+
+// Home's insights. The setting says whether new dictations are recorded; the
+// log keeps what it has either way until it is cleared.
+@property (nonatomic, readonly) BOOL insightsEnabled;
+// The log gained or lost records.
+@property (nonatomic, copy, nullable) void (^insightsChanged)(void);
+- (SpeecherInsightsModel *)insightsSummaryForRange:(SpeecherInsightsRange)range
+    NS_SWIFT_NAME(insightsSummary(range:));
+// Deletes every record, once the person has confirmed it.
+- (void)clearInsights;
+@property (nonatomic, readonly) NSInteger learnedCorrectionCount;
 
 // The desktop-wide shortcut, which nothing surfaced after the setup assistant.
 @property (nonatomic, readonly) BOOL shortcutSupported;

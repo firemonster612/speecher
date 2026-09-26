@@ -1,0 +1,127 @@
+name: Insights evidence
+
+# Screenshots of Home and the General page's Insights group on macOS and
+# Windows, from the seeded insights log (docs/insights-mockup/seed-active.jsonl)
+# with today pinned so the numbers match the mockup. Uploads evidence/.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/insights-home
+  pull_request:
+    paths:
+      - src/**
+      - .github/workflows/insights-evidence.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: insights-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_OBJCXX_COMPILER_LAUNCHER: ccache
+      SPEECHER_INSIGHTS_TODAY: "2026-09-26"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+          cache: true
+
+      - name: Cache macOS compiler outputs
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-26-release
+
+      - name: Remove obsolete AGL references
+        run: |
+          # Same workaround as release.yml: the macOS 26 SDK has no AGL.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Seed settings
+        run: |
+          # Qt's settings domain, as .github/macos-e2e/common.sh seeds it: no
+          # setup assistant and no update banner over the page.
+          defaults write com.io-github-firemonster612.speecher app.setupCompleted -bool true
+          defaults write com.io-github-firemonster612.speecher updates.autoCheck -bool false
+          defaults write com.io-github-firemonster612.speecher updates.autoInstall -bool false
+
+      - name: Grab Home and General
+        run: |
+          mkdir -p evidence
+          # As .github/macos-e2e/common.sh runs the app: Qt from the installed kit.
+          export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
+          export SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-active.jsonl"
+          for page in home general; do
+            SPEECHER_GRAB_PAGE="$page" build/speecher.app/Contents/MacOS/speecher \
+              --grab "evidence/mac-$page.png" 2>&1 | tee "evidence/mac-$page-grab.log"
+            test -s "evidence/mac-$page.png"
+            pkill -9 -x speecher || true
+            # A killed instance leaves its single-instance socket behind.
+            find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
+          done
+
+      - name: Screen capture with the window shown
+        # The backing-store grab has no sidebar vibrancy; screencapture shows
+        # the composited window when the runner lets it record the screen.
+        continue-on-error: true
+        run: |
+          export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
+          export SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-active.jsonl"
+          seed=.github/macos-e2e/tcc_seed.py
+          db="/Library/Application Support/com.apple.TCC/TCC.db"
+          sudo python3 "$seed" "$db" kTCCServiceScreenCapture /usr/sbin/screencapture 2 UNUSED 1 \
+            > evidence/tcc-seeding.log 2>&1 || true
+          sudo launchctl kickstart -k system/com.apple.tccd >/dev/null 2>&1 \
+            || sudo killall tccd >/dev/null 2>&1 || true
+          for page in home general; do
+            # The settings window opens on the pane AppModel remembers.
+            defaults write io.github.firemonster612.speecher settingsPane "$page"
+            build/speecher.app/Contents/MacOS/speecher > "evidence/mac-$page-screen.log" 2>&1 &
+            sleep 8
+            screencapture -x "evidence/mac-$page-screen.png" || true
+            pkill -9 -x speecher || true
+            # A killed instance leaves its single-instance socket behind.
+            find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
+            sleep 1
+          done
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: insights-evidence-macos
+          path: evidence/
+          if-no-files-found: error
