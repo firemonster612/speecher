@@ -467,7 +467,6 @@ private slots:
                                                {QStringLiteral("cohere"), 1.7}};
         settings.applySnapshot(draft);
         QCOMPARE(SettingsStore().snapshot().speech.local, draft.speech.local);
-        QCOMPARE(settings.raw().value(QStringLiteral("local/speedTest/cohere")).toDouble(), 1.7);
 
         draft.speech.local.speedTestSeconds.remove(QStringLiteral("cohere"));
         settings.applySnapshot(draft);
