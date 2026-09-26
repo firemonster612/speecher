@@ -155,6 +155,7 @@ int main(int argc, char **argv)
     if (selected("claude_voice")) result |= runClaudeVoiceTests(argc, argv);
     if (selected("codex_dictation")) result |= runCodexDictationTests(argc, argv);
     if (selected("audio_pcm_converter")) result |= runAudioPcmConverterTests(argc, argv);
+    if (selected("file_transcription")) result |= runFileTranscriptionTests(argc, argv);
 #ifdef Q_OS_UNIX
     if (selected("update_controller")) result |= runUpdateControllerTests(argc, argv);
 #endif

@@ -13,6 +13,7 @@
 #include "ui/HomePage.h"
 #include "ui/InsightsCharts.h"
 #include "ui/settings/SettingsPageSet.h"
+#include "transcribe/FileTranscriptionSession.h"
 #include "ui/Theme.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
@@ -99,6 +100,7 @@ private slots:
         ApplicationController controller(true);
         const QStringList titles{
             QStringLiteral("Home"),
+            QStringLiteral("Transcribe"),
             QStringLiteral("General"),
             QStringLiteral("Audio"),
             QStringLiteral("Output"),
@@ -107,7 +109,7 @@ private slots:
             QStringLiteral("Vocabulary"),
         };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 7);
+        QCOMPARE(window.pageCount(), 8);
         QCOMPARE(window.pageTitles(), titles);
     }
 
@@ -596,8 +598,100 @@ private slots:
         QVERIFY(window.findChild<QSplitter *>() && search);
 
         search->setText(QStringLiteral("Keep before speech"));
-        QVERIFY(navigation && navigation->item(1)->isHidden()
-                && !navigation->item(2)->isHidden());
+        QVERIFY(navigation && navigation->item(2)->isHidden()
+                && !navigation->item(3)->isHidden());
+    }
+
+    void openedAudioFilesLandOnTheTranscribePage()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("RIFF\0\0\0\0WAVEfmt ");
+        file.close();
+
+        window.showTranscribeFiles({audio, dir.filePath(QStringLiteral("missing.wav"))});
+
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Transcribe"));
+        auto *start = window.findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(start->isEnabled());
+        QCOMPARE(start->text(), QStringLiteral("Transcribe"));
+        QVERIFY(!controller.fileTranscription()->isRunning());
+    }
+
+    void openedFilesGetTheCompactWindowAlone()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("RIFF\0\0\0\0WAVEfmt ");
+        file.close();
+
+        // Earlier tests can leave windows behind; only what this opens counts.
+        const auto visibleWindows = [] {
+            QSet<QWidget *> visible;
+            for (QWidget *widget : QApplication::topLevelWidgets()) {
+                if (widget->isVisible()) {
+                    visible << widget;
+                }
+            }
+            return visible;
+        };
+        const QSet<QWidget *> before = visibleWindows();
+        controller.showTranscribeFiles({audio});
+        controller.showTranscribeFiles({audio});
+
+        const QWidgetList windows = (visibleWindows() - before).values();
+        QCOMPARE(windows.size(), 1);
+        QCOMPARE(windows.first()->objectName(), QStringLiteral("transcribeWindow"));
+        QCOMPARE(windows.first()->windowTitle(), QStringLiteral("Transcribe \u2014 Speecher"));
+        QVERIFY(!windows.first()->findChild<QListWidget *>(QStringLiteral("appNavigation")));
+        auto *start = windows.first()->findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(start->isEnabled());
+        QCOMPARE(start->text(), QStringLiteral("Transcribe"));
+    }
+
+    void aFileOpenedOverResultsIsKeptForTheNextBatch()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        QTemporaryDir dir;
+        const auto writeHeaderOnlyWav = [&dir](const QString &name) {
+            QFile file(dir.filePath(name));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("RIFF\0\0\0\0WAVEfmt ");
+        };
+        writeHeaderOnlyWav(QStringLiteral("first.wav"));
+        writeHeaderOnlyWav(QStringLiteral("second.wav"));
+        window.showTranscribeFiles({dir.filePath(QStringLiteral("first.wav"))});
+
+        // A header with no audio fails to decode, which still ends on results.
+        window.findChild<QPushButton *>(QStringLiteral("transcribeStart"))->click();
+        auto *again = window.findChild<QPushButton *>(QStringLiteral("transcribeAgain"));
+        QTRY_VERIFY_WITH_TIMEOUT(again->isVisibleTo(&window), 10000);
+        QVERIFY(window.findChild<QToolButton *>(QStringLiteral("transcribeRetry")));
+
+        window.showTranscribeFiles({dir.filePath(QStringLiteral("second.wav"))});
+
+        auto *start = window.findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(start->isVisibleTo(&window));
+        QVERIFY(start->isEnabled());
+        QStringList listed;
+        for (const QLabel *label : window.findChildren<QLabel *>()) {
+            if (label->text().endsWith(QStringLiteral(".wav")) && label->isVisibleTo(&window)) {
+                listed << label->text();
+            }
+        }
+        QCOMPARE(listed, QStringList({QStringLiteral("second.wav")}));
     }
 
     void programmaticNavigationUpdatesShellChrome()
@@ -618,11 +712,11 @@ private slots:
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
         QVERIFY(navigation && stack && whatsNew);
 
-        navigation->setCurrentRow(1);
+        navigation->setCurrentRow(2);
         whatsNew->click();
-        QCOMPARE(stack->currentIndex(), 7);
-        navigation->setCurrentRow(1);
-        QCOMPARE(stack->currentIndex(), 1);
+        QCOMPARE(stack->currentIndex(), 8);
+        navigation->setCurrentRow(2);
+        QCOMPARE(stack->currentIndex(), 2);
     }
 
     void whatsNewOffersAWayBackToThePageItWasOpenedFrom()
@@ -639,16 +733,16 @@ private slots:
         QVERIFY(!back->isVisible());
 
         // Opened from General, the same way the update banner opens it.
-        navigation->setCurrentRow(1);
+        navigation->setCurrentRow(2);
         whatsNew->click();
-        QCOMPARE(stack->currentIndex(), 7);
+        QCOMPARE(stack->currentIndex(), 8);
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(back->isVisible());
         QVERIFY(!navigation->currentItem());
 
         back->click();
-        QCOMPARE(stack->currentIndex(), 1);
-        QCOMPARE(navigation->currentRow(), 1);
+        QCOMPARE(stack->currentIndex(), 2);
+        QCOMPARE(navigation->currentRow(), 2);
         QCOMPARE(title->text(), QStringLiteral("General"));
         QVERIFY(!back->isVisible());
     }

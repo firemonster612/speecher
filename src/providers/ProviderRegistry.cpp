@@ -65,6 +65,18 @@ SpeechTranscriber *ProviderRegistry::speechProvider(const QString &id)
     return it->instance;
 }
 
+SpeechTranscriber *ProviderRegistry::createSpeechProvider(const QString &id, QObject *parent)
+{
+    const auto it = m_speech.constFind(id);
+    return it == m_speech.constEnd() ? nullptr : it->factory(parent);
+}
+
+TranscriptRefiner *ProviderRegistry::createRefinementProvider(const QString &id, QObject *parent)
+{
+    const auto it = m_refinement.constFind(id);
+    return it == m_refinement.constEnd() ? nullptr : it->factory(parent);
+}
+
 QString credentialSourceLabel(const QString &providerId, const QString &fallback)
 {
     if (providerId == QStringLiteral("claude")) {

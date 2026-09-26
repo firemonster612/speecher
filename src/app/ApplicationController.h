@@ -20,6 +20,8 @@ namespace speecher {
 class AppFrontEnd;
 enum class SetupAssistantPage;
 class DictationSession;
+class FileTranscriptionSession;
+struct TranscribeOptions;
 class AudioInput;
 class GlobalShortcutBinder;
 class InsightsLog;
@@ -43,6 +45,13 @@ public:
     // The session the front end renders. Everything it shows about a dictation
     // arrives on these signals.
     DictationSession *session() const;
+    // The batch the Transcribe page drives. One runs at a time, and it and
+    // dictation exclude each other: a batch will not start while a dictation
+    // is under way, and dictation will not start while a batch runs.
+    FileTranscriptionSession *fileTranscription() const;
+    bool startFileTranscription(const QStringList &paths,
+                                const TranscribeOptions &options,
+                                QString *error = nullptr);
     // Called by the front end once its first window is on screen. Startup work
     // that would compete with the first paint waits for this.
     void frontEndReady();
@@ -106,6 +115,15 @@ public:
     void showSettingsWindow();
     void showSetupAssistant();
     void showSetupAssistant(SetupAssistantPage page);
+    // Opens the Transcribe page with these files listed, not yet started.
+    // Before setup is complete it shows the setup assistant instead and holds
+    // the files until completeSetup().
+    void showTranscribeFiles(const QStringList &paths);
+    // Whether any files have been opened this run.
+    bool filesOpened() const;
+    // Records that the setup assistant finished, then opens any files that
+    // arrived while it was up.
+    void completeSetup();
     bool startIpc(QString *error = nullptr);
 
 public slots:
@@ -118,7 +136,8 @@ public slots:
     void quitApplication();
     void handleIpcCommand(const QString &command,
                           const QString &outputFormat,
-                          QLocalSocket *socket);
+                          QLocalSocket *socket,
+                          const QStringList &files = {});
 
 signals:
     void stateChanged(const QString &stateName);
@@ -138,7 +157,6 @@ signals:
 
 private:
     void forgetLastRecord();
-    void registerProviders();
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
     bool ensureSetupCompleted();
@@ -156,6 +174,10 @@ private:
     ProviderRegistry *m_providers = nullptr;
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
+    FileTranscriptionSession *m_fileTranscription = nullptr;
+    // Files opened before setup was complete.
+    QStringList m_pendingTranscribeFiles;
+    bool m_filesOpened = false;
     UpdateController *m_updates = nullptr;
     InsightsLog *m_insightsLog = nullptr;
     std::optional<DictationRecord> m_lastRecord;

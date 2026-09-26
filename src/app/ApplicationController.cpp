@@ -1,6 +1,7 @@
 #include "app/ApplicationController.h"
 
 #include "app/AppFrontEnd.h"
+#include "app/ProviderSetup.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "app/UpdateController.h"
 #ifdef Q_OS_MACOS
@@ -15,15 +16,9 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
-#include "providers/AnthropicTranscriptRefiner.h"
-#include "providers/ClaudeSpeechTranscriber.h"
-#ifdef SPEECHER_E2E_HOOKS
-#include "providers/E2EProviders.h"
-#endif
-#include "providers/CodexSpeechTranscriber.h"
-#include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
+#include "transcribe/FileTranscriptionSession.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -132,7 +127,7 @@ ApplicationController::ApplicationController(bool popupOnly,
             &GlobalShortcutBinder::registrationFinished,
             this,
             &ApplicationController::globalShortcutRegistrationFinished);
-    registerProviders();
+    registerProviders(*m_providers, m_secrets);
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
     connect(m_settings,
@@ -166,6 +161,7 @@ ApplicationController::ApplicationController(bool popupOnly,
                                      this);
     m_session->setScreenshotContextProvider(
         m_platform->createScreenshotContextProvider(this));
+    m_fileTranscription = new FileTranscriptionSession(m_settings, m_providers, this);
 #ifdef Q_OS_MACOS
     m_updates = new MacSparkleUpdater(m_settings, m_session, this);
 #elif defined(Q_OS_WIN)
@@ -250,6 +246,30 @@ void ApplicationController::setFrontEnd(AppFrontEnd *frontEnd)
 DictationSession *ApplicationController::session() const
 {
     return m_session;
+}
+
+FileTranscriptionSession *ApplicationController::fileTranscription() const
+{
+    return m_fileTranscription;
+}
+
+bool ApplicationController::startFileTranscription(const QStringList &paths,
+                                                   const TranscribeOptions &options,
+                                                   QString *error)
+{
+    const DictationState state = m_session->state();
+    const QString refusal = m_fileTranscription->isRunning()
+        ? QStringLiteral("Files are already being transcribed.")
+        : (state != DictationState::Idle && state != DictationState::Error) || m_microphoneStartPending
+            ? QStringLiteral("Finish the dictation in progress, then transcribe the files.")
+            : QString();
+    if (!refusal.isEmpty()) {
+        if (error) {
+            *error = refusal;
+        }
+        return false;
+    }
+    return m_fileTranscription->start(paths, options);
 }
 
 InsightsLog *ApplicationController::insightsLog() const
@@ -502,6 +522,24 @@ void ApplicationController::showSetupAssistant(SetupAssistantPage page)
     }
 }
 
+void ApplicationController::showTranscribeFiles(const QStringList &paths)
+{
+    m_filesOpened = true;
+    if (!m_settings->setupCompleted()) {
+        m_pendingTranscribeFiles += paths;
+        showSetupAssistant();
+        return;
+    }
+    if (m_frontEnd) {
+        m_frontEnd->showTranscribeFiles(paths);
+    }
+}
+
+bool ApplicationController::filesOpened() const
+{
+    return m_filesOpened;
+}
+
 // macOS answers the microphone grant asynchronously the first time, so a
 // session start has to wait for the answer instead of capturing silence.
 void ApplicationController::startWithMicrophone(std::function<void()> start)
@@ -509,6 +547,13 @@ void ApplicationController::startWithMicrophone(std::function<void()> start)
     // Every session start funnels through here; a start dispatched during the
     // quit pump would re-pause the media quitApplication just resumed.
     if (m_quitting) {
+        return;
+    }
+    if (m_fileTranscription->isRunning()) {
+        if (m_frontEnd) {
+            m_frontEnd->showDictationError(QStringLiteral(
+                "Dictation is unavailable while files are being transcribed."));
+        }
         return;
     }
 #ifdef SPEECHER_E2E_HOOKS
@@ -735,7 +780,8 @@ void ApplicationController::quitApplication()
 
 void ApplicationController::handleIpcCommand(const QString &command,
                                              const QString &outputFormat,
-                                             QLocalSocket *socket)
+                                             QLocalSocket *socket,
+                                             const QStringList &files)
 {
     const bool hasFormat = !outputFormat.isEmpty();
     if (hasFormat && outputFormat != QStringLiteral("plain") && outputFormat != QStringLiteral("html")) {
@@ -776,6 +822,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("showSetup")) {
         showSetup();
+        SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("transcribe")) {
+        showTranscribeFiles(files);
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("grab")) {
         // Screenshot seam for end-to-end runs: saves the main window into
@@ -823,8 +872,23 @@ ApplicationController::~ApplicationController()
 {
     delete m_updates;
     m_updates = nullptr;
+    delete m_fileTranscription;
+    m_fileTranscription = nullptr;
     delete m_session;
     m_session = nullptr;
+}
+
+void ApplicationController::completeSetup()
+{
+    m_settings->setSetupCompleted(true);
+    if (m_pendingTranscribeFiles.isEmpty()) {
+        return;
+    }
+    // Queued, so the front end has closed its assistant and shown its window
+    // before the Transcribe surface comes up over it.
+    QTimer::singleShot(0, this, [this] {
+        showTranscribeFiles(std::exchange(m_pendingTranscribeFiles, {}));
+    });
 }
 
 bool ApplicationController::ensureSetupCompleted()
@@ -834,95 +898,6 @@ bool ApplicationController::ensureSetupCompleted()
     }
     showSetupAssistant();
     return false;
-}
-
-// Model names follow the September 22, 2026 defaults. The speed and quality
-// lines were measured on the previous defaults (gpt-5.6-luna at effort none,
-// claude-sonnet-4-6 at effort low; see .scratch/provider-stats/FINDINGS.md)
-// and are estimated forward from vendor latency notes until the new defaults
-// are benchmarked. The score is the maintainers' overall ranking, folding
-// those lines into one number out of 10.
-static QVector<ProviderStat> refinementProviderStats(const QString &id)
-{
-    if (id == QStringLiteral("openai")) {
-        return {{QStringLiteral("Score"), QStringLiteral("9 / 10")},
-                {QStringLiteral("Default model"), QStringLiteral("gpt-6-luna")},
-                {QStringLiteral("Speed"), QStringLiteral("About 3 seconds per dictation (estimated)")},
-                {QStringLiteral("Efficiency"), QStringLiteral("No reasoning pass; time varies run to run")},
-                {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; applies spoken corrections reliably")}};
-    }
-    if (id == QStringLiteral("anthropic")) {
-        return {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-                {QStringLiteral("Default model"), QStringLiteral("Claude Opus 5.5")},
-                {QStringLiteral("Speed"), QStringLiteral("About 3 seconds per dictation (estimated)")},
-                {QStringLiteral("Efficiency"), QStringLiteral("Always reasons, kept light at low effort")},
-                {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; can leave a spoken correction in")}};
-    }
-    return {};
-}
-
-void ApplicationController::registerProviders()
-{
-#ifdef SPEECHER_E2E_HOOKS
-    // E2E-build-only hook: deterministic stub providers for the headless
-    // dictation-panel flow runs. Never compiled into distributed builds.
-    if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1) {
-        // The stub stats mirror the real providers' shape (a Score line first)
-        // so the setup-flow E2E can assert the rendering.
-        m_providers->registerSpeechProvider(
-            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString(), false, QString(),
-             {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-              {QStringLiteral("Engine"), QStringLiteral("Deterministic test stub")}}},
-            createE2ESpeechTranscriber);
-        m_providers->registerRefinementProvider(
-            {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString(), false, QString(),
-             {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-              {QStringLiteral("Engine"), QStringLiteral("Deterministic test stub")}}},
-            createE2ETranscriptRefiner);
-    }
-#endif
-    m_providers->registerSpeechProvider(
-        {QStringLiteral("claude"),
-         QStringLiteral("Claude Voice"),
-         QStringLiteral("Install Claude Code from claude.com/code and sign in — the desktop app or the claude CLI (/login) both work."),
-         false,
-         QStringLiteral("Deepgram Nova 3: words appear live as you speak. "
-                        "About 60 languages, automatic punctuation and numerals."),
-         {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-          {QStringLiteral("Engine"), QStringLiteral("Deepgram Nova 3")},
-          {QStringLiteral("Languages"), QStringLiteral("About 60")},
-          {QStringLiteral("Speed"), QStringLiteral("Live stream; words appear as you speak")},
-          {QStringLiteral("Accuracy"), QStringLiteral("Strong, holds up in noisy rooms")},
-          {QStringLiteral("Formatting"), QStringLiteral("Automatic punctuation, capitals, numerals")}}},
-        [](QObject *parent) {
-            return new ClaudeSpeechTranscriber(parent);
-        });
-    m_providers->registerSpeechProvider(
-        {QStringLiteral("codex"),
-         QStringLiteral("ChatGPT Codex"),
-         QStringLiteral("Sign in with ChatGPT in the ChatGPT app, or install the Codex CLI and run codex login."),
-         false,
-         QStringLiteral("GPT Live Transcribe: very accurate; text arrives a phrase "
-                        "at a time after short pauses. Around 100 languages."),
-         {{QStringLiteral("Score"), QStringLiteral("9 / 10")},
-          {QStringLiteral("Engine"), QStringLiteral("GPT Live Transcribe")},
-          {QStringLiteral("Languages"), QStringLiteral("Around 100")},
-          {QStringLiteral("Speed"), QStringLiteral("A phrase at a time, after a short pause")},
-          {QStringLiteral("Accuracy"), QStringLiteral("Excellent, even with accents and noise")},
-          {QStringLiteral("Formatting"), QStringLiteral("Natural punctuation and phrasing")}}},
-        [](QObject *parent) {
-            return new CodexSpeechTranscriber(parent);
-        });
-    m_providers->registerRefinementProvider(
-        {QStringLiteral("openai"), QStringLiteral("OpenAI"),
-         QStringLiteral("Uses your ChatGPT or Codex sign-in."), true,
-         QString(), refinementProviderStats(QStringLiteral("openai"))},
-        [this](QObject *parent) { return new OpenAiTranscriptRefiner(m_secrets, parent); });
-    m_providers->registerRefinementProvider(
-        {QStringLiteral("anthropic"), QStringLiteral("Anthropic"),
-         QStringLiteral("Uses your Claude Code sign-in."), true,
-         QString(), refinementProviderStats(QStringLiteral("anthropic"))},
-        [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
 }
 
 void ApplicationController::refreshAccessibilityState()

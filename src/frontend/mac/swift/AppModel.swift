@@ -82,6 +82,9 @@ final class AppModel: ObservableObject {
     @Published var requestedGroup: String? = nil
 
     let bridge: SpeecherBridge
+    /// The Transcribe pane's batch, kept here so it outlives the pane's view:
+    /// a batch keeps running while another pane is on screen.
+    let transcription: TranscriptionModel
     private static let paneKey = "settingsPane"
     /// A keyring read that lands after typing started must not overwrite it.
     private var apiKeyEdits = 0
@@ -111,6 +114,7 @@ final class AppModel: ObservableObject {
 
     init(bridge: SpeecherBridge) {
         self.bridge = bridge
+        transcription = TranscriptionModel(bridge: bridge)
         pages = bridge.settingsSchema.pages
         let panes = bridge.settingsSchema.panes.map(Pane.init)
         self.panes = panes

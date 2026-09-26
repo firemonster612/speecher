@@ -5,8 +5,11 @@
 #include "app/UpdateController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
+#include "app/ProviderSetup.h"
+#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
+#include "providers/ProviderRegistry.h"
 #ifndef SPEECHER_WITH_WINUI
 #include "frontend/qt/QtFrontEnd.h"
 #include "ui/Theme.h"
@@ -46,7 +49,15 @@
 #include <QTimer>
 #include <QMutex>
 
+#include <cstdio>
 #include <iostream>
+#ifdef Q_OS_WIN
+#include <io.h>
+#define isatty _isatty
+#define fileno _fileno
+#else
+#include <unistd.h>
+#endif
 
 using namespace speecher;
 
@@ -195,6 +206,17 @@ int main(int argc, char **argv)
         QCoreApplication app(argc, argv);
         return runCliCommand(decision, platform);
     }
+    if (decision.mode == LaunchMode::TranscribeHeadless) {
+        // Its own settings reader, secrets and providers: no IPC, no display,
+        // and nothing shared with a running instance's dictation.
+        QCoreApplication app(argc, argv);
+        SettingsStore settings;
+        SecretStore secrets(&settings);
+        ProviderRegistry providers;
+        registerProviders(providers, &secrets);
+        return runHeadlessTranscribe(decision.transcribeFiles, decision.headless, &settings, &providers,
+                                     std::cout, std::cerr, isatty(fileno(stderr)));
+    }
 
 #ifdef SPEECHER_WITH_WINUI
     auto winUiHost = std::make_unique<WinUiHost>();
@@ -258,12 +280,27 @@ int main(int argc, char **argv)
             }
             return 1;
         }
-        const QString showCommand = decision.showSettings ? QStringLiteral("showSettings")
-                                                          : QStringLiteral("showMain");
+        const QString showCommand = !decision.transcribeFiles.isEmpty()
+            ? QStringLiteral("transcribe")
+            : decision.showSettings ? QStringLiteral("showSettings")
+                                    : QStringLiteral("showMain");
+        // An older running instance answers a command it does not know, such
+        // as transcribe, with a refusal; say so rather than exit as if the
+        // files had opened.
+        IpcResponse response;
+        const auto answered = [&response, &showCommand] {
+            if (response.ok) {
+                return 0;
+            }
+            std::cerr << "The running Speecher instance refused " << showCommand.toStdString() << ": "
+                      << response.message.toStdString() << "\n";
+            return 1;
+        };
 #ifdef Q_OS_WIN
         if (!daemon) {
             AllowSetForegroundWindow(ASFW_ANY);
-            auto result = SingleInstanceIpc::sendCommandDetailed(showCommand, nullptr);
+            auto result = SingleInstanceIpc::sendCommandDetailed(
+                showCommand, std::nullopt, decision.transcribeFiles, &response);
             // The startup claim can precede the winning instance's pipe listener.
             if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
                 QDeadlineTimer deadline(750);
@@ -273,17 +310,19 @@ int main(int argc, char **argv)
                     if (remaining <= 0) {
                         break;
                     }
-                    result = SingleInstanceIpc::sendCommandDetailed(showCommand, nullptr,
-                                                                   int(remaining));
+                    result = SingleInstanceIpc::sendCommandDetailed(
+                        showCommand, std::nullopt, decision.transcribeFiles, &response, int(remaining));
                 }
             }
             if (result == IpcCommandResult::Sent) {
-                return 0;
+                return answered();
             }
         }
 #else
-        if (!daemon && SingleInstanceIpc::sendCommand(showCommand, nullptr)) {
-            return 0;
+        if (!daemon
+            && SingleInstanceIpc::sendCommandDetailed(showCommand, std::nullopt, decision.transcribeFiles, &response)
+                == IpcCommandResult::Sent) {
+            return answered();
         }
 #endif
         std::cerr << ipcError.toStdString() << "\n";
@@ -291,8 +330,12 @@ int main(int argc, char **argv)
     }
 
     if ((!controller.settings()->setupCompleted() && decision.grabPath.isEmpty()) || decision.showSetup) {
-        QTimer::singleShot(0, &controller, [&controller] {
+        QTimer::singleShot(0, &controller, [&controller, &decision] {
             controller.showSetupAssistant();
+            // Held by the controller until setup completes, then opened.
+            if (!decision.transcribeFiles.isEmpty()) {
+                controller.showTranscribeFiles(decision.transcribeFiles);
+            }
         });
     } else {
         if (decision.startListening) {
@@ -322,8 +365,23 @@ int main(int argc, char **argv)
             && restore.contains(QStringLiteral("settings"))) {
             QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
         }
-        if (!daemon || !decision.grabPath.isEmpty()) {
+        if (!decision.grabPath.isEmpty()) {
             controller.showMainWindow();
+        } else if (!daemon && decision.transcribeFiles.isEmpty()) {
+            // A launch that opens files brings up the Transcribe window alone.
+            // macOS hands Finder's files over as events once the loop runs,
+            // so let those arrive before deciding.
+            QTimer::singleShot(0, &controller, [&controller] {
+                QCoreApplication::processEvents();
+                if (!controller.filesOpened()) {
+                    controller.showMainWindow();
+                }
+            });
+        }
+        if (!decision.transcribeFiles.isEmpty()) {
+            QTimer::singleShot(0, &controller, [&controller, &decision] {
+                controller.showTranscribeFiles(decision.transcribeFiles);
+            });
         }
     }
     if (!decision.grabPath.isEmpty()) {

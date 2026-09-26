@@ -15,9 +15,49 @@
 #include <QApplication>
 #include <QDebug>
 #include <QDesktopServices>
+#include <QEventLoop>
+#include <QFileOpenEvent>
 #include <QStringList>
+#include <QTimer>
 #include <QUrl>
+
+#include <algorithm>
+
 namespace speecher {
+
+namespace {
+
+// Opening audio with Speecher from Finder, or dropping it on the Dock icon,
+// arrives as a QFileOpenEvent: Qt's application delegate turns AppKit's
+// application:openFiles: into one, and the Swift delegate proxy in
+// SpeecherMacUI.swift forwards that selector to Qt's delegate. The files take
+// the command line's route, so a file opened before setup is finished waits
+// for setup the same way.
+class FileOpenFilter final : public QObject {
+public:
+    explicit FileOpenFilter(ApplicationController *controller)
+        : QObject(controller)
+        , m_controller(controller)
+    {
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() != QEvent::FileOpen) {
+            return QObject::eventFilter(watched, event);
+        }
+        const QString path = static_cast<QFileOpenEvent *>(event)->file();
+        if (!path.isEmpty()) {
+            m_controller->showTranscribeFiles({path});
+        }
+        return true;
+    }
+
+private:
+    ApplicationController *m_controller;
+};
+
+} // namespace
 
 struct MacFrontEnd::Native {
     SpeecherBridge *bridge = nil;
@@ -79,6 +119,9 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
                          QDesktopServices::openUrl(QUrl(QStringLiteral(
                              "https://github.com/firemonster612/speecher/releases")));
                      });
+    // Parented to the controller, which goes first, so the filter never
+    // reaches a controller that is gone.
+    qApp->installEventFilter(new FileOpenFilter(controller));
 }
 
 MacFrontEnd::~MacFrontEnd()
@@ -115,9 +158,45 @@ void MacFrontEnd::showSetupAssistant(SetupAssistantPage)
     }];
 }
 
+// Opened audio gets a Transcribe window of its own rather than the settings
+// window, so all that is on screen is what the files need.
+void MacFrontEnd::showTranscribeFiles(const QStringList &paths)
+{
+    NSMutableArray<NSString *> *files = [NSMutableArray arrayWithCapacity:NSUInteger(paths.size())];
+    for (const QString &path : paths) {
+        [files addObject:path.toNSString()];
+    }
+    [m_native->ui showTranscribeFiles:files];
+    // As showMainWindow does, for when this window is the first on screen.
+    m_controller->frontEndReady();
+}
+
 bool MacFrontEnd::captureMainWindow(const QString &path)
 {
-    return [m_native->ui captureSettingsToPath:path.toNSString()];
+    // SPEECHER_GRAB_PAGE=transcribe grabs the settings window's Transcribe
+    // pane and transcribe-window the Transcribe window, both with any audio
+    // files the command line named. As on Qt, SPEECHER_GRAB_CLICK=
+    // transcribeStart starts them and SPEECHER_GRAB_WAIT_MS lets the batch
+    // run before the grab.
+    const QString page = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower();
+    const bool transcribeWindow = page == QStringLiteral("transcribe-window");
+    if (transcribeWindow || page == QStringLiteral("transcribe")) {
+        if (transcribeWindow) {
+            showTranscribeFiles({});
+        } else {
+            [m_native->ui showTranscribePane];
+        }
+        if (qEnvironmentVariable("SPEECHER_GRAB_CLICK") == QStringLiteral("transcribeStart")) {
+            [m_native->ui startTranscription];
+        }
+        // At least one pass, so SwiftUI draws the pane before the grab.
+        QEventLoop wait;
+        QTimer::singleShot(std::max(1, qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS")), &wait,
+                           &QEventLoop::quit);
+        wait.exec();
+    }
+    return transcribeWindow ? [m_native->ui captureTranscribeWindowToPath:path.toNSString()]
+                            : [m_native->ui captureSettingsToPath:path.toNSString()];
 }
 
 void MacFrontEnd::showDictationError(const QString &message)

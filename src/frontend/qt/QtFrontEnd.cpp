@@ -7,6 +7,8 @@
 #include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
+#include "ui/TranscribePage.h"
+#include "ui/TranscribeWindow.h"
 #include "ui/TranscriberPopup.h"
 
 #ifdef Q_OS_LINUX
@@ -25,6 +27,7 @@
 #include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QEvent>
+#include <QEventLoop>
 #include <QThread>
 #include <QWidget>
 #include <QWindow>
@@ -113,6 +116,7 @@ QtFrontEnd::~QtFrontEnd()
     // back into this object and its windows.
     m_controller->updates()->setRestoreStateProvider({});
     delete m_popup;
+    delete m_transcribeWindow;
 }
 
 void QtFrontEnd::showMainWindow()
@@ -130,6 +134,26 @@ void QtFrontEnd::showSettingsWindow()
 {
     showMainWindow();
     m_appWindow->navigateToSettings();
+}
+
+// Opened files get the compact window, not the main one; the Transcribe page
+// in the main window's sidebar stays for people who go there themselves.
+void QtFrontEnd::showTranscribeFiles(const QStringList &paths)
+{
+    TranscribeWindow *window = transcribeWindow();
+    window->page()->addFiles(paths);
+    window->show();
+    window->raise();
+    window->activateWindow();
+}
+
+TranscribeWindow *QtFrontEnd::transcribeWindow()
+{
+    if (!m_transcribeWindow) {
+        m_transcribeWindow = new TranscribeWindow(m_controller);
+        watchForFirstFrame(m_transcribeWindow);
+    }
+    return m_transcribeWindow;
 }
 
 void QtFrontEnd::showSetupAssistant(SetupAssistantPage page)
@@ -156,8 +180,9 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     }
     // Screenshot automation: SPEECHER_GRAB_PAGE names a page (home, general,
     // audio, output, auth, refinement, vocabulary), optionally with a tab
-    // index ("vocabulary:2"), to show before the grab. Unset or unknown
-    // leaves the window as launched, which is Home.
+    // index ("vocabulary:2"), or "transcribe", to show before the grab.
+    // "transcribe-window" grabs the compact Transcribe window instead.
+    // Unset or unknown leaves the window as launched, which is Home.
     static const QStringList pageNames{
         QStringLiteral("general"), QStringLiteral("audio"), QStringLiteral("output"),
         QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("vocabulary")};
@@ -201,10 +226,20 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         return saved;
     }
     const int page = pageNames.indexOf(request.first());
+    QWidget *target = m_appWindow;
+    if (request.first() == QStringLiteral("transcribe-window")) {
+        showTranscribeFiles({});
+        QCoreApplication::processEvents();
+        target = m_transcribeWindow;
+    }
     // SPEECHER_GRAB_SIZE=WxH resizes the window first.
     const QStringList size = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(u'x');
     if (size.size() == 2) {
-        m_appWindow->resize(size.at(0).toInt(), size.at(1).toInt());
+        target->resize(size.at(0).toInt(), size.at(1).toInt());
+    }
+    if (request.first() == QStringLiteral("transcribe")) {
+        m_appWindow->showTranscribeFiles({});
+        QCoreApplication::processEvents();
     }
     if (request.first() == QStringLiteral("whatsnew")) {
         m_appWindow->showWhatsNew();
@@ -249,7 +284,7 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     // page is up, so a grab can show what an interaction leaves behind.
     const QString click = qEnvironmentVariable("SPEECHER_GRAB_CLICK");
     if (!click.isEmpty()) {
-        auto *button = m_appWindow->findChild<QPushButton *>(click);
+        auto *button = target->findChild<QPushButton *>(click);
         if (!button) {
             qWarning("SPEECHER_GRAB_CLICK names no button: %s", qPrintable(click));
             return false;
@@ -257,7 +292,14 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         button->click();
         QCoreApplication::processEvents();
     }
-    return m_appWindow->grab().save(path);
+    // SPEECHER_GRAB_WAIT_MS lets what the click started run for a while
+    // first, so a grab can catch work in progress or its result.
+    if (const int waitMs = qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS"); waitMs > 0) {
+        QEventLoop wait;
+        QTimer::singleShot(waitMs, &wait, &QEventLoop::quit);
+        wait.exec();
+    }
+    return target->grab().save(path);
 }
 
 void QtFrontEnd::showDictationError(const QString &message)

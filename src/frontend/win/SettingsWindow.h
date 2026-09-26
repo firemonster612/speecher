@@ -12,13 +12,16 @@ class WinFrontEndTests;
 
 namespace win {
 
+class TranscribePane;
+
 // The settings window: a Mica Microsoft.UI.Xaml.Window with the TitleBar
 // control, a left NavigationView over the pane table, search, the update
 // banner, and the What's New page — the Windows 11 Settings app's shell around
 // the schema. Owns the SettingsModel; recreated windows reuse it.
 class SettingsWindow {
 public:
-    explicit SettingsWindow(ApplicationController *controller);
+    // transcribe backs the Transcribe pane and outlives the window.
+    SettingsWindow(ApplicationController *controller, TranscribePane *transcribe);
     ~SettingsWindow();
 
     // Creates the window if none is open, brings it forward, reloads the
@@ -29,8 +32,9 @@ public:
 
     // Saves a picture of the window for --grab. SPEECHER_GRAB_PAGE names a
     // schema page id (general, audio, refinement, output, vocabulary,
-    // corrections, bindings, providers, whatsNew) or the home or shortcut
-    // pane, to show before the grab. A ":index" suffix is tolerated and ignored.
+    // corrections, bindings, providers, whatsNew) or a hand-built pane
+    // (home, shortcut, transcribe), to show before the grab. A ":index" suffix
+    // is tolerated and ignored.
     bool capture(const QString &path);
 
     // Asks in a ContentDialog over the window, Cancel being the default, and

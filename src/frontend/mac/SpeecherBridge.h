@@ -118,6 +118,7 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
     SpeecherPaneLayoutSections,
     SpeecherPaneLayoutAlternatives,
     SpeecherPaneLayoutShortcut,
+    SpeecherPaneLayoutTranscribe,
     SpeecherPaneLayoutHome,
 };
 
@@ -209,6 +210,74 @@ typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
 // What a person must do before this provider works, or empty when it needs
 // nothing.
 @property (nonatomic, readonly, copy) NSString *setupHint;
+// One or two lines on what the provider is good at, for a picker's help.
+@property (nonatomic, readonly, copy) NSString *summary;
+@end
+
+// Where a batch saves its transcripts. Mirrors speecher::TranscriptDestination.
+typedef NS_ENUM(NSInteger, SpeecherTranscriptDestination) {
+    SpeecherTranscriptDestinationBesideInput,
+    SpeecherTranscriptDestinationFolder,
+    // Saved nowhere: the transcripts are only shown.
+    SpeecherTranscriptDestinationNowhere,
+};
+
+// One batch's choices. Mirrors speecher::TranscribeOptions; ids are the ones
+// the provider and cleanup/tone/profile lists below carry.
+@interface SpeecherTranscribeOptions : NSObject
+@property (nonatomic, copy) NSString *speechProviderId;
+@property (nonatomic) BOOL applyVocabulary;
+// "none" skips refinement.
+@property (nonatomic, copy) NSString *refinementProviderId;
+@property (nonatomic, copy) NSString *cleanupStrength;
+@property (nonatomic, copy) NSString *tone;
+@property (nonatomic, copy) NSString *writingProfile;
+@property (nonatomic) SpeecherTranscriptDestination destination;
+// Used only with SpeecherTranscriptDestinationFolder.
+@property (nonatomic, copy) NSString *folder;
+@end
+
+// One file's outcome. Mirrors speecher::TranscribeFileResult.
+@interface SpeecherTranscriptResult : NSObject
+@property (nonatomic, readonly, copy) NSString *path;
+// What the speech provider heard.
+@property (nonatomic, readonly, copy) NSString *raw;
+// The saved transcript: refined when refinement ran, otherwise the raw text
+// after vocabulary corrections. Empty when the file failed.
+@property (nonatomic, readonly, copy) NSString *refined;
+// Empty unless the transcript was written to disk.
+@property (nonatomic, readonly, copy) NSString *savedPath;
+// Why the file failed, or what went wrong on the way for one that finished.
+@property (nonatomic, readonly, copy) NSString *error;
+@property (nonatomic, readonly) BOOL failed;
+@end
+
+// Mirrors speecher::TranscribePhase.
+typedef NS_ENUM(NSInteger, SpeecherTranscribePhase) {
+    SpeecherTranscribePhaseReading,
+    SpeecherTranscribePhaseTranscribing,
+    SpeecherTranscribePhaseFinishing,
+    SpeecherTranscribePhaseRefining,
+};
+
+// Mirrors speecher::TranscribeStep.
+typedef NS_ENUM(NSInteger, SpeecherTranscribeStep) {
+    SpeecherTranscribeStepConfigure,
+    SpeecherTranscribeStepTranscribe,
+    SpeecherTranscribeStepExport,
+};
+
+// Mirrors speecher::TranscribeQueueState.
+typedef NS_ENUM(NSInteger, SpeecherTranscribeQueueState) {
+    SpeecherTranscribeQueueStateWaiting,
+    SpeecherTranscribeQueueStateCurrent,
+    SpeecherTranscribeQueueStateDone,
+    SpeecherTranscribeQueueStateFailed,
+};
+
+// What a batch's results summary names its choices, captured when it starts.
+// Mirrors speecher::TranscribeBatchLabels.
+@interface SpeecherTranscribeBatchLabels : NSObject
 @end
 
 // The period Home's totals cover. Mirrors speecher::InsightsRange.
@@ -537,6 +606,92 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 - (NSString *)readApiKey;
 // nil when the keyring took it, otherwise why it refused.
 - (nullable NSString *)saveApiKey:(NSString *)apiKey;
+
+// Transcribing audio files: the Transcribe pane's seams into the core's
+// FileTranscriptionSession. One batch runs at a time, and it and dictation
+// exclude each other.
+
+// The same lists the Qt Transcribe page offers. Refinement's "None" is the
+// pane's own first choice and is not in refinementProviders.
+@property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *cleanupStrengths;
+@property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *writingTones;
+@property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *writingProfiles;
+// Choices seeded from the user's settings, with the cleanup strength and tone
+// of the named writing profile as the user set it up; nil names the default
+// profile. Never written back to the settings.
+- (SpeecherTranscribeOptions *)transcribeOptionsWithWritingProfile:(nullable NSString *)profile
+    NS_SWIFT_NAME(transcribeOptions(writingProfile:));
+// The model a refinement provider is set to use, or empty for none.
+- (NSString *)refinementModelForProvider:(NSString *)providerId
+    NS_SWIFT_NAME(refinementModel(provider:));
+// The paths among these that are files the decoder can take.
+- (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
+    NS_SWIFT_NAME(audioFiles(among:));
+// nil once started; otherwise why not, such as a dictation under way.
+- (nullable NSString *)startTranscribingFiles:(NSArray<NSString *> *)paths
+                                      options:(SpeecherTranscribeOptions *)options
+    NS_SWIFT_NAME(startTranscribing(files:options:));
+// Stops the current file and skips the rest; the batch still finishes.
+- (void)cancelTranscription;
+// Writes text as "<name>-transcribed.txt" in folder, numbered rather than
+// overwriting. nil once written, otherwise why not.
+- (nullable NSString *)saveTranscript:(NSString *)text
+                          forAudioFile:(NSString *)audioPath
+                              inFolder:(NSString *)folder
+    NS_SWIFT_NAME(saveTranscript(_:forAudioFile:inFolder:));
+// The Transcribe pane's wording, shared with the Qt and Windows front ends
+// (speecher/transcribe/TranscribePresentation.h). A negative length is unknown.
+- (NSString *)transcribePhaseLabel:(SpeecherTranscribePhase)phase NS_SWIFT_NAME(phaseLabel(_:));
+- (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepLabel(_:));
+// A file's share of its whole work, below 1 until the file has finished.
+- (double)overallFileProgress:(double)fractionSent
+                        phase:(SpeecherTranscribePhase)phase
+                      refines:(BOOL)refines
+                    msInPhase:(int64_t)msInPhase
+    NS_SWIFT_NAME(overallFileProgress(fractionSent:phase:refines:msInPhase:));
+- (NSString *)durationLabel:(int64_t)durationMs NS_SWIFT_NAME(durationLabel(_:));
+- (NSString *)audioFileDetailWithBytes:(int64_t)bytes durationMs:(int64_t)durationMs
+    NS_SWIFT_NAME(audioFileDetail(bytes:durationMs:));
+- (BOOL)refinesTranscripts:(SpeecherTranscribeOptions *)options NS_SWIFT_NAME(refinesTranscripts(_:));
+- (NSString *)shownTranscript:(SpeecherTranscriptResult *)result raw:(BOOL)raw
+    NS_SWIFT_NAME(shownTranscript(_:raw:));
+- (NSString *)resultMeta:(SpeecherTranscriptResult *)result durationMs:(int64_t)durationMs raw:(BOOL)raw
+    NS_SWIFT_NAME(resultMeta(_:durationMs:raw:));
+- (NSString *)allTranscripts:(NSArray<SpeecherTranscriptResult *> *)results raw:(BOOL)raw
+    NS_SWIFT_NAME(allTranscripts(_:raw:));
+- (NSString *)processingTitleForBatch:(NSArray<NSString *> *)batch current:(NSInteger)current
+    NS_SWIFT_NAME(processingTitle(batch:current:));
+- (SpeecherTranscribeQueueState)queueStateAt:(NSInteger)index
+                                     current:(NSInteger)current
+                                    finished:(NSArray<SpeecherTranscriptResult *> *)finished
+    NS_SWIFT_NAME(queueState(at:current:finished:));
+- (NSString *)queueStateLabel:(SpeecherTranscribeQueueState)state phase:(NSString *)phase
+    NS_SWIFT_NAME(queueStateLabel(_:phase:));
+- (SpeecherTranscribeBatchLabels *)batchLabelsForOptions:(SpeecherTranscribeOptions *)options
+    NS_SWIFT_NAME(batchLabels(for:));
+- (NSString *)batchSummaryForResults:(NSArray<SpeecherTranscriptResult *> *)results
+                           batchSize:(NSInteger)batchSize
+                           cancelled:(BOOL)cancelled
+                           durations:(NSDictionary<NSString *, NSNumber *> *)durationsMs
+                             options:(SpeecherTranscribeOptions *)options
+                              labels:(SpeecherTranscribeBatchLabels *)labels
+    NS_SWIFT_NAME(batchSummary(results:batchSize:cancelled:durations:options:labels:));
+// The batch as it runs, on the main thread. Indexes count files in the order
+// they were passed to startTranscribing.
+@property (nonatomic, copy, nullable) void (^transcriptionBatchStarted)(NSInteger count);
+@property (nonatomic, copy, nullable) void (^transcriptionFileStarted)(NSInteger index, NSString *path);
+// The decoded file's peak levels (0 to 1) across its length, and its length.
+@property (nonatomic, copy, nullable) void (^transcriptionFileDecoded)
+    (NSInteger index, NSArray<NSNumber *> *peaks, int64_t durationMs);
+@property (nonatomic, copy, nullable) void (^transcriptionFileProgress)(NSInteger index, double fraction);
+// The transcript so far, whole each time.
+@property (nonatomic, copy, nullable) void (^transcriptionFilePartial)(NSInteger index, NSString *text);
+@property (nonatomic, copy, nullable) void (^transcriptionFileRefining)(NSInteger index);
+@property (nonatomic, copy, nullable) void (^transcriptionFileFinished)
+    (NSInteger index, SpeecherTranscriptResult *result);
+// Every file that finished or failed; a cancelled one is left out.
+@property (nonatomic, copy, nullable) void (^transcriptionBatchFinished)
+    (NSArray<SpeecherTranscriptResult *> *results, BOOL cancelled);
 @end
 
 #ifdef __cplusplus

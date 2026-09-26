@@ -182,7 +182,7 @@ struct WhatsNewStrip: View {
     }
 }
 
-/// The source list: eight regular panes in runs, plus What's New while selected,
+/// The source list: ten regular panes in runs, plus What's New while selected,
 /// filtered by whatever the search field holds. The schema is the index, so a
 /// pane answers to its own name and to any group heading, row label or help text
 /// it carries.
@@ -306,14 +306,8 @@ final class SpeecherSettingsWindow {
     }
 
     // Called from the front end on the main thread, which is where the window
-    // has to be touched.
-    //
-    // This is the window's backing store, so nothing the compositor draws for
-    // the window comes out: vibrancy materials are blank, and the whole sidebar
-    // column, which SwiftUI puts inside a glass container, is missing. The
-    // detail column and the titlebar are real. SwiftUI's ImageRenderer is not an
-    // alternative: it refuses NavigationSplitView outright. For a composited
-    // shot, screencapture with Screen Recording granted is the way.
+    // has to be touched. SwiftUI's ImageRenderer is not an alternative: it
+    // refuses NavigationSplitView outright.
     //
     // SPEECHER_GRAB_PAGE names the pane to show first, as on the other front
     // ends; unset or unknown leaves the window as it is.
@@ -331,8 +325,19 @@ final class SpeecherSettingsWindow {
             window.contentView?.layoutSubtreeIfNeeded()
             window.displayIfNeeded()
         }
-        guard let content = window.contentView,
-              let view = content.superview ?? window.contentView,
+        return window.captureBackingStore(toPath: path)
+    }
+}
+
+extension NSWindow {
+    /// Writes the window as a PNG, titlebar included. This is the backing
+    /// store, so nothing the compositor draws for the window comes out:
+    /// vibrancy materials are blank, and the settings sidebar, which SwiftUI
+    /// puts inside a glass container, is missing. For a composited shot,
+    /// screencapture with Screen Recording granted is the way.
+    func captureBackingStore(toPath path: String) -> Bool {
+        guard let content = contentView,
+              let view = content.superview ?? contentView,
               let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
             return false
         }

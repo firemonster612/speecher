@@ -54,6 +54,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     private let panel: SpeecherDictationPanel
     private var menuBar: SpeecherMenuBarExtra!
     private var settings: SpeecherSettingsWindow?
+    private var transcribeWindow: SpeecherTranscribeWindow?
     private var setupAssistant: SpeecherSetupAssistant?
     private var applicationDelegate: ReopenApplicationDelegate?
 
@@ -98,9 +99,41 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// The Transcribe window with these files added, not yet started: what
+    /// opening audio with Speecher does. Made on first use, like the settings
+    /// window; the settings pane stays for people who go there themselves.
+    @MainActor
+    @objc(showTranscribeFiles:)
+    public func showTranscribe(files: [String]) {
+        model.transcription.add(files)
+        if transcribeWindow == nil {
+            transcribeWindow = SpeecherTranscribeWindow(model: model.transcription)
+        }
+        transcribeWindow?.show()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The settings window on its Transcribe pane, for the screenshot path.
+    @MainActor
+    @objc public func showTranscribePane() {
+        model.pane = "transcribe"
+        showSettings()
+    }
+
+    /// Starts the files the Transcribe pane lists, for the screenshot path.
+    @MainActor
+    @objc public func startTranscription() {
+        model.transcription.start()
+    }
+
     @MainActor
     @objc public func captureSettings(toPath path: String) -> Bool {
         settings?.capture(toPath: path) ?? false
+    }
+
+    @MainActor
+    @objc public func captureTranscribeWindow(toPath path: String) -> Bool {
+        transcribeWindow?.capture(toPath: path) ?? false
     }
 
     /// A fresh flow every run: the assistant that was closed mid-way starts

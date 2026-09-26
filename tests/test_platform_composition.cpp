@@ -7,6 +7,7 @@
 #include "app/ShortcutSuspendingDelivery.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
+#include "transcribe/FileTranscriptionSession.h"
 #include "dictation/DictationSession.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/mac/MacMediaController.h"
@@ -15,6 +16,7 @@
 #include "platform/KGlobalAccelShortcutBinder.h"
 #include "platform/LinuxDesktopIntegration.h"
 #include "platform/PortalGlobalShortcutBinder.h"
+#include "transcribe/FileTranscriptionSession.h"
 #include "ui/SetupAssistant.h"
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #include "ui/setup/SetupPages.h"
@@ -36,6 +38,7 @@
 #include <QStringList>
 #include <QSystemTrayIcon>
 #include <QTemporaryDir>
+#include <QtEndian>
 
 #ifdef SPEECHER_WITH_KASSISTANT
 #include <KPageWidget>
@@ -280,6 +283,11 @@ public:
                       : QStringLiteral("showSetupAssistant GlobalShortcut"));
     }
 
+    void showTranscribeFiles(const QStringList &paths) override
+    {
+        calls << QStringLiteral("showTranscribeFiles ") + paths.join(QLatin1Char(' '));
+    }
+
     bool captureMainWindow(const QString &path) override
     {
         calls << QStringLiteral("captureMainWindow ") + path;
@@ -332,6 +340,43 @@ private slots:
         emit platform->binder->deactivated();
         if (!grantBeforeRelease) platform->microphoneAnswer(true);
         QCOMPARE(controller.session()->state(), hold ? DictationState::Idle : DictationState::Starting);
+        controller.stopListening();
+    }
+
+    void dictationAndFileTranscriptionExcludeEachOther()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const bool setupCompleted = controller.settings()->setupCompleted();
+        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
+        controller.settings()->setSetupCompleted(true);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("silence.wav"));
+        {
+            // One second of 16 kHz mono s16 silence.
+            const QByteArray data(32000, '\0');
+            const auto le32 = [](quint32 v) { QByteArray b(4, 0); qToLittleEndian(v, b.data()); return b; };
+            const auto le16 = [](quint16 v) { QByteArray b(2, 0); qToLittleEndian(v, b.data()); return b; };
+            QFile file(audio);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("RIFF" + le32(36 + data.size()) + "WAVEfmt " + le32(16) + le16(1) + le16(1)
+                       + le32(16000) + le32(32000) + le16(2) + le16(16) + "data" + le32(data.size()) + data);
+        }
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+
+        // A batch in flight turns the dictation shortcut away.
+        QVERIFY(controller.startFileTranscription({audio}, options));
+        controller.toggle();
+        QVERIFY(!platform->microphoneAnswer);
+        controller.fileTranscription()->cancel();
+
+        // A dictation waiting on the microphone turns a batch away.
+        controller.toggle();
+        QVERIFY(platform->microphoneAnswer);
+        QString error;
+        QVERIFY(!controller.startFileTranscription({audio}, options, &error));
+        QVERIFY(!error.isEmpty());
         controller.stopListening();
     }
 
@@ -514,6 +559,83 @@ private slots:
                  QStringList({QStringLiteral("--daemon"),
                               QStringLiteral("--format"),
                               QStringLiteral("plain")}));
+    }
+
+    void audioFileArgumentsOpenTheTranscribePage()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        const QString notes = dir.filePath(QStringLiteral("notes.txt"));
+        for (const auto &[path, bytes] : {std::pair{audio, QByteArrayLiteral("RIFF\0\0\0\0WAVEfmt ")},
+                                          std::pair{notes, QByteArrayLiteral("plain text")}}) {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(bytes);
+        }
+
+        // What a file manager's "Open with" passes: bare paths, of which only
+        // the audio is taken.
+        const CommandLineDecision opened = parseCommandLine(
+            {QStringLiteral("speecher"), audio, notes}, {});
+        QCOMPARE(opened.mode, LaunchMode::RunGui);
+        QCOMPARE(opened.transcribeFiles, QStringList{audio});
+
+        const CommandLineDecision verb = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("later.mp3")}, {});
+        QCOMPARE(verb.mode, LaunchMode::RunGui);
+        QCOMPARE(verb.transcribeFiles, QStringList{QDir::current().absoluteFilePath(QStringLiteral("later.mp3"))});
+    }
+
+    void transcribeOptionsRunWithoutAWindow()
+    {
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        const auto parse = [&audio](QStringList options) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("transcribe")} + options
+                                        + QStringList{audio},
+                                    {});
+        };
+
+        const CommandLineDecision decision = parse({QStringLiteral("--cleanup"), QStringLiteral("light"),
+                                                    QStringLiteral("--profile"), QStringLiteral("ai-coding"),
+                                                    QStringLiteral("--tone"), QStringLiteral("very-casual"),
+                                                    QStringLiteral("--refine"), QStringLiteral("none"),
+                                                    QStringLiteral("--output"), dir.path(),
+                                                    QStringLiteral("--no-vocabulary"), QStringLiteral("--json")});
+        QCOMPARE(decision.mode, LaunchMode::TranscribeHeadless);
+        QCOMPARE(decision.transcribeFiles, QStringList{audio});
+        QCOMPARE(decision.headless.cleanupStrength, std::optional(QStringLiteral("light_cleanup")));
+        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("ai_coding")));
+        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("very_casual")));
+        QCOMPARE(decision.headless.refinementProviderId, std::optional(QStringLiteral("none")));
+        QCOMPARE(decision.headless.destination, TranscriptDestination::Folder);
+        QCOMPARE(decision.headless.folder, dir.path());
+        QVERIFY(!decision.headless.applyVocabulary);
+        QVERIFY(decision.headless.json);
+        QCOMPARE(parse({QStringLiteral("--headless")}).mode, LaunchMode::TranscribeHeadless);
+        // Without options the files still open in the window.
+        QCOMPARE(parse({}).mode, LaunchMode::RunGui);
+        QCOMPARE(parse({QStringLiteral("--grab"), QStringLiteral("shot.png")}).mode, LaunchMode::RunGui);
+
+        for (const QStringList &mistake : {QStringList{QStringLiteral("--cleanup"), QStringLiteral("extreme")},
+                                           QStringList{QStringLiteral("--frobnicate")},
+                                           QStringList{QStringLiteral("--output"), dir.filePath(QStringLiteral("nowhere"))}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
+        QCOMPARE(parseCommandLine({QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--json")}, {})
+                     .exitCode,
+                 2);
+        QCOMPARE(parseCommandLine({QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--json"),
+                                   dir.filePath(QStringLiteral("missing.wav"))},
+                                  {})
+                     .exitCode,
+                 2);
     }
 
     void quitIsAClientCommand()
@@ -1777,6 +1899,38 @@ private slots:
         QCOMPARE(frontEnd.calls,
                  QStringList({QStringLiteral("showSetupAssistant"),
                               QStringLiteral("showSetupAssistant")}));
+    }
+
+    void transcribeCommandOpensTheFilesOnTheFrontEnd()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FakeAppFrontEnd frontEnd;
+        controller.setFrontEnd(&frontEnd);
+        controller.settings()->setSetupCompleted(true);
+
+        controller.handleIpcCommand(QStringLiteral("transcribe"), {}, nullptr,
+                                    {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")});
+
+        QCOMPARE(frontEnd.calls, QStringList({QStringLiteral("showTranscribeFiles /a.wav /b.mp3")}));
+    }
+
+    void filesOpenedBeforeSetupOpenOnceItCompletes()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FakeAppFrontEnd frontEnd;
+        controller.setFrontEnd(&frontEnd);
+        controller.settings()->setSetupCompleted(false);
+
+        controller.showTranscribeFiles({QStringLiteral("/a.wav")});
+        controller.handleIpcCommand(QStringLiteral("transcribe"), {}, nullptr, {QStringLiteral("/b.wav")});
+        QCOMPARE(frontEnd.calls,
+                 QStringList({QStringLiteral("showSetupAssistant"), QStringLiteral("showSetupAssistant")}));
+
+        controller.completeSetup();
+        QTRY_COMPARE(frontEnd.calls.size(), 3);
+        QCOMPARE(frontEnd.calls.last(), QStringLiteral("showTranscribeFiles /a.wav /b.wav"));
     }
 };
 

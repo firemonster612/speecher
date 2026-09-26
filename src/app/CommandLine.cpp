@@ -1,8 +1,14 @@
 #include "app/CommandLine.h"
 
 #include "app/PlatformComposition.h"
+#include "app/ProviderSetup.h"
 #include "app/SingleInstanceIpc.h"
+#include "core/Target.h"
+#include "core/settings/SettingsSchema.h"
+#include "providers/ProviderRegistry.h"
+#include "transcribe/FileTranscriptionSession.h"
 
+#include <QFileInfo>
 #include <QProcess>
 
 #include <iostream>
@@ -79,6 +85,211 @@ bool startDetachedSetup(const SingleInstancePlatform *platform)
         {QStringLiteral("--daemon"), QStringLiteral("--show-setup")});
 }
 
+QStringList absolutePaths(const QStringList &paths)
+{
+    QStringList absolute;
+    for (const QString &path : paths) {
+        absolute << QFileInfo(path).absoluteFilePath();
+    }
+    return absolute;
+}
+
+const char kHelp[] = R"(Usage: speecher [command] [options]
+
+Commands (sent to the running Speecher):
+  toggle | start | stop    control dictation
+  status                   print the dictation state
+  settings | setup         open settings or the setup assistant
+  quit                     quit the running Speecher
+
+  transcribe <files...>    open the files in the Transcribe window
+  <audio files...>         the same, as a file manager's "Open with" does
+
+Transcribe without a window, printing the results:
+  speecher transcribe [options] <files...>
+  --headless               transcribe with the settings' choices; any option
+                           below also implies it
+  --model <id>             speech provider: %1
+  --no-vocabulary          skip the custom vocabulary and corrections
+  --refine <id|none>       refinement provider: %2, none
+  --cleanup <level>        %3
+  --profile <name>         writing profile; seeds cleanup and tone: %4
+  --tone <name>            %5
+  --output <beside|none|DIR>
+                           where to save <name>-transcribed.txt (default beside)
+  --stdout                 also print each transcript
+  --raw                    print and save the raw transcript, not the refined one
+  --json                   print one JSON object per file, then a summary
+  Exit status: 0 all files transcribed, 1 some failed, 2 usage error.
+
+Options:
+  --format plain|html      output format for toggle and start
+  --daemon                 run without a window
+  --version                print the version
+  --help                   print this help
+)";
+
+// Stored ids as the command line spells them: a hyphen for the underscore,
+// and the cleanup levels by their labels. The lists themselves come from the
+// settings schema, so a new strength or tone reaches the command line too.
+QString cliName(const QString &id)
+{
+    return QString(id).replace(QLatin1Char('_'), QLatin1Char('-'));
+}
+
+QStringList cliNames(const QList<RowOption> &options, bool byLabel)
+{
+    QStringList names;
+    for (const RowOption &option : options) {
+        names << (byLabel ? option.label.toLower() : cliName(option.id));
+    }
+    return names;
+}
+
+QList<RowOption> writingProfileOptions()
+{
+    QList<RowOption> profiles;
+    for (const WritingProfileSettings &profile : defaultWritingProfileSettings()) {
+        profiles << RowOption{writingProfileName(profile.profile), writingProfileLabel(profile.profile)};
+    }
+    return profiles;
+}
+
+QStringList providerIds(const QList<ProviderDescriptor> &providers)
+{
+    QStringList ids;
+    for (const ProviderDescriptor &provider : providers) {
+        ids << provider.id;
+    }
+    ids.sort();
+    return ids;
+}
+
+// Lists the providers from the registry the app builds; registering creates
+// no provider, so this is cheap and needs no credentials.
+QString helpText()
+{
+    ProviderRegistry registry;
+    registerProviders(registry, nullptr);
+    const QString separator = QStringLiteral(", ");
+    return QString::fromUtf8(kHelp)
+        .arg(providerIds(registry.speechProviders()).join(separator),
+             providerIds(registry.refinementProviders()).join(separator),
+             cliNames(cleanupStrengths(), true).join(separator),
+             cliNames(writingProfileOptions(), false).join(separator),
+             cliNames(writingTones(), false).join(separator));
+}
+
+// The stored id for a command-line name, or nothing for a name not offered.
+std::optional<QString> storedId(const QList<RowOption> &options, const QString &name, bool byLabel)
+{
+    const QStringList names = cliNames(options, byLabel);
+    const qsizetype index = names.indexOf(name.toLower());
+    return index < 0 ? std::nullopt : std::optional(options.at(index).id);
+}
+
+// Reads `speecher transcribe`'s arguments. Returns an error message for a
+// usage mistake.
+QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    HeadlessTranscribeOptions &options = decision->headless;
+    bool headless = false;
+    QStringList files;
+    for (qsizetype index = 0; index < arguments.size(); ++index) {
+        const QString argument = arguments.at(index);
+        if (!argument.startsWith(QStringLiteral("--"))) {
+            files << argument;
+            continue;
+        }
+        // Read before this for the screenshot rig, which opens the window.
+        if (argument == QStringLiteral("--grab")) {
+            ++index;
+            continue;
+        }
+        if (argument.startsWith(QStringLiteral("--grab="))) {
+            continue;
+        }
+        headless = true;
+        const auto value = [&]() -> std::optional<QString> {
+            if (index + 1 < arguments.size()) {
+                return arguments.at(++index);
+            }
+            return std::nullopt;
+        };
+        const auto choice = [&](const QList<RowOption> &choices, bool byLabel,
+                                std::optional<QString> *target) -> QString {
+            const std::optional<QString> given = value();
+            if (!given) {
+                return QStringLiteral("%1 requires a value").arg(argument);
+            }
+            *target = storedId(choices, *given, byLabel);
+            return *target ? QString()
+                           : QStringLiteral("Unknown %1 value: %2 (expected %3)")
+                                 .arg(argument, *given,
+                                      cliNames(choices, byLabel).join(QStringLiteral(", ")));
+        };
+        QString error;
+        if (argument == QStringLiteral("--headless")) {
+        } else if (argument == QStringLiteral("--no-vocabulary")) {
+            options.applyVocabulary = false;
+        } else if (argument == QStringLiteral("--stdout")) {
+            options.printTranscripts = true;
+        } else if (argument == QStringLiteral("--raw")) {
+            options.raw = true;
+        } else if (argument == QStringLiteral("--json")) {
+            options.json = true;
+        } else if (argument == QStringLiteral("--model") || argument == QStringLiteral("--refine")) {
+            // Checked against the registry once it exists; this only reads it.
+            const std::optional<QString> given = value();
+            if (!given) {
+                error = QStringLiteral("%1 requires a value").arg(argument);
+            } else {
+                (argument == QStringLiteral("--model") ? options.speechProviderId
+                                                       : options.refinementProviderId) = given->toLower();
+            }
+        } else if (argument == QStringLiteral("--cleanup")) {
+            error = choice(cleanupStrengths(), true, &options.cleanupStrength);
+        } else if (argument == QStringLiteral("--profile")) {
+            error = choice(writingProfileOptions(), false, &options.writingProfile);
+        } else if (argument == QStringLiteral("--tone")) {
+            error = choice(writingTones(), false, &options.tone);
+        } else if (argument == QStringLiteral("--output")) {
+            const std::optional<QString> given = value();
+            if (!given) {
+                error = QStringLiteral("--output requires beside, none or a folder");
+            } else if (*given == QStringLiteral("beside")) {
+                options.destination = TranscriptDestination::BesideInput;
+            } else if (*given == QStringLiteral("none")) {
+                options.destination = TranscriptDestination::None;
+            } else if (QFileInfo(*given).isDir()) {
+                options.destination = TranscriptDestination::Folder;
+                options.folder = QFileInfo(*given).absoluteFilePath();
+            } else {
+                error = QStringLiteral("--output folder does not exist: %1").arg(*given);
+            }
+        } else {
+            error = QStringLiteral("Unknown transcribe option: %1").arg(argument);
+        }
+        if (!error.isEmpty()) {
+            return error;
+        }
+    }
+    if (files.isEmpty()) {
+        return QStringLiteral("transcribe needs at least one audio file");
+    }
+    decision->transcribeFiles = absolutePaths(files);
+    if (!headless) {
+        return {};
+    }
+    for (const QString &path : std::as_const(decision->transcribeFiles)) {
+        if (!QFileInfo(path).isReadable() || !QFileInfo(path).isFile()) {
+            return QStringLiteral("Cannot read %1").arg(path);
+        }
+    }
+    decision->mode = LaunchMode::TranscribeHeadless;
+    return {};
+}
+
 } // namespace
 
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
@@ -86,6 +297,11 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     if (arguments.contains(QStringLiteral("--version"))) {
         std::cout << "speecher " << SPEECHER_VERSION << " (build " << SPEECHER_BUILD_NUMBER << ")\n";
         std::cout << "log " << logPath.toStdString() << "\n";
+        return {LaunchMode::Exit};
+    }
+
+    if (arguments.contains(QStringLiteral("--help")) || arguments.contains(QStringLiteral("-h"))) {
+        std::cout << helpText().toStdString();
         return {LaunchMode::Exit};
     }
 
@@ -134,6 +350,28 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     decision.mode = arguments.contains(QStringLiteral("--daemon"))
         ? LaunchMode::RunDaemon
         : LaunchMode::RunGui;
+    if (verb == QStringLiteral("transcribe")) {
+        const QString error = parseTranscribeArguments(arguments.mid(2), &decision);
+        if (!error.isEmpty()) {
+            std::cerr << error.toStdString() << "\n\n"
+                      << helpText().toStdString();
+            return {LaunchMode::Exit, 2};
+        }
+        if (decision.mode == LaunchMode::TranscribeHeadless) {
+            return decision;
+        }
+    } else {
+        QStringList files;
+        for (const QString &argument : arguments.mid(1)) {
+            if (isAudioFile(argument)) {
+                files << argument;
+            }
+        }
+        decision.transcribeFiles = absolutePaths(files);
+    }
+    if (!decision.transcribeFiles.isEmpty()) {
+        decision.mode = LaunchMode::RunGui;
+    }
     return decision;
 }
 

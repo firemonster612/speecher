@@ -2,11 +2,12 @@
 Type=Application
 Name=Speecher
 Comment=Linux dictation popup
-Exec=@SPEECHER_DESKTOP_EXEC@
+Exec=@SPEECHER_DESKTOP_EXEC@ %F
 Icon=io.github.firemonster612.speecher
 StartupWMClass=speecher
 Terminal=false
 Categories=Utility;Accessibility;
+MimeType=audio/vnd.wave;audio/x-wav;audio/wav;audio/mpeg;audio/mp4;audio/x-m4a;audio/aac;audio/flac;audio/ogg;audio/x-vorbis+ogg;audio/x-opus+ogg;audio/webm;
 Actions=ToggleDictation;Quit;
 
 [Desktop Action ToggleDictation]
