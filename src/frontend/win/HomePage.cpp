@@ -462,8 +462,13 @@ Grid hoverableCell(const Border &tint)
     outline.CornerRadius({2, 2, 2, 2});
     outline.BorderThickness({1.5, 1.5, 1.5, 1.5});
     Grid cell;
-    cell.Width(kHeatCell);
-    cell.Height(kHeatCell);
+    // Half the gap on each side belongs to this day, so a pointer between two
+    // cells still hovers one: the tip stays and the outline does not drop.
+    // The negative margin gives the room back, so the grid does not grow.
+    cell.Width(kHeatCell + kHeatGap);
+    cell.Height(kHeatCell + kHeatGap);
+    cell.Margin({-kHeatGap / 2, -kHeatGap / 2, -kHeatGap / 2, -kHeatGap / 2});
+    cell.Padding({kHeatGap / 2, kHeatGap / 2, kHeatGap / 2, kHeatGap / 2});
     // Transparent, not empty: an unfilled Grid lets the pointer through.
     cell.Background(SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
     cell.Children().Append(tint);
