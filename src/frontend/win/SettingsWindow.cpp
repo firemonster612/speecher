@@ -6,6 +6,7 @@
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/ShortcutRecorder.h"
+#include "frontend/win/TranscribePane.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -49,10 +50,19 @@ using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 const QString kPaneSetting = QStringLiteral("ui/settingsPane");
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
-// The global-shortcut recorder is the sole capability page with no schema page
-// behind it; everything else in the sidebar comes from the schema.
+// The two hand-built panes with no schema page behind them: the global-shortcut
+// recorder, and file transcription, which sits after the dictation (audio)
+// page. Everything else in the sidebar comes from the schema.
 const QString kShortcutPane = QStringLiteral("shortcut");
 const QString kShortcutTitle = QStringLiteral("Shortcut");
+const QString kTranscribePane = QStringLiteral("transcribe");
+const QString kTranscribeTitle = QStringLiteral("Transcribe");
+const QString kTranscribeAfterPage = QStringLiteral("audio");
+
+bool isHandBuiltPane(const QString &id)
+{
+    return id == kShortcutPane || id == kTranscribePane;
+}
 
 // Segoe Fluent Icons for the schema's platform-neutral icon ids — the one
 // piece of per-platform icon data this front end keeps.
@@ -69,6 +79,7 @@ wchar_t glyphForIconId(const QString &iconId)
         {QStringLiteral("swap"), L'\uE8AB'},
         {QStringLiteral("key"), L'\uE192'},
         {QStringLiteral("shortcut"), L'\uE765'},
+        {QStringLiteral("transcribe"), L'\uE8D6'},
     };
     return glyphs.value(iconId, L'\uE713');
 }
@@ -168,6 +179,11 @@ struct SettingsWindow::Native {
         model.themeChanged = [this] { applyTheme(); };
         model.capabilitiesChanged = [this] { queueRebuild(); };
         model.anthropicCredentialsChanged = [this] { queueRebuild(); };
+        transcribe = std::make_unique<TranscribePane>(host, [this] {
+            if (currentPane == kTranscribePane) {
+                queueRebuild();
+            }
+        });
         QObject::connect(controller->updates(),
                          &UpdateController::changed,
                          &lifetime,
@@ -217,8 +233,11 @@ struct SettingsWindow::Native {
         // Edits left from the last showing are not edits any more.
         model.reloadDraft();
         currentPane = controller->settings()->raw().value(kPaneSetting).toString();
-        if (currentPane != kShortcutPane && !pageWithId(model.pages(), currentPane)) {
+        if (!isHandBuiltPane(currentPane) && !pageWithId(model.pages(), currentPane)) {
             currentPane = model.pages().first().id;
+        }
+        if (currentPane == kTranscribePane) {
+            transcribe->enter();
         }
         // What's New only exists while pending or selected; a remembered
         // selection of it stays honoured.
@@ -355,6 +374,7 @@ struct SettingsWindow::Native {
         // The editors hold XAML trees of the window that is going away.
         host.editors.clear();
         ShortcutRecorder::setRecording(host, false);
+        transcribe->forgetElements();
         window = nullptr;
         root = nullptr;
         titleBar = nullptr;
@@ -460,18 +480,23 @@ struct SettingsWindow::Native {
                 navigation.MenuItems().Append(NavigationViewItemSeparator());
             }
         }
+        const auto matches = [this](const QString &title) {
+            return query.isEmpty() || title.toLower().contains(query.toLower());
+        };
         // One item per schema page, in schema order; a search filters them.
         for (const PageSnapshot &page : pages) {
             if (page.id == kWhatsNewPane) {
                 continue;
             }
-            if (!query.isEmpty() && !pageMatches(page, query)) {
-                continue;
+            if (query.isEmpty() || pageMatches(page, query)) {
+                append(page.id, page.title, glyphForIconId(page.iconId));
             }
-            append(page.id, page.title, glyphForIconId(page.iconId));
+            if (page.id == kTranscribeAfterPage && matches(kTranscribeTitle)) {
+                append(kTranscribePane, kTranscribeTitle, glyphForIconId(kTranscribePane));
+            }
         }
         // The shortcut recorder, the sole non-schema capability page.
-        if (query.isEmpty() || kShortcutTitle.toLower().contains(query.toLower())) {
+        if (matches(kShortcutTitle)) {
             append(kShortcutPane, kShortcutTitle, glyphForIconId(kShortcutPane));
         }
         navigation.SelectedItem(selected);
@@ -484,6 +509,11 @@ struct SettingsWindow::Native {
         // must come back and the pane's key handler is going away.
         if (id != kShortcutPane) {
             ShortcutRecorder::setRecording(host, false);
+        }
+        if (id == kTranscribePane) {
+            transcribe->enter();
+        } else {
+            transcribe->forgetElements();
         }
         currentPane = id;
         controller->settings()->raw().setValue(kPaneSetting, id);
@@ -507,9 +537,18 @@ struct SettingsWindow::Native {
     void leaveWhatsNew()
     {
         const QList<PageSnapshot> pages = model.pages();
-        const bool returnable = whatsNewReturnPane == kShortcutPane
+        const bool returnable = isHandBuiltPane(whatsNewReturnPane)
             || pageWithId(pages, whatsNewReturnPane);
         selectPane(returnable ? whatsNewReturnPane : pages.first().id);
+    }
+
+    void showTranscribeFiles(const QStringList &paths)
+    {
+        show();
+        transcribe->addFiles(paths);
+        if (currentPane != kTranscribePane) {
+            selectPane(kTranscribePane);
+        }
     }
 
     void runAction(const QString &id)
@@ -548,8 +587,8 @@ struct SettingsWindow::Native {
         }
         const QList<PageSnapshot> pages = model.pages();
         const PageSnapshot *schemaPage =
-            currentPane == kShortcutPane ? nullptr : pageWithId(pages, currentPane);
-        if (currentPane != kShortcutPane && !schemaPage) {
+            isHandBuiltPane(currentPane) ? nullptr : pageWithId(pages, currentPane);
+        if (!isHandBuiltPane(currentPane) && !schemaPage) {
             return;
         }
         double offset = 0;
@@ -558,7 +597,9 @@ struct SettingsWindow::Native {
         }
         UIElement page{nullptr};
         try {
-            page = schemaPage ? buildPage(*schemaPage, host) : buildShortcutPage(host);
+            page = schemaPage                      ? buildPage(*schemaPage, host)
+                : currentPane == kTranscribePane ? transcribe->build()
+                                                 : buildShortcutPage(host);
         } catch (const winrt::hresult_error &error) {
             // A throw from a dispatcher callback dies as a stowed exception
             // with no message anywhere; log it and keep the window alive.
@@ -712,8 +753,8 @@ struct SettingsWindow::Native {
         const QString request = qEnvironmentVariable("SPEECHER_GRAB_PAGE")
                                     .toLower()
                                     .section(QLatin1Char(':'), 0, 0);
-        if (request == kShortcutPane) {
-            selectPane(kShortcutPane);
+        if (isHandBuiltPane(request)) {
+            selectPane(request);
         } else {
             for (const PageSnapshot &page : model.pages()) {
                 if (page.id.toLower() == request) {
@@ -743,6 +784,8 @@ struct SettingsWindow::Native {
     ApplicationController *controller;
     SettingsModel model;
     PaneHost host;
+    // Holds its own state across rebuilds and reopenings, like host does.
+    std::unique_ptr<TranscribePane> transcribe;
     std::function<void(const QString &)> actionHook;
     QObject lifetime;
 
@@ -783,6 +826,11 @@ bool SettingsWindow::offersWhatsNew(const QString &currentPane, const QString &p
 void SettingsWindow::show()
 {
     m_native->show();
+}
+
+void SettingsWindow::showTranscribeFiles(const QStringList &paths)
+{
+    m_native->showTranscribeFiles(paths);
 }
 
 void SettingsWindow::showWhatsNew()
