@@ -164,7 +164,8 @@ void InlineMessage::paintEvent(QPaintEvent *)
     const bool inlinePosition = m_position == Position::Inline;
     const qreal radius = inlinePosition ? cornerRadius() : 0;
     const QRectF border = rect();
-    const QRectF fill = border.adjusted(inlinePosition ? 1 : 0, 0, inlinePosition ? -1 : 0, -1);
+    const qreal side = inlinePosition ? 1 : 0;
+    const QRectF fill = border.adjusted(side, side, -side, -1);
     const QColor color = typeColor();
     QColor tint = color;
     tint.setAlphaF(0.20);
