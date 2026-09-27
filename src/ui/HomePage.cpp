@@ -340,7 +340,7 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
         row->addWidget(m_noticeButton, 0, Qt::AlignVCenter);
         noticeContent->addLayout(row);
         connect(m_noticeButton, &QPushButton::clicked, this,
-                [this] { emit navigateRequested(AppPageId::General); });
+                [this] { emit pageRequested(QStringLiteral("general")); });
     }
     m_columnLayout->addWidget(m_notice);
 
@@ -803,7 +803,8 @@ QFrame *HomePage::buildCorrectionsCard(QWidget *parent)
     content->addStretch();
     auto *open = new QPushButton(QStringLiteral("Review Corrections…"), host);
     open->setObjectName(QStringLiteral("reviewCorrections"));
-    connect(open, &QPushButton::clicked, this, &HomePage::correctionsRequested);
+    connect(open, &QPushButton::clicked, this,
+            [this] { emit pageRequested(QStringLiteral("vocabulary:corrections")); });
     content->addWidget(open, 0, Qt::AlignLeft);
     return card;
 }
@@ -948,7 +949,7 @@ QWidget *HomePage::buildFooter(QWidget *parent)
     link->setFont(settings::smallFont(link->font()));
     link->setAlignment(Qt::AlignHCenter);
     connect(link, &QLabel::linkActivated, this,
-            [this] { emit navigateRequested(AppPageId::General); });
+            [this] { emit pageRequested(QStringLiteral("general")); });
     column->addWidget(link);
     return footer;
 }

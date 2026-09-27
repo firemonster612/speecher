@@ -35,28 +35,6 @@ namespace speecher {
 
 namespace {
 
-SettingsPage providerRowsPage(const SettingsPage &source,
-                              const QStringList &rowIds,
-                              bool includeSectionHelp)
-{
-    SettingsPage page = source;
-    page.sections.clear();
-    for (const SettingsSection &sourceSection : source.sections) {
-        SettingsSection section{sourceSection.title,
-                                includeSectionHelp ? sourceSection.help : QString(),
-                                {}};
-        for (const SettingsRow &row : sourceSection.rows) {
-            if (rowIds.contains(row.id)) {
-                section.rows.append(row);
-            }
-        }
-        if (!section.rows.isEmpty()) {
-            page.sections.append(std::move(section));
-        }
-    }
-    return page;
-}
-
 SettingsRow *rowById(SettingsPage &page, const QString &id)
 {
     for (SettingsSection &section : page.sections) {
@@ -205,14 +183,36 @@ SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
         }
         auto *page = new LinuxGlobalShortcutSetupPage(*controller, parent);
         page->hideAppMenuIntegration();
-        // The General page renders the activationMode schema row itself.
+        // Dictation renders the activationMode schema row itself.
         page->hideActivationMode();
         return SchemaCustomRow{page, {}, {}, true};
     };
 #else
+    // The Qt window runs only on Linux; the other front ends draw their own
+    // recorder, so this build of it only has to stand the row in.
     Q_UNUSED(controller)
-    return {};
+    return [](const SettingsRow &descriptor, QWidget *parent, std::function<void()>) {
+        return descriptor.id == QStringLiteral("globalShortcut")
+            ? SchemaCustomRow{new QWidget(parent), {}, {}, true}
+            : SchemaCustomRow{};
+    };
 #endif
+}
+
+// Every front-end-supplied row, whichever pane shows it: each factory
+// answers only for its own rows.
+SchemaCustomRowFactory combinedRows(QList<SchemaCustomRowFactory> factories)
+{
+    factories.removeAll(nullptr);
+    return [factories](const SettingsRow &descriptor, QWidget *parent, std::function<void()> notifyChanged) {
+        for (const SchemaCustomRowFactory &factory : factories) {
+            SchemaCustomRow row = factory(descriptor, parent, notifyChanged);
+            if (row.widget) {
+                return row;
+            }
+        }
+        return SchemaCustomRow{};
+    };
 }
 
 } // namespace
@@ -230,30 +230,32 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     , m_schema(std::move(schema))
     , m_outputRows(*controller->settings())
     , m_providerRows(*controller->settings(), *controller->secretStore())
-    , m_general(addPage(QStringLiteral("general"), parent, generalCustomRows(controller)))
-    , m_audio(addPage(QStringLiteral("audio"), parent))
-    , m_output(addPage(QStringLiteral("output"), parent, m_outputRows.factory()))
-    , m_refinement(addPage(QStringLiteral("refinement"), parent))
-    , m_localModels(m_schema.hasPage(QStringLiteral("localModels"))
-                        ? addPage(QStringLiteral("localModels"), parent,
-                                  localModelRows(*controller->localSetup()))
-                        : nullptr)
-    , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent))
-    , m_corrections(addPage(QStringLiteral("corrections"), parent))
-    , m_bindings(addPage(QStringLiteral("bindings"), parent, m_bindingRows.factory()))
-    , m_providerModels(addPage(
-          providerRowsPage(m_schema.page(QStringLiteral("providers")),
-                           providerModelRowIds(),
-                           false),
-          parent))
-    , m_providerAuth(addPage(
-          providerRowsPage(m_schema.page(QStringLiteral("providers")),
-                           providerAuthRowIds(),
-                           true),
-          parent,
-          m_providerRows.factory()))
-    , m_whatsNew(addPage(QStringLiteral("whatsNew"), parent, whatsNewCustomRow))
 {
+    const SchemaCustomRowFactory customRows = combinedRows({
+        generalCustomRows(controller),
+        m_outputRows.factory(),
+        m_bindingRows.factory(),
+        m_providerRows.factory(),
+        m_schema.hasPage(QStringLiteral("localModels")) ? localModelRows(*controller->localSetup())
+                                                        : SchemaCustomRowFactory(),
+        whatsNewCustomRow,
+    });
+    for (const SettingsPane &pane : std::as_const(m_schema.panes)) {
+        if (pane.layout == PaneLayout::Alternatives) {
+            for (const SettingsPaneGroup &group : pane.groups) {
+                addPage(pane.id + QLatin1Char(':') + group.view, {m_schema.section(group)}, parent,
+                        customRows);
+            }
+        } else if (!pane.groups.isEmpty()) {
+            QList<SettingsSection> sections;
+            for (const SettingsPaneGroup &group : pane.groups) {
+                sections.append(m_schema.section(group));
+            }
+            addPage(pane.id, sections, parent, customRows);
+        }
+    }
+    preserveScroll(page(QStringLiteral("vocabulary:replacements")));
+
     connect(controller,
             &ApplicationController::accessibilityStateChanged,
             this,
@@ -271,12 +273,12 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
         const auto current = m_controller->settings()->dictationSnapshot();
         m_draft = mergeSettingsDraft(m_schema, m_loaded, m_draft, current);
         m_loaded = current;
-        for (SchemaSettingsPage *page : {m_audio, m_refinement, m_localModels}) {
-            if (!page) {
-                continue;
+        for (const QString &id : {QStringLiteral("dictation"), QStringLiteral("refinement"),
+                                  QStringLiteral("localModels")}) {
+            if (SchemaSettingsPage *live = page(id)) {
+                const QSignalBlocker blocker(live);
+                live->load(m_draft);
             }
-            const QSignalBlocker blocker(page);
-            page->load(m_draft);
         }
     });
     updateAccessibilityState(controller->accessibilitySupported(),
@@ -285,45 +287,13 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     refreshUpdateRows();
 }
 
-// Every row of the schema's providers page must appear in exactly one of these
-// lists, or it silently never renders on the Qt frontend; the schema tests
-// check that coverage.
-QStringList SettingsPageSet::providerModelRowIds()
+void SettingsPageSet::addPage(const QString &id,
+                              const QList<SettingsSection> &sections,
+                              QWidget *parent,
+                              const SchemaCustomRowFactory &customRows)
 {
-    return {QStringLiteral("openAiModel"),
-            QStringLiteral("openAiModelCaution"),
-            QStringLiteral("openAiEffort"),
-            QStringLiteral("openAiFastMode"),
-            QStringLiteral("anthropicModel"),
-            QStringLiteral("anthropicModelCaution"),
-            QStringLiteral("anthropicEffort"),
-            QStringLiteral("anthropicFastMode")};
-}
-
-QStringList SettingsPageSet::providerAuthRowIds()
-{
-    return {QStringLiteral("openAiAuthMode"),
-            QStringLiteral("openAiCliproxyAccount"),
-            QStringLiteral("openAiAuth"),
-            QStringLiteral("anthropicAuthMode"),
-            QStringLiteral("anthropicCliproxyAccount"),
-            QStringLiteral("cliproxyOauthDir"),
-            QStringLiteral("cliproxyBaseUrl"),
-            QStringLiteral("cliproxyApiKey")};
-}
-
-SchemaSettingsPage *SettingsPageSet::addPage(const QString &id,
-                                             QWidget *parent,
-                                             SchemaCustomRowFactory customRows)
-{
-    return addPage(m_schema.page(id), parent, std::move(customRows));
-}
-
-SchemaSettingsPage *SettingsPageSet::addPage(const SettingsPage &descriptor,
-                                             QWidget *parent,
-                                             SchemaCustomRowFactory customRows)
-{
-    auto *page = new SchemaSettingsPage(descriptor, parent, std::move(customRows));
+    auto *page = new SchemaSettingsPage(sections, parent, customRows);
+    page->setObjectName(id);
     connect(page, &SchemaSettingsPage::changed, this, [this, page] {
         page->appendToDraft(m_draft);
         for (SchemaSettingsPage *candidate : std::as_const(m_pages)) {
@@ -333,21 +303,12 @@ SchemaSettingsPage *SettingsPageSet::addPage(const SettingsPage &descriptor,
         emit changed();
     });
     connect(page, &SchemaSettingsPage::actionTriggered, this, &SettingsPageSet::runPageAction);
-    m_pages.append(page);
-    return page;
+    m_pages.insert(id, page);
 }
 
-SchemaSettingsPage *SettingsPageSet::general() const { return m_general; }
-SchemaSettingsPage *SettingsPageSet::audio() const { return m_audio; }
-SchemaSettingsPage *SettingsPageSet::output() const { return m_output; }
-SchemaSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
-SchemaSettingsPage *SettingsPageSet::localModels() const { return m_localModels; }
-SchemaSettingsPage *SettingsPageSet::providerModels() const { return m_providerModels; }
-SchemaSettingsPage *SettingsPageSet::providerAuth() const { return m_providerAuth; }
-SchemaSettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
-SchemaSettingsPage *SettingsPageSet::corrections() const { return m_corrections; }
-SchemaSettingsPage *SettingsPageSet::bindings() const { return m_bindings; }
-SchemaSettingsPage *SettingsPageSet::whatsNew() const { return m_whatsNew; }
+const SettingsSchema &SettingsPageSet::schema() const { return m_schema; }
+
+SchemaSettingsPage *SettingsPageSet::page(const QString &id) const { return m_pages.value(id); }
 
 void SettingsPageSet::load()
 {
@@ -404,17 +365,19 @@ bool SettingsPageSet::save(bool showValidationErrors,
     };
 
     SettingsStore *settings = m_controller->settings();
-    const QStringList replacementProblems = m_bindings->validate();
+    SchemaSettingsPage *replacements = page(QStringLiteral("vocabulary:replacements"));
+    const QStringList replacementProblems = replacements->validate();
     if (!replacementProblems.isEmpty()) {
         return refuseAloud(SaveFailure::InvalidReplacementRules,
-                           m_bindings,
+                           replacements,
                            QStringLiteral("Replacements not saved"),
                            replacementProblems);
     }
-    const QStringList pasteRuleProblems = m_output->validate();
+    SchemaSettingsPage *pasteRules = page(QStringLiteral("output"));
+    const QStringList pasteRuleProblems = pasteRules->validate();
     if (!pasteRuleProblems.isEmpty()) {
         return refuseAloud(SaveFailure::DuplicatePasteRuleIds,
-                           m_output,
+                           pasteRules,
                            QStringLiteral("Paste rules not saved"),
                            pasteRuleProblems);
     }
@@ -459,7 +422,7 @@ void SettingsPageSet::prepareForSettingsDeletion()
     emit settingsDeletionStarted();
 }
 
-void SettingsPageSet::preserveBindingScroll(QScrollArea *scroll)
+void SettingsPageSet::preserveScroll(QScrollArea *scroll)
 {
     connect(&m_bindingRows, &BindingRows::preserveScrollRequested,
             scroll, [scroll](bool rebuilding) {
@@ -543,8 +506,8 @@ void SettingsPageSet::runPageAction(const QString &rowId)
 
 void SettingsPageSet::refreshUpdateRows()
 {
-    m_general->refresh();
-    m_whatsNew->refresh();
+    page(QStringLiteral("general"))->refresh();
+    page(QStringLiteral("whatsNew"))->refresh();
 }
 
 #ifdef Q_OS_LINUX
@@ -691,19 +654,22 @@ void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, boo
     applyCapabilities();
 }
 
+Capabilities SettingsPageSet::capabilities() const
+{
+    return {m_targetAccessibility, m_controller->updates()->supportsAutomaticDownloads(),
+            Theme::overrideHonored()};
+}
+
 void SettingsPageSet::applyCapabilities()
 {
-    const Capabilities capabilities{m_targetAccessibility,
-                                    m_controller->updates()->supportsAutomaticDownloads(),
-                                    Theme::overrideHonored()};
-    m_general->setCapabilities(capabilities);
-    m_output->setCapabilities(capabilities);
-    m_refinement->setCapabilities(capabilities);
-    if (m_localModels) {
-        m_localModels->setCapabilities(capabilities);
+    for (SchemaSettingsPage *page : std::as_const(m_pages)) {
+        page->setCapabilities(capabilities());
     }
-    m_corrections->setCapabilities(capabilities);
-    m_whatsNew->setCapabilities(capabilities);
+}
+
+QStringList SettingsPageSet::searchPanes(const QString &query) const
+{
+    return speecher::searchPanes(m_schema, query, m_draft, capabilities());
 }
 
 } // namespace speecher

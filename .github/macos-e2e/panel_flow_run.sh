@@ -123,9 +123,9 @@ unset SPEECHER_E2E_PANEL_BANNERS SPEECHER_E2E_PANEL_CAPTURE_DIR
 # DICTATION-PANE: the Transcription row's dynamic subtitle (the schema's
 # helpValue) renders in the settings window's Dictation pane.
 defaults write "$DOMAIN" stt.provider claude
-defaults write "$BUNDLE_ID" settingsPane dictation
 case_begin DICTATION-PANE
-DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" \
+# The grab picks its page by page id; the window itself always opens on Home.
+DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" SPEECHER_GRAB_PAGE=dictation \
   "$APP_BIN" --grab "$CASE_DIR/dictation-pane.png" >"$CASE_DIR/grab.out" 2>&1
 pane_text="$(swift - "$CASE_DIR/dictation-pane.png" <<'SWIFT'
 import Foundation

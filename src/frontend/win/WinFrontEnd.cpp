@@ -32,7 +32,7 @@ struct WinFrontEnd::Native {
     {
         panel = std::make_unique<DictationPanel>(controller, frontEnd);
         tray = std::make_unique<TrayIcon>(
-            controller, [q] { q->showSettingsWindow(); }, frontEnd);
+            controller, [q] { q->showSettingsWindow(); }, [q] { q->showMainWindow(); }, frontEnd);
         trayReady = new QTimer(frontEnd);
         trayReady->setSingleShot(true);
         trayReady->setInterval(50);
@@ -98,7 +98,7 @@ WinFrontEnd::WinFrontEnd(ApplicationController *controller,
     , m_native(std::make_unique<Native>(controller, this, std::move(host)))
 {
     connect(m_native->panel.get(), &DictationPanel::whatsNewRequested, this, [this] {
-        showSettingsWindow();
+        showMainWindow();
         m_native->settingsWindow()->showWhatsNew();
     });
     // On-screen windows only, never the microphone: an update restart must not
@@ -127,9 +127,12 @@ WinFrontEnd::~WinFrontEnd()
     m_controller->updates()->setRestoreStateProvider({});
 }
 
+// Opened from closed the window shows Home; one already up keeps its page.
 void WinFrontEnd::showMainWindow()
 {
-    showSettingsWindow();
+    m_native->trayReady->stop();
+    m_native->settingsWindow()->show();
+    QTimer::singleShot(0, this, &WinFrontEnd::reportReady);
 }
 
 void WinFrontEnd::hideMainWindow()
@@ -139,11 +142,11 @@ void WinFrontEnd::hideMainWindow()
     }
 }
 
+// "Settings…" and `speecher settings` open General on every platform.
 void WinFrontEnd::showSettingsWindow()
 {
-    m_native->trayReady->stop();
-    m_native->settingsWindow()->show();
-    QTimer::singleShot(0, this, &WinFrontEnd::reportReady);
+    showMainWindow();
+    m_native->settingsWindow()->showPage(QStringLiteral("general"));
 }
 
 void WinFrontEnd::showSetupAssistant(SetupAssistantPage page)
@@ -184,17 +187,15 @@ void WinFrontEnd::alert()
     MessageBeep(MB_OK);
 }
 
-void WinFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message)
+void WinFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId)
 {
     if ((m_native->settings && m_native->settings->isVisible())
         || (m_native->setup && m_native->setup->isVisible())) {
         return;
     }
-    // The only notification is a Local Model finishing its download, so a
-    // click opens the page that model lives on.
-    m_native->tray->showMessage(title, message, [this] {
-        showSettingsWindow();
-        m_native->settings->showPane(QStringLiteral("localModels"));
+    m_native->tray->showMessage(title, message, [this, pageId] {
+        showMainWindow();
+        m_native->settings->showPage(pageId);
     });
 }
 

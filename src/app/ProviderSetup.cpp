@@ -1,4 +1,5 @@
 #include "app/ProviderSetup.h"
+#include "core/settings/SettingsSchema.h"
 
 #include "providers/AnthropicTranscriptRefiner.h"
 #include "providers/ClaudeSpeechTranscriber.h"
@@ -101,14 +102,15 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     registry.registerSpeechProvider(
         {QStringLiteral("local"),
          QStringLiteral("Local model"),
-         QStringLiteral("Download a model on the Local models page. It runs on this computer, with no account."),
+         QStringLiteral("Download a model on the %1 page. It runs on this computer, with no account.")
+             .arg(paneTitle(QStringLiteral("localModels"))),
          false,
          QStringLiteral("Runs on this computer: no account, works offline after a one-time "
                         "download. English; speed depends on the model and this computer."),
          {{QStringLiteral("Engine"), QStringLiteral("transcribe.cpp")},
           {QStringLiteral("Languages"), QStringLiteral("English")},
           {QStringLiteral("Speed"), QStringLiteral("Depends on the model and this computer")},
-          {QStringLiteral("Accuracy"), QStringLiteral("See the Local models page")}}},
+          {QStringLiteral("Accuracy"), QStringLiteral("See the %1 page").arg(paneTitle(QStringLiteral("localModels")))}}},
         [localModels](QObject *parent) {
             return new LocalSpeechTranscriber(*localModels, parent);
         });

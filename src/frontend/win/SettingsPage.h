@@ -63,8 +63,11 @@ struct PaneHost {
     std::function<void()> refresh;
     // Action rows (runSetup, checkForUpdates, whatsNew) and disabledAction ids.
     std::function<void(const QString &id)> action;
-    // Selects a sidebar pane, for links on a page.
-    std::function<void(const QString &paneId)> showPane;
+    // Shows a page by id ("general", "vocabulary:corrections"), for links on
+    // a page.
+    std::function<void(const QString &pageId)> showPage;
+    // The view each Alternatives pane shows, by pane id.
+    QHash<QString, QString> views;
     // The window's HWND, which the file picker needs.
     std::function<HWND()> hwnd;
     // The window's XamlRoot, which ContentDialog needs.
@@ -85,7 +88,7 @@ struct PaneHost {
     int apiKeyEdits = 0;
     bool apiKeyLoaded = false;
     QString credentialProblem;
-    // Shortcut pane state.
+    // Global Shortcut recorder state, on Dictation.
     QString shortcutProblem;
     // The single-key typing cost, shown inline after a save; not an error.
     QString shortcutNotice;
@@ -124,15 +127,12 @@ bool printWindowTo(HWND handle, const QString &path);
 void setWindowIcon(const winrt::Microsoft::UI::Xaml::Window &window,
                    const winrt::Microsoft::UI::Xaml::Controls::TitleBar &titleBar);
 
-// One schema page as a WinUI page: ScrollViewer over a 1064-wide column with
-// the page title, one card per schema section — BodyStrong headers,
-// SettingsCard-shaped rows spaced 4 and Caption footnotes — the WinUI Gallery
-// settings page, built in code.
-winrt::Microsoft::UI::Xaml::UIElement buildPage(const PageSnapshot &page, PaneHost &host);
+// One pane as a WinUI page: ScrollViewer over a 1064-wide column with the
+// pane title, one card per group — BodyStrong headers, SettingsCard-shaped
+// rows spaced 4 and Caption footnotes — the WinUI Gallery settings page, built
+// in code. An Alternatives pane shows one group at a time under a SelectorBar.
+winrt::Microsoft::UI::Xaml::UIElement buildPane(const SettingsPane &pane, PaneHost &host);
 
-// The global-shortcut recorder page, the one settings surface with no schema
-// page behind it.
-winrt::Microsoft::UI::Xaml::UIElement buildShortcutPage(PaneHost &host);
 
 // The Gallery's settings page scaffold: gutters on the scroller, the column
 // capped at 1064 inside them, the page title on top (none when empty). Shared

@@ -12,10 +12,10 @@ import SwiftUI
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var pages: [SettingsPageModel]
-    /// The sidebar's panes and their runs, as the schema arranges them. Fixed
-    /// for the life of the app, so a plain let.
+    /// The sidebar's panes and their groups, as the schema arranges them.
+    /// Fixed for the life of the app, so a plain let.
     let panes: [Pane]
-    let sidebarRuns: [[String]]
+    let sidebarGroups: [SidebarGroupModel]
     /// The dictation state's name, as the controller reports it.
     @Published private(set) var status: String
     @Published private(set) var level: Float = 0
@@ -61,11 +61,8 @@ final class AppModel: ObservableObject {
     /// The last single-key binding was refused for the missing Accessibility
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
-    /// The pane the sidebar is on, remembered between openings because people
-    /// adjust related settings more than once.
-    @Published var pane: String {
-        didSet { UserDefaults.standard.set(pane, forKey: Self.paneKey) }
-    }
+    /// The pane the sidebar is on. A window opened from closed starts on Home.
+    @Published var pane = "home"
     /// Home's numbers for the chosen period, re-read whole when the log, the
     /// Insights setting or the period changes.
     @Published private(set) var insights: SpeecherInsightsModel
@@ -80,15 +77,16 @@ final class AppModel: ObservableObject {
     @Published var confirmingClearInsights = false
     /// Deleting the history failed, and the alert saying so is up.
     @Published var clearInsightsFailed = false
-    /// The group an alternatives pane should switch to when it next shows,
-    /// by title; the pane clears it once it has.
-    @Published var requestedGroup: String? = nil
+    /// The view an alternatives pane should switch to when it next shows,
+    /// by view id; the pane clears it once it has.
+    @Published var requestedView: String? = nil
 
     let bridge: SpeecherBridge
     /// The Transcribe pane's batch, kept here so it outlives the pane's view:
     /// a batch keeps running while another pane is on screen.
     let transcription: TranscriptionModel
-    private static let paneKey = "settingsPane"
+    /// The pane that was showing when What's New opened.
+    private var whatsNewReturnPane = "home"
     /// A keyring read that lands after typing started must not overwrite it.
     private var apiKeyEdits = 0
     private var apiKeyLoaded = false
@@ -121,7 +119,7 @@ final class AppModel: ObservableObject {
         pages = bridge.settingsSchema.pages
         let panes = bridge.settingsSchema.panes.map(Pane.init)
         self.panes = panes
-        sidebarRuns = bridge.settingsSchema.sidebarRuns
+        sidebarGroups = bridge.settingsSchema.sidebarGroups
         status = bridge.stateName
         transcript = bridge.lastTranscript
         local = bridge.localSetupState
@@ -129,7 +127,6 @@ final class AppModel: ObservableObject {
         accessibilityEnabled = bridge.accessibilityEnabled
         whatsNewPending = bridge.whatsNewPending
         anthropicCredentialStatus = bridge.anthropicCredentialStatus
-        pane = UserDefaults.standard.string(forKey: Self.paneKey) ?? panes[0].id
         insights = bridge.insightsSummary(range: .last30Days)
         insightsEnabled = bridge.insightsEnabled
         bridge.statusChanged = { [weak self] status in
@@ -214,9 +211,16 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func showCorrections() {
-        requestedGroup = "Corrections"
-        pane = "vocabulary"
+    /// Shows a page by id: a pane id, or "pane:view" for one of its views.
+    /// An unknown id shows Home (speecher::resolvePage).
+    func showPage(_ pageId: String) {
+        let page = bridge.settingsSchema.resolvePage(pageId)
+        if !page[1].isEmpty { requestedView = page[1] }
+        if page[0] == "whatsNew" {
+            showWhatsNew()
+        } else {
+            pane = page[0]
+        }
     }
 
     /// What a window showing local models asks for on the way up: the
@@ -310,81 +314,31 @@ final class AppModel: ObservableObject {
         return nil
     }
 
-    /// The rows a group asks for that the schema currently offers, in the order
-    /// the group named them. A pattern ending in `*` takes every row whose id
-    /// starts with it, which is how the per-category paste rules arrive.
-    func rows(matching patterns: [String]) -> [SettingsRowModel] {
-        var found: [SettingsRowModel] = []
-        for pattern in patterns {
-            guard pattern.hasSuffix("*") else {
-                if let row = row(pattern) { found.append(row) }
-                continue
-            }
-            let prefix = String(pattern.dropLast())
-            for page in pages {
-                for section in page.sections {
-                    found += section.rows.filter { $0.rowId.hasPrefix(prefix) }
-                }
-            }
-        }
-        return found
+    /// The rows with these ids that the schema currently offers, in this order.
+    func rows(matching ids: [String]) -> [SettingsRowModel] {
+        ids.compactMap(row)
     }
 
     /// A pane's groups, in order, each with the rows the schema currently offers
-    /// it. A group whose rows are all absent stays in the list and draws
+    /// it. A group whose rows are all hidden stays in the list and draws
     /// nothing, so the index a segmented picker holds keeps meaning what it did.
     func groupCards(for pane: Pane) -> [PaneCard] {
         pane.groups.map { group in
-            let placed = rows(matching: group.rows)
-            return PaneCard(title: group.title, help: footnote(group, placed), rows: placed)
+            PaneCard(title: group.title, help: footnote(group), rows: group.rows.compactMap(row))
         }
     }
 
-    /// Schema rows no pane placed explicitly, as the cards the schema itself
-    /// describes: they appear on the pane that owns their schema page, keeping
-    /// their section's title and help. A newly added schema page falls back to
-    /// General.
-    func unclaimedCards(for pane: Pane) -> [PaneCard] {
-        let claimed = Set(panes.flatMap { candidate in
-            candidate.groups.flatMap { rows(matching: $0.rows).map(\.rowId) }
-        })
-        let ownedPages = Set(panes.flatMap(\.schemaPages))
-        return pages.flatMap { page -> [PaneCard] in
-            let belongsHere = pane.schemaPages.contains(page.pageId)
-                || (pane.id == "general" && !ownedPages.contains(page.pageId))
-            guard belongsHere else { return [] }
-            return page.sections.compactMap { section -> PaneCard? in
-                let unplaced = page.pageId == "whatsNew"
-                    ? section.rows
-                    : section.rows.filter { !claimed.contains($0.rowId) }
-                guard !unplaced.isEmpty else { return nil }
-                return PaneCard(title: section.title.isEmpty ? page.title : section.title,
-                                help: section.help,
-                                rows: unplaced)
-            }
-        }
-    }
-
-    /// What a group says about itself, or failing that what the schema says
-    /// under the section these rows came from, or the help of a row that fills
-    /// the whole card and so has nowhere else to put it.
-    private func footnote(_ group: PaneGroup, _ rows: [SettingsRowModel]) -> String {
+    /// The group's footnote, or the help of a row that fills the whole card
+    /// and so has nowhere else to put it.
+    private func footnote(_ group: PaneGroup) -> String {
         if !group.help.isEmpty { return group.help }
-        let ids = Set(rows.map(\.rowId))
-        for page in pages {
-            for section in page.sections where !section.help.isEmpty {
-                if section.rows.contains(where: { ids.contains($0.rowId) }) {
-                    return section.help
-                }
-            }
-        }
-        return rows.first { $0.collection != nil }?.help ?? ""
+        return group.rows.compactMap(row).first { $0.collection != nil }?.help ?? ""
     }
 
     func trigger(_ rowId: String) {
         if rowId == "whatsNew" { showWhatsNew() }
         if rowId == "speechLocalModelDownload" {
-            pane = "localModels"
+            showPage("localModels")
             return
         }
         // Asked here rather than in MacFrontEnd.mm: the confirmation is a
@@ -412,8 +366,14 @@ final class AppModel: ObservableObject {
     private static let testsTypedText: Set<String> = ["speechEndpointTest", "refinementEndpointTest"]
 
     func showWhatsNew() {
+        if pane != "whatsNew" { whatsNewReturnPane = pane }
         pane = "whatsNew"
         bridge.clearPendingWhatsNew()
+    }
+
+    /// Back from What's New to the pane it was opened from.
+    func leaveWhatsNew() {
+        pane = whatsNewReturnPane
     }
 
     func dismissWhatsNew() {
@@ -521,17 +481,9 @@ final class AppModel: ObservableObject {
         NSPasteboard.general.setString(transcript, forType: .string)
     }
 
-    /// Whether anything on a pane — its name, a card heading, a row, or the
-    /// help under one — answers to what was typed in the search field. The cards
-    /// are the ones the pane draws, so nothing visible is unsearchable.
-    func pane(_ pane: Pane, matches query: String) -> Bool {
-        if query.isEmpty { return true }
-        let needle = query.lowercased()
-        let hit = { (text: String) in text.lowercased().contains(needle) }
-        if hit(pane.title) { return true }
-        return (groupCards(for: pane) + unclaimedCards(for: pane)).contains { card in
-            hit(card.title) || hit(card.help)
-                || card.rows.contains { hit($0.label) || hit($0.help) }
-        }
+    /// The panes a sidebar search shows, from the core index every front end
+    /// searches.
+    func searchPanes(_ query: String) -> [Pane] {
+        bridge.settingsSchema.searchPanes(query).compactMap(pane(withId:))
     }
 }

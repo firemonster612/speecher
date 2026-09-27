@@ -196,17 +196,6 @@ QFrame *makeSeparator(QWidget *parent)
     return line;
 }
 
-QWidget *makeCenteredSeparator(QWidget *parent)
-{
-    auto *container = new QWidget(parent);
-    auto *layout = new QHBoxLayout(container);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->addStretch(1);
-    layout->addWidget(makeSeparator(container), 3);
-    layout->addStretch(1);
-    return container;
-}
-
 void configureFormLayout(QFormLayout *form)
 {
     form->setRowWrapPolicy(QFormLayout::DontWrapRows);
@@ -640,6 +629,13 @@ QColor positiveTextColor(const QPalette &palette)
 #endif
 }
 
+QFont sectionTitleFont(const QFont &font)
+{
+    QFont bold(font);
+    bold.setBold(true);
+    return bold;
+}
+
 QLabel *makeSectionLabel(const QString &text, QWidget *parent)
 {
     // FormHeader: bold text right above its card, inset like the rows.
@@ -647,9 +643,7 @@ QLabel *makeSectionLabel(const QString &text, QWidget *parent)
     section->setObjectName(QStringLiteral("sectionLabel"));
     section->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     section->setContentsMargins(gridUnit(), 0, gridUnit(), smallSpacing());
-    QFont font = section->font();
-    font.setBold(true);
-    section->setFont(font);
+    section->setFont(sectionTitleFont(section->font()));
     return section;
 }
 
@@ -823,19 +817,6 @@ private:
 } // namespace
 
 int cardStretchedWidth() { return gridUnit() * 60; }
-
-QWidget *takePageContent(QScrollArea *scroll)
-{
-    QWidget *content = scroll->takeWidget();
-    // The governor that sized the content for this scroll area must go with
-    // it, or a hidden viewport keeps pinning the content's width.
-    for (QObject *governor : scroll->findChildren<QObject *>(QStringLiteral("pageWidthGovernor"),
-                                                             Qt::FindDirectChildrenOnly)) {
-        delete governor;
-    }
-    content->setMaximumWidth(QWIDGETSIZE_MAX);
-    return content;
-}
 
 void configurePageScroll(QScrollArea *scroll, QWidget *content)
 {

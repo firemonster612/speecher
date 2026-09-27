@@ -113,8 +113,6 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 
 @interface SettingsPageModel : NSObject
 @property (nonatomic, readonly, copy) NSString *pageId;
-@property (nonatomic, readonly, copy) NSString *title;
-@property (nonatomic, readonly, copy) NSString *symbolName;
 @property (nonatomic, readonly, copy) NSArray<SettingsSectionModel *> *sections;
 @end
 
@@ -122,14 +120,14 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
     SpeecherPaneLayoutSections,
     SpeecherPaneLayoutAlternatives,
-    SpeecherPaneLayoutShortcut,
     SpeecherPaneLayoutTranscribe,
     SpeecherPaneLayoutHome,
 };
 
-// One card a pane shows: a heading, a footnote, and the schema rows it names.
-// A row pattern ending in `*` takes every row whose id starts with it.
+// One card a pane shows: a heading, a footnote, and the schema rows it names,
+// as this build has them. An Alternatives pane addresses it as "pane:view".
 @interface SettingsPaneGroupModel : NSObject
+@property (nonatomic, readonly, copy) NSString *view;
 @property (nonatomic, readonly, copy) NSString *title;
 @property (nonatomic, readonly, copy) NSString *help;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *rows;
@@ -139,11 +137,16 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 @interface SettingsPaneModel : NSObject
 @property (nonatomic, readonly, copy) NSString *paneId;
 @property (nonatomic, readonly, copy) NSString *title;
-@property (nonatomic, readonly, copy) NSString *symbolName;
-// Schema pages whose otherwise-unmapped rows fall back to this pane.
-@property (nonatomic, readonly, copy) NSArray<NSString *> *schemaPages;
+// Platform-neutral; PaneIcons.swift maps it to an SF Symbol.
+@property (nonatomic, readonly, copy) NSString *iconId;
 @property (nonatomic, readonly) SpeecherPaneLayout layout;
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneGroupModel *> *groups;
+@end
+
+// One titled group of the sidebar; the top group's title is empty.
+@interface SidebarGroupModel : NSObject
+@property (nonatomic, readonly, copy) NSString *title;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *panes;
 @end
 
 // What a file offered to a collection turned out to hold.
@@ -160,9 +163,16 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // flag from the draft, so a reader sees the effect of its own writes.
 @interface SettingsSchemaModel : NSObject
 @property (nonatomic, readonly, copy) NSArray<SettingsPageModel *> *pages;
-// The sidebar's panes and their runs, which never change while the app runs.
+// The sidebar's panes and their groups, which never change while the app runs.
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneModel *> *panes;
-@property (nonatomic, readonly, copy) NSArray<NSArray<NSString *> *> *sidebarRuns;
+@property (nonatomic, readonly, copy) NSArray<SidebarGroupModel *> *sidebarGroups;
+// A page id ("general", "vocabulary:corrections") as the pane and view it
+// names, speecher::resolvePage's answer: an unknown pane, or a view the pane
+// does not have, gives Home.
+- (NSArray<NSString *> *)resolvePage:(NSString *)pageId NS_SWIFT_NAME(resolvePage(_:));
+// The pane ids a sidebar search shows, from the core index, with rows as
+// the draft shows them.
+- (NSArray<NSString *> *)searchPanes:(NSString *)query NS_SWIFT_NAME(searchPanes(_:));
 // What an Action row's button does. The schema names the commands; what they do
 // belongs to the front end, as it does on Qt.
 @property (nonatomic, copy, nullable) void (^actionTriggered)(NSString *rowId);
@@ -848,6 +858,10 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepLabel(_:));
 // The line under the step indicator; empty for a step that needs none.
 - (NSString *)transcribeStepHint:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepHint(_:));
+// The settings page a row is on, from core (speecher::paneTitleForRow).
+- (NSString *)paneTitleForRowId:(NSString *)rowId NS_SWIFT_NAME(paneTitle(forRowId:));
+// Where to change the refinement model the Configure step shows.
+@property (nonatomic, readonly, copy) NSString *transcribeRefinementModelHint;
 // How long a finished file holds at the end before the next one replaces it.
 @property (nonatomic, readonly) double transcribeLandingSeconds;
 // A file's share of its whole work, below 1 until the file has finished.

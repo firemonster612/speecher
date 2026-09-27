@@ -4,8 +4,11 @@
 #include "core/SettingsStore.h"
 #include "frontend/qt/LinuxTrayIcon.h"
 #include "frontend/qt/QtFrontEnd.h"
+#include "dictation/DictationSession.h"
 
 #include <QAction>
+#include <QApplication>
+#include <QLabel>
 #include <QMenu>
 #include <QSignalSpy>
 #include <QSystemTrayIcon>
@@ -38,7 +41,7 @@ private slots:
         QCOMPARE(actions.at(0)->objectName(), QStringLiteral("trayToggleDictation"));
         QCOMPARE(actions.at(0)->text(), QStringLiteral("Start Dictation"));
         QCOMPARE(actions.at(1)->objectName(), QStringLiteral("traySettings"));
-        QCOMPARE(actions.at(1)->text(), QStringLiteral("Settings..."));
+        QCOMPARE(actions.at(1)->text(), QStringLiteral("Settings…"));
         QVERIFY(actions.at(2)->isSeparator());
         QCOMPARE(actions.at(3)->objectName(), QStringLiteral("trayQuit"));
         QCOMPARE(actions.at(3)->text(), QStringLiteral("Quit"));
@@ -95,15 +98,79 @@ private slots:
         QVERIFY(tray);
         QSignalSpy shown(tray, &LinuxTrayIcon::messageShown);
 
-        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."));
+        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."),
+                                       QStringLiteral("output"));
         QCOMPARE(shown.size(), 1);
         QCOMPARE(shown.first().first().toString(), QStringLiteral("Parakeet 0.6B is ready"));
+
+        // Clicking it opens the page it is about.
+        emit tray->messageClicked();
+        QWidget *window = visibleAppWindow();
+        QVERIFY(window);
+        QCOMPARE(window->findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Output"));
+        window->hide();
 
         // With the window up, the Local models page already says so.
         frontEnd.showMainWindow();
         QCoreApplication::processEvents();
-        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."));
+        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."),
+                                       QStringLiteral("output"));
         QCOMPARE(shown.size(), 1);
+        window->hide();
+    }
+
+    // An error balloon has nothing to open, so clicking it must not run the
+    // action of a notice it replaced.
+    void anErrorBalloonDoesNotReplayTheNoticeBeforeIt()
+    {
+        ApplicationController controller(true);
+        QtFrontEnd frontEnd(&controller);
+        auto *tray = frontEnd.findChild<LinuxTrayIcon *>();
+        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."),
+                                       QStringLiteral("output"));
+        emit controller.session()->popupErrorRequested(QStringLiteral("The microphone stopped."));
+        emit tray->messageClicked();
+        QVERIFY(!visibleAppWindow());
+    }
+
+    // Clicking the icon brings the window up as it was: Home when hidden, the
+    // page it shows when already up. "Settings…" opens General.
+    void clickingTheIconShowsTheWindowAndSettingsOpensGeneral()
+    {
+        ApplicationController controller(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        auto *icon = frontEnd.findChild<LinuxTrayIcon *>()->findChild<QSystemTrayIcon *>();
+        const auto title = [] {
+            QWidget *window = visibleAppWindow();
+            return window ? window->findChild<QLabel *>(QStringLiteral("pageTitle"))->text() : QString();
+        };
+
+        emit icon->activated(QSystemTrayIcon::Trigger);
+        QCOMPARE(title(), QStringLiteral("Home"));
+        for (QAction *action : icon->contextMenu()->actions()) {
+            if (action->objectName() == QStringLiteral("traySettings")) {
+                action->trigger();
+            }
+        }
+        QCOMPARE(title(), QStringLiteral("General"));
+        emit icon->activated(QSystemTrayIcon::Trigger);
+        QCOMPARE(title(), QStringLiteral("General"));
+        frontEnd.hideMainWindow();
+        emit icon->activated(QSystemTrayIcon::Trigger);
+        QCOMPARE(title(), QStringLiteral("Home"));
+        frontEnd.hideMainWindow();
+    }
+
+private:
+    static QWidget *visibleAppWindow()
+    {
+        for (QWidget *candidate : QApplication::topLevelWidgets()) {
+            if (candidate->objectName() == QStringLiteral("appWindow") && candidate->isVisible()) {
+                return candidate;
+            }
+        }
+        return nullptr;
     }
 };
 

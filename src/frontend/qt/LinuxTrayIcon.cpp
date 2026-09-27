@@ -1,5 +1,7 @@
 #include "frontend/qt/LinuxTrayIcon.h"
 
+#include <utility>
+
 #include "app/ApplicationController.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
@@ -38,7 +40,7 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     m_toggleAction = m_menu.addAction(QStringLiteral("Start Dictation"),
                                       controller, &ApplicationController::toggle);
     m_toggleAction->setObjectName(QStringLiteral("trayToggleDictation"));
-    QAction *settings = m_menu.addAction(QStringLiteral("Settings..."),
+    QAction *settings = m_menu.addAction(QStringLiteral("Settings…"),
                                          controller, &ApplicationController::showSettingsWindow);
     settings->setObjectName(QStringLiteral("traySettings"));
     m_menu.addSeparator();
@@ -53,25 +55,36 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     // notification keeps the failure findable when nobody was watching.
     connect(controller->session(), &DictationSession::popupErrorRequested,
             this, [this](const QString &message) {
-                m_tray->showMessage(QStringLiteral("Speecher"), message,
-                                    QSystemTrayIcon::Critical);
+                showMessage(QStringLiteral("Speecher"), message, {}, QSystemTrayIcon::Critical);
             });
     connect(m_tray, &QSystemTrayIcon::activated,
             this, [controller](QSystemTrayIcon::ActivationReason reason) {
+                // The window as it was: Home if hidden, its page if up.
                 if (reason == QSystemTrayIcon::Trigger) {
-                    controller->showSettingsWindow();
+                    controller->showMainWindow();
                 } else if (reason == QSystemTrayIcon::MiddleClick) {
                     controller->toggle();
                 }
             });
 
+    connect(m_tray, &QSystemTrayIcon::messageClicked, this, &LinuxTrayIcon::messageClicked);
+    connect(this, &LinuxTrayIcon::messageClicked, this, [this] {
+        if (const std::function<void()> clicked = std::exchange(m_messageClicked, {})) {
+            clicked();
+        }
+    });
+
     applyState(controller->stateName());
     m_tray->show();
 }
 
-void LinuxTrayIcon::showMessage(const QString &title, const QString &message)
+void LinuxTrayIcon::showMessage(const QString &title,
+                                const QString &message,
+                                std::function<void()> clicked,
+                                QSystemTrayIcon::MessageIcon icon)
 {
-    m_tray->showMessage(title, message, QSystemTrayIcon::Information);
+    m_messageClicked = std::move(clicked);
+    m_tray->showMessage(title, message, icon);
     emit messageShown(title, message);
 }
 

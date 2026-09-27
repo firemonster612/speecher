@@ -327,7 +327,7 @@ public:
         calls << QStringLiteral("alert");
     }
 
-    void notifyIfNoWindowShown(const QString &title, const QString &message) override
+    void notifyIfNoWindowShown(const QString &title, const QString &message, const QString &) override
     {
         calls << QStringLiteral("notify %1: %2").arg(title, message);
     }

@@ -62,31 +62,10 @@ namespace {
 constexpr int kTrafficLightInset = 28;
 #endif
 
-struct PageDefinition {
-    QString title;
-    QString iconName;
-    QString fallbackIconName;
-};
-
-// Every name comes from the theme's monochrome action/status/device set,
-// which Breeze draws in the text colour at the sidebar's 22px size. The
-// preferences-* and app icons live in a different visual language (colourful,
-// or gradients that stay dark on dark schemes), so one of them in the list
-// makes the whole column read as mismatched.
-constexpr int kTranscribeRow = 1;
-// The settings pages follow Home and Transcribe, in AppPageId order.
-constexpr int kFirstSettingsRow = 2;
-const QList<PageDefinition> kPages{
-    {QStringLiteral("Home"), QStringLiteral("go-home"), QStringLiteral("user-home")},
-    {QStringLiteral("Transcribe"), QStringLiteral("view-media-lyrics"), QStringLiteral("document-import")},
-    {QStringLiteral("General"), QStringLiteral("settings-configure"), QStringLiteral("configure")},
-    {QStringLiteral("Audio"), QStringLiteral("audio-volume-high"), QStringLiteral("player-volume")},
-    {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
-    {QStringLiteral("Accounts"), QStringLiteral("user-identity"), QStringLiteral("im-user")},
-    {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
-    {QStringLiteral("Local models"), QStringLiteral("computer"), QStringLiteral("computer-laptop")},
-    {QStringLiteral("Vocabulary"), QStringLiteral("tools-check-spelling"), QStringLiteral("accessories-dictionary")},
-};
+const QString kWhatsNewPane = QStringLiteral("whatsNew");
+const QString kHomePane = QStringLiteral("home");
+// The id a sidebar row carries. Spacer rows between runs carry none.
+constexpr int kPaneRole = Qt::UserRole;
 
 QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
 {
@@ -95,32 +74,32 @@ QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
     return scroll;
 }
 
-void removeEmbeddedPageTitle(QWidget *content)
+// A pane's icon from the theme's monochrome action/status/device set, which
+// Breeze draws in the text colour at the sidebar's 22px size. The
+// preferences-* and app icons live in a different visual language (colourful,
+// or gradients that stay dark on dark schemes), so one of them in the list
+// makes the whole column read as mismatched.
+QIcon paneIcon(const QString &iconId)
 {
-    QLabel *title = content->findChild<QLabel *>(QStringLiteral("pageTitle"));
-    if (!title || !title->parentWidget() || !title->parentWidget()->layout()) {
-        return;
+    static const QHash<QString, QStringList> names{
+        {QStringLiteral("home"), {QStringLiteral("go-home"), QStringLiteral("user-home")}},
+        {QStringLiteral("settings"), {QStringLiteral("settings-configure"), QStringLiteral("configure")}},
+        {QStringLiteral("whatsNew"), {QStringLiteral("help-about")}},
+        {QStringLiteral("microphone"), {QStringLiteral("audio-input-microphone")}},
+        {QStringLiteral("refinement"), {QStringLiteral("tools-wizard"), QStringLiteral("document-edit")}},
+        {QStringLiteral("localModels"), {QStringLiteral("computer"), QStringLiteral("computer-laptop")}},
+        {QStringLiteral("transcribe"), {QStringLiteral("view-media-lyrics"), QStringLiteral("document-import")}},
+        {QStringLiteral("output"), {QStringLiteral("edit-paste"), QStringLiteral("edit-copy")}},
+        {QStringLiteral("vocabulary"),
+         {QStringLiteral("tools-check-spelling"), QStringLiteral("accessories-dictionary")}},
+        {QStringLiteral("accounts"), {QStringLiteral("user-identity"), QStringLiteral("im-user")}},
+    };
+    for (const QString &name : names.value(iconId)) {
+        if (QIcon::hasThemeIcon(name)) {
+            return QIcon::fromTheme(name);
+        }
     }
-    QLayout *layout = title->parentWidget()->layout();
-    const int index = layout->indexOf(title);
-    delete layout->takeAt(index);
-    delete title;
-    if (QLayoutItem *gap = layout->takeAt(index)) {
-        delete gap;
-    }
-}
-
-QWidget *detachedContent(QScrollArea *page, bool removeTitle = false)
-{
-    QWidget *content = settings::takePageContent(page);
-    if (removeTitle) {
-        removeEmbeddedPageTitle(content);
-    }
-    // The composed page carries the page margins and the width cap; the
-    // detached content contributes neither, so cards on every page line up.
-    content->layout()->setContentsMargins(0, 0, 0, 0);
-    page->hide();
-    return content;
+    return {};
 }
 
 // A theme without the icon leaves the row text-only: a stand-in document icon
@@ -167,11 +146,6 @@ protected:
     }
 };
 
-QIcon pageIcon(const PageDefinition &page)
-{
-    return QIcon::fromTheme(page.iconName, QIcon::fromTheme(page.fallbackIconName));
-}
-
 } // namespace
 
 AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
@@ -183,15 +157,11 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
 {
     setObjectName(QStringLiteral("appWindow"));
     setWindowTitle(QStringLiteral("Speecher"));
-    buildSharedPages();
+    buildPages();
     connect(m_pages, &SettingsPageSet::whatsNewRequested, this, &AppWindow::showWhatsNew);
     connect(m_pages, &SettingsPageSet::localModelsRequested, this,
-            [this] { navigateToSettings(AppPageId::LocalModels); });
-    connect(m_home, &HomePage::navigateRequested, this, &AppWindow::navigateToSettings);
-    connect(m_home, &HomePage::correctionsRequested, this, [this] {
-        navigateToSettings(AppPageId::Vocabulary);
-        m_vocabularyTabs->setCurrentIndex(m_correctionsTab);
-    });
+            [this] { showPage(QStringLiteral("localModels")); });
+    connect(m_home, &HomePage::pageRequested, this, &AppWindow::showPage);
     connect(m_controller->updates(),
             &UpdateController::changed,
             this,
@@ -217,33 +187,66 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     }
 }
 
-QStringList AppWindow::pageTitles() const
+QStringList AppWindow::sidebarPanes() const
 {
-    QStringList titles;
-    for (const auto &page : kPages) {
-        titles << page.title;
+    QStringList panes;
+    for (const SidebarGroup &group : m_pages->schema().sidebarGroups) {
+        panes += group.panes;
     }
-    return titles;
+    return panes;
 }
 
-int AppWindow::pageCount() const { return kPages.size(); }
-
-void AppWindow::navigateToSettings(AppPageId page)
+void AppWindow::showPage(const QString &pageId)
 {
-    const int settingsIndex = static_cast<int>(page);
-    for (int row = 0; row < m_navigation->count(); ++row) {
-        QListWidgetItem *item = m_navigation->item(row);
-        if (item->data(Qt::UserRole).toInt() == settingsIndex + kFirstSettingsRow) {
-            m_navigation->setCurrentItem(item);
-            break;
+    const PageId page = resolvePage(m_pages->schema(), pageId);
+    if (page.pane == kWhatsNewPane) {
+        showWhatsNew();
+        return;
+    }
+    if (QTabWidget *tabs = m_viewTabs.value(page.pane)) {
+        const auto *pane = m_pages->schema().pane(page.pane);
+        for (int index = 0; index < pane->groups.size(); ++index) {
+            if (pane->groups.at(index).view == page.view) {
+                tabs->setCurrentIndex(index);
+            }
         }
     }
+    selectPane(page.pane);
+}
+
+QString AppWindow::currentPane() const
+{
+    return m_paneWidgets.key(m_stack->currentWidget());
+}
+
+void AppWindow::selectPane(const QString &paneId)
+{
+    m_stack->setCurrentWidget(m_paneWidgets.value(paneId));
+    // What's New enters and leaves the list as it is shown and left; any other
+    // pick only moves the selection.
+    if (sidebarListsWhatsNew() != m_sidebarListsWhatsNew) {
+        rebuildSidebar();
+        return;
+    }
+    const QSignalBlocker blocker(m_navigation);
+    m_navigation->setCurrentItem(nullptr);
+    for (int row = 0; row < m_navigation->count(); ++row) {
+        if (m_navigation->item(row)->data(kPaneRole).toString() == paneId) {
+            m_navigation->setCurrentRow(row);
+        }
+    }
+}
+
+bool AppWindow::sidebarListsWhatsNew() const
+{
+    return m_query.isEmpty()
+        && (currentPane() == kWhatsNewPane || !m_controller->pendingWhatsNewVersion().isEmpty());
 }
 
 void AppWindow::showTranscribeFiles(const QStringList &paths)
 {
     m_transcribe->addFiles(paths);
-    m_navigation->setCurrentRow(kTranscribeRow);
+    showPage(QStringLiteral("transcribe"));
 }
 
 void AppWindow::refreshHeaderStripColor()
@@ -420,68 +423,36 @@ bool AppWindow::eventFilter(QObject *watched, QEvent *event)
     return QMainWindow::eventFilter(watched, event);
 }
 
-void AppWindow::buildSharedPages()
+// One widget per pane, in the schema's order: Home and Transcribe are drawn
+// here, every other pane is its SettingsPageSet page, and an Alternatives pane
+// shows its views as tabs.
+void AppWindow::buildPages()
 {
-    auto *refinementContent = new QWidget(this);
-    auto *refinementLayout = new QVBoxLayout(refinementContent);
-    settings::applyPageMargins(refinementLayout);
-    refinementLayout->setSpacing(0);
-    refinementLayout->addWidget(settings::makePageTitle(QStringLiteral("Refinement"), refinementContent));
-    refinementLayout->addSpacing(settings::sectionGap());
-    refinementLayout->addWidget(detachedContent(m_pages->refinement(), true));
-    refinementLayout->addSpacing(settings::groupGap());
-    refinementLayout->addWidget(detachedContent(m_pages->providerModels(), true));
-    refinementLayout->addStretch();
-    QWidget *refinement = scrollingPage(refinementContent, this);
-
-    auto *authContent = new QWidget(this);
-    auto *authLayout = new QVBoxLayout(authContent);
-    settings::applyPageMargins(authLayout);
-    authLayout->setSpacing(0);
-    authLayout->addWidget(settings::makePageTitle(QStringLiteral("Accounts"), authContent));
-    authLayout->addSpacing(settings::sectionGap());
-    authLayout->addWidget(detachedContent(m_pages->providerAuth(), true));
-    authLayout->addStretch();
-    QWidget *auth = scrollingPage(authContent, this);
-
-    auto *tabs = new QTabWidget(this);
-    const auto addTab = [tabs](QScrollArea *page, const QString &title) {
-        QWidget *content = detachedContent(page, true);
-        settings::applyPageMargins(content->layout());
-        auto *scroll = scrollingPage(content, tabs);
-        tabs->addTab(scroll, title);
-        return scroll;
-    };
-    addTab(m_pages->vocabulary(), QStringLiteral("Vocabulary"));
-    m_vocabularyTabs = tabs;
-    m_correctionsTab = tabs->indexOf(addTab(m_pages->corrections(), QStringLiteral("Learned corrections")));
-    m_pages->preserveBindingScroll(
-        addTab(m_pages->bindings(), QStringLiteral("Replacements && snippets")));
-
-    auto *vocabularyContent = new QWidget(this);
-    auto *vocabularyLayout = new QVBoxLayout(vocabularyContent);
-    settings::applyPageMargins(vocabularyLayout);
-    vocabularyLayout->setSpacing(0);
-    vocabularyLayout->addWidget(settings::makePageTitle(QStringLiteral("Vocabulary"), vocabularyContent));
-    vocabularyLayout->addSpacing(settings::sectionGap());
-    vocabularyLayout->addWidget(tabs, 1);
-
-    m_pageWidgets = {
-        m_home,
-        m_transcribe,
-        m_pages->general(),
-        m_pages->audio(),
-        m_pages->output(),
-        auth,
-        refinement,
-        // A build without local speech keeps the slot, so page indices stay
-        // put, and leaves it out of the sidebar.
-        m_pages->localModels() ? static_cast<QWidget *>(m_pages->localModels()) : new QWidget(this),
-        vocabularyContent,
-        m_pages->whatsNew(),
-    };
-    for (QWidget *page : std::as_const(m_pageWidgets)) {
-        removeEmbeddedPageTitle(page);
+    for (const SettingsPane &pane : m_pages->schema().panes) {
+        QWidget *widget = nullptr;
+        if (pane.layout == PaneLayout::Home) {
+            widget = m_home;
+        } else if (pane.layout == PaneLayout::Transcribe) {
+            widget = m_transcribe;
+        } else if (pane.layout == PaneLayout::Alternatives) {
+            auto *tabs = new QTabWidget(this);
+            tabs->setDocumentMode(true);
+            for (const SettingsPaneGroup &group : pane.groups) {
+                // A tab reads & as a mnemonic marker ("Replacements & snippets").
+                QString title = group.title;
+                tabs->addTab(m_pages->page(pane.id + QLatin1Char(':') + group.view),
+                             title.replace(QLatin1Char('&'), QStringLiteral("&&")));
+            }
+            m_viewTabs.insert(pane.id, tabs);
+            auto *content = new QWidget(this);
+            auto *layout = new QVBoxLayout(content);
+            settings::applyPageMargins(layout);
+            layout->addWidget(tabs, 1);
+            widget = content;
+        } else {
+            widget = m_pages->page(pane.id);
+        }
+        m_paneWidgets.insert(pane.id, widget);
     }
 }
 
@@ -554,7 +525,7 @@ void AppWindow::buildSidebarShell()
     m_backButton->hide();
     connect(m_backButton, &QToolButton::clicked, this, &AppWindow::leaveWhatsNew);
     headerRightLayout->addWidget(m_backButton);
-    m_pageTitle = settings::makePageTitle(kPages.first().title, headerRight);
+    m_pageTitle = settings::makePageTitle(paneTitle(kHomePane), headerRight);
     headerRightLayout->addWidget(m_pageTitle);
     headerRightLayout->addStretch();
     headerLayout->addWidget(headerRight, 1);
@@ -609,15 +580,6 @@ void AppWindow::buildSidebarShell()
     m_navigation->setSpacing(2);
     m_navigation->setIconSize(QSize(22, 22));
     m_navigation->setItemDelegate(new WholeItemDelegate(m_navigation));
-    for (int index = 0; index < kPages.size(); ++index) {
-        if (index == int(AppPageId::LocalModels) + kFirstSettingsRow && !m_pages->localModels()) {
-            continue;
-        }
-        const auto &page = kPages.at(index);
-        auto *item = new QListWidgetItem(pageIcon(page), page.title, m_navigation);
-        item->setData(Qt::UserRole, index);
-        item->setSizeHint(QSize(0, 32));
-    }
     sidebarLayout->addWidget(m_navigation, 1);
 #ifdef Q_OS_LINUX
     sidebarLayout->addSpacing(settings::relatedSpacing());
@@ -628,8 +590,8 @@ void AppWindow::buildSidebarShell()
 #endif
     m_stack = new QStackedWidget(m_sidebarSplitter);
     m_stack->setObjectName(QStringLiteral("appPageStack"));
-    for (QWidget *page : std::as_const(m_pageWidgets)) {
-        m_stack->addWidget(page);
+    for (const SettingsPane &pane : m_pages->schema().panes) {
+        m_stack->addWidget(m_paneWidgets.value(pane.id));
     }
     auto *right = new QWidget(m_sidebarSplitter);
     right->setBackgroundRole(QPalette::Window);
@@ -727,27 +689,36 @@ void AppWindow::buildSidebarShell()
                                      settings::relatedSpacing());
     mac::applyMainWindowChrome(this, sidebar->width());
 #endif
-    m_navigation->setCurrentRow(0);
-    connect(m_navigation, &QListWidget::currentItemChanged, this,
-            [this](QListWidgetItem *item) {
-                if (item && item->data(Qt::UserRole).toInt() >= 0) {
-                    m_stack->setCurrentIndex(item->data(Qt::UserRole).toInt());
-                }
-            });
-    connect(m_stack, &QStackedWidget::currentChanged, this, [this](int index) {
-        const bool whatsNew = index >= kPages.size();
-        m_pageTitle->setText(whatsNew ? QStringLiteral("What's New") : kPages.at(index).title);
-        m_backButton->setVisible(whatsNew);
-    });
-    connect(search, &QLineEdit::textChanged, this, &AppWindow::filterSidebarPages);
-    connect(search, &QLineEdit::returnPressed, this, [this] {
-        for (int row = 0; row < m_navigation->count(); ++row) {
-            if (!m_navigation->item(row)->isHidden()) {
-                m_navigation->setCurrentRow(row);
-                return;
-            }
+    // Every pick goes through showPage, so choosing What's New in the list is
+    // the same as any other way of opening it.
+    connect(m_navigation, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
+        const QString pane = item ? item->data(kPaneRole).toString() : QString();
+        if (!pane.isEmpty() && pane != currentPane()) {
+            showPage(pane);
         }
     });
+    connect(m_stack, &QStackedWidget::currentChanged, this, [this] {
+        const QString pane = currentPane();
+        m_pageTitle->setText(paneTitle(pane));
+        m_backButton->setVisible(pane == kWhatsNewPane);
+    });
+    connect(m_controller, &ApplicationController::whatsNewChanged, this, [this] {
+        if (sidebarListsWhatsNew() != m_sidebarListsWhatsNew) {
+            rebuildSidebar();
+        }
+    });
+    connect(search, &QLineEdit::textChanged, this, [this](const QString &query) {
+        m_query = query;
+        rebuildSidebar();
+    });
+    connect(search, &QLineEdit::returnPressed, this, [this] {
+        const QStringList hits = m_pages->searchPanes(m_query);
+        if (!hits.isEmpty()) {
+            showPage(hits.first());
+        }
+    });
+    rebuildSidebar();
+    showPage(kHomePane);
     auto *clearSearch = new QShortcut(QKeySequence(Qt::Key_Escape), search);
     clearSearch->setContext(Qt::WidgetShortcut);
     connect(clearSearch, &QShortcut::activated, search, &QLineEdit::clear);
@@ -860,73 +831,102 @@ void AppWindow::refreshUpdateBanner()
 
 void AppWindow::showWhatsNew()
 {
-    if (m_navigation->currentRow() >= 0) {
-        m_whatsNewReturnRow = m_navigation->currentRow();
+    if (currentPane() != kWhatsNewPane) {
+        m_whatsNewReturnPane = currentPane();
     }
-    m_navigation->setCurrentItem(nullptr);
-    m_stack->setCurrentWidget(m_pages->whatsNew());
     m_controller->clearPendingWhatsNew();
+    selectPane(kWhatsNewPane);
 }
 
 void AppWindow::leaveWhatsNew()
 {
-    m_navigation->setCurrentRow(qBound(0, m_whatsNewReturnRow, m_navigation->count() - 1));
+    selectPane(m_whatsNewReturnPane.isEmpty() ? kHomePane : m_whatsNewReturnPane);
 }
 
-void AppWindow::filterSidebarPages(const QString &query)
+// Where a pane item's content starts, its icon, as the style lays out an item
+// of the sidebar; System Settings starts its section titles there.
+static int sidebarContentInset(const QListWidget *navigation)
 {
-    if (query.isEmpty()) {
-        for (int row = 0; row < m_navigation->count(); ++row) {
-            m_navigation->item(row)->setHidden(false);
+    QStyleOptionViewItem option;
+    option.initFrom(navigation);
+    option.features = QStyleOptionViewItem::HasDisplay | QStyleOptionViewItem::HasDecoration;
+    option.decorationSize = navigation->iconSize();
+    option.decorationPosition = QStyleOptionViewItem::Left;
+    option.displayAlignment = Qt::AlignLeft | Qt::AlignVCenter;
+    option.text = QStringLiteral("M");
+    option.rect = QRect(0, 0, navigation->viewport()->width(), 32);
+    return navigation->style()->subElementRect(QStyle::SE_ItemViewItemDecoration, &option, navigation).left();
+}
+
+// The panes in their groups, each titled group under a header, and What's
+// New first in the top group while it is pending or showing. A search lists
+// its hits alone.
+void AppWindow::rebuildSidebar()
+{
+    const QSignalBlocker blocker(m_navigation);
+    m_navigation->clear();
+    const QString current = currentPane();
+    const SettingsSchema &schema = m_pages->schema();
+    const auto addPane = [this, &schema, &current](const QString &id) {
+        const SettingsPane *pane = schema.pane(id);
+        auto *item = new QListWidgetItem(paneIcon(pane->iconId), pane->title, m_navigation);
+        item->setData(kPaneRole, id);
+        item->setSizeHint(QSize(0, 32));
+        if (id == current) {
+            m_navigation->setCurrentItem(item);
+        }
+    };
+    // Kirigami's ListSectionHeader, as System Settings' sidebar has it: the
+    // group's title in the section bold where the items' icons start, then a
+    // line the style draws running to the row's right edge. The row is an
+    // item nothing can select or land on with the keyboard.
+    const int inset = sidebarContentInset(m_navigation);
+    const auto addHeader = [this, inset](const QString &title) {
+        auto *item = new QListWidgetItem(m_navigation);
+        item->setFlags(Qt::NoItemFlags);
+        auto *header = new QWidget(m_navigation);
+        header->setObjectName(QStringLiteral("sidebarHeader"));
+        header->setFocusPolicy(Qt::NoFocus);
+        header->setAttribute(Qt::WA_TransparentForMouseEvents);
+        auto *layout = new QHBoxLayout(header);
+        layout->setContentsMargins(inset, settings::relatedSpacing(), 0, 0);
+        layout->setSpacing(settings::relatedSpacing());
+        auto *label = new QLabel(title, header);
+        label->setObjectName(QStringLiteral("sidebarHeaderTitle"));
+        label->setFont(settings::sectionTitleFont(label->font()));
+        layout->addWidget(label);
+        // Breeze draws this line darker than Kirigami's Separator (a fifth of
+        // the text over the background), so it reads at least as clearly.
+        auto *line = new QFrame(header);
+        line->setObjectName(QStringLiteral("sidebarHeaderLine"));
+        line->setFrameShape(QFrame::HLine);
+        layout->addWidget(line, 1, Qt::AlignVCenter);
+        item->setSizeHint(header->sizeHint());
+        m_navigation->setItemWidget(item, header);
+    };
+    m_sidebarListsWhatsNew = sidebarListsWhatsNew();
+    if (!m_query.isEmpty()) {
+        for (const QString &id : m_pages->searchPanes(m_query)) {
+            addPane(id);
         }
         return;
     }
-
-    if (m_pageKeywords.isEmpty()) {
-        const auto cleanText = [](QString text) {
-            text = text.trimmed();
-            while (text.endsWith(QLatin1Char(':')) || text.endsWith(QChar(0x2026))) {
-                text.chop(1);
-                text = text.trimmed();
-            }
-            return text;
-        };
-        for (int pageIndex = 0; pageIndex < kPages.size(); ++pageIndex) {
-            QStringList keywords{kPages.at(pageIndex).title};
-            QWidget *page = m_pageWidgets.at(pageIndex);
-            for (QLabel *label : page->findChildren<QLabel *>()) {
-                if (!label->isHidden() && !Qt::mightBeRichText(label->text())) {
-                    const QString text = cleanText(label->text());
-                    if (!text.isEmpty()) keywords.append(text);
-                }
-            }
-            for (QCheckBox *checkBox : page->findChildren<QCheckBox *>()) {
-                if (!checkBox->isHidden()) {
-                    const QString text = cleanText(checkBox->text());
-                    if (!text.isEmpty()) keywords.append(text);
-                }
-            }
-            for (QGroupBox *group : page->findChildren<QGroupBox *>()) {
-                if (!group->isHidden()) {
-                    const QString text = cleanText(group->title());
-                    if (!text.isEmpty()) keywords.append(text);
-                }
-            }
-            for (QPushButton *button : page->findChildren<QPushButton *>()) {
-                if (!button->isHidden()) {
-                    const QString text = cleanText(button->text());
-                    if (!text.isEmpty()) keywords.append(text);
-                }
-            }
-            m_pageKeywords.append(keywords.join(QLatin1Char('\n')));
+    if (m_sidebarListsWhatsNew) {
+        addPane(kWhatsNewPane);
+    }
+    for (const SidebarGroup &group : schema.sidebarGroups) {
+        if (!group.title.isEmpty()) {
+            addHeader(group.title);
+        }
+        for (const QString &id : group.panes) {
+            addPane(id);
         }
     }
+}
 
-    for (int row = 0; row < m_navigation->count(); ++row) {
-        QListWidgetItem *item = m_navigation->item(row);
-        item->setHidden(!m_pageKeywords.at(item->data(Qt::UserRole).toInt())
-                             .contains(query, Qt::CaseInsensitive));
-    }
+void AppWindow::showHome()
+{
+    showPage(kHomePane);
 }
 
 void AppWindow::runAutoSave()

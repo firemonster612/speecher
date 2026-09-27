@@ -107,8 +107,6 @@ SpeecherPaneLayout bridgedPaneLayout(PaneLayout layout)
         return SpeecherPaneLayoutSections;
     case PaneLayout::Alternatives:
         return SpeecherPaneLayoutAlternatives;
-    case PaneLayout::Shortcut:
-        return SpeecherPaneLayoutShortcut;
     case PaneLayout::Transcribe:
         return SpeecherPaneLayoutTranscribe;
     case PaneLayout::Home:
@@ -565,8 +563,6 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 
 @interface SettingsPageModel ()
 @property (nonatomic, copy) NSString *pageId;
-@property (nonatomic, copy) NSString *title;
-@property (nonatomic, copy) NSString *symbolName;
 @property (nonatomic, copy) NSArray<SettingsSectionModel *> *sections;
 @end
 
@@ -574,6 +570,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @end
 
 @interface SettingsPaneGroupModel ()
+@property (nonatomic, copy) NSString *view;
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSString *help;
 @property (nonatomic, copy) NSArray<NSString *> *rows;
@@ -585,13 +582,20 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @interface SettingsPaneModel ()
 @property (nonatomic, copy) NSString *paneId;
 @property (nonatomic, copy) NSString *title;
-@property (nonatomic, copy) NSString *symbolName;
-@property (nonatomic, copy) NSArray<NSString *> *schemaPages;
+@property (nonatomic, copy) NSString *iconId;
 @property (nonatomic) SpeecherPaneLayout layout;
 @property (nonatomic, copy) NSArray<SettingsPaneGroupModel *> *groups;
 @end
 
 @implementation SettingsPaneModel
+@end
+
+@interface SidebarGroupModel ()
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSArray<NSString *> *panes;
+@end
+
+@implementation SidebarGroupModel
 @end
 
 @interface LocalModelInfo ()
@@ -1121,8 +1125,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         }
         SettingsPageModel *pageModel = [[SettingsPageModel alloc] init];
         pageModel.pageId = page.id.toNSString();
-        pageModel.title = page.title.toNSString();
-        pageModel.symbolName = page.symbolName.toNSString();
         pageModel.sections = sections;
         [pages addObject:pageModel];
     }
@@ -1136,6 +1138,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         NSMutableArray<SettingsPaneGroupModel *> *groups = [NSMutableArray array];
         for (const speecher::SettingsPaneGroup &group : pane.groups) {
             SettingsPaneGroupModel *groupModel = [[SettingsPaneGroupModel alloc] init];
+            groupModel.view = group.view.toNSString();
             groupModel.title = group.title.toNSString();
             groupModel.help = group.help.toNSString();
             groupModel.rows = bridgedStrings(group.rows);
@@ -1144,8 +1147,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         SettingsPaneModel *paneModel = [[SettingsPaneModel alloc] init];
         paneModel.paneId = pane.id.toNSString();
         paneModel.title = pane.title.toNSString();
-        paneModel.symbolName = pane.symbolName.toNSString();
-        paneModel.schemaPages = bridgedStrings(pane.schemaPages);
+        paneModel.iconId = pane.iconId.toNSString();
         paneModel.layout = bridgedPaneLayout(pane.layout);
         paneModel.groups = groups;
         [panes addObject:paneModel];
@@ -1153,13 +1155,28 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return panes;
 }
 
-- (NSArray<NSArray<NSString *> *> *)sidebarRuns
+- (NSArray<NSString *> *)resolvePage:(NSString *)pageId
 {
-    NSMutableArray<NSArray<NSString *> *> *runs = [NSMutableArray array];
-    for (const QStringList &run : _state->schema.sidebarRuns) {
-        [runs addObject:bridgedStrings(run)];
+    const speecher::PageId page = speecher::resolvePage(_state->schema, QString::fromNSString(pageId));
+    return @[page.pane.toNSString(), page.view.toNSString()];
+}
+
+- (NSArray<NSString *> *)searchPanes:(NSString *)query
+{
+    return bridgedStrings(speecher::searchPanes(_state->schema, QString::fromNSString(query),
+                                                _state->draft, _state->capabilities));
+}
+
+- (NSArray<SidebarGroupModel *> *)sidebarGroups
+{
+    NSMutableArray<SidebarGroupModel *> *groups = [NSMutableArray array];
+    for (const speecher::SidebarGroup &group : _state->schema.sidebarGroups) {
+        SidebarGroupModel *model = [[SidebarGroupModel alloc] init];
+        model.title = group.title.toNSString();
+        model.panes = bridgedStrings(group.panes);
+        [groups addObject:model];
     }
-    return runs;
+    return groups;
 }
 
 - (void)setValue:(id)value forRowId:(NSString *)rowId
@@ -2674,6 +2691,16 @@ static std::optional<QString> optionalString(NSString *value)
 - (NSString *)transcribeStepHint:(SpeecherTranscribeStep)step
 {
     return speecher::transcribeStepHint(static_cast<speecher::TranscribeStep>(step)).toNSString();
+}
+
+- (NSString *)paneTitleForRowId:(NSString *)rowId
+{
+    return speecher::paneTitleForRow(QString::fromNSString(rowId)).toNSString();
+}
+
+- (NSString *)transcribeRefinementModelHint
+{
+    return speecher::refinementModelHint().toNSString();
 }
 
 - (double)transcribeLandingSeconds

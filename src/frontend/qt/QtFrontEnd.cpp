@@ -5,7 +5,6 @@
 #include "app/PlatformComposition.h"
 #include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
-#include "ui/AppPage.h"
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscribePage.h"
@@ -127,6 +126,10 @@ void QtFrontEnd::showMainWindow()
         m_appWindow = new AppWindow(m_controller);
         watchForFirstFrame(m_appWindow);
     }
+    // Opened from hidden it starts on Home; one already up keeps its page.
+    if (!m_appWindow->isVisible()) {
+        m_appWindow->showHome();
+    }
     m_appWindow->show();
     m_appWindow->raise();
     m_appWindow->activateWindow();
@@ -142,7 +145,7 @@ void QtFrontEnd::hideMainWindow()
 void QtFrontEnd::showSettingsWindow()
 {
     showMainWindow();
-    m_appWindow->navigateToSettings();
+    m_appWindow->showPage(QStringLiteral("general"));
 }
 
 // Opened files get the compact window, not the main one; the Transcribe page
@@ -188,16 +191,12 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     if (!m_appWindow) {
         return false;
     }
-    // Screenshot automation: SPEECHER_GRAB_PAGE names a page (home, general,
-    // audio, output, auth, refinement, localmodels, vocabulary), optionally
-    // with a tab index ("vocabulary:2"), or "transcribe", to show before the
-    // grab. "transcribe-window" grabs the compact Transcribe window instead.
-    // Unset or unknown leaves the window as launched, which is Home.
-    static const QStringList pageNames{
-        QStringLiteral("general"), QStringLiteral("audio"), QStringLiteral("output"),
-        QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("localmodels"),
-        QStringLiteral("vocabulary")};
-    const QStringList request = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower().split(u':');
+    // Screenshot automation: SPEECHER_GRAB_PAGE names a page id, as every
+    // front end takes it ("general", "vocabulary:corrections"; see
+    // resolvePage), to show before the grab. "transcribe-window" grabs the
+    // compact Transcribe window instead. Unset leaves the window as launched.
+    const QString requested = qEnvironmentVariable("SPEECHER_GRAB_PAGE");
+    const QStringList request = requested.toLower().split(u':');
     // "setup" or "setup:<page title>" grabs the setup assistant instead,
     // advanced to the first page whose title matches (e.g. "setup:refinement").
     if (request.first() == QStringLiteral("setup")) {
@@ -249,7 +248,6 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         assistant->deleteLater();
         return saved;
     }
-    const int page = pageNames.indexOf(request.first());
     QWidget *target = m_appWindow;
     if (request.first() == QStringLiteral("transcribe-window")) {
         showTranscribeFiles({});
@@ -261,27 +259,8 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     if (size.size() == 2) {
         target->resize(size.at(0).toInt(), size.at(1).toInt());
     }
-    if (request.first() == QStringLiteral("transcribe")) {
-        m_appWindow->showTranscribeFiles({});
-        QCoreApplication::processEvents();
-    }
-    if (request.first() == QStringLiteral("whatsnew")) {
-        m_appWindow->showWhatsNew();
-        QCoreApplication::processEvents();
-    }
-    if (page >= 0) {
-        m_appWindow->navigateToSettings(static_cast<AppPageId>(page));
-        if (request.size() > 1) {
-            for (QTabWidget *tabs : m_appWindow->findChildren<QTabWidget *>()) {
-                if (tabs->isVisible()) {
-                    tabs->setCurrentIndex(request.at(1).toInt());
-                }
-            }
-        }
-        QCoreApplication::processEvents();
-    }
-    if (request.first() == QStringLiteral("home")) {
-        m_appWindow->findChild<QListWidget *>(QStringLiteral("appNavigation"))->setCurrentRow(0);
+    if (!requested.isEmpty() && target == m_appWindow) {
+        m_appWindow->showPage(requested);
         QCoreApplication::processEvents();
     }
     // Height-for-width rows (wrapped labels, the heatmap) settle over a few
@@ -346,16 +325,20 @@ void QtFrontEnd::alert()
     QApplication::beep();
 }
 
-void QtFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message)
+void QtFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId)
 {
     if ((m_appWindow && m_appWindow->isVisible()) || (m_setupAssistant && m_setupAssistant->isVisible())) {
         return;
     }
 #ifdef Q_OS_LINUX
-    m_tray->showMessage(title, message);
+    m_tray->showMessage(title, message, [this, pageId] {
+        showMainWindow();
+        m_appWindow->showPage(pageId);
+    });
 #else
     Q_UNUSED(title);
     Q_UNUSED(message);
+    Q_UNUSED(pageId);
 #endif
 }
 

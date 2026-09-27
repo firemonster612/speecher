@@ -57,6 +57,19 @@ resist description declare a custom identifier and are supplied by the front end
 Each front end implements one renderer over that schema plus a handful of custom
 rows. Validation returns messages rather than an enum the caller re-narrates.
 
+**Pane arrangement.** Amended 2026-09-27. The schema also says how the
+settings window is arranged, and all three front ends read it: the panes (id,
+title, platform-neutral icon id, layout), their order and titled sidebar groups, and
+which schema section each pane shows (`settingsPanes()` and
+`settingsSidebarGroups()` in `SettingsSchema.cpp`). A pane group's heading is its
+section's title, so the two cannot differ. Pages are addressed by one id space,
+a pane id or `pane:view` for one view of a pane, used for screenshot automation,
+links between pages and notification targets. A window opened from hidden
+shows Home, and "Settings…" opens General. Text
+that names a page takes the name from `paneTitle` or `paneTitleForRow`, and the
+sidebar search runs over `searchPanes`. A front end maps icon ids to its own
+icons and otherwise holds no page list of its own.
+
 **UI seam.** `ApplicationController` keeps the session, permission and IPC
 responsibilities and loses its widget knowledge: window and dialog requests, the
 "front end is on screen" signal that currently rides on Qt paint events, and the
@@ -68,6 +81,8 @@ alert sound become ports the front end implements. `PopupPositioner` stops takin
 - A new settings row is added once, in core, and appears on every platform.
 - The sidebar search index comes from the schema instead of scraping the widget
   tree for label text.
+- Every platform shows the same panes in the same order with the same headings,
+  and adding, moving or renaming a pane is one edit in core.
 - macOS gets real system controls and materials, including Liquid Glass, because
   the views are AppKit and SwiftUI rather than approximations of them.
 - Windows costs a renderer, not a rewrite.

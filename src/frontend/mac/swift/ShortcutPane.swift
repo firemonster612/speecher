@@ -145,43 +145,37 @@ final class ShortcutRecorder: ObservableObject {
     }
 }
 
-struct ShortcutPane: View {
+/// The Global Shortcut row at the top of Dictation: the recorder, and what it
+/// has to say, as the schema's "globalShortcut" custom row.
+struct ShortcutRecorderRow: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = ShortcutRecorder()
-    /// A key the recorder caught but could not bind (a media key); shown in
-    /// the footer while the recorder stays armed.
+    /// A key the recorder caught but could not bind (a media key); shown under
+    /// the recorder while it stays armed.
     @State private var captureProblem = ""
 
     var body: some View {
-        Form {
-            Section {
-                LabeledContent {
-                    Button(caption) {
-                        captureProblem = ""
-                        recorder.record(suspending: model, combination: { characters, flags in
-                            model.bindShortcut(characters: characters, modifierFlags: flags)
-                        }, singleKey: { keyCode in
-                            if model.bindSingleKey(macKeyCode: keyCode) { return true }
-                            captureProblem = "That key cannot be a dictation key."
-                            return false
-                        })
-                    }
-                    .disabled(!model.shortcutSupported)
-                } label: {
-                    Text("Dictation shortcut")
-                    Text("Press a key combination, or a single key such as "
-                         + "Right Option or F13.")
-                }
-                if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
-                    Button("Grant Accessibility Access") { model.requestAccessibility() }
-                }
-            } header: {
-                Text("Shortcut")
-            } footer: {
-                Text(footnote)
+        Group {
+        LabeledContent {
+            Button(caption) {
+                captureProblem = ""
+                recorder.record(suspending: model, combination: { characters, flags in
+                    model.bindShortcut(characters: characters, modifierFlags: flags)
+                }, singleKey: { keyCode in
+                    if model.bindSingleKey(macKeyCode: keyCode) { return true }
+                    captureProblem = "That key cannot be a dictation key."
+                    return false
+                })
             }
+            .disabled(!model.shortcutSupported)
+        } label: {
+            Text("Dictation shortcut")
+            Text(footnote)
         }
-        .formStyle(.grouped)
+        if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
+            Button("Grant Accessibility Access") { model.requestAccessibility() }
+        }
+        }
         .onDisappear { recorder.stop() }
     }
 
@@ -200,6 +194,6 @@ struct ShortcutPane: View {
         }
         if !model.shortcutProblem.isEmpty { return model.shortcutProblem }
         if !model.shortcutWarning.isEmpty { return model.shortcutWarning }
-        return "macOS keeps no desktop-wide shortcut registry, so this binding is Speecher's own."
+        return "Press a key combination, or a single key such as Right Option or F13."
     }
 }

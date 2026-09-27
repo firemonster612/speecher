@@ -300,7 +300,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
                          refineCard);
     m_refinerModel = new QLabel(refineCard);
     m_refinerModelRow = settings::makeRow(QStringLiteral("Model"),
-                                          QStringLiteral("Change it on the Refinement page"),
+                                          refinementModelHint(),
                                           m_refinerModel, refineCard);
     settings::addCardRow(refineForm, m_refinerModelRow, refineCard);
 

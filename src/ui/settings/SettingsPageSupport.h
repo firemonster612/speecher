@@ -41,7 +41,6 @@ protected:
 
 QFrame *makeSeparator(QWidget *parent);
 QColor separatorColor(const QPalette &palette);
-QWidget *makeCenteredSeparator(QWidget *parent);
 void configureFormLayout(QFormLayout *form);
 QFrame *makeRow(const QString &label,
                 const QString &description,
@@ -88,6 +87,8 @@ void populateCliproxyAccounts(QComboBox *combo,
                               const QString &selected);
 QColor positiveTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
+// The bold a section title is set in, on pages and in the sidebar's headers.
+QFont sectionTitleFont(const QFont &font);
 QFrame *makeSettingsCard(QWidget *parent);
 // FormButtonDelegate: the whole row is the button, with a trailing arrow.
 QPushButton *makeButtonRow(const QString &title, const QString &description, QWidget *parent);
@@ -116,8 +117,6 @@ QWidget *centerColumn(QWidget *content, QWidget *parent);
 void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent);
 // Configures the shared page container; makeSettingsPage and AppWindow both use it.
 void configurePageScroll(QScrollArea *scroll, QWidget *content);
-// Detaches a page's content for composing into another page container.
-QWidget *takePageContent(QScrollArea *scroll);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);
 
 } // namespace speecher::settings

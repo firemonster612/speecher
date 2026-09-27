@@ -149,9 +149,10 @@ jobs:
             page="${shot%-bottom}"
             scroll=""
             [ "$shot" = home-bottom ] && scroll=bottom
-            # The settings window opens on the pane AppModel remembers.
-            defaults write io.github.firemonster612.speecher settingsPane "$page"
-            SPEECHER_GRAB_SCROLL="$scroll" build/speecher.app/Contents/MacOS/speecher \
+            # The window opens on Home; --show-settings opens it on General.
+            open_on=""
+            [ "$page" = general ] && open_on=--show-settings
+            SPEECHER_GRAB_SCROLL="$scroll" build/speecher.app/Contents/MacOS/speecher $open_on \
               > "evidence/mac-$shot-screen.log" 2>&1 &
             sleep 8
             screencapture -x "evidence/mac-$shot-screen.png" || true

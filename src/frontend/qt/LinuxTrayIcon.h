@@ -2,9 +2,11 @@
 
 #include <QMenu>
 #include <QObject>
+#include <QSystemTrayIcon>
+
+#include <functional>
 
 class QAction;
-class QSystemTrayIcon;
 
 namespace speecher {
 
@@ -21,11 +23,17 @@ class LinuxTrayIcon final : public QObject {
 public:
     explicit LinuxTrayIcon(ApplicationController *controller, QObject *parent = nullptr);
 
-    void showMessage(const QString &title, const QString &message);
+    // Clicking the balloon runs clicked, once; a later balloon replaces it.
+    void showMessage(const QString &title,
+                     const QString &message,
+                     std::function<void()> clicked,
+                     QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::Information);
 
 signals:
     // A balloon went up; tests observe it, since the tray itself cannot be.
     void messageShown(const QString &title, const QString &message);
+    // The last balloon was clicked.
+    void messageClicked();
 
 private:
     void applyState(const QString &stateName);
@@ -33,6 +41,7 @@ private:
     QMenu m_menu;
     QSystemTrayIcon *m_tray;
     QAction *m_toggleAction;
+    std::function<void()> m_messageClicked;
 };
 
 } // namespace speecher

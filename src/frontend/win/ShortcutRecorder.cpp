@@ -161,18 +161,9 @@ void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
     }
 }
 
-void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
+StackPanel ShortcutRecorder::element(PaneHost &host)
 {
-    column.Children().Append([] {
-        TextBlock header;
-        header.Style(Application::Current()
-                         .Resources()
-                         .Lookup(box_value(L"SettingsSectionHeaderStyle"))
-                         .as<Style>());
-        header.Text(L"Shortcut");
-        return header;
-    }());
-
+    StackPanel column;
     const QString display = host.controller->globalShortcut().displayText();
     Button recorder;
     recorder.Content(box_value(host.shortcutRecording
@@ -225,11 +216,7 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
     StackPanel rows;
     rows.Children().Append(rowGrid(recorderRow, recorder, host, false));
     rows.Children().Append(rowGrid(resetRow, reset, host, true));
-    StackPanel cards;
-    cards.Spacing(4);
-    cards.Margin({0, 0, 0, 0});
-    cards.Children().Append(cardContainer(rows));
-    column.Children().Append(cards);
+    column.Children().Append(rows);
 
     // The binder's refusal, what recording is waiting for, or the typing cost
     // of a single key that did save.
@@ -238,7 +225,7 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
         InfoBar note;
         note.IsClosable(false);
         note.IsOpen(true);
-        note.Margin({0, 8, 0, 0});
+        note.Margin({16, 0, 16, 12});
         if (!host.shortcutProblem.isEmpty()) {
             note.Severity(InfoBarSeverity::Error);
             note.Message(hs(host.shortcutProblem));
@@ -253,8 +240,8 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
         column.Children().Append(note);
     }
 
-    // The keys arrive on the pane rather than the button, so moving focus
-    // cannot end the recording early. Escape abandons it rather than becoming
+    // The keys arrive on the recorder's block rather than the button, so
+    // moving focus within it cannot end the recording early. Escape abandons it rather than becoming
     // the shortcut — so Escape itself is not recordable as a single key, like
     // the mac recorder.
     column.PreviewKeyDown([&host](const IInspectable &, const Input::KeyRoutedEventArgs &args) {
@@ -321,6 +308,7 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
             host.shortcutPendingModifier = 0;
         }
     });
+    return column;
 }
 
 } // namespace speecher::win

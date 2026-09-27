@@ -3002,7 +3002,7 @@ struct SetupWindow::Native {
         window.Close();
         // Files held through setup open in a window of their own.
         if (!controller->popupOnly() && !controller->heldFilesOpening()) {
-            controller->showSettingsWindow();
+            controller->showMainWindow();
         }
     }
 

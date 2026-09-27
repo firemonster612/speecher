@@ -65,8 +65,9 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         self.model = model
         panel = SpeecherDictationPanel(model: model)
         super.init()
+        // "Settings…" opens General on every platform.
         menuBar = SpeecherMenuBarExtra(model: model,
-                                      openSettings: { [weak self] in self?.showSettings() })
+                                      openSettings: { [weak self] in self?.openSettingsPage("general") })
         panel.openWhatsNew = { [weak self] in
             self?.showSettings()
             self?.model.showWhatsNew()
@@ -96,6 +97,10 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         if settings == nil {
             settings = SpeecherSettingsWindow(model: model)
         }
+        // Opened from closed it starts on Home; one already up keeps its page.
+        if settings?.isVisible != true {
+            model.showPage("home")
+        }
         settings?.show()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -124,8 +129,22 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     /// The settings window on its Transcribe pane, for the screenshot path.
     @MainActor
     @objc public func showTranscribePane() {
-        model.pane = "transcribe"
         showSettings()
+        model.showPage("transcribe")
+    }
+
+    /// Opens the settings window on a page id, as "Settings…", a notification
+    /// click or a link asks for it.
+    @MainActor
+    @objc public func openSettingsPage(_ page: String) {
+        showSettings()
+        model.showPage(page)
+    }
+
+    /// The ⌘, menu item's action: Settings… on General.
+    @MainActor
+    @objc private func openGeneralSettings() {
+        openSettingsPage("general")
     }
 
     /// Starts the files the Transcribe pane lists, for the screenshot path.
@@ -138,9 +157,8 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     /// the pane to show before the grab.
     @MainActor
     @objc public func captureSettings(toPath path: String) -> Bool {
-        if let page = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"]?.lowercased(),
-           let pane = model.panes.first(where: { $0.id.lowercased() == page }) {
-            model.pane = pane.id
+        if let page = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"], !page.isEmpty {
+            model.showPage(page)
             RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         }
         return settings?.capture(toPath: path) ?? false
@@ -209,7 +227,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     /// Model download finishing after setup closed, goes to Notification
     /// Center. A window on screen already shows it.
     @MainActor
-    @objc public func notifyIfNoWindowShown(title: String, message: String) {
+    @objc public func notifyIfNoWindowShown(title: String, message: String, page: String) {
         // Notification Center only takes posts from an app bundle; asking
         // from a bare executable (the tests) throws.
         guard settings?.isVisible != true, setupAssistant?.isVisible != true,
@@ -217,6 +235,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         let center = UNUserNotificationCenter.current()
         // Closing the last window can leave Speecher the active app, where
         // macOS holds notifications back unless the delegate asks for them.
+        ForegroundNotifications.shared.open = { [weak self] page in self?.openSettingsPage(page) }
         center.delegate = ForegroundNotifications.shared
         center.requestAuthorization(options: [.alert, .sound]) { granted, error in
             guard granted else {
@@ -227,6 +246,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = message
+            content.userInfo = ["page": page]
             center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
         }
     }
@@ -248,13 +268,13 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         // than adding a second one is what keeps ⌘, unambiguous.
         if let reserved = appMenu.items.first(where: { $0.keyEquivalent == comma }) {
             reserved.title = "Settings…"
-            reserved.action = #selector(showSettings)
+            reserved.action = #selector(openGeneralSettings)
             reserved.target = self
             reserved.isHidden = false
             reserved.isEnabled = true
             return
         }
-        let item = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: comma)
+        let item = NSMenuItem(title: "Settings…", action: #selector(openGeneralSettings), keyEquivalent: comma)
         item.target = self
         // After About, which is where the item sits in every other Mac app.
         let index = min(1, appMenu.items.count)
@@ -267,6 +287,19 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
 /// posts when no window of its own is up to show the news instead.
 private final class ForegroundNotifications: NSObject, UNUserNotificationCenterDelegate {
     static let shared = ForegroundNotifications()
+    /// Opens the settings window on the page a notification is about.
+    var open: (@MainActor (String) -> Void)?
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let page = response.notification.request.content.userInfo["page"] as? String ?? ""
+        let open = open
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { open?(page) }
+            completionHandler()
+        }
+    }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,

@@ -81,6 +81,8 @@ struct RowView: View {
             releaseNotes
         } else if row.rowId == "localModelBrowser" {
             LocalModelBrowser(row: row, model: model)
+        } else if row.rowId == "globalShortcut" {
+            ShortcutRecorderRow(model: model)
         } else if row.rowId == "openAiAuth" {
             LabeledContent { CredentialField(model: model) } label: { label }
         } else if row.rowId == "anthropicAuthMode" {

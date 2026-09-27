@@ -23,6 +23,10 @@ struct RootView: View {
         // On the split view rather than on a column: search covers the whole
         // window, and the sidebar is where a settings app puts the field.
         .searchable(text: $query, placement: .sidebar, prompt: "Search")
+        // Return opens the first hit.
+        .onSubmit(of: .search) {
+            if let first = model.searchPanes(query).first { model.showPage(first.id) }
+        }
         .toolbar(removing: .sidebarToggle)
         .toolbar(removing: .title)
         .confirmationDialog("Delete all insights history?",
@@ -50,15 +54,20 @@ struct RootView: View {
                                   dismiss: { model.dismissWhatsNew() })
                         .scenePadding([.top, .horizontal])
                 }
-                Text(pane.title)
-                    .font(.title2.weight(.semibold))
-                    .scenePadding([.top, .horizontal])
+                HStack {
+                    if pane.id == "whatsNew" {
+                        Button("Back", systemImage: "chevron.backward") { model.leaveWhatsNew() }
+                            .labelStyle(.iconOnly)
+                    }
+                    Text(pane.title)
+                        .font(.title2.weight(.semibold))
+                }
+                .scenePadding([.top, .horizontal])
                 PaneView(pane: pane, model: model)
+                    // A fresh view per pane, so one pane's chosen view (Apps,
+                    // Vocabulary) does not carry over to the next.
+                    .id(pane.id)
             }
-        } else {
-            ContentUnavailableView("No Pane Selected",
-                                   systemImage: "sidebar.left",
-                                   description: Text("Pick a pane in the sidebar."))
         }
     }
 }
@@ -182,29 +191,42 @@ struct WhatsNewStrip: View {
     }
 }
 
-/// The source list: ten regular panes in runs, plus What's New while selected,
-/// filtered by whatever the search field holds. The schema is the index, so a
-/// pane answers to its own name and to any group heading, row label or help text
-/// it carries.
+/// The source list: the panes in their runs, plus What's New on top while it
+/// is pending or selected, filtered by whatever the search field holds. The
+/// core index answers the search, so a pane answers to its own name and to any
+/// group heading, row label or help text it carries, as on every platform.
 struct SidebarList: View {
     @ObservedObject var model: AppModel
     @Binding var query: String
 
     var body: some View {
-        List(selection: $model.pane) {
+        // Every pick goes through showPage, so choosing What's New here is the
+        // same as any other way of opening it.
+        List(selection: Binding<String>(get: { model.pane },
+                                        set: { if $0 != model.pane { model.showPage($0) } })) {
             if query.isEmpty {
-                if model.pane == "whatsNew", let pane = model.pane(withId: model.pane) {
-                    row(pane)
-                }
-                ForEach(Array(model.sidebarRuns.enumerated()), id: \.offset) { _, run in
-                    Section {
-                        ForEach(run.compactMap(model.pane(withId:))) { row($0) }
+                // Each titled group under the native section header; the top
+                // group has none, and What's New leads it while pending or open.
+                ForEach(Array(model.sidebarGroups.enumerated()), id: \.offset) { index, group in
+                    let panes = group.panes.compactMap(model.pane(withId:))
+                    if group.title.isEmpty {
+                        Section {
+                            if index == 0, model.pane == "whatsNew" || model.whatsNewPending,
+                               let whatsNew = model.pane(withId: "whatsNew") {
+                                row(whatsNew)
+                            }
+                            ForEach(panes) { row($0) }
+                        }
+                    } else {
+                        Section(group.title) {
+                            ForEach(panes) { row($0) }
+                        }
                     }
                 }
             } else {
-                // A search shows its hits as one flat list, not as the runs they
-                // came from.
-                ForEach(model.panes.filter { model.pane($0, matches: query) }) { row($0) }
+                // A search shows its hits as one flat list, not under the groups
+                // they came from.
+                ForEach(model.searchPanes(query)) { row($0) }
             }
         }
         .listStyle(.sidebar)
@@ -314,17 +336,15 @@ final class SpeecherSettingsWindow {
     // has to be touched. SwiftUI's ImageRenderer is not an alternative: it
     // refuses NavigationSplitView outright.
     //
-    // SPEECHER_GRAB_PAGE names the pane to show first, as on the other front
-    // ends; unset or unknown leaves the window as it is.
+    // SPEECHER_GRAB_PAGE names the page to show first, as a page id on every
+    // front end; unset leaves the window as it is, unknown shows Home.
     func capture(toPath path: String) -> Bool {
-        let request = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"]?
-            .lowercased().split(separator: ":").first.map(String.init) ?? ""
+        let request = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"] ?? ""
         // Again here: showing the window fitted it to the screen, and the
         // backing store has no such limit.
         let resized = applyRequestedSize()
-        let pane = model.panes.first { $0.id.lowercased() == request }
-        if let pane { model.pane = pane.id }
-        if resized || pane != nil {
+        if !request.isEmpty { model.showPage(request) }
+        if resized || !request.isEmpty {
             // Let SwiftUI render the pane before the backing store is read.
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
             window.contentView?.layoutSubtreeIfNeeded()

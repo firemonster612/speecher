@@ -118,7 +118,7 @@ struct HomePane: View {
         Section {
             LabeledContent {
                 if let action {
-                    Button(action) { model.pane = "general" }
+                    Button(action) { model.showPage("general") }
                 }
             } label: {
                 Text(title)
@@ -360,7 +360,7 @@ struct HomePane: View {
                 .monospacedDigit()
             Text("Speecher learned these from edits you made after dictating.")
                 .foregroundStyle(.secondary)
-            Button("Review Corrections…") { model.showCorrections() }
+            Button("Review Corrections…") { model.showPage("vocabulary:corrections") }
         }
     }
 
@@ -427,7 +427,7 @@ struct HomePane: View {
             HStack {
                 Label("Insights are stored only on this computer and are never sent to the cloud.",
                       systemImage: "lock")
-                Button("Insights settings") { model.pane = "general" }
+                Button("Insights settings") { model.showPage("general") }
                     .buttonStyle(.link)
             }
             .id(Self.bottomID)

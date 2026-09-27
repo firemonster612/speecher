@@ -48,80 +48,30 @@ using namespace winrt::Microsoft::UI::Xaml::Controls;
 using winrt::Microsoft::UI::Xaml::Input::FocusManager;
 using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 
-const QString kPaneSetting = QStringLiteral("ui/settingsPane");
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
-// The hand-built panes with no schema page behind them: Home, the
-// global-shortcut recorder, and file transcription, which sits after the
-// dictation (audio) page. Everything else in the sidebar comes from the schema.
-const QString kShortcutPane = QStringLiteral("shortcut");
-const QString kShortcutTitle = QStringLiteral("Shortcut");
-const QString kTranscribePane = QStringLiteral("transcribe");
-const QString kTranscribeTitle = QStringLiteral("Transcribe");
-const QString kTranscribeAfterPage = QStringLiteral("audio");
-// Home is drawn from the insights log; it leads the sidebar and is where the
-// window opens when no pane is remembered.
 const QString kHomePane = QStringLiteral("home");
-const QString kHomeTitle = QStringLiteral("Home");
-
-bool isHandBuiltPane(const QString &id)
-{
-    return id == kShortcutPane || id == kTranscribePane || id == kHomePane;
-}
+// The Transcribe pane keeps its batch across the window; entering and leaving
+// it tells TranscribePane so.
+const QString kTranscribePane = QStringLiteral("transcribe");
 
 // Segoe Fluent Icons for the schema's platform-neutral icon ids — the one
 // piece of per-platform icon data this front end keeps.
 wchar_t glyphForIconId(const QString &iconId)
 {
     static const QHash<QString, wchar_t> glyphs = {
+        {QStringLiteral("home"), L'\uE80F'},
         {QStringLiteral("settings"), L'\uE713'},
         {QStringLiteral("whatsNew"), L'\uE7E7'},
         {QStringLiteral("microphone"), L'\uE720'},
-        {QStringLiteral("text"), L'\uE8D2'},
-        {QStringLiteral("clipboard"), L'\uF0E3'},
-        {QStringLiteral("dictionary"), L'\uE82D'},
-        {QStringLiteral("checkmark"), L'\uE73E'},
-        {QStringLiteral("swap"), L'\uE8AB'},
-        {QStringLiteral("key"), L'\uE192'},
-        {QStringLiteral("shortcut"), L'\uE765'},
+        {QStringLiteral("refinement"), L'\uE8D2'},
         {QStringLiteral("localModels"), L'\uE977'},
         {QStringLiteral("transcribe"), L'\uE8D6'},
-        {QStringLiteral("home"), L'\uE80F'},
+        {QStringLiteral("output"), L'\uF0E3'},
+        {QStringLiteral("vocabulary"), L'\uE82D'},
+        {QStringLiteral("accounts"), L'\uE192'},
     };
     return glyphs.value(iconId, L'\uE713');
-}
-
-const PageSnapshot *pageWithId(const QList<PageSnapshot> &pages, const QString &id)
-{
-    for (const PageSnapshot &page : pages) {
-        if (page.id == id) {
-            return &page;
-        }
-    }
-    return nullptr;
-}
-
-// Whether anything on a page — its title, a section heading, a row, or the
-// help under one — answers to the query.
-bool pageMatches(const PageSnapshot &page, const QString &query)
-{
-    const auto hit = [needle = query.toLower()](const QString &text) {
-        return text.toLower().contains(needle);
-    };
-    if (hit(page.title)) {
-        return true;
-    }
-    for (const SectionSnapshot &section : page.sections) {
-        if (hit(section.title) || hit(section.help)) {
-            return true;
-        }
-        for (const RowSnapshot &row : section.rows) {
-            if (hit(row.label) || hit(row.help)) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 } // namespace
@@ -138,11 +88,11 @@ struct SettingsWindow::Native {
         host.refresh = [this] { queueRebuild(); };
         host.action = [this](const QString &id) { runAction(id); };
         // Queued: the link that asks is inside the page the switch replaces.
-        host.showPane = [this](const QString &id) {
+        host.showPage = [this](const QString &id) {
             winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread().TryEnqueue(
                 [this, id, weak = std::weak_ptr<bool>(alive)] {
                     if (!gone(weak) && window) {
-                        selectPane(id);
+                        showPage(id);
                     }
                 });
         };
@@ -182,7 +132,7 @@ struct SettingsWindow::Native {
                 return;
             }
             model.syncWithStore();
-            static const QStringList livePages{QStringLiteral("audio"), QStringLiteral("refinement"),
+            static const QStringList livePages{QStringLiteral("dictation"), QStringLiteral("refinement"),
                                                QStringLiteral("localModels")};
             if (livePages.contains(currentPane)) {
                 queueLiveRebuild();
@@ -241,15 +191,8 @@ struct SettingsWindow::Native {
         }
         // Edits left from the last showing are not edits any more.
         model.reloadDraft();
-        currentPane = controller->settings()->raw().value(kPaneSetting).toString();
-        if (!isHandBuiltPane(currentPane) && !pageWithId(model.pages(), currentPane)) {
-            currentPane = kHomePane;
-        }
-        if (currentPane == kTranscribePane) {
-            transcribe->enter();
-        }
-        // What's New only exists while pending or selected; a remembered
-        // selection of it stays honoured.
+        // A window opened from closed starts on Home.
+        currentPane = kHomePane;
         createWindow();
         SetForegroundWindow(windowHandle());
     }
@@ -312,6 +255,13 @@ struct SettingsWindow::Native {
             query = qs(sender.Text());
             rebuildSidebar();
         });
+        // Enter opens the first hit.
+        search.QuerySubmitted([this](const AutoSuggestBox &, const auto &) {
+            const QStringList hits = model.searchPanes(query);
+            if (!hits.isEmpty()) {
+                showPage(hits.first());
+            }
+        });
         navigation.AutoSuggestBox(search);
         navigation.SelectionChanged([this](const NavigationView &, const auto &args) {
             if (sidebarUpdating) {
@@ -321,9 +271,11 @@ struct SettingsWindow::Native {
             if (!item) {
                 return;
             }
+            // Through showPage, so picking What's New here is the same as any
+            // other way of opening it.
             const QString id = qs(unbox_value<hstring>(item.as<NavigationViewItem>().Tag()));
             if (id != currentPane) {
-                selectPane(id);
+                showPage(id);
             }
         });
         Grid::SetRow(navigation, 1);
@@ -479,46 +431,36 @@ struct SettingsWindow::Native {
         sidebarUpdating = true;
         navigation.MenuItems().Clear();
         IInspectable selected{nullptr};
-        const auto append = [this, &selected](const QString &id,
-                                              const QString &title,
-                                              wchar_t glyph) {
-            NavigationViewItem item = sidebarItem(id, title, glyph);
+        const SettingsSchema &schema = model.schema();
+        const auto append = [this, &selected, &schema](const QString &id) {
+            const SettingsPane *pane = schema.pane(id);
+            NavigationViewItem item = sidebarItem(id, pane->title, glyphForIconId(pane->iconId));
             if (id == currentPane) {
                 selected = item;
             }
             navigation.MenuItems().Append(item);
         };
-        const QList<PageSnapshot> pages = model.pages();
-        // What's New sits on top only while pending or selected, as before.
-        if (query.isEmpty()
-            && SettingsWindow::offersWhatsNew(currentPane,
-                                              controller->pendingWhatsNewVersion())) {
-            if (const PageSnapshot *whatsNew = pageWithId(pages, kWhatsNewPane)) {
-                append(whatsNew->id, whatsNew->title, glyphForIconId(whatsNew->iconId));
-                navigation.MenuItems().Append(NavigationViewItemSeparator());
+        if (!query.isEmpty()) {
+            // A search lists its hits alone, from the core index.
+            for (const QString &id : model.searchPanes(query)) {
+                append(id);
             }
-        }
-        const auto matches = [this](const QString &title) {
-            return query.isEmpty() || title.toLower().contains(query.toLower());
-        };
-        if (matches(kHomeTitle)) {
-            append(kHomePane, kHomeTitle, glyphForIconId(kHomePane));
-        }
-        // One item per schema page, in schema order; a search filters them.
-        for (const PageSnapshot &page : pages) {
-            if (page.id == kWhatsNewPane) {
-                continue;
+        } else {
+            // What's New leads the untitled top group only while pending or
+            // selected; each titled group sits under a NavigationViewItemHeader.
+            if (SettingsWindow::offersWhatsNew(currentPane, controller->pendingWhatsNewVersion())) {
+                append(kWhatsNewPane);
             }
-            if (query.isEmpty() || pageMatches(page, query)) {
-                append(page.id, page.title, glyphForIconId(page.iconId));
+            for (const SidebarGroup &group : schema.sidebarGroups) {
+                if (!group.title.isEmpty()) {
+                    NavigationViewItemHeader header;
+                    header.Content(box_value(hs(group.title)));
+                    navigation.MenuItems().Append(header);
+                }
+                for (const QString &id : group.panes) {
+                    append(id);
+                }
             }
-            if (page.id == kTranscribeAfterPage && matches(kTranscribeTitle)) {
-                append(kTranscribePane, kTranscribeTitle, glyphForIconId(kTranscribePane));
-            }
-        }
-        // The shortcut recorder, the sole non-schema capability page.
-        if (matches(kShortcutTitle)) {
-            append(kShortcutPane, kShortcutTitle, glyphForIconId(kShortcutPane));
         }
         navigation.SelectedItem(selected);
         sidebarUpdating = false;
@@ -526,9 +468,9 @@ struct SettingsWindow::Native {
 
     void selectPane(const QString &id)
     {
-        // Leaving the shortcut pane ends a recording; the suspended hotkey
-        // must come back and the pane's key handler is going away.
-        if (id != kShortcutPane) {
+        // Leaving Dictation ends a recording; the suspended hotkey must come
+        // back and the recorder's key handler is going away.
+        if (id != QStringLiteral("dictation")) {
             ShortcutRecorder::setRecording(host, false);
         }
         // The model browser belongs to its pane; left running, its download
@@ -542,12 +484,25 @@ struct SettingsWindow::Native {
             transcribe->forget(host);
         }
         currentPane = id;
-        controller->settings()->raw().setValue(kPaneSetting, id);
         if (titleBar) {
             titleBar.IsBackButtonVisible(id == kWhatsNewPane);
         }
         rebuildSidebar();
         rebuildPage();
+    }
+
+    // A page id, as resolvePage takes it; an unknown one shows Home.
+    void showPage(const QString &pageId)
+    {
+        const PageId page = resolvePage(model.schema(), pageId);
+        if (page.pane == kWhatsNewPane) {
+            showWhatsNew();
+            return;
+        }
+        if (!page.view.isEmpty()) {
+            host.views.insert(page.pane, page.view);
+        }
+        selectPane(page.pane);
     }
 
     void showWhatsNew()
@@ -562,10 +517,7 @@ struct SettingsWindow::Native {
 
     void leaveWhatsNew()
     {
-        const QList<PageSnapshot> pages = model.pages();
-        const bool returnable = isHandBuiltPane(whatsNewReturnPane)
-            || pageWithId(pages, whatsNewReturnPane);
-        selectPane(returnable ? whatsNewReturnPane : kHomePane);
+        selectPane(model.schema().pane(whatsNewReturnPane) ? whatsNewReturnPane : kHomePane);
     }
 
     void runAction(const QString &id)
@@ -573,7 +525,7 @@ struct SettingsWindow::Native {
         if (id == QStringLiteral("whatsNew")) {
             showWhatsNew();
         } else if (id == QStringLiteral("speechLocalModelDownload")) {
-            host.showPane(QStringLiteral("localModels"));
+            host.showPage(QStringLiteral("localModels"));
         }
         // Every edit is already committed, so the draft is what is stored.
         controller->localSetup()->runSettingsAction(id, model.draft());
@@ -626,18 +578,24 @@ struct SettingsWindow::Native {
         if (!pageHost) {
             return;
         }
-        const QList<PageSnapshot> pages = model.pages();
-        const PageSnapshot *schemaPage =
-            isHandBuiltPane(currentPane) ? nullptr : pageWithId(pages, currentPane);
-        if (!isHandBuiltPane(currentPane) && !schemaPage) {
+        const SettingsPane *pane = model.schema().pane(currentPane);
+        if (!pane) {
             return;
         }
         UIElement page{nullptr};
         try {
-            page = schemaPage                      ? buildPage(*schemaPage, host)
-                : currentPane == kHomePane       ? buildHomePage(host)
-                : currentPane == kTranscribePane ? transcribe->build(host, kTranscribeTitle)
-                                                 : buildShortcutPage(host);
+            switch (pane->layout) {
+            case PaneLayout::Home:
+                page = buildHomePage(host);
+                break;
+            case PaneLayout::Transcribe:
+                page = transcribe->build(host, pane->title);
+                break;
+            case PaneLayout::Sections:
+            case PaneLayout::Alternatives:
+                page = buildPane(*pane, host);
+                break;
+            }
         } catch (const winrt::hresult_error &error) {
             // A throw from a dispatcher callback dies as a stowed exception
             // with no message anywhere; log it and keep the window alive.
@@ -659,7 +617,7 @@ struct SettingsWindow::Native {
         host.apiKeyLoaded = true;
         if (edits == host.apiKeyEdits) {
             host.apiKey = key;
-            if (currentPane == QStringLiteral("providers")) {
+            if (currentPane == QStringLiteral("accounts")) {
                 rebuildPage();
             }
         }
@@ -781,18 +739,9 @@ struct SettingsWindow::Native {
         if (!window) {
             return false;
         }
-        const QString request = qEnvironmentVariable("SPEECHER_GRAB_PAGE")
-                                    .toLower()
-                                    .section(QLatin1Char(':'), 0, 0);
-        if (isHandBuiltPane(request)) {
-            selectPane(request);
-        } else {
-            for (const PageSnapshot &page : model.pages()) {
-                if (page.id.toLower() == request) {
-                    selectPane(page.id);
-                    break;
-                }
-            }
+        const QString request = qEnvironmentVariable("SPEECHER_GRAB_PAGE");
+        if (!request.isEmpty()) {
+            showPage(request);
         }
         // Let composition catch up with the pane switch before printing.
         QEventLoop settle;
@@ -907,10 +856,10 @@ void SettingsWindow::show()
     m_native->show();
 }
 
-void SettingsWindow::showPane(const QString &id)
+void SettingsWindow::showPage(const QString &pageId)
 {
     m_native->show();
-    m_native->selectPane(id);
+    m_native->showPage(pageId);
 }
 
 void SettingsWindow::showWhatsNew()

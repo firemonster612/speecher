@@ -3,7 +3,6 @@
 #include "frontend/win/CollectionEditor.h"
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/SettingsModel.h"
-#include "frontend/win/ShortcutRecorder.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -673,22 +672,42 @@ void setValueAndCommit(PaneHost &host, const QString &rowId, const QVariant &val
     }
 }
 
-UIElement buildPage(const PageSnapshot &page, PaneHost &host)
+UIElement buildPane(const SettingsPane &pane, PaneHost &host)
 {
     StackPanel column;
-    ScrollViewer scroll = pageScaffold(page.title, column);
-    for (const SectionSnapshot &section : page.sections) {
-        appendSection(column, section, host);
+    ScrollViewer scroll = pageScaffold(pane.title, column);
+    if (pane.layout != PaneLayout::Alternatives) {
+        for (const SettingsPaneGroup &group : pane.groups) {
+            appendSection(column, host.model->section(group), host);
+        }
+        return scroll;
     }
+    // The views as a SelectorBar, as Transcribe picks Refined or Raw; the
+    // chosen view's card goes without a heading, which the bar already gives.
+    const QString current = host.views.value(pane.id, pane.groups.first().view);
+    SelectorBar views;
+    for (const SettingsPaneGroup &group : pane.groups) {
+        SelectorBarItem item;
+        item.Text(hs(group.title));
+        item.Tag(box_value(hs(group.view)));
+        views.Items().Append(item);
+        if (group.view == current) {
+            views.SelectedItem(item);
+            SectionSnapshot section = host.model->section(group);
+            section.title.clear();
+            appendSection(column, section, host);
+        }
+    }
+    views.SelectionChanged([paneId = pane.id, &host](const SelectorBar &sender, const auto &) {
+        const auto selected = sender.SelectedItem();
+        if (selected) {
+            host.views.insert(paneId, qs(unbox_value<hstring>(selected.Tag())));
+            host.refresh();
+        }
+    });
+    column.Children().InsertAt(1, views);
     return scroll;
 }
 
-UIElement buildShortcutPage(PaneHost &host)
-{
-    StackPanel column;
-    ScrollViewer scroll = pageScaffold(QStringLiteral("Shortcut"), column);
-    ShortcutRecorder::appendPane(column, host);
-    return scroll;
-}
 
 } // namespace speecher::win

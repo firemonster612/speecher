@@ -280,24 +280,26 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     return snapshot;
 }
 
-QList<PageSnapshot> SettingsModel::pages() const
+const SettingsSchema &SettingsModel::schema() const
 {
-    QList<PageSnapshot> pages;
-    for (const SettingsPage &page : m_schema.pages) {
-        PageSnapshot pageSnapshot{page.id, page.title, page.iconId, {}};
-        for (const SettingsSection &section : page.sections) {
-            SectionSnapshot sectionSnapshot{section.title, section.help, {}};
-            for (const SettingsRow &row : section.rows) {
-                if (row.visible && !row.visible(m_draft, m_capabilities)) {
-                    continue;
-                }
-                sectionSnapshot.rows.append(rowSnapshot(row));
-            }
-            pageSnapshot.sections.append(sectionSnapshot);
+    return m_schema;
+}
+
+QStringList SettingsModel::searchPanes(const QString &query) const
+{
+    return speecher::searchPanes(m_schema, query, m_draft, m_capabilities);
+}
+
+SectionSnapshot SettingsModel::section(const SettingsPaneGroup &group) const
+{
+    SectionSnapshot snapshot{group.title, group.help, {}};
+    for (const QString &rowId : group.rows) {
+        const SettingsRow *row = rowWithId(rowId);
+        if (row && (!row->visible || row->visible(m_draft, m_capabilities))) {
+            snapshot.rows.append(rowSnapshot(*row));
         }
-        pages.append(pageSnapshot);
     }
-    return pages;
+    return snapshot;
 }
 
 void SettingsModel::setValue(const QString &rowId, const QVariant &value)
