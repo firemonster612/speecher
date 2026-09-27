@@ -109,6 +109,12 @@ QString transcribeStepHint(TranscribeStep step)
                                              : QString();
 }
 
+QString mediaFilesHint()
+{
+    return QStringLiteral("Drop audio and video files here or choose them") + kSeparator
+        + transcribableExtensions().join(QStringLiteral(", "));
+}
+
 QString durationLabel(qint64 ms)
 {
     const qint64 seconds = (ms + 500) / 1000;

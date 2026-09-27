@@ -92,10 +92,11 @@ final class TranscriptionModel: ObservableObject {
     let profiles: [RowOptionModel]
     private let bridge: SpeecherBridge
 
-    /// Audio and video (whose sound track the decoder reads), plus the formats
-    /// macOS may not declare a type for.
-    private static let audioTypes: [UTType] = [UTType.audiovisualContent]
-        + ["flac", "ogg", "oga", "opus", "webm"].compactMap { UTType(filenameExtension: $0) }
+    /// The audio and video the core transcribes, by extension, so macOS
+    /// offers the same files as the other front ends.
+    private let mediaTypes: [UTType]
+    /// Under the file chooser while no files are listed.
+    let mediaFilesHint: String
 
     init(bridge: SpeecherBridge) {
         self.bridge = bridge
@@ -106,6 +107,8 @@ final class TranscriptionModel: ObservableObject {
         profiles = bridge.writingProfiles
         stepLabels = [SpeecherTranscribeStep.configure, .transcribe, .export].map { bridge.stepLabel($0) }
         configureHint = bridge.stepHint(.configure)
+        mediaTypes = bridge.transcribableExtensions.compactMap { UTType(filenameExtension: $0) }
+        mediaFilesHint = bridge.mediaFilesHint
         finishGlide = bridge.transcribeLandingSeconds
         seedOptions()
         bridge.transcriptionFileStarted = { [weak self] index, path in
@@ -235,7 +238,7 @@ final class TranscriptionModel: ObservableObject {
         panel.title = "Choose audio files"
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = Self.audioTypes
+        panel.allowedContentTypes = mediaTypes
         guard panel.runModal() == .OK else { return }
         add(panel.urls.map(\.path))
     }
@@ -601,7 +604,7 @@ struct TranscribePane: View {
                     Text("Audio files")
                 } footer: {
                     if model.files.isEmpty {
-                        Text("Drop files here, or choose them · wav, mp3, m4a, flac, ogg")
+                        Text(model.mediaFilesHint)
                     }
                 }
                 Section("Transcription") {

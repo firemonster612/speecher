@@ -2593,6 +2593,16 @@ static std::optional<QString> optionalString(NSString *value)
         .toNSString();
 }
 
+- (NSArray<NSString *> *)transcribableExtensions
+{
+    return bridgedStrings(speecher::transcribableExtensions());
+}
+
+- (NSString *)mediaFilesHint
+{
+    return speecher::mediaFilesHint().toNSString();
+}
+
 - (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
 {
     NSMutableArray<NSString *> *audio = [NSMutableArray array];

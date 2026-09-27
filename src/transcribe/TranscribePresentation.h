@@ -50,6 +50,10 @@ QString transcribeStepLabel(TranscribeStep step);
 // The line under the step indicator; empty for a step that needs none.
 QString transcribeStepHint(TranscribeStep step);
 
+// Under the file chooser while no files are listed: what may be dropped or
+// chosen, every extension from transcribableExtensions().
+QString mediaFilesHint();
+
 // "3 min 7 s", or "42 s" under a minute.
 QString durationLabel(qint64 ms);
 // A setup list row's detail, "3 min 7 s · 3.6 MB"; the size alone while the

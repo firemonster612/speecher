@@ -160,16 +160,15 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     setup->setSpacing(0);
 
     m_filesCard = addCard(setup, QStringLiteral("Audio files"), m_setup);
-    QPushButton *choose = settings::makeButtonRow(
-        QStringLiteral("Choose audio files"),
-        QStringLiteral("Drop files here or click to browse · wav, mp3, m4a, flac, ogg"),
-        m_filesCard);
+    QPushButton *choose = settings::makeButtonRow(QStringLiteral("Choose audio files\u2026"), mediaFilesHint(),
+                                                  m_filesCard);
     choose->setObjectName(QStringLiteral("transcribeChooseFiles"));
     settings::addCardRow(settings::cardFormLayout(m_filesCard), choose, m_filesCard);
     connect(choose, &QPushButton::clicked, this, [this] {
         addFiles(QFileDialog::getOpenFileNames(
             this, QStringLiteral("Choose audio files"), QDir::homePath(),
-            QStringLiteral("Audio files (*.wav *.mp3 *.m4a *.mp4 *.aac *.flac *.ogg *.oga *.opus *.webm);;All files (*)")));
+            QStringLiteral("Audio and video files (*.%1);;All files (*)")
+                .arg(transcribableExtensions().join(QStringLiteral(" *.")))));
     });
 
     QFrame *speechCard = addCard(setup, QStringLiteral("Transcription"), m_setup);
@@ -369,7 +368,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     toolbar->addWidget(m_variants);
     toolbar->addStretch();
     auto *copyAll = new QPushButton(QStringLiteral("Copy all"), top);
-    auto *exportAll = new QPushButton(QStringLiteral("Export all"), top);
+    auto *exportAll = new QPushButton(QStringLiteral("Export all\u2026"), top);
     toolbar->addWidget(copyAll);
     toolbar->addWidget(exportAll);
     topLayout->addLayout(toolbar);
@@ -671,8 +670,8 @@ void TranscribePage::refreshFileList()
                              m_filesCard);
     }
     auto *choose = m_filesCard->findChild<QPushButton *>(QStringLiteral("transcribeChooseFiles"));
-    settings::setButtonRowCaption(choose, m_files.isEmpty() ? QStringLiteral("Choose audio files")
-                                                            : QStringLiteral("Add more files"));
+    settings::setButtonRowCaption(choose, m_files.isEmpty() ? QStringLiteral("Choose audio files\u2026")
+                                                            : QStringLiteral("Add more files\u2026"));
     choose->findChild<QLabel *>(QStringLiteral("rowDescription"))->setVisible(m_files.isEmpty());
     m_start->setEnabled(!m_files.isEmpty());
     m_start->setText(m_files.size() > 1 ? QStringLiteral("Transcribe %1 files").arg(m_files.size())
@@ -885,7 +884,7 @@ void TranscribePage::showResults()
                 copy->setText(QStringLiteral("Copied"));
                 QTimer::singleShot(1500, copy, [copy] { copy->setText(QStringLiteral("Copy")); });
             });
-            QToolButton *exportButton = textButton(QStringLiteral("Export"), headRow);
+            QToolButton *exportButton = textButton(QStringLiteral("Export\u2026"), headRow);
             const QString audioPath = result.path;
             connect(exportButton, &QToolButton::clicked, this, [this, audioPath, text, metaLabel] {
                 const QFileInfo audio(audioPath);

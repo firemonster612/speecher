@@ -53,8 +53,6 @@ constexpr wchar_t kGlyphRemove = L'\uE711';
 constexpr wchar_t kGlyphDone = L'\uE73E';
 constexpr wchar_t kGlyphFailed = L'\uE783';
 constexpr wchar_t kGlyphCurrent = L'\uE768';
-const wchar_t *const kAudioExtensions[] = {L".wav", L".mp3", L".m4a", L".mp4", L".aac", L".flac",
-                                           L".ogg", L".oga", L".opus", L".webm"};
 // Same dot geometry as the dictation panel's bars.
 constexpr double kBarWidth = 3.2;
 constexpr double kBarDotHeight = 3.2;
@@ -445,8 +443,7 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
     browse.Click([this, &host](const auto &, const auto &) { chooseFiles(host); });
     files.Children().Append(row(m_files.isEmpty() ? QStringLiteral("Choose audio files")
                                                   : QStringLiteral("Add more files"),
-                                QStringLiteral("Drop files here or browse \u00b7 wav, mp3, m4a, flac, ogg"),
-                                browse, false));
+                                m_files.isEmpty() ? mediaFilesHint() : QString(), browse, false));
     for (const QString &path : std::as_const(m_files)) {
         const QFileInfo info(path);
         Button remove;
@@ -851,7 +848,7 @@ void TranscribePane::appendResults(const StackPanel &column, PaneHost &host)
     actions.Orientation(Orientation::Horizontal);
     actions.Spacing(8);
     actions.Children().Append(copyButton(QStringLiteral("Copy all"), allTranscripts(m_results, m_showRaw)));
-    Button exportAllButton = textButton(QStringLiteral("Export all"));
+    Button exportAllButton = textButton(QStringLiteral("Export all\u2026"));
     exportAllButton.Click([this, &host](const auto &, const auto &) { exportAll(host); });
     actions.Children().Append(exportAllButton);
     Grid::SetColumn(actions, 1);
@@ -922,7 +919,7 @@ void TranscribePane::appendResults(const StackPanel &column, PaneHost &host)
             buttons.Children().Append(retryButton);
         } else {
             buttons.Children().Append(copyButton(QStringLiteral("Copy"), text));
-            Button exportButton = textButton(QStringLiteral("Export"));
+            Button exportButton = textButton(QStringLiteral("Export\u2026"));
             exportButton.Click([this, &host, path = result.path, text](const auto &, const auto &) {
                 exportOne(host, path, text);
             });
@@ -964,8 +961,8 @@ winrt::fire_and_forget TranscribePane::chooseFiles(PaneHost &host)
         Pickers::FileOpenPicker picker;
         check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(host.hwnd()));
         picker.SuggestedStartLocation(Pickers::PickerLocationId::MusicLibrary);
-        for (const wchar_t *extension : kAudioExtensions) {
-            picker.FileTypeFilter().Append(extension);
+        for (const QString &extension : transcribableExtensions()) {
+            picker.FileTypeFilter().Append(hs(QStringLiteral(".") + extension));
         }
         const auto picked = co_await picker.PickMultipleFilesAsync();
         if (gone(weak)) {

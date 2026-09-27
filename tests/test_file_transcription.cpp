@@ -7,9 +7,18 @@
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/TranscribePresentation.h"
 
+#include <QAudioBufferInput>
 #include <QDir>
+#include <QImage>
+#include <QMediaCaptureSession>
+#include <QMediaFormat>
+#include <QMediaRecorder>
+#include <QMimeDatabase>
+#include <QRegularExpression>
 #include <QScopeGuard>
 #include <QFile>
+#include <QVideoFrame>
+#include <QVideoFrameInput>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QJsonDocument>
@@ -105,6 +114,99 @@ QString readFile(const QString &path)
 {
     QFile file(path);
     return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).trimmed() : QString();
+}
+
+// Records half a second of 440 Hz tone beside a few plain video frames into
+// path with Qt's own FFmpeg recorder, so the test needs no fixture files.
+// Returns why it could not, or empty once the file is written.
+QString recordClip(const QString &path, QMediaFormat::FileFormat container,
+                   QMediaFormat::AudioCodec audioCodec, QMediaFormat::VideoCodec videoCodec)
+{
+    constexpr int rate = 44100;
+    constexpr int samples = rate / 2;
+    constexpr int frames = 5;
+    QMediaCaptureSession session;
+    QAudioBufferInput audio;
+    QVideoFrameInput video;
+    QMediaRecorder recorder;
+    session.setAudioBufferInput(&audio);
+    session.setVideoFrameInput(&video);
+    session.setRecorder(&recorder);
+    QMediaFormat format(container);
+    format.setAudioCodec(audioCodec);
+    format.setVideoCodec(videoCodec);
+    recorder.setMediaFormat(format);
+    recorder.setOutputLocation(QUrl::fromLocalFile(path));
+    recorder.setAutoStop(true);
+
+    QAudioFormat pcm;
+    pcm.setSampleRate(rate);
+    pcm.setChannelCount(1);
+    pcm.setSampleFormat(QAudioFormat::Int16);
+    int samplesSent = 0;
+    QObject::connect(&audio, &QAudioBufferInput::readyToSendAudioBuffer, &audio, [&] {
+        while (samplesSent < samples) {
+            QByteArray data;
+            const int count = std::min(rate / 10, samples - samplesSent);
+            for (int i = 0; i < count; ++i) {
+                const auto sample = qint16(8000 * std::sin(2 * M_PI * 440 * (samplesSent + i) / rate));
+                data.append(reinterpret_cast<const char *>(&sample), 2);
+            }
+            if (!audio.sendAudioBuffer(QAudioBuffer(data, pcm, qint64(samplesSent) * 1000000 / rate))) {
+                return;
+            }
+            samplesSent += count;
+        }
+        audio.sendAudioBuffer({});
+    });
+    int framesSent = 0;
+    QObject::connect(&video, &QVideoFrameInput::readyToSendVideoFrame, &video, [&] {
+        while (framesSent < frames) {
+            QImage image(320, 240, QImage::Format_RGB32);
+            image.fill(Qt::darkGreen);
+            QVideoFrame frame(image);
+            frame.setStartTime(framesSent * 100000);
+            frame.setEndTime((framesSent + 1) * 100000);
+            if (!video.sendVideoFrame(frame)) {
+                return;
+            }
+            ++framesSent;
+        }
+        video.sendVideoFrame({});
+    });
+    QString error;
+    QObject::connect(&recorder, &QMediaRecorder::errorOccurred, &recorder,
+                     [&error](QMediaRecorder::Error, const QString &message) { error = message; });
+    recorder.record();
+    const bool stopped = QTest::qWaitFor(
+        [&] { return !error.isEmpty() || recorder.recorderState() == QMediaRecorder::StoppedState; }, 10000);
+    if (!error.isEmpty()) {
+        return error;
+    }
+    return stopped && QFileInfo(path).size() > 0 ? QString() : QStringLiteral("the recorder wrote nothing");
+}
+
+// Every first capture of pattern in a file under packaging/, sorted.
+QStringList packagingEntries(const QString &file, const QString &pattern)
+{
+    QFile source(QStringLiteral(SPEECHER_SOURCE_DIR "/packaging/") + file);
+    if (!source.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    QStringList entries;
+    const QString text = QString::fromUtf8(source.readAll());
+    for (const QRegularExpressionMatch &match :
+         QRegularExpression(pattern, QRegularExpression::MultilineOption).globalMatch(text)) {
+        entries << match.captured(1);
+    }
+    entries.sort();
+    return entries;
+}
+
+QStringList sorted(QStringList list)
+{
+    list.sort();
+    return list;
 }
 
 class FileTranscriptionTests : public QObject {
@@ -417,6 +519,78 @@ private slots:
         QCOMPARE(runHeadlessTranscribe({}, options, &settings, m_registry.get(), out, err, false), 2);
         QVERIFY(!err.str().empty());
         QVERIFY(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("summary")).toBool());
+    }
+
+    // Each video container the pickers offer: its audio track decodes and
+    // reaches the speech provider as half a second of 16 kHz audio.
+    void decodesTheAudioTrackOfVideoContainers_data()
+    {
+        QTest::addColumn<QString>("extension");
+        QTest::addColumn<QMediaFormat::FileFormat>("container");
+        QTest::addColumn<QMediaFormat::AudioCodec>("audioCodec");
+        QTest::addColumn<QMediaFormat::VideoCodec>("videoCodec");
+        using A = QMediaFormat::AudioCodec;
+        using V = QMediaFormat::VideoCodec;
+        QTest::newRow("mp4") << QStringLiteral("mp4") << QMediaFormat::MPEG4 << A::AAC << V::MPEG4;
+        QTest::newRow("m4v") << QStringLiteral("m4v") << QMediaFormat::MPEG4 << A::AAC << V::MPEG4;
+        QTest::newRow("mov") << QStringLiteral("mov") << QMediaFormat::QuickTime << A::AAC << V::MPEG4;
+        QTest::newRow("mkv") << QStringLiteral("mkv") << QMediaFormat::Matroska << A::AAC << V::MPEG4;
+        QTest::newRow("webm") << QStringLiteral("webm") << QMediaFormat::WebM << A::Opus << V::AV1;
+        QTest::newRow("avi") << QStringLiteral("avi") << QMediaFormat::AVI << A::AC3 << V::MPEG4;
+    }
+
+    void decodesTheAudioTrackOfVideoContainers()
+    {
+        QFETCH(QString, extension);
+        QFETCH(QMediaFormat::FileFormat, container);
+        QFETCH(QMediaFormat::AudioCodec, audioCodec);
+        QFETCH(QMediaFormat::VideoCodec, videoCodec);
+        QVERIFY(transcribableExtensions().contains(extension));
+        const QString clip = m_dir.filePath(QStringLiteral("clip.") + extension);
+        const QString recordError = recordClip(clip, container, audioCodec, videoCodec);
+        if (!recordError.isEmpty()) {
+            QSKIP(qPrintable(QStringLiteral("Qt cannot write this clip here: ") + recordError));
+        }
+        QVERIFY(QMimeDatabase().mimeTypeForFile(clip).name().startsWith(QStringLiteral("video/")));
+        QVERIFY(isAudioFile(clip));
+        SettingsStore settings;
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+
+        QVERIFY(session.start({clip}, speechOnly()));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
+        QVERIFY2(!results.first().failed(), qPrintable(results.first().error));
+        // Half a second of 16 kHz mono s16 is 16000 bytes; encoders pad the
+        // start and end by a frame or two.
+        QVERIFY2(m_script.bytes > 14000 && m_script.bytes < 20000, qPrintable(QString::number(m_script.bytes)));
+    }
+
+    // "Open with" offers Speecher for exactly the files its pickers take.
+    void packagingRegistersTheTranscribableTypes()
+    {
+        const QStringList extensions = sorted(transcribableExtensions());
+        const QStringList desktop = packagingEntries(QStringLiteral("io.github.firemonster612.speecher.desktop"),
+                                                     QStringLiteral("^MimeType=(.*)$"));
+        QCOMPARE(desktop.size(), 1);
+        QCOMPARE(sorted(desktop.first().split(u';', Qt::SkipEmptyParts)), sorted(transcribableMimeTypes()));
+        QCOMPARE(packagingEntries(QStringLiteral("macos/Info.plist.in"),
+                                  QStringLiteral("^\\t\\t\\t\\t<string>(\\w+)</string>$")),
+                 extensions);
+        QCOMPARE(packagingEntries(QStringLiteral("windows/speecher.iss"),
+                                  QStringLiteral("Classes\\\\\\.(\\w+)\\\\OpenWithProgids")),
+                 extensions);
+        QCOMPARE(packagingEntries(QStringLiteral("windows/speecher.iss"),
+                                  QStringLiteral("SupportedTypes\"; ValueType: string; ValueName: \"\\.(\\w+)\"")),
+                 extensions);
+        // Each extension's own type is one the .desktop file registers.
+        for (const QString &extension : extensions) {
+            const QString type = QMimeDatabase()
+                                     .mimeTypeForFile(QStringLiteral("x.") + extension, QMimeDatabase::MatchExtension)
+                                     .name();
+            QVERIFY2(transcribableMimeTypes().contains(type), qPrintable(extension + QStringLiteral(" is ") + type));
+        }
     }
 
 private:

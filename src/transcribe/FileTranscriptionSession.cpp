@@ -54,14 +54,39 @@ QVector<float> peakLevels(const QByteArray &pcm)
 
 } // namespace
 
+QStringList transcribableExtensions()
+{
+    return {QStringLiteral("wav"), QStringLiteral("mp3"), QStringLiteral("m4a"), QStringLiteral("aac"),
+            QStringLiteral("flac"), QStringLiteral("ogg"), QStringLiteral("oga"), QStringLiteral("opus"),
+            QStringLiteral("webm"), QStringLiteral("mp4"), QStringLiteral("m4v"), QStringLiteral("mov"),
+            QStringLiteral("mkv"), QStringLiteral("avi")};
+}
+
+QStringList transcribableMimeTypes()
+{
+    return {QStringLiteral("audio/vnd.wave"), QStringLiteral("audio/wav"), QStringLiteral("audio/x-wav"),
+            QStringLiteral("audio/mpeg"), QStringLiteral("audio/mp4"), QStringLiteral("audio/x-m4a"),
+            QStringLiteral("audio/aac"), QStringLiteral("audio/flac"), QStringLiteral("audio/ogg"),
+            QStringLiteral("audio/x-vorbis+ogg"), QStringLiteral("audio/x-opus+ogg"), QStringLiteral("audio/webm"),
+            QStringLiteral("video/webm"), QStringLiteral("video/mp4"), QStringLiteral("video/x-m4v"),
+            QStringLiteral("video/quicktime"), QStringLiteral("video/x-matroska"), QStringLiteral("video/vnd.avi"),
+            QStringLiteral("video/x-msvideo")};
+}
+
 bool isAudioFile(const QString &path)
 {
     const QFileInfo info(path);
     if (!info.isFile()) {
         return false;
     }
-    const QString mime = QMimeDatabase().mimeTypeForFile(info).name();
-    return mime.startsWith(QStringLiteral("audio/")) || mime.startsWith(QStringLiteral("video/"));
+    // Any audio the decoder may read, as dropped files always were; video only
+    // in the containers the list names, since other video may carry no track
+    // the decoder can take.
+    const QMimeType mime = QMimeDatabase().mimeTypeForFile(info);
+    const QStringList types = transcribableMimeTypes();
+    return mime.name().startsWith(QStringLiteral("audio/"))
+        || std::any_of(types.cbegin(), types.cend(), [&mime](const QString &type) { return mime.inherits(type); })
+        || transcribableExtensions().contains(info.suffix().toLower());
 }
 
 void probeAudioDuration(const QString &path, QObject *receiver, std::function<void(qint64)> done)

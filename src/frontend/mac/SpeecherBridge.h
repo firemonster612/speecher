@@ -810,6 +810,10 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 // The model a refinement provider is set to use, or empty for none.
 - (NSString *)refinementModelForProvider:(NSString *)providerId
     NS_SWIFT_NAME(refinementModel(provider:));
+// The extensions the file chooser offers, audio and video, without dots.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *transcribableExtensions;
+// Under the file chooser while no files are listed.
+@property (nonatomic, readonly, copy) NSString *mediaFilesHint;
 // The paths among these that are files the decoder can take.
 - (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
     NS_SWIFT_NAME(audioFiles(among:));

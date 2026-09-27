@@ -1501,6 +1501,7 @@ if(SPEECHER_BUILD_TESTS)
   target_compile_definitions(speecher_tests PRIVATE
     SPEECHER_VERSION="${SPEECHER_VERSION}"
     SPEECHER_BUILD_NUMBER=${SPEECHER_BUILD_NUMBER}
+    SPEECHER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   )
   target_link_libraries(speecher_tests PRIVATE
     speecher_frontend_qt Qt6::Test
