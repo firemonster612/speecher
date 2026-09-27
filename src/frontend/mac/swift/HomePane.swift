@@ -324,9 +324,11 @@ struct HomePane: View {
                 let scale = max(wpm, 160)
                 LabeledContent("Your speaking pace", value: "\(wpm) wpm")
                 LabeledContent("Saved over typing", value: minutes(insights.minutesSavedVersusTyping))
-                bar("You, speaking", value: wpm, total: scale, emphasised: true, caption: "\(wpm)")
                 let typing = insights.typingWordsPerMinute
-                bar("Typical typing", value: typing, total: scale, emphasised: false, caption: "\(typing)")
+                barGrid {
+                    bar("You, speaking", value: wpm, total: scale, emphasised: true, caption: "\(wpm)")
+                    bar("Typical typing", value: typing, total: scale, emphasised: false, caption: "\(typing)")
+                }
                 Text(insights.speedupText)
                     .foregroundStyle(.secondary)
             }
@@ -341,9 +343,11 @@ struct HomePane: View {
                 Text("No dictation in this period.")
             } else {
                 let most = insights.apps.map(\.words).max() ?? 1
-                ForEach(Array(insights.apps.enumerated()), id: \.offset) { index, app in
-                    bar(app.name, detail: app.profileLabel, value: app.words, total: most,
-                        emphasised: index == 0, caption: "\(app.percent)%")
+                barGrid {
+                    ForEach(Array(insights.apps.enumerated()), id: \.offset) { index, app in
+                        bar(app.name, detail: app.profileLabel, value: app.words, total: most,
+                            emphasised: index == 0, caption: "\(app.percent)%")
+                    }
                 }
             }
         }
@@ -360,26 +364,29 @@ struct HomePane: View {
         }
     }
 
+    /// Name, bar and caption per row in one grid, so the bars line up and
+    /// start after the widest name, as on Linux and Windows.
+    private func barGrid<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 12) { rows() }
+    }
+
     /// A labelled bar: the emphasised one in the accent colour, the rest in a
     /// lighter tint of it.
     private func bar(_ title: String, detail: String = "", value: Int, total: Int,
                      emphasised: Bool, caption: String) -> some View {
-        LabeledContent {
-            HStack {
-                ProgressView(value: Double(value), total: Double(max(total, 1)))
-                    // The system accent itself, not Color.accentColor: a tint
-                    // defined in terms of the accent it replaces resolves
-                    // recursively and overflows the stack.
-                    .tint(Color(nsColor: .controlAccentColor).opacity(emphasised ? 1 : 0.42))
-                Text(caption).monospacedDigit()
-            }
-        } label: {
+        GridRow {
             HStack(spacing: 6) {
                 // An app name stays on one line; the badge beside it would
                 // otherwise squeeze a two-word name onto two.
                 Text(title).lineLimit(1).fixedSize()
                 if !detail.isEmpty { ProfileBadge(label: detail).fixedSize() }
             }
+            ProgressView(value: Double(value), total: Double(max(total, 1)))
+                // The system accent itself, not Color.accentColor: a tint
+                // defined in terms of the accent it replaces resolves
+                // recursively and overflows the stack.
+                .tint(Color(nsColor: .controlAccentColor).opacity(emphasised ? 1 : 0.42))
+            Text(caption).monospacedDigit().gridColumnAlignment(.trailing)
         }
     }
 
