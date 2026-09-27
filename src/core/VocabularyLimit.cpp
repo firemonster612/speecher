@@ -59,4 +59,21 @@ QString summary(const QStringList &terms)
         .arg(maxTokens);
 }
 
+QString promptText(const QStringList &terms)
+{
+    QString prompt;
+    for (const QString &rawTerm : terms) {
+        const QString term = rawTerm.simplified();
+        // Whisper fails a run whose prompt holds one of its special tokens.
+        if (term.isEmpty() || term.contains(QStringLiteral("<|"))) {
+            continue;
+        }
+        const QString next = prompt.isEmpty() ? term : prompt + QStringLiteral(", ") + term;
+        if (next.size() <= maxPromptChars) {
+            prompt = next;
+        }
+    }
+    return prompt;
+}
+
 } // namespace speecher::VocabularyLimit
