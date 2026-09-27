@@ -64,8 +64,8 @@ struct RootView: View {
                 }
                 .scenePadding([.top, .horizontal])
                 PaneView(pane: pane, model: model)
-                    // A fresh view per pane, so one pane's chosen view (Apps,
-                    // Vocabulary) does not carry over to the next.
+                    // A fresh view per pane, so state one pane keeps, such as
+                    // Vocabulary's chosen view, does not carry over to the next.
                     .id(pane.id)
             }
         }

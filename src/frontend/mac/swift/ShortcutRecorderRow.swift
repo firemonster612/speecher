@@ -155,26 +155,29 @@ struct ShortcutRecorderRow: View {
     @State private var captureProblem = ""
 
     var body: some View {
-        Group {
-        LabeledContent {
-            Button(caption) {
-                captureProblem = ""
-                recorder.record(suspending: model, combination: { characters, flags in
-                    model.bindShortcut(characters: characters, modifierFlags: flags)
-                }, singleKey: { keyCode in
-                    if model.bindSingleKey(macKeyCode: keyCode) { return true }
-                    captureProblem = "That key cannot be a dictation key."
-                    return false
-                })
+        // One view, so leaving the pane stops the recording once; a Group
+        // would hand onDisappear to each child, and the Grant button going
+        // away would end a recording in progress.
+        VStack(alignment: .leading) {
+            LabeledContent {
+                Button(caption) {
+                    captureProblem = ""
+                    recorder.record(suspending: model, combination: { characters, flags in
+                        model.bindShortcut(characters: characters, modifierFlags: flags)
+                    }, singleKey: { keyCode in
+                        if model.bindSingleKey(macKeyCode: keyCode) { return true }
+                        captureProblem = "That key cannot be a dictation key."
+                        return false
+                    })
+                }
+                .disabled(!model.shortcutSupported)
+            } label: {
+                Text("Dictation shortcut")
+                Text(footnote)
             }
-            .disabled(!model.shortcutSupported)
-        } label: {
-            Text("Dictation shortcut")
-            Text(footnote)
-        }
-        if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
-            Button("Grant Accessibility Access") { model.requestAccessibility() }
-        }
+            if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
+                Button("Grant Accessibility Access") { model.requestAccessibility() }
+            }
         }
         .onDisappear { recorder.stop() }
     }

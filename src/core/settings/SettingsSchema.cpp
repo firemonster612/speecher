@@ -2677,12 +2677,10 @@ PageId resolvePage(const SettingsSchema &schema, const QString &request)
         {QStringLiteral("shortcut"), QStringLiteral("dictation")},
         {QStringLiteral("apps"), QStringLiteral("output")},
         {QStringLiteral("apps:recognition"), QStringLiteral("output")},
-        {QStringLiteral("apps:pasteRules"), QStringLiteral("output")},
+        {QStringLiteral("apps:pasterules"), QStringLiteral("output")},
     };
-    for (auto alias = merged.cbegin(); alias != merged.cend(); ++alias) {
-        if (alias.key().compare(request, Qt::CaseInsensitive) == 0) {
-            return resolvePage(schema, alias.value());
-        }
+    if (const auto alias = merged.constFind(request.toLower()); alias != merged.cend()) {
+        return resolvePage(schema, *alias);
     }
     const QString paneId = request.section(QLatin1Char(':'), 0, 0);
     const QString viewId = request.section(QLatin1Char(':'), 1);
