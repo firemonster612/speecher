@@ -87,6 +87,8 @@ void populateCliproxyAccounts(QComboBox *combo,
                               const QString &selected);
 QColor positiveTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
+// The bold a section title is set in, on pages and in the sidebar's headers.
+QFont sectionTitleFont(const QFont &font);
 QFrame *makeSettingsCard(QWidget *parent);
 // FormButtonDelegate: the whole row is the button, with a trailing arrow.
 QPushButton *makeButtonRow(const QString &title, const QString &description, QWidget *parent);

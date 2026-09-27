@@ -86,12 +86,10 @@ QIcon paneIcon(const QString &iconId)
         {QStringLiteral("settings"), {QStringLiteral("settings-configure"), QStringLiteral("configure")}},
         {QStringLiteral("whatsNew"), {QStringLiteral("help-about")}},
         {QStringLiteral("microphone"), {QStringLiteral("audio-input-microphone")}},
-        {QStringLiteral("keyboard"), {QStringLiteral("input-keyboard"), QStringLiteral("configure-shortcuts")}},
         {QStringLiteral("refinement"), {QStringLiteral("tools-wizard"), QStringLiteral("document-edit")}},
         {QStringLiteral("localModels"), {QStringLiteral("computer"), QStringLiteral("computer-laptop")}},
         {QStringLiteral("transcribe"), {QStringLiteral("view-media-lyrics"), QStringLiteral("document-import")}},
         {QStringLiteral("output"), {QStringLiteral("edit-paste"), QStringLiteral("edit-copy")}},
-        {QStringLiteral("apps"), {QStringLiteral("view-grid"), QStringLiteral("view-list-icons")}},
         {QStringLiteral("vocabulary"),
          {QStringLiteral("tools-check-spelling"), QStringLiteral("accessories-dictionary")}},
         {QStringLiteral("accounts"), {QStringLiteral("user-identity"), QStringLiteral("im-user")}},
@@ -192,8 +190,8 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
 QStringList AppWindow::sidebarPanes() const
 {
     QStringList panes;
-    for (const QStringList &run : m_pages->schema().sidebarRuns) {
-        panes += run;
+    for (const SidebarGroup &group : m_pages->schema().sidebarGroups) {
+        panes += group.panes;
     }
     return panes;
 }
@@ -860,8 +858,9 @@ static int sidebarTextInset(const QListWidget *navigation)
     return navigation->style()->subElementRect(QStyle::SE_ItemViewItemText, &option, navigation).left();
 }
 
-// The panes in their runs, a separator line between runs, and What's New on
-// top while it is pending or showing. A search lists its hits alone.
+// The panes in their groups, each titled group under a header, and What's
+// New first in the top group while it is pending or showing. A search lists
+// its hits alone.
 void AppWindow::rebuildSidebar()
 {
     const QSignalBlocker blocker(m_navigation);
@@ -877,24 +876,33 @@ void AppWindow::rebuildSidebar()
             m_navigation->setCurrentItem(item);
         }
     };
-    // A line the style draws (Breeze's separator, as Kirigami.Separator
-    // looks), on an item nothing can select or land on with the keyboard.
+    // Kirigami's ListSectionHeader, as System Settings' sidebar has it: the
+    // group's title in the section bold at the item text, then a line the
+    // style draws running to the row's right edge. The row is an item nothing
+    // can select or land on with the keyboard.
     const int inset = sidebarTextInset(m_navigation);
-    const auto addGap = [this, inset] {
-        auto *gap = new QListWidgetItem(m_navigation);
-        gap->setFlags(Qt::NoItemFlags);
-        auto *holder = new QWidget(m_navigation);
-        holder->setObjectName(QStringLiteral("sidebarSeparator"));
-        holder->setFocusPolicy(Qt::NoFocus);
-        holder->setAttribute(Qt::WA_TransparentForMouseEvents);
-        auto *layout = new QVBoxLayout(holder);
-        layout->setContentsMargins(inset, settings::tightSpacing(), settings::relatedSpacing(),
-                                   settings::tightSpacing());
-        auto *line = new QFrame(holder);
+    const auto addHeader = [this, inset](const QString &title) {
+        auto *item = new QListWidgetItem(m_navigation);
+        item->setFlags(Qt::NoItemFlags);
+        auto *header = new QWidget(m_navigation);
+        header->setObjectName(QStringLiteral("sidebarHeader"));
+        header->setFocusPolicy(Qt::NoFocus);
+        header->setAttribute(Qt::WA_TransparentForMouseEvents);
+        auto *layout = new QHBoxLayout(header);
+        layout->setContentsMargins(inset, settings::relatedSpacing(), 0, 0);
+        layout->setSpacing(settings::relatedSpacing());
+        auto *label = new QLabel(title, header);
+        label->setObjectName(QStringLiteral("sidebarHeaderTitle"));
+        label->setFont(settings::sectionTitleFont(label->font()));
+        layout->addWidget(label);
+        // Breeze draws this line darker than Kirigami's Separator (a fifth of
+        // the text over the background), so it reads at least as clearly.
+        auto *line = new QFrame(header);
+        line->setObjectName(QStringLiteral("sidebarHeaderLine"));
         line->setFrameShape(QFrame::HLine);
-        layout->addWidget(line);
-        gap->setSizeHint(holder->sizeHint());
-        m_navigation->setItemWidget(gap, holder);
+        layout->addWidget(line, 1, Qt::AlignVCenter);
+        item->setSizeHint(header->sizeHint());
+        m_navigation->setItemWidget(item, header);
     };
     m_sidebarListsWhatsNew = sidebarListsWhatsNew();
     if (!m_query.isEmpty()) {
@@ -905,13 +913,12 @@ void AppWindow::rebuildSidebar()
     }
     if (m_sidebarListsWhatsNew) {
         addPane(kWhatsNewPane);
-        addGap();
     }
-    for (const QStringList &run : schema.sidebarRuns) {
-        if (run != schema.sidebarRuns.first()) {
-            addGap();
+    for (const SidebarGroup &group : schema.sidebarGroups) {
+        if (!group.title.isEmpty()) {
+            addHeader(group.title);
         }
-        for (const QString &id : run) {
+        for (const QString &id : group.panes) {
             addPane(id);
         }
     }

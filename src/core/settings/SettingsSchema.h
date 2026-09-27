@@ -186,8 +186,6 @@ enum class PaneLayout {
     Sections,
     // Views of one idea, one at a time, chosen with a segmented control.
     Alternatives,
-    // The shortcut recorder, which has no schema rows behind it.
-    Shortcut,
     // Transcribing audio files, which has no schema rows behind it either.
     Transcribe,
     // Home: the dictation card and insights, drawn by each front end from
@@ -220,15 +218,23 @@ struct SettingsPane {
     QList<SettingsPaneGroup> groups;
 };
 
+// One titled run of the sidebar, as System Settings groups its pages under a
+// header. The first group has no title, like System Settings' Quick Settings.
+struct SidebarGroup {
+    QString title;
+    QStringList panes;
+
+    bool operator==(const SidebarGroup &) const = default;
+};
+
 struct SettingsSchema {
     // localModels is among them only when speechProviders offers "local",
     // and so is its pane.
     QList<SettingsPage> pages;
     QList<SettingsPane> panes;
-    // The sidebar's runs, in order: pane ids, each run separated from the next
-    // by a gap and none of them titled, as System Settings does. A pane in no
-    // run (What's New) appears only while pending or selected.
-    QList<QStringList> sidebarRuns;
+    // The sidebar's groups, in order. A pane in no group (What's New) appears
+    // only while pending or selected, first in the untitled top group.
+    QList<SidebarGroup> sidebarGroups;
 
     const SettingsPage &page(const QString &id) const;
     bool hasPage(const QString &id) const;
@@ -247,13 +253,15 @@ struct PageId {
     QString pane;
     QString view;
 };
-// Case-insensitive. A bare Alternatives pane id gives its first view. An
-// unknown pane, or a view the pane does not have, warns and gives Home.
+// Case-insensitive. A bare Alternatives pane id gives its first view. Ids of
+// panes since merged into others (shortcut, apps) give the pane that holds
+// their settings now. An unknown pane, or a view the pane does not have, warns
+// and gives Home.
 PageId resolvePage(const SettingsSchema &schema, const QString &request);
 // The panes a sidebar search shows, in sidebar order: those whose title,
 // group titles, or visible rows' labels or help mention the query. Rows are
 // visible as settings would show them. What's New never matches; an empty
-// query matches every pane in a run.
+// query matches every pane in a group.
 QStringList searchPanes(const SettingsSchema &schema, const QString &query, const AppSettings &settings,
                         const Capabilities &capabilities);
 

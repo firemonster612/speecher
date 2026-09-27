@@ -1078,14 +1078,13 @@ private slots:
         SchemaContext context = fakeContext();
         context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});
         const SettingsSchema schema = buildSettingsSchema(context);
-        QCOMPARE(schema.sidebarRuns,
-                 (QList<QStringList>{{QStringLiteral("home")},
-                                     {QStringLiteral("general")},
-                                     {QStringLiteral("dictation"), QStringLiteral("shortcut"),
-                                      QStringLiteral("refinement"), QStringLiteral("localModels")},
-                                     {QStringLiteral("transcribe")},
-                                     {QStringLiteral("output"), QStringLiteral("apps")},
-                                     {QStringLiteral("vocabulary"), QStringLiteral("accounts")}}));
+        QCOMPARE(schema.sidebarGroups,
+                 (QList<SidebarGroup>{
+                     {QString(), {QStringLiteral("home"), QStringLiteral("general"), QStringLiteral("accounts")}},
+                     {QStringLiteral("Speech"),
+                      {QStringLiteral("dictation"), QStringLiteral("localModels"), QStringLiteral("transcribe")}},
+                     {QStringLiteral("Text"),
+                      {QStringLiteral("refinement"), QStringLiteral("vocabulary"), QStringLiteral("output")}}}));
         const auto paneOf = [&schema](const QString &rowId) {
             for (const SettingsPane &pane : schema.panes) {
                 for (const SettingsPaneGroup &group : pane.groups) {
@@ -1104,9 +1103,24 @@ private slots:
                                    QStringLiteral("anthropicFastMode")}) {
             QCOMPARE(paneOf(row), QStringLiteral("refinement"));
         }
-        QCOMPARE(paneOf(QStringLiteral("activationMode")), QStringLiteral("shortcut"));
-        QCOMPARE(paneOf(QStringLiteral("appRecognitionRules")), QStringLiteral("apps"));
-        QCOMPARE(paneOf(QStringLiteral("applicationPasteRules")), QStringLiteral("apps"));
+        // The recorder and Shortcut behavior lead Dictation; the app rules are
+        // sections of Output.
+        QCOMPARE(paneOf(QStringLiteral("globalShortcut")), QStringLiteral("dictation"));
+        QCOMPARE(paneOf(QStringLiteral("activationMode")), QStringLiteral("dictation"));
+        QCOMPARE(schema.pane(QStringLiteral("dictation"))->groups.first().rows,
+                 (QStringList{QStringLiteral("globalShortcut"), QStringLiteral("activationMode")}));
+        QCOMPARE(paneOf(QStringLiteral("appRecognitionRules")), QStringLiteral("output"));
+        QCOMPARE(paneOf(QStringLiteral("applicationPasteRules")), QStringLiteral("output"));
+        QStringList outputSections;
+        for (const SettingsPaneGroup &group : schema.pane(QStringLiteral("output"))->groups) {
+            outputSections.append(group.title);
+        }
+        QCOMPARE(outputSections, (QStringList{QStringLiteral("Delivery"), QStringLiteral("Paste behavior"),
+                                              QStringLiteral("Application recognition"),
+                                              QStringLiteral("App-specific paste rules")}));
+        QCOMPARE(schema.pane(QStringLiteral("output"))->layout, PaneLayout::Sections);
+        QVERIFY(!schema.pane(QStringLiteral("shortcut")));
+        QVERIFY(!schema.pane(QStringLiteral("apps")));
         QStringList views;
         for (const SettingsPaneGroup &group : schema.pane(QStringLiteral("vocabulary"))->groups) {
             views.append(group.title);
@@ -1137,6 +1151,11 @@ private slots:
             }
         }
         QCOMPARE(resolvePage(schema, QStringLiteral("vocabulary")).view, QStringLiteral("terms"));
+        // Pages once of their own land where their settings went.
+        QCOMPARE(resolvePage(schema, QStringLiteral("shortcut")).pane, QStringLiteral("dictation"));
+        QCOMPARE(resolvePage(schema, QStringLiteral("apps")).pane, QStringLiteral("output"));
+        QCOMPARE(resolvePage(schema, QStringLiteral("apps:recognition")).pane, QStringLiteral("output"));
+        QCOMPARE(resolvePage(schema, QStringLiteral("Apps:PasteRules")).pane, QStringLiteral("output"));
 
         QTest::ignoreMessage(QtWarningMsg, "no settings page nothing - showing Home");
         QCOMPARE(resolvePage(schema, QStringLiteral("nothing")).pane, QStringLiteral("home"));
@@ -1381,9 +1400,9 @@ private slots:
         acceleration.apply(settings, QStringLiteral("auto"));
         QCOMPARE(settings.speech.local.runsOn, LocalRunsOn{});
 
-        // It is its own pane, next to Refinement.
-        const QStringList &run = schema.sidebarRuns.at(2);
-        QCOMPARE(run.indexOf(QStringLiteral("localModels")), run.indexOf(QStringLiteral("refinement")) + 1);
+        // It is its own pane in the Speech group, after Dictation.
+        const QStringList &speech = schema.sidebarGroups.at(1).panes;
+        QCOMPARE(speech.indexOf(QStringLiteral("localModels")), speech.indexOf(QStringLiteral("dictation")) + 1);
 
         // A build that cannot run speech models has no page or pane for them.
         const SettingsSchema without = buildSettingsSchema(fakeContext());
@@ -1391,8 +1410,8 @@ private slots:
         QVERIFY(std::none_of(without.panes.cbegin(), without.panes.cend(), [](const SettingsPane &pane) {
             return pane.id == QStringLiteral("localModels");
         }));
-        for (const QStringList &otherRun : without.sidebarRuns) {
-            QVERIFY(!otherRun.contains(QStringLiteral("localModels")));
+        for (const SidebarGroup &group : without.sidebarGroups) {
+            QVERIFY(!group.panes.contains(QStringLiteral("localModels")));
         }
     }
 

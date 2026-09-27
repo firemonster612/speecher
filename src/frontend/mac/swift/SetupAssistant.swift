@@ -983,7 +983,8 @@ final class SetupFlowModel: ObservableObject {
     /// than repeating the offer to try again.
     var readyStatus: String {
         shortcutFailureAcknowledged
-            ? "No dictation shortcut is set. You can set one in Settings > Shortcut."
+            ? "No dictation shortcut is set. You can set one in Settings > "
+                + model.bridge.paneTitle(forRowId: "globalShortcut") + "."
             : shortcutStatus
     }
 

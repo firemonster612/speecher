@@ -59,9 +59,9 @@ rows. Validation returns messages rather than an enum the caller re-narrates.
 
 **Pane arrangement.** Amended 2026-09-27. The schema also says how the
 settings window is arranged, and all three front ends read it: the panes (id,
-title, platform-neutral icon id, layout), their order and sidebar runs, and
+title, platform-neutral icon id, layout), their order and titled sidebar groups, and
 which schema section each pane shows (`settingsPanes()` and
-`settingsSidebarRuns()` in `SettingsSchema.cpp`). A pane group's heading is its
+`settingsSidebarGroups()` in `SettingsSchema.cpp`). A pane group's heading is its
 section's title, so the two cannot differ. Pages are addressed by one id space,
 a pane id or `pane:view` for one view of a pane, used for screenshot automation,
 links between pages and notification targets. A window opened from hidden

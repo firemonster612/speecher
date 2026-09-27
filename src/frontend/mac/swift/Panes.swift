@@ -39,8 +39,6 @@ enum PaneLayout {
     case sections
     /// Views of one idea, one at a time, chosen with a segmented picker.
     case alternatives
-    /// The shortcut recorder, which has no schema rows behind it.
-    case shortcut
     /// Transcribing audio files, which has no schema rows behind it either.
     case transcribe
     /// The dictation card and insights, drawn from the insights summary.
@@ -49,7 +47,6 @@ enum PaneLayout {
     init(_ layout: SpeecherPaneLayout) {
         switch layout {
         case .alternatives: self = .alternatives
-        case .shortcut: self = .shortcut
         case .transcribe: self = .transcribe
         case .home: self = .home
         case .sections: self = .sections
@@ -80,12 +77,10 @@ struct Pane: Identifiable {
         case "settings": return "gearshape"
         case "whatsNew": return "sparkles"
         case "microphone": return "mic"
-        case "keyboard": return "command"
         case "refinement": return "text.cursor"
         case "localModels": return "cpu"
         case "transcribe": return "waveform"
         case "output": return "arrow.right.doc.on.clipboard"
-        case "apps": return "square.grid.2x2"
         case "vocabulary": return "character.book.closed"
         case "accounts": return "person.badge.key"
         default: return "gearshape"
@@ -103,8 +98,6 @@ struct PaneView: View {
 
     var body: some View {
         switch pane.layout {
-        case .shortcut:
-            ShortcutPane(model: model, cards: model.groupCards(for: pane))
         case .transcribe:
             TranscribePane(model: model.transcription)
         case .home:

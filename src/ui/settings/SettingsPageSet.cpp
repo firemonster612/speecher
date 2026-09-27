@@ -183,13 +183,19 @@ SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
         }
         auto *page = new LinuxGlobalShortcutSetupPage(*controller, parent);
         page->hideAppMenuIntegration();
-        // The Shortcut page renders the activationMode schema row itself.
+        // Dictation renders the activationMode schema row itself.
         page->hideActivationMode();
         return SchemaCustomRow{page, {}, {}, true};
     };
 #else
+    // The Qt window runs only on Linux; the other front ends draw their own
+    // recorder, so this build of it only has to stand the row in.
     Q_UNUSED(controller)
-    return {};
+    return [](const SettingsRow &descriptor, QWidget *parent, std::function<void()>) {
+        return descriptor.id == QStringLiteral("globalShortcut")
+            ? SchemaCustomRow{new QWidget(parent), {}, {}, true}
+            : SchemaCustomRow{};
+    };
 #endif
 }
 
@@ -367,7 +373,7 @@ bool SettingsPageSet::save(bool showValidationErrors,
                            QStringLiteral("Replacements not saved"),
                            replacementProblems);
     }
-    SchemaSettingsPage *pasteRules = page(QStringLiteral("apps:pasteRules"));
+    SchemaSettingsPage *pasteRules = page(QStringLiteral("output"));
     const QStringList pasteRuleProblems = pasteRules->validate();
     if (!pasteRuleProblems.isEmpty()) {
         return refuseAloud(SaveFailure::DuplicatePasteRuleIds,

@@ -205,18 +205,27 @@ struct SidebarList: View {
         List(selection: Binding<String>(get: { model.pane },
                                         set: { if $0 != model.pane { model.showPage($0) } })) {
             if query.isEmpty {
-                if model.pane == "whatsNew" || model.whatsNewPending,
-                   let pane = model.pane(withId: "whatsNew") {
-                    Section { row(pane) }
-                }
-                ForEach(Array(model.sidebarRuns.enumerated()), id: \.offset) { _, run in
-                    Section {
-                        ForEach(run.compactMap(model.pane(withId:))) { row($0) }
+                // Each titled group under the native section header; the top
+                // group has none, and What's New leads it while pending or open.
+                ForEach(Array(model.sidebarGroups.enumerated()), id: \.offset) { index, group in
+                    let panes = group.panes.compactMap(model.pane(withId:))
+                    if group.title.isEmpty {
+                        Section {
+                            if index == 0, model.pane == "whatsNew" || model.whatsNewPending,
+                               let whatsNew = model.pane(withId: "whatsNew") {
+                                row(whatsNew)
+                            }
+                            ForEach(panes) { row($0) }
+                        }
+                    } else {
+                        Section(group.title) {
+                            ForEach(panes) { row($0) }
+                        }
                     }
                 }
             } else {
-                // A search shows its hits as one flat list, not as the runs they
-                // came from.
+                // A search shows its hits as one flat list, not under the groups
+                // they came from.
                 ForEach(model.searchPanes(query)) { row($0) }
             }
         }

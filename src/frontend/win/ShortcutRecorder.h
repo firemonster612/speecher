@@ -4,18 +4,15 @@
 
 namespace speecher::win {
 
-// The Shortcut pane: one recorder that captures the next input — a key
-// combination, a bare key, or a lone modifier committed on its release — and
-// warns inline when a single key also types, shows the current binding as the
-// system writes it, a reset to the default, and the binder's own error when it
-// refuses a binding.
+// The Global Shortcut row at the top of Dictation: one recorder that captures
+// the next input — a key combination, a bare key, or a lone modifier committed
+// on its release — and warns inline when a single key also types, shows the
+// current binding as the system writes it, a reset to the default, and the
+// binder's own error when it refuses a binding.
 class ShortcutRecorder {
 public:
-    // Appends the pane's cards to an already-titled settings column.
-    // title is the pane group's heading, which core owns.
-    static void appendPane(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column,
-                           const QString &title,
-                           PaneHost &host);
+    // The schema's "globalShortcut" custom row, which its card holds.
+    static winrt::Microsoft::UI::Xaml::Controls::StackPanel element(PaneHost &host);
 
     // Starts or ends recording, suspending the hotkey registration while it
     // runs: the bound chord is consumed system-wide and would never reach the

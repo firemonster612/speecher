@@ -64,12 +64,10 @@ wchar_t glyphForIconId(const QString &iconId)
         {QStringLiteral("settings"), L'\uE713'},
         {QStringLiteral("whatsNew"), L'\uE7E7'},
         {QStringLiteral("microphone"), L'\uE720'},
-        {QStringLiteral("keyboard"), L'\uE765'},
         {QStringLiteral("refinement"), L'\uE8D2'},
         {QStringLiteral("localModels"), L'\uE977'},
         {QStringLiteral("transcribe"), L'\uE8D6'},
         {QStringLiteral("output"), L'\uF0E3'},
-        {QStringLiteral("apps"), L'\uE71D'},
         {QStringLiteral("vocabulary"), L'\uE82D'},
         {QStringLiteral("accounts"), L'\uE192'},
     };
@@ -448,16 +446,18 @@ struct SettingsWindow::Native {
                 append(id);
             }
         } else {
-            // What's New sits on top only while pending or selected.
+            // What's New leads the untitled top group only while pending or
+            // selected; each titled group sits under a NavigationViewItemHeader.
             if (SettingsWindow::offersWhatsNew(currentPane, controller->pendingWhatsNewVersion())) {
                 append(kWhatsNewPane);
-                navigation.MenuItems().Append(NavigationViewItemSeparator());
             }
-            for (const QStringList &run : schema.sidebarRuns) {
-                if (run != schema.sidebarRuns.first()) {
-                    navigation.MenuItems().Append(NavigationViewItemSeparator());
+            for (const SidebarGroup &group : schema.sidebarGroups) {
+                if (!group.title.isEmpty()) {
+                    NavigationViewItemHeader header;
+                    header.Content(box_value(hs(group.title)));
+                    navigation.MenuItems().Append(header);
                 }
-                for (const QString &id : run) {
+                for (const QString &id : group.panes) {
                     append(id);
                 }
             }
@@ -468,9 +468,9 @@ struct SettingsWindow::Native {
 
     void selectPane(const QString &id)
     {
-        // Leaving the shortcut pane ends a recording; the suspended hotkey
-        // must come back and the pane's key handler is going away.
-        if (id != QStringLiteral("shortcut")) {
+        // Leaving Dictation ends a recording; the suspended hotkey must come
+        // back and the recorder's key handler is going away.
+        if (id != QStringLiteral("dictation")) {
             ShortcutRecorder::setRecording(host, false);
         }
         // The model browser belongs to its pane; left running, its download
@@ -590,9 +590,6 @@ struct SettingsWindow::Native {
                 break;
             case PaneLayout::Transcribe:
                 page = transcribe->build(host, pane->title);
-                break;
-            case PaneLayout::Shortcut:
-                page = buildShortcutPage(*pane, host);
                 break;
             case PaneLayout::Sections:
             case PaneLayout::Alternatives:

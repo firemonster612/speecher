@@ -107,8 +107,6 @@ SpeecherPaneLayout bridgedPaneLayout(PaneLayout layout)
         return SpeecherPaneLayoutSections;
     case PaneLayout::Alternatives:
         return SpeecherPaneLayoutAlternatives;
-    case PaneLayout::Shortcut:
-        return SpeecherPaneLayoutShortcut;
     case PaneLayout::Transcribe:
         return SpeecherPaneLayoutTranscribe;
     case PaneLayout::Home:
@@ -590,6 +588,14 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @end
 
 @implementation SettingsPaneModel
+@end
+
+@interface SidebarGroupModel ()
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSArray<NSString *> *panes;
+@end
+
+@implementation SidebarGroupModel
 @end
 
 @interface LocalModelInfo ()
@@ -1161,13 +1167,16 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                                                 _state->draft, _state->capabilities));
 }
 
-- (NSArray<NSArray<NSString *> *> *)sidebarRuns
+- (NSArray<SidebarGroupModel *> *)sidebarGroups
 {
-    NSMutableArray<NSArray<NSString *> *> *runs = [NSMutableArray array];
-    for (const QStringList &run : _state->schema.sidebarRuns) {
-        [runs addObject:bridgedStrings(run)];
+    NSMutableArray<SidebarGroupModel *> *groups = [NSMutableArray array];
+    for (const speecher::SidebarGroup &group : _state->schema.sidebarGroups) {
+        SidebarGroupModel *model = [[SidebarGroupModel alloc] init];
+        model.title = group.title.toNSString();
+        model.panes = bridgedStrings(group.panes);
+        [groups addObject:model];
     }
-    return runs;
+    return groups;
 }
 
 - (void)setValue:(id)value forRowId:(NSString *)rowId
@@ -2682,6 +2691,11 @@ static std::optional<QString> optionalString(NSString *value)
 - (NSString *)transcribeStepHint:(SpeecherTranscribeStep)step
 {
     return speecher::transcribeStepHint(static_cast<speecher::TranscribeStep>(step)).toNSString();
+}
+
+- (NSString *)paneTitleForRowId:(NSString *)rowId
+{
+    return speecher::paneTitleForRow(QString::fromNSString(rowId)).toNSString();
 }
 
 - (NSString *)transcribeRefinementModelHint

@@ -1,4 +1,5 @@
 #include "frontend/win/CustomRows.h"
+#include "frontend/win/ShortcutRecorder.h"
 
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
@@ -293,7 +294,8 @@ bool customRowIsFullWidth(const QString &rowId)
 {
     return rowId == QStringLiteral("writingProfileBehavior")
         || rowId == QStringLiteral("whatsNewNotes")
-        || rowId == QStringLiteral("localModelBrowser");
+        || rowId == QStringLiteral("localModelBrowser")
+        || rowId == QStringLiteral("globalShortcut");
 }
 
 UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
@@ -303,6 +305,9 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     }
     if (row.id == QStringLiteral("whatsNewNotes")) {
         return releaseNotes(row);
+    }
+    if (row.id == QStringLiteral("globalShortcut")) {
+        return ShortcutRecorder::element(host);
     }
     if (row.id == QStringLiteral("localModelBrowser")) {
         if (!host.localModels) {

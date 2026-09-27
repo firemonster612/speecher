@@ -817,12 +817,11 @@ SettingsPage generalPage(const SchemaContext &context)
     };
     systemRows.append(std::move(launchAtLoginRefused));
 #endif
-#ifdef Q_OS_LINUX
+    // The recorder, which every front end draws with its own key capture.
     shortcutRows.append(customRow(
         QStringLiteral("globalShortcut"),
         QStringLiteral("Global Shortcut"),
         QStringLiteral("Start or stop dictation from anywhere.")));
-#endif
     SettingsRow activationMode = choiceRow(
         QStringLiteral("activationMode"),
         QStringLiteral("Shortcut behavior"),
@@ -2547,14 +2546,11 @@ const QList<PaneSpec> &paneSpecs()
         {"whatsNew", "What's New", "whatsNew", PaneLayout::Sections,
          {{"whatsNew", ""}, {"whatsNew", "Try the new settings"}}},
         {"dictation", "Dictation", "microphone", PaneLayout::Sections,
-         {{"audio", "Transcription"},
+         {{"general", "Global Shortcut"},
+          {"audio", "Transcription"},
           {"audio", "Microphone"},
           {"audio", "Silence trimming"},
           {"audio", "Timing"}}},
-        // macOS and Windows have no schema row for the recorder, so they draw
-        // their own above these rows.
-        {"shortcut", "Shortcut", "keyboard", PaneLayout::Shortcut,
-         {{"general", "Global Shortcut"}}},
         {"refinement", "Refinement", "refinement", PaneLayout::Sections,
          {{"refinement", "Refinement"},
           {"providers", "OpenAI"},
@@ -2566,10 +2562,11 @@ const QList<PaneSpec> &paneSpecs()
           {"localModels", "Cleanup on this computer"}}},
         {"transcribe", "Transcribe", "transcribe", PaneLayout::Transcribe, {}},
         {"output", "Output", "output", PaneLayout::Sections,
-         {{"output", "Delivery"}, {"output", "Paste behavior"}, {"output", "Advanced"}}},
-        {"apps", "Apps", "apps", PaneLayout::Alternatives,
-         {{"output", "Application recognition", "recognition"},
-          {"output", "App-specific paste rules", "pasteRules"}}},
+         {{"output", "Delivery"},
+          {"output", "Paste behavior"},
+          {"output", "Application recognition"},
+          {"output", "App-specific paste rules"},
+          {"output", "Advanced"}}},
         {"vocabulary", "Vocabulary", "vocabulary", PaneLayout::Alternatives,
          {{"vocabulary", "Vocabulary", "terms"},
           {"corrections", "Learned corrections", "corrections"},
@@ -2614,16 +2611,14 @@ QList<SettingsPane> settingsPanes(const QList<SettingsPage> &pages)
     return panes;
 }
 
-QList<QStringList> settingsSidebarRuns()
+QList<SidebarGroup> settingsSidebarGroups()
 {
     return {
-        {QStringLiteral("home")},
-        {QStringLiteral("general")},
-        {QStringLiteral("dictation"), QStringLiteral("shortcut"), QStringLiteral("refinement"),
-         QStringLiteral("localModels")},
-        {QStringLiteral("transcribe")},
-        {QStringLiteral("output"), QStringLiteral("apps")},
-        {QStringLiteral("vocabulary"), QStringLiteral("accounts")},
+        {QString(), {QStringLiteral("home"), QStringLiteral("general"), QStringLiteral("accounts")}},
+        {QStringLiteral("Speech"),
+         {QStringLiteral("dictation"), QStringLiteral("localModels"), QStringLiteral("transcribe")}},
+        {QStringLiteral("Text"),
+         {QStringLiteral("refinement"), QStringLiteral("vocabulary"), QStringLiteral("output")}},
     };
 }
 
@@ -2676,6 +2671,19 @@ SettingsSection SettingsSchema::section(const SettingsPaneGroup &group) const
 
 PageId resolvePage(const SettingsSchema &schema, const QString &request)
 {
+    // Pages that were once panes of their own, so old links and grabs land
+    // where their settings live now.
+    static const QHash<QString, QString> merged{
+        {QStringLiteral("shortcut"), QStringLiteral("dictation")},
+        {QStringLiteral("apps"), QStringLiteral("output")},
+        {QStringLiteral("apps:recognition"), QStringLiteral("output")},
+        {QStringLiteral("apps:pasteRules"), QStringLiteral("output")},
+    };
+    for (auto alias = merged.cbegin(); alias != merged.cend(); ++alias) {
+        if (alias.key().compare(request, Qt::CaseInsensitive) == 0) {
+            return resolvePage(schema, alias.value());
+        }
+    }
     const QString paneId = request.section(QLatin1Char(':'), 0, 0);
     const QString viewId = request.section(QLatin1Char(':'), 1);
     const SettingsPane *pane = nullptr;
@@ -2706,8 +2714,8 @@ QStringList searchPanes(const SettingsSchema &schema, const QString &query, cons
         return text.contains(needle, Qt::CaseInsensitive);
     };
     QStringList found;
-    for (const QStringList &run : schema.sidebarRuns) {
-        for (const QString &id : run) {
+    for (const SidebarGroup &group : schema.sidebarGroups) {
+        for (const QString &id : group.panes) {
             const SettingsPane *pane = schema.pane(id);
             bool matches = hit(pane->title);
             for (const SettingsPaneGroup &group : pane->groups) {
@@ -2739,7 +2747,7 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
                               correctionsPage(),
                               bindingsPage(),
                               providersPage()};
-    QList<QStringList> runs = settingsSidebarRuns();
+    QList<SidebarGroup> groups = settingsSidebarGroups();
     // Local models exists where this build runs speech models, which is when
     // the registry offers the local speech provider.
     const QString localModels = QStringLiteral("localModels");
@@ -2749,8 +2757,8 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
     if (localSpeech) {
         pages.insert(4, localModelsPage(context));
     } else {
-        for (QStringList &run : runs) {
-            run.removeAll(localModels);
+        for (SidebarGroup &group : groups) {
+            group.panes.removeAll(localModels);
         }
     }
     pages.append(whatsNewPage(pages, context));
@@ -2758,7 +2766,7 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
     if (!localSpeech) {
         panes.removeIf([&localModels](const SettingsPane &pane) { return pane.id == localModels; });
     }
-    return {std::move(pages), std::move(panes), std::move(runs)};
+    return {std::move(pages), std::move(panes), std::move(groups)};
 }
 
 QString paneTitleForRow(const QString &rowId)

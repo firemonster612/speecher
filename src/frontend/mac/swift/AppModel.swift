@@ -12,10 +12,10 @@ import SwiftUI
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var pages: [SettingsPageModel]
-    /// The sidebar's panes and their runs, as the schema arranges them. Fixed
-    /// for the life of the app, so a plain let.
+    /// The sidebar's panes and their groups, as the schema arranges them.
+    /// Fixed for the life of the app, so a plain let.
     let panes: [Pane]
-    let sidebarRuns: [[String]]
+    let sidebarGroups: [SidebarGroupModel]
     /// The dictation state's name, as the controller reports it.
     @Published private(set) var status: String
     @Published private(set) var level: Float = 0
@@ -119,7 +119,7 @@ final class AppModel: ObservableObject {
         pages = bridge.settingsSchema.pages
         let panes = bridge.settingsSchema.panes.map(Pane.init)
         self.panes = panes
-        sidebarRuns = bridge.settingsSchema.sidebarRuns
+        sidebarGroups = bridge.settingsSchema.sidebarGroups
         status = bridge.stateName
         transcript = bridge.lastTranscript
         local = bridge.localSetupState

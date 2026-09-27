@@ -3,7 +3,6 @@
 #include "frontend/win/CollectionEditor.h"
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/SettingsModel.h"
-#include "frontend/win/ShortcutRecorder.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -710,18 +709,5 @@ UIElement buildPane(const SettingsPane &pane, PaneHost &host)
     return scroll;
 }
 
-UIElement buildShortcutPage(const SettingsPane &pane, PaneHost &host)
-{
-    StackPanel column;
-    ScrollViewer scroll = pageScaffold(pane.title, column);
-    ShortcutRecorder::appendPane(column, pane.groups.isEmpty() ? QString() : pane.groups.first().title, host);
-    for (const SettingsPaneGroup &group : pane.groups) {
-        SectionSnapshot section = host.model->section(group);
-        // The recorder's card already carries the heading.
-        section.title.clear();
-        appendSection(column, section, host);
-    }
-    return scroll;
-}
 
 } // namespace speecher::win

@@ -103,7 +103,9 @@ private slots:
     }
 
     // The sidebar is the schema's runs, a gap between each, and nothing else.
-    void sidebarListsTheSchemaPanesInTheirRuns()
+    // The sidebar is the schema's groups, each titled one under its header,
+    // and nothing else.
+    void sidebarListsTheSchemaPanesInTheirGroups()
     {
         ApplicationController controller(true);
         AppWindow window(&controller);
@@ -111,38 +113,41 @@ private slots:
         QStringList rows;
         for (int row = 0; row < navigation->count(); ++row) {
             QListWidgetItem *item = navigation->item(row);
-            // A separator is a style-drawn line on an item nothing can pick.
-            if (auto *separator = navigation->itemWidget(item)) {
-                QCOMPARE(separator->objectName(), QStringLiteral("sidebarSeparator"));
-                auto *line = separator->findChild<QFrame *>();
+            // A header is a bold title and a style-drawn line on an item
+            // nothing can pick.
+            if (auto *header = navigation->itemWidget(item)) {
+                QCOMPARE(header->objectName(), QStringLiteral("sidebarHeader"));
+                auto *title = header->findChild<QLabel *>(QStringLiteral("sidebarHeaderTitle"));
+                auto *line = header->findChild<QFrame *>(QStringLiteral("sidebarHeaderLine"));
+                QVERIFY(title && title->font().bold());
                 QVERIFY(line && line->frameShape() == QFrame::HLine);
                 QCOMPARE(item->flags(), Qt::NoItemFlags);
-                rows.append(QStringLiteral("|"));
+                rows.append(QStringLiteral("[%1]").arg(title->text()));
             } else {
                 rows.append(item->text());
             }
         }
-        QStringList expected{QStringLiteral("Home"), QStringLiteral("|"), QStringLiteral("General"),
-                             QStringLiteral("|"), QStringLiteral("Dictation"), QStringLiteral("Shortcut"),
-                             QStringLiteral("Refinement")};
+        QStringList expected{QStringLiteral("Home"), QStringLiteral("General"), QStringLiteral("Accounts"),
+                             QStringLiteral("[Speech]"), QStringLiteral("Dictation")};
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         expected.append(QStringLiteral("Local models"));
 #endif
-        expected += QStringList{QStringLiteral("|"), QStringLiteral("Transcribe"), QStringLiteral("|"),
-                                QStringLiteral("Output"), QStringLiteral("Apps"), QStringLiteral("|"),
-                                QStringLiteral("Vocabulary"), QStringLiteral("Accounts")};
+        expected += QStringList{QStringLiteral("Transcribe"), QStringLiteral("[Text]"),
+                                QStringLiteral("Refinement"), QStringLiteral("Vocabulary"),
+                                QStringLiteral("Output")};
         QCOMPARE(rows, expected);
 
-        // Up and Down step over the separators, from one pane to the next.
+        // Up and Down step over the headers, from one pane to the next.
         window.show();
         navigation->setFocus();
         QTest::keyClick(navigation, Qt::Key_Down);
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("General"));
         QTest::keyClick(navigation, Qt::Key_Down);
+        QTest::keyClick(navigation, Qt::Key_Down);
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Dictation"));
         QTest::keyClick(navigation, Qt::Key_Up);
-        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("General"));
-        QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("General"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Accounts"));
+        QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Accounts"));
         window.hide();
     }
 
@@ -788,7 +793,7 @@ private slots:
         search->setText(QStringLiteral("Keep before speech"));
         QCOMPARE(navigation->count(), 1);
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Dictation"));
-        // Hits across several runs come without separators.
+        // Hits across several groups come without headers.
         search->setText(QStringLiteral("e"));
         QVERIFY(navigation->count() > 3);
         for (int row = 0; row < navigation->count(); ++row) {
@@ -1071,6 +1076,7 @@ private slots:
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(back->isVisible());
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("What's New"));
+        QCOMPARE(navigation->item(1)->text(), QStringLiteral("Home"));
         QCOMPARE(navigation->currentItem(), navigation->item(0));
 
         back->click();

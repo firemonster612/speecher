@@ -266,7 +266,9 @@ private slots:
         const SettingsSchema schema = buildSettingsSchema(context());
         const SettingsPage &general = schema.page(QStringLiteral("general"));
         QVERIFY(hasRow(general, QStringLiteral("launchAtLogin")));
-        QVERIFY(!hasRow(general, QStringLiteral("globalShortcut")));
+        // The recorder is a custom row every front end draws, at the top of
+        // Dictation.
+        QVERIFY(hasRow(general, QStringLiteral("globalShortcut")));
         QVERIFY(!hasRow(general, QStringLiteral("removeSpeecher")));
 
         const SettingsRow &globalPaste = rowById(

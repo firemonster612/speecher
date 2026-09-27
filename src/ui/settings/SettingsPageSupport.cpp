@@ -629,6 +629,13 @@ QColor positiveTextColor(const QPalette &palette)
 #endif
 }
 
+QFont sectionTitleFont(const QFont &font)
+{
+    QFont bold(font);
+    bold.setBold(true);
+    return bold;
+}
+
 QLabel *makeSectionLabel(const QString &text, QWidget *parent)
 {
     // FormHeader: bold text right above its card, inset like the rows.
@@ -636,9 +643,7 @@ QLabel *makeSectionLabel(const QString &text, QWidget *parent)
     section->setObjectName(QStringLiteral("sectionLabel"));
     section->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     section->setContentsMargins(gridUnit(), 0, gridUnit(), smallSpacing());
-    QFont font = section->font();
-    font.setBold(true);
-    section->setFont(font);
+    section->setFont(sectionTitleFont(section->font()));
     return section;
 }
 

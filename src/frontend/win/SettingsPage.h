@@ -88,7 +88,7 @@ struct PaneHost {
     int apiKeyEdits = 0;
     bool apiKeyLoaded = false;
     QString credentialProblem;
-    // Shortcut pane state.
+    // Global Shortcut recorder state, on Dictation.
     QString shortcutProblem;
     // The single-key typing cost, shown inline after a save; not an error.
     QString shortcutNotice;
@@ -133,9 +133,6 @@ void setWindowIcon(const winrt::Microsoft::UI::Xaml::Window &window,
 // in code. An Alternatives pane shows one group at a time under a SelectorBar.
 winrt::Microsoft::UI::Xaml::UIElement buildPane(const SettingsPane &pane, PaneHost &host);
 
-// The global-shortcut recorder, which has no schema row, above the Shortcut
-// pane's schema rows.
-winrt::Microsoft::UI::Xaml::UIElement buildShortcutPage(const SettingsPane &pane, PaneHost &host);
 
 // The Gallery's settings page scaffold: gutters on the scroller, the column
 // capped at 1064 inside them, the page title on top (none when empty). Shared

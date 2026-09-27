@@ -647,8 +647,9 @@ private slots:
             }
             QVERIFY2(pages.page(pane.id), qPrintable(pane.id));
             // Release notes are What's New's first group and carry no heading;
-            // the Linux shortcut editor brings its own "Dictation key" heading.
-            if (pane.id != QStringLiteral("whatsNew") && pane.id != QStringLiteral("shortcut")) {
+            // the Linux shortcut editor on Dictation brings its own "Dictation
+            // key" heading.
+            if (pane.id != QStringLiteral("whatsNew") && pane.id != QStringLiteral("dictation")) {
                 QCOMPARE(sectionLabels(*pages.page(pane.id)), titles);
             }
             // Every row has a control named for it, except the custom blocks

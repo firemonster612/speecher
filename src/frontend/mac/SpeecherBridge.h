@@ -120,7 +120,6 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
     SpeecherPaneLayoutSections,
     SpeecherPaneLayoutAlternatives,
-    SpeecherPaneLayoutShortcut,
     SpeecherPaneLayoutTranscribe,
     SpeecherPaneLayoutHome,
 };
@@ -144,6 +143,12 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneGroupModel *> *groups;
 @end
 
+// One titled group of the sidebar; the top group's title is empty.
+@interface SidebarGroupModel : NSObject
+@property (nonatomic, readonly, copy) NSString *title;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *panes;
+@end
+
 // What a file offered to a collection turned out to hold.
 @interface CollectionImportResult : NSObject
 // The records already there with the file's merged in, or nil when the file
@@ -158,9 +163,9 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // flag from the draft, so a reader sees the effect of its own writes.
 @interface SettingsSchemaModel : NSObject
 @property (nonatomic, readonly, copy) NSArray<SettingsPageModel *> *pages;
-// The sidebar's panes and their runs, which never change while the app runs.
+// The sidebar's panes and their groups, which never change while the app runs.
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneModel *> *panes;
-@property (nonatomic, readonly, copy) NSArray<NSArray<NSString *> *> *sidebarRuns;
+@property (nonatomic, readonly, copy) NSArray<SidebarGroupModel *> *sidebarGroups;
 // A page id ("general", "vocabulary:corrections") as the pane and view it
 // names, speecher::resolvePage's answer: an unknown pane, or a view the pane
 // does not have, gives Home.
@@ -853,6 +858,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepLabel(_:));
 // The line under the step indicator; empty for a step that needs none.
 - (NSString *)transcribeStepHint:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepHint(_:));
+// The settings page a row is on, from core (speecher::paneTitleForRow).
+- (NSString *)paneTitleForRowId:(NSString *)rowId NS_SWIFT_NAME(paneTitle(forRowId:));
 // Where to change the refinement model the Configure step shows.
 @property (nonatomic, readonly, copy) NSString *transcribeRefinementModelHint;
 // How long a finished file holds at the end before the next one replaces it.
