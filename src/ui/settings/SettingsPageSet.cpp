@@ -519,6 +519,10 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         emit whatsNewRequested();
         return;
     }
+    if (rowId == QStringLiteral("speechLocalModelDownload")) {
+        emit localModelsRequested();
+        return;
+    }
 #ifdef Q_OS_LINUX
     if (rowId == QStringLiteral("removeSpeecher")) {
         removeSpeecher();

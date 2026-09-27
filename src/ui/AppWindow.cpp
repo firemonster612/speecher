@@ -185,6 +185,8 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     setWindowTitle(QStringLiteral("Speecher"));
     buildSharedPages();
     connect(m_pages, &SettingsPageSet::whatsNewRequested, this, &AppWindow::showWhatsNew);
+    connect(m_pages, &SettingsPageSet::localModelsRequested, this,
+            [this] { navigateToSettings(AppPageId::LocalModels); });
     connect(m_home, &HomePage::navigateRequested, this, &AppWindow::navigateToSettings);
     connect(m_home, &HomePage::correctionsRequested, this, [this] {
         navigateToSettings(AppPageId::Vocabulary);

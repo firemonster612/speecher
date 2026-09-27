@@ -69,6 +69,7 @@ signals:
     void changed();
     void settingsDeletionStarted();
     void whatsNewRequested();
+    void localModelsRequested();
 
 private:
     SchemaSettingsPage *addPage(const QString &id,

@@ -4,6 +4,7 @@
 #include "core/SecretStore.h"
 
 #include "core/EndpointUrl.h"
+#include "core/LocalModelCatalog.h"
 
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
@@ -490,6 +491,57 @@ QList<SettingsRow> speechEndpointRows(const std::function<LiveFacts(const AppSet
         row.visible = whileSpeechProvider(QStringLiteral("endpoint"));
     }
     return rows;
+}
+
+// The Local Model dictation uses, under the Transcription picker. It is the
+// setting "Use this model" writes, so the two always agree. With nothing
+// downloaded there is nothing to choose, and the row sends people to the page
+// that downloads.
+QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts)
+{
+    SettingsRow model = choiceRow(
+        QStringLiteral("speechLocalModel"),
+        QStringLiteral("Model"),
+        QStringLiteral("Downloaded models. Get others on the Local models page."),
+        [facts](const AppSettings &settings) {
+            QList<RowOption> options;
+            for (const QString &id : facts().downloadedModels) {
+                if (const LocalModel *model = findLocalModel(id)) {
+                    options.append({model->id, model->name, model->bestFor});
+                }
+            }
+            const QString chosen = settings.speech.local.modelId;
+            if (std::none_of(options.cbegin(), options.cend(),
+                             [&chosen](const RowOption &option) { return option.id == chosen; })) {
+                const LocalModel *missing = findLocalModel(chosen);
+                options.append({chosen,
+                                QStringLiteral("%1 (not downloaded)").arg(missing ? missing->name : chosen),
+                                QString(),
+                                false});
+            }
+            return options;
+        },
+        [](const AppSettings &settings) { return settings.speech.local.modelId; },
+        [](AppSettings &settings, const QString &value) {
+            settings.speech.local.modelId = value;
+            settings.speech.local.modelChosen = true;
+        });
+    model.contentWidthHint = 24;
+
+    SettingsRow download = actionRow(QStringLiteral("speechLocalModelDownload"),
+                                     QStringLiteral("Model"),
+                                     QStringLiteral("No model is downloaded yet. Download one to "
+                                                    "dictate on this computer."),
+                                     QStringLiteral("Open Local models"));
+
+    const auto whileLocal = whileSpeechProvider(QStringLiteral("local"));
+    model.visible = [whileLocal, facts](const AppSettings &settings, const Capabilities &capabilities) {
+        return whileLocal(settings, capabilities) && !facts().downloadedModels.isEmpty();
+    };
+    download.visible = [whileLocal, facts](const AppSettings &settings, const Capabilities &capabilities) {
+        return whileLocal(settings, capabilities) && facts().downloadedModels.isEmpty();
+    };
+    return {std::move(model), std::move(download)};
 }
 
 // Refinement through a Local Runner, under the Provider picker.
@@ -1130,6 +1182,7 @@ SettingsPage audioPage(const SchemaContext &context)
             {QStringLiteral("Transcription"),
              QString(),
              QList<SettingsRow>{std::move(speechProvider), std::move(finalRetranscribe)}
+                 + speechLocalModelRows([context] { return liveFacts(context); })
                  + speechEndpointRows([context](const AppSettings &draft) {
                      return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
                  })},
@@ -2457,6 +2510,7 @@ static QList<SettingsPane> settingsPanes()
              PaneLayout::Sections,
              {group("Transcription", {QStringLiteral("speechProvider"),
                                       QStringLiteral("codexFinalRetranscribe"),
+                                      QStringLiteral("speechLocalModel*"),
                                       QStringLiteral("speechEndpoint*")}),
               group("Microphone", {QStringLiteral("audioDevice"),
                                    QStringLiteral("captureMode")}),

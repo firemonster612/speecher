@@ -1134,8 +1134,9 @@ private slots:
             }
             return QStringList();
         };
-        QCOMPARE(idsAfter(audio, QStringLiteral("speechProvider")).mid(1, 5),
-                 QStringList({QStringLiteral("speechEndpointUrl"), QStringLiteral("speechEndpointPath"),
+        QCOMPARE(idsAfter(audio, QStringLiteral("speechProvider")).mid(1, 7),
+                 QStringList({QStringLiteral("speechLocalModel"), QStringLiteral("speechLocalModelDownload"),
+                              QStringLiteral("speechEndpointUrl"), QStringLiteral("speechEndpointPath"),
                               QStringLiteral("speechEndpointApiKey"), QStringLiteral("speechEndpointModel"),
                               QStringLiteral("speechEndpointTest")}));
         QCOMPARE(idsAfter(refinement, QStringLiteral("refinementProvider")).mid(0, 9),
@@ -1243,6 +1244,57 @@ private slots:
         for (const QStringList &otherRun : without.sidebarRuns) {
             QVERIFY(!otherRun.contains(QStringLiteral("localModels")));
         }
+    }
+
+    void audioPageChoosesTheLocalModel()
+    {
+        SchemaContext context = fakeContext();
+        context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});
+        LiveFacts facts;
+        context.liveFacts = [&facts] { return facts; };
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
+        const SettingsRow &model = rowById(audio, QStringLiteral("speechLocalModel"));
+        const SettingsRow &download = rowById(audio, QStringLiteral("speechLocalModelDownload"));
+        AppSettings settings;
+
+        // Only while Local model is the speech provider.
+        settings.speech.providerId = QStringLiteral("claude");
+        facts.downloadedModels = {QStringLiteral("moonshine-small")};
+        QVERIFY(!model.visible(settings, Capabilities{}));
+        QVERIFY(!download.visible(settings, Capabilities{}));
+
+        // Nothing downloaded: the row points at the Local models page instead.
+        settings.speech.providerId = QStringLiteral("local");
+        facts.downloadedModels.clear();
+        QVERIFY(!model.visible(settings, Capabilities{}));
+        QVERIFY(download.visible(settings, Capabilities{}));
+        QCOMPARE(download.kind, RowKind::Action);
+
+        // Downloaded models are the choices, and a chosen model that is not
+        // downloaded stays shown but cannot be picked again.
+        facts.downloadedModels = {QStringLiteral("moonshine-small"), QStringLiteral("parakeet")};
+        settings.speech.local.modelId = QStringLiteral("cohere");
+        QVERIFY(model.visible(settings, Capabilities{}));
+        QVERIFY(!download.visible(settings, Capabilities{}));
+        const QList<RowOption> options = model.options(settings);
+        QCOMPARE(options.size(), 3);
+        QCOMPARE(options.at(0).id, QStringLiteral("moonshine-small"));
+        QCOMPARE(options.at(0).label, QStringLiteral("Moonshine Small"));
+        QCOMPARE(options.at(1).id, QStringLiteral("parakeet"));
+        QCOMPARE(options.at(2).label, QStringLiteral("Cohere Transcribe (not downloaded)"));
+        QVERIFY(!options.at(2).enabled);
+
+        // It writes the setting "Use this model" writes.
+        model.apply(settings, QStringLiteral("parakeet"));
+        QCOMPARE(settings.speech.local.modelId, QStringLiteral("parakeet"));
+        QVERIFY(settings.speech.local.modelChosen);
+        QCOMPARE(model.value(settings).toString(), QStringLiteral("parakeet"));
+        const SettingsRow &browser =
+            rowById(schema.page(QStringLiteral("localModels")), QStringLiteral("localModelBrowser"));
+        QCOMPARE(browser.value(settings).toString(), QStringLiteral("parakeet"));
+        browser.apply(settings, QStringLiteral("moonshine-small"));
+        QCOMPARE(model.value(settings).toString(), QStringLiteral("moonshine-small"));
     }
 
     void aSavedMicrophoneSurvivesGoingMissing()
