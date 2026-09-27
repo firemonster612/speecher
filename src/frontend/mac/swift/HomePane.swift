@@ -377,15 +377,22 @@ struct HomePane: View {
         GridRow {
             HStack(spacing: 6) {
                 // An app name stays on one line; the badge beside it would
-                // otherwise squeeze a two-word name onto two.
-                Text(title).lineLimit(1).fixedSize()
+                // otherwise squeeze a two-word name onto two. The name takes
+                // its width before the bar does, and truncates only when the
+                // card is too narrow for it.
+                Text(title).lineLimit(1)
                 if !detail.isEmpty { ProfileBadge(label: detail).fixedSize() }
             }
+            .layoutPriority(1)
             ProgressView(value: Double(value), total: Double(max(total, 1)))
                 // The system accent itself, not Color.accentColor: a tint
                 // defined in terms of the accent it replaces resolves
                 // recursively and overflows the stack.
                 .tint(Color(nsColor: .controlAccentColor).opacity(emphasised ? 1 : 0.42))
+                // Enough bar to read even beside a long name, which
+                // truncates first.
+                .frame(minWidth: 60)
+                .accessibilityLabel(title)
             Text(caption).monospacedDigit().gridColumnAlignment(.trailing)
         }
     }
