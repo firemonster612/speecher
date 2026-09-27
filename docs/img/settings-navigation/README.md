@@ -8,12 +8,13 @@ holds the app rules as sections.
 
 ## Linux
 
-Captured at 26323bc8, offscreen with the KDE platform theme and Breeze in an
+Captured at bfa34d63, offscreen with the KDE platform theme and Breeze in an
 isolated config (`SPEECHER_GRAB_PAGE=<page id>`), from a build with local
 speech on, at the window's default size unless noted.
 
 - `linux-sidebar-headers.png`: the sidebar enlarged; each group titled like
-  Kirigami's ListSectionHeader, a bold title and a Breeze-drawn line.
+  Kirigami's ListSectionHeader: a bold title starting at the icons and a
+  Breeze-drawn line.
 - `linux-general-whatsnew-light.png`, `linux-general-whatsnew-dark.png`: What's
   New pending, first in the top group.
 - `linux-general-light.png`, `linux-general-dark.png`: nothing pending.
