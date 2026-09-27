@@ -137,8 +137,29 @@ private slots:
                                 QStringLiteral("Output")};
         QCOMPARE(rows, expected);
 
-        // Up and Down step over the headers, from one pane to the next.
+        // A header's title starts where the items' icons do, as System Settings'
+        // section titles do, and its line runs to the row's right edge.
         window.show();
+        QCoreApplication::processEvents();
+        QStyleOptionViewItem option;
+        option.initFrom(navigation);
+        option.features = QStyleOptionViewItem::HasDisplay | QStyleOptionViewItem::HasDecoration;
+        option.decorationSize = navigation->iconSize();
+        option.decorationPosition = QStyleOptionViewItem::Left;
+        option.rect = navigation->visualItemRect(navigation->item(0));
+        const int iconLeft =
+            navigation->style()->subElementRect(QStyle::SE_ItemViewItemDecoration, &option, navigation).left();
+        for (int row = 0; row < navigation->count(); ++row) {
+            if (QWidget *header = navigation->itemWidget(navigation->item(row))) {
+                auto *title = header->findChild<QLabel *>(QStringLiteral("sidebarHeaderTitle"));
+                auto *line = header->findChild<QFrame *>(QStringLiteral("sidebarHeaderLine"));
+                QCOMPARE(title->mapTo(navigation->viewport(), QPoint()).x(), iconLeft);
+                QCOMPARE(line->mapTo(navigation->viewport(), QPoint(line->width() - 1, 0)).x(),
+                         navigation->visualItemRect(navigation->item(row)).right());
+            }
+        }
+
+        // Up and Down step over the headers, from one pane to the next.
         navigation->setFocus();
         QTest::keyClick(navigation, Qt::Key_Down);
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("General"));

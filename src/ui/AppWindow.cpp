@@ -843,9 +843,9 @@ void AppWindow::leaveWhatsNew()
     selectPane(m_whatsNewReturnPane.isEmpty() ? kHomePane : m_whatsNewReturnPane);
 }
 
-// Where an item's text starts in the sidebar, as the style lays out an icon
-// and a label, so a separator can line up with the titles above and below it.
-static int sidebarTextInset(const QListWidget *navigation)
+// Where a pane item's content starts, its icon, as the style lays out an item
+// of the sidebar; System Settings starts its section titles there.
+static int sidebarContentInset(const QListWidget *navigation)
 {
     QStyleOptionViewItem option;
     option.initFrom(navigation);
@@ -855,7 +855,7 @@ static int sidebarTextInset(const QListWidget *navigation)
     option.displayAlignment = Qt::AlignLeft | Qt::AlignVCenter;
     option.text = QStringLiteral("M");
     option.rect = QRect(0, 0, navigation->viewport()->width(), 32);
-    return navigation->style()->subElementRect(QStyle::SE_ItemViewItemText, &option, navigation).left();
+    return navigation->style()->subElementRect(QStyle::SE_ItemViewItemDecoration, &option, navigation).left();
 }
 
 // The panes in their groups, each titled group under a header, and What's
@@ -877,10 +877,10 @@ void AppWindow::rebuildSidebar()
         }
     };
     // Kirigami's ListSectionHeader, as System Settings' sidebar has it: the
-    // group's title in the section bold at the item text, then a line the
-    // style draws running to the row's right edge. The row is an item nothing
-    // can select or land on with the keyboard.
-    const int inset = sidebarTextInset(m_navigation);
+    // group's title in the section bold where the items' icons start, then a
+    // line the style draws running to the row's right edge. The row is an
+    // item nothing can select or land on with the keyboard.
+    const int inset = sidebarContentInset(m_navigation);
     const auto addHeader = [this, inset](const QString &title) {
         auto *item = new QListWidgetItem(m_navigation);
         item->setFlags(Qt::NoItemFlags);
