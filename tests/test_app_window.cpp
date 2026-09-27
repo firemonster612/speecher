@@ -1,5 +1,6 @@
 #include "app/LocalSetup.h"
 #include "common/test_suites.h"
+#include "common/test_doubles.h"
 
 #include "app/ApplicationController.h"
 #include "app/UpdateController.h"
@@ -858,11 +859,8 @@ private slots:
         {
             QFile audio(first);
             QVERIFY(audio.open(QIODevice::WriteOnly));
-            const QByteArray samples(16000 * 2, '\0');
-            QByteArray header("RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x80\x3e\0\0\0\x7d\0\0\x02\0\x10\0data", 40);
-            const quint32 size = quint32(samples.size());
-            header.append(reinterpret_cast<const char *>(&size), 4);
-            audio.write(header + samples);
+            // One second of 16 kHz mono silence.
+            audio.write(test::wavBytes(QByteArray(16000 * 2, '\0'), 16000, 1));
         }
         model->retry(0);
         QCOMPARE(model->retrying(), 0);

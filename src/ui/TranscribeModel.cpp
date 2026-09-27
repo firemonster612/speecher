@@ -129,8 +129,10 @@ bool TranscribeModel::start(const TranscribeOptions &options, QString *error)
 {
     // Refused before anything changes, so a batch or retry still running
     // keeps the list, results and choices it reports into.
-    if (m_controller->fileTranscription()->isRunning()) {
-        return m_controller->startFileTranscription(m_files, options, error);
+    const QString refusal = m_controller->fileTranscriptionRefusal();
+    if (!refusal.isEmpty()) {
+        *error = refusal;
+        return false;
     }
     m_batch = m_files;
     m_batchOptions = options;

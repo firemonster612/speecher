@@ -62,10 +62,10 @@ struct TranscribeFileResult {
 
 // The files Speecher offers to transcribe: the file pickers and their hint
 // name these extensions, and the packaging registers "Open with" for them (a
-// test holds the .desktop, Info.plist and .iss lists to these). A test
-// transcribes a clip in each video container, where Qt's FFmpeg backend can
-// write one. Dropped and opened files are not limited to the list; see
-// isAudioFile.
+// test holds the .desktop, Info.plist and .iss lists to these). A test writes
+// a clip in each video container and transcribes it, wherever the media
+// backend reports it can write that clip. Dropped and opened files are not
+// limited to the list; see isAudioFile.
 QStringList transcribableExtensions();
 // The MIME types of those files, with the aliases older shared-mime-info
 // releases and file managers still use.

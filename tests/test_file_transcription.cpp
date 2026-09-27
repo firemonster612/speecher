@@ -8,7 +8,6 @@
 #include "transcribe/TranscribePresentation.h"
 
 #include <QDir>
-#include <QLibraryInfo>
 #include <QMediaFormat>
 #include <QMimeDatabase>
 #include <QRegularExpression>
@@ -103,14 +102,9 @@ void writeWav(const QString &path)
             data.append(reinterpret_cast<const char *>(&sample), 2);
         }
     }
-    const auto le32 = [](quint32 v) { QByteArray b(4, 0); qToLittleEndian(v, b.data()); return b; };
-    const auto le16 = [](quint16 v) { QByteArray b(2, 0); qToLittleEndian(v, b.data()); return b; };
-    QByteArray wav = "RIFF" + le32(36 + data.size()) + "WAVEfmt " + le32(16) + le16(1) + le16(channels)
-        + le32(rate) + le32(rate * channels * 2) + le16(channels * 2) + le16(16) + "data"
-        + le32(data.size()) + data;
     QFile file(path);
     QVERIFY(file.open(QIODevice::WriteOnly));
-    file.write(wav);
+    file.write(wavBytes(data, rate, channels));
 }
 
 QString readFile(const QString &path)
@@ -191,20 +185,6 @@ QString recordClip(const QString &path, QMediaFormat::FileFormat container,
     return stopped && QFileInfo(path).size() > 0 ? QString() : QStringLiteral("the recorder wrote nothing");
 }
 
-// True where Qt Multimedia runs on its FFmpeg backend, which writes every
-// clip the decode test needs: Linux, with the plugin installed and no other
-// backend asked for.
-bool ffmpegMediaBackend()
-{
-#if defined(Q_OS_LINUX)
-    const QString asked = qEnvironmentVariable("QT_MEDIA_BACKEND");
-    return (asked.isEmpty() || asked == QStringLiteral("ffmpeg"))
-        && QFile::exists(QLibraryInfo::path(QLibraryInfo::PluginsPath)
-                         + QStringLiteral("/multimedia/libffmpegmediaplugin.so"));
-#else
-    return false;
-#endif
-}
 #endif
 
 // Every first capture of pattern in a file under packaging/, sorted.
@@ -573,13 +553,16 @@ private slots:
         Q_UNUSED(videoCodec);
         QSKIP("Writing the clips needs Qt 6.8's recorder inputs");
 #else
+        // Only a clip this Qt's media backend says it cannot write is skipped;
+        // once it says it can, failing to write or read it fails the test.
+        QMediaFormat format(container);
+        format.setAudioCodec(audioCodec);
+        format.setVideoCodec(videoCodec);
+        if (!format.isSupported(QMediaFormat::Encode)) {
+            QSKIP("This Qt cannot write this clip");
+        }
         const QString clip = m_dir.filePath(QStringLiteral("clip.") + extension);
         const QString recordError = recordClip(clip, container, audioCodec, videoCodec);
-        // Where the FFmpeg backend is there, a clip it cannot write is a
-        // failure: the container would go unproven.
-        if (!recordError.isEmpty() && !ffmpegMediaBackend()) {
-            QSKIP(qPrintable(QStringLiteral("No FFmpeg media backend to write the clip: ") + recordError));
-        }
         QVERIFY2(recordError.isEmpty(), qPrintable(recordError));
         QVERIFY(QMimeDatabase().mimeTypeForFile(clip).name().startsWith(QStringLiteral("video/")));
         QVERIFY(isAudioFile(clip));

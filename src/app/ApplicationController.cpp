@@ -263,16 +263,21 @@ FileTranscriptionSession *ApplicationController::fileTranscription() const
     return m_fileTranscription;
 }
 
-bool ApplicationController::startFileTranscription(const QStringList &paths,
-                                                   const TranscribeOptions &options,
-                                                   QString *error)
+QString ApplicationController::fileTranscriptionRefusal() const
 {
     const DictationState state = m_session->state();
-    const QString refusal = m_fileTranscription->isRunning()
+    return m_fileTranscription->isRunning()
         ? QStringLiteral("Files are already being transcribed.")
         : (state != DictationState::Idle && state != DictationState::Error) || m_microphoneStartPending
             ? QStringLiteral("Finish the dictation in progress, then transcribe the files.")
             : QString();
+}
+
+bool ApplicationController::startFileTranscription(const QStringList &paths,
+                                                   const TranscribeOptions &options,
+                                                   QString *error)
+{
+    const QString refusal = fileTranscriptionRefusal();
     if (!refusal.isEmpty()) {
         if (error) {
             *error = refusal;

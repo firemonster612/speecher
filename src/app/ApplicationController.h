@@ -51,6 +51,8 @@ public:
     // dictation exclude each other: a batch will not start while a dictation
     // is under way, and dictation will not start while a batch runs.
     FileTranscriptionSession *fileTranscription() const;
+    // Why a batch cannot start now, or empty when it can.
+    QString fileTranscriptionRefusal() const;
     bool startFileTranscription(const QStringList &paths,
                                 const TranscribeOptions &options,
                                 QString *error = nullptr);
