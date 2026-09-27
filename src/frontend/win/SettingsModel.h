@@ -54,6 +54,8 @@ struct RowSnapshot {
     QVariant value;
     QList<RowOption> options;
     QList<RowOption> suggestions;
+    // Offers values even while the list is empty, so the control stays the same.
+    bool suggests = false;
     // Text rows only: shown masked.
     bool secret = false;
     bool enabled = true;

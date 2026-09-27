@@ -2124,6 +2124,7 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
     m_endpointModel->setEditable(true);
     m_endpointModel->setInsertPolicy(QComboBox::NoInsert);
     m_endpointModel->setMinimumContentsLength(18);
+    m_endpointModel->lineEdit()->setClearButtonEnabled(true);
     m_endpointModel->setEditText(saved.model);
     modelLayout->addWidget(m_endpointModel);
     auto *connectButton = new QPushButton(QStringLiteral("Connect"), modelControls);
@@ -2189,6 +2190,13 @@ void RefinementSetupPage::showEndpointCheck()
         m_endpointModel->addItems(facts.refinementEndpointModels);
         m_endpointModel->setEditText(typed);
         m_endpointModel->lineEdit()->setCursorPosition(cursor);
+    }
+    // A check that finds no model saved picks the server's first.
+    const QString saved = m_settings.refinementEndpointSettings().model;
+    if (m_endpointModel->currentText().isEmpty() && !saved.isEmpty()) {
+        const QSignalBlocker blocker(m_endpointModel);
+        m_endpointModel->setCurrentIndex(m_endpointModel->findText(saved));
+        m_endpointModel->setEditText(saved);
     }
 }
 

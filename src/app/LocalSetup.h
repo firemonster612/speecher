@@ -156,6 +156,7 @@ public:
     };
     Pull pull() const;
 
+    // A check that lists models while no model is saved saves the first.
     void checkSpeechEndpoint(const SpeechEndpointSettings &endpoint);
     void checkRefinementEndpoint(const RefinementSettings &settings);
 

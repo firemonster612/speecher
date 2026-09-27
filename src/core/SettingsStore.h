@@ -124,6 +124,10 @@ public:
     using SettingsCodecs::setLocalSpeechSettings;
     using SettingsCodecs::localRunnerSettings;
     using SettingsCodecs::setLocalRunnerSettings;
+    using SettingsCodecs::speechEndpointSettings;
+    using SettingsCodecs::setSpeechEndpointSettings;
+    using SettingsCodecs::refinementEndpointSettings;
+    using SettingsCodecs::setRefinementEndpointSettings;
     using SettingsCodecs::setCodexFinalRetranscribe;
     using SettingsCodecs::setSetupCompleted;
     using SettingsCodecs::setStoredApiKeyFallback;

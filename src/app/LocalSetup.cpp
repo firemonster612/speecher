@@ -33,6 +33,15 @@ QString acceleratorName(const QString &kind)
     return kind;
 }
 
+// What a connection check depends on. The model is picked from its answer,
+// so choosing one keeps the verdict and the list.
+template <typename Endpoint>
+Endpoint connection(Endpoint endpoint)
+{
+    endpoint.model.clear();
+    return endpoint;
+}
+
 } // namespace
 
 bool offersSetupSpeechProvider(const QString &id, const QString &saved, bool localAvailable)
@@ -516,7 +525,7 @@ LocalSetup::Pull LocalSetup::pull() const
 void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
 {
     const auto generation = ++m_speechEndpoint.generation;
-    m_checkedSpeech = endpoint;
+    m_checkedSpeech = connection(endpoint);
     m_speechEndpoint.result = {};
     m_speechEndpoint.checking = true;
     emit changed();
@@ -526,6 +535,13 @@ void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
                                         if (generation != m_speechEndpoint.generation) return;
                                         m_speechEndpoint.checking = false;
                                         m_speechEndpoint.result = check;
+                                        // Only for the server that is saved, not one still being typed.
+                                        SpeechEndpointSettings saved = m_settings.dictationSnapshot().speech.endpoint;
+                                        if (saved.model.isEmpty() && !check.models.isEmpty()
+                                            && connection(saved) == m_checkedSpeech) {
+                                            saved.model = check.models.first();
+                                            m_settings.setSpeechEndpointSettings(saved);
+                                        }
                                         emit changed();
                                     });
 }
@@ -533,7 +549,7 @@ void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
 void LocalSetup::checkRefinementEndpoint(const RefinementSettings &settings)
 {
     const auto generation = ++m_refinementEndpoint.generation;
-    m_checkedRefinement = resolvedRefinementEndpoint(settings);
+    m_checkedRefinement = connection(resolvedRefinementEndpoint(settings));
     m_refinementEndpoint.result = {};
     m_refinementEndpoint.checking = true;
     emit changed();
@@ -543,6 +559,13 @@ void LocalSetup::checkRefinementEndpoint(const RefinementSettings &settings)
                                         if (generation != m_refinementEndpoint.generation) return;
                                         m_refinementEndpoint.checking = false;
                                         m_refinementEndpoint.result = check;
+                                        const RefinementSettings saved = m_settings.dictationSnapshot().refinement;
+                                        if (saved.endpoint.model.isEmpty() && !check.models.isEmpty()
+                                            && connection(resolvedRefinementEndpoint(saved)) == m_checkedRefinement) {
+                                            RefinementEndpointSettings endpoint = saved.endpoint;
+                                            endpoint.model = check.models.first();
+                                            m_settings.setRefinementEndpointSettings(endpoint);
+                                        }
                                         emit changed();
                                     });
 }
@@ -577,11 +600,11 @@ LiveFacts LocalSetup::liveFacts() const
 LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
 {
     LiveFacts facts;
-    if (m_checkedSpeech == draft.speech.endpoint) {
+    if (m_checkedSpeech == connection(draft.speech.endpoint)) {
         facts.speechEndpointStatus = endpointStatus(m_speechEndpoint);
         facts.speechEndpointModels = m_speechEndpoint.result.models;
     }
-    if (m_checkedRefinement == resolvedRefinementEndpoint(draft.refinement)) {
+    if (m_checkedRefinement == connection(resolvedRefinementEndpoint(draft.refinement))) {
         facts.refinementEndpointStatus = endpointStatus(m_refinementEndpoint);
         facts.refinementEndpointModels = m_refinementEndpoint.result.models;
     }

@@ -143,7 +143,7 @@ UIElement textField(const RowSnapshot &row, PaneHost &host)
     if (row.secret) {
         return secretField(row, host);
     }
-    if (row.suggestions.isEmpty()) {
+    if (!row.suggests) {
         TextBox box;
         box.MinWidth(contentMinWidth(row));
         box.Text(hs(row.value.toString()));

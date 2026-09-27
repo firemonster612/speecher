@@ -1270,7 +1270,7 @@ private slots:
         QCOMPARE(settings.snapshot().refinement.endpoint.baseUrl, QStringLiteral("http://localhost:8080/v1"));
     }
 
-    void connectKeepsAnUnchosenEndpointModelEmpty()
+    void connectSelectsTheServersFirstModelWhenNoneIsSaved()
     {
         SettingsStore settings;
         settings.raw().clear();
@@ -1298,10 +1298,7 @@ private slots:
         page.findChild<QPushButton *>("refinementEndpointConnect")->click();
         auto *combo = page.findChild<QComboBox *>("refinementEndpointModel");
         QTRY_COMPARE(combo->count(), 1);
-        QVERIFY(combo->currentText().isEmpty());
-        QVERIFY(settings.snapshot().refinement.endpoint.model.isEmpty());
-        combo->setCurrentIndex(0);
-        combo->setEditText("test-model");
+        QCOMPARE(combo->currentText(), QString("test-model"));
         QCOMPARE(settings.snapshot().refinement.endpoint.model, QString("test-model"));
     }
 

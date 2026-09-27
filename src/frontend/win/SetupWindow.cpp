@@ -2375,9 +2375,10 @@ struct SetupWindow::Native {
             return;
         }
         endpointForm.shownModels = facts.refinementEndpointModels;
-        const QString typed = endpointModel();
-        // A typed model the server does not list stays on offer, first; with
-        // none typed, the list waits for the person to pick.
+        // With none typed, LocalSetup has saved the server's first model.
+        const QString typed = endpointModel().isEmpty()
+            ? controller->settings()->refinementEndpointSettings().model : endpointModel();
+        // A typed model the server does not list stays on offer, first.
         QStringList models = facts.refinementEndpointModels;
         if (!typed.isEmpty() && !models.contains(typed)) {
             models.prepend(typed);

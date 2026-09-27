@@ -2215,6 +2215,10 @@ private struct EndpointSections: View {
         }
         .onAppear(perform: load)
         .onDisappear(perform: commitTypedFields)
+        // A check that finds no model saved picks the server's first.
+        .onChange(of: model.local.endpointModels) {
+            if modelName.isEmpty { modelName = model.bridge.refinementEndpointForm.model }
+        }
     }
 
     private func load() {

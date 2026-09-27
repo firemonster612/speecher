@@ -403,6 +403,11 @@ void selectData(QComboBox *combo, const QString &data)
 void selectEditableText(QComboBox *combo, const QString &text)
 {
     const QString trimmed = text.trimmed();
+    // Nothing chosen is an empty field, not a blank entry in the list.
+    if (trimmed.isEmpty()) {
+        combo->setCurrentIndex(-1);
+        return;
+    }
     const int dataIndex = combo->findData(trimmed);
     if (dataIndex >= 0) {
         combo->setCurrentIndex(dataIndex);

@@ -526,6 +526,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, strong, nullable) id value;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *options;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *suggestions;
+@property (nonatomic) BOOL suggests;
 @property (nonatomic) BOOL enabled;
 @property (nonatomic, copy) NSString *tooltip;
 @property (nonatomic, copy) NSString *disabledHelp;
@@ -1064,6 +1065,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.suffix = row.range.suffix.toNSString();
     model.options = [self optionsForRow:row];
     model.suggestions = row.suggestions ? [self bridgedOptions:row.suggestions(_state->draft)] : @[];
+    model.suggests = bool(row.suggestions);
     model.enabled = !row.enabled || row.enabled(_state->draft, _state->capabilities);
     model.tooltip = row.tooltip.toNSString();
     model.disabledHelp = row.disabledHelp.toNSString();

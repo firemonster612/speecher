@@ -88,6 +88,9 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *options;
 // Text rows only: values worth offering, though the row still takes any text.
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *suggestions;
+// The row offers values, even while the list is empty (a server not yet
+// asked), so it keeps the same control.
+@property (nonatomic, readonly) BOOL suggests;
 @property (nonatomic, readonly) BOOL enabled;
 // Shown on the control, and replaced by disabledHelp while enabled says no.
 @property (nonatomic, readonly, copy) NSString *tooltip;

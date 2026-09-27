@@ -180,8 +180,13 @@ private slots:
         serveOnce(slow, "200 OK", R"({"data":[{"id":"old-A"}]})");
         QTest::qWait(100);
         QCOMPARE(modelsForCheck(), QStringList{"new-B"});
-        snapshot.speech.endpoint.model = "edited-after-check";
-        snapshot.refinement.endpoint.model = "edited-after-check";
+        // Picking a model keeps the verdict; another server does not.
+        snapshot.speech.endpoint.model = "picked";
+        snapshot.refinement.endpoint.model = "picked";
+        settings.applySnapshot(snapshot);
+        QCOMPARE(modelsForCheck(), QStringList{"new-B"});
+        snapshot.speech.endpoint = endpoint(slow.serverPort());
+        snapshot.refinement.endpoint.baseUrl = snapshot.speech.endpoint.baseUrl;
         settings.applySnapshot(snapshot);
         const auto facts = setup.liveFacts();
         QVERIFY((refinement ? facts.refinementEndpointStatus : facts.speechEndpointStatus).isEmpty());

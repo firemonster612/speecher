@@ -230,7 +230,7 @@ struct TextRowField: View {
     @FocusState private var editing: Bool
 
     var body: some View {
-        if row.suggestions.isEmpty {
+        if !row.suggests {
             TextField("", text: $text)
                 .labelsHidden()
                 .focused($editing)

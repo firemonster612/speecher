@@ -233,6 +233,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.contentWidthHint = row.contentWidthHint;
     snapshot.options = optionsForRow(row);
     snapshot.suggestions = row.suggestions ? row.suggestions(m_draft) : QList<RowOption>();
+    snapshot.suggests = bool(row.suggestions);
     snapshot.secret = row.secret;
     snapshot.enabled = !row.enabled || row.enabled(m_draft, m_capabilities);
     snapshot.tooltip = row.tooltip;
