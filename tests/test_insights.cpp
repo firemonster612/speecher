@@ -187,11 +187,16 @@ private slots:
         QCOMPARE(InsightsLog(seed, InsightsLog::Access::ReadOnly).records().size(), 2015);
     }
 
-    void bookComparisonMatchesTheMockup_data()
+    void bookComparisonNamesTheClosestWork_data()
     {
         QTest::addColumn<int>("words");
         QTest::addColumn<QString>("text");
-        QTest::newRow("150") << 150 << QStringLiteral("About half the Gettysburg Address");
+        QTest::newRow("150") << 150 << QStringLiteral("About half of the Gettysburg Address");
+        QTest::newRow("1100") << 1100 << QStringLiteral("About as long as The Raven");
+        QTest::newRow("1200") << 1200
+                              << QStringLiteral("About as long as the Declaration of Independence");
+        QTest::newRow("3848") << 3848
+                              << QStringLiteral("About as long as An Occurrence at Owl Creek Bridge");
         QTest::newRow("9000") << 9000 << QStringLiteral("About half of Macbeth");
         QTest::newRow("15000") << 15000 << QStringLiteral("About half of Hamlet");
         QTest::newRow("80000") << 80000
@@ -202,13 +207,44 @@ private slots:
                                  << QStringLiteral("About 6 times the length of War and Peace");
     }
 
-    void bookComparisonMatchesTheMockup()
+    void bookComparisonNamesTheClosestWork()
     {
         QFETCH(int, words);
         QFETCH(QString, text);
         const InsightsSummary summary =
             summarize({recordOn(kToday, words)}, InsightsRange::AllTime, kToday);
         QCOMPARE(summary.bookComparison, text);
+    }
+
+    void bookComparisonTipSaysWhenItChanges_data()
+    {
+        QTest::addColumn<int>("words");
+        QTest::addColumn<QString>("tip");
+        QTest::newRow("few sentences")
+            << 40 << QStringLiteral("Changes to about a quarter of the Gettysburg Address at 68 words");
+        QTest::newRow("3153") << 3153
+                              << QStringLiteral("The Declaration of Independence is about 1,321 words\n"
+                                                "Changes to about as long as An Occurrence at Owl Creek "
+                                                "Bridge at 3,154 words");
+        QTest::newRow("3848") << 3848
+                              << QStringLiteral("An Occurrence at Owl Creek Bridge is about 3,763 words\n"
+                                                "Changes to about twice the length of The Tell-Tale Heart "
+                                                "at 4,019 words");
+        QTest::newRow("3500000") << 3500000
+                                 << QStringLiteral("War and Peace is about 561,304 words\n"
+                                                   "Changes to about 7 times the length of War and Peace "
+                                                   "at 3,648,476 words");
+        QTest::newRow("negative") << -5 << QString();
+        QTest::newRow("INT_MAX") << INT_MAX << QStringLiteral("War and Peace is about 561,304 words");
+    }
+
+    void bookComparisonTipSaysWhenItChanges()
+    {
+        QFETCH(int, words);
+        QFETCH(QString, tip);
+        const InsightsSummary summary =
+            summarize({recordOn(kToday, words)}, InsightsRange::AllTime, kToday);
+        QCOMPARE(summary.bookComparisonTip, tip);
     }
 
     void streakSurvivesAnIdleToday()
@@ -457,7 +493,7 @@ private slots:
         QCOMPARE(insightsShareText(summary, InsightsRange::Last7Days),
                  QStringLiteral("My Speecher stats, last 7 days\n"
                                 "150 words in 2 dictations (2 min of audio)\n"
-                                "About half the Gettysburg Address\n"
+                                "About half of the Gettysburg Address\n"
                                 "100 words per minute, 2.5× faster than typing\n"
                                 "2-day streak, my longest yet\n"
                                 "Top apps: Kate 100%"));

@@ -5,6 +5,7 @@
 #include <QMap>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <iterator>
 
@@ -16,13 +17,23 @@ constexpr int kHeatmapWeeks = 53;
 constexpr int kHourDataMinimum = 20;
 constexpr int kTopApps = 5;
 
-// Word counts: Shakespeare from Open Source Shakespeare, novels from Nathan
-// Bransford's novel word count list, the Gettysburg Address from the Bliss copy.
+// Word counts: the Gettysburg Address from the Bliss copy; The Raven, The
+// Tell-Tale Heart and An Occurrence at Owl Creek Bridge from their Project
+// Gutenberg texts (ebooks 2151, 2148 and 375), words split at spaces and
+// em dashes; the Declaration of Independence from the National Archives
+// transcript, without its heading and signatures, counted the same way;
+// Shakespeare from Open Source Shakespeare; novels from Nathan Bransford's
+// novel word count list.
 struct Book {
     const char *title;
     int words;
 };
 constexpr Book kBooks[] = {
+    {"the Gettysburg Address", 272},
+    {"The Raven", 1088},
+    {"the Declaration of Independence", 1321},
+    {"The Tell-Tale Heart", 2146},
+    {"An Occurrence at Owl Creek Bridge", 3763},
     {"Macbeth", 17121},
     {"Romeo and Juliet", 24545},
     {"Hamlet", 30557},
@@ -34,7 +45,6 @@ constexpr Book kBooks[] = {
     {"Moby-Dick", 209117},
     {"War and Peace", 561304},
 };
-constexpr int kGettysburgWords = 272;
 // Plain fractions and multiples only. Half, whole and twice read easiest, so
 // the others need to fit noticeably better to win.
 struct Share {
@@ -100,29 +110,16 @@ QString plural(int count, const QString &noun)
     return QStringLiteral("%1 %2").arg(formatNumber(count), count == 1 ? noun : noun + u's');
 }
 
+struct Comparison {
+    QString text;
+    const Book *book = nullptr;
+};
+
 // "About half of Hamlet": the book and plain fraction closest to the count.
-void describeAsBook(int words, InsightsSummary &summary)
+Comparison compareToBook(int words)
 {
-    if (words == 0) {
-        summary.bookComparison = QStringLiteral("Nothing yet");
-        return;
-    }
-    const double smallest = kBooks[0].words * kShares[0].of;
-    if (words < smallest) {
-        const int addresses = roundHalfUp(double(words) / kGettysburgWords);
-        const QString tip = QStringLiteral("The Gettysburg Address is %1 words").arg(kGettysburgWords);
-        if (words < kGettysburgWords / 4.0) {
-            summary.bookComparison = QStringLiteral("A few sentences so far");
-        } else if (words < kGettysburgWords * 0.75) {
-            summary.bookComparison = QStringLiteral("About half the Gettysburg Address");
-            summary.bookComparisonTip = tip;
-        } else {
-            summary.bookComparison = addresses == 1
-                ? QStringLiteral("About the Gettysburg Address")
-                : QStringLiteral("About %1 Gettysburg Addresses").arg(addresses);
-            summary.bookComparisonTip = tip;
-        }
-        return;
+    if (words < kBooks[0].words * kShares[0].of) {
+        return {QStringLiteral("A few sentences so far")};
     }
     const Book *bestBook = nullptr;
     QString say;
@@ -142,13 +139,55 @@ void describeAsBook(int words, InsightsSummary &summary)
         bestBook = &last;
         say = QStringLiteral("%1 times the length of").arg(roundHalfUp(double(words) / last.words));
     }
-    QString title = QLatin1String(bestBook->title);
-    summary.bookComparison = QStringLiteral("About %1 %2").arg(say, title);
-    if (title.startsWith(QLatin1String("the "))) {
-        title[0] = QLatin1Char('T');
+    return {QStringLiteral("About %1 %2").arg(say, QLatin1String(bestBook->title)), bestBook};
+}
+
+// The smallest count above `words` that reads differently, or 0 if none does.
+// Each text covers a single run of counts, so a binary search finds its end.
+int nextChange(int words)
+{
+    if (words < 0 || words == INT_MAX) return 0;
+    const QString now = compareToBook(words).text;
+    qint64 same = words;
+    qint64 other = words + 1;
+    while (compareToBook(int(other)).text == now) {
+        if (other == INT_MAX) return 0;
+        same = other;
+        other = std::min<qint64>(other * 2, INT_MAX);
     }
-    summary.bookComparisonTip =
-        QStringLiteral("%1 is about %2 words").arg(title, formatNumber(bestBook->words));
+    while (other - same > 1) {
+        const qint64 middle = (same + other) / 2;
+        (compareToBook(int(middle)).text == now ? same : other) = middle;
+    }
+    return int(other);
+}
+
+QString capitalized(QString text)
+{
+    text[0] = text[0].toUpper();
+    return text;
+}
+
+void describeAsBook(int words, InsightsSummary &summary)
+{
+    if (words == 0) {
+        summary.bookComparison = QStringLiteral("Nothing yet");
+        return;
+    }
+    const Comparison comparison = compareToBook(words);
+    summary.bookComparison = comparison.text;
+    QStringList tip;
+    if (comparison.book) {
+        tip << QStringLiteral("%1 is about %2 words")
+                   .arg(capitalized(QLatin1String(comparison.book->title)),
+                        formatNumber(comparison.book->words));
+    }
+    if (const int next = nextChange(words)) {
+        QString nextText = compareToBook(next).text;
+        nextText[0] = nextText[0].toLower();
+        tip << QStringLiteral("Changes to %1 at %2 words").arg(nextText, formatNumber(next));
+    }
+    summary.bookComparisonTip = tip.join(u'\n');
 }
 
 std::optional<int> percentChange(qint64 current, qint64 previous)

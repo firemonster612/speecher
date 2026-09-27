@@ -69,7 +69,9 @@ struct InsightsSummary {
     QString deltaPeriodLabel; // "week" or "30 days"; empty for the other periods
     // "About half of Hamlet", plain text; "Nothing yet" with no words.
     QString bookComparison;
-    QString bookComparisonTip; // "Hamlet is about 30,557 words"; may be empty
+    // "Hamlet is about 30,557 words", then on a new line "Changes to about
+    // twice the length of Macbeth at 32,348 words"; empty with no words.
+    QString bookComparisonTip;
 
     // Streak. A streak survives until the end of today.
     int currentStreak = 0;
