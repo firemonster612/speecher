@@ -162,7 +162,8 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneModel *> *panes;
 @property (nonatomic, readonly, copy) NSArray<NSArray<NSString *> *> *sidebarRuns;
 // A page id ("general", "vocabulary:corrections") as the pane and view it
-// names, speecher::resolvePage's answer: an unknown pane gives Home.
+// names, speecher::resolvePage's answer: an unknown pane, or a view the pane
+// does not have, gives Home.
 - (NSArray<NSString *> *)resolvePage:(NSString *)pageId NS_SWIFT_NAME(resolvePage(_:));
 // The pane ids a sidebar search shows, from the core index, with rows as
 // the draft shows them.

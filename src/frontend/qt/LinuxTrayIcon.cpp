@@ -40,7 +40,7 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     m_toggleAction = m_menu.addAction(QStringLiteral("Start Dictation"),
                                       controller, &ApplicationController::toggle);
     m_toggleAction->setObjectName(QStringLiteral("trayToggleDictation"));
-    QAction *settings = m_menu.addAction(QStringLiteral("Settings..."),
+    QAction *settings = m_menu.addAction(QStringLiteral("Settings…"),
                                          controller, &ApplicationController::showSettingsWindow);
     settings->setObjectName(QStringLiteral("traySettings"));
     m_menu.addSeparator();
@@ -59,8 +59,9 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
             });
     connect(m_tray, &QSystemTrayIcon::activated,
             this, [controller](QSystemTrayIcon::ActivationReason reason) {
+                // The window as it was: Home if hidden, its page if up.
                 if (reason == QSystemTrayIcon::Trigger) {
-                    controller->showSettingsWindow();
+                    controller->showMainWindow();
                 } else if (reason == QSystemTrayIcon::MiddleClick) {
                     controller->toggle();
                 }

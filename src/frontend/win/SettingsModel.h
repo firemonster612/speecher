@@ -76,7 +76,7 @@ struct SectionSnapshot {
 
 // The settings surface as the schema describes it, over a draft of the stored
 // settings — SpeecherBridge's SchemaState for the Windows front end. Reading
-// pages() re-derives every row's value, choices and enabled flag from the
+// section() re-derives every row's value, choices and enabled flag from the
 // draft, so a reader sees the effect of its own writes.
 class SettingsModel {
 public:

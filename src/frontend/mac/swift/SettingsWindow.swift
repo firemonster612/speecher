@@ -202,8 +202,8 @@ struct SidebarList: View {
     var body: some View {
         // Every pick goes through showPage, so choosing What's New here is the
         // same as any other way of opening it.
-        List(selection: Binding(get: { model.pane },
-                                set: { if let id = $0, id != model.pane { model.showPage(id) } })) {
+        List(selection: Binding<String>(get: { model.pane },
+                                        set: { if $0 != model.pane { model.showPage($0) } })) {
             if query.isEmpty {
                 if model.pane == "whatsNew" || model.whatsNewPending,
                    let pane = model.pane(withId: "whatsNew") {
