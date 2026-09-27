@@ -12,7 +12,8 @@
 namespace speecher {
 namespace {
 
-// Speecher's first-party models are English-only, and Cohere needs the hint.
+// Speecher transcribes English. The multilingual models (Cohere, Qwen3-ASR,
+// Whisper) would otherwise guess the language, and Cohere needs the hint.
 constexpr auto language = "en";
 constexpr double speedTestReferenceSeconds = 10.0;
 constexpr double sampleRateHz = 16000.0;
