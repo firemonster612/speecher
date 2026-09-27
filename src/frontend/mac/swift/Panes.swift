@@ -2,7 +2,7 @@ import SwiftUI
 
 // The settings window's panes, exactly as the schema arranges them. The schema
 // supplies rows and values, and also which pane a row appears on and how the
-// sidebar runs group, so every front end reads one arrangement (see
+// sidebar groups them, so every front end reads one arrangement (see
 // settingsPanes() in SettingsSchema.cpp). This file only renders it.
 
 /// One card this file asks a pane for: a heading, a footnote, and the schema
