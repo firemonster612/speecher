@@ -848,6 +848,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepLabel(_:));
 // The line under the step indicator; empty for a step that needs none.
 - (NSString *)transcribeStepHint:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepHint(_:));
+// Where to change the refinement model the Configure step shows.
+@property (nonatomic, readonly, copy) NSString *transcribeRefinementModelHint;
 // How long a finished file holds at the end before the next one replaces it.
 @property (nonatomic, readonly) double transcribeLandingSeconds;
 // A file's share of its whole work, below 1 until the file has finished.

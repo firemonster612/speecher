@@ -600,7 +600,6 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/frontend/qt/SchemaSettingsPage.h
   src/frontend/qt/WritingProfileGrid.h
   src/ui/AccessibilityNotice.h
-  src/ui/AppPage.h
   src/ui/AppWindow.h
   src/ui/HomePage.h
   src/ui/InsightsCharts.h

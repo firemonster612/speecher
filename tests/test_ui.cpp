@@ -20,6 +20,7 @@
 #endif
 #include "frontend/qt/ProviderCustomRows.h"
 #include "frontend/qt/SchemaSettingsPage.h"
+#include "ui/settings/SettingsPageSet.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
 
@@ -59,7 +60,7 @@ std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
 {
     const SettingsSchema schema =
         buildSettingsSchema(qtSchemaContext(platform, providers));
-    return std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, std::move(customRows));
+    return std::make_unique<SchemaSettingsPage>(schema.page(id).sections, nullptr, std::move(customRows));
 }
 
 QStringList sectionLabels(const QWidget &page)
@@ -597,8 +598,9 @@ private slots:
             QVERIFY(action);
             QCOMPARE(action->text(), gateAction);
         }
-        // One note per gated group: the paste rules and the app recognition rules.
-        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 2);
+        // One note per gated group: the category paste rules, the app paste
+        // rules and the app recognition rules.
+        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 3);
         QSignalSpy triggered(&output, &SchemaSettingsPage::actionTriggered);
         output.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
         QCOMPARE(triggered.count(), 1);
@@ -619,127 +621,45 @@ private slots:
         }
     }
 
-    void linuxSettingsLayoutsMatchMasterAndKeepSchemaRows()
+    void qtPanesHeadTheirCardsWithTheSchemaGroupTitles()
     {
-        SettingsStore settings;
-        ProviderRegistry providers;
-        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        const SettingsSchema schema =
-            buildSettingsSchema(qtSchemaContext(*platform, providers));
-        SettingsPage refinementSchema = schema.page(QStringLiteral("refinement"));
-        SettingsRow sentinel;
-        sentinel.id = QStringLiteral("refinementLayoutSentinel");
-        sentinel.label = QStringLiteral("Sentinel");
-        sentinel.kind = RowKind::Toggle;
-        refinementSchema.sections.append({QStringLiteral("Later"), QString(), {sentinel}});
-        const std::unique_ptr<SchemaSettingsPage> refinement =
-            std::make_unique<SchemaSettingsPage>(refinementSchema);
-
-        for (const SettingsSection &section : refinementSchema.sections) {
-            for (const SettingsRow &row : section.rows) {
-                const QString control = row.id == QStringLiteral("writingProfileBehavior")
-                    ? QStringLiteral("vocabInput")
-                    : row.id;
-                QVERIFY2(refinement->findChild<QWidget *>(control), qPrintable(control));
+        ApplicationController controller(true);
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        for (const SettingsPane &pane : pages.schema().panes) {
+            if (pane.layout == PaneLayout::Alternatives) {
+                for (const SettingsPaneGroup &group : pane.groups) {
+                    const QString id = pane.id + QLatin1Char(':') + group.view;
+                    QVERIFY2(pages.page(id), qPrintable(id));
+                }
+                continue;
             }
-        }
-        refinement->resize(900, 668);
-        refinement->show();
-        QCoreApplication::processEvents();
-        auto *profile = refinement->findChild<QTableWidget *>(QStringLiteral("vocabInput"));
-        auto *context = refinement->findChild<QWidget *>(QStringLiteral("targetContextControl"));
-        QVERIFY(profile && context);
-        QCOMPARE(refinement->findChildren<QFrame *>(QStringLiteral("settingsCard")).size(), 1);
-        QCOMPARE(sectionLabels(*refinement), QStringList{QStringLiteral("Refinement")});
-        const int profileBottom =
-            profile->mapTo(refinement->widget(), QPoint(0, profile->height())).y();
-        const int contextY = context->mapTo(refinement->widget(), QPoint()).y();
-        QVERIFY(profileBottom <= contextY);
-
-        OutputCustomRows outputRows(settings);
-        const std::unique_ptr<SchemaSettingsPage> output =
-            std::make_unique<SchemaSettingsPage>(schema.page(QStringLiteral("output")),
-                                                 nullptr,
-                                                 outputRows.factory());
-        const bool virtualKeyboard = [&schema] {
-            for (const SettingsSection &section : schema.page(QStringLiteral("output")).sections) {
-                for (const SettingsRow &row : section.rows) {
-                    if (row.id == QStringLiteral("virtualKeyboard")) {
-                        return true;
-                    }
+            QStringList titles;
+            for (const SettingsPaneGroup &group : pane.groups) {
+                if (!group.title.isEmpty()) {
+                    titles.append(group.title);
                 }
             }
-            return false;
-        }();
-        const QStringList outputLabels{
-            QStringLiteral("Delivery"),
-            QStringLiteral("Paste behavior"),
-            virtualKeyboard ? QStringLiteral("Clipboard & virtual keyboard")
-                            : QStringLiteral("Clipboard"),
-            QStringLiteral("Application recognition"),
-        };
-        QCOMPARE(sectionLabels(*output), outputLabels);
-        output->resize(900, 668);
-        output->show();
-        QCoreApplication::processEvents();
-        auto *globalPaste = output->findChild<QWidget *>(QStringLiteral("globalPasteRule"));
-        auto *restoreClipboard =
-            output->findChild<QWidget *>(QStringLiteral("restoreClipboardAfterTyping"));
-        QVERIFY(globalPaste && restoreClipboard);
-        QVERIFY(globalPaste->mapTo(output->widget(), QPoint()).y()
-                < restoreClipboard->mapTo(output->widget(), QPoint()).y());
-
-        for (const QString &id : {QStringLiteral("general"), QStringLiteral("output")}) {
-            SchemaCustomRowFactory customRows;
-            if (id == QStringLiteral("output")) {
-                customRows = outputRows.factory();
+            if (pane.groups.isEmpty()) {
+                QVERIFY2(!pages.page(pane.id), qPrintable(pane.id));
+                continue;
             }
-#ifdef Q_OS_LINUX
-            if (id == QStringLiteral("general")) {
-                customRows = [](const SettingsRow &row,
-                                QWidget *parent,
-                                std::function<void()>) {
-                    return row.id == QStringLiteral("globalShortcut")
-                        ? SchemaCustomRow{new QWidget(parent), {}, {}}
-                        : SchemaCustomRow{};
-                };
+            QVERIFY2(pages.page(pane.id), qPrintable(pane.id));
+            // Release notes are What's New's first group and carry no heading;
+            // the Linux shortcut editor brings its own "Dictation key" heading.
+            if (pane.id != QStringLiteral("whatsNew") && pane.id != QStringLiteral("shortcut")) {
+                QCOMPARE(sectionLabels(*pages.page(pane.id)), titles);
             }
-#endif
-            const std::unique_ptr<SchemaSettingsPage> page =
-                std::make_unique<SchemaSettingsPage>(schema.page(id), nullptr, customRows);
-            // Every card carries its section title; General's cards are the
-            // agreed five and Output keeps its schema order plus the rules.
-            const QStringList generalLabels{
-#ifdef Q_OS_LINUX
-                QStringLiteral("Dictation"),
-                QStringLiteral("Insights"),
-                QStringLiteral("Global Shortcut"),
-#else
-                QStringLiteral("Appearance & behavior"),
-                QStringLiteral("Insights"),
-                QStringLiteral("System"),
-#endif
-                QStringLiteral("Setup"),
-                QStringLiteral("Updates"),
-            };
-            QCOMPARE(sectionLabels(*page),
-                     id == QStringLiteral("general") ? generalLabels : outputLabels);
+            for (const SettingsPaneGroup &group : pane.groups) {
+                for (const QString &row : group.rows) {
+                    QVERIFY2(pages.page(pane.id)->findChild<QWidget *>(row)
+                                 || row == QStringLiteral("writingProfileBehavior")
+                                 || row == QStringLiteral("whatsNewNotes")
+                                 || row == QStringLiteral("globalShortcut"),
+                             qPrintable(pane.id + QLatin1Char('/') + row));
+                }
+            }
         }
-
-        // Audio keeps one everyday card and a separate Advanced card for the
-        // timing controls, in that order.
-        const std::unique_ptr<SchemaSettingsPage> audio =
-            std::make_unique<SchemaSettingsPage>(schema.page(QStringLiteral("audio")));
-        QCOMPARE(sectionLabels(*audio),
-                 (QStringList{QStringLiteral("Speech to text"), QStringLiteral("Advanced")}));
-        audio->resize(900, 668);
-        audio->show();
-        QCoreApplication::processEvents();
-        auto *silence = audio->findChild<QWidget *>(QStringLiteral("vadEnabled"));
-        auto *preRoll = audio->findChild<QWidget *>(QStringLiteral("preRollMs"));
-        QVERIFY(silence && preRoll);
-        QVERIFY(silence->mapTo(audio->widget(), QPoint()).y()
-                < preRoll->mapTo(audio->widget(), QPoint()).y());
     }
 
     void outputMethodsOfferAccessibilityInsertion()

@@ -164,20 +164,19 @@ struct SettingsRow {
 };
 
 struct SettingsSection {
-    // A section without a title is one a page has only for the shape, such as a
-    // page that is nothing but its collection.
+    // The heading every front end shows above the section's card, which is
+    // also the title of the pane group that shows it. Empty only for What's
+    // New's release notes, which need none.
     QString title;
     // A footnote below the section's rows.
     QString help;
     QList<SettingsRow> rows;
 };
 
+// Where rows are defined, not where they are shown: the panes below decide
+// that. A schema page groups rows that are built from the same context.
 struct SettingsPage {
     QString id;
-    QString title;
-    QString iconName;   // freedesktop icon theme name
-    QString symbolName; // SF Symbol name
-    QString iconId;     // platform-neutral icon key, mapped to a glyph per front end
     QList<SettingsSection> sections;
 };
 
@@ -196,27 +195,26 @@ enum class PaneLayout {
     Home,
 };
 
-// One card a pane shows: a heading, a footnote, and the schema rows it names.
+// One card a pane shows. Its title and footnote are those of the schema
+// section its first row comes from, so a heading reads the same on every
+// platform and cannot drift from the section it names.
 struct SettingsPaneGroup {
+    // An Alternatives pane's view, addressed as "pane:view"; empty otherwise.
+    QString view;
     QString title;
-    // A footnote below the group's rows. Empty falls back to the schema
-    // section the rows came from.
     QString help;
-    // Schema row ids, in the order they should read. A pattern ending in `*`
-    // takes every row whose id starts with it. A named row a build does not
-    // have is skipped, so a group can mention rows only some platforms carry.
+    // Schema row ids, in the order they should read, as this build has them.
     QStringList rows;
 };
 
-// One sidebar entry of the settings window on macOS and Windows. The schema's
-// pages supply rows and values; which pane a row appears on is decided here.
-// The Qt front end keeps its own flat page list and ignores these.
+// One sidebar entry of the settings window, the same on every front end: the
+// schema's pages supply rows and values, and which pane a row appears on is
+// decided here.
 struct SettingsPane {
     QString id;
     QString title;
-    QString symbolName; // SF Symbol name
-    // Schema pages whose otherwise-unmapped rows fall back to this pane.
-    QStringList schemaPages;
+    // Platform-neutral; each front end maps it to an icon of its own.
+    QString iconId;
     PaneLayout layout = PaneLayout::Sections;
     QList<SettingsPaneGroup> groups;
 };
@@ -228,12 +226,41 @@ struct SettingsSchema {
     QList<SettingsPane> panes;
     // The sidebar's runs, in order: pane ids, each run separated from the next
     // by a gap and none of them titled, as System Settings does. A pane in no
-    // run (What's New) appears only while selected.
+    // run (What's New) appears only while pending or selected.
     QList<QStringList> sidebarRuns;
 
     const SettingsPage &page(const QString &id) const;
     bool hasPage(const QString &id) const;
+    // Null for an id this schema does not have.
+    const SettingsPane *pane(const QString &id) const;
+    const SettingsRow *row(const QString &id) const;
+    // A group as a section of the schema's rows, ready to render.
+    SettingsSection section(const SettingsPaneGroup &group) const;
 };
+
+// Every page a front end can show is named by one id: a pane id, or
+// "pane:view" for one view of an Alternatives pane (vocabulary:corrections).
+// The same ids serve SPEECHER_GRAB_PAGE, links between pages, notification
+// targets and the remembered last page.
+struct PageId {
+    QString pane;
+    QString view;
+};
+// Case-insensitive. An unknown pane warns and gives Home; an unknown view
+// warns and gives the pane's first.
+PageId resolvePage(const SettingsSchema &schema, const QString &request);
+// The page id a settings window opens on: the one remembered, unless that is
+// What's New or a pane this build lacks, in which case Home.
+QString launchPane(const SettingsSchema &schema, const QString &remembered);
+// The panes a sidebar search shows, in sidebar order: those whose title,
+// group titles, row labels or help mention the query. What's New never
+// matches; an empty query matches every pane in a run.
+QStringList searchPanes(const SettingsSchema &schema, const QString &query);
+
+// What help and error text calls a page, so a sentence that sends someone to
+// one names a page that exists. These read the arrangement every build shares.
+QString paneTitle(const QString &paneId);
+QString paneTitleForRow(const QString &rowId);
 
 // A refinement provider as the settings surface sees it: what to call it, and
 // what it can be asked to do.

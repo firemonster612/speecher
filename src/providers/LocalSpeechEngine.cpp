@@ -1,4 +1,5 @@
 #include "providers/LocalSpeechEngine.h"
+#include "core/settings/SettingsSchema.h"
 
 #include <QElapsedTimer>
 #include <QFile>
@@ -23,11 +24,12 @@ QString statusMessage(transcribe_status status)
 {
     switch (status) {
     case TRANSCRIBE_ERR_FILE_NOT_FOUND:
-        return QStringLiteral("The model file is missing. Download it again on the Local models page.");
+        return QStringLiteral("The model file is missing. Download it again on the %1 page.").arg(paneTitle(QStringLiteral("localModels")));
     case TRANSCRIBE_ERR_GGUF:
     case TRANSCRIBE_ERR_UNSUPPORTED_ARCH:
     case TRANSCRIBE_ERR_UNSUPPORTED_VARIANT:
-        return QStringLiteral("The model file is damaged or not a speech model. Delete it and download it again on the Local models page.");
+        return QStringLiteral("The model file is damaged or not a speech model. Delete it and download it again on the %1 page.")
+            .arg(paneTitle(QStringLiteral("localModels")));
     case TRANSCRIBE_ERR_OOM:
         return QStringLiteral("This computer ran out of memory for the model. Close other programs or choose a smaller model.");
     case TRANSCRIBE_ERR_INPUT_TOO_LONG:

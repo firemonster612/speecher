@@ -606,7 +606,8 @@ QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const Ap
     QList<SettingsRow> rows{
         choiceRow(QStringLiteral("refinementEndpointServer"),
                   QStringLiteral("Server"),
-                  QStringLiteral("Your own server, or the CLI Proxy API server set up under Accounts."),
+                  QStringLiteral("Your own server, or the CLI Proxy API server set up under %1.")
+                      .arg(paneTitle(QStringLiteral("accounts"))),
                   fixedOptions({
                       {QString(), QStringLiteral("Custom")},
                       {QStringLiteral("cliproxy"), QStringLiteral("CLI Proxy API")},
@@ -793,6 +794,7 @@ SettingsPage generalPage(const SchemaContext &context)
         "This desktop chooses the colour scheme itself, so Speecher follows it.");
 
     QList<SettingsRow> systemRows;
+    QList<SettingsRow> shortcutRows;
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     systemRows.append(toggleRow(
         QStringLiteral("launchAtLogin"),
@@ -815,14 +817,14 @@ SettingsPage generalPage(const SchemaContext &context)
     systemRows.append(std::move(launchAtLoginRefused));
 #endif
 #ifdef Q_OS_LINUX
-    systemRows.append(customRow(
+    shortcutRows.append(customRow(
         QStringLiteral("globalShortcut"),
         QStringLiteral("Global Shortcut"),
         QStringLiteral("Start or stop dictation from anywhere.")));
 #endif
     SettingsRow activationMode = choiceRow(
         QStringLiteral("activationMode"),
-        QStringLiteral("Shortcut behaviour"),
+        QStringLiteral("Shortcut behavior"),
         // Holding needs the shortcut backend to report the key going up, and
         // some do not: a desktop-registered combination and a manual desktop
         // shortcut both only ever say "pressed".
@@ -847,7 +849,7 @@ SettingsPage generalPage(const SchemaContext &context)
             settings.shortcutActivationMode = shortcutActivationModeFromName(value);
         });
     activationMode.sinceVersion = QStringLiteral("0.1.6");
-    systemRows.append(activationMode);
+    shortcutRows.append(activationMode);
     // No clipboard status row here: the Output page's Method choice says how
     // text is delivered, and a platform's "clipboard path" is not a setting.
 
@@ -967,17 +969,8 @@ SettingsPage generalPage(const SchemaContext &context)
 
     SettingsPage page{
         QStringLiteral("general"),
-        QStringLiteral("General"),
-        QStringLiteral("preferences-system"),
-        QStringLiteral("gearshape"),
-        QStringLiteral("settings"),
         {
-            {
-#ifdef Q_OS_LINUX
-             QStringLiteral("Dictation"),
-#else
-             QStringLiteral("Appearance & behavior"),
-#endif
+            {QStringLiteral("Appearance & behavior"),
              QString(),
              {
 #ifndef Q_OS_LINUX
@@ -1015,14 +1008,8 @@ SettingsPage generalPage(const SchemaContext &context)
                            QStringLiteral("Delete every recorded dictation from this computer."),
                            QStringLiteral("Clear insights history…")),
              }},
-            {
-#ifdef Q_OS_LINUX
-             QStringLiteral("Global Shortcut"),
-#else
-             QStringLiteral("System"),
-#endif
-             QString(),
-             std::move(systemRows)},
+            {QStringLiteral("System"), QString(), std::move(systemRows)},
+            {QStringLiteral("Global Shortcut"), QString(), std::move(shortcutRows)},
             {QStringLiteral("Setup"),
              QString(),
              std::move(maintenanceRows)},
@@ -1080,10 +1067,6 @@ SettingsPage whatsNewPage(const QList<SettingsPage> &pages, const SchemaContext 
         sections.append({QStringLiteral("Try the new settings"), QString(), std::move(newRows)});
     }
     return {QStringLiteral("whatsNew"),
-            QStringLiteral("What's New"),
-            QStringLiteral("help-about"),
-            QStringLiteral("sparkles"),
-            QStringLiteral("whatsNew"),
             std::move(sections)};
 }
 
@@ -1174,10 +1157,6 @@ SettingsPage audioPage(const SchemaContext &context)
 
     return {
         QStringLiteral("audio"),
-        QStringLiteral("Audio"),
-        QStringLiteral("preferences-desktop-sound"),
-        QStringLiteral("waveform"),
-        QStringLiteral("microphone"),
         {
             {QStringLiteral("Transcription"),
              QString(),
@@ -1186,16 +1165,15 @@ SettingsPage audioPage(const SchemaContext &context)
                  + speechEndpointRows([context](const AppSettings &draft) {
                      return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
                  })},
-            {QStringLiteral("Capture"), QString(), {std::move(device)}},
+            {QStringLiteral("Microphone"), QString(), {std::move(device), std::move(captureMode)}},
             {QStringLiteral("Silence trimming"),
              QString(),
              {std::move(vadEnabled), std::move(vadThreshold)}},
             // Timing controls most people never need; the labels say what a
             // change does to the recording rather than how the pipeline works.
-            {QStringLiteral("Advanced"),
+            {QStringLiteral("Timing"),
              QString(),
              {
-                 std::move(captureMode),
                  numberRow(QStringLiteral("preRollMs"),
                            QStringLiteral("Keep before speech"),
                            QStringLiteral("Audio kept from just before you start, so the first word is not clipped."),
@@ -1300,10 +1278,6 @@ SettingsPage refinementPage(const SchemaContext &context)
     const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
     return {
         QStringLiteral("refinement"),
-        QStringLiteral("Refinement"),
-        QStringLiteral("tools-wizard"),
-        QStringLiteral("wand.and.sparkles"),
-        QStringLiteral("text"),
         {
             {QStringLiteral("Refinement"),
              QString(),
@@ -1324,7 +1298,7 @@ SettingsPage refinementPage(const SchemaContext &context)
                  std::move(targetContext),
                  std::move(screenshots),
              }},
-            {QStringLiteral("Prompt shaping"), QString(), {std::move(profileBehavior)}},
+            {QStringLiteral("Profile behavior"), QString(), {std::move(profileBehavior)}},
         },
     };
 }
@@ -1448,18 +1422,15 @@ SettingsPage localModelsPage(const SchemaContext &context)
 
     return {
         QStringLiteral("localModels"),
-        QStringLiteral("Local models"),
-        QStringLiteral("computer"),
-        QStringLiteral("cpu"),
-        QStringLiteral("localModels"),
         {
-            {QString(), QString(), {std::move(browser)}},
-            {QStringLiteral("Behaviour"),
+            {QStringLiteral("Speech models"), QString(), {std::move(browser)}},
+            {QStringLiteral("Behavior"),
              QString(),
              {std::move(idleUnload), std::move(acceleration), std::move(graphicsCard), std::move(folder)}},
             {QStringLiteral("Cleanup on this computer"),
              QStringLiteral("Refinement can run through one of these; choose Local model under "
-                            "Refinement to use it."),
+                            "%1 to use it.")
+                 .arg(paneTitle(QStringLiteral("refinement"))),
              {std::move(runner)}},
         },
     };
@@ -1680,7 +1651,8 @@ SettingsPage outputPage(const SchemaContext &context)
     for (AppCategory category : managedPasteCategories()) {
         pasteRows.append(categoryPasteRuleRow(category));
     }
-    pasteRows.append(applicationPasteRuleRow());
+    SettingsRow applicationRules = applicationPasteRuleRow();
+    gateOnTargetAccessibility(applicationRules, targetAccessibilityHint());
     // Every row below the global fallback needs a known target application, so
     // they stand or fall together with desktop accessibility.
     for (int index = 1; index < pasteRows.size(); ++index) {
@@ -1716,6 +1688,7 @@ SettingsPage outputPage(const SchemaContext &context)
              std::move(restoreClipboard),
          }},
         {QStringLiteral("Paste behavior"), QString(), pasteRows},
+        {QStringLiteral("App-specific paste rules"), QString(), {std::move(applicationRules)}},
     };
     if (context.virtualKeyboardSetup) {
         sections.append({QStringLiteral("Advanced"),
@@ -1730,10 +1703,6 @@ SettingsPage outputPage(const SchemaContext &context)
     sections.append(applicationRecognitionSection());
     return {
         QStringLiteral("output"),
-        QStringLiteral("Output"),
-        QStringLiteral("klipper"),
-        QStringLiteral("doc.on.clipboard"),
-        QStringLiteral("clipboard"),
         sections,
     };
 }
@@ -1860,11 +1829,7 @@ SettingsPage vocabularyPage()
 
     return {
         QStringLiteral("vocabulary"),
-        QStringLiteral("Vocabulary"),
-        QStringLiteral("accessories-dictionary"),
-        QStringLiteral("character.book.closed"),
-        QStringLiteral("dictionary"),
-        {{QString(),
+        {{QStringLiteral("Vocabulary"),
           QString(),
           {
               std::move(entries),
@@ -1957,11 +1922,7 @@ SettingsPage correctionsPage()
 
     return {
         QStringLiteral("corrections"),
-        QStringLiteral("Learned corrections"),
-        QStringLiteral("tools-check-spelling"),
-        QStringLiteral("checkmark.bubble"),
-        QStringLiteral("checkmark"),
-        {{QString(),
+        {{QStringLiteral("Learned corrections"),
           QString(),
           {
               std::move(learn),
@@ -2029,11 +1990,7 @@ SettingsPage bindingsPage()
 
     return {
         QStringLiteral("bindings"),
-        QStringLiteral("Replacements & snippets"),
-        QStringLiteral("edit-find-replace"),
-        QStringLiteral("arrow.left.arrow.right"),
-        QStringLiteral("swap"),
-        {{QString(),
+        {{QStringLiteral("Replacements & snippets"),
           QString(),
           {collectionRow(QStringLiteral("bindingRules"),
                          QStringLiteral("Replacements & snippets"),
@@ -2048,6 +2005,9 @@ SettingsPage bindingsPage()
 // provider is another entry in providerAccounts() plus the two AppSettings
 // fields it names, rather than a third hand-written card.
 struct ProviderAccount {
+    // The refinement settings' heading, on the Refinement pane.
+    QString modelSectionTitle;
+    // The sign-in's heading, on the Accounts pane.
     QString sectionTitle;
     // A closing note under the card.
     QString note;
@@ -2094,6 +2054,7 @@ QList<RowOption> namedModels(const QStringList &ids)
 QList<ProviderAccount> providerAccounts()
 {
     ProviderAccount openAi;
+    openAi.modelSectionTitle = QStringLiteral("OpenAI");
     openAi.sectionTitle = QStringLiteral("OpenAI account");
     // Footnote of the card whose Sign-in row it explains.
     openAi.note = QStringLiteral(
@@ -2167,6 +2128,7 @@ QList<ProviderAccount> providerAccounts()
     openAi.authRows[2].expensive = true;
 
     ProviderAccount anthropic;
+    anthropic.modelSectionTitle = QStringLiteral("Anthropic");
     anthropic.sectionTitle = QStringLiteral("Anthropic account");
     anthropic.modelRowId = QStringLiteral("anthropicModel");
     anthropic.modelLabel = QStringLiteral("Claude model");
@@ -2291,7 +2253,9 @@ SettingsSection cliproxyServerSection()
             {std::move(oauthDir), std::move(baseUrl), std::move(apiKey)}};
 }
 
-SettingsSection providerSection(const ProviderAccount &account)
+// What a provider refines with, and how it signs in: two sections, because
+// the first belongs with Refinement and the second with Accounts.
+QList<SettingsSection> providerSections(const ProviderAccount &account)
 {
     SettingsRow model;
     model.id = account.modelRowId;
@@ -2340,23 +2304,19 @@ SettingsSection providerSection(const ProviderAccount &account)
             settings.refinement.*field = value;
         }));
     rows.last().tooltip = account.fastModeTooltip;
-    rows.append(account.authRows);
-    return {account.sectionTitle, account.note, rows};
+    return {{account.modelSectionTitle, QString(), rows},
+            {account.sectionTitle, account.note, account.authRows}};
 }
 
 SettingsPage providersPage()
 {
     QList<SettingsSection> sections;
     for (const ProviderAccount &account : providerAccounts()) {
-        sections.append(providerSection(account));
+        sections.append(providerSections(account));
     }
     sections.append(cliproxyServerSection());
     return {
         QStringLiteral("providers"),
-        QStringLiteral("Providers"),
-        QStringLiteral("preferences-system-network"),
-        QStringLiteral("key.horizontal"),
-        QStringLiteral("key"),
         sections,
     };
 }
@@ -2552,133 +2512,225 @@ int compareBaseVersions(const QString &left, const QString &right)
     return 0;
 }
 
-// The settings window's nine regular panes and contextual What's New page, as
-// macOS shows them and Windows will. The pages above supply rows and values;
-// which pane a row appears on is decided here, so both front ends read one
-// arrangement instead of each keeping its own.
-static QList<SettingsPane> settingsPanes()
+namespace {
+
+// A pane group as written below: the schema section it shows, and the view id
+// an Alternatives pane addresses it by.
+struct GroupSpec {
+    const char *page;
+    const char *section;
+    const char *view = "";
+};
+
+struct PaneSpec {
+    const char *id;
+    const char *title;
+    const char *iconId;
+    PaneLayout layout;
+    QList<GroupSpec> groups;
+};
+
+// The settings window's panes on every front end. The pages above supply rows
+// and values; which pane shows a section is decided here, and a pane group's
+// heading is its section's title.
+const QList<PaneSpec> &paneSpecs()
 {
-    const auto pane = [](const char *id, const char *title, const char *symbol,
-                         QStringList schemaPages, PaneLayout layout,
-                         QList<SettingsPaneGroup> groups) {
-        return SettingsPane{QLatin1String(id),      QLatin1String(title),
-                            QLatin1String(symbol),  std::move(schemaPages),
-                            layout,                 std::move(groups)};
+    static const QList<PaneSpec> specs{
+        {"home", "Home", "home", PaneLayout::Home, {}},
+        {"general", "General", "settings", PaneLayout::Sections,
+         {{"general", "Appearance & behavior"},
+          {"general", "Insights"},
+          {"general", "System"},
+          {"general", "Setup"},
+          {"general", "Updates"}}},
+        {"whatsNew", "What's New", "whatsNew", PaneLayout::Sections,
+         {{"whatsNew", ""}, {"whatsNew", "Try the new settings"}}},
+        {"dictation", "Dictation", "microphone", PaneLayout::Sections,
+         {{"audio", "Transcription"},
+          {"audio", "Microphone"},
+          {"audio", "Silence trimming"},
+          {"audio", "Timing"}}},
+        // macOS and Windows have no schema row for the recorder, so they draw
+        // their own above these rows.
+        {"shortcut", "Shortcut", "keyboard", PaneLayout::Shortcut,
+         {{"general", "Global Shortcut"}}},
+        {"refinement", "Refinement", "refinement", PaneLayout::Sections,
+         {{"refinement", "Refinement"},
+          {"providers", "OpenAI"},
+          {"providers", "Anthropic"},
+          {"refinement", "Profile behavior"}}},
+        {"localModels", "Local models", "localModels", PaneLayout::Sections,
+         {{"localModels", "Speech models"},
+          {"localModels", "Behavior"},
+          {"localModels", "Cleanup on this computer"}}},
+        {"transcribe", "Transcribe", "transcribe", PaneLayout::Transcribe, {}},
+        {"output", "Output", "output", PaneLayout::Sections,
+         {{"output", "Delivery"}, {"output", "Paste behavior"}, {"output", "Advanced"}}},
+        {"apps", "Apps", "apps", PaneLayout::Alternatives,
+         {{"output", "Application recognition", "recognition"},
+          {"output", "App-specific paste rules", "pasteRules"}}},
+        {"vocabulary", "Vocabulary", "vocabulary", PaneLayout::Alternatives,
+         {{"vocabulary", "Vocabulary", "terms"},
+          {"corrections", "Learned corrections", "corrections"},
+          {"bindings", "Replacements & snippets", "replacements"}}},
+        {"accounts", "Accounts", "accounts", PaneLayout::Sections,
+         {{"providers", "OpenAI account"},
+          {"providers", "Anthropic account"},
+          {"providers", "CLI Proxy API"}}},
     };
-    const auto group = [](const char *title, QStringList rows) {
-        return SettingsPaneGroup{QLatin1String(title), QString(), std::move(rows)};
-    };
-    return {
-        pane("home", "Home", "house", {}, PaneLayout::Home, {}),
-        pane("general", "General", "gearshape", {QStringLiteral("general")},
-             PaneLayout::Sections,
-             {group("Appearance", {QStringLiteral("themeControl"),
-                                   QStringLiteral("pauseMedia"),
-                                   QStringLiteral("soundsEnabled"),
-                                   QStringLiteral("transcriptionPreviewEnabled"),
-                                   QStringLiteral("refinementPreviewEnabled"),
-                                   QStringLiteral("previewWords")}),
-              group("Insights", {QStringLiteral("insightsEnabled"),
-                                 QStringLiteral("insightsOffNote"),
-                                 QStringLiteral("clearInsights")}),
-              group("System", {QStringLiteral("launchAtLogin"),
-                               QStringLiteral("launchAtLoginProblem"),
-                               QStringLiteral("activationMode")}),
-              group("Maintenance", {QStringLiteral("runSetup")}),
-              group("Updates", {QStringLiteral("updateChannel"),
-                                QStringLiteral("autoCheckUpdates"),
-                                QStringLiteral("updateCheckInterval"),
-                                QStringLiteral("autoInstallUpdates"),
-                                QStringLiteral("checkForUpdates"),
-                                QStringLiteral("currentVersion"),
-                                QStringLiteral("whatsNew")})}),
-        pane("whatsNew", "What's New", "sparkles", {QStringLiteral("whatsNew")},
-             PaneLayout::Sections, {}),
-        pane("dictation", "Dictation", "mic", {QStringLiteral("audio")},
-             PaneLayout::Sections,
-             {group("Transcription", {QStringLiteral("speechProvider"),
-                                      QStringLiteral("codexFinalRetranscribe"),
-                                      QStringLiteral("speechLocalModel*"),
-                                      QStringLiteral("speechEndpoint*")}),
-              group("Microphone", {QStringLiteral("audioDevice"),
-                                   QStringLiteral("captureMode")}),
-              group("Timing", {QStringLiteral("preRollMs"),
-                               QStringLiteral("postRollMs"),
-                               QStringLiteral("readinessTimeoutMs")}),
-              group("Silence", {QStringLiteral("vadEnabled"),
-                                QStringLiteral("vadThresholdPercent")})}),
-        pane("shortcut", "Shortcut", "command", {}, PaneLayout::Shortcut, {}),
-        pane("transcribe", "Transcribe", "waveform", {}, PaneLayout::Transcribe, {}),
-        pane("text", "Text", "text.cursor", {QStringLiteral("refinement")},
-             PaneLayout::Sections,
-             {group("Refinement", {QStringLiteral("refinementProvider"),
-                                   QStringLiteral("localRunner*"),
-                                   QStringLiteral("refinementEndpoint*"),
-                                   QStringLiteral("defaultWritingProfile"),
-                                   QStringLiteral("targetContextControl"),
-                                   QStringLiteral("includeScreenshotContext")}),
-              group("Profile Behavior", {QStringLiteral("writingProfileBehavior")})}),
-        pane("localModels", "Local Models", "cpu", {QStringLiteral("localModels")},
-             PaneLayout::Sections,
-             {group("Speech Models", {QStringLiteral("localModelBrowser")}),
-              group("Behaviour", {QStringLiteral("localIdleUnload"),
-                                  QStringLiteral("localAcceleration"),
-                                  QStringLiteral("localGraphicsCard"),
-                                  QStringLiteral("localModelFolder")}),
-              group("Cleanup on This Computer", {QStringLiteral("localModelsRunner")})}),
-        pane("delivery", "Delivery", "arrow.right.doc.on.clipboard",
-             {QStringLiteral("output")}, PaneLayout::Sections,
-             {group("Delivery", {QStringLiteral("outputMethod"),
-                                 QStringLiteral("outputFormat"),
-                                 QStringLiteral("completionStatusDuration"),
-                                 QStringLiteral("restoreClipboardAfterTyping")}),
-              group("Paste Behavior", {QStringLiteral("globalPasteRule"),
-                                       QStringLiteral("categoryPasteRule_*")}),
-              // Only a build that can set up a virtual keyboard has this row;
-              // an empty group draws nothing.
-              group("Advanced", {QStringLiteral("virtualKeyboard")})}),
-        // The Apps rows live on the schema's output page; the groups claim
-        // them by id, so the pane owns no page of its own.
-        pane("apps", "Apps", "square.grid.2x2", {}, PaneLayout::Alternatives,
-             {group("Application Recognition", {QStringLiteral("appRecognitionRules")}),
-              group("App-Specific Paste Rules", {QStringLiteral("applicationPasteRules")})}),
-        pane("vocabulary", "Vocabulary", "character.book.closed",
-             {QStringLiteral("vocabulary"), QStringLiteral("corrections"),
-              QStringLiteral("bindings")},
-             PaneLayout::Alternatives,
-             {group("Terms", {QStringLiteral("vocabularyEntries"),
-                              QStringLiteral("vocabularyLimit")}),
-              group("Corrections", {QStringLiteral("correctionLearningControl"),
-                                    QStringLiteral("learnedCorrections")}),
-              group("Replacements", {QStringLiteral("bindingRules")})}),
-        pane("accounts", "Accounts", "person.badge.key",
-             {QStringLiteral("providers")}, PaneLayout::Sections,
-             {group("OpenAI", {QStringLiteral("openAiModel"),
-                               QStringLiteral("openAiEffort"),
-                               QStringLiteral("openAiFastMode"),
-                               QStringLiteral("openAiAuthMode"),
-                               QStringLiteral("openAiCliproxyAccount"),
-                               QStringLiteral("openAiAuth")}),
-              group("Anthropic", {QStringLiteral("anthropicModel"),
-                                  QStringLiteral("anthropicModelCaution"),
-                                  QStringLiteral("anthropicEffort"),
-                                  QStringLiteral("anthropicFastMode"),
-                                  QStringLiteral("anthropicAuthMode"),
-                                  QStringLiteral("anthropicCliproxyAccount")})}),
-    };
+    return specs;
 }
 
-static QList<QStringList> settingsSidebarRuns()
+const QString kHomePane = QStringLiteral("home");
+const QString kWhatsNewPane = QStringLiteral("whatsNew");
+
+// A group whose section this build lacks or leaves empty (System on Linux,
+// Advanced without a virtual keyboard) is left out.
+QList<SettingsPane> settingsPanes(const QList<SettingsPage> &pages)
+{
+    QList<SettingsPane> panes;
+    for (const PaneSpec &spec : paneSpecs()) {
+        SettingsPane pane{QLatin1String(spec.id), QLatin1String(spec.title),
+                          QLatin1String(spec.iconId), spec.layout, {}};
+        for (const GroupSpec &group : spec.groups) {
+            for (const SettingsPage &page : pages) {
+                if (page.id != QLatin1String(group.page)) {
+                    continue;
+                }
+                for (const SettingsSection &section : page.sections) {
+                    if (section.title != QLatin1String(group.section) || section.rows.isEmpty()) {
+                        continue;
+                    }
+                    QStringList rows;
+                    for (const SettingsRow &row : section.rows) {
+                        rows.append(row.id);
+                    }
+                    pane.groups.append({QLatin1String(group.view), section.title, section.help, rows});
+                }
+            }
+        }
+        panes.append(std::move(pane));
+    }
+    return panes;
+}
+
+QList<QStringList> settingsSidebarRuns()
 {
     return {
         {QStringLiteral("home")},
         {QStringLiteral("general")},
-        {QStringLiteral("dictation"), QStringLiteral("shortcut"), QStringLiteral("text"),
+        {QStringLiteral("dictation"), QStringLiteral("shortcut"), QStringLiteral("refinement"),
          QStringLiteral("localModels")},
         {QStringLiteral("transcribe")},
-        {QStringLiteral("delivery"), QStringLiteral("apps")},
+        {QStringLiteral("output"), QStringLiteral("apps")},
         {QStringLiteral("vocabulary"), QStringLiteral("accounts")},
     };
+}
+
+} // namespace
+
+QString paneTitle(const QString &paneId)
+{
+    for (const PaneSpec &spec : paneSpecs()) {
+        if (paneId == QLatin1String(spec.id)) {
+            return QLatin1String(spec.title);
+        }
+    }
+    qFatal("no settings pane with id %s", qPrintable(paneId));
+}
+
+const SettingsPane *SettingsSchema::pane(const QString &id) const
+{
+    for (const SettingsPane &candidate : panes) {
+        if (candidate.id == id) {
+            return &candidate;
+        }
+    }
+    return nullptr;
+}
+
+const SettingsRow *SettingsSchema::row(const QString &id) const
+{
+    for (const SettingsPage &candidate : pages) {
+        for (const SettingsSection &section : candidate.sections) {
+            for (const SettingsRow &row : section.rows) {
+                if (row.id == id) {
+                    return &row;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+SettingsSection SettingsSchema::section(const SettingsPaneGroup &group) const
+{
+    SettingsSection section{group.title, group.help, {}};
+    for (const QString &id : group.rows) {
+        if (const SettingsRow *found = row(id)) {
+            section.rows.append(*found);
+        }
+    }
+    return section;
+}
+
+PageId resolvePage(const SettingsSchema &schema, const QString &request)
+{
+    const QString paneId = request.section(QLatin1Char(':'), 0, 0);
+    const QString viewId = request.section(QLatin1Char(':'), 1);
+    const SettingsPane *pane = nullptr;
+    for (const SettingsPane &candidate : schema.panes) {
+        if (candidate.id.compare(paneId, Qt::CaseInsensitive) == 0) {
+            pane = &candidate;
+        }
+    }
+    if (!pane) {
+        qWarning().noquote() << "no settings page" << request << "- showing Home";
+        return {kHomePane, {}};
+    }
+    if (pane->layout != PaneLayout::Alternatives || pane->groups.isEmpty()) {
+        return {pane->id, {}};
+    }
+    for (const SettingsPaneGroup &group : pane->groups) {
+        if (group.view.compare(viewId, Qt::CaseInsensitive) == 0) {
+            return {pane->id, group.view};
+        }
+    }
+    if (!viewId.isEmpty()) {
+        qWarning().noquote() << "no view" << viewId << "on settings page" << pane->id;
+    }
+    return {pane->id, pane->groups.first().view};
+}
+
+QString launchPane(const SettingsSchema &schema, const QString &remembered)
+{
+    const QString pane = remembered.section(QLatin1Char(':'), 0, 0);
+    return pane == kWhatsNewPane || !schema.pane(pane) ? kHomePane : remembered;
+}
+
+QStringList searchPanes(const SettingsSchema &schema, const QString &query)
+{
+    const auto hit = [needle = query.trimmed()](const QString &text) {
+        return text.contains(needle, Qt::CaseInsensitive);
+    };
+    QStringList found;
+    for (const QStringList &run : schema.sidebarRuns) {
+        for (const QString &id : run) {
+            const SettingsPane *pane = schema.pane(id);
+            bool matches = hit(pane->title);
+            for (const SettingsPaneGroup &group : pane->groups) {
+                matches = matches || hit(group.title) || hit(group.help);
+                for (const QString &rowId : group.rows) {
+                    const SettingsRow *row = schema.row(rowId);
+                    matches = matches || hit(row->label) || hit(row->help);
+                }
+            }
+            if (matches) {
+                found.append(id);
+            }
+        }
+    }
+    return found;
 }
 
 SettingsSchema buildSettingsSchema(const SchemaContext &context)
@@ -2691,22 +2743,46 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
                               correctionsPage(),
                               bindingsPage(),
                               providersPage()};
-    QList<SettingsPane> panes = settingsPanes();
     QList<QStringList> runs = settingsSidebarRuns();
     // Local models exists where this build runs speech models, which is when
     // the registry offers the local speech provider.
     const QString localModels = QStringLiteral("localModels");
-    if (std::any_of(context.speechProviders.cbegin(), context.speechProviders.cend(),
-                    [](const RowOption &provider) { return provider.id == QStringLiteral("local"); })) {
+    const bool localSpeech =
+        std::any_of(context.speechProviders.cbegin(), context.speechProviders.cend(),
+                    [](const RowOption &provider) { return provider.id == QStringLiteral("local"); });
+    if (localSpeech) {
         pages.insert(4, localModelsPage(context));
     } else {
-        panes.removeIf([&localModels](const SettingsPane &pane) { return pane.id == localModels; });
         for (QStringList &run : runs) {
             run.removeAll(localModels);
         }
     }
     pages.append(whatsNewPage(pages, context));
+    QList<SettingsPane> panes = settingsPanes(pages);
+    if (!localSpeech) {
+        panes.removeIf([&localModels](const SettingsPane &pane) { return pane.id == localModels; });
+    }
     return {std::move(pages), std::move(panes), std::move(runs)};
+}
+
+QString paneTitleForRow(const QString &rowId)
+{
+    // Which pane a row is on does not depend on the context beyond what it
+    // enables, so one built with everything enabled answers for every build.
+    static const SettingsSchema schema = [] {
+        SchemaContext context;
+        context.speechProviders = {{QStringLiteral("local"), QString()}};
+        context.virtualKeyboardSetup = true;
+        return buildSettingsSchema(context);
+    }();
+    for (const SettingsPane &pane : schema.panes) {
+        for (const SettingsPaneGroup &group : pane.groups) {
+            if (group.rows.contains(rowId)) {
+                return pane.title;
+            }
+        }
+    }
+    qFatal("settings row %s is on no pane", qPrintable(rowId));
 }
 
 QList<RowOption> cleanupStrengths()

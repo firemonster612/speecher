@@ -5,6 +5,7 @@
 #include "frontend/qt/OutputCustomRows.h"
 #include "frontend/qt/ProviderCustomRows.h"
 
+#include <QHash>
 #include <QObject>
 #include <QStringList>
 
@@ -38,23 +39,11 @@ public:
                     QWidget *parent,
                     SettingsSchema schema);
 
-    // The schema's providers page split across the Models and Auth sidebar
-    // sections. Exposed so tests can prove the two lists cover every row.
-    static QStringList providerModelRowIds();
-    static QStringList providerAuthRowIds();
-
-    SchemaSettingsPage *general() const;
-    SchemaSettingsPage *audio() const;
-    SchemaSettingsPage *output() const;
-    SchemaSettingsPage *refinement() const;
-    // Null in a build without local speech.
-    SchemaSettingsPage *localModels() const;
-    SchemaSettingsPage *providerModels() const;
-    SchemaSettingsPage *providerAuth() const;
-    SchemaSettingsPage *vocabulary() const;
-    SchemaSettingsPage *corrections() const;
-    SchemaSettingsPage *bindings() const;
-    SchemaSettingsPage *whatsNew() const;
+    const SettingsSchema &schema() const;
+    // The page showing a pane's groups, by pane id, or by "pane:view" for one
+    // view of an Alternatives pane. Null for a pane with no schema rows (Home,
+    // Transcribe) and for one this build does not have.
+    SchemaSettingsPage *page(const QString &id) const;
 
     void load();
     void loadBeforeShow();
@@ -63,7 +52,6 @@ public:
               bool refreshPages = true,
               SaveOutcome *outcome = nullptr);
     void prepareForSettingsDeletion();
-    void preserveBindingScroll(QScrollArea *scroll);
 
 signals:
     void changed();
@@ -72,12 +60,12 @@ signals:
     void localModelsRequested();
 
 private:
-    SchemaSettingsPage *addPage(const QString &id,
-                                QWidget *parent,
-                                SchemaCustomRowFactory customRows = {});
-    SchemaSettingsPage *addPage(const SettingsPage &page,
-                                QWidget *parent,
-                                SchemaCustomRowFactory customRows = {});
+    void addPage(const QString &id,
+                 const QList<SettingsSection> &sections,
+                 QWidget *parent,
+                 const SchemaCustomRowFactory &customRows);
+    // Keeps the replacements list where it was while its rows are rebuilt.
+    void preserveScroll(QScrollArea *scroll);
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
     void applyCapabilities();
     void runPageAction(const QString &rowId);
@@ -95,18 +83,7 @@ private:
     OutputCustomRows m_outputRows;
     BindingRows m_bindingRows;
     ProviderCustomRows m_providerRows;
-    QList<SchemaSettingsPage *> m_pages;
-    SchemaSettingsPage *m_general;
-    SchemaSettingsPage *m_audio;
-    SchemaSettingsPage *m_output;
-    SchemaSettingsPage *m_refinement;
-    SchemaSettingsPage *m_localModels;
-    SchemaSettingsPage *m_vocabulary;
-    SchemaSettingsPage *m_corrections;
-    SchemaSettingsPage *m_bindings;
-    SchemaSettingsPage *m_providerModels;
-    SchemaSettingsPage *m_providerAuth;
-    SchemaSettingsPage *m_whatsNew;
+    QHash<QString, SchemaSettingsPage *> m_pages;
 };
 
 } // namespace speecher

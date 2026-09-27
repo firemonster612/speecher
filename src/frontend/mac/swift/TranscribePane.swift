@@ -207,6 +207,7 @@ final class TranscriptionModel: ObservableObject {
     }
 
     var refinementModel: String { bridge.refinementModel(provider: options.refiner) }
+    var refinementModelHint: String { bridge.transcribeRefinementModelHint }
 
     var startCaption: String { files.count > 1 ? "Transcribe \(files.count) files" : "Transcribe" }
 
@@ -659,7 +660,7 @@ struct TranscribePane: View {
                         Text(model.refinementModel)
                     } label: {
                         Text("Model")
-                        Text("Change it in Accounts")
+                        Text(model.refinementModelHint)
                     }
                 }
                 Picker(selection: $model.options.cleanup) {

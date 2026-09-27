@@ -40,14 +40,14 @@ struct SchemaCustomRow {
 using SchemaCustomRowFactory = std::function<
     SchemaCustomRow(const SettingsRow &descriptor, QWidget *parent, std::function<void()> notifyChanged)>;
 
-// Renders one SettingsPage as the Qt front end's settings page, and drives
+// Renders a pane's sections as the Qt front end's settings page, and drives
 // load, appendToDraft and hasChanges from the descriptors rather than from a
-// hand-written line per field.
+// hand-written line per field. The window header carries the page title.
 class SchemaSettingsPage : public QScrollArea {
     Q_OBJECT
 
 public:
-    explicit SchemaSettingsPage(const SettingsPage &page,
+    explicit SchemaSettingsPage(const QList<SettingsSection> &sections,
                                 QWidget *parent = nullptr,
                                 SchemaCustomRowFactory customRows = {});
 
@@ -74,7 +74,6 @@ private:
         // The container the row shares with the rest of its group, which is
         // what gets enabled and carries the group's tooltip.
         QWidget *group = nullptr;
-        QWidget *separator = nullptr;
         // The visible explanation (and fix) shown above the row or its group
         // while the row's gate says no. Shared by every row of a group.
         QWidget *gateNote = nullptr;
@@ -92,9 +91,7 @@ private:
         int rowEnd = 0;
     };
 
-    void addSection(const SettingsSection &section,
-                    const QString &centeredSeparatorAfterRow,
-                    QVBoxLayout *pageLayout);
+    void addSection(const SettingsSection &section, QVBoxLayout *pageLayout);
     void addRow(const SettingsRow &descriptor, QWidget *host, QWidget *group, QWidget *gateNote);
     QWidget *addGateNote(const SettingsRow &descriptor, QWidget *form);
     SchemaCustomRow supplyRow(const SettingsRow &descriptor,

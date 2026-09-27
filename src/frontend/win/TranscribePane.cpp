@@ -513,7 +513,7 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
                                  false));
     if (!model.isEmpty()) {
         refine.Children().Append(row(QStringLiteral("Model"),
-                                     QStringLiteral("Change it on the Refinement page"),
+                                     refinementModelHint(),
                                      secondaryTextBlock(model, L"SettingsInfoTextStyle", host),
                                      true));
     }

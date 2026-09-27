@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/InsightsSummary.h"
-#include "ui/AppPage.h"
 #include "ui/InsightsCharts.h"
 
 #include <QWidget>
@@ -37,8 +36,8 @@ public slots:
     void refresh();
 
 signals:
-    void navigateRequested(AppPageId page);
-    void correctionsRequested();
+    // A page id, as AppWindow::showPage takes it.
+    void pageRequested(const QString &pageId);
 
 protected:
     void showEvent(QShowEvent *event) override;

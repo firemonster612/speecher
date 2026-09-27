@@ -62,6 +62,8 @@ QString audioFileDetail(qint64 bytes, qint64 durationMs);
 
 // The model a refinement provider is set to use, or empty for none.
 QString refinementModel(const QString &providerId, const RefinementSettings &settings);
+// The help under that model on the Configure step: where to change it.
+QString refinementModelHint();
 // Whether a batch with these options refines its transcripts, which is when
 // the results offer the raw text beside the refined one.
 bool refinesTranscripts(const TranscribeOptions &options);

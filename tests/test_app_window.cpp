@@ -11,7 +11,7 @@
 #include "dictation/DictationSession.h"
 #include "core/TranscriptState.h"
 #include "frontend/qt/QtFrontEnd.h"
-#include "ui/AppPage.h"
+#include "frontend/qt/SchemaSettingsPage.h"
 #include "ui/AppWindow.h"
 #include "ui/InlineMessage.h"
 #include "ui/HomePage.h"
@@ -79,13 +79,10 @@ private slots:
         window.resize(980, 680);
         window.show();
         QTest::qWait(200);
-        for (int page = 0; page < window.pageCount(); ++page) {
-            window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->setCurrentRow(page);
+        for (const QString &pane : window.sidebarPanes()) {
+            window.showPage(pane);
             QTest::qWait(120);
-            window.grab().save(QStringLiteral("%1/page-%2-%3.png")
-                                   .arg(dir)
-                                   .arg(page)
-                                   .arg(window.pageTitles().at(page).toLower()));
+            window.grab().save(QStringLiteral("%1/%2.png").arg(dir, pane));
         }
     }
 
@@ -105,23 +102,85 @@ private slots:
         QCOMPARE(meta->text(), QStringLiteral("5 words"));
     }
 
-    void sidebarShellConstructsWithSharedPageTitles()
+    // The sidebar is the schema's runs, a gap between each, and nothing else.
+    void sidebarListsTheSchemaPanesInTheirRuns()
     {
         ApplicationController controller(true);
-        const QStringList titles{
-            QStringLiteral("Home"),
-            QStringLiteral("Transcribe"),
-            QStringLiteral("General"),
-            QStringLiteral("Audio"),
-            QStringLiteral("Output"),
-            QStringLiteral("Accounts"),
-            QStringLiteral("Refinement"),
-            QStringLiteral("Local models"),
-            QStringLiteral("Vocabulary"),
-        };
         AppWindow window(&controller);
-        QCOMPARE(window.pageCount(), 9);
-        QCOMPARE(window.pageTitles(), titles);
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        QStringList rows;
+        for (int row = 0; row < navigation->count(); ++row) {
+            const QString text = navigation->item(row)->text();
+            rows.append(text.isEmpty() ? QStringLiteral("|") : text);
+        }
+        QStringList expected{QStringLiteral("Home"), QStringLiteral("|"), QStringLiteral("General"),
+                             QStringLiteral("|"), QStringLiteral("Dictation"), QStringLiteral("Shortcut"),
+                             QStringLiteral("Refinement")};
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+        expected.append(QStringLiteral("Local models"));
+#endif
+        expected += QStringList{QStringLiteral("|"), QStringLiteral("Transcribe"), QStringLiteral("|"),
+                                QStringLiteral("Output"), QStringLiteral("Apps"), QStringLiteral("|"),
+                                QStringLiteral("Vocabulary"), QStringLiteral("Accounts")};
+        QCOMPARE(rows, expected);
+    }
+
+    void pageIdsOpenPanesAndViewsAndUnknownIdsOpenHome()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
+        window.showPage(QStringLiteral("vocabulary:corrections"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Vocabulary"));
+        QTabWidget *tabs = nullptr;
+        for (QTabWidget *candidate : window.findChildren<QTabWidget *>()) {
+            if (candidate->isVisibleTo(&window) || candidate->tabText(0) == QStringLiteral("Vocabulary")) {
+                tabs = candidate;
+            }
+        }
+        QVERIFY(tabs);
+        QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("Learned corrections"));
+
+        QTest::ignoreMessage(QtWarningMsg, "no settings page nosuchpage - showing Home");
+        window.showPage(QStringLiteral("nosuchpage"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Home"));
+        QCOMPARE(title->text(), QStringLiteral("Home"));
+    }
+
+    void theWindowOpensOnTheLastPageButNeverOnWhatsNew()
+    {
+        ApplicationController controller(true);
+        {
+            AppWindow window(&controller);
+            window.showPage(QStringLiteral("output"));
+        }
+        {
+            AppWindow window(&controller);
+            QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(),
+                     QStringLiteral("Output"));
+            window.showWhatsNew();
+        }
+        AppWindow window(&controller);
+        QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(),
+                 QStringLiteral("Output"));
+    }
+
+    void settingsOpensGeneral()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        controller.showSettingsWindow();
+        const auto windows = QApplication::topLevelWidgets();
+        const auto window = std::find_if(windows.cbegin(), windows.cend(), [](QWidget *widget) {
+            return qobject_cast<AppWindow *>(widget) && widget->isVisible();
+        });
+        QVERIFY(window != windows.cend());
+        QCOMPARE((*window)->findChild<QLabel *>(QStringLiteral("pageTitle"))->text(),
+                 QStringLiteral("General"));
+        (*window)->hide();
     }
 
 #ifdef Q_OS_LINUX
@@ -263,10 +322,10 @@ private slots:
         QCOMPARE(notice->findChild<QLabel *>(QStringLiteral("insightsNoticeTitle"))->text(),
                  QStringLiteral("Insights are off"));
         QVERIFY(page.findChildren<QFrame *>(QStringLiteral("insightTile")).isEmpty());
-        QSignalSpy navigate(&page, &HomePage::navigateRequested);
+        QSignalSpy navigate(&page, &HomePage::pageRequested);
         page.findChild<QPushButton *>(QStringLiteral("insightsNoticeSettings"))->click();
         QCOMPARE(navigate.count(), 1);
-        QCOMPARE(navigate.first().first().value<AppPageId>(), AppPageId::General);
+        QCOMPARE(navigate.first().first().toString(), QStringLiteral("general"));
 
         controller.settings()->setInsightsEnabled(true);
         page.refresh();
@@ -539,13 +598,13 @@ private slots:
         SettingsPageSet pages(&controller, &parent, buildSettingsSchema(context));
         pages.loadBeforeShow();
 
-        auto *autoCheck = pages.whatsNew()->findChild<QCheckBox *>(
+        auto *autoCheck = pages.page(QStringLiteral("whatsNew"))->findChild<QCheckBox *>(
             QStringLiteral("autoCheckUpdates"));
         QVERIFY(autoCheck);
         autoCheck->setChecked(false);
         QVERIFY(pages.save(false, false));
 
-        auto *channel = pages.general()->findChild<QComboBox *>(QStringLiteral("updateChannel"));
+        auto *channel = pages.page(QStringLiteral("general"))->findChild<QComboBox *>(QStringLiteral("updateChannel"));
         QVERIFY(channel);
         channel->setCurrentIndex(channel->findData(QStringLiteral("nightly")));
         QVERIFY(pages.save(false, false));
@@ -672,8 +731,18 @@ private slots:
         QVERIFY(window.findChild<QSplitter *>() && search);
 
         search->setText(QStringLiteral("Keep before speech"));
-        QVERIFY(navigation && navigation->item(2)->isHidden()
-                && !navigation->item(3)->isHidden());
+        QCOMPARE(navigation->count(), 1);
+        QCOMPARE(navigation->item(0)->text(), QStringLiteral("Dictation"));
+        // Return opens the first hit.
+        search->setText(QStringLiteral("paste"));
+        QCOMPARE(navigation->item(0)->text(), QStringLiteral("Output"));
+        QTest::keyClick(search, Qt::Key_Return);
+        QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Output"));
+        // What's New is not searchable, even for its own name: General
+        // answers, for the row that opens it.
+        search->setText(QStringLiteral("What's New"));
+        QCOMPARE(navigation->count(), 1);
+        QCOMPARE(navigation->item(0)->text(), QStringLiteral("General"));
     }
 
     void openedAudioFilesLandOnTheTranscribePage()
@@ -915,26 +984,10 @@ private slots:
     {
         ApplicationController controller(true);
         AppWindow window(&controller);
-        window.navigateToSettings(AppPageId::Output);
+        window.showPage(QStringLiteral("output"));
         QCOMPARE(window.findChild<QListWidget *>(QStringLiteral("appNavigation"))->currentItem()->text(),
                  QStringLiteral("Output"));
-    }
-
-    void sidebarCanReturnToThePageThatOpenedWhatsNew()
-    {
-        ApplicationController controller(true);
-        AppWindow window(&controller);
-        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
-        auto *stack = window.findChild<QStackedWidget *>();
-        auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
-        QVERIFY(navigation && stack && whatsNew);
-
-        navigation->setCurrentRow(2);
-        whatsNew->click();
-        // What's New sits after the sidebar's pages.
-        QCOMPARE(stack->currentIndex(), window.pageCount());
-        navigation->setCurrentRow(2);
-        QCOMPARE(stack->currentIndex(), 2);
+        QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Output"));
     }
 
     void whatsNewOffersAWayBackToThePageItWasOpenedFrom()
@@ -943,27 +996,27 @@ private slots:
         AppWindow window(&controller);
         window.show();
         auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
-        auto *stack = window.findChild<QStackedWidget *>();
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
         auto *back = window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"));
         auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
-        QVERIFY(navigation && stack && whatsNew && back && title);
+        QVERIFY(navigation && whatsNew && back && title);
         QVERIFY(!back->isVisible());
 
-        // Opened from General, the same way the update banner opens it.
-        navigation->setCurrentRow(2);
+        // Opened from General, the same way the update banner opens it. It
+        // sits at the top of the sidebar while it shows.
+        window.showPage(QStringLiteral("general"));
         whatsNew->click();
-        // What's New sits after the sidebar's pages.
-        QCOMPARE(stack->currentIndex(), window.pageCount());
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(back->isVisible());
-        QVERIFY(!navigation->currentItem());
+        QCOMPARE(navigation->item(0)->text(), QStringLiteral("What's New"));
+        QCOMPARE(navigation->currentItem(), navigation->item(0));
 
         back->click();
-        QCOMPARE(stack->currentIndex(), 2);
-        QCOMPARE(navigation->currentRow(), 2);
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("General"));
         QCOMPARE(title->text(), QStringLiteral("General"));
         QVERIFY(!back->isVisible());
+        // Not pending and not showing, so it leaves the sidebar.
+        QCOMPARE(navigation->item(0)->text(), QStringLiteral("Home"));
     }
 
     void deletingACorrectionThroughThePageSetKeepsUndoAvailable()
@@ -980,11 +1033,12 @@ private slots:
         SettingsPageSet pages(&controller, &parent);
         pages.load();
 
-        auto *table = pages.corrections()->findChild<QTableWidget *>(
+        SchemaSettingsPage *correctionsPage = pages.page(QStringLiteral("vocabulary:corrections"));
+        auto *table = correctionsPage->findChild<QTableWidget *>(
             QStringLiteral("learnedCorrections"));
-        auto *remove = pages.corrections()->findChild<QPushButton *>(
+        auto *remove = correctionsPage->findChild<QPushButton *>(
             QStringLiteral("deleteLearnedCorrections"));
-        auto *undo = pages.corrections()->findChild<QPushButton *>(
+        auto *undo = correctionsPage->findChild<QPushButton *>(
             QStringLiteral("undoDeleteLearnedCorrections"));
         QVERIFY(table && remove && undo);
         QCOMPARE(table->rowCount(), 2);
@@ -999,7 +1053,7 @@ private slots:
         undo->click();
         QCOMPARE(table->rowCount(), 2);
         AppSettings draft;
-        pages.corrections()->appendToDraft(draft);
+        correctionsPage->appendToDraft(draft);
         QCOMPARE(draft.learnedCorrections, corrections);
     }
 
@@ -1049,7 +1103,7 @@ private slots:
         SettingsPageSet pages(&controller, &parent);
         pages.load();
 
-        auto *check = pages.general()->findChild<QPushButton *>(
+        auto *check = pages.page(QStringLiteral("general"))->findChild<QPushButton *>(
             QStringLiteral("checkForUpdates"));
         QVERIFY(check);
         auto *title = check->findChild<QLabel *>(QStringLiteral("rowTitle"));
@@ -1099,7 +1153,7 @@ private slots:
             {QStringLiteral("my email"), QStringLiteral("one")},
             {QStringLiteral("MY email"), QStringLiteral("two")},
         };
-        pages.bindings()->load(withDuplicateBinding);
+        pages.page(QStringLiteral("vocabulary:replacements"))->load(withDuplicateBinding);
 
         QVERIFY(!pages.save(false, true, &outcome));
         QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::InvalidReplacementRules);

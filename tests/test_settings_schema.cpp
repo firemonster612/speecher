@@ -6,8 +6,9 @@
 #include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/SettingsSchema.h"
-#include "ui/settings/SettingsPageSet.h"
+#include "transcribe/TranscribePresentation.h"
 
+#include <QRegularExpression>
 #include <algorithm>
 
 using namespace speecher;
@@ -594,15 +595,14 @@ private slots:
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         const SettingsPage &audio = schema.page(QStringLiteral("audio"));
-        const SettingsSection &advanced = audio.sections.last();
-        QCOMPARE(advanced.title, QStringLiteral("Advanced"));
+        const SettingsSection &timing = audio.sections.last();
+        QCOMPARE(timing.title, QStringLiteral("Timing"));
         QStringList ids;
-        for (const SettingsRow &row : advanced.rows) {
+        for (const SettingsRow &row : timing.rows) {
             ids.append(row.id);
         }
         QCOMPARE(ids,
-                 QStringList({QStringLiteral("captureMode"),
-                              QStringLiteral("preRollMs"),
+                 QStringList({QStringLiteral("preRollMs"),
                               QStringLiteral("postRollMs"),
                               QStringLiteral("readinessTimeoutMs")}));
         for (const SettingsSection &section : audio.sections) {
@@ -750,17 +750,20 @@ private slots:
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         const SettingsPage &page = schema.page(QStringLiteral("providers"));
-        QCOMPARE(page.sections.size(), 3);
-        for (const SettingsSection &section : page.sections.sliced(0, 2)) {
-            QVERIFY(section.title.endsWith(QStringLiteral("account")));
+        // Each provider is a refinement section (model, effort, fast mode) and
+        // an account section (sign-in), then the shared CLI Proxy API server.
+        QCOMPARE(page.sections.size(), 5);
+        for (int index : {0, 2}) {
+            const SettingsSection &section = page.sections.at(index);
+            QCOMPARE(page.sections.at(index + 1).title, section.title + QStringLiteral(" account"));
+            QVERIFY(std::any_of(page.sections.at(index + 1).rows.begin(),
+                                page.sections.at(index + 1).rows.end(),
+                                [](const SettingsRow &row) { return row.kind == RowKind::Custom; }));
             const SettingsRow &model = section.rows.first();
             QCOMPARE(model.kind, RowKind::Text);
             QVERIFY(!model.suggestions(AppSettings{}).isEmpty());
             QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
                 return row.kind == RowKind::Choice;
-            }));
-            QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
-                return row.kind == RowKind::Custom;
             }));
             QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
                 return row.kind == RowKind::Toggle;
@@ -810,19 +813,6 @@ private slots:
         }
         QCOMPARE(rowById(page, QStringLiteral("openAiAuthMode")).label, QStringLiteral("Sign-in"));
         QCOMPARE(rowById(page, QStringLiteral("openAiAuth")).label, QStringLiteral("Status"));
-    }
-
-    void qtProviderPagesCoverEveryProviderRow()
-    {
-        const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const QStringList covered = SettingsPageSet::providerModelRowIds()
-            + SettingsPageSet::providerAuthRowIds();
-        for (const SettingsSection &section : schema.page(QStringLiteral("providers")).sections) {
-            for (const SettingsRow &row : section.rows) {
-                QVERIFY2(covered.contains(row.id),
-                         qPrintable(QStringLiteral("row %1 is on no Qt provider page").arg(row.id)));
-            }
-        }
     }
 
     void aModelThatReadsTranscriptsAsInstructionsSaysSo()
@@ -1047,77 +1037,172 @@ private slots:
                                 "clipboard."));
     }
 
-    // The pane arrangement names pages and rows by id; a typo or a renamed row
-    // would otherwise fail silently, as a group that never draws.
-    void panesReferenceOnlyPagesAndRowsTheSchemaHas()
+    // A row no pane shows is a setting nobody can reach, and a row two panes
+    // show is two places to look; either way the platforms drift apart.
+    void everySchemaRowIsOnExactlyOnePane()
     {
-        // The maximal schema, so capability-gated rows (the virtual keyboard)
-        // exist to be matched.
+        for (const bool everything : {false, true}) {
+            SchemaContext context = fakeContext();
+            if (everything) {
+                context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});
+                context.virtualKeyboardSetup = true;
+                context.lastSeenVersion = QStringLiteral("0.0.0");
+                context.currentVersion = QStringLiteral("0.1.0");
+            }
+            const SettingsSchema schema = buildSettingsSchema(context);
+            QStringList placed;
+            for (const SettingsPane &pane : schema.panes) {
+                for (const SettingsPaneGroup &group : pane.groups) {
+                    if (pane.id != QStringLiteral("whatsNew")) {
+                        placed += group.rows;
+                    }
+                }
+            }
+            for (const SettingsPage &page : schema.pages) {
+                if (page.id == QStringLiteral("whatsNew")) {
+                    continue;
+                }
+                for (const SettingsSection &section : page.sections) {
+                    for (const SettingsRow &row : section.rows) {
+                        QVERIFY2(placed.count(row.id) == 1,
+                                 qPrintable(QStringLiteral("%1 is on %2 panes").arg(row.id).arg(placed.count(row.id))));
+                    }
+                }
+            }
+        }
+    }
+
+    // The user-approved arrangement, which every front end's sidebar shows.
+    void panesFollowTheAgreedArrangement()
+    {
         SchemaContext context = fakeContext();
-        context.virtualKeyboardSetup = true;
-        context.lastSeenVersion = QStringLiteral("0.0.0");
-        context.currentVersion = QStringLiteral("0.1.0");
+        context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});
         const SettingsSchema schema = buildSettingsSchema(context);
-
-        QStringList pageIds;
-        QStringList rowIds;
-        for (const SettingsPage &page : schema.pages) {
-            pageIds.append(page.id);
-            for (const SettingsSection &section : page.sections) {
-                for (const SettingsRow &row : section.rows) {
-                    rowIds.append(row.id);
+        QCOMPARE(schema.sidebarRuns,
+                 (QList<QStringList>{{QStringLiteral("home")},
+                                     {QStringLiteral("general")},
+                                     {QStringLiteral("dictation"), QStringLiteral("shortcut"),
+                                      QStringLiteral("refinement"), QStringLiteral("localModels")},
+                                     {QStringLiteral("transcribe")},
+                                     {QStringLiteral("output"), QStringLiteral("apps")},
+                                     {QStringLiteral("vocabulary"), QStringLiteral("accounts")}}));
+        const auto paneOf = [&schema](const QString &rowId) {
+            for (const SettingsPane &pane : schema.panes) {
+                for (const SettingsPaneGroup &group : pane.groups) {
+                    if (group.rows.contains(rowId)) {
+                        return pane.id;
+                    }
                 }
             }
+            return QString();
+        };
+        for (const QString &row : {QStringLiteral("openAiAuthMode"), QStringLiteral("anthropicAuthMode"),
+                                   QStringLiteral("cliproxyBaseUrl")}) {
+            QCOMPARE(paneOf(row), QStringLiteral("accounts"));
         }
+        for (const QString &row : {QStringLiteral("openAiModel"), QStringLiteral("openAiEffort"),
+                                   QStringLiteral("anthropicFastMode")}) {
+            QCOMPARE(paneOf(row), QStringLiteral("refinement"));
+        }
+        QCOMPARE(paneOf(QStringLiteral("activationMode")), QStringLiteral("shortcut"));
+        QCOMPARE(paneOf(QStringLiteral("appRecognitionRules")), QStringLiteral("apps"));
+        QCOMPARE(paneOf(QStringLiteral("applicationPasteRules")), QStringLiteral("apps"));
+        QStringList views;
+        for (const SettingsPaneGroup &group : schema.pane(QStringLiteral("vocabulary"))->groups) {
+            views.append(group.title);
+        }
+        QCOMPARE(views, (QStringList{QStringLiteral("Vocabulary"), QStringLiteral("Learned corrections"),
+                                     QStringLiteral("Replacements & snippets")}));
+    }
 
-#ifdef Q_OS_LINUX
-        // Rows generalPage() compiles in on macOS and Windows but not Linux;
-        // keep in sync with its #ifdefs so the check stays exact elsewhere.
-        const QStringList otherPlatformRows{QStringLiteral("themeControl"),
-                                            QStringLiteral("launchAtLogin"),
-                                            QStringLiteral("launchAtLoginProblem")};
-#else
-        const QStringList otherPlatformRows;
-#endif
-
-        QVERIFY(!schema.panes.isEmpty());
-        QStringList paneIds;
+    void everyPageIdResolves()
+    {
+        SchemaContext context = fakeContext();
+        context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});
+        const SettingsSchema schema = buildSettingsSchema(context);
         for (const SettingsPane &pane : schema.panes) {
-            QVERIFY2(!paneIds.contains(pane.id), qPrintable(pane.id));
-            paneIds.append(pane.id);
-            for (const QString &pageId : pane.schemaPages) {
-                QVERIFY2(pageIds.contains(pageId),
-                         qPrintable(pane.id + QStringLiteral(" owns unknown page ") + pageId));
-            }
+            QCOMPARE(resolvePage(schema, pane.id).pane, pane.id);
+            QCOMPARE(resolvePage(schema, pane.id.toLower()).pane, pane.id);
+            QCOMPARE(paneTitle(pane.id), pane.title);
+            QVERIFY2(!pane.groups.isEmpty() || pane.layout == PaneLayout::Home
+                         || pane.layout == PaneLayout::Transcribe,
+                     qPrintable(pane.id));
             for (const SettingsPaneGroup &group : pane.groups) {
-                for (const QString &pattern : group.rows) {
-                    const bool matched = pattern.endsWith(QLatin1Char('*'))
-                        ? std::any_of(rowIds.cbegin(), rowIds.cend(),
-                                      [&pattern](const QString &id) {
-                                          return id.startsWith(pattern.chopped(1));
-                                      })
-                        : rowIds.contains(pattern) || otherPlatformRows.contains(pattern);
-                    QVERIFY2(matched,
-                             qPrintable(pane.id + QStringLiteral("/") + group.title
-                                        + QStringLiteral(" names unknown row ") + pattern));
+                QVERIFY2(!group.title.isEmpty() || pane.id == QStringLiteral("whatsNew"), qPrintable(pane.id));
+                if (pane.layout == PaneLayout::Alternatives) {
+                    const PageId view = resolvePage(schema, pane.id + QLatin1Char(':') + group.view);
+                    QCOMPARE(view.pane, pane.id);
+                    QCOMPARE(view.view, group.view);
                 }
             }
         }
+        QCOMPARE(resolvePage(schema, QStringLiteral("vocabulary")).view, QStringLiteral("terms"));
 
-        // Every run names real panes, and every pane sits in exactly one run
-        // except What's New, which appears only while selected.
-        QStringList runPaneIds;
-        for (const QStringList &run : schema.sidebarRuns) {
-            runPaneIds += run;
+        QTest::ignoreMessage(QtWarningMsg, "no settings page nothing - showing Home");
+        QCOMPARE(resolvePage(schema, QStringLiteral("nothing")).pane, QStringLiteral("home"));
+        QTest::ignoreMessage(QtWarningMsg, "no view nothing on settings page vocabulary");
+        QCOMPARE(resolvePage(schema, QStringLiteral("vocabulary:nothing")).view, QStringLiteral("terms"));
+
+        QCOMPARE(launchPane(schema, QStringLiteral("output")), QStringLiteral("output"));
+        QCOMPARE(launchPane(schema, QStringLiteral("vocabulary:corrections")),
+                 QStringLiteral("vocabulary:corrections"));
+        QCOMPARE(launchPane(schema, QStringLiteral("whatsNew")), QStringLiteral("home"));
+        QCOMPARE(launchPane(schema, QStringLiteral("providers")), QStringLiteral("home"));
+        QCOMPARE(launchPane(schema, QString()), QStringLiteral("home"));
+    }
+
+    void searchLooksThroughTitlesRowsAndHelpButNotWhatsNew()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        QCOMPARE(searchPanes(schema, QStringLiteral("keep before speech")),
+                 QStringList{QStringLiteral("dictation")});
+        QCOMPARE(searchPanes(schema, QStringLiteral("Replacements")),
+                 QStringList{QStringLiteral("vocabulary")});
+        QVERIFY(searchPanes(schema, QStringLiteral("Sign-in")).contains(QStringLiteral("accounts")));
+        QCOMPARE(searchPanes(schema, QStringLiteral("What's New")), QStringList{QStringLiteral("general")});
+        QVERIFY(searchPanes(schema, QStringLiteral("Try the new settings")).isEmpty());
+    }
+
+    // Help and error text that sends someone to a page names it through
+    // paneTitle or paneTitleForRow; this pins that the names are the panes'.
+    void pageNamesInTextArePaneTitles()
+    {
+        QCOMPARE(paneTitle(QStringLiteral("localModels")), QStringLiteral("Local models"));
+        QCOMPARE(paneTitleForRow(QStringLiteral("openAiModel")), QStringLiteral("Refinement"));
+        QCOMPARE(paneTitleForRow(QStringLiteral("openAiCliproxyAccount")), QStringLiteral("Accounts"));
+        QCOMPARE(refinementModelHint(), QStringLiteral("Change it on the Refinement page"));
+
+        SchemaContext context = fakeContext();
+        context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const QStringList titles = [&schema] {
+            QStringList titles;
+            for (const SettingsPane &pane : schema.panes) {
+                titles.append(pane.title);
+            }
+            return titles;
+        }();
+        // Every "under X" or "the X page" the schema itself says names a pane.
+        static const QRegularExpression pageName(
+            QStringLiteral("(?:under|on the) ([A-Z][a-z]+(?: [a-z]+)?)(?: page|\\.| to)"));
+        int named = 0;
+        for (const SettingsPage &page : schema.pages) {
+            for (const SettingsSection &section : page.sections) {
+                QStringList texts{section.help};
+                for (const SettingsRow &row : section.rows) {
+                    texts << row.help << row.disabledHelp << row.tooltip;
+                }
+                for (const QString &text : std::as_const(texts)) {
+                    auto matches = pageName.globalMatch(text);
+                    while (matches.hasNext()) {
+                        const QString name = matches.next().captured(1);
+                        ++named;
+                        QVERIFY2(titles.contains(name), qPrintable(text));
+                    }
+                }
+            }
         }
-        for (const QString &paneId : runPaneIds) {
-            QVERIFY2(paneIds.contains(paneId),
-                     qPrintable(QStringLiteral("run names unknown pane ") + paneId));
-            QCOMPARE(runPaneIds.count(paneId), 1);
-        }
-        QStringList expected = paneIds;
-        expected.removeAll(QStringLiteral("whatsNew"));
-        QCOMPARE(runPaneIds.size(), expected.size());
+        QVERIFY(named >= 2);
     }
 
     void customEndpointRowsSitUnderTheirPickerWhileItIsChosen()
@@ -1265,7 +1350,6 @@ private slots:
         QCOMPARE(pageIds.indexOf(QStringLiteral("localModels")),
                  pageIds.indexOf(QStringLiteral("refinement")) + 1);
         const SettingsPage &page = schema.page(QStringLiteral("localModels"));
-        QCOMPARE(page.title, QStringLiteral("Local models"));
         const SettingsRow &browser = rowById(page, QStringLiteral("localModelBrowser"));
         QCOMPARE(browser.kind, RowKind::Custom);
 
@@ -1290,9 +1374,9 @@ private slots:
         acceleration.apply(settings, QStringLiteral("auto"));
         QCOMPARE(settings.speech.local.runsOn, LocalRunsOn{});
 
-        // On macOS and Windows it is its own pane, next to Text.
+        // It is its own pane, next to Refinement.
         const QStringList &run = schema.sidebarRuns.at(2);
-        QCOMPARE(run.indexOf(QStringLiteral("localModels")), run.indexOf(QStringLiteral("text")) + 1);
+        QCOMPARE(run.indexOf(QStringLiteral("localModels")), run.indexOf(QStringLiteral("refinement")) + 1);
 
         // A build that cannot run speech models has no page or pane for them.
         const SettingsSchema without = buildSettingsSchema(fakeContext());

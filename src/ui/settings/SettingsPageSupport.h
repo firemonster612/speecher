@@ -41,7 +41,6 @@ protected:
 
 QFrame *makeSeparator(QWidget *parent);
 QColor separatorColor(const QPalette &palette);
-QWidget *makeCenteredSeparator(QWidget *parent);
 void configureFormLayout(QFormLayout *form);
 QFrame *makeRow(const QString &label,
                 const QString &description,

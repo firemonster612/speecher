@@ -2676,6 +2676,11 @@ static std::optional<QString> optionalString(NSString *value)
     return speecher::transcribeStepHint(static_cast<speecher::TranscribeStep>(step)).toNSString();
 }
 
+- (NSString *)transcribeRefinementModelHint
+{
+    return speecher::refinementModelHint().toNSString();
+}
+
 - (double)transcribeLandingSeconds
 {
     return speecher::kTranscribeLandingMs / 1000.0;

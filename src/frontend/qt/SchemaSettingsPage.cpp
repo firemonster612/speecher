@@ -88,129 +88,6 @@ SchemaCustomRow builtInRow(const SettingsRow &descriptor,
     qFatal("the Qt front end has no widget for settings row %s", qPrintable(descriptor.id));
 }
 
-SettingsSection mergedSection(const QList<SettingsSection> &sections)
-{
-    SettingsSection merged;
-    for (const SettingsSection &section : sections) {
-        merged.rows.append(section.rows);
-        if (!section.help.isEmpty()) {
-            if (!merged.help.isEmpty()) {
-                merged.help += QLatin1Char('\n');
-            }
-            merged.help += section.help;
-        }
-    }
-    return merged;
-}
-
-SettingsRow takeRow(QList<SettingsRow> &rows, const QString &id)
-{
-    for (int index = 0; index < rows.size(); ++index) {
-        if (rows.at(index).id == id) {
-            return rows.takeAt(index);
-        }
-    }
-    qFatal("Qt settings layout cannot find row %s", qPrintable(id));
-}
-
-int rowIndex(const QList<SettingsRow> &rows, const QString &id)
-{
-    for (int index = 0; index < rows.size(); ++index) {
-        if (rows.at(index).id == id) {
-            return index;
-        }
-    }
-    return -1;
-}
-
-SettingsRow takeRow(QList<SettingsSection> &sections, const QString &id)
-{
-    for (SettingsSection &section : sections) {
-        const int index = rowIndex(section.rows, id);
-        if (index >= 0) {
-            return section.rows.takeAt(index);
-        }
-    }
-    qFatal("Qt settings layout cannot find row %s", qPrintable(id));
-}
-
-int sectionWithRow(const QList<SettingsSection> &sections, const QString &id)
-{
-    for (int index = 0; index < sections.size(); ++index) {
-        if (rowIndex(sections.at(index).rows, id) >= 0) {
-            return index;
-        }
-    }
-    return -1;
-}
-
-struct QtPageLayout {
-    SettingsPage page;
-    QString centeredSeparatorAfterRow;
-};
-
-// The schema groups rows for native macOS forms. Keep the established compact
-// KDE order when the same descriptors are rendered by Qt.
-QtPageLayout qtPageLayout(SettingsPage page)
-{
-    if (page.id == QStringLiteral("audio")) {
-        // One compact card for the everyday rows; Advanced keeps its own card
-        // and title so the timing controls read as optional.
-        QList<SettingsSection> everyday;
-        QList<SettingsSection> advanced;
-        for (SettingsSection &section : page.sections) {
-            (section.title == QStringLiteral("Advanced") ? advanced : everyday).append(section);
-        }
-        SettingsSection everydayCard = mergedSection(everyday);
-        everydayCard.title = QStringLiteral("Speech to text");
-        page.sections = {std::move(everydayCard)};
-        page.sections.append(advanced);
-        return {std::move(page), {}};
-    }
-
-    if (page.id == QStringLiteral("output")) {
-        SettingsSection clipboardAndKeyboard{
-            QStringLiteral("Clipboard"), QString(),
-            {takeRow(page.sections, QStringLiteral("restoreClipboardAfterTyping"))}};
-        const int virtualKeyboardSection =
-            sectionWithRow(page.sections, QStringLiteral("virtualKeyboard"));
-        if (virtualKeyboardSection >= 0) {
-            clipboardAndKeyboard.title = QStringLiteral("Clipboard & virtual keyboard");
-            clipboardAndKeyboard.rows.append(
-                takeRow(page.sections[virtualKeyboardSection].rows, QStringLiteral("virtualKeyboard")));
-            if (page.sections[virtualKeyboardSection].rows.isEmpty()) {
-                page.sections.removeAt(virtualKeyboardSection);
-            }
-        }
-        // The app recognition rules stay last: they are the reference table
-        // the paste rules above point at.
-        int recognition = -1;
-        for (int index = 0; index < page.sections.size(); ++index) {
-            if (page.sections.at(index).title == QStringLiteral("Application recognition")) {
-                recognition = index;
-            }
-        }
-        page.sections.insert(recognition >= 0 ? recognition : page.sections.size(),
-                             std::move(clipboardAndKeyboard));
-        return {std::move(page), {}};
-    }
-
-    if (page.id == QStringLiteral("refinement")) {
-        SettingsSection refinement = mergedSection(page.sections);
-        const SettingsRow profile =
-            takeRow(refinement.rows, QStringLiteral("writingProfileBehavior"));
-        const int targetContext = rowIndex(refinement.rows, QStringLiteral("targetContextControl"));
-        if (targetContext < 0) {
-            qFatal("Qt settings layout cannot find row targetContextControl");
-        }
-        refinement.rows.insert(targetContext, profile);
-        refinement.title = QStringLiteral("Refinement");
-        page.sections = {std::move(refinement)};
-        return {std::move(page), QStringLiteral("writingProfileBehavior")};
-    }
-    return {std::move(page), {}};
-}
-
 // A run of rows that render together inside the card, so one capability can
 // gate the whole cluster.
 QWidget *addRowGroup(const QString &id, QWidget *form)
@@ -247,30 +124,24 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
     };
 }
 
-SchemaSettingsPage::SchemaSettingsPage(const SettingsPage &page,
+SchemaSettingsPage::SchemaSettingsPage(const QList<SettingsSection> &sections,
                                        QWidget *parent,
                                        SchemaCustomRowFactory customRows)
     : QScrollArea(parent)
     , m_customRows(std::move(customRows))
 {
-    const QtPageLayout layout = qtPageLayout(page);
-    auto *title = settings::makePageTitle(layout.page.title, this);
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);
-    pageLayout->addWidget(title);
-    pageLayout->addSpacing(settings::sectionGap());
-    for (int index = 0; index < layout.page.sections.size(); ++index) {
+    for (int index = 0; index < sections.size(); ++index) {
         if (index > 0) {
             pageLayout->addSpacing(settings::groupGap());
         }
-        addSection(layout.page.sections.at(index), layout.centeredSeparatorAfterRow, pageLayout);
+        addSection(sections.at(index), pageLayout);
     }
     pageLayout->addStretch();
 }
 
-void SchemaSettingsPage::addSection(const SettingsSection &section,
-                                    const QString &centeredSeparatorAfterRow,
-                                    QVBoxLayout *pageLayout)
+void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout *pageLayout)
 {
     Section entry;
     entry.rowStart = m_rows.size();
@@ -310,11 +181,6 @@ void SchemaSettingsPage::addSection(const SettingsSection &section,
         }
         QWidget *host = group ? group : form;
         addRow(descriptor, host, group, group ? groupNote : addGateNote(descriptor, form));
-        if (descriptor.id == centeredSeparatorAfterRow) {
-            Row &row = m_rows.last();
-            row.separator = settings::makeCenteredSeparator(host);
-            qobject_cast<QFormLayout *>(host->layout())->addRow(row.separator);
-        }
     }
     // The card's title already names its leading block, so that block's own
     // heading stays hidden (a custom block's whole header, a collection's title).
@@ -757,9 +623,6 @@ void SchemaSettingsPage::refreshRows()
             if (row.gateNote) {
                 row.gateNote->setVisible(!live && shown[index]);
             }
-        }
-        if (row.separator) {
-            row.separator->setVisible(shown[index]);
         }
     }
 

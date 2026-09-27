@@ -1,5 +1,6 @@
 #include "transcribe/TranscribePresentation.h"
 
+#include "core/settings/SettingsSchema.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDir>
@@ -113,6 +114,11 @@ QString mediaFilesHint()
 {
     return QStringLiteral("Drop audio and video files here or choose them") + kSeparator
         + transcribableExtensions().join(QStringLiteral(", "));
+}
+
+QString refinementModelHint()
+{
+    return QStringLiteral("Change it on the %1 page").arg(paneTitleForRow(QStringLiteral("openAiModel")));
 }
 
 QString durationLabel(qint64 ms)

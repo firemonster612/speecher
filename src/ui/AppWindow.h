@@ -1,7 +1,6 @@
 #pragma once
 
-#include "ui/AppPage.h"
-
+#include <QHash>
 #include <QMainWindow>
 #include <QPoint>
 
@@ -35,9 +34,11 @@ class AppWindow : public QMainWindow {
 public:
     explicit AppWindow(ApplicationController *controller, QWidget *parent = nullptr);
 
-    QStringList pageTitles() const;
-    int pageCount() const;
-    void navigateToSettings(AppPageId page = AppPageId::General);
+    // The pane ids in the sidebar, in order, without What's New.
+    QStringList sidebarPanes() const;
+    // Shows a page by id: a pane id, or "pane:view" for one of its views.
+    // An unknown id shows Home (see resolvePage).
+    void showPage(const QString &pageId);
     // Opens the Transcribe page with these files added to its list.
     void showTranscribeFiles(const QStringList &paths);
     void showWhatsNew();
@@ -52,11 +53,14 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
-    void buildSharedPages();
+    void buildPages();
     void buildSidebarShell();
+    void rebuildSidebar();
+    void selectPane(const QString &paneId);
+    QString currentPane() const;
     void refreshHeaderStripColor();
     void runAutoSave();
-    void filterSidebarPages(const QString &query);
+
     void refreshUpdateBanner();
     void warnThatClosingDoesNotQuitOnce();
     void leaveWhatsNew();
@@ -65,9 +69,10 @@ private:
     SettingsPageSet *m_pages;
     HomePage *m_home;
     TranscribePage *m_transcribe;
-    QTabWidget *m_vocabularyTabs = nullptr;
-    int m_correctionsTab = 0;
-    QList<QWidget *> m_pageWidgets;
+    // Each pane's widget in the stack, and each Alternatives pane's views by id.
+    QHash<QString, QWidget *> m_paneWidgets;
+    QHash<QString, QTabWidget *> m_viewTabs;
+    QString m_query;
     QStackedWidget *m_stack = nullptr;
     QListWidget *m_navigation = nullptr;
     QSplitter *m_sidebarSplitter = nullptr;
@@ -76,11 +81,10 @@ private:
     QWidget *m_headerStrip = nullptr;
     QWidget *m_headerDividerLine = nullptr;
     QWidget *m_headerUnderline = nullptr;
-    QStringList m_pageKeywords;
     QLabel *m_pageTitle = nullptr;
     QToolButton *m_backButton = nullptr;
-    // The sidebar row that was current when What's New opened.
-    int m_whatsNewReturnRow = 0;
+    // The pane that was current when What's New opened.
+    QString m_whatsNewReturnPane;
     InlineMessage *m_autoSaveWarning = nullptr;
     QLabel *m_autoSaveWarningText = nullptr;
     QTimer *m_autoSaveTimer = nullptr;

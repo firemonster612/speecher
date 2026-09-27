@@ -196,17 +196,6 @@ QFrame *makeSeparator(QWidget *parent)
     return line;
 }
 
-QWidget *makeCenteredSeparator(QWidget *parent)
-{
-    auto *container = new QWidget(parent);
-    auto *layout = new QHBoxLayout(container);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->addStretch(1);
-    layout->addWidget(makeSeparator(container), 3);
-    layout->addStretch(1);
-    return container;
-}
-
 void configureFormLayout(QFormLayout *form)
 {
     form->setRowWrapPolicy(QFormLayout::DontWrapRows);
