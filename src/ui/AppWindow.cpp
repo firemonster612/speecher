@@ -845,8 +845,23 @@ void AppWindow::leaveWhatsNew()
     selectPane(m_whatsNewReturnPane.isEmpty() ? kHomePane : m_whatsNewReturnPane);
 }
 
-// The panes in their runs, a gap between runs, and What's New on top while
-// it is pending or showing. A search lists its hits alone.
+// Where an item's text starts in the sidebar, as the style lays out an icon
+// and a label, so a separator can line up with the titles above and below it.
+static int sidebarTextInset(const QListWidget *navigation)
+{
+    QStyleOptionViewItem option;
+    option.initFrom(navigation);
+    option.features = QStyleOptionViewItem::HasDisplay | QStyleOptionViewItem::HasDecoration;
+    option.decorationSize = navigation->iconSize();
+    option.decorationPosition = QStyleOptionViewItem::Left;
+    option.displayAlignment = Qt::AlignLeft | Qt::AlignVCenter;
+    option.text = QStringLiteral("M");
+    option.rect = QRect(0, 0, navigation->viewport()->width(), 32);
+    return navigation->style()->subElementRect(QStyle::SE_ItemViewItemText, &option, navigation).left();
+}
+
+// The panes in their runs, a separator line between runs, and What's New on
+// top while it is pending or showing. A search lists its hits alone.
 void AppWindow::rebuildSidebar()
 {
     const QSignalBlocker blocker(m_navigation);
@@ -862,10 +877,24 @@ void AppWindow::rebuildSidebar()
             m_navigation->setCurrentItem(item);
         }
     };
-    const auto addGap = [this] {
+    // A line the style draws (Breeze's separator, as Kirigami.Separator
+    // looks), on an item nothing can select or land on with the keyboard.
+    const int inset = sidebarTextInset(m_navigation);
+    const auto addGap = [this, inset] {
         auto *gap = new QListWidgetItem(m_navigation);
         gap->setFlags(Qt::NoItemFlags);
-        gap->setSizeHint(QSize(0, settings::relatedSpacing()));
+        auto *holder = new QWidget(m_navigation);
+        holder->setObjectName(QStringLiteral("sidebarSeparator"));
+        holder->setFocusPolicy(Qt::NoFocus);
+        holder->setAttribute(Qt::WA_TransparentForMouseEvents);
+        auto *layout = new QVBoxLayout(holder);
+        layout->setContentsMargins(inset, settings::tightSpacing(), settings::relatedSpacing(),
+                                   settings::tightSpacing());
+        auto *line = new QFrame(holder);
+        line->setFrameShape(QFrame::HLine);
+        layout->addWidget(line);
+        gap->setSizeHint(holder->sizeHint());
+        m_navigation->setItemWidget(gap, holder);
     };
     m_sidebarListsWhatsNew = sidebarListsWhatsNew();
     if (!m_query.isEmpty()) {

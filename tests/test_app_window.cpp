@@ -110,8 +110,17 @@ private slots:
         auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
         QStringList rows;
         for (int row = 0; row < navigation->count(); ++row) {
-            const QString text = navigation->item(row)->text();
-            rows.append(text.isEmpty() ? QStringLiteral("|") : text);
+            QListWidgetItem *item = navigation->item(row);
+            // A separator is a style-drawn line on an item nothing can pick.
+            if (auto *separator = navigation->itemWidget(item)) {
+                QCOMPARE(separator->objectName(), QStringLiteral("sidebarSeparator"));
+                auto *line = separator->findChild<QFrame *>();
+                QVERIFY(line && line->frameShape() == QFrame::HLine);
+                QCOMPARE(item->flags(), Qt::NoItemFlags);
+                rows.append(QStringLiteral("|"));
+            } else {
+                rows.append(item->text());
+            }
         }
         QStringList expected{QStringLiteral("Home"), QStringLiteral("|"), QStringLiteral("General"),
                              QStringLiteral("|"), QStringLiteral("Dictation"), QStringLiteral("Shortcut"),
@@ -123,6 +132,18 @@ private slots:
                                 QStringLiteral("Output"), QStringLiteral("Apps"), QStringLiteral("|"),
                                 QStringLiteral("Vocabulary"), QStringLiteral("Accounts")};
         QCOMPARE(rows, expected);
+
+        // Up and Down step over the separators, from one pane to the next.
+        window.show();
+        navigation->setFocus();
+        QTest::keyClick(navigation, Qt::Key_Down);
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("General"));
+        QTest::keyClick(navigation, Qt::Key_Down);
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Dictation"));
+        QTest::keyClick(navigation, Qt::Key_Up);
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("General"));
+        QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("General"));
+        window.hide();
     }
 
     void pageIdsOpenPanesAndViewsAndUnknownIdsOpenHome()
@@ -767,6 +788,13 @@ private slots:
         search->setText(QStringLiteral("Keep before speech"));
         QCOMPARE(navigation->count(), 1);
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Dictation"));
+        // Hits across several runs come without separators.
+        search->setText(QStringLiteral("e"));
+        QVERIFY(navigation->count() > 3);
+        for (int row = 0; row < navigation->count(); ++row) {
+            QVERIFY(!navigation->itemWidget(navigation->item(row)));
+            QVERIFY(!navigation->item(row)->text().isEmpty());
+        }
         // Return opens the first hit.
         search->setText(QStringLiteral("paste"));
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Output"));
