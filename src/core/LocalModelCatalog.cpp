@@ -30,6 +30,8 @@ const QList<LocalModel> catalog{
         .licence = QStringLiteral("MIT"),
         .m4MaxMetalSpeed = 58.59,
         .ryzen4750uVulkanSpeed = 14.16,
+        .rating = ModelRating::Good,
+        .bestFor = QStringLiteral("Older or slower computers"),
         .pros = {QStringLiteral("Smallest download"),
                  QStringLiteral("Words appear as you speak"),
                  QStringLiteral("Quickest on older processors")},
@@ -50,6 +52,8 @@ const QList<LocalModel> catalog{
         .licence = QStringLiteral("NVIDIA Open Model License"),
         .m4MaxMetalSpeed = 228.39,
         .ryzen4750uVulkanSpeed = 26.01,
+        .rating = ModelRating::Recommended,
+        .bestFor = QStringLiteral("Most people"),
         .pros = {QStringLiteral("Words appear as you speak"),
                  QStringLiteral("Fewest mistakes on everyday speech of the small models")},
         .cons = {QStringLiteral("731 MB download")},
@@ -68,6 +72,8 @@ const QList<LocalModel> catalog{
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 75.14,
         .ryzen4750uVulkanSpeed = 8.52,
+        .rating = ModelRating::NotRecommended,
+        .bestFor = QStringLiteral("Read-aloud speech, if you can wait"),
         .pros = {QStringLiteral("Fewest mistakes on clear speech"),
                  QStringLiteral("Top open model on the Open ASR leaderboard")},
         .cons = {QStringLiteral("2.4 GB download"),
@@ -92,6 +98,8 @@ const QList<LocalModel> catalog{
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 2.41,
         .ryzen4750uVulkanSpeed = 0,
+        .rating = ModelRating::NotRecommended,
+        .bestFor = QStringLiteral("Nobody: Qwen3-ASR is as accurate at an eighth of the size"),
         .pros = {QStringLiteral("Fewest mistakes on everyday speech"),
                  QStringLiteral("Most accurate open model on real-world recordings")},
         .cons = {QStringLiteral("17 GB download"),
@@ -202,6 +210,21 @@ QString modelFitLabel(ModelFit fit)
         break;
     }
     return QStringLiteral("Too large");
+}
+
+QString modelRatingLabel(ModelRating rating)
+{
+    switch (rating) {
+    case ModelRating::Recommended:
+        return QStringLiteral("Recommended");
+    case ModelRating::Good:
+        return QStringLiteral("Good");
+    case ModelRating::Situational:
+        return QStringLiteral("Situational");
+    case ModelRating::NotRecommended:
+        break;
+    }
+    return QStringLiteral("Not recommended");
 }
 
 QString downloadSizeText(qint64 bytes)
