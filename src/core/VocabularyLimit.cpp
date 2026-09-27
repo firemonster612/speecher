@@ -41,18 +41,26 @@ QStringList limited(const QStringList &terms)
     return result;
 }
 
-QString summary(const QStringList &terms)
+QString summary(const QStringList &terms, bool speechTakesHints)
 {
-    // `terms` is the whole stored list. Saying how many of them a request
-    // actually carries is the point of the row, so the over-cap sentence names
-    // the sent count rather than pretending the rest are gone.
+    // `terms` is the whole stored list. Saying how many of them each consumer
+    // actually receives is the point of the row, so the over-cap sentences
+    // name the sent counts rather than pretending the rest are gone.
+    const QString refinement = terms.size() > maxRefinementTerms
+        ? QStringLiteral("the first %1 are used for refinement").arg(maxRefinementTerms)
+        : QStringLiteral("all are used for refinement");
+    if (!speechTakesHints) {
+        return (terms.size() == 1 ? QStringLiteral("1 term, used for refinement")
+                                  : QStringLiteral("%1 terms, %2").arg(terms.size()).arg(refinement));
+    }
     const QStringList sent = limited(terms);
     if (sent.size() < terms.size()) {
-        return QStringLiteral("%1 terms, the %2 highest priority are sent")
+        return QStringLiteral("%1 terms. The first %2 are speech hints, and %3.")
             .arg(terms.size())
-            .arg(sent.size());
+            .arg(sent.size())
+            .arg(refinement);
     }
-    return QStringLiteral("%1 of %2 terms, using %3 of %4 tokens")
+    return QStringLiteral("%1 of %2 speech hints, using %3 of %4 tokens")
         .arg(terms.size())
         .arg(maxKeyterms)
         .arg(tokenCount(terms))

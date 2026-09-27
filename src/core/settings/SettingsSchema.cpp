@@ -1714,6 +1714,24 @@ QString lastUsedLabel(qint64 lastUsedMs)
         : QStringLiteral("Never");
 }
 
+QStringList vocabularyTerms(const QList<VocabularyEntry> &entries)
+{
+    QStringList terms;
+    terms.reserve(entries.size());
+    for (const VocabularyEntry &entry : entries) {
+        terms.append(entry.term);
+    }
+    return terms;
+}
+
+// Claude Voice takes vocabulary as key terms and a custom endpoint as its
+// prompt; the other speech services take none.
+bool speechTakesHints(const AppSettings &settings)
+{
+    const QString &provider = settings.speech.providerId;
+    return provider == QStringLiteral("claude") || provider == QStringLiteral("endpoint");
+}
+
 QList<QVariantMap> vocabularyRecords(const QList<VocabularyEntry> &entries)
 {
     QList<QVariantMap> records;
@@ -1747,16 +1765,6 @@ QList<VocabularyEntry> vocabularyEntries(const QList<QVariantMap> &records)
                         record.value(kLastUsedMsKey).toLongLong()});
     }
     return normalizeVocabularyEntries(entries);
-}
-
-QStringList vocabularyTerms(const QList<VocabularyEntry> &entries)
-{
-    QStringList terms;
-    terms.reserve(entries.size());
-    for (const VocabularyEntry &entry : entries) {
-        terms.append(entry.term);
-    }
-    return terms;
 }
 
 SettingsPage vocabularyPage()
@@ -1802,17 +1810,15 @@ SettingsPage vocabularyPage()
     limit.label = QStringLiteral("Limit");
     limit.kind = RowKind::Info;
     limit.value = [](const AppSettings &settings) {
-        if (settings.speech.providerId == QStringLiteral("local")) {
-            return QVariant(QStringLiteral("None are sent to local models"));
-        }
         return QVariant(VocabularyLimit::summary(
-            vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary))));
+            vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary)),
+            speechTakesHints(settings)));
     };
 
-    const QString help = QStringLiteral("Names and words Speecher should recognize. Every term is "
-                                        "kept. When the list is longer than the transcription "
-                                        "service accepts, starred terms are sent first, then the "
-                                        "most used.");
+    const QString help = QStringLiteral("Names and words Speecher should recognize. Refinement "
+                                        "uses every term. The list is in priority order, starred "
+                                        "terms first and then the most used, and speech hints are "
+                                        "taken from the top.");
     SettingsRow entries = collectionRow(QStringLiteral("vocabularyEntries"),
                                         QStringLiteral("Extra vocabulary"),
                                         help,
@@ -1820,10 +1826,10 @@ SettingsPage vocabularyPage()
     entries.helpValue = [help](const AppSettings &settings) {
         const QString &provider = settings.speech.providerId;
         const QString speech = provider == QStringLiteral("claude")
-            ? QStringLiteral("Claude Voice receives them as key terms.")
+            ? QStringLiteral("Claude Voice receives the first 100 as key terms.")
             : provider == QStringLiteral("endpoint")
-            ? QStringLiteral("The custom endpoint receives them as its prompt.")
-            : QStringLiteral("This transcription service does not use them.");
+            ? QStringLiteral("The custom endpoint receives the first 100 as its prompt.")
+            : QStringLiteral("This transcription service takes no speech hints.");
         return help + QLatin1Char(' ') + speech;
     };
 

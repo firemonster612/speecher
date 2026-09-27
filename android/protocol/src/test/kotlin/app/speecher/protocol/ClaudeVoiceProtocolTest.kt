@@ -128,6 +128,14 @@ class ClaudeVoiceProtocolTest {
         }
 
         @Test
+        fun `the terms are the ones the header carries`() {
+            assertEquals(
+                listOf("Gradle", "Kotlin Coroutines"),
+                claudeVoiceKeyterms(listOf("Gradle", "gradle", " Kotlin  Coroutines ", "東京")),
+            )
+        }
+
+        @Test
         fun `a term exactly filling the limit is kept`() {
             val term = "a".repeat(1024)
             assertEquals(term, claudeVoiceKeytermsHeader(listOf(term, "b")))

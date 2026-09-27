@@ -45,9 +45,11 @@ import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
 import app.speecher.android.dictation.refinementModels
 import app.speecher.protocol.CleanupStrength
+import app.speecher.protocol.MAX_REFINEMENT_TERMS
 import app.speecher.protocol.Tone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.claudeVoiceKeyterms
 import app.speecher.protocol.modelSupportsFastMode
 
 internal const val FAST_MODE_DESCRIPTION =
@@ -303,7 +305,7 @@ fun Settings(
 
         Section("Vocabulary")
         Text(
-            "Names and terms the transcriber should spell your way.",
+            vocabularySummary(settings),
             Modifier.padding(horizontal = 16.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -445,6 +447,24 @@ internal fun PasteCode(provider: Provider, onPasteCode: (String) -> Unit) {
             TextButton({ onPasteCode(code) }, enabled = code.isNotBlank()) { Text("Continue") }
         }
     }
+}
+
+/**
+ * What the list amounts to: refinement uses every term up to its ceiling, and only Claude takes
+ * speech hints, as many as fit its header.
+ */
+internal fun vocabularySummary(settings: SpeecherSettings): String {
+    val count = settings.vocabulary.size
+    val refinement =
+        if (count > MAX_REFINEMENT_TERMS) "the first $MAX_REFINEMENT_TERMS are used for refinement"
+        else "all are used for refinement"
+    if (settings.transcriptionProvider != Provider.Claude) {
+        return "Names and terms Speecher should spell your way. ChatGPT dictation takes no " +
+            "speech hints, and $refinement."
+    }
+    val hints = claudeVoiceKeyterms(settings.vocabulary).size
+    return "Names and terms Speecher should spell your way. Claude takes the first $hints as " +
+        "speech hints, and $refinement."
 }
 
 @Composable
