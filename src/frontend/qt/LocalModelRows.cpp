@@ -52,14 +52,20 @@ public:
         m_list = new QListWidget(this);
         m_list->setObjectName(QStringLiteral("localModelList"));
         m_list->setIconSize(QSize(settings::gridUnit(), settings::gridUnit()));
+        m_list->setItemDelegate(new BadgeDelegate(m_list));
         m_list->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
         m_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        // As wide as its longest row, so no fact is elided; the detail takes
-        // the rest.
+        // As wide as its longest row with its badge, so nothing is elided; the
+        // detail takes the rest.
         m_list->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Maximum);
         for (const LocalModel &model : localModelCatalog()) {
             auto *item = new QListWidgetItem(m_list);
             item->setData(Qt::UserRole, model.id);
+            item->setData(BadgeDelegate::TextRole, modelRatingLabel(model.rating));
+            item->setData(BadgeDelegate::ToneRole, int(modelRatingTone(model.rating)));
+            // The badge is only painted, so a screen reader hears it here.
+            item->setData(Qt::AccessibleTextRole,
+                          QStringLiteral("%1, %2").arg(model.name, modelRatingLabel(model.rating)));
         }
         columns->addWidget(m_list, 0, Qt::AlignTop);
         columns->addWidget(makeFacts(), 1, Qt::AlignTop);
@@ -103,12 +109,19 @@ private:
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(settings::smallSpacing());
 
+        auto *title = new QHBoxLayout;
+        title->setSpacing(settings::smallSpacing() * 2);
         m_name = new QLabel(detail);
         m_name->setObjectName(QStringLiteral("localModelName"));
         QFont bold = m_name->font();
         bold.setBold(true);
         m_name->setFont(bold);
-        layout->addWidget(m_name);
+        title->addWidget(m_name);
+        m_rating = new Badge(QString(), Badge::Tone::Neutral, detail);
+        m_rating->setObjectName(QStringLiteral("localModelRating"));
+        title->addWidget(m_rating, 0, Qt::AlignVCenter);
+        title->addStretch();
+        layout->addLayout(title);
         m_subtitle = new QLabel(detail);
         m_subtitle->setForegroundRole(QPalette::PlaceholderText);
         m_subtitle->setFont(settings::smallFont(m_subtitle->font()));
@@ -127,6 +140,8 @@ private:
             facts->addRow(key, value);
             return value;
         };
+        m_bestFor = addFact(QStringLiteral("Best for"));
+        m_bestFor->setObjectName(QStringLiteral("localModelBestFor"));
         m_size = addFact(QStringLiteral("Download"));
         m_speed = addFact(QStringLiteral("Speed here"));
         m_wer = addFact(QStringLiteral("Word error rate"));
@@ -225,6 +240,8 @@ private:
         const auto state = m_setup.modelState(model);
         const bool tooLarge = m_setup.fit(model) == ModelFit::TooLarge;
         m_name->setText(model.name);
+        m_rating->setBadge(modelRatingLabel(model.rating), modelRatingTone(model.rating));
+        m_bestFor->setText(model.bestFor);
         m_subtitle->setText(model.id == suggested && m_setup.hardwareKnown()
                                 ? QStringLiteral("Suggested for this computer")
                                 : model.fileName);
@@ -278,7 +295,9 @@ private:
     QLabel *m_hardware = nullptr;
     QListWidget *m_list = nullptr;
     QLabel *m_name = nullptr;
+    Badge *m_rating = nullptr;
     QLabel *m_subtitle = nullptr;
+    QLabel *m_bestFor = nullptr;
     QLabel *m_size = nullptr;
     QLabel *m_speed = nullptr;
     QLabel *m_wer = nullptr;
@@ -297,6 +316,20 @@ private:
 };
 
 } // namespace
+
+Badge::Tone modelRatingTone(ModelRating rating)
+{
+    switch (rating) {
+    case ModelRating::Recommended:
+        return Badge::Tone::Accent;
+    case ModelRating::NotRecommended:
+        return Badge::Tone::Negative;
+    case ModelRating::Good:
+    case ModelRating::Situational:
+        break;
+    }
+    return Badge::Tone::Neutral;
+}
 
 SchemaCustomRowFactory localModelRows(LocalSetup &setup)
 {

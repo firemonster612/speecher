@@ -8,6 +8,17 @@
 
 namespace speecher {
 
+// How a model compares with the rest of the catalog, shown as a badge next to
+// its name. Separate from the Hardware Tier's suggestion for this computer.
+enum class ModelRating {
+    Recommended,
+    Good,
+    // Worth it only for the case bestFor names.
+    Situational,
+    // Kept for people who already downloaded it; another model beats it.
+    NotRecommended,
+};
+
 // One Local Model Speecher offers. The numbers come from transcribe.cpp
 // v0.2.4's catalog/<variant>.json and the pinned Hugging Face revision; see
 // LocalModelCatalog.cpp.
@@ -27,6 +38,9 @@ struct LocalModel {
     // it published none.
     double m4MaxMetalSpeed = 0;
     double ryzen4750uVulkanSpeed = 0;
+    ModelRating rating = ModelRating::Good;
+    // Who should pick it, in one short line: "Fewest mistakes if you can wait".
+    QString bestFor;
     QStringList pros;
     QStringList cons;
 };
@@ -78,6 +92,8 @@ const LocalModel &suggestedLocalModel(const HardwareProfile &hardware);
 // The words every front end shows for these facts, so the setup assistants
 // and Local models pages agree.
 QString modelFitLabel(ModelFit fit);
+// The badge's words: "Recommended", "Good", "Situational", "Not recommended".
+QString modelRatingLabel(ModelRating rating);
 // "731 MB", "2.4 GB": decimal units, as download sizes are quoted.
 QString downloadSizeText(qint64 bytes);
 // "0.3 s", never below 0.1 s.

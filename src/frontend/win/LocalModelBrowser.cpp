@@ -11,6 +11,7 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Microsoft.UI.Xaml.Media.h>
 #pragma pop_macro("GetCurrentTime")
 
 namespace speecher::win {
@@ -34,6 +35,19 @@ void setVisible(const UIElement &element, bool visible)
 }
 
 } // namespace
+
+Grid ratingBadge(ModelRating rating, const PaneHost &host)
+{
+    const wchar_t *key = L"RatingBadgeNeutral";
+    if (rating == ModelRating::Recommended) {
+        key = L"RatingBadgeAccent";
+    } else if (rating == ModelRating::NotRecommended) {
+        key = L"RatingBadgeCritical";
+    }
+    Grid pill = badge(modelRatingLabel(rating), themeBrush(key, host));
+    AutomationProperties::SetName(pill, hs(modelRatingLabel(rating)));
+    return pill;
+}
 
 LocalModelBrowser::LocalModelBrowser(PaneHost &host)
     : m_host(host)
@@ -123,15 +137,23 @@ UIElement LocalModelBrowser::listItem(const LocalModel &model)
     icon.VerticalAlignment(VerticalAlignment::Center);
     item.Children().Append(icon);
     StackPanel text;
-    text.Children().Append(styledTextBlock(model.name, L"SettingsCardBodyStyle"));
-    // Size and error rate only, so the list stays narrow; the fit is in the facts.
+    StackPanel title;
+    title.Orientation(Orientation::Horizontal);
+    title.Spacing(8);
+    TextBlock name = styledTextBlock(model.name, L"SettingsCardBodyStyle");
+    name.VerticalAlignment(VerticalAlignment::Center);
+    title.Children().Append(name);
+    title.Children().Append(ratingBadge(model.rating, m_host));
+    text.Children().Append(title);
+    // Size and error rate only, so the list stays as narrow as its names and
+    // badges; the fit is in the facts.
     text.Children().Append(secondaryTextBlock(QStringLiteral("%1 · %2 WER")
                                                   .arg(downloadSizeText(model.sizeBytes),
                                                        werText(model.librispeechCleanWer)),
                                               L"SettingsCardDescriptionStyle", m_host));
     Grid::SetColumn(text, 1);
     item.Children().Append(text);
-    AutomationProperties::SetName(item, hs(model.name));
+    AutomationProperties::SetName(item, hs(QStringLiteral("%1, %2").arg(model.name, modelRatingLabel(model.rating))));
     return item;
 }
 
@@ -139,8 +161,16 @@ StackPanel LocalModelBrowser::makeDetail()
 {
     StackPanel detail;
     detail.Spacing(4);
+    StackPanel title;
+    title.Orientation(Orientation::Horizontal);
+    title.Spacing(8);
     m_name = styledTextBlock(QString(), L"BodyStrongTextBlockStyle");
-    detail.Children().Append(m_name);
+    m_name.VerticalAlignment(VerticalAlignment::Center);
+    title.Children().Append(m_name);
+    // The badge is rebuilt with each model, so it sits in a holder.
+    m_rating = Border();
+    title.Children().Append(m_rating);
+    detail.Children().Append(title);
     m_subtitle = secondaryTextBlock(QString(), L"SettingsCardDescriptionStyle", m_host);
     detail.Children().Append(m_subtitle);
 
@@ -167,6 +197,7 @@ StackPanel LocalModelBrowser::makeDetail()
         facts.Children().Append(value);
         return value;
     };
+    m_bestFor = addFact(QStringLiteral("Best for"));
     m_size = addFact(QStringLiteral("Download"));
     m_speed = addFact(QStringLiteral("Speed here"));
     m_wer = addFact(QStringLiteral("Word error rate"));
@@ -256,6 +287,8 @@ void LocalModelBrowser::showDetail()
     const LocalModel &model = selected();
     const LocalSetup::ModelState state = this->state(model);
     m_name.Text(hs(model.name));
+    m_rating.Child(ratingBadge(model.rating, m_host));
+    m_bestFor.Text(hs(model.bestFor));
     m_subtitle.Text(hs(state.suggested ? QStringLiteral("Suggested for this computer") : model.fileName));
     m_size.Text(hs(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes),
                                                  m_setup.fitLabel(model))));

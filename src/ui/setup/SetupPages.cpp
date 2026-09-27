@@ -6,6 +6,7 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
+#include "frontend/qt/LocalModelRows.h"
 #ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetup.h"
 #include "output/YdotoolSetupFlow.h"
@@ -918,12 +919,19 @@ QWidget *SpeechProviderSetupPage::makeLocalSection()
     text->setSpacing(settings::smallSpacing());
     m_localCaption = makeNote(QString(), m_localCard);
     text->addWidget(m_localCaption);
+    auto *title = new QHBoxLayout;
+    title->setSpacing(settings::smallSpacing() * 2);
     m_localName = new QLabel(m_localCard);
     m_localName->setObjectName(QStringLiteral("speechLocalModelName"));
     QFont bold = m_localName->font();
     bold.setBold(true);
     m_localName->setFont(bold);
-    text->addWidget(m_localName);
+    title->addWidget(m_localName);
+    m_localRating = new Badge(QString(), Badge::Tone::Neutral, m_localCard);
+    m_localRating->setObjectName(QStringLiteral("speechLocalModelRating"));
+    title->addWidget(m_localRating, 0, Qt::AlignVCenter);
+    title->addStretch();
+    text->addLayout(title);
     m_localFacts = new WrappingLabel(m_localCard);
     m_localFacts->setWordWrap(true);
     text->addWidget(m_localFacts);
@@ -970,6 +978,7 @@ QWidget *SpeechProviderSetupPage::makeLocalSection()
     m_compare->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
     m_compare->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_compare->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_compare->setItemDelegateForColumn(0, new BadgeDelegate(m_compare));
     m_compare->hide();
     layout->addWidget(m_compare);
     auto *compareNote = makeNote(QStringLiteral("Word errors: clear read speech / everyday speech. Times are "
@@ -1044,6 +1053,7 @@ void SpeechProviderSetupPage::showLocalChoice()
     m_localCaption->setText(state.suggested ? QStringLiteral("Suggested for this computer")
                                             : QStringLiteral("Your choice"));
     m_localName->setText(model.name);
+    m_localRating->setBadge(modelRatingLabel(model.rating), modelRatingTone(model.rating));
     m_localFacts->setText(state.cardFacts);
 
     const auto progress = m_local->downloadProgress(model.id);
@@ -1070,7 +1080,8 @@ void SpeechProviderSetupPage::showLocalChoice()
                                  ? QStringLiteral("Hide other models")
                                  : QStringLiteral("Compare %1 other models").arg(localModelCatalog().size() - 1));
     for (int row = 0; row < localModelCatalog().size(); ++row) {
-        const QStringList cells = m_local->modelState(localModelCatalog().at(row)).tableCells;
+        const LocalModel &entry = localModelCatalog().at(row);
+        const QStringList cells = m_local->modelState(entry).tableCells;
         for (int column = 0; column < cells.size(); ++column) {
             QTableWidgetItem *item = m_compare->item(row, column);
             if (!item) {
@@ -1079,6 +1090,11 @@ void SpeechProviderSetupPage::showLocalChoice()
             }
             item->setText(cells.at(column));
         }
+        QTableWidgetItem *name = m_compare->item(row, 0);
+        name->setData(BadgeDelegate::TextRole, modelRatingLabel(entry.rating));
+        name->setData(BadgeDelegate::ToneRole, int(modelRatingTone(entry.rating)));
+        name->setData(Qt::AccessibleTextRole,
+                      QStringLiteral("%1, %2").arg(cells.first(), modelRatingLabel(entry.rating)));
     }
     {
         const QSignalBlocker blocker(m_compare);

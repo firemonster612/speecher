@@ -243,6 +243,15 @@ struct RefinementProvider {
     bool supportsScreenshotContext = false;
 };
 
+// A graphics card as one transcribe.cpp backend reports it.
+struct LocalGpu {
+    // A localBackends kind other than "auto" or "cpu".
+    QString backend;
+    // The PCI bus id, empty when the backend reports none.
+    QString deviceId;
+    QString description;
+};
+
 // What the app layer last learned about this computer and the servers a
 // person named, for the rows that report it. ApplicationController's
 // LocalSetup builds it; a front end hands the schema a way to read it, runs the
@@ -253,6 +262,7 @@ struct RefinementProvider {
 // - refinementEndpointTest: LocalSetup::checkRefinementEndpoint(draft.refinement)
 // - localRunnerDetect, localModelsRunner: LocalSetup::detectRunners()
 // - localModelFolder: open LocalModelStore::directory() in the file manager
+// - speechLocalModelDownload: show the Local models page (a front-end job)
 struct LiveFacts {
     // The last connection check's verdict, "Checking…" while one runs, empty
     // before the first. LocalSetup runs one on its own once an endpoint in
@@ -269,9 +279,14 @@ struct LiveFacts {
     bool detectingRunners = false;
     // Where Local Model files live and how much room they take.
     QString modelFolder;
-    // The GPUs a Local Model can run on, by transcribe.cpp device id. The
-    // picker only shows when there is more than one.
-    QList<RowOption> gpus;
+    // Local Model ids with a finished download, in catalog order.
+    QStringList downloadedModels;
+    // The graphics cards a Local Model can run on, once per backend that
+    // reaches them.
+    QList<LocalGpu> localGpus;
+    // Where the loaded Local Model runs, e.g. "NVIDIA GeForce RTX 3060
+    // (CUDA)"; empty while none is loaded.
+    QString localModelRunsOn;
 };
 
 // What the descriptors need to be built. A value type, so a test can make one
@@ -338,5 +353,14 @@ QString keyStorageHelp();
 // that has gone away. Shared with the setup assistant's own device list.
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices,
                                     const QString &selectedDeviceId);
+
+// The Local models page's Acceleration choice: Automatic, the CPU, then each
+// GPU backend that reaches a card here, with a disabled placeholder for a
+// saved backend this computer lacks. Option ids are localBackends kinds.
+QList<RowOption> localAccelerationOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
+// Its Graphics card choice: each card the chosen backend reaches, by device
+// id, with a disabled placeholder for a saved card that has gone. Empty for
+// the CPU and plain Automatic, which pick no card.
+QList<RowOption> localGraphicsCardOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
 
 } // namespace speecher

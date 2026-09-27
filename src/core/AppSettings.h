@@ -9,6 +9,8 @@
 #include <QList>
 #include <QMap>
 
+#include <array>
+
 namespace speecher {
 
 enum class UpdateChannel {
@@ -87,14 +89,74 @@ struct UiSettings {
     bool soundsEnabled = false;
 };
 
+// The backends Runs on can name: "auto", then transcribe.cpp's device kinds,
+// each with what a person calls it. LocalSpeechEngine maps them to
+// transcribe.cpp's requests in this order.
+struct LocalBackend {
+    const char *kind;
+    const char *name;
+};
+inline constexpr std::array<LocalBackend, 6> localBackends{{
+    {"auto", "Automatic"},
+    {"cpu", "CPU"},
+    {"metal", "Metal"},
+    {"vulkan", "Vulkan"},
+    {"cuda", "CUDA"},
+    {"rocm", "ROCm"},
+}};
+
+inline QString localBackendName(const QString &kind)
+{
+    for (const LocalBackend &backend : localBackends) {
+        if (kind == QLatin1String(backend.kind)) return QString::fromLatin1(backend.name);
+    }
+    return kind;
+}
+
+// Where Local Models run: the Local models page's Runs on choice.
+struct LocalRunsOn {
+    // A localBackends kind.
+    QString backend = QStringLiteral("auto");
+    // A transcribe.cpp device_id (PCI bus id) of that backend, or empty for
+    // the backend's own choice. One card can appear under two backends. With
+    // "auto", the card decides the backend: a card chosen before Runs on had
+    // backends is kept that way.
+    QString deviceId;
+
+    bool operator==(const LocalRunsOn &other) const = default;
+};
+
+// "auto", "cpu", "cuda:0000:01:00.0": how Runs on stores a choice.
+inline QString localRunsOnId(const LocalRunsOn &runsOn)
+{
+    return runsOn.deviceId.isEmpty() ? runsOn.backend
+                                     : runsOn.backend + QLatin1Char(':') + runsOn.deviceId;
+}
+
+inline LocalRunsOn localRunsOnFromId(const QString &id)
+{
+    // PCI bus ids have colons of their own; the backend is what precedes the first.
+    const qsizetype colon = id.indexOf(QLatin1Char(':'));
+    if (colon < 0) {
+        return {id, QString()};
+    }
+    return {id.left(colon), id.mid(colon + 1)};
+}
+
+// A Speed Test result's key: the model, and where it ran.
+inline QString localSpeedTestKey(const QString &modelId, const LocalRunsOn &runsOn)
+{
+    return modelId + QLatin1Char('/') + localRunsOnId(runsOn);
+}
+
 struct LocalSpeechSettings {
     // A LocalModelCatalog id.
     QString modelId = QStringLiteral("parakeet");
-    // A transcribe.cpp device_id (PCI bus id), or empty for automatic choice.
-    QString deviceId;
+    LocalRunsOn runsOn;
     // 0 keeps the model loaded until Speecher quits.
     int idleUnloadMinutes = 10;
-    // Model id to the Speed Test's measured seconds for the bundled clip.
+    // localSpeedTestKey to the Speed Test's measured seconds for the bundled
+    // clip, so a result from one Runs on choice never stands for another.
     QMap<QString, double> speedTestSeconds;
     // False only for an unchosen default; legacy saved model ids are choices.
     bool modelChosen = false;

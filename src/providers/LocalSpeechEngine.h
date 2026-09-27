@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/AppSettings.h"
+
 #include <QByteArray>
 #include <QList>
 #include <QString>
@@ -52,10 +54,14 @@ public:
     LocalSpeechEngine(const LocalSpeechEngine &) = delete;
     LocalSpeechEngine &operator=(const LocalSpeechEngine &) = delete;
 
-    // An empty deviceId, or one no longer present, lets transcribe.cpp choose.
-    bool load(const QString &modelPath, const QString &deviceId, QString *error);
+    // An explicit backend or card that cannot take the model fails the load
+    // rather than falling back to another.
+    bool load(const QString &modelPath, const LocalRunsOn &runsOn, QString *error);
     void unload();
-    bool isLoaded(const QString &modelPath, const QString &deviceId) const;
+    bool isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const;
+    // Where the loaded model runs, e.g. "NVIDIA GeForce RTX 3060 (CUDA)";
+    // empty while none is loaded.
+    QString runsOnDescription() const;
     bool streams() const;
 
     // Audio is 16 kHz mono signed 16-bit PCM. A call that fails without
@@ -69,7 +75,7 @@ public:
     std::optional<QString> finalize(QString *error);
 
     // The Speed Test: seconds the loaded model takes for 10 s of speech,
-    // measured on a bundled clip.
+    // measured on a bundled clip after one untimed run of it.
     std::optional<double> speedTestSeconds(QString *error);
 
 private:
@@ -79,7 +85,7 @@ private:
     transcribe_model *m_model = nullptr;
     transcribe_session *m_session = nullptr;
     QString m_modelPath;
-    QString m_deviceId;
+    LocalRunsOn m_runsOn;
     bool m_streams = false;
 };
 

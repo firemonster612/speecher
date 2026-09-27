@@ -27,6 +27,22 @@ private slots:
         QVERIFY(SettingsStore().localSpeechSettings().modelChosen);
     }
 
+    void localRunsOnDefaultsToAutomaticAndKeepsAnOldCard()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QCOMPARE(settings.localSpeechSettings().runsOn, LocalRunsOn{});
+        QCOMPARE(settings.localSpeechSettings().runsOn.backend, QStringLiteral("auto"));
+
+        // A graphics card saved before backends could be chosen is kept, on
+        // whichever backend reaches it, and survives the next write.
+        settings.raw().setValue(SettingsKeys::LocalDevice, QStringLiteral("0000:c1:00.0"));
+        const LocalRunsOn legacy{QStringLiteral("auto"), QStringLiteral("0000:c1:00.0")};
+        QCOMPARE(settings.localSpeechSettings().runsOn, legacy);
+        settings.setLocalSpeechSettings(settings.localSpeechSettings());
+        QCOMPARE(SettingsStore().localSpeechSettings().runsOn, legacy);
+    }
+
     void settingsRespectConfiguredStorageFormat()
     {
         const auto previous = QSettings::defaultFormat();
@@ -461,17 +477,24 @@ private slots:
         AppSettings draft = settings.snapshot();
         draft.speech.local.modelId = QStringLiteral("cohere");
         draft.speech.local.modelChosen = true;
-        draft.speech.local.deviceId = QStringLiteral("0000:c1:00.0");
+        draft.speech.local.runsOn = {QStringLiteral("cuda"), QStringLiteral("0000:c1:00.0")};
         draft.speech.local.idleUnloadMinutes = 0;
-        draft.speech.local.speedTestSeconds = {{QStringLiteral("parakeet"), 0.42},
-                                               {QStringLiteral("cohere"), 1.7}};
+        const QString parakeetOnCuda = localSpeedTestKey(QStringLiteral("parakeet"), draft.speech.local.runsOn);
+        const QString cohereOnCpu = localSpeedTestKey(QStringLiteral("cohere"), {QStringLiteral("cpu"), {}});
+        draft.speech.local.speedTestSeconds = {{parakeetOnCuda, 0.42}, {cohereOnCpu, 1.7}};
         settings.applySnapshot(draft);
         QCOMPARE(SettingsStore().snapshot().speech.local, draft.speech.local);
 
-        draft.speech.local.speedTestSeconds.remove(QStringLiteral("cohere"));
+        draft.speech.local.speedTestSeconds.remove(cohereOnCpu);
         settings.applySnapshot(draft);
-        QCOMPARE(SettingsStore().snapshot().speech.local.speedTestSeconds.keys(),
-                 QStringList{QStringLiteral("parakeet")});
+        QCOMPARE(SettingsStore().snapshot().speech.local.speedTestSeconds.keys(), QStringList{parakeetOnCuda});
+
+        // A result saved before results were kept per Runs on choice ran on
+        // Automatic.
+        settings.raw().setValue(SettingsKeys::LocalSpeedTest + QStringLiteral("/moonshine-small"), 0.3);
+        QCOMPARE(settings.localSpeechSettings().speedTestSeconds.value(
+                     localSpeedTestKey(QStringLiteral("moonshine-small"), {})),
+                 0.3);
         settings.raw().clear();
     }
 

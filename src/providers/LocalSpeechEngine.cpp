@@ -6,13 +6,15 @@
 
 #include <transcribe.h>
 
+#include <array>
 #include <mutex>
 #include <vector>
 
 namespace speecher {
 namespace {
 
-// Speecher's first-party models are English-only, and Cohere needs the hint.
+// Speecher transcribes English. The multilingual models (Cohere, Qwen3-ASR,
+// Whisper) would otherwise guess the language, and Cohere needs the hint.
 constexpr auto language = "en";
 constexpr double speedTestReferenceSeconds = 10.0;
 constexpr double sampleRateHz = 16000.0;
@@ -69,18 +71,33 @@ LocalSpeechEngine::Device::Type deviceType(transcribe_device_type type)
     return LocalSpeechEngine::Device::Type::Cpu;
 }
 
-transcribe_device_t findDevice(const QString &deviceId)
+// In localBackends order.
+constexpr std::array<transcribe_backend_request, localBackends.size()> backendRequests{
+    TRANSCRIBE_BACKEND_AUTO,   TRANSCRIBE_BACKEND_CPU,  TRANSCRIBE_BACKEND_METAL,
+    TRANSCRIBE_BACKEND_VULKAN, TRANSCRIBE_BACKEND_CUDA, TRANSCRIBE_BACKEND_ROCM,
+};
+
+std::optional<transcribe_backend_request> backendRequest(const QString &backend)
 {
-    if (deviceId.isEmpty()) {
-        return nullptr;
+    for (size_t index = 0; index < localBackends.size(); ++index) {
+        if (backend == QLatin1String(localBackends[index].kind)) return backendRequests[index];
     }
-    const QByteArray id = deviceId.toUtf8();
+    return std::nullopt;
+}
+
+// The registered device with that PCI bus id, of that backend unless it is
+// "auto".
+transcribe_device_t findDevice(const LocalRunsOn &runsOn)
+{
+    const QByteArray id = runsOn.deviceId.toUtf8();
+    const QByteArray kind = runsOn.backend.toUtf8();
+    const bool anyKind = runsOn.backend == QStringLiteral("auto");
     for (int index = 0; index < transcribe_device_count(); ++index) {
         transcribe_device_t device = transcribe_device_get(index);
         transcribe_device_info info;
         transcribe_device_info_init(&info);
         if (device && transcribe_device_get_info(device, &info) == TRANSCRIBE_OK
-            && info.device_id && id == info.device_id) {
+            && info.device_id && id == info.device_id && info.kind && (anyKind || kind == info.kind)) {
             return device;
         }
     }
@@ -143,15 +160,42 @@ bool LocalSpeechEngine::abortRequested(void *engine)
     return static_cast<LocalSpeechEngine *>(engine)->m_shouldAbort();
 }
 
-bool LocalSpeechEngine::load(const QString &modelPath, const QString &deviceId, QString *error)
+bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn, QString *error)
 {
     unload();
     initBackendsOnce();
+    const QString backendName = localBackendName(runsOn.backend);
+    const std::optional<transcribe_backend_request> backend = backendRequest(runsOn.backend);
+    if (!backend || !transcribe_backend_available(*backend)) {
+        *error = QStringLiteral("%1 is not available on this computer. Choose where the model runs "
+                                "on the Local models page.")
+                     .arg(backendName);
+        return false;
+    }
     transcribe_model_load_params params;
     transcribe_model_load_params_init(&params);
-    params.device = findDevice(deviceId);
+    params.backend = *backend;
+    if (!runsOn.deviceId.isEmpty()) {
+        params.device = findDevice(runsOn);
+        if (!params.device) {
+            *error = *backend == TRANSCRIBE_BACKEND_AUTO
+                ? QStringLiteral("The chosen graphics card is missing. Choose where the model runs "
+                                 "on the Local models page.")
+                : QStringLiteral("The graphics card chosen for %1 is missing. Choose where the "
+                                 "model runs on the Local models page.")
+                      .arg(backendName);
+            return false;
+        }
+    }
     const QByteArray path = modelPath.toUtf8();
-    if (!succeeded(transcribe_model_load_file(path.constData(), &params, &m_model), error)) {
+    const transcribe_status status = transcribe_model_load_file(path.constData(), &params, &m_model);
+    if (status == TRANSCRIBE_ERR_BACKEND && *backend != TRANSCRIBE_BACKEND_AUTO) {
+        *error = QStringLiteral("%1 could not load the model. Choose where the model runs on the "
+                                "Local models page.")
+                     .arg(backendName);
+        return false;
+    }
+    if (!succeeded(status, error)) {
         return false;
     }
     if (!succeeded(transcribe_session_init(m_model, nullptr, &m_session), error)) {
@@ -164,7 +208,7 @@ bool LocalSpeechEngine::load(const QString &modelPath, const QString &deviceId, 
     m_streams = transcribe_model_get_capabilities(m_model, &capabilities) == TRANSCRIBE_OK
         && capabilities.supports_streaming;
     m_modelPath = modelPath;
-    m_deviceId = deviceId;
+    m_runsOn = runsOn;
     return true;
 }
 
@@ -175,13 +219,25 @@ void LocalSpeechEngine::unload()
     m_session = nullptr;
     m_model = nullptr;
     m_modelPath.clear();
-    m_deviceId.clear();
+    m_runsOn = {};
     m_streams = false;
 }
 
-bool LocalSpeechEngine::isLoaded(const QString &modelPath, const QString &deviceId) const
+bool LocalSpeechEngine::isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const
 {
-    return m_session && m_modelPath == modelPath && m_deviceId == deviceId;
+    return m_session && m_modelPath == modelPath && m_runsOn == runsOn;
+}
+
+QString LocalSpeechEngine::runsOnDescription() const
+{
+    transcribe_device_info info;
+    transcribe_device_info_init(&info);
+    const transcribe_device_t device = transcribe_model_device(m_model);
+    if (!device || transcribe_device_get_info(device, &info) != TRANSCRIBE_OK) {
+        return {};
+    }
+    return QStringLiteral("%1 (%2)").arg(QString::fromUtf8(info.description).simplified(),
+                                         localBackendName(QString::fromUtf8(info.kind)));
 }
 
 bool LocalSpeechEngine::streams() const
@@ -267,6 +323,11 @@ std::optional<double> LocalSpeechEngine::speedTestSeconds(QString *error)
         return std::nullopt;
     }
     const QByteArray pcm16 = clip.readAll();
+    // Untimed: a backend's first run pays one-off costs, such as Vulkan
+    // compiling its shaders, that dictation after it never sees.
+    if (!transcribe(pcm16, error)) {
+        return std::nullopt;
+    }
     QElapsedTimer timer;
     timer.start();
     if (!transcribe(pcm16, error)) {

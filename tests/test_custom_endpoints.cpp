@@ -113,10 +113,12 @@ QByteArray chatChunk(const QString &content, const QString &finishReason = {})
     return json({{QStringLiteral("choices"), QJsonArray{choice}}});
 }
 
-void dictate(EndpointSpeechTranscriber &transcriber, const QString &origin, quint64 attempt = 1)
+void dictate(EndpointSpeechTranscriber &transcriber, const QString &origin, quint64 attempt = 1,
+             const QStringList &vocabulary = {})
 {
     SpeechSettings settings;
     settings.endpoint.baseUrl = origin;
+    settings.vocabulary = vocabulary;
     transcriber.startAttempt(attempt, settings);
     transcriber.sendAudio(attempt, QByteArray(640, '\0'));
     transcriber.finishInput(attempt);
@@ -144,7 +146,7 @@ private slots:
         FakeServer server;
         server.route("POST /inference", httpResponse("200 OK", "application/json", "{\"text\":\"ok\"}"));
         endpoint.baseUrl = server.origin();
-        const SpeechEndpointUpload upload = speechEndpointUpload(endpoint, pcm);
+        const SpeechEndpointUpload upload = speechEndpointUpload(endpoint, pcm, {});
         QNetworkAccessManager network;
         QNetworkReply *reply = network.post(upload.request, upload.parts);
         upload.parts->setParent(reply);
@@ -172,6 +174,38 @@ private slots:
                                        QByteArray("stream\"\r\n\r\ntrue")}) {
             QVERIFY2(body.contains(field), field.constData());
         }
+        QVERIFY(!body.contains("name=\"prompt\""));
+    }
+
+    void speechUploadCarriesTheKeyTermsAsItsPrompt()
+    {
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"ok\"}"));
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        dictate(transcriber, server.origin(), 1, {QStringLiteral("Speecher"), QStringLiteral("Kirigami Addons")});
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
+        QCOMPARE(server.requests.size(), 1);
+        QVERIFY(server.requests.first().contains("name=\"prompt\"\r\n\r\nSpeecher, Kirigami Addons\r\n"));
+    }
+
+    // The endpoint gets what Claude Voice gets: 101 short terms send 100.
+    void speechPromptUsesTheKeyTermLimits()
+    {
+        QStringList terms;
+        for (int index = 1; index <= 101; ++index) {
+            terms << QStringLiteral("term%1").arg(index, 4, 10, QLatin1Char('0'));
+        }
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"ok\"}"));
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        dictate(transcriber, server.origin(), 1, terms);
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
+        const QByteArray request = server.requests.first();
+        QVERIFY(request.contains("term0001, term0002, "));
+        QVERIFY(request.contains(", term0100\r\n"));
+        QVERIFY(!request.contains("term0101"));
     }
 
     void endpointsRejectCrossOriginRedirects()

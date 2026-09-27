@@ -2,6 +2,7 @@
 
 #include "core/InsightsSummary.h"
 
+#include <QStyledItemDelegate>
 #include <QWidget>
 
 #include <array>
@@ -72,13 +73,29 @@ private:
     HeatScale m_scale{{}, HeatMeasure::Dictations};
 };
 
-// A Writing Profile shown as a badge beside an app's name: its label on a
-// rounded pill of the insights tint. Qt Widgets has no badge or chip widget.
-class InsightsBadge final : public QWidget {
+// A short label on a pill beside a name: a Writing Profile on Home, a Local
+// Model's rating. Kirigami.Badge's look in palette colours, bold small text.
+// Qt Widgets has no badge widget.
+class Badge final : public QWidget {
     Q_OBJECT
 
 public:
-    explicit InsightsBadge(const QString &text, QWidget *parent = nullptr);
+    enum class Tone {
+        Accent,  // Highlight, the insights charts' colour
+        Neutral, // the card frame's colour
+        // The colour scheme's NegativeText; where no scheme names one, the
+        // frame with placeholder text.
+        Negative,
+    };
+
+    explicit Badge(const QString &text, Tone tone = Tone::Accent, QWidget *parent = nullptr);
+
+    void setBadge(const QString &text, Tone tone);
+
+    // For item views, which paint the same pill through BadgeDelegate.
+    static QSize sizeFor(const QFont &font, const QString &text);
+    static void paint(QPainter &painter, const QRect &rect, const QString &text, Tone tone,
+                      const QPalette &palette);
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
@@ -88,6 +105,22 @@ protected:
 
 private:
     QString m_text;
+    Tone m_tone;
+};
+
+// Paints a Badge after the first line of an item's text, in the item's small
+// font: its words from TextRole, its Badge::Tone from ToneRole. Items without
+// words get none. The size hint makes room, so a view sized to its contents
+// widens instead of eliding; in a narrower one the name elides first.
+class BadgeDelegate final : public QStyledItemDelegate {
+public:
+    static constexpr int TextRole = Qt::UserRole + 16;
+    static constexpr int ToneRole = Qt::UserRole + 17;
+
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override;
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override;
 };
 
 // Dictations by hour of day: 24 bars, the peak in the accent colour. Painted

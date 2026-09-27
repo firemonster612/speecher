@@ -11,6 +11,11 @@ namespace speecher {
 
 namespace win {
 
+// A model's rating as a badge: Recommended on the accent, Not recommended on
+// the critical fill, the rest on the neutral one, each in the host window's
+// theme. Shared with the setup assistant's comparison.
+winrt::Microsoft::UI::Xaml::Controls::Grid ratingBadge(ModelRating rating, const PaneHost &host);
+
 // The Local models page's list and detail ("localModelBrowser"), as the Qt
 // LocalModelRows draws it: the catalog in a ListView, the selected model's
 // facts and buttons beside it. Its value is the model dictation uses, empty
@@ -47,7 +52,9 @@ private:
 
     winrt::Microsoft::UI::Xaml::Controls::StackPanel m_actions{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_name{nullptr};
+    winrt::Microsoft::UI::Xaml::Controls::Border m_rating{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_subtitle{nullptr};
+    winrt::Microsoft::UI::Xaml::Controls::TextBlock m_bestFor{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_size{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_speed{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_wer{nullptr};

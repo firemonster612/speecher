@@ -204,15 +204,24 @@ LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
     LocalSpeechSettings settings;
     settings.modelId = value(SettingsKeys::LocalModel, defaults.modelId).toString();
     settings.modelChosen = value(SettingsKeys::LocalModelChosen, m_settings.contains(SettingsKeys::LocalModel)).toBool();
-    settings.deviceId = value(SettingsKeys::LocalDevice, QString()).toString();
+    // A graphics card saved before the backend was chosen too has no backend
+    // saved, and reads as Automatic on that card.
+    settings.runsOn.backend = value(SettingsKeys::LocalBackend, defaults.runsOn.backend).toString();
+    settings.runsOn.deviceId = value(SettingsKeys::LocalDevice, QString()).toString();
     settings.idleUnloadMinutes =
         std::max(0, value(SettingsKeys::LocalIdleUnloadMinutes, defaults.idleUnloadMinutes).toInt());
     const QString speedTestPrefix = SettingsKeys::LocalSpeedTest + QLatin1Char('/');
     for (const QString &key : m_settings.allKeys()) {
-        if (key.startsWith(speedTestPrefix)) {
-            settings.speedTestSeconds.insert(key.mid(speedTestPrefix.size()),
-                                             m_settings.value(key).toDouble());
+        if (!key.startsWith(speedTestPrefix)) {
+            continue;
         }
+        // Results saved before they were kept per Runs on choice ran on
+        // Automatic, the only choice there was.
+        QString speedKey = key.mid(speedTestPrefix.size());
+        if (!speedKey.contains(QLatin1Char('/'))) {
+            speedKey = localSpeedTestKey(speedKey, {});
+        }
+        settings.speedTestSeconds.insert(speedKey, m_settings.value(key).toDouble());
     }
     return settings;
 }
@@ -223,7 +232,8 @@ void SettingsCodecs::setLocalSpeechSettings(const LocalSpeechSettings &value)
     m_settings.setValue(SettingsKeys::LocalModelChosen, value.modelChosen || previous.modelChosen
                         || value.modelId != previous.modelId);
     m_settings.setValue(SettingsKeys::LocalModel, value.modelId);
-    m_settings.setValue(SettingsKeys::LocalDevice, value.deviceId);
+    m_settings.setValue(SettingsKeys::LocalBackend, value.runsOn.backend);
+    m_settings.setValue(SettingsKeys::LocalDevice, value.runsOn.deviceId);
     m_settings.setValue(SettingsKeys::LocalIdleUnloadMinutes, std::max(0, value.idleUnloadMinutes));
     m_settings.remove(SettingsKeys::LocalSpeedTest);
     m_settings.beginGroup(SettingsKeys::LocalSpeedTest);

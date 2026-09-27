@@ -25,14 +25,6 @@ QString gigabytesText(quint64 bytes)
     return QStringLiteral("%1 GB").arg(qRound(double(bytes) / 1e9));
 }
 
-QString acceleratorName(const QString &kind)
-{
-    if (kind == QStringLiteral("metal")) return QStringLiteral("Metal");
-    if (kind == QStringLiteral("vulkan")) return QStringLiteral("Vulkan");
-    if (kind == QStringLiteral("cuda")) return QStringLiteral("CUDA");
-    return kind;
-}
-
 // What a connection check depends on. The model is picked from its answer,
 // so choosing one keeps the verdict and the list.
 template <typename Endpoint>
@@ -166,6 +158,36 @@ QString ownModelRefinementSummary(const RefinementSettings &settings)
     return {};
 }
 
+HardwareProfile runsOnProfile(const HardwareSummary &hardware, const LocalRunsOn &runsOn)
+{
+    HardwareProfile profile = hardware.profile;
+    const bool anyBackend = runsOn.backend == QStringLiteral("auto");
+    if (anyBackend && runsOn.deviceId.isEmpty()) {
+        return profile;
+    }
+    const auto card = std::find_if(hardware.gpus.cbegin(), hardware.gpus.cend(),
+                                   [&](const LocalSpeechEngine::Device &gpu) {
+                                       return gpu.id == runsOn.deviceId && (anyBackend || gpu.kind == runsOn.backend);
+                                   });
+    if (runsOn.backend == QStringLiteral("cpu") || card == hardware.gpus.cend()) {
+        profile.accelerator = HardwareProfile::Accelerator::Cpu;
+        profile.gpuMemoryBytes = 0;
+        return profile;
+    }
+    // Apple Silicon's GPU shares system RAM, so its budget is already right.
+    if (profile.accelerator == HardwareProfile::Accelerator::AppleSilicon) {
+        return profile;
+    }
+    if (card->type == LocalSpeechEngine::Device::Type::IntegratedGpu) {
+        profile.accelerator = HardwareProfile::Accelerator::IntegratedGpu;
+        profile.gpuMemoryBytes = 0;
+    } else {
+        profile.accelerator = HardwareProfile::Accelerator::DedicatedGpu;
+        profile.gpuMemoryBytes = card->memoryTotalBytes;
+    }
+    return profile;
+}
+
 LocalSetup::LocalSetup(SettingsStore &settings,
                        ProviderRegistry &providers,
                        LocalModelStore &models,
@@ -226,13 +248,17 @@ LocalSetup::LocalSetup(SettingsStore &settings,
                     if (error.isEmpty()) {
                         m_speedTestErrors.remove(modelId);
                         LocalSpeechSettings local = m_settings.localSpeechSettings();
-                        local.speedTestSeconds.insert(modelId, seconds);
+                        local.speedTestSeconds.insert(localSpeedTestKey(modelId, m_speedTestRunsOn), seconds);
                         m_settings.setLocalSpeechSettings(local);
                     } else {
                         m_speedTestErrors.insert(modelId, error);
                     }
                     emit changed();
                 });
+        connect(local, &LocalSpeechTranscriber::runsOnChanged, this, [this](const QString &description) {
+            m_modelRunsOn = description;
+            emit changed();
+        });
     }
 #endif
     // An endpoint someone is filling in is checked once they pause, without
@@ -247,6 +273,13 @@ LocalSetup::LocalSetup(SettingsStore &settings,
             [this] { checkRefinementEndpoint(m_settings.dictationSnapshot().refinement); });
     connect(&m_settings, &SettingsStore::snapshotApplied, this, [this](const AppSettings &previous) {
         const AppSettings current = m_settings.dictationSnapshot();
+        // A new Runs on choice changes what fits and which speeds were
+        // measured. The loaded model still runs on the old choice until the
+        // next load says where the new one put it.
+        if (current.speech.local.runsOn != previous.speech.local.runsOn) {
+            m_modelRunsOn.clear();
+            emit changed();
+        }
         const auto reschedule = [](QTimer &delay, const auto &now, const auto &before) {
             if (now == before) return;
             if (now) delay.start();
@@ -314,7 +347,7 @@ QString LocalSetup::hardwareLine() const
         parts << QStringLiteral("no graphics acceleration");
     } else {
         const LocalSpeechEngine::Device &gpu = m_hardware.gpus.first();
-        parts << QStringLiteral("%1, %2").arg(gpu.description, acceleratorName(gpu.kind));
+        parts << QStringLiteral("%1, %2").arg(gpu.description, localBackendName(gpu.kind));
     }
     parts << (profile.accelerator == HardwareProfile::Accelerator::DedicatedGpu
                   ? QStringLiteral("%1 memory, %2 on the graphics card")
@@ -330,7 +363,10 @@ const LocalModel &LocalSetup::suggestedModel() const
 
 std::optional<ModelFit> LocalSetup::fit(const LocalModel &model) const
 {
-    return m_hardwareKnown ? std::optional<ModelFit>(modelFit(model, m_hardware.profile)) : std::nullopt;
+    if (!m_hardwareKnown) {
+        return std::nullopt;
+    }
+    return modelFit(model, runsOnProfile(m_hardware, m_settings.localSpeechSettings().runsOn));
 }
 
 QString LocalSetup::fitLabel(const LocalModel &model) const
@@ -373,7 +409,9 @@ bool LocalSetup::removeModel(const LocalModel &model)
     m_progress.remove(model.id);
     m_speedTestQueue.removeAll(model.id);
     LocalSpeechSettings local = m_settings.localSpeechSettings();
-    local.speedTestSeconds.remove(model.id);
+    local.speedTestSeconds.removeIf([&model](const auto &result) {
+        return result.key().startsWith(model.id + QLatin1Char('/'));
+    });
     // Dictation moves to another downloaded model rather than a missing file.
     // With none left it stays, and dictating says to download one.
     if (local.modelId == model.id) {
@@ -417,9 +455,10 @@ void LocalSetup::runSpeedTest(const QString &modelId)
         return;
     }
     m_speedTestModel = modelId;
+    m_speedTestRunsOn = m_settings.localSpeechSettings().runsOn;
     m_speedTestErrors.remove(modelId);
     emit changed();
-    local->runSpeedTest(modelId, m_settings.localSpeechSettings().deviceId);
+    local->runSpeedTest(modelId, m_speedTestRunsOn);
 #else
     Q_UNUSED(modelId);
 #endif
@@ -432,9 +471,9 @@ bool LocalSetup::speedTestRunning(const QString &modelId) const
 
 std::optional<double> LocalSetup::measuredSeconds(const QString &modelId) const
 {
-    const QMap<QString, double> measured = m_settings.localSpeechSettings().speedTestSeconds;
-    const auto it = measured.constFind(modelId);
-    return it == measured.cend() ? std::nullopt : std::optional<double>(*it);
+    const LocalSpeechSettings local = m_settings.localSpeechSettings();
+    const auto it = local.speedTestSeconds.constFind(localSpeedTestKey(modelId, local.runsOn));
+    return it == local.speedTestSeconds.cend() ? std::nullopt : std::optional<double>(*it);
 }
 
 QString LocalSetup::speedTestError(const QString &modelId) const
@@ -662,15 +701,15 @@ LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
     for (const LocalModel &model : localModelCatalog()) {
         if (m_models.isDownloaded(model)) {
             used += model.sizeBytes;
+            facts.downloadedModels.append(model.id);
         }
     }
     facts.modelFolder = QStringLiteral("%1 · %2 used")
                             .arg(QDir::toNativeSeparators(m_models.directory()), downloadSizeText(used));
-    if (m_hardware.gpus.size() > 1) {
-        for (const LocalSpeechEngine::Device &gpu : m_hardware.gpus) {
-            facts.gpus.append({gpu.id, gpu.description});
-        }
+    for (const LocalSpeechEngine::Device &gpu : m_hardware.gpus) {
+        facts.localGpus.append({gpu.kind, gpu.id, gpu.description});
     }
+    facts.localModelRunsOn = m_modelRunsOn;
     return facts;
 }
 
