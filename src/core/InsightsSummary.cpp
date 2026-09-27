@@ -20,7 +20,7 @@ constexpr int kTopApps = 5;
 // Word counts: the Gettysburg Address from the Bliss copy; The Raven, The
 // Tell-Tale Heart and An Occurrence at Owl Creek Bridge from their Project
 // Gutenberg texts (ebooks 2151, 2148 and 375), words split at spaces and
-// dashes; the Declaration of Independence from the National Archives
+// em dashes; the Declaration of Independence from the National Archives
 // transcript, without its heading and signatures, counted the same way;
 // Shakespeare from Open Source Shakespeare; novels from Nathan Bransford's
 // novel word count list.
@@ -146,6 +146,7 @@ Comparison compareToBook(int words)
 // Each text covers a single run of counts, so a binary search finds its end.
 int nextChange(int words)
 {
+    if (words < 0 || words == INT_MAX) return 0;
     const QString now = compareToBook(words).text;
     qint64 same = words;
     qint64 other = words + 1;

@@ -187,11 +187,12 @@ private slots:
         QCOMPARE(InsightsLog(seed, InsightsLog::Access::ReadOnly).records().size(), 2015);
     }
 
-    void bookComparisonMatchesTheMockup_data()
+    void bookComparisonNamesTheClosestWork_data()
     {
         QTest::addColumn<int>("words");
         QTest::addColumn<QString>("text");
         QTest::newRow("150") << 150 << QStringLiteral("About half of the Gettysburg Address");
+        QTest::newRow("1100") << 1100 << QStringLiteral("About as long as The Raven");
         QTest::newRow("1200") << 1200
                               << QStringLiteral("About as long as the Declaration of Independence");
         QTest::newRow("3848") << 3848
@@ -206,7 +207,7 @@ private slots:
                                  << QStringLiteral("About 6 times the length of War and Peace");
     }
 
-    void bookComparisonMatchesTheMockup()
+    void bookComparisonNamesTheClosestWork()
     {
         QFETCH(int, words);
         QFETCH(QString, text);
@@ -233,6 +234,8 @@ private slots:
                                  << QStringLiteral("War and Peace is about 561,304 words\n"
                                                    "Changes to about 7 times the length of War and Peace "
                                                    "at 3,648,476 words");
+        QTest::newRow("negative") << -5 << QString();
+        QTest::newRow("INT_MAX") << INT_MAX << QStringLiteral("War and Peace is about 561,304 words");
     }
 
     void bookComparisonTipSaysWhenItChanges()
