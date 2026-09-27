@@ -17,6 +17,11 @@ namespace win {
 // while another provider transcribes. One lives on the PaneHost, so the
 // selection survives the pane rebuild every LocalSetup change causes; a
 // download's progress updates the detail in place instead.
+// A model's rating as a badge: Recommended on the accent, Not recommended on
+// the critical fill, the rest on the neutral one. Shared with the setup
+// assistant's comparison.
+winrt::Microsoft::UI::Xaml::Controls::Grid ratingBadge(ModelRating rating);
+
 class LocalModelBrowser : public std::enable_shared_from_this<LocalModelBrowser> {
 public:
     explicit LocalModelBrowser(PaneHost &host);
@@ -47,7 +52,9 @@ private:
 
     winrt::Microsoft::UI::Xaml::Controls::StackPanel m_actions{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_name{nullptr};
+    winrt::Microsoft::UI::Xaml::Controls::Border m_rating{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_subtitle{nullptr};
+    winrt::Microsoft::UI::Xaml::Controls::TextBlock m_bestFor{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_size{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_speed{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_wer{nullptr};

@@ -541,6 +541,24 @@ winrt::Microsoft::UI::Xaml::Media::Brush themeBrush(const wchar_t *key, const Pa
     return nullptr;
 }
 
+Grid badge(const QString &label, const winrt::Microsoft::UI::Xaml::Media::Brush &brush)
+{
+    // The tint is its own layer so its opacity leaves the label at full
+    // strength; the label's margin is the pill's padding.
+    Border tint;
+    tint.Background(brush);
+    tint.Opacity(kHeatStrengths.at(1));
+    tint.CornerRadius({9, 9, 9, 9});
+    TextBlock text = styledTextBlock(label, L"CaptionTextBlockStyle");
+    text.Margin({8, 1, 8, 2});
+    Grid pill;
+    pill.HorizontalAlignment(HorizontalAlignment::Left);
+    pill.VerticalAlignment(VerticalAlignment::Center);
+    pill.Children().Append(tint);
+    pill.Children().Append(text);
+    return pill;
+}
+
 void detachFromParent(const UIElement &element)
 {
     if (!element) {

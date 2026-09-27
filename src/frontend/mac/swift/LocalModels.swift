@@ -32,7 +32,9 @@ struct LocalModelBrowser: View {
                     listRow(entry)
                 }
                 .listStyle(.bordered)
-                .frame(width: 200, height: CGFloat(local.models.count) * 44 + 8)
+                // Wide enough for the longest name with a "Not recommended"
+                // badge, so no row truncates; the detail takes the rest.
+                .frame(width: 300, height: CGFloat(local.models.count) * 44 + 8)
                 if let id = selection.wrappedValue, let entry = local.model(id) {
                     LocalModelDetail(entry: entry, model: model) {
                         model.setValue(entry.modelId, for: row.rowId)
@@ -45,7 +47,10 @@ struct LocalModelBrowser: View {
     private func listRow(_ entry: LocalModelInfo) -> some View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
+                HStack {
+                    Text(entry.name)
+                    RatingBadge(entry: entry)
+                }
                 // Size and error rate only, so the list stays narrow; the
                 // fit is in the facts.
                 Text("\(entry.sizeText) · \(LocalModelText.wer(entry.librispeechWer)) WER")
@@ -69,7 +74,10 @@ private struct LocalModelDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name).font(.headline)
+                HStack {
+                    Text(entry.name).font(.headline)
+                    RatingBadge(entry: entry)
+                }
                 Text(entry.suggested ? "Suggested for this computer" : entry.fileName)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -108,7 +116,8 @@ private struct LocalModelDetail: View {
     }
 
     private var facts: [(name: String, value: String)] {
-        [("Download", "\(entry.sizeText) · \(entry.fitLabel)"),
+        [("Best for", entry.bestFor),
+         ("Download", "\(entry.sizeText) · \(entry.fitLabel)"),
          ("Speed here", entry.speedDetail),
          ("Word error rate", "\(LocalModelText.wer(entry.librispeechWer)) clear speech\n"
             + "\(LocalModelText.wer(entry.fleursWer)) everyday speech"),
@@ -138,6 +147,31 @@ private struct LocalModelDetail: View {
                 }
                 .disabled(entry.tooLarge)
             }
+        }
+    }
+}
+
+/// A model's rating as a capsule beside its name, as the Home pane's Writing
+/// Profile badges are: Recommended in the accent, Not recommended in red, the
+/// rest in grey.
+struct RatingBadge: View {
+    let entry: LocalModelInfo
+
+    var body: some View {
+        Text(entry.ratingLabel)
+            .font(.caption)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(tint.opacity(0.3)))
+            .accessibilityLabel(entry.ratingLabel)
+    }
+
+    private var tint: Color {
+        switch entry.rating {
+        case .recommended: Color(nsColor: .controlAccentColor)
+        case .notRecommended: Color(nsColor: .systemRed)
+        default: Color(nsColor: .systemGray)
         }
     }
 }

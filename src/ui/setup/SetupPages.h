@@ -28,6 +28,7 @@ namespace speecher {
 
 class ApplicationController;
 class AudioInput;
+class Badge;
 class InlineMessage;
 class LocalSetup;
 struct LocalModel;
@@ -255,6 +256,7 @@ private:
     QWidget *m_localCard = nullptr;
     QLabel *m_localCaption = nullptr;
     QLabel *m_localName = nullptr;
+    Badge *m_localRating = nullptr;
     QLabel *m_localFacts = nullptr;
     QPushButton *m_localDownload = nullptr;
     QProgressBar *m_localProgress = nullptr;
