@@ -1,3 +1,5 @@
+#include "core/EndpointSettings.h"
+#include "core/SecretStore.h"
 #include "common/test_suites.h"
 
 #include "core/BindingProcessor.h"
@@ -53,6 +55,131 @@ class SettingsSchemaTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void refinementServerChoiceSelectsTheCliProxyPreset()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto &page = schema.page("refinement");
+        QVERIFY(hasRow(page, "refinementEndpointServer"));
+        const auto &server = rowById(page, "refinementEndpointServer");
+        AppSettings settings;
+        settings.refinement.providerId = "endpoint";
+        settings.refinement.cliproxyBaseUrl = "http://proxy.example:8317";
+        settings.refinement.cliproxyApiKey = "saved-key";
+        const auto options = server.options(settings);
+        QCOMPARE(options.size(), 2);
+        QCOMPARE(options.at(0).label, QString("Custom"));
+        QCOMPARE(options.at(1).label, QString("CLI Proxy API"));
+        server.apply(settings, options.at(1).id);
+        QCOMPARE(settings.refinement.endpoint.preset, QString("cliproxy"));
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, QString("http://proxy.example:8317/v1"));
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString("saved-key"));
+        server.apply(settings, options.at(0).id);
+        QVERIFY(settings.refinement.endpoint.preset.isEmpty());
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, QString("http://proxy.example:8317/v1"));
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiKey, QString("saved-key"));
+        QCOMPARE(settings.refinement.cliproxyApiKey, QString("saved-key"));
+    }
+
+    void returningToCustomRestoresTheServerEnteredBefore()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto &server = rowById(schema.page("refinement"), "refinementEndpointServer");
+        AppSettings settings;
+        settings.refinement.providerId = "endpoint";
+        settings.refinement.endpoint.baseUrl = "http://localhost:8080/v1";
+        settings.refinement.endpoint.apiKey = "custom-key";
+        settings.refinement.cliproxyBaseUrl = "http://proxy.example:8317";
+        settings.refinement.cliproxyApiKey = "proxy-key";
+        server.apply(settings, "cliproxy");
+        server.apply(settings, QString());
+        const auto endpoint = resolvedRefinementEndpoint(settings.refinement);
+        QCOMPARE(endpoint.apiBase, QString("http://localhost:8080/v1"));
+        QCOMPARE(endpoint.apiKey, QString("custom-key"));
+    }
+
+    void endpointPresetRowsShowAndEditEffectiveValues()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto &page = schema.page("refinement");
+        const auto &url = rowById(page, "refinementEndpointUrl");
+        const auto &key = rowById(page, "refinementEndpointApiKey");
+        AppSettings settings;
+        settings.refinement.endpoint.preset = "cliproxy";
+        settings.refinement.cliproxyBaseUrl = "http://proxy.example:8317";
+        settings.refinement.cliproxyApiKey = "saved-key";
+        QCOMPARE(url.value(settings).toString(), QString("http://proxy.example:8317/v1"));
+        QCOMPARE(key.value(settings).toString(), QString("saved-key"));
+        url.apply(settings, "http://proxy.example:8317/v1");
+        QCOMPARE(settings.refinement.endpoint.preset, QString("cliproxy"));
+        url.apply(settings, "http://other.example/v1");
+        QVERIFY(settings.refinement.endpoint.preset.isEmpty());
+        QCOMPARE(settings.refinement.endpoint.baseUrl, QString("http://other.example/v1"));
+        QVERIFY(resolvedRefinementEndpoint(settings.refinement).apiKey.isEmpty());
+        AppSettings withKey;
+        withKey.refinement.endpoint.preset = "cliproxy";
+        withKey.refinement.cliproxyApiKey = "saved-key";
+        editRefinementEndpoint(withKey, {.baseUrl = "http://other.example/v1", .apiKey = "other-key"});
+        QCOMPARE(resolvedRefinementEndpoint(withKey.refinement).apiKey, QString("other-key"));
+    }
+
+    void endpointEditsPreserveLateSecretsAndExplicitClears()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto key = SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey);
+        AppSettings loaded;
+        loaded.unreadSecretKeys = {key};
+        AppSettings draft = loaded;
+        editRefinementEndpoint(draft, {.model = "chosen"});
+        AppSettings current = loaded;
+        current.unreadSecretKeys.clear();
+        current.refinement.endpoint.apiKey = "late-key";
+        auto merged = mergeSettingsDraft(schema, loaded, draft, current);
+        QCOMPARE(merged.refinement.endpoint.apiKey, QString("late-key"));
+        QCOMPARE(merged.refinement.endpoint.model, QString("chosen"));
+        editRefinementEndpoint(draft, {.apiKey = QString()});
+        merged = mergeSettingsDraft(schema, loaded, draft, current);
+        QVERIFY(merged.refinement.endpoint.apiKey.isEmpty());
+        QVERIFY(!merged.unreadSecretKeys.contains(key));
+    }
+
+    // The Qt row applies every keystroke and reads the value back into the
+    // field, so a URL typed one character at a time must survive intact.
+    void typingTheEndpointUrlKeepsItsSlashes()
+    {
+        const auto schema = buildSettingsSchema(fakeContext());
+        const auto &url = rowById(schema.page("refinement"), "refinementEndpointUrl");
+        AppSettings settings;
+        settings.refinement.providerId = "endpoint";
+        const QString typed = "http://127.0.0.1:9000/v1";
+        for (qsizetype i = 1; i <= typed.size(); ++i) {
+            const QString shown = url.value(settings).toString();
+            url.apply(settings, shown + typed.at(i - 1));
+        }
+        QCOMPARE(url.value(settings).toString(), typed);
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, typed);
+    }
+
+    void detachingAnUnreadProxyUrlDropsTheProxyKey()
+    {
+        AppSettings settings;
+        settings.refinement.endpoint.preset = "cliproxy";
+        settings.refinement.cliproxyBaseUrl = "http://proxy.example:8317";
+        settings.unreadSecretKeys = {SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey)};
+        const AppSettings unread = settings;
+        auto cleared = unread;
+        editRefinementEndpoint(cleared, {.apiKey = QString()});
+        auto late = unread;
+        late.refinement.cliproxyApiKey = "late-proxy-key";
+        late.unreadSecretKeys.clear();
+        const auto merged = mergeSettingsDraft(buildSettingsSchema(fakeContext()), unread, cleared, late);
+        QVERIFY(resolvedRefinementEndpoint(merged.refinement).apiKey.isEmpty());
+        QCOMPARE(merged.refinement.cliproxyApiKey, QString("late-proxy-key"));
+        editRefinementEndpoint(settings, {.baseUrl = "http://other.example/v1"});
+        settings.refinement.cliproxyApiKey = "late-proxy-key";
+        QVERIFY(resolvedRefinementEndpoint(settings.refinement).apiKey.isEmpty());
+        QCOMPARE(resolvedRefinementEndpoint(settings.refinement).apiBase, QString("http://other.example/v1"));
+    }
+
     void writingProfileCollectionIsDescribedBySchema()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
@@ -987,6 +1114,135 @@ private slots:
         QStringList expected = paneIds;
         expected.removeAll(QStringLiteral("whatsNew"));
         QCOMPARE(runPaneIds.size(), expected.size());
+    }
+
+    void customEndpointRowsSitUnderTheirPickerWhileItIsChosen()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
+        const SettingsPage &refinement = schema.page(QStringLiteral("refinement"));
+        const auto idsAfter = [](const SettingsPage &page, const QString &picker) {
+            for (const SettingsSection &section : page.sections) {
+                QStringList ids;
+                for (const SettingsRow &row : section.rows) {
+                    ids.append(row.id);
+                }
+                const int at = ids.indexOf(picker);
+                if (at >= 0) {
+                    return ids.mid(at + 1);
+                }
+            }
+            return QStringList();
+        };
+        QCOMPARE(idsAfter(audio, QStringLiteral("speechProvider")).mid(1, 5),
+                 QStringList({QStringLiteral("speechEndpointUrl"), QStringLiteral("speechEndpointPath"),
+                              QStringLiteral("speechEndpointApiKey"), QStringLiteral("speechEndpointModel"),
+                              QStringLiteral("speechEndpointTest")}));
+        QCOMPARE(idsAfter(refinement, QStringLiteral("refinementProvider")).mid(0, 9),
+                 QStringList({QStringLiteral("localRunner"), QStringLiteral("localRunnerModel"),
+                              QStringLiteral("localRunnerDetect"), QStringLiteral("refinementEndpointServer"),
+                              QStringLiteral("refinementEndpointFormat"),
+                              QStringLiteral("refinementEndpointUrl"), QStringLiteral("refinementEndpointApiKey"),
+                              QStringLiteral("refinementEndpointModel"),
+                              QStringLiteral("refinementEndpointTest")}));
+
+        AppSettings settings;
+        const Capabilities capabilities;
+        const SettingsRow &speechUrl = rowById(audio, QStringLiteral("speechEndpointUrl"));
+        const SettingsRow &runner = rowById(refinement, QStringLiteral("localRunner"));
+        const SettingsRow &refinementUrl = rowById(refinement, QStringLiteral("refinementEndpointUrl"));
+        QVERIFY(!speechUrl.visible(settings, capabilities));
+        QVERIFY(!runner.visible(settings, capabilities));
+        QVERIFY(!refinementUrl.visible(settings, capabilities));
+        settings.speech.providerId = QStringLiteral("endpoint");
+        settings.refinement.providerId = QStringLiteral("local");
+        QVERIFY(speechUrl.visible(settings, capabilities));
+        QVERIFY(runner.visible(settings, capabilities));
+        QVERIFY(!refinementUrl.visible(settings, capabilities));
+        settings.refinement.providerId = QStringLiteral("endpoint");
+        QVERIFY(!runner.visible(settings, capabilities));
+        QVERIFY(refinementUrl.visible(settings, capabilities));
+
+        QVERIFY(rowById(audio, QStringLiteral("speechEndpointApiKey")).secret);
+        QVERIFY(rowById(refinement, QStringLiteral("refinementEndpointApiKey")).secret);
+        rowById(audio, QStringLiteral("speechEndpointPath")).apply(settings, QStringLiteral(" /inference "));
+        rowById(refinement, QStringLiteral("refinementEndpointModel")).apply(settings, QStringLiteral("gemma4:e4b"));
+        rowById(refinement, QStringLiteral("localRunnerModel")).apply(settings, QStringLiteral("lfm"));
+        QCOMPARE(settings.speech.endpoint.path, QStringLiteral("/inference"));
+        QCOMPARE(settings.refinement.endpoint.model, QStringLiteral("gemma4:e4b"));
+        QCOMPARE(settings.refinement.localRunner.model, QStringLiteral("lfm"));
+    }
+
+    void endpointAndRunnerRowsReportWhatTheAppLayerLearned()
+    {
+        SchemaContext context = fakeContext();
+        LiveFacts facts;
+        facts.speechEndpointStatus = QStringLiteral("Connected. Models available: 2.");
+        facts.speechEndpointModels = {QStringLiteral("whisper-1"), QStringLiteral("parakeet")};
+        facts.runners = {{QStringLiteral("ollama"), QStringLiteral("Ollama 0.34.4")}};
+        facts.runnerModels.insert(QStringLiteral("ollama"), {QStringLiteral("gemma4:e4b")});
+        context.liveFacts = [&facts] { return facts; };
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
+        const SettingsPage &refinement = schema.page(QStringLiteral("refinement"));
+        AppSettings settings;
+        settings.refinement.localRunner.runner = QStringLiteral("ollama");
+
+        QCOMPARE(rowById(audio, QStringLiteral("speechEndpointTest")).helpValue(settings), facts.speechEndpointStatus);
+        QCOMPARE(rowById(audio, QStringLiteral("speechEndpointModel")).suggestions(settings).size(), 2);
+        QCOMPARE(rowById(refinement, QStringLiteral("refinementEndpointTest")).helpValue(settings),
+                 QStringLiteral("Not tested yet."));
+        QCOMPARE(rowById(refinement, QStringLiteral("localRunnerModel")).suggestions(settings).first().id,
+                 QStringLiteral("gemma4:e4b"));
+        QCOMPARE(rowById(refinement, QStringLiteral("localRunner")).options(settings).size(), 1);
+
+        // A saved runner that is not answering stays selectable and says so.
+        facts.runners.clear();
+        const QList<RowOption> runners = rowById(refinement, QStringLiteral("localRunner")).options(settings);
+        QCOMPARE(runners.size(), 1);
+        QCOMPARE(runners.first().label, QStringLiteral("Ollama (not running)"));
+    }
+
+    void localModelsPageFollowsRefinement()
+    {
+        SchemaContext context = fakeContext();
+        context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});
+        const SettingsSchema schema = buildSettingsSchema(context);
+        QStringList pageIds;
+        for (const SettingsPage &page : schema.pages) {
+            pageIds.append(page.id);
+        }
+        QCOMPARE(pageIds.indexOf(QStringLiteral("localModels")),
+                 pageIds.indexOf(QStringLiteral("refinement")) + 1);
+        const SettingsPage &page = schema.page(QStringLiteral("localModels"));
+        QCOMPARE(page.title, QStringLiteral("Local models"));
+        const SettingsRow &browser = rowById(page, QStringLiteral("localModelBrowser"));
+        QCOMPARE(browser.kind, RowKind::Custom);
+
+        // Choosing a model is choosing to dictate with it.
+        AppSettings settings;
+        QCOMPARE(browser.value(settings).toString(), QString());
+        browser.apply(settings, QStringLiteral("moonshine-small"));
+        QCOMPARE(settings.speech.providerId, QStringLiteral("local"));
+        QCOMPARE(settings.speech.local.modelId, QStringLiteral("moonshine-small"));
+        QCOMPARE(browser.value(settings).toString(), QStringLiteral("moonshine-small"));
+
+        // The GPU picker only earns a row with more than one GPU.
+        QVERIFY(!rowById(page, QStringLiteral("localDevice")).visible(settings, Capabilities{}));
+
+        // On macOS and Windows it is its own pane, next to Text.
+        const QStringList &run = schema.sidebarRuns.at(2);
+        QCOMPARE(run.indexOf(QStringLiteral("localModels")), run.indexOf(QStringLiteral("text")) + 1);
+
+        // A build that cannot run speech models has no page or pane for them.
+        const SettingsSchema without = buildSettingsSchema(fakeContext());
+        QVERIFY(!without.hasPage(QStringLiteral("localModels")));
+        QVERIFY(std::none_of(without.panes.cbegin(), without.panes.cend(), [](const SettingsPane &pane) {
+            return pane.id == QStringLiteral("localModels");
+        }));
+        for (const QStringList &otherRun : without.sidebarRuns) {
+            QVERIFY(!otherRun.contains(QStringLiteral("localModels")));
+        }
     }
 
     void aSavedMicrophoneSurvivesGoingMissing()

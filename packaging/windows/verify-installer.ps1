@@ -26,7 +26,7 @@ try {
     }
 
     $Exe = Join-Path $InstallDir "speecher.exe"
-    foreach ($Required in "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll") {
+    foreach ($Required in "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll") {
         if (-not (Test-Path (Join-Path $InstallDir $Required))) {
             throw "Installed application is missing $Required"
         }

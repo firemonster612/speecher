@@ -6,6 +6,12 @@
 #ifdef SPEECHER_E2E_HOOKS
 #include "providers/E2EProviders.h"
 #endif
+#include "providers/EndpointSpeechTranscriber.h"
+#include "providers/EndpointTranscriptRefiner.h"
+#include "providers/LocalRunner.h"
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+#include "providers/LocalSpeechTranscriber.h"
+#endif
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/ProviderRegistry.h"
 
@@ -39,7 +45,7 @@ QVector<ProviderStat> refinementProviderStats(const QString &id)
 
 } // namespace
 
-void registerProviders(ProviderRegistry &registry, SecretStore *secrets)
+void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const LocalModelStore *localModels)
 {
 #ifdef SPEECHER_E2E_HOOKS
     // E2E-build-only hook: deterministic stub providers for the headless
@@ -91,6 +97,24 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets)
         [](QObject *parent) {
             return new CodexSpeechTranscriber(parent);
         });
+#ifdef SPEECHER_WITH_LOCAL_SPEECH
+    registry.registerSpeechProvider(
+        {QStringLiteral("local"),
+         QStringLiteral("Local model"),
+         QStringLiteral("Download a model on the Local models page. It runs on this computer, with no account."),
+         false,
+         QStringLiteral("Runs on this computer: no account, works offline after a one-time "
+                        "download. English; speed depends on the model and this computer."),
+         {{QStringLiteral("Engine"), QStringLiteral("transcribe.cpp")},
+          {QStringLiteral("Languages"), QStringLiteral("English")},
+          {QStringLiteral("Speed"), QStringLiteral("Depends on the model and this computer")},
+          {QStringLiteral("Accuracy"), QStringLiteral("See the Local models page")}}},
+        [localModels](QObject *parent) {
+            return new LocalSpeechTranscriber(*localModels, parent);
+        });
+#else
+    Q_UNUSED(localModels);
+#endif
     registry.registerRefinementProvider(
         {QStringLiteral("openai"), QStringLiteral("OpenAI"),
          QStringLiteral("Uses your ChatGPT or Codex sign-in."), true,
@@ -101,6 +125,33 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets)
          QStringLiteral("Uses your Claude Code sign-in."), true,
          QString(), refinementProviderStats(QStringLiteral("anthropic"))},
         [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
+    registry.registerSpeechProvider(
+        {QStringLiteral("endpoint"),
+         QStringLiteral("Custom endpoint"),
+         QStringLiteral("Set your server's URL in Settings. Any server with an OpenAI-style "
+                        "audio transcriptions API works, including whisper.cpp and Speaches."),
+         false,
+         QStringLiteral("A server you run: text appears after you stop. "
+                        "Speed, accuracy and languages depend on the server and its model."),
+         {{QStringLiteral("Engine"), QStringLiteral("Your server's model")},
+          {QStringLiteral("Speed"), QStringLiteral("Text appears after you stop")},
+          {QStringLiteral("Formatting"), QStringLiteral("Whatever the server returns")}}},
+        [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
+    registry.registerRefinementProvider(
+        {QStringLiteral("endpoint"), QStringLiteral("Custom endpoint"),
+         QStringLiteral("A server you run, or CLI Proxy API, with an OpenAI- or Anthropic-compatible API."),
+         false, QString(),
+         {{QStringLiteral("Model"), QStringLiteral("Any model your server offers")},
+          {QStringLiteral("Speed"), QStringLiteral("Depends on the server and model")}}},
+        [](QObject *parent) { return new EndpointTranscriptRefiner(parent); });
+    registry.registerRefinementProvider(
+        {QStringLiteral("local"), QStringLiteral("Local model"),
+         QStringLiteral("Runs on this computer through Ollama, LM Studio or llama-server."),
+         false, QString(),
+         {{QStringLiteral("Model"), QStringLiteral("A cleanup model in your local runner")},
+          {QStringLiteral("Speed"), QStringLiteral("Depends on this computer")},
+          {QStringLiteral("Privacy"), QStringLiteral("The transcript stays on this computer")}}},
+        [](QObject *parent) { return new LocalRunnerRefiner(parent); });
 }
 
 } // namespace speecher

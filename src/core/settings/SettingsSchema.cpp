@@ -1,6 +1,9 @@
 #include "core/settings/SettingsSchema.h"
 
-#include "core/CliProxyUrl.h"
+#include "core/EndpointSettings.h"
+#include "core/SecretStore.h"
+
+#include "core/EndpointUrl.h"
 
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
@@ -375,6 +378,225 @@ SettingsRow infoRow(QString id, QString label, QString help, QString text)
     row.kind = RowKind::Info;
     row.value = [text = std::move(text)](const AppSettings &) { return QVariant(text); };
     return row;
+}
+
+SettingsRow textRow(QString id, QString label, QString help, Getter get, Setter set)
+{
+    SettingsRow row;
+    row.id = std::move(id);
+    row.label = std::move(label);
+    row.help = std::move(help);
+    row.kind = RowKind::Text;
+    row.value = [get = std::move(get)](const AppSettings &settings) { return QVariant(get(settings)); };
+    row.apply = [set = std::move(set)](AppSettings &settings, const QVariant &value) {
+        set(settings, value.toString().trimmed());
+    };
+    return row;
+}
+
+LiveFacts liveFacts(const SchemaContext &context)
+{
+    return context.liveFacts ? context.liveFacts() : LiveFacts{};
+}
+
+// Rows that only mean something while one provider is chosen sit under its
+// picker and come and go with it.
+std::function<bool(const AppSettings &, const Capabilities &)> whileSpeechProvider(const QString &id)
+{
+    return [id](const AppSettings &settings, const Capabilities &) {
+        return settings.speech.providerId == id;
+    };
+}
+
+std::function<bool(const AppSettings &, const Capabilities &)> whileRefinementProvider(const QString &id)
+{
+    return [id](const AppSettings &settings, const Capabilities &) {
+        return settings.refinement.providerId == id;
+    };
+}
+
+QList<RowOption> namedOptions(const QStringList &ids)
+{
+    QList<RowOption> options;
+    for (const QString &id : ids) {
+        options.append({id, id});
+    }
+    return options;
+}
+
+// Test connection: the row's subtitle is the last verdict.
+SettingsRow connectionTestRow(QString id, std::function<QString(const LiveFacts &)> status,
+                              std::function<LiveFacts(const AppSettings &)> facts)
+{
+    const QString untested = QStringLiteral("Not tested yet.");
+    SettingsRow row = actionRow(std::move(id), QStringLiteral("Connection"), untested,
+                                QStringLiteral("Test connection"));
+    row.helpValue = [status = std::move(status), facts = std::move(facts), untested](const AppSettings &settings) {
+        const QString verdict = status(facts(settings));
+        return verdict.isEmpty() ? untested : verdict;
+    };
+    return row;
+}
+
+// One line on which Local Runners answered the last look.
+QString runnersSummary(const LiveFacts &live)
+{
+    if (live.detectingRunners) {
+        return QStringLiteral("Looking for Ollama, LM Studio and llama-server…");
+    }
+    if (live.runners.isEmpty()) {
+        return QStringLiteral("No Ollama, LM Studio or llama-server is running on this computer.");
+    }
+    QStringList found;
+    for (const RowOption &runner : live.runners) {
+        found.append(runner.label);
+    }
+    return QStringLiteral("Running: %1.").arg(found.join(QStringLiteral(", ")));
+}
+
+// The speech Custom Endpoint, under the Transcription picker.
+QList<SettingsRow> speechEndpointRows(const std::function<LiveFacts(const AppSettings &)> &facts)
+{
+    QList<SettingsRow> rows{
+        textRow(QStringLiteral("speechEndpointUrl"),
+                QStringLiteral("Server URL"),
+                QStringLiteral("Any server with an OpenAI-style audio transcriptions API."),
+                [](const AppSettings &settings) { return settings.speech.endpoint.baseUrl; },
+                [](AppSettings &settings, const QString &value) { settings.speech.endpoint.baseUrl = value; }),
+        textRow(QStringLiteral("speechEndpointPath"),
+                QStringLiteral("Path"),
+                QStringLiteral("whisper.cpp uses /inference."),
+                [](const AppSettings &settings) { return settings.speech.endpoint.path; },
+                [](AppSettings &settings, const QString &value) { settings.speech.endpoint.path = value; }),
+        textRow(QStringLiteral("speechEndpointApiKey"),
+                QStringLiteral("API key"),
+                QStringLiteral("Optional. ") + keyStorageHelp(),
+                [](const AppSettings &settings) { return settings.speech.endpoint.apiKey; },
+                [](AppSettings &settings, const QString &value) { settings.speech.endpoint.apiKey = value; }),
+        textRow(QStringLiteral("speechEndpointModel"),
+                QStringLiteral("Model"),
+                QStringLiteral("Test the connection to list the server's models, or type one."),
+                [](const AppSettings &settings) { return settings.speech.endpoint.model; },
+                [](AppSettings &settings, const QString &value) { settings.speech.endpoint.model = value; }),
+        connectionTestRow(QStringLiteral("speechEndpointTest"),
+                          [](const LiveFacts &live) { return live.speechEndpointStatus; }, facts),
+    };
+    rows[2].secret = true;
+    rows[3].contentWidthHint = 20;
+    rows[3].suggestions = [facts](const AppSettings &settings) {
+        return namedOptions(facts(settings).speechEndpointModels);
+    };
+    for (SettingsRow &row : rows) {
+        row.visible = whileSpeechProvider(QStringLiteral("endpoint"));
+    }
+    return rows;
+}
+
+// Refinement through a Local Runner, under the Provider picker.
+QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
+{
+    SettingsRow runner = choiceRow(
+        QStringLiteral("localRunner"),
+        QStringLiteral("Runner"),
+        QStringLiteral("The app on this computer that runs the cleanup model."),
+        [facts](const AppSettings &settings) {
+            const LiveFacts live = facts();
+            QList<RowOption> options = live.runners;
+            const QString chosen = settings.refinement.localRunner.runner;
+            if (std::none_of(options.cbegin(), options.cend(),
+                             [&chosen](const RowOption &option) { return option.id == chosen; })) {
+                options.append({chosen, chosen.isEmpty() ? QStringLiteral("Not selected") : live.detectingRunners
+                                            ? localRunnerName(chosen)
+                                            : QStringLiteral("%1 (not running)").arg(localRunnerName(chosen))});
+            }
+            return options;
+        },
+        [](const AppSettings &settings) { return settings.refinement.localRunner.runner; },
+        [](AppSettings &settings, const QString &value) { settings.refinement.localRunner.runner = value; });
+    runner.helpValue = [facts](const AppSettings &) {
+        const LiveFacts live = facts();
+        if (live.detectingRunners) {
+            return QStringLiteral("Looking for Ollama, LM Studio and llama-server…");
+        }
+        return live.runners.isEmpty()
+            ? QStringLiteral("None found. Install Ollama, LM Studio or llama-server; until one runs, "
+                             "dictation delivers the raw transcript.")
+            : QStringLiteral("The app on this computer that runs the cleanup model.");
+    };
+
+    SettingsRow model = textRow(
+        QStringLiteral("localRunnerModel"),
+        QStringLiteral("Model"),
+        QStringLiteral("A cleanup model the runner has downloaded."),
+        [](const AppSettings &settings) { return settings.refinement.localRunner.model; },
+        [](AppSettings &settings, const QString &value) { settings.refinement.localRunner.model = value; });
+    model.contentWidthHint = 20;
+    model.suggestions = [facts](const AppSettings &settings) {
+        return namedOptions(facts().runnerModels.value(settings.refinement.localRunner.runner));
+    };
+
+    SettingsRow detect = actionRow(QStringLiteral("localRunnerDetect"),
+                                   QStringLiteral("Look for runners"),
+                                   QStringLiteral("Not checked yet."),
+                                   QStringLiteral("Look for runners again"));
+    detect.helpValue = [facts](const AppSettings &) { return runnersSummary(facts()); };
+
+    QList<SettingsRow> rows{std::move(runner), std::move(model), std::move(detect)};
+    for (SettingsRow &row : rows) {
+        row.visible = whileRefinementProvider(QStringLiteral("local"));
+    }
+    return rows;
+}
+
+// The refinement Custom Endpoint, under the Provider picker.
+QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const AppSettings &)> &facts)
+{
+    QList<SettingsRow> rows{
+        choiceRow(QStringLiteral("refinementEndpointServer"),
+                  QStringLiteral("Server"),
+                  QStringLiteral("Your own server, or the CLI Proxy API server set up under Accounts."),
+                  fixedOptions({
+                      {QString(), QStringLiteral("Custom")},
+                      {QStringLiteral("cliproxy"), QStringLiteral("CLI Proxy API")},
+                  }),
+                  [](const AppSettings &settings) { return settings.refinement.endpoint.preset; },
+                  [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.preset = value}); }),
+        choiceRow(QStringLiteral("refinementEndpointFormat"),
+                  QStringLiteral("Format"),
+                  QStringLiteral("The API the server speaks."),
+                  fixedOptions({
+                      {QStringLiteral("openai"), QStringLiteral("OpenAI-compatible (Chat Completions)")},
+                      {QStringLiteral("anthropic"), QStringLiteral("Anthropic-compatible (Messages)")},
+                  }),
+                  [](const AppSettings &settings) { return resolvedRefinementEndpoint(settings.refinement).format; },
+                  [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.format = value}); }),
+        textRow(QStringLiteral("refinementEndpointUrl"),
+                QStringLiteral("Server URL"),
+                QStringLiteral("The API base, such as http://localhost:11434/v1."),
+                [](const AppSettings &settings) { return resolvedRefinementEndpoint(settings.refinement).apiBase; },
+                [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.baseUrl = value}); }),
+        textRow(QStringLiteral("refinementEndpointApiKey"),
+                QStringLiteral("API key"),
+                QStringLiteral("Optional. ") + keyStorageHelp(),
+                [](const AppSettings &settings) { return resolvedRefinementEndpoint(settings.refinement).apiKey; },
+                [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.apiKey = value}); }),
+        textRow(QStringLiteral("refinementEndpointModel"),
+                QStringLiteral("Model"),
+                QStringLiteral("Test the connection to list the server's models, or type one."),
+                [](const AppSettings &settings) { return resolvedRefinementEndpoint(settings.refinement).model; },
+                [](AppSettings &settings, const QString &value) { editRefinementEndpoint(settings, {.model = value}); }),
+        connectionTestRow(QStringLiteral("refinementEndpointTest"),
+                          [](const LiveFacts &live) { return live.refinementEndpointStatus; }, facts),
+    };
+    rows[3].secret = true;
+    rows[4].contentWidthHint = 20;
+    rows[4].suggestions = [facts](const AppSettings &settings) {
+        return namedOptions(facts(settings).refinementEndpointModels);
+    };
+    for (SettingsRow &row : rows) {
+        row.visible = whileRefinementProvider(QStringLiteral("endpoint"));
+    }
+    return rows;
 }
 
 const QString kRepositoryUrl = QStringLiteral("https://github.com/firemonster612/speecher");
@@ -907,7 +1129,10 @@ SettingsPage audioPage(const SchemaContext &context)
         {
             {QStringLiteral("Transcription"),
              QString(),
-             {std::move(speechProvider), std::move(finalRetranscribe)}},
+             QList<SettingsRow>{std::move(speechProvider), std::move(finalRetranscribe)}
+                 + speechEndpointRows([context](const AppSettings &draft) {
+                     return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
+                 })},
             {QStringLiteral("Capture"), QString(), {std::move(device)}},
             {QStringLiteral("Silence trimming"),
              QString(),
@@ -1019,6 +1244,7 @@ SettingsPage refinementPage(const SchemaContext &context)
     };
     gateOnRefinementProvider(profileBehavior);
 
+    const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
     return {
         QStringLiteral("refinement"),
         QStringLiteral("Refinement"),
@@ -1028,18 +1254,137 @@ SettingsPage refinementPage(const SchemaContext &context)
         {
             {QStringLiteral("Refinement"),
              QString(),
-             {
+             QList<SettingsRow>{
                  choiceRow(QStringLiteral("refinementProvider"),
                            QStringLiteral("Provider"),
                            QStringLiteral("Cleans up dictated text after capture; None leaves it as spoken."),
                            fixedOptions(refiners),
                            [](const AppSettings &settings) { return settings.refinement.providerId; },
                            [](AppSettings &settings, const QString &value) { settings.refinement.providerId = value; }),
+             }
+                 + localRunnerRows(facts)
+                 + refinementEndpointRows([context](const AppSettings &draft) {
+                     return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
+                 })
+                 + QList<SettingsRow>{
                  std::move(fallbackProfile),
                  std::move(targetContext),
                  std::move(screenshots),
              }},
             {QStringLiteral("Prompt shaping"), QString(), {std::move(profileBehavior)}},
+        },
+    };
+}
+
+// Downloads, the Speed Test and the model choice live in the list and detail
+// custom row "localModelBrowser", which each front end supplies over
+// LocalModelCatalog, LocalModelStore and LocalSetup. The rest is plain rows.
+SettingsPage localModelsPage(const SchemaContext &context)
+{
+    const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
+
+    // The model dictation uses, empty while it uses another provider; choosing
+    // one switches transcription to it.
+    SettingsRow browser = customRow(QStringLiteral("localModelBrowser"),
+                                    QStringLiteral("Speech models"),
+                                    QStringLiteral("Models run on this computer, with no account "
+                                                   "and no network once downloaded."));
+    browser.value = [](const AppSettings &settings) {
+        return QVariant(settings.speech.providerId == QStringLiteral("local")
+                            ? settings.speech.local.modelId
+                            : QString());
+    };
+    browser.apply = [](AppSettings &settings, const QVariant &value) {
+        const QString modelId = value.toString();
+        if (modelId.isEmpty()) {
+            return;
+        }
+        settings.speech.local.modelId = modelId;
+        settings.speech.local.modelChosen = true;
+        settings.speech.providerId = QStringLiteral("local");
+    };
+
+    SettingsRow idleUnload = choiceRow(
+        QStringLiteral("localIdleUnload"),
+        QStringLiteral("Unload the model when idle"),
+        QStringLiteral("Frees memory. The next dictation loads it again while you speak."),
+        fixedOptions({
+            {QStringLiteral("1"), QStringLiteral("After 1 minute")},
+            {QStringLiteral("10"), QStringLiteral("After 10 minutes")},
+            {QStringLiteral("60"), QStringLiteral("After 1 hour")},
+            {QStringLiteral("0"), QStringLiteral("Never")},
+        }),
+        [](const AppSettings &settings) { return QString::number(settings.speech.local.idleUnloadMinutes); },
+        [](AppSettings &settings, const QString &value) {
+            settings.speech.local.idleUnloadMinutes = value.toInt();
+        });
+
+    SettingsRow device = choiceRow(
+        QStringLiteral("localDevice"),
+        QStringLiteral("Graphics card"),
+        QStringLiteral("Which GPU runs the model. Automatic picks the fastest."),
+        [facts](const AppSettings &settings) {
+            QList<RowOption> options{{QString(), QStringLiteral("Automatic")}};
+            options.append(facts().gpus);
+            const QString chosen = settings.speech.local.deviceId;
+            if (std::none_of(options.cbegin(), options.cend(),
+                             [&chosen](const RowOption &option) { return option.id == chosen; })) {
+                options.append({chosen, QStringLiteral("Missing graphics card"), QString(), false});
+            }
+            return options;
+        },
+        [](const AppSettings &settings) { return settings.speech.local.deviceId; },
+        [](AppSettings &settings, const QString &value) { settings.speech.local.deviceId = value; });
+    device.visible = [facts](const AppSettings &, const Capabilities &) { return facts().gpus.size() > 1; };
+
+    SettingsRow folder = actionRow(QStringLiteral("localModelFolder"),
+                                   QStringLiteral("Model folder"),
+                                   QStringLiteral("Where downloaded models are kept."),
+                                   QStringLiteral("Open model folder"));
+    folder.helpValue = [facts](const AppSettings &) { return facts().modelFolder; };
+
+    // Its caption names the runner, so a person sees what cleans their text.
+    SettingsRow runner = actionRow(QStringLiteral("localModelsRunner"),
+                                   QStringLiteral("Local runner"),
+                                   QStringLiteral("Not checked yet."),
+                                   QStringLiteral("Look for runners again"));
+    runner.value = [facts](const AppSettings &) {
+        const LiveFacts live = facts();
+        return QVariant(live.runners.isEmpty() ? QStringLiteral("No local runner found")
+                                               : live.runners.first().label);
+    };
+    runner.helpValue = [facts](const AppSettings &settings) {
+        const LiveFacts live = facts();
+        if (live.detectingRunners || live.runners.isEmpty()) {
+            return runnersSummary(live) + QStringLiteral(" Cleanup models run in a separate app; "
+                                                         "choose to look again.");
+        }
+        const RowOption &first = live.runners.first();
+        const int models = live.runnerModels.value(first.id).size();
+        QString line = QStringLiteral("Running · %1 %2").arg(models).arg(models == 1 ? QStringLiteral("model")
+                                                                                    : QStringLiteral("models"));
+        if (settings.refinement.providerId == QStringLiteral("local")
+            && settings.refinement.localRunner.runner == first.id) {
+            line += QStringLiteral(" · used for refinement");
+        }
+        return line;
+    };
+
+    return {
+        QStringLiteral("localModels"),
+        QStringLiteral("Local models"),
+        QStringLiteral("computer"),
+        QStringLiteral("cpu"),
+        QStringLiteral("localModels"),
+        {
+            {QString(), QString(), {std::move(browser)}},
+            {QStringLiteral("Behaviour"),
+             QString(),
+             {std::move(idleUnload), std::move(device), std::move(folder)}},
+            {QStringLiteral("Cleanup on this computer"),
+             QStringLiteral("Refinement can run through one of these; choose Local model under "
+                            "Refinement to use it."),
+             {std::move(runner)}},
         },
     };
 }
@@ -1831,16 +2176,17 @@ SettingsSection cliproxyServerSection()
         return QVariant(settings.refinement.cliproxyBaseUrl);
     };
     baseUrl.apply = [](AppSettings &settings, const QVariant &value) {
-        settings.refinement.cliproxyBaseUrl = cliproxyServerBase(value.toString());
+        settings.refinement.cliproxyBaseUrl = endpointServerBase(value.toString());
     };
     baseUrl.visible = cliproxyServerRowVisible;
 
     SettingsRow apiKey = customRow(
         QStringLiteral("cliproxyApiKey"),
         QStringLiteral("Server API key"),
-        QStringLiteral("One of the keys the server accepts. Needed when a server URL is set. "
-                       "Stored unencrypted in Speecher's settings file."));
-    apiKey.tooltip = QStringLiteral("Stored unencrypted in Speecher's settings file.");
+        QStringLiteral("One of the keys the server accepts. Needed when a server URL is set. ")
+            + keyStorageHelp());
+    apiKey.tooltip = keyStorageHelp();
+    apiKey.secret = true;
     apiKey.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyApiKey);
     };
@@ -1947,6 +2293,11 @@ QString fastModeTooltip(const QString &refinementProviderId)
                          "standard speed.");
 }
 
+QString keyStorageHelp()
+{
+    return QStringLiteral("Stored in the system keychain when there is one.");
+}
+
 QString restoreClipboardDescription()
 {
     return QStringLiteral("Restore the previous clipboard once Speecher confirms the paste. "
@@ -1961,6 +2312,11 @@ const SettingsPage &SettingsSchema::page(const QString &id) const
         }
     }
     qFatal("no settings page with id %s", qPrintable(id));
+}
+
+bool SettingsSchema::hasPage(const QString &id) const
+{
+    return std::any_of(pages.cbegin(), pages.cend(), [&id](const SettingsPage &page) { return page.id == id; });
 }
 
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QString &selectedDeviceId)
@@ -2100,7 +2456,8 @@ static QList<SettingsPane> settingsPanes()
         pane("dictation", "Dictation", "mic", {QStringLiteral("audio")},
              PaneLayout::Sections,
              {group("Transcription", {QStringLiteral("speechProvider"),
-                                      QStringLiteral("codexFinalRetranscribe")}),
+                                      QStringLiteral("codexFinalRetranscribe"),
+                                      QStringLiteral("speechEndpoint*")}),
               group("Microphone", {QStringLiteral("audioDevice"),
                                    QStringLiteral("captureMode")}),
               group("Timing", {QStringLiteral("preRollMs"),
@@ -2113,10 +2470,19 @@ static QList<SettingsPane> settingsPanes()
         pane("text", "Text", "text.cursor", {QStringLiteral("refinement")},
              PaneLayout::Sections,
              {group("Refinement", {QStringLiteral("refinementProvider"),
+                                   QStringLiteral("localRunner*"),
+                                   QStringLiteral("refinementEndpoint*"),
                                    QStringLiteral("defaultWritingProfile"),
                                    QStringLiteral("targetContextControl"),
                                    QStringLiteral("includeScreenshotContext")}),
               group("Profile Behavior", {QStringLiteral("writingProfileBehavior")})}),
+        pane("localModels", "Local Models", "cpu", {QStringLiteral("localModels")},
+             PaneLayout::Sections,
+             {group("Speech Models", {QStringLiteral("localModelBrowser")}),
+              group("Behaviour", {QStringLiteral("localIdleUnload"),
+                                  QStringLiteral("localDevice"),
+                                  QStringLiteral("localModelFolder")}),
+              group("Cleanup on This Computer", {QStringLiteral("localModelsRunner")})}),
         pane("delivery", "Delivery", "arrow.right.doc.on.clipboard",
              {QStringLiteral("output")}, PaneLayout::Sections,
              {group("Delivery", {QStringLiteral("outputMethod"),
@@ -2164,7 +2530,8 @@ static QList<QStringList> settingsSidebarRuns()
     return {
         {QStringLiteral("home")},
         {QStringLiteral("general")},
-        {QStringLiteral("dictation"), QStringLiteral("shortcut"), QStringLiteral("text")},
+        {QStringLiteral("dictation"), QStringLiteral("shortcut"), QStringLiteral("text"),
+         QStringLiteral("localModels")},
         {QStringLiteral("transcribe")},
         {QStringLiteral("delivery"), QStringLiteral("apps")},
         {QStringLiteral("vocabulary"), QStringLiteral("accounts")},
@@ -2181,8 +2548,22 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
                               correctionsPage(),
                               bindingsPage(),
                               providersPage()};
+    QList<SettingsPane> panes = settingsPanes();
+    QList<QStringList> runs = settingsSidebarRuns();
+    // Local models exists where this build runs speech models, which is when
+    // the registry offers the local speech provider.
+    const QString localModels = QStringLiteral("localModels");
+    if (std::any_of(context.speechProviders.cbegin(), context.speechProviders.cend(),
+                    [](const RowOption &provider) { return provider.id == QStringLiteral("local"); })) {
+        pages.insert(4, localModelsPage(context));
+    } else {
+        panes.removeIf([&localModels](const SettingsPane &pane) { return pane.id == localModels; });
+        for (QStringList &run : runs) {
+            run.removeAll(localModels);
+        }
+    }
     pages.append(whatsNewPage(pages, context));
-    return {std::move(pages), settingsPanes(), settingsSidebarRuns()};
+    return {std::move(pages), std::move(panes), std::move(runs)};
 }
 
 QList<RowOption> cleanupStrengths()
@@ -2269,10 +2650,20 @@ QList<RowOption> authModeOptions(const QString &rowId)
 AppSettings mergeSettingsDraft(const SettingsSchema &schema, const AppSettings &loaded,
                                const AppSettings &draft, AppSettings current)
 {
+    const QString endpointKey = SecretStore::settingsKey(SecretStore::Secret::RefinementEndpointKey);
+    const QString proxyKey = SecretStore::settingsKey(SecretStore::Secret::CliproxyApiKey);
+    const bool clearedUnreadKey = loaded.unreadSecretKeys.contains(endpointKey)
+        && !draft.unreadSecretKeys.contains(endpointKey);
+    const bool detachedUnreadProxyKey = loaded.unreadSecretKeys.contains(proxyKey)
+        && (loaded.refinement.endpoint.preset == QStringLiteral("cliproxy") || loaded.refinement.endpoint.useCliproxyKey)
+        && draft.refinement.endpoint.preset.isEmpty() && !draft.refinement.endpoint.useCliproxyKey;
     for (const SettingsPage &page : schema.pages) {
         for (const SettingsSection &section : page.sections) {
             for (const SettingsRow &row : section.rows) {
-                if (!row.value || !row.apply || row.value(loaded) == row.value(draft)) continue;
+                if (!row.value || !row.apply) continue;
+                const bool editedKey = row.id == QStringLiteral("refinementEndpointApiKey")
+                    && (clearedUnreadKey || detachedUnreadProxyKey);
+                if (!editedKey && row.value(loaded) == row.value(draft)) continue;
                 const CollectionDescriptor &collection = row.collection;
                 if (collection.identityColumn.isEmpty()) {
                     row.apply(current, row.value(draft));

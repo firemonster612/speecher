@@ -1,6 +1,7 @@
 #include "frontend/qt/QtFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
@@ -17,6 +18,7 @@
 #endif
 
 #include <QApplication>
+#include <QAbstractButton>
 #include <QListWidget>
 #include <QPushButton>
 #include <QScrollArea>
@@ -44,7 +46,7 @@ QtFrontEnd::QtFrontEnd(ApplicationController *controller, QObject *parent)
     // Like the mac menu bar extra, the tray icon exists from launch: in
     // daemon mode it is the only sign the process is running and the global
     // shortcut has something to reach.
-    new LinuxTrayIcon(controller, this);
+    m_tray = new LinuxTrayIcon(controller, this);
     installLinuxAuthPrompt();
 #endif
     wireSessionToPopup();
@@ -187,18 +189,28 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         return false;
     }
     // Screenshot automation: SPEECHER_GRAB_PAGE names a page (home, general,
-    // audio, output, auth, refinement, vocabulary), optionally with a tab
-    // index ("vocabulary:2"), or "transcribe", to show before the grab.
-    // "transcribe-window" grabs the compact Transcribe window instead.
+    // audio, output, auth, refinement, localmodels, vocabulary), optionally
+    // with a tab index ("vocabulary:2"), or "transcribe", to show before the
+    // grab. "transcribe-window" grabs the compact Transcribe window instead.
     // Unset or unknown leaves the window as launched, which is Home.
     static const QStringList pageNames{
         QStringLiteral("general"), QStringLiteral("audio"), QStringLiteral("output"),
-        QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("vocabulary")};
+        QStringLiteral("auth"), QStringLiteral("refinement"), QStringLiteral("localmodels"),
+        QStringLiteral("vocabulary")};
     const QStringList request = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower().split(u':');
     // "setup" or "setup:<page title>" grabs the setup assistant instead,
     // advanced to the first page whose title matches (e.g. "setup:refinement").
     if (request.first() == QStringLiteral("setup")) {
+        // SPEECHER_GRAB_DOWNLOAD names a Local Model to start downloading
+        // first, so later pages show a download in flight.
+        if (const LocalModel *model = findLocalModel(qEnvironmentVariable("SPEECHER_GRAB_DOWNLOAD"))) {
+            m_controller->localSetup()->download(*model);
+        }
         auto *assistant = new SetupAssistant(m_controller);
+        const QStringList assistantSize = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(u'x');
+        if (assistantSize.size() == 2) {
+            assistant->resize(assistantSize.at(0).toInt(), assistantSize.at(1).toInt());
+        }
         const QStringList titles = assistant->pageTitles();
         const QString wanted = request.value(1);
         int target = 0;
@@ -218,6 +230,10 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         assistant->show();
         for (int i = 0; i < target; ++i) {
             assistant->next();
+        }
+        if (!clickGrabButtons(assistant)) {
+            assistant->deleteLater();
+            return false;
         }
         // The credential probes run off-thread and answer through queued
         // signals; each answer changes a label and posts a relayout. One
@@ -288,26 +304,35 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         }
         QCoreApplication::processEvents();
     }
-    // SPEECHER_GRAB_CLICK names a button (by objectName) to click once the
-    // page is up, so a grab can show what an interaction leaves behind.
-    const QString click = qEnvironmentVariable("SPEECHER_GRAB_CLICK");
-    if (!click.isEmpty()) {
-        auto *button = target->findChild<QPushButton *>(click);
+    // SPEECHER_GRAB_CLICK names buttons (by objectName, comma-separated) to
+    // click once the page is up, so a grab can show what an interaction
+    // leaves behind. SPEECHER_GRAB_WAIT_MS lets what they started run first.
+    if (!clickGrabButtons(target)) {
+        return false;
+    }
+    return target->grab().save(path);
+}
+
+bool QtFrontEnd::clickGrabButtons(QWidget *window)
+{
+    const QStringList clicks = qEnvironmentVariable("SPEECHER_GRAB_CLICK").split(u',', Qt::SkipEmptyParts);
+    for (const QString &click : clicks) {
+        QCoreApplication::processEvents();
+        auto *button = window->findChild<QAbstractButton *>(click);
         if (!button) {
             qWarning("SPEECHER_GRAB_CLICK names no button: %s", qPrintable(click));
             return false;
         }
         button->click();
-        QCoreApplication::processEvents();
     }
-    // SPEECHER_GRAB_WAIT_MS lets what the click started run for a while
-    // first, so a grab can catch work in progress or its result.
-    if (const int waitMs = qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS"); waitMs > 0) {
-        QEventLoop wait;
-        QTimer::singleShot(waitMs, &wait, &QEventLoop::quit);
-        wait.exec();
-    }
-    return target->grab().save(path);
+    QElapsedTimer settle;
+    settle.start();
+    const int waitMs = qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS");
+    do {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QThread::msleep(20);
+    } while (settle.elapsed() < waitMs);
+    return true;
 }
 
 void QtFrontEnd::showDictationError(const QString &message)
@@ -319,6 +344,19 @@ void QtFrontEnd::showDictationError(const QString &message)
 void QtFrontEnd::alert()
 {
     QApplication::beep();
+}
+
+void QtFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message)
+{
+    if ((m_appWindow && m_appWindow->isVisible()) || (m_setupAssistant && m_setupAssistant->isVisible())) {
+        return;
+    }
+#ifdef Q_OS_LINUX
+    m_tray->showMessage(title, message);
+#else
+    Q_UNUSED(title);
+    Q_UNUSED(message);
+#endif
 }
 
 void QtFrontEnd::watchForFirstFrame(QWidget *window)

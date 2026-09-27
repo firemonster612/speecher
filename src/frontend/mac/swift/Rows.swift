@@ -44,11 +44,22 @@ struct RowView: View {
         case .number:
             LabeledContent { NumberField(row: row, model: model) } label: { label }
         case .text:
-            LabeledContent { TextRowField(row: row, model: model) } label: { label }
+            LabeledContent {
+                if row.secret {
+                    SecureTextRowField(row: row, model: model)
+                } else {
+                    TextRowField(row: row, model: model)
+                }
+            } label: { label }
         case .info:
             LabeledContent { Text(Self.text(row.value)) } label: { label }
         case .action:
-            LabeledContent { Button(row.actionLabel) { model.trigger(row.rowId) } } label: { label }
+            // A caption that follows the state (a Local Runner's name) is the
+            // row's value; without one the label names the row.
+            LabeledContent { Button(row.actionLabel) { model.trigger(row.rowId) } } label: {
+                Self.label(RowView.text(row.value).isEmpty ? row.label : RowView.text(row.value),
+                           help: row.enabled ? row.help : "")
+            }
         case .collection:
             // The card's heading and footnote carry this row's label and help,
             // so the table is all there is to draw.
@@ -68,6 +79,8 @@ struct RowView: View {
             WritingProfileRows(row: row, model: model)
         } else if row.rowId == "whatsNewNotes" {
             releaseNotes
+        } else if row.rowId == "localModelBrowser" {
+            LocalModelBrowser(row: row, model: model)
         } else if row.rowId == "openAiAuth" {
             LabeledContent { CredentialField(model: model) } label: { label }
         } else if row.rowId == "anthropicAuthMode" {
@@ -79,7 +92,7 @@ struct RowView: View {
             }
         } else if row.options.isEmpty, row.value is String {
             LabeledContent {
-                if row.rowId == "cliproxyApiKey" {
+                if row.secret {
                     SecureTextRowField(row: row, model: model)
                 } else {
                     TextRowField(row: row, model: model)
@@ -125,16 +138,21 @@ struct RowView: View {
         .disabled(row.options.allSatisfy { !$0.enabled })
     }
 
-    /// The name of the setting and, under it, what it does. Two Texts in a
-    /// stock label is how a settings row says that; SwiftUI sizes and colours
-    /// the second one, which is why there is no font or colour here.
-    @ViewBuilder private var label: some View {
-        Text(row.label)
-        // The gate note in the row body replaces the description while the
-        // row is disabled, matching the Qt and Windows front ends; showing
-        // both would give a gated row two competing descriptions.
-        if row.enabled, !row.help.isEmpty {
-            Text(row.help)
+    // The gate note in the row body replaces the description while the row is
+    // disabled, matching the Qt and Windows front ends; showing both would give
+    // a gated row two competing descriptions.
+    private var label: some View {
+        Self.label(row.label, help: row.enabled ? row.help : "")
+    }
+
+    /// The name of a setting and, under it, what it does. Two Texts in a stock
+    /// label is how a settings row says that; SwiftUI sizes and colours the
+    /// second one, which is why there is no font or colour here. A builder
+    /// rather than a view, so the form still sees two Texts.
+    @ViewBuilder static func label(_ title: String, help: String) -> some View {
+        Text(title)
+        if !help.isEmpty {
+            Text(help)
         }
     }
 
@@ -212,7 +230,7 @@ struct TextRowField: View {
     @FocusState private var editing: Bool
 
     var body: some View {
-        if row.suggestions.isEmpty {
+        if !row.suggests {
             TextField("", text: $text)
                 .labelsHidden()
                 .focused($editing)
@@ -281,6 +299,12 @@ struct SuggestingField: NSViewRepresentable {
 
     func updateNSView(_ box: NSComboBox, context: Context) {
         context.coordinator.commit = commit
+        // The list can arrive after the field, as a server's models do once
+        // its connection is tested.
+        if box.objectValues as? [String] != suggestions {
+            box.removeAllItems()
+            box.addItems(withObjectValues: suggestions)
+        }
         // Replacing the text under someone who is typing in it is the one thing
         // a redraw must not do.
         if !context.coordinator.editing, box.stringValue != text {

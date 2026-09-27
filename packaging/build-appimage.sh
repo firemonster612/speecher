@@ -78,6 +78,7 @@ require_tool file
 require_tool ldd
 require_tool ninja
 require_tool patchelf
+require_tool strip
 
 BUILD_DIR="$(readlink -m -- "$BUILD_DIR")"
 APPDIR_PATH="$(readlink -m -- "$APPDIR_PATH")"
@@ -125,6 +126,14 @@ echo "Compiling speecher"
 cmake --build "$BUILD_DIR" --parallel
 echo "Installing into AppDir at $APPDIR_PATH"
 DESTDIR="$APPDIR_PATH" cmake --install "$BUILD_DIR" --prefix /usr
+# The build keeps debug info for crash reports on the build host; the package
+# does not need it. libexec stays as built: the key-watch installer checks
+# its daemon against a digest compiled from the unstripped file.
+echo "Stripping debug info"
+# Regular files only: strip rewrites a symlink into a second copy.
+find "$APPDIR_PATH/usr/bin/speecher" "$APPDIR_PATH/usr/lib" -type f \
+  \( -name speecher -o -name 'libtranscribe.so.*' -o -name 'libggml*.so*' \) \
+  -exec strip --strip-debug {} +
 
 # Bundle the Qt the build actually linked against. The installed binary has no
 # RPATH and the host may carry a different system Qt, so both the ldd closure
@@ -158,11 +167,13 @@ fi
 
 mkdir -p "$APPDIR_PATH/usr/lib" "$APPDIR_PATH/usr/plugins"
 
+# The Vulkan loader belongs to the system beside its GPU drivers. Without one,
+# transcribe.cpp's Vulkan module does not load and local models use the CPU.
 skip_library() {
   local name
   name="$(basename "$1")"
   case "$name" in
-    ld-linux*|linux-vdso*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libnss_*.so*|libcrypt.so*|libGL*.so*|libEGL*.so*|libOpenGL*.so*|libwayland-client.so*|libxcb.so*|libX11.so*|libfontconfig.so*|libfreetype.so*|libharfbuzz.so*)
+    ld-linux*|linux-vdso*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*|libutil.so*|libnss_*.so*|libcrypt.so*|libGL*.so*|libEGL*.so*|libOpenGL*.so*|libwayland-client.so*|libxcb.so*|libX11.so*|libfontconfig.so*|libfreetype.so*|libharfbuzz.so*|libvulkan.so*)
       return 0
       ;;
     *)
@@ -184,7 +195,9 @@ copy_library() {
 copy_deps_for_elf() {
   local elf="$1"
   local dependencies
-  dependencies="$(LD_LIBRARY_PATH="$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>&1 || true)"
+  # The install step already put transcribe.cpp's libraries in usr/lib, and
+  # nothing has an RUNPATH pointing there yet.
+  dependencies="$(LD_LIBRARY_PATH="$APPDIR_PATH/usr/lib:$QT_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$elf" 2>&1 || true)"
   if grep -Fq 'not found' <<<"$dependencies"; then
     echo "Unresolved dependency while bundling $elf:" >&2
     printf '%s\n' "$dependencies" >&2

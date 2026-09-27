@@ -8,6 +8,7 @@ enum class AppPageId {
     Output,
     Auth,
     Refinement,
+    LocalModels,
     Vocabulary,
 };
 

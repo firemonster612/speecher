@@ -172,7 +172,7 @@ QStringList providerIds(const QList<ProviderDescriptor> &providers)
 QString helpText()
 {
     ProviderRegistry registry;
-    registerProviders(registry, nullptr);
+    registerProviders(registry, nullptr, nullptr);
     const QString separator = QStringLiteral(", ");
     return QString::fromUtf8(kHelp)
         .arg(providerIds(registry.speechProviders()).join(separator),

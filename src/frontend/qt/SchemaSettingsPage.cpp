@@ -24,31 +24,25 @@ namespace speecher {
 
 namespace {
 
-QStringList optionIds(const QList<RowOption> &options)
+bool offersExactly(const QComboBox *combo, const QList<RowOption> &options)
 {
-    QStringList ids;
-    ids.reserve(options.size());
-    for (const RowOption &option : options) {
-        ids.append(option.id);
+    if (combo->count() != options.size()) {
+        return false;
     }
-    return ids;
-}
-
-QStringList itemIds(const QComboBox *combo)
-{
-    QStringList ids;
-    ids.reserve(combo->count());
     for (int index = 0; index < combo->count(); ++index) {
-        ids.append(combo->itemData(index).toString());
+        if (combo->itemData(index).toString() != options.at(index).id
+            || combo->itemText(index) != options.at(index).label) {
+            return false;
+        }
     }
-    return ids;
+    return true;
 }
 
 // Rebuilding a combo resets its selection, so leave one that already offers the
 // same choices alone: the caller selects the value straight after.
 void setOptions(QComboBox *combo, const QList<RowOption> &options)
 {
-    if (itemIds(combo) == optionIds(options)) {
+    if (offersExactly(combo, options)) {
         return;
     }
     const QSignalBlocker blocker(combo);
@@ -593,9 +587,16 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
     case RowKind::Text: {
         if (!descriptor.suggestions) {
             auto *edit = new QLineEdit(card);
+            if (descriptor.secret) {
+                edit->setEchoMode(QLineEdit::Password);
+            }
             connect(edit, &QLineEdit::textEdited, this, announce);
             row.value = [edit] { return edit->text(); };
-            row.setValue = [edit](const QVariant &value) { edit->setText(value.toString()); };
+            // setText moves the cursor to the end even for the same text, and
+            // an automatic connection check can reload the page mid-typing.
+            row.setValue = [edit](const QVariant &value) {
+                if (edit->text() != value.toString()) edit->setText(value.toString());
+            };
             return edit;
         }
         // Free text that has values worth offering is an editable combo: the
@@ -685,6 +686,8 @@ void SchemaSettingsPage::appendToDraft(AppSettings &draft) const
         // and must not overwrite the saved value with its empty one.
         const QVariant value = row.value();
         if (value.isValid()) {
+            if (row.descriptor.secret && row.descriptor.value
+                && value == row.descriptor.value(m_loaded)) continue;
             row.descriptor.apply(draft, value);
         }
     }
@@ -727,7 +730,7 @@ void SchemaSettingsPage::refreshRows()
         const Row &row = m_rows.at(index);
         if (row.descriptor.visible) {
             shown[index] = row.descriptor.visible(draft, m_capabilities);
-            row.frame->setVisible(shown[index]);
+            settings::setCardRowVisible(row.frame, shown[index]);
         }
         if (row.descriptor.kind == RowKind::Info && row.descriptor.value && row.setValue) {
             row.setValue(row.descriptor.value(draft));

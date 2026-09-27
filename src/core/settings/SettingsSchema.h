@@ -2,6 +2,7 @@
 
 #include "core/AppSettings.h"
 
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QVariant>
@@ -151,6 +152,8 @@ struct SettingsRow {
     // Text rows only: values worth offering, though the row still takes any
     // text a person types.
     std::function<QList<RowOption>(const AppSettings &)> suggestions;
+    // Text rows only: a key or password, shown masked.
+    bool secret = false;
     std::function<bool(const AppSettings &, const Capabilities &)> enabled;
     // A row that is only worth showing sometimes, such as a caution about the
     // model currently chosen. Absent means always.
@@ -219,6 +222,8 @@ struct SettingsPane {
 };
 
 struct SettingsSchema {
+    // localModels is among them only when speechProviders offers "local",
+    // and so is its pane.
     QList<SettingsPage> pages;
     QList<SettingsPane> panes;
     // The sidebar's runs, in order: pane ids, each run separated from the next
@@ -227,6 +232,7 @@ struct SettingsSchema {
     QList<QStringList> sidebarRuns;
 
     const SettingsPage &page(const QString &id) const;
+    bool hasPage(const QString &id) const;
 };
 
 // A refinement provider as the settings surface sees it: what to call it, and
@@ -235,6 +241,37 @@ struct RefinementProvider {
     QString id;
     QString label;
     bool supportsScreenshotContext = false;
+};
+
+// What the app layer last learned about this computer and the servers a
+// person named, for the rows that report it. ApplicationController's
+// LocalSetup builds it; a front end hands the schema a way to read it, runs the
+// actions below, and refreshes the rows when LocalSetup says changed().
+//
+// Actions a front end runs for these rows, by row id:
+// - speechEndpointTest: LocalSetup::checkSpeechEndpoint(draft.speech.endpoint)
+// - refinementEndpointTest: LocalSetup::checkRefinementEndpoint(draft.refinement)
+// - localRunnerDetect, localModelsRunner: LocalSetup::detectRunners()
+// - localModelFolder: open LocalModelStore::directory() in the file manager
+struct LiveFacts {
+    // The last connection check's verdict, "Checking…" while one runs, empty
+    // before the first. LocalSetup runs one on its own once an endpoint in
+    // use is filled in, as well as for Test connection.
+    QString speechEndpointStatus;
+    QStringList speechEndpointModels;
+    QString refinementEndpointStatus;
+    QStringList refinementEndpointModels;
+    // Local Runners found on this computer: id as LocalRunnerSettings stores
+    // it, label with the version.
+    QList<RowOption> runners;
+    // What each found runner can serve, by runner id.
+    QHash<QString, QStringList> runnerModels;
+    bool detectingRunners = false;
+    // Where Local Model files live and how much room they take.
+    QString modelFolder;
+    // The GPUs a Local Model can run on, by transcribe.cpp device id. The
+    // picker only shows when there is more than one.
+    QList<RowOption> gpus;
 };
 
 // What the descriptors need to be built. A value type, so a test can make one
@@ -248,6 +285,10 @@ struct SchemaContext {
     bool virtualKeyboardSetup = false;
     QString currentVersion;
     QString lastSeenVersion;
+    // Absent reads as nothing learned yet.
+    std::function<LiveFacts()> liveFacts;
+    // Endpoint verdicts must match the draft currently on screen.
+    std::function<LiveFacts(const AppSettings &)> liveFactsForDraft;
 };
 
 QList<RowOption> cleanupStrengths();
@@ -288,6 +329,9 @@ QString openAiSignInHelp();
 // own fast-mode checkboxes. Both must say the same thing.
 QString fastModeHelp(const QString &refinementProviderId);
 QString fastModeTooltip(const QString &refinementProviderId);
+
+// Where a key the settings surface takes is kept, as a row's help says it.
+QString keyStorageHelp();
 
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device

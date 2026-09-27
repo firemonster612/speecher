@@ -54,6 +54,10 @@ struct RowSnapshot {
     QVariant value;
     QList<RowOption> options;
     QList<RowOption> suggestions;
+    // Offers values even while the list is empty, so the control stays the same.
+    bool suggests = false;
+    // Text rows only: shown masked.
+    bool secret = false;
     bool enabled = true;
     QString tooltip;
     QString disabledHelp;
@@ -92,6 +96,9 @@ public:
     void commit();
     // Discards edits left from the last showing and re-reads the store.
     void reloadDraft();
+    // Takes in what the store gained since the draft was read, such as the
+    // model LocalSetup moved dictation to, keeping the draft's own edits.
+    void syncWithStore();
     // Lets the rows whose choices are slow to gather — a device enumeration —
     // offer them from now on. Called once the window has painted.
     void loadExpensiveRows();

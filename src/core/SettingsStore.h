@@ -9,6 +9,8 @@
 
 namespace speecher {
 
+class SecretStore;
+
 bool migrateSettingsIdentity(QSettings &newSettings,
                              QSettings &oldSettings,
                              QString *error = nullptr);
@@ -23,7 +25,19 @@ public:
     using LaunchAtLoginReconciler = std::function<bool(bool, QString *)>;
 
     explicit SettingsStore(QObject *parent = nullptr);
+    // Carries every saved endpoint and CLI Proxy API key, so a settings
+    // surface shows and saves them all. A key SecretStore::prefetch has not
+    // cached yet waits for the keyring (1.5 s at most).
+    AppSettings snapshot() const;
+    // Never waits for the keyring on the GUI thread. Startup preparation
+    // resolves unread keys for the selected providers on its worker.
+    AppSettings dictationSnapshot() const;
+    // Run on the startup worker. Returns an error if a required key is unreadable.
+    static QString resolveDictationSecrets(AppSettings &settings);
     void applySnapshot(const AppSettings &draft);
+    SecretStore *secrets() const;
+    QString cliproxyApiKey() const;
+    void setCliproxyApiKey(const QString &value);
     bool launchAtLogin() const;
     void setLaunchAtLogin(bool enabled);
     void setLaunchAtLoginReconciler(LaunchAtLoginReconciler reconcile);
@@ -44,8 +58,6 @@ public:
     using SettingsCodecs::setCliproxyOauthDir;
     using SettingsCodecs::cliproxyBaseUrl;
     using SettingsCodecs::setCliproxyBaseUrl;
-    using SettingsCodecs::cliproxyApiKey;
-    using SettingsCodecs::setCliproxyApiKey;
     using SettingsCodecs::appRecognitionRules;
     using SettingsCodecs::audioCaptureSettings;
     using SettingsCodecs::bindingRules;
@@ -73,6 +85,7 @@ public:
     using SettingsCodecs::recordVocabularyUsage;
     using SettingsCodecs::refinementPreviewEnabled;
     using SettingsCodecs::refinementProvider;
+    using SettingsCodecs::refinementProviderChosen;
     using SettingsCodecs::refinementStyle;
     using SettingsCodecs::transcriptionPreviewEnabled;
     using SettingsCodecs::removeLearnedCorrection;
@@ -107,6 +120,14 @@ public:
     using SettingsCodecs::setRestoreClipboardAfterTyping;
     using SettingsCodecs::setSoundsEnabled;
     using SettingsCodecs::setSpeechProvider;
+    using SettingsCodecs::localSpeechSettings;
+    using SettingsCodecs::setLocalSpeechSettings;
+    using SettingsCodecs::localRunnerSettings;
+    using SettingsCodecs::setLocalRunnerSettings;
+    using SettingsCodecs::speechEndpointSettings;
+    using SettingsCodecs::setSpeechEndpointSettings;
+    using SettingsCodecs::refinementEndpointSettings;
+    using SettingsCodecs::setRefinementEndpointSettings;
     using SettingsCodecs::setCodexFinalRetranscribe;
     using SettingsCodecs::setSetupCompleted;
     using SettingsCodecs::setStoredApiKeyFallback;
@@ -122,7 +143,6 @@ public:
     using SettingsCodecs::setUpdatesLastRunBuildNumber;
     using SettingsCodecs::setUpdatesPendingWhatsNewVersion;
     using SettingsCodecs::setUpdatesLastCheckTime;
-    using SettingsCodecs::snapshot;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
     using SettingsCodecs::codexFinalRetranscribe;
@@ -164,6 +184,8 @@ public:
     QSettings &raw();
 
 signals:
+    // After applySnapshot, with what dictationSnapshot read just before it.
+    void snapshotApplied(const AppSettings &previous);
     void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
     void correctionLearningEnabledChanged(bool enabled);
     void updateSettingsChanged();
@@ -175,7 +197,10 @@ signals:
 private:
     void emitAudioCaptureSettingsChangedIfNeeded(const AudioCaptureSettings &previous);
 
+    AppSettings snapshotReading(bool waitForKeyring) const;
+
     LaunchAtLoginReconciler m_reconcileLaunchAtLogin;
+    SecretStore *m_secrets = nullptr;
 };
 
 } // namespace speecher

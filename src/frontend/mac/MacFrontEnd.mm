@@ -1,6 +1,7 @@
 #include "frontend/mac/MacFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/UpdateController.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -79,6 +80,11 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
         }
         if (id == QStringLiteral("checkForUpdates")) {
             controller->updates()->checkForUpdates(controller->settings()->updateChannel());
+            return;
+        }
+        // Every edit on macOS commits at once, so the settings are what the
+        // window shows.
+        if (controller->localSetup()->runSettingsAction(id, controller->settings()->snapshot())) {
             return;
         }
         if (id == QStringLiteral("enableAccessibility")) {
@@ -215,6 +221,11 @@ void MacFrontEnd::showDictationError(const QString &message)
 void MacFrontEnd::alert()
 {
     QApplication::beep();
+}
+
+void MacFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message)
+{
+    [m_native->ui notifyIfNoWindowShownWithTitle:title.toNSString() message:message.toNSString()];
 }
 
 } // namespace speecher

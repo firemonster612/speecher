@@ -3,8 +3,8 @@
 #include "providers/CliProxyCredentials.h"
 #include "providers/CodexDictationClient.h"
 #include "providers/OpenAiAuthProvider.h"
+#include "providers/PcmWav.h"
 
-#include <QDataStream>
 #include <QHttpMultiPart>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -32,22 +32,6 @@ QString transcribeEndpoint()
     const QString override = qEnvironmentVariable("SPEECHER_CODEX_TRANSCRIBE_URL");
     return override.isEmpty() ? QStringLiteral("https://chatgpt.com/backend-api/transcribe")
                               : override;
-}
-
-QByteArray wavFromPcm16Mono(const QByteArray &pcm, int rateHz)
-{
-    QByteArray wav;
-    QDataStream stream(&wav, QIODevice::WriteOnly);
-    stream.setByteOrder(QDataStream::LittleEndian);
-    stream.writeRawData("RIFF", 4);
-    stream << quint32(36 + pcm.size());
-    stream.writeRawData("WAVEfmt ", 8);
-    stream << quint32(16) << quint16(1) << quint16(1)
-           << quint32(rateHz) << quint32(rateHz * 2) << quint16(2) << quint16(16);
-    stream.writeRawData("data", 4);
-    stream << quint32(pcm.size());
-    stream.writeRawData(pcm.constData(), pcm.size());
-    return wav;
 }
 
 SpeechPrepareResult prepareCodex(const SpeechSettings &settings, QString *accessToken)

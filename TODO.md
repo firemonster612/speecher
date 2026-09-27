@@ -43,9 +43,10 @@ complete.
 - [x] **A6 — Attempt lifecycle.** A speech attempt has explicit start,
   finish-input, completion, typed failure, and cancellation behavior. Final
   processing waits for authoritative completion rather than a fixed delay.
-- [x] **A7 — No full-audio replay.** Speecher streams each captured PCM chunk
-  once and does not retain or resend the complete recording after stop. Provider
-  failures surface promptly instead of starting a slow second transcription.
+- [x] **A7 — No full-audio replay.** Speecher never resends a recording after a
+  provider failure. Provider failures surface promptly instead of starting a
+  slow second transcription. Batch providers (custom speech endpoints, Codex
+  final re-transcription) may hold one attempt's audio until it is sent once.
 - [x] **A8 — Session isolation.** Settings and a CLI output override are
   snapshotted when recording starts. Starting, cancelling, or completing a
   session cannot leak transcript, screenshot, audio, or provider events into

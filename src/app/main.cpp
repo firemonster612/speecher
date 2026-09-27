@@ -6,9 +6,9 @@
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
-#include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
+#include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
 #ifndef SPEECHER_WITH_WINUI
 #include "frontend/qt/QtFrontEnd.h"
@@ -265,9 +265,9 @@ int main(int argc, char **argv)
         // and nothing shared with a running instance's dictation.
         QCoreApplication app(argc, argv);
         SettingsStore settings;
-        SecretStore secrets(&settings);
+        LocalModelStore localModels;
         ProviderRegistry providers;
-        registerProviders(providers, &secrets);
+        registerProviders(providers, settings.secrets(), &localModels);
         return runHeadlessTranscribe(decision.transcribeFiles, decision.headless, &settings, &providers,
                                      std::cout, std::cerr, stderrIsTerminal());
     }

@@ -306,6 +306,7 @@ final class SpeecherSettingsWindow {
                 toolbar.removeItem(at: index)
             }
             model.loadDeferredRows()
+            model.refreshLocalSetup()
         }
     }
 

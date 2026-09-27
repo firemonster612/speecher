@@ -30,13 +30,14 @@ QString anthropicCredentialStatus(const AppSettings &draft,
 
 
 // The control for a Custom row, by id: pickers over customRowOptions, the
-// credential field, the CLI Proxy text rows, the profile grid and the release
-// notes. Null for an id this front end does not know.
+// credential field, the CLI Proxy text rows, the profile grid, the release
+// notes and the Local models browser. Null for an id this front end does not
+// know.
 winrt::Microsoft::UI::Xaml::UIElement customRowElement(const RowSnapshot &row,
                                                        PaneHost &host);
 
 // Whether a Custom row takes the whole card width instead of the control
-// column: the profile grid and the release notes.
+// column: the profile grid, the release notes and the Local models browser.
 bool customRowIsFullWidth(const QString &rowId);
 
 } // namespace win

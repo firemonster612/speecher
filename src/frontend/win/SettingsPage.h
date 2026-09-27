@@ -24,6 +24,7 @@ class ApplicationController;
 namespace win {
 
 class CollectionEditor;
+class LocalModelBrowser;
 class SettingsModel;
 
 inline winrt::hstring hs(const QString &text)
@@ -75,6 +76,9 @@ struct PaneHost {
     // Collection editors by row id, kept across pane rebuilds so an undo
     // history survives an unrelated setting changing.
     QHash<QString, std::shared_ptr<CollectionEditor>> editors;
+    // The Local models list and detail, kept for the same reason: its
+    // selection outlives the rebuild each LocalSetup change causes.
+    std::shared_ptr<LocalModelBrowser> localModels;
     // The OpenAI credential field's state: a keyring read that lands after
     // typing started must not overwrite what was typed.
     QString apiKey;

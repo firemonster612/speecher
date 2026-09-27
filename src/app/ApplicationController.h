@@ -25,6 +25,8 @@ struct TranscribeOptions;
 class AudioInput;
 class GlobalShortcutBinder;
 class InsightsLog;
+class LocalModelStore;
+class LocalSetup;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
@@ -75,6 +77,11 @@ public:
     void clearPendingWhatsNew();
     SecretStore *secretStore() const;
     ProviderRegistry *providerRegistry() const;
+    // Owned here so a download outlives whichever window started it.
+    LocalModelStore *localModelStore() const;
+    // Hardware, runners, endpoint checks, Speed Tests and Ollama pulls, owned
+    // here for the same reason.
+    LocalSetup *localSetup() const;
     const PlatformComposition *platform() const;
     QString stateName() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
@@ -164,6 +171,7 @@ signals:
 
 private:
     void forgetLastRecord();
+    void notifyModelReady(const QString &modelId);
     void startWithMicrophone(std::function<void()> start);
     void runDeferredStartup();
     bool ensureSetupCompleted();
@@ -179,6 +187,8 @@ private:
     SettingsStore *m_settings = nullptr;
     SecretStore *m_secrets = nullptr;
     ProviderRegistry *m_providers = nullptr;
+    LocalModelStore *m_localModels = nullptr;
+    LocalSetup *m_localSetup = nullptr;
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;

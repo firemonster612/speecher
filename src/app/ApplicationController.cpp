@@ -1,6 +1,7 @@
 #include "app/ApplicationController.h"
 
 #include "app/AppFrontEnd.h"
+#include "app/LocalSetup.h"
 #include "app/ProviderSetup.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "app/UpdateController.h"
@@ -16,6 +17,7 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
+#include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
@@ -63,8 +65,9 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_popupOnly(popupOnly)
     , m_platform(std::move(platform))
     , m_settings(new SettingsStore(this))
-    , m_secrets(new SecretStore(m_settings, this))
+    , m_secrets(m_settings->secrets())
     , m_providers(new ProviderRegistry(this))
+    , m_localModels(new LocalModelStore(this))
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
     , m_pushToTalkStart(new QTimer(this))
@@ -129,7 +132,12 @@ ApplicationController::ApplicationController(bool popupOnly,
             &GlobalShortcutBinder::registrationFinished,
             this,
             &ApplicationController::globalShortcutRegistrationFinished);
-    registerProviders(*m_providers, m_secrets);
+    m_secrets->migrateSettingsFallbacks();
+    m_secrets->prefetch();
+    registerProviders(*m_providers, m_secrets, m_localModels);
+    m_localSetup = new LocalSetup(*m_settings, *m_providers, *m_localModels, this);
+    connect(m_localModels, &LocalModelStore::downloadFinished,
+            this, &ApplicationController::notifyModelReady);
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
     targetProvider->setCorrectionObservationEnabled(m_settings->correctionLearningEnabled());
     connect(m_settings,
@@ -382,6 +390,32 @@ void ApplicationController::clearPendingWhatsNew()
 SecretStore *ApplicationController::secretStore() const
 {
     return m_secrets;
+}
+
+LocalModelStore *ApplicationController::localModelStore() const
+{
+    return m_localModels;
+}
+
+LocalSetup *ApplicationController::localSetup() const
+{
+    return m_localSetup;
+}
+
+// A download the setup assistant left running finishes long after its window
+// closed; nothing on screen would say dictation now works.
+void ApplicationController::notifyModelReady(const QString &modelId)
+{
+    const LocalModel *model = findLocalModel(modelId);
+    if (!m_frontEnd || !model) {
+        return;
+    }
+    const bool inUse = m_settings->speechProvider() == QStringLiteral("local")
+        && m_settings->localSpeechSettings().modelId == modelId;
+    m_frontEnd->notifyIfNoWindowShown(
+        QStringLiteral("%1 is ready").arg(model->name),
+        inUse ? QStringLiteral("You can start dictating. Speech stays on this computer.")
+              : QStringLiteral("Choose it on the Local models page to dictate with it."));
 }
 
 ProviderRegistry *ApplicationController::providerRegistry() const

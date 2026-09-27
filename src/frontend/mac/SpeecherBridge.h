@@ -88,6 +88,9 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *options;
 // Text rows only: values worth offering, though the row still takes any text.
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *suggestions;
+// The row offers values, even while the list is empty (a server not yet
+// asked), so it keeps the same control.
+@property (nonatomic, readonly) BOOL suggests;
 @property (nonatomic, readonly) BOOL enabled;
 // Shown on the control, and replaced by disabledHelp while enabled says no.
 @property (nonatomic, readonly, copy) NSString *tooltip;
@@ -98,6 +101,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSString *disabledActionLabel;
 // Set on a Collection row, and on the one Custom row that is a table.
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
+// Text rows only: a key or password, shown masked.
+@property (nonatomic, readonly) BOOL secret;
 @end
 
 @interface SettingsSectionModel : NSObject
@@ -387,6 +392,132 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger firstDictationDaysAgo;
 @end
 
+// One Local Model as the Local models page and the setup assistant show it:
+// the catalog's facts in core's words, and where this computer stands with it.
+@interface LocalModelInfo : NSObject
+@property (nonatomic, readonly, copy) NSString *modelId;
+@property (nonatomic, readonly, copy) NSString *name;
+@property (nonatomic, readonly, copy) NSString *fileName;
+// "731 MB", as download sizes are quoted.
+@property (nonatomic, readonly, copy) NSString *sizeText;
+// Word error rates in percent.
+@property (nonatomic, readonly) double librispeechWer;
+@property (nonatomic, readonly) double fleursWer;
+// Text appears as the person speaks rather than after they stop.
+@property (nonatomic, readonly) BOOL streams;
+@property (nonatomic, readonly, copy) NSString *licence;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *pros;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *cons;
+// "Fits", "Tight fit", "Too large", or "Checking…" before the hardware is known.
+@property (nonatomic, readonly, copy) NSString *fitLabel;
+@property (nonatomic, readonly) BOOL tooLarge;
+// The model Speecher suggests for this computer, once it knows the hardware.
+@property (nonatomic, readonly) BOOL suggested;
+@property (nonatomic, readonly) BOOL speedTestRunning;
+// The rest is LocalSetup::ModelState: how long 10 s of speech takes here as a
+// table cell ("~0.7 s (estimated)") and as a sentence, the files, and the
+// last download or Speed Test failure (empty when there is none).
+@property (nonatomic, readonly, copy) NSString *speedText;
+@property (nonatomic, readonly, copy) NSString *speedDetail;
+// The setup card's three lines, and the comparison table's six cells.
+@property (nonatomic, readonly, copy) NSString *cardFacts;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *tableCells;
+@property (nonatomic, readonly) BOOL downloaded;
+@property (nonatomic, readonly) BOOL downloading;
+@property (nonatomic, readonly) BOOL inUse;
+@property (nonatomic, readonly, copy) NSString *problem;
+// While downloading: 0 to 1, and "164 MB of 199 MB".
+@property (nonatomic, readonly) double downloadFraction;
+@property (nonatomic, readonly, copy) NSString *progressText;
+@end
+
+// A Local Runner found on this computer.
+@interface LocalRunnerInfo : NSObject
+// "ollama", "lmstudio" or "llama-server", as the localRunner row stores it.
+@property (nonatomic, readonly, copy) NSString *runnerId;
+@property (nonatomic, readonly, copy) NSString *name;
+// Empty where the runner does not report one.
+@property (nonatomic, readonly, copy) NSString *version;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *models;
+@end
+
+// The cleanup model Speecher suggests pulling into Ollama.
+@interface CleanupModelInfo : NSObject
+@property (nonatomic, readonly, copy) NSString *ollamaTag;
+@property (nonatomic, readonly, copy) NSString *name;
+@property (nonatomic, readonly, copy) NSString *sizeText;
+@end
+
+// The last cleanup model pull through Ollama.
+@interface CleanupPullInfo : NSObject
+@property (nonatomic, readonly) BOOL running;
+@property (nonatomic, readonly) double fraction;
+// "1.2 GB of 5.3 GB" while running.
+@property (nonatomic, readonly, copy) NSString *progressText;
+@property (nonatomic, readonly, copy) NSString *error;
+@end
+
+// Which Local Runner refinement uses, resolved by core (RunnerChoice): the
+// saved runner and model, the running runner they name if any, and whether to
+// offer the suggested cleanup model.
+@interface LocalRunnerChoice : NSObject
+@property (nonatomic, readonly, copy) NSString *runnerId;
+// "Ollama", for a saved runner that is not running.
+@property (nonatomic, readonly, copy) NSString *runnerName;
+@property (nonatomic, readonly, copy) NSString *model;
+@property (nonatomic, readonly, strong, nullable) LocalRunnerInfo *available;
+@property (nonatomic, readonly) BOOL offerPull;
+@property (nonatomic, readonly) BOOL showSuggestion;
+@end
+
+// The welcome step's path, owned by core's WelcomeChoice. One per assistant,
+// kept across Back and Continue.
+@interface SetupWelcomeChoice : NSObject
+// After a round of sign-in checks (choice nil) or a click on a path (choice
+// set). Returns the speech provider to save.
+- (NSString *)updateWithProvider:(NSString *)provider
+                  readyProviders:(NSArray<NSString *> *)readyProviders
+               proxyAccountFound:(BOOL)proxyAccountFound
+                          choice:(nullable NSNumber *)choice
+    NS_SWIFT_NAME(update(provider:readyProviders:proxyAccountFound:choice:));
+// An explicit Transcription choice, which a later path default must not undo.
+- (void)providerChosen;
+@property (nonatomic, readonly) BOOL local;
+@end
+
+// Everything LocalSetup knows, read in one go on every change it announces.
+@interface LocalSetupState : NSObject
+// "Apple M4 Max, 14 threads · Apple M4 Max, Metal · 36 GB memory", or
+// "Checking this computer…" until the probe answers.
+@property (nonatomic, readonly, copy) NSString *hardwareLine;
+@property (nonatomic, readonly) BOOL hardwareKnown;
+// Where the word error rates come from, for a tooltip on them.
+@property (nonatomic, readonly, copy) NSString *wordErrorRateSources;
+// The catalog, in the order it lists the models.
+@property (nonatomic, readonly, copy) NSArray<LocalModelInfo *> *models;
+// The Local Model dictation will use: the chosen one, else the suggestion.
+@property (nonatomic, readonly, copy) NSString *speechModelChoice;
+@property (nonatomic, readonly, strong) LocalRunnerChoice *runnerChoice;
+@property (nonatomic, readonly) BOOL detectingRunners;
+// nil when cleanup here would be slower than a cloud provider or none.
+@property (nonatomic, readonly, strong, nullable) CleanupModelInfo *cleanupModel;
+@property (nonatomic, readonly, strong) CleanupPullInfo *pull;
+// The refinement endpoint's last verdict for the saved settings, "Checking…"
+// while one runs, empty before the first; and the models it listed.
+@property (nonatomic, readonly, copy) NSString *endpointStatus;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *endpointModels;
+@end
+
+// The refinement Custom Endpoint as the setup assistant's form shows it: with
+// the CLI Proxy API preset, the server and key are the proxy's.
+@interface RefinementEndpointForm : NSObject
+// "openai" or "anthropic".
+@property (nonatomic, readonly, copy) NSString *format;
+@property (nonatomic, readonly, copy) NSString *serverUrl;
+@property (nonatomic, readonly, copy) NSString *apiKey;
+@property (nonatomic, readonly, copy) NSString *model;
+@end
+
 @interface SpeecherBridge : NSObject
 @property (nonatomic, readonly, strong) SettingsSchemaModel *settingsSchema;
 @property (nonatomic, readonly, copy) NSString *stateName;
@@ -539,6 +670,26 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
                           report:(void (^)(NSString *providerId, BOOL ready, NSString *message))report
     NS_SWIFT_NAME(checkSpeechProvider(named:report:));
 - (void)checkRefinementProviders:(void (^)(NSString *providerId, BOOL ready, NSString *message))report;
+// Whether the own-model refinement choice (Local or Custom endpoint) has what
+// it needs, read from the settings now: its verdict follows every edit rather
+// than a probe.
+@property (nonatomic, readonly) BOOL ownModelRefinementReady;
+// Core's setup policy: the provider auto-selection may move to, and which
+// providers are sign-ins.
+- (NSString *)setupProviderChoiceForSaved:(NSString *)saved
+                           readyProviders:(NSArray<NSString *> *)readyProviders
+                         explicitlyChosen:(BOOL)explicitlyChosen
+    NS_SWIFT_NAME(setupProviderChoice(saved:readyProviders:explicitlyChosen:));
+// Core's refinement default for the saved provider; nil while the runner
+// check is still looking.
+- (nullable NSString *)setupRefinementChoiceForSaved:(NSString *)saved
+                                      readyProviders:(NSArray<NSString *> *)readyProviders
+    NS_SWIFT_NAME(setupRefinementChoice(saved:readyProviders:));
+- (BOOL)offersSetupSpeechProvider:(NSString *)providerId saved:(NSString *)saved localAvailable:(BOOL)localAvailable
+    NS_SWIFT_NAME(offersSetupSpeechProvider(_:saved:localAvailable:));
+- (BOOL)isSetupSignInProvider:(NSString *)providerId NS_SWIFT_NAME(isSetupSignInProvider(_:));
+// "Ollama with gemma4:e4b" or "qwen3 on your server"; empty for other providers.
+@property (nonatomic, readonly, copy) NSString *ownModelRefinementSummary;
 
 // The CLI Proxy API sign-in a service can be opted into during setup. The
 // decisions live in core (ProviderSignIn); these are its seams, so this
@@ -606,6 +757,41 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 - (NSString *)readApiKey;
 // nil when the keyring took it, otherwise why it refused.
 - (nullable NSString *)saveApiKey:(NSString *)apiKey;
+
+// Running models on this computer: ApplicationController's LocalSetup, so a
+// download, a Speed Test or a pull outlives the window that started it.
+// Whether this build can run speech on this computer at all.
+@property (nonatomic, readonly) BOOL localSpeechAvailable;
+// Anything below changed. rowsChanged says the settings rows that report it,
+// and the settings LocalSetup writes, changed too; it is NO for a download or
+// pull's progress alone. Arrives on the main thread, often while one runs.
+@property (nonatomic, copy, nullable) void (^localSetupChanged)(BOOL rowsChanged);
+@property (nonatomic, readonly, strong) LocalSetupState *localSetupState;
+// Starts the hardware probe the first time.
+- (void)probeLocalHardware;
+// Saves the suggestion as the choice unless a model was already chosen.
+- (void)initializeSpeechModel;
+// Saves an explicit choice, whichever provider is selected.
+- (void)chooseSpeechModel:(NSString *)modelId NS_SWIFT_NAME(chooseSpeechModel(_:));
+- (void)downloadLocalModel:(NSString *)modelId NS_SWIFT_NAME(downloadLocalModel(_:));
+- (void)cancelLocalModelDownload:(NSString *)modelId NS_SWIFT_NAME(cancelLocalModelDownload(_:));
+- (void)deleteLocalModel:(NSString *)modelId NS_SWIFT_NAME(deleteLocalModel(_:));
+- (void)testLocalModelSpeed:(NSString *)modelId NS_SWIFT_NAME(testLocalModelSpeed(_:));
+
+- (void)detectLocalRunners;
+- (void)pullCleanupModel:(NSString *)ollamaTag NS_SWIFT_NAME(pullCleanupModel(_:));
+
+@property (nonatomic, readonly, strong) RefinementEndpointForm *refinementEndpointForm;
+// Saves the fields the person edited; nil is a field left alone. Core decides
+// what an edit does to a preset and a saved key.
+- (void)editRefinementEndpointFormat:(nullable NSString *)format
+                           serverUrl:(nullable NSString *)serverUrl
+                              apiKey:(nullable NSString *)apiKey
+                               model:(nullable NSString *)model
+    NS_SWIFT_NAME(editRefinementEndpoint(format:serverUrl:apiKey:model:));
+// Tests the saved endpoint; the verdict and model list arrive with
+// localSetupChanged.
+- (void)checkRefinementEndpoint;
 
 // Transcribing audio files: the Transcribe pane's seams into the core's
 // FileTranscriptionSession. One batch runs at a time, and it and dictation

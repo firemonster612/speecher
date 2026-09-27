@@ -230,7 +230,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
         return;
     }
 
-    AppSettings settings = m_settings->snapshot();
+    AppSettings settings = m_settings->dictationSnapshot();
     if (format) {
         settings.output.format = *format;
     }
@@ -316,6 +316,16 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         m_mediaController->pausePlaying();
     }
 
+    if (!settings.unreadSecretKeys.isEmpty()) {
+        m_startupRunner->start(generation, std::nullopt, std::nullopt, {true, {}}, settings);
+        return;
+    }
+    prepareProviders(generation);
+}
+
+void DictationSession::prepareProviders(quint64 generation)
+{
+    const AppSettings settings = *m_sessionSettings;
     std::optional<SpeechPrepareJob> speechPrepareJob = m_transcriber->createPrepareJob(settings.speech);
     const bool speechRefreshRequired = speechPrepareJob ? speechPrepareJob->showRefreshIndicator
                                                         : m_transcriber->requiresRefresh(settings.speech);
@@ -474,6 +484,12 @@ void DictationSession::finishStartupPreparation(const StartupPreparationResult &
 
     if (!result.speech.ok) {
         failStartup(result.generation, result.speech.message);
+        return;
+    }
+
+    if (result.resolvedSettings) {
+        m_sessionSettings = *result.resolvedSettings;
+        prepareProviders(result.generation);
         return;
     }
 
@@ -758,7 +774,9 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
                          << "message=" + failure.message;
     if (!m_transcript->isEmpty()
         && (m_state == DictationState::Listening || m_state == DictationState::Stopping)) {
-        m_speechWarning = QStringLiteral("Part of the dictation may be missing. The connection dropped.");
+        m_speechWarning = failure.phase == QStringLiteral("finalize")
+            ? QStringLiteral("Part of the dictation may be missing. ") + failure.message
+            : QStringLiteral("Part of the dictation may be missing. The connection dropped.");
         if (m_state == DictationState::Listening) {
             m_audio->stop();
             m_audioGeneration = 0;

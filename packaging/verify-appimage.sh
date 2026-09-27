@@ -51,6 +51,9 @@ REQUIRED_FILES=(
   usr/lib/libKF6WidgetsAddons.so.6
   usr/lib/libLayerShellQtInterface.so.6
   usr/lib/libqt6keychain.so.1
+  usr/lib/libtranscribe.so.0.2
+  usr/lib/libggml-cpu-x64.so
+  usr/lib/libggml-vulkan.so
   usr/share/icons/breeze/index.theme
 )
 for required in "${REQUIRED_FILES[@]}"; do

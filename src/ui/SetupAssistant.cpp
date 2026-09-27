@@ -1,6 +1,8 @@
 #include "ui/SetupAssistant.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
+#include "providers/ProviderRegistry.h"
 #include "core/SettingsStore.h"
 #include "ui/setup/SetupPages.h"
 #ifdef Q_OS_LINUX
@@ -123,12 +125,23 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     AccessibilitySetupPage *accessibility = nullptr;
     RefinementSetupPage *refinement = nullptr;
     if (!m_singlePage) {
+        // Speech on this computer is only a path where the build can run it.
+        LocalSetup *localSpeech = controller->providerRegistry()->speechProvider(QStringLiteral("local"))
+            ? controller->localSetup()
+            : nullptr;
         m_welcomePage = new WelcomeSetupPage(*controller->settings(),
                                              *controller->providerRegistry(),
+                                             localSpeech,
                                              this);
         m_speechProviderPage = new SpeechProviderSetupPage(*controller->settings(),
                                                            *controller->providerRegistry(),
+                                                           localSpeech,
                                                            this);
+        connect(m_speechProviderPage, &SpeechProviderSetupPage::providerChosen,
+                m_welcomePage, &WelcomeSetupPage::preserveSpeechChoice);
+        connect(m_welcomePage, &WelcomeSetupPage::pathProviderChanged, this, [this](const QString &provider) {
+            m_speechProviderPage->chooseProvider(provider);
+        });
         m_microphonePage = new MicrophoneSetupPage(*controller->settings(),
                                                    *controller->platform(),
                                                    this);
@@ -136,6 +149,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         m_deliveryPage = new TextDeliverySetupPage(*controller->settings(), this);
         refinement = new RefinementSetupPage(*controller->settings(),
                                              *controller->providerRegistry(),
+                                             controller->localSetup(),
                                              this);
         m_profilesPage = new WritingProfilesSetupPage(*controller->settings(), this);
         m_finishPage = new FinishSetupPage(*controller, this);
@@ -372,10 +386,12 @@ void SetupAssistant::updateFinishSteps()
         const auto gate = m_gates.value(step.content);
         const bool ok = !gate || gate();
         QString detail;
+        QString localModelId;
         if (const auto *reporter = dynamic_cast<const SetupStep *>(step.content)) {
             detail = ok ? reporter->readySummary() : reporter->blockedReason();
+            localModelId = reporter->localModelId();
         }
-        steps.append({step.title, ok, detail});
+        steps.append({step.title, ok, detail, localModelId});
         m_finishStepPages.append(step.content);
     }
     m_finishPage->setSteps(steps);

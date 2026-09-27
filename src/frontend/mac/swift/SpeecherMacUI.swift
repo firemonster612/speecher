@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 @MainActor
 private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
@@ -133,9 +134,16 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         model.transcription.start()
     }
 
+    /// Screenshot automation, as on Qt and Windows: SPEECHER_GRAB_PAGE names
+    /// the pane to show before the grab.
     @MainActor
     @objc public func captureSettings(toPath path: String) -> Bool {
-        settings?.capture(toPath: path) ?? false
+        if let page = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"]?.lowercased(),
+           let pane = model.panes.first(where: { $0.id.lowercased() == page }) {
+            model.pane = pane.id
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        }
+        return settings?.capture(toPath: path) ?? false
     }
 
     @MainActor
@@ -197,6 +205,32 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc public var settingsWindowVisible: Bool { settings?.isVisible ?? false }
 
+    /// News that arrives while no Speecher window is up, such as a Local
+    /// Model download finishing after setup closed, goes to Notification
+    /// Center. A window on screen already shows it.
+    @MainActor
+    @objc public func notifyIfNoWindowShown(title: String, message: String) {
+        // Notification Center only takes posts from an app bundle; asking
+        // from a bare executable (the tests) throws.
+        guard settings?.isVisible != true, setupAssistant?.isVisible != true,
+              Bundle.main.bundleURL.pathExtension == "app" else { return }
+        let center = UNUserNotificationCenter.current()
+        // Closing the last window can leave Speecher the active app, where
+        // macOS holds notifications back unless the delegate asks for them.
+        center.delegate = ForegroundNotifications.shared
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            guard granted else {
+                NSLog("Speecher: notifications are not allowed%@",
+                      error.map { ": \($0.localizedDescription)" } ?? "")
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = message
+            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
+    }
+
     /// Brings Speecher forward so whatever it just put on screen can be seen.
     @MainActor
     @objc public func activate() {
@@ -226,5 +260,18 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         let index = min(1, appMenu.items.count)
         appMenu.insertItem(item, at: index)
         appMenu.insertItem(.separator(), at: index + 1)
+    }
+}
+
+/// Shows Speecher's notifications while Speecher is the active app. It only
+/// posts when no window of its own is up to show the news instead.
+private final class ForegroundNotifications: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = ForegroundNotifications()
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler:
+                                    @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
     }
 }

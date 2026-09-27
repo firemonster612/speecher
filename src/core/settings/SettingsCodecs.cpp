@@ -1,6 +1,6 @@
 #include "core/settings/SettingsCodecs.h"
 
-#include "core/CliProxyUrl.h"
+#include "core/EndpointUrl.h"
 #include "core/settings/SettingsKeys.h"
 
 #include "core/BindingProcessor.h"
@@ -41,6 +41,22 @@ AudioCaptureSettings normalizedAudioCaptureSettings(AudioCaptureSettings setting
     settings.readinessTimeoutMs = std::clamp(settings.readinessTimeoutMs, 500, 3000);
     settings.vadThresholdPercent = std::clamp(settings.vadThresholdPercent, 1, 20);
     return settings;
+}
+
+bool isRefinementProviderId(const QString &id)
+{
+    return id == QStringLiteral("none") || id == QStringLiteral("anthropic")
+        || id == QStringLiteral("openai") || id == QStringLiteral("endpoint")
+        || id == QStringLiteral("local");
+}
+
+QString normalizedEndpointPath(const QString &path)
+{
+    const QString trimmed = path.trimmed();
+    if (trimmed.isEmpty()) {
+        return SpeechEndpointSettings{}.path;
+    }
+    return trimmed.startsWith(QLatin1Char('/')) ? trimmed : QLatin1Char('/') + trimmed;
 }
 
 QString defaultRefinementProvider()
@@ -180,6 +196,102 @@ bool SettingsCodecs::codexFinalRetranscribe() const
 void SettingsCodecs::setCodexFinalRetranscribe(bool value)
 {
     m_settings.setValue(SettingsKeys::CodexFinalRetranscribe, value);
+}
+
+LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
+{
+    const LocalSpeechSettings defaults;
+    LocalSpeechSettings settings;
+    settings.modelId = value(SettingsKeys::LocalModel, defaults.modelId).toString();
+    settings.modelChosen = value(SettingsKeys::LocalModelChosen, m_settings.contains(SettingsKeys::LocalModel)).toBool();
+    settings.deviceId = value(SettingsKeys::LocalDevice, QString()).toString();
+    settings.idleUnloadMinutes =
+        std::max(0, value(SettingsKeys::LocalIdleUnloadMinutes, defaults.idleUnloadMinutes).toInt());
+    const QString speedTestPrefix = SettingsKeys::LocalSpeedTest + QLatin1Char('/');
+    for (const QString &key : m_settings.allKeys()) {
+        if (key.startsWith(speedTestPrefix)) {
+            settings.speedTestSeconds.insert(key.mid(speedTestPrefix.size()),
+                                             m_settings.value(key).toDouble());
+        }
+    }
+    return settings;
+}
+
+void SettingsCodecs::setLocalSpeechSettings(const LocalSpeechSettings &value)
+{
+    const auto previous = localSpeechSettings();
+    m_settings.setValue(SettingsKeys::LocalModelChosen, value.modelChosen || previous.modelChosen
+                        || value.modelId != previous.modelId);
+    m_settings.setValue(SettingsKeys::LocalModel, value.modelId);
+    m_settings.setValue(SettingsKeys::LocalDevice, value.deviceId);
+    m_settings.setValue(SettingsKeys::LocalIdleUnloadMinutes, std::max(0, value.idleUnloadMinutes));
+    m_settings.remove(SettingsKeys::LocalSpeedTest);
+    m_settings.beginGroup(SettingsKeys::LocalSpeedTest);
+    for (auto it = value.speedTestSeconds.cbegin(); it != value.speedTestSeconds.cend(); ++it) {
+        m_settings.setValue(it.key(), it.value());
+    }
+    m_settings.endGroup();
+}
+
+SpeechEndpointSettings SettingsCodecs::speechEndpointSettings() const
+{
+    SpeechEndpointSettings settings;
+    settings.baseUrl = endpointServerBase(value(SettingsKeys::SpeechEndpointBaseUrl, QString()).toString());
+    settings.path = normalizedEndpointPath(value(SettingsKeys::SpeechEndpointPath, settings.path).toString());
+    settings.model = value(SettingsKeys::SpeechEndpointModel, QString()).toString().trimmed();
+    return settings;
+}
+
+void SettingsCodecs::setSpeechEndpointSettings(const SpeechEndpointSettings &value)
+{
+    m_settings.setValue(SettingsKeys::SpeechEndpointBaseUrl, endpointServerBase(value.baseUrl));
+    m_settings.setValue(SettingsKeys::SpeechEndpointPath, normalizedEndpointPath(value.path));
+    m_settings.setValue(SettingsKeys::SpeechEndpointModel, value.model.trimmed());
+}
+
+RefinementEndpointSettings SettingsCodecs::refinementEndpointSettings() const
+{
+    RefinementEndpointSettings settings;
+    const QString preset = value(SettingsKeys::RefinementEndpointPreset, QString()).toString();
+    settings.preset = preset == QStringLiteral("cliproxy") ? preset : QString();
+    settings.useCliproxyKey = value(SettingsKeys::RefinementEndpointUseCliproxyKey, false).toBool();
+    const QString format = value(SettingsKeys::RefinementEndpointFormat, settings.format).toString();
+    settings.format = format == QStringLiteral("anthropic") ? format : QStringLiteral("openai");
+    settings.baseUrl = withoutTrailingSlashes(value(SettingsKeys::RefinementEndpointBaseUrl, QString()).toString());
+    settings.model = value(SettingsKeys::RefinementEndpointModel, QString()).toString().trimmed();
+    return settings;
+}
+
+void SettingsCodecs::setRefinementEndpointSettings(const RefinementEndpointSettings &value)
+{
+    m_settings.setValue(SettingsKeys::RefinementEndpointUseCliproxyKey, value.useCliproxyKey);
+    m_settings.setValue(SettingsKeys::RefinementEndpointPreset,
+                        value.preset == QStringLiteral("cliproxy") ? value.preset : QString());
+    m_settings.setValue(SettingsKeys::RefinementEndpointFormat,
+                        value.format == QStringLiteral("anthropic") ? value.format : QStringLiteral("openai"));
+    m_settings.setValue(SettingsKeys::RefinementEndpointBaseUrl, withoutTrailingSlashes(value.baseUrl));
+    m_settings.setValue(SettingsKeys::RefinementEndpointModel, value.model.trimmed());
+}
+
+LocalRunnerSettings SettingsCodecs::localRunnerSettings() const
+{
+    LocalRunnerSettings settings;
+    const QString previousDefault = value(SettingsKeys::LocalRunnerModel, QString()).toString().isEmpty()
+        ? QString() : QStringLiteral("ollama");
+    const QString runner = value(SettingsKeys::LocalRunner, previousDefault).toString();
+    if (runner == QStringLiteral("ollama") || runner == QStringLiteral("lmstudio") || runner == QStringLiteral("llama-server")) {
+        settings.runner = runner;
+    }
+    settings.model = value(SettingsKeys::LocalRunnerModel, QString()).toString().trimmed();
+    return settings;
+}
+
+void SettingsCodecs::setLocalRunnerSettings(const LocalRunnerSettings &value)
+{
+    const bool known = value.runner == QStringLiteral("ollama") || value.runner == QStringLiteral("lmstudio")
+        || value.runner == QStringLiteral("llama-server");
+    m_settings.setValue(SettingsKeys::LocalRunner, known ? value.runner : QString());
+    m_settings.setValue(SettingsKeys::LocalRunnerModel, value.model.trimmed());
 }
 
 // The terms a transcription request carries. Everything a person typed is
@@ -380,7 +492,7 @@ QString SettingsCodecs::refinementProvider() const
     const QString key = SettingsKeys::RefinementProvider;
     const QString provider = m_settings.contains(key) ? value(key, QStringLiteral("openai")).toString()
                                                       : defaultRefinementProvider();
-    if (provider == QStringLiteral("none") || provider == QStringLiteral("anthropic")) {
+    if (isRefinementProviderId(provider)) {
         return provider;
     }
 #ifdef SPEECHER_E2E_HOOKS
@@ -394,13 +506,19 @@ QString SettingsCodecs::refinementProvider() const
     return QStringLiteral("openai");
 }
 
+bool SettingsCodecs::refinementProviderChosen() const
+{
+    return m_settings.contains(SettingsKeys::RefinementProvider);
+}
+
 void SettingsCodecs::setRefinementProvider(const QString &value)
 {
-    if (value == QStringLiteral("none") || value == QStringLiteral("anthropic")) {
-        m_settings.setValue(SettingsKeys::RefinementProvider, value);
-        return;
-    }
-    m_settings.setValue(SettingsKeys::RefinementProvider, QStringLiteral("openai"));
+    const QString provider = isRefinementProviderId(value) ? value : QStringLiteral("openai");
+    // Saving a snapshot that still holds the default leaves it a default,
+    // which the setup assistant may replace; only a different provider is a
+    // choice.
+    if (!refinementProviderChosen() && provider == refinementProvider()) return;
+    m_settings.setValue(SettingsKeys::RefinementProvider, provider);
 }
 
 QString SettingsCodecs::refinementStyle() const
@@ -988,22 +1106,12 @@ void SettingsCodecs::setCliproxyOauthDir(const QString &value)
 
 QString SettingsCodecs::cliproxyBaseUrl() const
 {
-    return cliproxyServerBase(value(SettingsKeys::CliproxyBaseUrl, QString()).toString());
+    return endpointServerBase(value(SettingsKeys::CliproxyBaseUrl, QString()).toString());
 }
 
 void SettingsCodecs::setCliproxyBaseUrl(const QString &value)
 {
-    m_settings.setValue(SettingsKeys::CliproxyBaseUrl, cliproxyServerBase(value));
-}
-
-QString SettingsCodecs::cliproxyApiKey() const
-{
-    return value(SettingsKeys::CliproxyApiKey, QString()).toString().trimmed();
-}
-
-void SettingsCodecs::setCliproxyApiKey(const QString &value)
-{
-    m_settings.setValue(SettingsKeys::CliproxyApiKey, value.trimmed());
+    m_settings.setValue(SettingsKeys::CliproxyBaseUrl, endpointServerBase(value));
 }
 
 QString SettingsCodecs::claudeCredentialsPath() const
@@ -1050,6 +1158,7 @@ AppSettings SettingsCodecs::snapshot() const
 
     settings.speech.providerId = speechProvider();
     settings.speech.codexFinalRetranscribe = codexFinalRetranscribe();
+    settings.speech.local = localSpeechSettings();
     settings.speech.claudeAuthMode = anthropicAuthMode();
     settings.speech.codexAuthMode = openAiAuthMode();
     settings.speech.vocabulary = customVocabulary();
@@ -1059,6 +1168,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.speech.cliproxyOauthDir = cliproxyOauthDir();
     settings.speech.claudeCliproxyAccount = anthropicCliproxyAccount();
     settings.speech.codexCliproxyAccount = openAiCliproxyAccount();
+    settings.speech.endpoint = speechEndpointSettings();
     settings.audio = audioCaptureSettings();
     settings.appRecognitionRules = appRecognitionRules();
     settings.bindings = bindingRules();
@@ -1094,7 +1204,8 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.cliproxyOauthDir = cliproxyOauthDir();
     settings.refinement.cliproxyOauthDirConfigured = configuredCliproxyOauthDir();
     settings.refinement.cliproxyBaseUrl = cliproxyBaseUrl();
-    settings.refinement.cliproxyApiKey = cliproxyApiKey();
+    settings.refinement.endpoint = refinementEndpointSettings();
+    settings.refinement.localRunner = localRunnerSettings();
     settings.refinement.anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     settings.refinement.claudeCredentialsPath = claudeCredentialsPath();
     settings.refinement.defaultWritingProfile = defaultWritingProfile();

@@ -16,6 +16,7 @@ RUN apt-get update \
         file \
         g++ \
         git \
+        glslc \
         kwin-wayland \
         libcap2-bin \
         libatspi2.0-dev \
@@ -29,6 +30,7 @@ RUN apt-get update \
         libkf6widgetsaddons-dev \
         liblayershellqtinterface-dev \
         libsecret-1-dev \
+        libvulkan-dev \
         libwayland-dev \
         libxkbcommon-dev \
         libxkbcommon-x11-0 \
@@ -47,6 +49,7 @@ RUN apt-get update \
         qt6-wayland \
         qt6-websockets-dev \
         qt6-xdgdesktopportal-platformtheme \
+        spirv-headers \
         wayland-protocols \
         wl-clipboard \
         xauth \

@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "core/settings/SettingsKeys.h"
+#include <QProcess>
 #ifdef SPEECHER_WITH_QKEYCHAIN
 #include "core/KeyringResult.h"
 #include "core/ShortcutBinding.h"
@@ -14,6 +15,18 @@ class SettingsTests : public QObject {
     Q_OBJECT
 
 private slots:
+    void legacySpeechModelIsAnExplicitChoice()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue("local/model", "parakeet");
+        QVERIFY(settings.localSpeechSettings().modelChosen);
+        auto saved = settings.localSpeechSettings();
+        saved.idleUnloadMinutes = 60;
+        settings.setLocalSpeechSettings(saved);
+        QVERIFY(SettingsStore().localSpeechSettings().modelChosen);
+    }
+
     void settingsRespectConfiguredStorageFormat()
     {
         const auto previous = QSettings::defaultFormat();
@@ -22,6 +35,25 @@ private slots:
         const auto actual = settings.raw().format();
         QSettings::setDefaultFormat(previous);
         QCOMPARE(actual, QSettings::IniFormat);
+    }
+
+    void otherTestProcessesCannotClearSettingsFallbacks()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(SettingsKeys::SpeechEndpointApiKey, QStringLiteral("speech-secret"));
+        settings.raw().sync();
+
+        // This peer clears its settings, as many suites do at the start of a test.
+        QProcess peer;
+        peer.setProcessChannelMode(QProcess::MergedChannels);
+        peer.start(QCoreApplication::applicationFilePath(),
+                   {QStringLiteral("--suite"), QStringLiteral("settings"),
+                    QStringLiteral("legacySpeechModelIsAnExplicitChoice")});
+        QVERIFY(peer.waitForFinished());
+        QVERIFY2(peer.exitStatus() == QProcess::NormalExit && peer.exitCode() == 0,
+                 peer.readAll().constData());
+        QCOMPARE(SettingsStore().snapshot().speech.endpoint.apiKey, QStringLiteral("speech-secret"));
     }
 
 #ifdef SPEECHER_WITH_QKEYCHAIN
@@ -416,6 +448,31 @@ private slots:
         settings.setShortcutActivationMode(ShortcutActivationMode::PushToTalk);
         QCOMPARE(settings.shortcutActivationMode(), ShortcutActivationMode::PushToTalk);
         QCOMPARE(settings.snapshot().shortcutActivationMode, ShortcutActivationMode::PushToTalk);
+    }
+
+    void localSpeechSettingsRoundTrip()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QCOMPARE(settings.snapshot().speech.local, LocalSpeechSettings{});
+        QCOMPARE(settings.snapshot().speech.local.modelId, QStringLiteral("parakeet"));
+        QCOMPARE(settings.snapshot().speech.local.idleUnloadMinutes, 10);
+
+        AppSettings draft = settings.snapshot();
+        draft.speech.local.modelId = QStringLiteral("cohere");
+        draft.speech.local.modelChosen = true;
+        draft.speech.local.deviceId = QStringLiteral("0000:c1:00.0");
+        draft.speech.local.idleUnloadMinutes = 0;
+        draft.speech.local.speedTestSeconds = {{QStringLiteral("parakeet"), 0.42},
+                                               {QStringLiteral("cohere"), 1.7}};
+        settings.applySnapshot(draft);
+        QCOMPARE(SettingsStore().snapshot().speech.local, draft.speech.local);
+
+        draft.speech.local.speedTestSeconds.remove(QStringLiteral("cohere"));
+        settings.applySnapshot(draft);
+        QCOMPARE(SettingsStore().snapshot().speech.local.speedTestSeconds.keys(),
+                 QStringList{QStringLiteral("parakeet")});
+        settings.raw().clear();
     }
 
     void settingsDefaultRefinementProviderUsesInstalledCli()

@@ -21,6 +21,7 @@ public:
     ~SetupWindow() override;
 
     void show(SetupAssistantPage page);
+    bool isVisible() const;
     static QStringList pageTitles();
 
 private:

@@ -5,7 +5,7 @@
 <title>Speecher setup — Ready to dictate</title>
 <link rel="stylesheet" href="wizard.css">
 </head>
-<body data-states="complete blocked" data-default-state="complete">
+<body data-states="complete downloading blocked" data-default-state="complete">
 
 <div class="dialog" role="dialog" aria-labelledby="page-title">
 
@@ -16,12 +16,22 @@
 
   <main class="dialog-body">
 
-    <!-- complete -->
-    <div data-show="complete">
-      <p class="status ok" style="font-size:13.5px">
+    <!-- complete, and downloading: Finish stays enabled while the chosen
+         Local Model downloads; its row carries the progress. -->
+    <div data-show="complete downloading">
+      <p class="status ok" style="font-size:13.5px" data-show="complete">
         <svg class="icon sm" aria-hidden="true"><use href="#icon-check"/></svg>
         <span>Setup is complete.</span>
       </p>
+      <p class="status" style="font-size:13.5px" data-show="downloading">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-download"/></svg>
+        <span>Setup is complete except for the speech model download.</span>
+      </p>
+      <div class="notice" style="margin-top:10px" data-show="downloading">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-download"/></svg>
+        <p>You can close this window. The download keeps going, and Speecher
+          shows a notification when you can start dictating.</p>
+      </div>
 
       <div class="card" style="margin-top:16px">
         <h2 class="card-title">How to dictate</h2>
@@ -32,7 +42,16 @@
       </div>
 
       <ul class="status-list">
-        <li>
+        <li data-show="downloading">
+          <div class="status-row">
+            <svg class="icon" aria-hidden="true"><use href="#icon-chip"/></svg>
+            <span class="row-label" style="font-weight:400">Transcription — Parakeet 0.6B, on this computer</span>
+            <span class="progress" style="width:120px"><span style="width:42%"></span></span>
+            <span class="fine">307 of 731 MB</span>
+            <button type="button" class="small">Cancel</button>
+          </div>
+        </li>
+        <li data-show="complete">
           <div class="status-row">
             <svg class="icon" aria-hidden="true"><use href="#icon-openai"/></svg>
             <span class="row-label" style="font-weight:400">Transcription — ChatGPT Codex</span>

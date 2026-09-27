@@ -4,6 +4,7 @@
 
 #include <QColor>
 #include <QFont>
+#include <QLabel>
 #include <QMargins>
 #include <QString>
 
@@ -25,6 +26,18 @@ struct AudioInputDeviceInfo;
 }
 
 namespace speecher::settings {
+
+// A word-wrapped QLabel that needs more lines than its width-blind size hint
+// paints its last line clipped; keeping minimumHeight at heightForWidth makes
+// the layout give it the real height (same fix as the settings rows').
+class WrappingLabel final : public QLabel {
+public:
+    explicit WrappingLabel(const QString &text = {}, QWidget *parent = nullptr);
+    explicit WrappingLabel(QWidget *parent);
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+};
 
 QFrame *makeSeparator(QWidget *parent);
 QColor separatorColor(const QPalette &palette);
@@ -95,6 +108,9 @@ QColor frameColor(const QPalette &palette);
 QFormLayout *cardFormLayout(QWidget *card);
 // Adds a spanning row to a card, with a hairline above every row after the first.
 void addCardRow(QFormLayout *layout, QWidget *row, QWidget *parent);
+// Shows or hides a row of a card along with the hairline above it, which would
+// otherwise be left behind as a gap where the row was.
+void setCardRowVisible(QWidget *row, bool visible);
 // Wraps a section (title + card) in the shared, centred content column.
 QWidget *centerColumn(QWidget *content, QWidget *parent);
 void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent);

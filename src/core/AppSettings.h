@@ -7,6 +7,7 @@
 #include <QString>
 #include <QStringList>
 #include <QList>
+#include <QMap>
 
 namespace speecher {
 
@@ -86,6 +87,33 @@ struct UiSettings {
     bool soundsEnabled = false;
 };
 
+struct LocalSpeechSettings {
+    // A LocalModelCatalog id.
+    QString modelId = QStringLiteral("parakeet");
+    // A transcribe.cpp device_id (PCI bus id), or empty for automatic choice.
+    QString deviceId;
+    // 0 keeps the model loaded until Speecher quits.
+    int idleUnloadMinutes = 10;
+    // Model id to the Speed Test's measured seconds for the bundled clip.
+    QMap<QString, double> speedTestSeconds;
+    // False only for an unchosen default; legacy saved model ids are choices.
+    bool modelChosen = false;
+
+    bool operator==(const LocalSpeechSettings &other) const = default;
+};
+
+// The speech Custom Endpoint: an OpenAI-style audio transcriptions server.
+struct SpeechEndpointSettings {
+    // The server's origin, without the path.
+    QString baseUrl;
+    // whisper.cpp's server answers on /inference.
+    QString path = QStringLiteral("/v1/audio/transcriptions");
+    QString model;
+    QString apiKey;
+
+    bool operator==(const SpeechEndpointSettings &other) const = default;
+};
+
 struct SpeechSettings {
     QString providerId = QStringLiteral("claude");
     QString claudeAuthMode = QStringLiteral("oauth");
@@ -99,6 +127,8 @@ struct SpeechSettings {
     QString cliproxyOauthDir;
     QString claudeCliproxyAccount;
     QString codexCliproxyAccount;
+    LocalSpeechSettings local;
+    SpeechEndpointSettings endpoint;
 };
 
 struct AudioCaptureSettings {
@@ -112,6 +142,41 @@ struct AudioCaptureSettings {
 
     bool operator==(const AudioCaptureSettings &other) const = default;
 };
+
+// The refinement Custom Endpoint.
+struct RefinementEndpointSettings {
+    // "cliproxy" takes the server and key from the CLI Proxy API settings;
+    // empty uses the fields below.
+    QString preset;
+    // "openai" (Chat Completions) or "anthropic" (Messages).
+    QString format = QStringLiteral("openai");
+    // The API base the endpoint paths hang off, e.g. http://localhost:11434/v1.
+    QString baseUrl;
+    QString model;
+    QString apiKey;
+
+    // A detached URL can still use an unread proxy key until the user edits the key.
+    bool useCliproxyKey = false;
+
+    bool operator==(const RefinementEndpointSettings &other) const = default;
+};
+
+// Refinement through a Local Runner on this computer.
+struct LocalRunnerSettings {
+    // "ollama", "lmstudio" or "llama-server"; empty until configured.
+    QString runner;
+    QString model;
+
+    bool operator==(const LocalRunnerSettings &other) const = default;
+};
+
+// What a person calls a Local Runner stored by id.
+inline QString localRunnerName(const QString &runnerId)
+{
+    if (runnerId == QStringLiteral("lmstudio")) return QStringLiteral("LM Studio");
+    if (runnerId == QStringLiteral("llama-server")) return QStringLiteral("llama-server");
+    return QStringLiteral("Ollama");
+}
 
 struct RefinementSettings {
     QString providerId = QStringLiteral("openai");
@@ -133,6 +198,8 @@ struct RefinementSettings {
     QString cliproxyOauthDirConfigured;
     QString cliproxyBaseUrl;
     QString cliproxyApiKey;
+    RefinementEndpointSettings endpoint;
+    LocalRunnerSettings localRunner;
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;
@@ -161,6 +228,8 @@ struct UpdateSettings {
 };
 
 struct AppSettings {
+    // Empty secret fields in this draft were unread, not cleared by the user.
+    QStringList unreadSecretKeys;
     bool setupCompleted = false;
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     bool launchAtLogin = true;

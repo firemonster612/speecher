@@ -84,6 +84,7 @@ const QList<PageDefinition> kPages{
     {QStringLiteral("Output"), QStringLiteral("edit-paste"), QStringLiteral("edit-copy")},
     {QStringLiteral("Accounts"), QStringLiteral("user-identity"), QStringLiteral("im-user")},
     {QStringLiteral("Refinement"), QStringLiteral("tools-wizard"), QStringLiteral("document-edit")},
+    {QStringLiteral("Local models"), QStringLiteral("computer"), QStringLiteral("computer-laptop")},
     {QStringLiteral("Vocabulary"), QStringLiteral("tools-check-spelling"), QStringLiteral("accessories-dictionary")},
 };
 
@@ -471,6 +472,9 @@ void AppWindow::buildSharedPages()
         m_pages->output(),
         auth,
         refinement,
+        // A build without local speech keeps the slot, so page indices stay
+        // put, and leaves it out of the sidebar.
+        m_pages->localModels() ? static_cast<QWidget *>(m_pages->localModels()) : new QWidget(this),
         vocabularyContent,
         m_pages->whatsNew(),
     };
@@ -604,6 +608,9 @@ void AppWindow::buildSidebarShell()
     m_navigation->setIconSize(QSize(22, 22));
     m_navigation->setItemDelegate(new WholeItemDelegate(m_navigation));
     for (int index = 0; index < kPages.size(); ++index) {
+        if (index == int(AppPageId::LocalModels) + kFirstSettingsRow && !m_pages->localModels()) {
+            continue;
+        }
         const auto &page = kPages.at(index);
         auto *item = new QListWidgetItem(pageIcon(page), page.title, m_navigation);
         item->setData(Qt::UserRole, index);
@@ -914,8 +921,9 @@ void AppWindow::filterSidebarPages(const QString &query)
     }
 
     for (int row = 0; row < m_navigation->count(); ++row) {
-        m_navigation->item(row)->setHidden(
-            !m_pageKeywords.at(row).contains(query, Qt::CaseInsensitive));
+        QListWidgetItem *item = m_navigation->item(row);
+        item->setHidden(!m_pageKeywords.at(item->data(Qt::UserRole).toInt())
+                             .contains(query, Qt::CaseInsensitive));
     }
 }
 

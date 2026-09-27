@@ -1,4 +1,5 @@
 #include "providers/OpenAiRefiner.h"
+#include "providers/EndpointRequest.h"
 
 #include "providers/TranscriptRefinementPrompt.h"
 
@@ -89,7 +90,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         QUrl endpoint = base;
         endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/responses"));
 
-        QNetworkRequest request(endpoint);
+        QNetworkRequest request = endpointRequest(endpoint);
         request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
         request.setRawHeader("Authorization", "Bearer " + bearerToken.toUtf8());
         if (!organization.isEmpty()) {
@@ -105,10 +106,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         QJsonObject body;
         body.insert(QStringLiteral("model"), model);
         body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), effort.isEmpty() ? QStringLiteral("none") : effort}});
-        body.insert(QStringLiteral("instructions"),
-                    context.editSelection
-                        ? selectedDocumentEditingSystemPrompt(refinementStyle, context)
-                        : dictationRefinementSystemPrompt(refinementStyle, context));
+        body.insert(QStringLiteral("instructions"), refinementSystemPrompt(refinementStyle, context));
         body.insert(QStringLiteral("stream"), true);
         body.insert(QStringLiteral("store"), false);
         if (fast) {

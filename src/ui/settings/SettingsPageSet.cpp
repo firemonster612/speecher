@@ -1,11 +1,14 @@
 #include "ui/settings/SettingsPageSet.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/UpdateController.h"
 #include "core/AppSettings.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "frontend/qt/LocalModelRows.h"
 #include "frontend/qt/SchemaSettingsPage.h"
+#include "providers/LocalModelStore.h"
 #ifdef Q_OS_LINUX
 #include "output/YdotoolSetup.h"
 #include "platform/KeywatchSetup.h"
@@ -79,10 +82,14 @@ SettingsPage &pageById(SettingsSchema &schema, const QString &id)
 
 SettingsSchema settingsSchema(ApplicationController *controller)
 {
-    SettingsSchema schema = buildSettingsSchema(qtSchemaContext(
-        *controller->platform(),
-        *controller->providerRegistry(),
-        controller->pendingWhatsNewVersion()));
+    SchemaContext context = qtSchemaContext(*controller->platform(),
+                                            *controller->providerRegistry(),
+                                            controller->pendingWhatsNewVersion());
+    context.liveFacts = [setup = controller->localSetup()] { return setup->liveFacts(); };
+    context.liveFactsForDraft = [setup = controller->localSetup()](const AppSettings &draft) {
+        return setup->liveFacts(draft);
+    };
+    SettingsSchema schema = buildSettingsSchema(context);
     UpdateController *updates = controller->updates();
     SettingsPage &general = pageById(schema, QStringLiteral("general"));
 
@@ -227,6 +234,10 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     , m_audio(addPage(QStringLiteral("audio"), parent))
     , m_output(addPage(QStringLiteral("output"), parent, m_outputRows.factory()))
     , m_refinement(addPage(QStringLiteral("refinement"), parent))
+    , m_localModels(m_schema.hasPage(QStringLiteral("localModels"))
+                        ? addPage(QStringLiteral("localModels"), parent,
+                                  localModelRows(*controller->localSetup()))
+                        : nullptr)
     , m_vocabulary(addPage(QStringLiteral("vocabulary"), parent))
     , m_corrections(addPage(QStringLiteral("corrections"), parent))
     , m_bindings(addPage(QStringLiteral("bindings"), parent, m_bindingRows.factory()))
@@ -253,6 +264,21 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
             &SettingsPageSet::refreshUpdateRows);
     connect(this, &SettingsPageSet::changed,
             this, &SettingsPageSet::refreshUpdateRows);
+    // What LocalSetup learns shows up in rows on three pages: endpoint
+    // verdicts, runners, model lists.
+    connect(controller->localSetup(), &LocalSetup::changed, this, [this] {
+        // LocalSetup writes Speed Test results and the model in use itself.
+        const auto current = m_controller->settings()->dictationSnapshot();
+        m_draft = mergeSettingsDraft(m_schema, m_loaded, m_draft, current);
+        m_loaded = current;
+        for (SchemaSettingsPage *page : {m_audio, m_refinement, m_localModels}) {
+            if (!page) {
+                continue;
+            }
+            const QSignalBlocker blocker(page);
+            page->load(m_draft);
+        }
+    });
     updateAccessibilityState(controller->accessibilitySupported(),
                              controller->accessibilityEnabled(),
                              controller->accessibilityPersistent());
@@ -315,6 +341,7 @@ SchemaSettingsPage *SettingsPageSet::general() const { return m_general; }
 SchemaSettingsPage *SettingsPageSet::audio() const { return m_audio; }
 SchemaSettingsPage *SettingsPageSet::output() const { return m_output; }
 SchemaSettingsPage *SettingsPageSet::refinement() const { return m_refinement; }
+SchemaSettingsPage *SettingsPageSet::localModels() const { return m_localModels; }
 SchemaSettingsPage *SettingsPageSet::providerModels() const { return m_providerModels; }
 SchemaSettingsPage *SettingsPageSet::providerAuth() const { return m_providerAuth; }
 SchemaSettingsPage *SettingsPageSet::vocabulary() const { return m_vocabulary; }
@@ -350,6 +377,8 @@ void SettingsPageSet::loadAfterShow()
     }
     m_providerRows.loadSecret();
     refreshUpdateRows();
+    m_controller->localSetup()->probeHardware();
+    m_controller->localSetup()->detectRunners();
 }
 
 bool SettingsPageSet::save(bool showValidationErrors,
@@ -482,6 +511,9 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         }
         return;
     }
+    if (m_controller->localSetup()->runSettingsAction(rowId, m_draft)) {
+        return;
+    }
     if (rowId == QStringLiteral("whatsNew")) {
         m_controller->clearPendingWhatsNew();
         emit whatsNewRequested();
@@ -603,11 +635,11 @@ void SettingsPageSet::removeSpeecher()
     const bool deleteUserSettings = deleteSettings->isChecked();
     if (deleteUserSettings) {
         prepareForSettingsDeletion();
-        if (m_controller->secretStore()->deleteKeyringApiKey()) {
-            done.append(QStringLiteral("Deleted your API key from the desktop keyring."));
+        if (m_controller->secretStore()->deleteKeyringSecrets()) {
+            done.append(QStringLiteral("Deleted your API keys from the desktop keyring."));
         } else {
             notDone.append(
-                QStringLiteral("Could not delete your API key from the desktop keyring: %1")
+                QStringLiteral("Could not delete your API keys from the desktop keyring: %1")
                     .arg(m_controller->secretStore()->lastError()));
         }
         QSettings &raw = m_controller->settings()->raw();
@@ -663,6 +695,9 @@ void SettingsPageSet::applyCapabilities()
     m_general->setCapabilities(capabilities);
     m_output->setCapabilities(capabilities);
     m_refinement->setCapabilities(capabilities);
+    if (m_localModels) {
+        m_localModels->setCapabilities(capabilities);
+    }
     m_corrections->setCapabilities(capabilities);
     m_whatsNew->setCapabilities(capabilities);
 }

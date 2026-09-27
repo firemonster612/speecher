@@ -1,6 +1,7 @@
 #pragma once
 
-#include "core/AppSettings.h"
+#include "core/EndpointSettings.h"
+#include "app/LocalSetup.h"
 #include "providers/ProviderSignIn.h"
 
 #include <QList>
@@ -9,6 +10,7 @@
 #include <QVector>
 #include <QWidget>
 
+class QButtonGroup;
 class QCheckBox;
 class QComboBox;
 class QFormLayout;
@@ -18,12 +20,17 @@ class QShowEvent;
 class QProgressBar;
 class QPushButton;
 class QRadioButton;
+class QTableWidget;
 class QTimer;
+class QToolButton;
 
 namespace speecher {
 
 class ApplicationController;
 class AudioInput;
+class InlineMessage;
+class LocalSetup;
+struct LocalModel;
 class PlatformComposition;
 class ProviderRegistry;
 class SettingsStore;
@@ -43,16 +50,15 @@ void setSetupStepCounter(QWidget *page, int step, int total);
 // pixmap for a provider with no mark of its own.
 QPixmap providerMark(const QString &providerId, int size, qreal devicePixelRatio);
 
-// Shows or hides a row of a settings card along with the hairline above it,
-// which would otherwise be left behind as a gap where the row was.
-void setCardRowVisible(QWidget *row, bool visible);
-
 // What one wizard step reports to the Ready page.
 struct SetupStepStatus {
     QString name;
     bool ok = true;
     // Why the step is unfinished when it is not ok, otherwise what was chosen.
     QString detail;
+    // The Local Model the choice runs on, so the Ready page can show its
+    // download while it is still going.
+    QString localModelId;
 };
 
 // A wizard step that can explain itself on the Ready page, so each step owns
@@ -66,6 +72,8 @@ public:
     // What the user chose here, for the completed checklist. Empty for a step
     // with nothing to report back.
     virtual QString readySummary() const { return QString(); }
+    // See SetupStepStatus::localModelId.
+    virtual QString localModelId() const { return QString(); }
 };
 
 // The label/value facts describing a provider, shown under the provider picker
@@ -99,29 +107,39 @@ class WelcomeSetupPage final : public QWidget, public SetupStep {
     Q_OBJECT
 
 public:
+    // With local set, running speech on this computer is offered as a second
+    // path beside the sign-ins.
     WelcomeSetupPage(SettingsStore &settings,
                      ProviderRegistry &providers,
+                     LocalSetup *local = nullptr,
                      QWidget *parent = nullptr);
 
     QString blockedReason() const override;
 
-    // Setup cannot succeed without one of the provider CLIs signed in, so the
-    // assistant holds Next until the probe finds one.
+    // Next waits for a sign-in to be found, unless the person chose to run
+    // on this computer.
     bool ready() const { return m_ready; }
     // Re-run the probe while the page is off screen, so a sign-in that lapsed
     // mid-wizard closes the gate before Finish commits.
     void recheck();
+    void preserveSpeechChoice() { m_pathChoice.providerChosen(); }
 
 signals:
     void readyChanged();
     // Every provider in this round has answered. The assistant waits for it
     // before probing the same providers again from another page.
     void checkFinished();
+    // Running on this computer was chosen, by the person or as the default.
+    void localPathChosen();
+    void pathProviderChanged(const QString &provider);
 
 protected:
     void showEvent(QShowEvent *event) override;
 
 private:
+    void choosePath(std::optional<bool> local = std::nullopt);
+    void showSignInPathStatus();
+
     struct CredentialRow {
         QString providerId;
         QLabel *status = nullptr;
@@ -148,18 +166,35 @@ private:
     quint64 m_checkGeneration = 0;
     int m_checksOutstanding = 0;
     bool m_ready = false;
+    LocalSetup *m_local;
+    QRadioButton *m_signInPath = nullptr;
+    QRadioButton *m_localPath = nullptr;
+    QLabel *m_signInPathStatus = nullptr;
+    QWidget *m_signInDetail = nullptr;
+    QWidget *m_localDetail = nullptr;
+    QLabel *m_hardware = nullptr;
+    // Until the person picks a path, every round of checks sets the
+    // default: the sign-in when one is found, else this computer.
+    WelcomeChoice m_pathChoice;
 };
 
 class SpeechProviderSetupPage final : public QWidget, public SetupStep {
     Q_OBJECT
 
 public:
+    // With local set, Local model is one of the choices, with a suggested
+    // model to download.
     SpeechProviderSetupPage(SettingsStore &settings,
                             ProviderRegistry &providers,
+                            LocalSetup *local = nullptr,
                             QWidget *parent = nullptr);
 
     QString blockedReason() const override;
     QString readySummary() const override;
+    QString localModelId() const override;
+
+    // Selects a provider as if the person had, so no later probe moves off it.
+    void chooseProvider(const QString &providerId);
 
     // The setup assistant holds Next until the chosen service checked out.
     bool ready() const { return m_ready; }
@@ -167,6 +202,7 @@ public:
     void recheck();
 
 signals:
+    void providerChosen();
     void readyChanged();
 
 protected:
@@ -184,9 +220,17 @@ private:
     void reprobeSelectedProvider();
     int selectedIndex() const;
     void setReady(bool ready);
+    bool localSelected() const;
+    QWidget *makeLocalSection();
+    // The model the Local card shows, which is the one dictation will use.
+    const LocalModel &localChoice() const;
+    void setLocalChoice(const QString &modelId);
+    bool localDownloadStarted() const;
+    void showLocalChoice();
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
+    LocalSetup *m_local;
     ProviderSignIn m_signIn;
     QList<ProviderOptionRow> m_options;
     // Where the selected service's sign-in comes from, so someone whose only
@@ -206,6 +250,21 @@ private:
     QLabel *m_hint;
     QLabel *m_status;
     QPushButton *m_checkAgain;
+    QWidget *m_localSection = nullptr;
+    QLabel *m_localHardware = nullptr;
+    QWidget *m_localCard = nullptr;
+    QLabel *m_localCaption = nullptr;
+    QLabel *m_localName = nullptr;
+    QLabel *m_localFacts = nullptr;
+    QPushButton *m_localDownload = nullptr;
+    QProgressBar *m_localProgress = nullptr;
+    QLabel *m_localState = nullptr;
+    QPushButton *m_localCancel = nullptr;
+    QToolButton *m_compareToggle = nullptr;
+    QTableWidget *m_compare = nullptr;
+
+    // The suggestion stands until the person picks a model themselves.
+
     quint64 m_checkGeneration = 0;
     int m_pendingProbes = 0;
     // Auto-selecting a ready provider is a one-time courtesy on the first
@@ -330,8 +389,11 @@ private:
 
 class RefinementSetupPage final : public QWidget, public SetupStep {
 public:
+    // With local set, the Local Runner choice reports what it found on this
+    // computer and can pull a suggested model through Ollama.
     RefinementSetupPage(SettingsStore &settings,
                         ProviderRegistry &providers,
+                        LocalSetup *local = nullptr,
                         QWidget *parent = nullptr);
 
     QString readySummary() const override;
@@ -350,12 +412,39 @@ private:
     void updateFastModeControl();
     int selectedIndex() const;
     QString selectedProviderId() const;
+    void skipCleanup(bool skip);
+    QWidget *makeLocalRunnerDetail();
+    QWidget *makeEndpointDetail();
+    void showLocalRunner();
+    void showEndpointCheck();
+    void saveEndpointEdit(const RefinementEndpointEdit &edit);
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
-    // The provider rows, then the None row, which needs no readiness probe.
+    LocalSetup *m_local;
     QList<ProviderOptionRow> m_options;
-    QRadioButton *m_none;
+    QButtonGroup *m_group = nullptr;
+    // None, which needs no readiness probe, as a check box under the choices.
+    QCheckBox *m_skip = nullptr;
+    // The provider to go back to when Skip cleanup is cleared.
+    QString m_lastProvider;
+    QWidget *m_localDetail = nullptr;
+    QLabel *m_runnerStatus = nullptr;
+    // The card holding the model choice and the suggestion.
+    QWidget *m_runnerCard = nullptr;
+    QWidget *m_runnerModelRow = nullptr;
+    QComboBox *m_runnerModel = nullptr;
+    QWidget *m_cleanupSuggestion = nullptr;
+    QLabel *m_cleanupSuggestionText = nullptr;
+    QPushButton *m_pull = nullptr;
+    QProgressBar *m_pullProgress = nullptr;
+    QWidget *m_noRunner = nullptr;
+    QWidget *m_endpointDetail = nullptr;
+    QComboBox *m_endpointFormat = nullptr;
+    QLineEdit *m_endpointUrl = nullptr;
+    QLineEdit *m_endpointKey = nullptr;
+    QComboBox *m_endpointModel = nullptr;
+    QLabel *m_endpointStatus = nullptr;
     ProviderStatsBlock *m_stats;
     QLabel *m_warning;
     QCheckBox *m_fastMode;
@@ -408,8 +497,15 @@ protected:
 private:
     void showBlockedSteps(const QList<SetupStepStatus> &steps);
     void showCompletedSteps(const QList<SetupStepStatus> &steps);
+    // The download a completed step still waits on, if any.
+    QString downloadingModel() const;
+    void showDownloadProgress();
 
     ApplicationController &m_controller;
+    QList<SetupStepStatus> m_steps;
+    InlineMessage *m_downloadNotice = nullptr;
+    QProgressBar *m_downloadProgress = nullptr;
+    QLabel *m_downloadText = nullptr;
 #ifdef Q_OS_LINUX
     void updateLinuxShortcutInstruction();
     QLabel *m_manualCommand = nullptr;

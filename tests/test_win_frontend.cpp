@@ -176,6 +176,28 @@ private slots:
         if (scalarCommit) QCOMPARE(store->previewWords(), 12);
     }
 
+    // LocalSetup writes settings behind an open window (deleting the model in
+    // use moves dictation to another); the draft takes that in without losing
+    // an edit of its own.
+    void settingsDraftTakesInStoreChangesAndKeepsItsEdits()
+    {
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        LocalSpeechSettings local = store->localSpeechSettings();
+        local.modelId = QStringLiteral("parakeet");
+        store->setLocalSpeechSettings(local);
+        win::SettingsModel model(controller.get());
+        model.setValue(QStringLiteral("previewWords"), 12);
+
+        local.modelId = QStringLiteral("moonshine-small");
+        store->setLocalSpeechSettings(local);
+        model.syncWithStore();
+
+        QCOMPARE(model.draft().speech.local.modelId, QStringLiteral("moonshine-small"));
+        QCOMPARE(model.draft().ui.previewWords, 12);
+    }
+
     void constructionDoesNotCreateAQtDictationPopup()
     {
         QCOMPARE(widgetCount<TranscriberPopup>(), existingQtPopups);

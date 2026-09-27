@@ -71,3 +71,23 @@ _Avoid_: Added version, introduced version
 **CLI Proxy API Account**:
 One OAuth login (claude or codex) stored as a JSON file in CLI Proxy API's auth directory, selectable as a credential source per provider family (Auth page): the Anthropic auth mode covers Claude Voice dictation and Anthropic refinement, the OpenAI auth mode covers Codex dictation and OpenAI refinement. CLI Proxy API owns and refreshes these files; Speecher may also refresh an expired account and writes rotated tokens back while holding the account's adjacent lock file. The directory is auto-detected (`~/.cli-proxy-api`, then `~/.local/share/cliproxy-api/oauth`; override with `cliproxy/oauthDir`). On machines that don't host CLI Proxy API, set the server URL and API key on the Providers page instead: refinement then goes through the proxy's own `/v1/messages` and `/v1/responses` endpoints and the server routes accounts itself (speech still needs the local files, since its websockets connect to the vendors directly).
 _Avoid_: Proxy token, cliproxy key
+
+**Local Model**:
+A speech-to-text model file Speecher downloads and runs on the user's own machine through transcribe.cpp, managed on the Local models page.
+_Avoid_: Offline model, on-device model, embedded model
+
+**Local Runner**:
+A separately installed program that serves cleanup models over HTTP on the user's machine: Ollama, LM Studio or llama-server. Speecher detects it and uses it for refinement but does not run the model itself.
+_Avoid_: Local LLM, inference server, backend
+
+**Custom Endpoint**:
+A user-supplied server URL for one role, speech or refinement. The speech endpoint speaks OpenAI's audio transcriptions API; the refinement endpoint speaks OpenAI Chat Completions or Anthropic Messages. The CLI Proxy API server is a preset of the refinement endpoint.
+_Avoid_: BYO endpoint, self-hosted provider, custom provider
+
+**Hardware Tier**:
+The class Speecher assigns a machine from its detected GPU memory, RAM and CPU, used to label each Local Model fits, tight or too large and to pick a suggestion.
+_Avoid_: Device class, performance level
+
+**Speed Test**:
+A short bundled clip transcribed with a downloaded Local Model on the user's machine; its measured time replaces the estimated speed label.
+_Avoid_: Benchmark, calibration

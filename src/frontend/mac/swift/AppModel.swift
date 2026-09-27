@@ -34,6 +34,9 @@ final class AppModel: ObservableObject {
     }
 
     @Published private(set) var update = UpdateStatus()
+    /// What LocalSetup knows about running models on this computer, re-read
+    /// whole on every change it announces.
+    @Published private(set) var local: LocalSetupState
     /// "Later" on the restart banner: hides it until a different version or a
     /// restart makes it worth showing again, exactly as the Linux banner does.
     @Published var updateBannerDeferred = false
@@ -121,6 +124,7 @@ final class AppModel: ObservableObject {
         sidebarRuns = bridge.settingsSchema.sidebarRuns
         status = bridge.stateName
         transcript = bridge.lastTranscript
+        local = bridge.localSetupState
         shortcut = bridge.shortcutDisplay
         accessibilityEnabled = bridge.accessibilityEnabled
         whatsNewPending = bridge.whatsNewPending
@@ -168,6 +172,17 @@ final class AppModel: ObservableObject {
         bridge.updateChanged = { [weak self] in
             self?.refreshUpdate()
         }
+        bridge.localSetupChanged = { [weak self] rowsChanged in
+            guard let self else { return }
+            local = self.bridge.localSetupState
+            // Endpoint verdicts, runners and model lists are row text, and
+            // LocalSetup writes settings (a pulled model, a Speed Test), so
+            // the draft is re-read too. Every edit here is already committed.
+            if rowsChanged {
+                self.bridge.settingsSchema.reloadDraft()
+                pages = self.bridge.settingsSchema.pages
+            }
+        }
         refreshUpdate()
         refreshTranscriptDetail()
     }
@@ -202,6 +217,14 @@ final class AppModel: ObservableObject {
     func showCorrections() {
         requestedGroup = "Corrections"
         pane = "vocabulary"
+    }
+
+    /// What a window showing local models asks for on the way up: the
+    /// hardware (probed once) and the runners (looked for every time), which
+    /// refinement uses even where speech cannot run here.
+    func refreshLocalSetup() {
+        bridge.probeLocalHardware()
+        bridge.detectLocalRunners()
     }
 
     private func refreshUpdate() {
@@ -368,8 +391,21 @@ final class AppModel: ObservableObject {
         }
         // Every schema action, enableAccessibility included, goes to the
         // front end's one dispatcher (MacFrontEnd.mm).
-        bridge.settingsSchema.actionTriggered?(rowId)
+        guard Self.testsTypedText.contains(rowId) else {
+            bridge.settingsSchema.actionTriggered?(rowId)
+            return
+        }
+        // A button click leaves a field being typed in still editing, and the
+        // field saves when it lets go: end that first, and test a turn later,
+        // so the address on screen is the one tested.
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        DispatchQueue.main.async { [bridge] in
+            bridge.settingsSchema.actionTriggered?(rowId)
+        }
     }
+
+    /// The actions that read what the fields beside them hold.
+    private static let testsTypedText: Set<String> = ["speechEndpointTest", "refinementEndpointTest"]
 
     func showWhatsNew() {
         pane = "whatsNew"

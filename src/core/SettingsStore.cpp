@@ -1,4 +1,5 @@
 #include "core/SettingsStore.h"
+#include "core/SecretStore.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 
@@ -67,10 +68,101 @@ SettingsStore::SettingsStore(QObject *parent)
     : QObject(parent)
     , SettingsCodecs()
 {
+    m_secrets = new SecretStore(this, this);
+}
+
+SecretStore *SettingsStore::secrets() const
+{
+    return m_secrets;
+}
+
+QString SettingsStore::cliproxyApiKey() const
+{
+    return m_secrets->secret(SecretStore::Secret::CliproxyApiKey);
+}
+
+void SettingsStore::setCliproxyApiKey(const QString &value)
+{
+    m_secrets->saveSecret(SecretStore::Secret::CliproxyApiKey, value);
+}
+
+AppSettings SettingsStore::snapshot() const
+{
+    return snapshotReading(true);
+}
+
+AppSettings SettingsStore::dictationSnapshot() const
+{
+    return snapshotReading(false);
+}
+
+QString SettingsStore::resolveDictationSecrets(AppSettings &settings)
+{
+    using Secret = SecretStore::Secret;
+    QList<std::pair<Secret, QString *>> required;
+    const auto require = [&](Secret secret, QString &value) {
+        if (settings.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) {
+            required.append({secret, &value});
+        }
+    };
+    auto &refinement = settings.refinement;
+    if (settings.speech.providerId == QStringLiteral("endpoint")) {
+        require(Secret::SpeechEndpointKey, settings.speech.endpoint.apiKey);
+    }
+    if (refinement.providerId == QStringLiteral("endpoint") && refinement.endpoint.preset.isEmpty()
+        && !refinement.endpoint.useCliproxyKey) {
+        require(Secret::RefinementEndpointKey, refinement.endpoint.apiKey);
+    }
+    // Speech uses local OAuth account files, never the remote proxy API key.
+    const bool proxyPreset = refinement.providerId == QStringLiteral("endpoint")
+        && (refinement.endpoint.preset == QStringLiteral("cliproxy") || refinement.endpoint.useCliproxyKey);
+    const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
+        && ((refinement.providerId == QStringLiteral("openai") && refinement.openAiAuthMode == QStringLiteral("cliproxy"))
+            || (refinement.providerId == QStringLiteral("anthropic") && refinement.anthropicAuthMode == QStringLiteral("cliproxy")));
+    if (proxyPreset || remoteProxy) {
+        require(Secret::CliproxyApiKey, refinement.cliproxyApiKey);
+    }
+    if (required.isEmpty()) return {};
+
+    // Own QSettings and SecretStore in this worker; never access the GUI cache
+    // or its in-flight prefetch jobs from another thread.
+    SettingsStore source;
+    for (const auto &[secret, value] : required) {
+        *value = source.secrets()->secret(secret);
+        if (value->isEmpty() && !source.secrets()->isSecretKnown(secret)) {
+            return QStringLiteral("Desktop keyring unavailable for %1: %2")
+                .arg(SecretStore::settingsKey(secret), source.secrets()->lastError());
+        }
+        settings.unreadSecretKeys.removeAll(SecretStore::settingsKey(secret));
+    }
+    return {};
+}
+
+// Preserve unread state in the draft even if prefetch completes before save.
+AppSettings SettingsStore::snapshotReading(bool waitForKeyring) const
+{
+    AppSettings settings = SettingsCodecs::snapshot();
+    const auto read = [this, &settings, waitForKeyring](SecretStore::Secret secret) {
+        const QString value = waitForKeyring ? m_secrets->secret(secret) : m_secrets->cachedSecret(secret);
+        if (!m_secrets->isSecretKnown(secret)) {
+            settings.unreadSecretKeys.append(SecretStore::settingsKey(secret));
+        }
+        return value;
+    };
+    settings.refinement.cliproxyApiKey = read(SecretStore::Secret::CliproxyApiKey);
+    settings.refinement.endpoint.apiKey =
+        read(SecretStore::Secret::RefinementEndpointKey);
+    settings.speech.endpoint.apiKey = read(SecretStore::Secret::SpeechEndpointKey);
+    return settings;
 }
 
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
+    const AppSettings previous = dictationSnapshot();
+    const auto save = [this, &draft](SecretStore::Secret secret, const QString &value) {
+        if (value.trimmed().isEmpty() && draft.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) return;
+        m_secrets->saveSecret(secret, value);
+    };
     setSetupCompleted(draft.setupCompleted);
     setLaunchAtLogin(draft.launchAtLogin);
     setTheme(draft.ui.theme);
@@ -81,6 +173,9 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setPreviewWords(draft.ui.previewWords);
     setSpeechProvider(draft.speech.providerId);
     setCodexFinalRetranscribe(draft.speech.codexFinalRetranscribe);
+    setLocalSpeechSettings(draft.speech.local);
+    setSpeechEndpointSettings(draft.speech.endpoint);
+    save(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);
     setAudioCaptureSettings(draft.audio);
     setAppRecognitionRules(draft.appRecognitionRules);
     setRefinementProvider(draft.refinement.providerId);
@@ -101,7 +196,10 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setAnthropicCliproxyAccount(draft.refinement.anthropicCliproxyAccount);
     setCliproxyOauthDir(draft.refinement.cliproxyOauthDirConfigured);
     setCliproxyBaseUrl(draft.refinement.cliproxyBaseUrl);
-    setCliproxyApiKey(draft.refinement.cliproxyApiKey);
+    save(SecretStore::Secret::CliproxyApiKey, draft.refinement.cliproxyApiKey);
+    setRefinementEndpointSettings(draft.refinement.endpoint);
+    save(SecretStore::Secret::RefinementEndpointKey, draft.refinement.endpoint.apiKey);
+    setLocalRunnerSettings(draft.refinement.localRunner);
     setOutputMethod(draft.output.method);
     setOutputFormat(draft.output.format);
     setPasteRules(draft.output.pasteRules);
@@ -122,6 +220,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     if (!setBindingRules(draft.bindings, &replacementError)) {
         qWarning("dropped invalid replacement rules: %s", qPrintable(replacementError));
     }
+    emit snapshotApplied(previous);
 }
 
 bool SettingsStore::launchAtLogin() const

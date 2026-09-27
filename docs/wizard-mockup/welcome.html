@@ -5,7 +5,7 @@
 <title>Speecher setup — Welcome</title>
 <link rel="stylesheet" href="wizard.css">
 </head>
-<body data-states="nocreds checking found" data-default-state="nocreds">
+<body data-states="local nocreds checking found" data-default-state="local">
 
 <div class="dialog" role="dialog" aria-labelledby="page-title">
 
@@ -20,11 +20,44 @@
     <p class="lead">This assistant checks everything dictation needs: your
       speech service, microphone, and how text reaches your apps.</p>
 
-    <section class="card" style="margin-top:16px">
-      <h2 class="card-title">Before you start</h2>
-      <p class="muted" style="margin-bottom:0">Speecher uses your existing
-        ChatGPT or Claude sign-in. Install and sign in to one of these, then
-        choose Check again:</p>
+    <h2 class="section-title" style="margin-top:14px">How should Speecher turn speech into text?</h2>
+    <div class="choices" role="radiogroup" aria-label="How speech becomes text">
+      <label class="choice">
+        <input type="radio" name="path" value="signin" data-checked-in="nocreds checking found">
+        <svg class="icon lg" aria-hidden="true"><use href="#icon-user"/></svg>
+        <span class="choice-text">
+          <span class="choice-name">Use my ChatGPT or Claude sign-in</span>
+          <span class="choice-note">Transcribed in the cloud by the service you already pay for.</span>
+        </span>
+        <span class="choice-status warn" data-show="local nocreds">None found</span>
+        <span class="choice-status" data-show="checking">Checking…</span>
+        <span class="choice-status ok" data-show="found">Sign-in found</span>
+      </label>
+      <label class="choice">
+        <input type="radio" name="path" value="local" data-checked-in="local">
+        <svg class="icon lg" aria-hidden="true"><use href="#icon-chip"/></svg>
+        <span class="choice-text">
+          <span class="choice-name">Run on this computer</span>
+          <span class="choice-note">Private, no account, works offline after a one-time download.</span>
+        </span>
+      </label>
+    </div>
+
+    <!-- local: what running here means, before a model is chosen -->
+    <div data-show="local">
+      <p class="hwline">
+        <svg class="icon" aria-hidden="true"><use href="#icon-chip"/></svg>
+        <span>AMD Ryzen 7 PRO 4750U, 16 threads · AMD Radeon Graphics, Vulkan · 16 GB memory</span>
+      </p>
+      <p style="margin:0">Speecher will suggest a speech model for this computer on the
+        next step. Dictation stays on this computer and works offline once the
+        model is downloaded.</p>
+    </div>
+
+    <section class="card" style="margin-top:16px" data-hide="local">
+      <h2 class="card-title">Sign-ins on this computer</h2>
+      <p class="muted" style="margin-bottom:0">Install and sign in to one of
+        these, then choose Check again:</p>
 
       <ul class="status-list">
         <li>

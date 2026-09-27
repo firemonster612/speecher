@@ -10,8 +10,10 @@ project(speecher VERSION 0.1.1 LANGUAGES C CXX)
 include(cmake/GitVersion.cmake)
 
 if(APPLE)
-  # The macOS platform backend is Objective-C++.
-  enable_language(OBJCXX)
+  # The macOS platform backend is Objective-C++. Objective-C too, for ggml's
+  # Metal backend: with only OBJCXX enabled CMake compiles its .m files as
+  # Objective-C++, where they do not build.
+  enable_language(OBJC OBJCXX)
 
   include(FetchContent)
   FetchContent_Declare(sparkle
@@ -241,6 +243,8 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/InsightsLog.cpp
   src/core/InsightsSummary.cpp
   src/core/LearnedCorrection.cpp
+  src/core/EndpointSettings.cpp
+  src/core/LocalModelCatalog.cpp
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
@@ -270,6 +274,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/InsightsLog.h
   src/core/InsightsSummary.h
   src/core/LearnedCorrection.h
+  src/core/LocalModelCatalog.h
   src/core/OutputMethod.h
   src/core/OutputFormat.h
   src/core/PasteRules.h
@@ -307,6 +312,11 @@ set(SPEECHER_WORKFLOW_HEADERS
 
 set(SPEECHER_PROVIDER_SOURCES
   src/providers/StreamingRefinement.cpp
+  src/providers/ChatCompletionsRefiner.cpp
+  src/providers/CustomEndpoints.cpp
+  src/providers/EndpointSpeechTranscriber.cpp
+  src/providers/EndpointTranscriptRefiner.cpp
+  src/providers/LocalRunner.cpp
   src/providers/AnthropicApiRefiner.cpp
   src/providers/AnthropicTranscriptRefiner.cpp
   src/providers/CodexCredentialStorage.cpp
@@ -320,6 +330,7 @@ set(SPEECHER_PROVIDER_SOURCES
   src/providers/ProviderSignIn.cpp
   src/providers/CodexDictationClient.cpp
   src/providers/CodexSpeechTranscriber.cpp
+  src/providers/LocalModelStore.cpp
   src/providers/OpenAiAuthProvider.cpp
   src/providers/OpenAiRefiner.cpp
   src/providers/OpenAiTranscriptRefiner.cpp
@@ -332,6 +343,14 @@ endif()
 
 set(SPEECHER_PROVIDER_HEADERS
   src/providers/StreamingRefinement.h
+  src/providers/BlockingHttp.h
+  src/providers/ChatCompletionsRefiner.h
+  src/providers/CustomEndpoints.h
+  src/providers/EndpointSpeechTranscriber.h
+  src/providers/EndpointTranscriptRefiner.h
+  src/providers/LocalRunner.h
+  src/providers/PcmWav.h
+  src/providers/ServerSentEvents.h
   src/providers/AnthropicApiRefiner.h
   src/providers/AnthropicTranscriptRefiner.h
   src/providers/CodexCredentialStorage.h
@@ -346,6 +365,7 @@ set(SPEECHER_PROVIDER_HEADERS
   src/providers/ProviderSignIn.h
   src/providers/CodexDictationClient.h
   src/providers/CodexSpeechTranscriber.h
+  src/providers/LocalModelStore.h
   src/providers/OpenAiAuthProvider.h
   src/providers/OpenAiRefiner.h
   src/providers/OpenAiTranscriptRefiner.h
@@ -483,6 +503,7 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
 
 set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
+  src/app/LocalSetup.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
@@ -497,6 +518,7 @@ set(SPEECHER_APP_SOURCES
 set(SPEECHER_APP_HEADERS
   src/app/AppFrontEnd.h
   src/app/ApplicationController.h
+  src/app/LocalSetup.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
   src/app/HeadlessTranscribe.h
@@ -541,6 +563,7 @@ set(SPEECHER_APP_MAC_HEADERS
 set(SPEECHER_FRONTEND_QT_SOURCES
   src/frontend/qt/BindingRows.cpp
   src/frontend/qt/CollectionRow.cpp
+  src/frontend/qt/LocalModelRows.cpp
   src/frontend/qt/OutputCustomRows.cpp
   src/frontend/qt/ProviderCustomRows.cpp
   src/frontend/qt/QtFrontEnd.cpp
@@ -568,6 +591,7 @@ set(SPEECHER_FRONTEND_QT_SOURCES
 set(SPEECHER_FRONTEND_QT_HEADERS
   src/frontend/qt/BindingRows.h
   src/frontend/qt/CollectionRow.h
+  src/frontend/qt/LocalModelRows.h
   src/frontend/qt/OutputCustomRows.h
   src/frontend/qt/ProviderCustomRows.h
   src/frontend/qt/QtFrontEnd.h
@@ -633,6 +657,7 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
   src/frontend/mac/swift/Collections.swift
   src/frontend/mac/swift/DictationPanel.swift
   src/frontend/mac/swift/HomePane.swift
+  src/frontend/mac/swift/LocalModels.swift
   src/frontend/mac/swift/MenuBarExtra.swift
   src/frontend/mac/swift/Panes.swift
   src/frontend/mac/swift/Rows.swift
@@ -649,6 +674,7 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/CustomRows.cpp
   src/frontend/win/DictationPanel.cpp
   src/frontend/win/HomePage.cpp
+  src/frontend/win/LocalModelBrowser.cpp
   src/frontend/win/SettingsModel.cpp
   src/frontend/win/SettingsPage.cpp
   src/frontend/win/SettingsWindow.cpp
@@ -667,6 +693,7 @@ set(SPEECHER_FRONTEND_WIN_HEADERS
   src/frontend/win/CustomRows.h
   src/frontend/win/DictationPanel.h
   src/frontend/win/HomePage.h
+  src/frontend/win/LocalModelBrowser.h
   src/frontend/win/SettingsModel.h
   src/frontend/win/SettingsPage.h
   src/frontend/win/SettingsWindow.h
@@ -718,6 +745,155 @@ if(APPLE)
   target_link_libraries(speecher_providers PRIVATE "-framework Security")
 elseif(WIN32)
   target_link_libraries(speecher_providers PRIVATE Advapi32)
+endif()
+
+# Local speech runs in-process on transcribe.cpp; see
+# docs/adr/0006-local-models-and-custom-endpoints.md. Linux and Windows x64
+# build the ggml backends as modules shipped beside libtranscribe (one module
+# per CPU instruction set, plus Vulkan), so one package runs on any x86-64
+# machine and falls back to the CPU where no Vulkan driver loads. Elsewhere
+# (macOS, ARM) everything is static, with Metal compiled in on Apple Silicon.
+#
+# Off by default so an everyday build stays fast: transcribe.cpp more than
+# doubles a clean build. Release builds turn it on. A local build with it on
+# compiles one CPU backend tuned for this machine unless
+# SPEECHER_LOCAL_SPEECH_ALL_CPUS asks for every instruction set, as packages do.
+option(SPEECHER_WITH_LOCAL_SPEECH "Run speech models on this computer with transcribe.cpp"
+  ${SPEECHER_RELEASE_BUILD})
+if(SPEECHER_WITH_LOCAL_SPEECH)
+  set(SPEECHER_LOCAL_SPEECH_MODULES OFF)
+  if(NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    set(SPEECHER_LOCAL_SPEECH_MODULES ON)
+  endif()
+
+  set(SPEECHER_LOCAL_SPEECH_VULKAN_FOUND OFF)
+  if(SPEECHER_LOCAL_SPEECH_MODULES)
+    # Where the LunarG SDK installs, as ggml looks too.
+    if(DEFINED ENV{VULKAN_SDK})
+      list(APPEND CMAKE_PREFIX_PATH "$ENV{VULKAN_SDK}")
+    endif()
+    find_package(Vulkan QUIET COMPONENTS glslc)
+    find_package(SPIRV-Headers CONFIG QUIET)
+    if(Vulkan_FOUND AND Vulkan_glslc_FOUND AND SPIRV-Headers_FOUND)
+      set(SPEECHER_LOCAL_SPEECH_VULKAN_FOUND ON)
+    endif()
+  endif()
+  # Release builds must not quietly drop to the CPU: the Linux release profile
+  # always wants Vulkan, and the Windows release job asks for it explicitly.
+  set(SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT ${SPEECHER_LOCAL_SPEECH_VULKAN_FOUND})
+  if(SPEECHER_RELEASE_BUILD)
+    set(SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT ON)
+  endif()
+  option(SPEECHER_LOCAL_SPEECH_VULKAN "Build transcribe.cpp's Vulkan backend"
+    ${SPEECHER_LOCAL_SPEECH_VULKAN_DEFAULT})
+  if(SPEECHER_LOCAL_SPEECH_VULKAN AND NOT SPEECHER_LOCAL_SPEECH_VULKAN_FOUND)
+    message(FATAL_ERROR "SPEECHER_LOCAL_SPEECH_VULKAN needs the Vulkan headers, glslc and "
+      "SPIRV-Headers (Debian: libvulkan-dev glslc spirv-headers; Windows: the LunarG "
+      "Vulkan SDK plus SPIRV-Headers on CMAKE_PREFIX_PATH).")
+  endif()
+  if(NOT SPEECHER_LOCAL_SPEECH_VULKAN)
+    message(STATUS "Local speech: Vulkan is off; models will run on the CPU.")
+  endif()
+
+  set(TRANSCRIBE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+  # A package must not depend on whichever BLAS the build host has installed.
+  set(TRANSCRIBE_USE_SYSTEM_BLAS OFF CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_VULKAN ${SPEECHER_LOCAL_SPEECH_VULKAN} CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_BUILD_SHARED ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_GGML_BACKEND_DL ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
+  # Packages carry every CPU backend so they run on any x86-64 machine; a
+  # local build compiles only the one tuned for the machine it runs on.
+  option(SPEECHER_LOCAL_SPEECH_ALL_CPUS
+    "Build a CPU backend for every x86-64 instruction set, as release packages need"
+    ${SPEECHER_RELEASE_BUILD})
+  if(SPEECHER_LOCAL_SPEECH_MODULES AND SPEECHER_LOCAL_SPEECH_ALL_CPUS)
+    set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+    set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+  else()
+    set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
+    set(GGML_NATIVE ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
+  endif()
+
+  include(FetchContent)
+  # v0.2.4's release commit.
+  FetchContent_Declare(transcribe
+    URL https://github.com/handy-computer/transcribe.cpp/archive/7d37cea2248a1fb6aca9652a1d37debccbbb1ff3.tar.gz
+    URL_HASH SHA256=abbe8a1e7352cc2a101ffdc37b2a0de1e6b3f04121e27d24ff1d63821ab6ccfb
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    # Added below with EXCLUDE_FROM_ALL, which keeps ggml's headers and CMake
+    # package files out of `cmake --install`.
+    SOURCE_SUBDIR speecher-adds-this-itself
+  )
+  FetchContent_MakeAvailable(transcribe)
+  # A function scope so that Qt's automatic code generation, switched on for
+  # this project, stays off for transcribe.cpp's plain C and C++ targets.
+  function(speecher_add_transcribe)
+    set(CMAKE_AUTOMOC OFF)
+    set(CMAKE_AUTORCC OFF)
+    set(CMAKE_AUTOUIC OFF)
+    add_subdirectory("${transcribe_SOURCE_DIR}" "${transcribe_BINARY_DIR}" EXCLUDE_FROM_ALL)
+  endfunction()
+  speecher_add_transcribe()
+  # transcribe.cpp names its headers from CMAKE_SOURCE_DIR, which is Speecher's
+  # tree when it is built as a subproject.
+  target_include_directories(transcribe PUBLIC "$<BUILD_INTERFACE:${transcribe_SOURCE_DIR}/include>")
+  # transcribe.cpp and the ggml and miniz code it vendors are MIT licensed;
+  # their notices ship beside the binaries on every platform.
+  set(SPEECHER_LOCAL_SPEECH_NOTICES "${CMAKE_CURRENT_BINARY_DIR}/transcribe.cpp-licenses.md")
+  file(READ "${transcribe_SOURCE_DIR}/LICENSE" _transcribe_license)
+  file(READ "${transcribe_SOURCE_DIR}/THIRD-PARTY-LICENSES.md" _transcribe_third_party)
+  file(WRITE "${SPEECHER_LOCAL_SPEECH_NOTICES}"
+    "# transcribe.cpp\n\n${_transcribe_license}\n\n${_transcribe_third_party}")
+
+  if(SPEECHER_LOCAL_SPEECH_MODULES)
+    # libtranscribe finds its backend modules in its own directory, so keep
+    # every piece beside the executables in the build tree and beside
+    # libtranscribe once installed.
+    set(SPEECHER_LOCAL_SPEECH_LIBRARIES transcribe ggml ggml-base)
+    # ggml only ever adds to this list, so a backend switched off since the
+    # last configure can still be named in it.
+    foreach(backend IN LISTS GGML_AVAILABLE_BACKENDS)
+      if(TARGET ${backend})
+        list(APPEND SPEECHER_LOCAL_SPEECH_LIBRARIES ${backend})
+      endif()
+    endforeach()
+    # The package carries the libraries, not the headers to build against them.
+    set_target_properties(ggml PROPERTIES PUBLIC_HEADER "")
+    set_target_properties(${SPEECHER_LOCAL_SPEECH_LIBRARIES} PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    include(GNUInstallDirs)
+    if(WIN32)
+      set(SPEECHER_LOCAL_SPEECH_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}")
+    else()
+      set(SPEECHER_LOCAL_SPEECH_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}")
+    endif()
+    install(TARGETS ${SPEECHER_LOCAL_SPEECH_LIBRARIES}
+      LIBRARY DESTINATION "${SPEECHER_LOCAL_SPEECH_INSTALL_DIR}" NAMELINK_SKIP
+      RUNTIME DESTINATION "${SPEECHER_LOCAL_SPEECH_INSTALL_DIR}"
+    )
+  endif()
+
+  target_sources(speecher_providers PRIVATE
+    src/providers/HardwareProbe.cpp
+    src/providers/HardwareProbe.h
+    src/providers/LocalSpeechEngine.cpp
+    src/providers/LocalSpeechEngine.h
+    src/providers/LocalSpeechTranscriber.cpp
+    src/providers/LocalSpeechTranscriber.h
+  )
+  target_compile_definitions(speecher_providers PUBLIC SPEECHER_WITH_LOCAL_SPEECH=1)
+  target_link_libraries(speecher_providers PRIVATE transcribe)
+  # LibriSpeech test-clean utterance 6930-75918-0018 (CC BY 4.0, Panayotov et
+  # al., openslr.org/12), 16 kHz mono signed 16-bit little-endian PCM.
+  qt_add_resources(speecher_providers speed_test_clip
+    PREFIX "/speedtest"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/assets/speedtest"
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/speedtest/librispeech-6930-75918-0018.s16le"
+  )
 endif()
 
 add_library(speecher_platform STATIC
@@ -924,11 +1100,12 @@ if(APPLE AND SPEECHER_WITH_SWIFT_UI)
   # Qt, still: the bridge reads the schema context and the theme through the Qt
   # front end's helpers rather than reassembling them. Every window this front
   # end shows is AppKit/SwiftUI. AVFoundation is the setup assistant's
-  # microphone permission.
+  # microphone permission; UserNotifications says a download finished.
   target_link_libraries(speecher_frontend_mac PUBLIC
     speecher_frontend_qt speecher_frontend_mac_swift
     "-framework AppKit"
     "-framework AVFoundation"
+    "-framework UserNotifications"
   )
   # Ninja cannot see that the .mm files need the generated header, so order the
   # whole Swift target ahead of them.
@@ -980,7 +1157,7 @@ if(TARGET speecher_frontend_mac)
 endif()
 
 if(WIN32)
-  target_sources(speecher PRIVATE packaging/windows/speecher.manifest)
+  target_sources(speecher PRIVATE packaging/windows/speecher.manifest packaging/windows/speecher.rc)
 endif()
 if(TARGET speecher_frontend_win)
   set_target_properties(speecher PROPERTIES WIN32_EXECUTABLE TRUE)
@@ -1011,6 +1188,9 @@ if(APPLE)
     packaging/macos/speecher-menubar.png
     packaging/macos/speecher-menubar@2x.png
   )
+  if(SPEECHER_WITH_LOCAL_SPEECH)
+    list(APPEND SPEECHER_MACOS_RESOURCES "${SPEECHER_LOCAL_SPEECH_NOTICES}")
+  endif()
   target_sources(speecher PRIVATE ${SPEECHER_MACOS_RESOURCES})
   set_source_files_properties(${SPEECHER_MACOS_RESOURCES} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources"
@@ -1268,6 +1448,9 @@ endif()
 if(UNIX AND NOT APPLE)
   install(FILES "${CMAKE_CURRENT_BINARY_DIR}/io.github.firemonster612.speecher.desktop" DESTINATION ${SPEECHER_INSTALL_APPLICATIONS_DIR})
   install(FILES packaging/io.github.firemonster612.speecher.svg DESTINATION ${SPEECHER_INSTALL_HICOLOR_DIR}/scalable/apps)
+  if(SPEECHER_WITH_LOCAL_SPEECH)
+    install(FILES "${SPEECHER_LOCAL_SPEECH_NOTICES}" DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
+  endif()
   install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 endif()
 
@@ -1295,6 +1478,8 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
+    tests/test_local_models.cpp
+    tests/test_custom_endpoints.cpp
     tests/test_file_transcription.cpp
   )
   if(UNIX)
@@ -1371,6 +1556,8 @@ if(SPEECHER_BUILD_TESTS)
     claude_voice
     codex_dictation
     audio_pcm_converter
+    local_models
+    custom_endpoints
     file_transcription
   )
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -1400,6 +1587,21 @@ if(SPEECHER_BUILD_TESTS)
     add_test(NAME speecher_atspi_unavailable_peer
       COMMAND dbus-run-session -- $<TARGET_FILE:speecher_atspi_peer_test>)
     set_tests_properties(speecher_atspi_unavailable_peer PROPERTIES TIMEOUT 10)
+  endif()
+
+  # The endpoint key tests against a working keyring, which the developer's
+  # own session may not offer (a locked collection falls back to the
+  # settings file). Skipped where gnome-keyring is not installed.
+  if(UNIX AND NOT APPLE)
+    find_program(SPEECHER_DBUS_RUN_SESSION dbus-run-session)
+    find_program(SPEECHER_GNOME_KEYRING gnome-keyring-daemon)
+    if(SPEECHER_DBUS_RUN_SESSION AND SPEECHER_GNOME_KEYRING)
+      add_test(NAME speecher_custom_endpoints_keyring
+        COMMAND ${SPEECHER_DBUS_RUN_SESSION} -- ${CMAKE_CURRENT_SOURCE_DIR}/tests/keyring/with_session_keyring.sh
+                $<TARGET_FILE:speecher_tests> --suite custom_endpoints)
+      set_tests_properties(speecher_custom_endpoints_keyring PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE TIMEOUT 120)
+    endif()
   endif()
 
   qt_add_executable(speecher_atspi_fixture

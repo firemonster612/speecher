@@ -17,6 +17,13 @@ inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscrip
 inline const QString UiSoundsEnabled = QStringLiteral("ui/soundsEnabled");
 inline const QString SpeechProvider = QStringLiteral("stt/provider");
 inline const QString CodexFinalRetranscribe = QStringLiteral("stt/codexFinalRetranscribe");
+inline const QString LocalModelChosen = QStringLiteral("local/modelChosen");
+inline const QString LocalPendingDownloads = QStringLiteral("local/pendingDownloads");
+inline const QString LocalModel = QStringLiteral("local/model");
+inline const QString LocalDevice = QStringLiteral("local/device");
+inline const QString LocalIdleUnloadMinutes = QStringLiteral("local/idleUnloadMinutes");
+// A group: one key per model id, holding the measured seconds for the clip.
+inline const QString LocalSpeedTest = QStringLiteral("local/speedTest");
 inline const QString VocabularyEntries = QStringLiteral("stt/vocabularyEntries");
 inline const QString LegacyVocabulary = QStringLiteral("stt/customVocabulary");
 inline const QString AudioDeviceId = QStringLiteral("audio/deviceId");
@@ -56,7 +63,23 @@ inline const QString AnthropicFastMode = QStringLiteral("anthropic/fastMode");
 inline const QString AnthropicCliproxyAccount = QStringLiteral("anthropic/cliproxyAccount");
 inline const QString CliproxyOauthDir = QStringLiteral("cliproxy/oauthDir");
 inline const QString CliproxyBaseUrl = QStringLiteral("cliproxy/baseUrl");
+// The settings-file copy of a secret is only a fallback for machines without
+// a keyring; SecretStore owns these four keys.
 inline const QString CliproxyApiKey = QStringLiteral("cliproxy/apiKey");
+inline const QString SpeechEndpointApiKey = QStringLiteral("endpoint/speech/apiKey");
+inline const QString RefinementEndpointApiKey = QStringLiteral("endpoint/refinement/apiKey");
+// The keyring entries SecretStore has written besides the OpenAI key.
+inline const QString SecretsInKeyring = QStringLiteral("secrets/inKeyring");
+inline const QString SpeechEndpointBaseUrl = QStringLiteral("endpoint/speech/baseUrl");
+inline const QString SpeechEndpointPath = QStringLiteral("endpoint/speech/path");
+inline const QString SpeechEndpointModel = QStringLiteral("endpoint/speech/model");
+inline const QString RefinementEndpointUseCliproxyKey = QStringLiteral("endpoint/refinement/useCliproxyKey");
+inline const QString RefinementEndpointPreset = QStringLiteral("endpoint/refinement/preset");
+inline const QString RefinementEndpointFormat = QStringLiteral("endpoint/refinement/format");
+inline const QString RefinementEndpointBaseUrl = QStringLiteral("endpoint/refinement/baseUrl");
+inline const QString RefinementEndpointModel = QStringLiteral("endpoint/refinement/model");
+inline const QString LocalRunner = QStringLiteral("localRunner/runner");
+inline const QString LocalRunnerModel = QStringLiteral("localRunner/model");
 inline const QString OutputMethod = QStringLiteral("output/method");
 inline const QString OutputFormat = QStringLiteral("output/format");
 inline const QString YdotoolEnabled = QStringLiteral("output/ydotoolEnabled");

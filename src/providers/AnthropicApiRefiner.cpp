@@ -1,4 +1,5 @@
 #include "providers/AnthropicApiRefiner.h"
+#include "providers/EndpointRequest.h"
 
 #include "providers/ClaudeCredentials.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -85,9 +86,7 @@ QString apiEffortForModel(const QString &model, const QString &effort)
 QJsonArray claudeCodeSystemBlocks(const QString &refinementStyle,
     const RefinementContext &context)
 {
-    const QString instructions = context.editSelection
-        ? selectedDocumentEditingSystemPrompt(refinementStyle, context)
-        : dictationRefinementSystemPrompt(refinementStyle, context);
+    const QString instructions = refinementSystemPrompt(refinementStyle, context);
     return {
         QJsonObject{
             {QStringLiteral("type"), QStringLiteral("text")},
@@ -101,7 +100,48 @@ QJsonArray claudeCodeSystemBlocks(const QString &refinementStyle,
     };
 }
 
-StreamingRefinement::Event anthropicEvent(const QByteArray &name, const QByteArray &data)
+QUrl messagesEndpoint(const QString &endpointBase)
+{
+    QUrl endpoint(endpointBase.isEmpty() ? QStringLiteral("https://api.anthropic.com/v1") : endpointBase);
+    endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/messages"));
+    return endpoint;
+}
+
+QJsonArray userMessages(const QString &rawTranscript,
+                        const QStringList &vocabulary,
+                        const QStringList &bindingVocabulary,
+                        const RefinementContext &context)
+{
+    const QString userMessage = transcriptRefinementUserMessage(
+        rawTranscript,
+        vocabulary,
+        bindingVocabulary,
+        context);
+    QJsonValue content = userMessage;
+    if (context.hasScreenshot() && !context.editSelection) {
+        content = QJsonArray{
+            QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("text")},
+                {QStringLiteral("text"), userMessage},
+            },
+            QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("image")},
+                {QStringLiteral("source"),
+                 QJsonObject{
+                     {QStringLiteral("type"), QStringLiteral("base64")},
+                     {QStringLiteral("media_type"), context.screenshotMediaType},
+                     {QStringLiteral("data"), QString::fromLatin1(context.screenshotData.toBase64())},
+                 }},
+            },
+        };
+    }
+    return QJsonArray{QJsonObject{
+        {QStringLiteral("role"), QStringLiteral("user")},
+        {QStringLiteral("content"), content},
+    }};
+}
+
+StreamingRefinement::Event anthropicEvent(const QString &label, const QByteArray &name, const QByteArray &data)
 {
     using Event = StreamingRefinement::Event;
     const QJsonObject object = QJsonDocument::fromJson(data).object();
@@ -109,10 +149,10 @@ StreamingRefinement::Event anthropicEvent(const QByteArray &name, const QByteArr
     const QString stopReason = delta.value(QStringLiteral("stop_reason")).toString();
     if (name == "message_delta" && !stopReason.isEmpty()
         && stopReason != QStringLiteral("end_turn") && stopReason != QStringLiteral("stop_sequence")) {
-        return {Event::Failed, QStringLiteral("Anthropic refinement stopped: %1").arg(stopReason)};
+        return {Event::Failed, QStringLiteral("%1 refinement stopped: %2").arg(label, stopReason)};
     }
     if (name == "error" || object.value(QStringLiteral("type")).toString() == QStringLiteral("error")) {
-        return {Event::Rejected, anthropicErrorMessage(data, QStringLiteral("Anthropic refinement error"))};
+        return {Event::Rejected, anthropicErrorMessage(data, QStringLiteral("%1 refinement error").arg(label))};
     }
     if (name == "content_block_delta" && delta.value(QStringLiteral("type")).toString() == QStringLiteral("text_delta")) {
         return {Event::Delta, delta.value(QStringLiteral("text")).toString()};
@@ -129,10 +169,12 @@ StreamingRefinement::Event anthropicEvent(const QByteArray &name, const QByteArr
 
 AnthropicApiRefiner::AnthropicApiRefiner(QObject *parent,
                                          int requestTimeoutMs,
-                                         int absoluteDeadlineMs)
+                                         int absoluteDeadlineMs,
+                                         const QString &label)
     : QObject(parent)
-    , m_stream(QStringLiteral("Anthropic"), anthropicEvent, anthropicErrorMessage,
-               requestTimeoutMs, absoluteDeadlineMs, this)
+    , m_stream(label,
+               [label](const QByteArray &name, const QByteArray &data) { return anthropicEvent(label, name, data); },
+               anthropicErrorMessage, requestTimeoutMs, absoluteDeadlineMs, this)
 {
     connect(&m_stream, &StreamingRefinement::delta, this, &AnthropicApiRefiner::delta);
     connect(&m_stream, &StreamingRefinement::completed, this, &AnthropicApiRefiner::completed);
@@ -151,10 +193,8 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
                                  const RefinementContext &context)
 {
     m_stream.start([=](bool fast) -> StreamingRefinement::Request {
-        QUrl endpoint(endpointBase.isEmpty() ? QStringLiteral("https://api.anthropic.com/v1") : endpointBase);
-        endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/messages"));
-
-        QNetworkRequest request(endpoint);
+        const QUrl endpoint = messagesEndpoint(endpointBase);
+        QNetworkRequest request = endpointRequest(endpoint);
         request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
         request.setRawHeader("Authorization", "Bearer " + bearerToken.toUtf8());
         request.setRawHeader("anthropic-version", "2023-06-01");
@@ -187,36 +227,37 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
                           << "effort=" + (body.value(QStringLiteral("output_config")).toObject().value(QStringLiteral("effort")).toString(QStringLiteral("default")))
                           << "endpoint=" + endpoint.toString(QUrl::RemoveUserInfo);
         body.insert(QStringLiteral("system"), claudeCodeSystemBlocks(refinementStyle, context));
-        const QString userMessage = transcriptRefinementUserMessage(
-            rawTranscript,
-            vocabulary,
-            bindingVocabulary,
-            context);
-        QJsonValue content = userMessage;
-        if (context.hasScreenshot() && !context.editSelection) {
-            content = QJsonArray{
-                QJsonObject{
-                    {QStringLiteral("type"), QStringLiteral("text")},
-                    {QStringLiteral("text"), userMessage},
-                },
-                QJsonObject{
-                    {QStringLiteral("type"), QStringLiteral("image")},
-                    {QStringLiteral("source"),
-                     QJsonObject{
-                         {QStringLiteral("type"), QStringLiteral("base64")},
-                         {QStringLiteral("media_type"), context.screenshotMediaType},
-                         {QStringLiteral("data"), QString::fromLatin1(context.screenshotData.toBase64())},
-                     }},
-                },
-            };
-        }
         body.insert(QStringLiteral("messages"),
-                    QJsonArray{QJsonObject{
-                        {QStringLiteral("role"), QStringLiteral("user")},
-                        {QStringLiteral("content"), content},
-                    }});
+                    userMessages(rawTranscript, vocabulary, bindingVocabulary, context));
         return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
     }, fastMode && modelSupportsFastMode(model));
+}
+
+void AnthropicApiRefiner::refineWithApiKey(const QString &rawTranscript,
+                                           const QStringList &vocabulary,
+                                           const QStringList &bindingVocabulary,
+                                           const QString &apiKey,
+                                           const QString &endpointBase,
+                                           const QString &model,
+                                           const QString &refinementStyle,
+                                           const RefinementContext &context)
+{
+    m_stream.start([=](bool) -> StreamingRefinement::Request {
+        QNetworkRequest request = endpointRequest(messagesEndpoint(endpointBase));
+        request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+        request.setRawHeader("anthropic-version", "2023-06-01");
+        if (!apiKey.isEmpty()) {
+            request.setRawHeader("x-api-key", apiKey.toUtf8());
+        }
+        const QJsonObject body{
+            {QStringLiteral("model"), model},
+            {QStringLiteral("max_tokens"), 4096},
+            {QStringLiteral("stream"), true},
+            {QStringLiteral("system"), refinementSystemPrompt(refinementStyle, context)},
+            {QStringLiteral("messages"), userMessages(rawTranscript, vocabulary, bindingVocabulary, context)},
+        };
+        return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
+    }, false);
 }
 
 void AnthropicApiRefiner::cancel()

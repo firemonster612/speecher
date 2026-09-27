@@ -26,7 +26,7 @@ public:
         Kind kind = Ignore;
         QString text;
     };
-    using DecodeEvent = Event (*)(const QByteArray &name, const QByteArray &data);
+    using DecodeEvent = std::function<Event(const QByteArray &name, const QByteArray &data)>;
     using DecodeError = QString (*)(const QByteArray &body, const QString &fallback);
     using BuildRequest = std::function<Request(bool fast)>;
 
@@ -38,7 +38,7 @@ public:
 signals:
     void delta(const QString &text);
     void completed(const QString &text);
-    void failed(const QString &message);
+    void failed(const QString &message, int httpStatus);
 
 private:
     enum class Retry { Never, AfterStall, AfterRejection };

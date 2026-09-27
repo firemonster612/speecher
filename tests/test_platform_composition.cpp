@@ -11,6 +11,8 @@
 #include "dictation/DictationSession.h"
 #include "platform/CorrectionDiff.h"
 #include "platform/mac/MacMediaController.h"
+#include "app/LocalSetup.h"
+#include "providers/LocalModelStore.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/SingleKeyShortcutBinder.h"
 #ifdef Q_OS_LINUX
@@ -323,6 +325,11 @@ public:
     void alert() override
     {
         calls << QStringLiteral("alert");
+    }
+
+    void notifyIfNoWindowShown(const QString &title, const QString &message) override
+    {
+        calls << QStringLiteral("notify %1: %2").arg(title, message);
     }
 
     QStringList calls;
@@ -858,36 +865,39 @@ private slots:
         ApplicationController controller(true, platform);
         controller.settings()->setSetupCompleted(false);
         SetupAssistant assistant(&controller);
+        auto *welcome = assistant.findChild<WelcomeSetupPage *>();
+        auto *transcription = assistant.findChild<SpeechProviderSetupPage *>();
+        QVERIFY(welcome && transcription);
+        QSignalSpy checked(welcome, &WelcomeSetupPage::checkFinished);
         assistant.show();
-        QCoreApplication::processEvents();
+        QTRY_VERIFY(!checked.isEmpty());
+        // With no sign-in, a build with speech on this computer takes that
+        // path on Welcome, so the first unfinished step is Transcription,
+        // where no model has been downloaded. Choosing it here does what the
+        // sign-in checks do on their own. Without local speech, no sign-in
+        // holds Welcome itself.
+        auto *localPath = welcome->findChild<QAbstractButton *>(QStringLiteral("welcomePathLocal"));
+        const bool localSpeech = localPath != nullptr;
+        if (localSpeech) localPath->click();
+        else if (welcome->ready()) QSKIP("A sign-in on this computer opens Welcome.");
 
+        // Walked with Next, as a person would: QWizard goes back only through
+        // pages it visited.
         const int lastPage = assistant.pageTitles().size() - 1;
-#ifdef SPEECHER_WITH_KASSISTANT
         for (int step = 0; step < lastPage; ++step) {
             assistant.next();
         }
-#else
-        assistant.setCurrentId(assistant.pageIds().at(lastPage));
-#endif
         QCoreApplication::processEvents();
 
-        // No provider is signed in on this fake platform, so the very first
-        // gate is shut. Pressing Finish must land the user back on that step
-        // rather than marking setup complete.
+        // Pressing Finish must land the user back on the first unfinished
+        // step rather than marking setup complete.
         QVERIFY(QMetaObject::invokeMethod(&assistant, "accept"));
         QCoreApplication::processEvents();
 
         QVERIFY(!controller.settings()->setupCompleted());
         QVERIFY(assistant.isVisible());
-        WelcomeSetupPage *welcome = nullptr;
-        for (QWidget *widget : assistant.findChildren<QWidget *>()) {
-            if (auto *page = dynamic_cast<WelcomeSetupPage *>(widget)) {
-                welcome = page;
-                break;
-            }
-        }
-        QVERIFY(welcome);
-        QVERIFY(welcome->isVisible());
+        QCOMPARE(welcome->isVisible(), !localSpeech);
+        QCOMPARE(transcription->isVisible(), localSpeech);
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
@@ -1076,6 +1086,39 @@ private slots:
         // A step with nothing chosen has nothing to report back.
         QVERIFY(!shown.contains(QStringLiteral("Desktop accessibility")));
         QVERIFY(!shown.contains(QStringLiteral("A few steps still need attention:")));
+    }
+
+    void finishPageShowsADownloadThatIsStillGoing()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const LocalModel &model = *findLocalModel(QStringLiteral("moonshine-small"));
+        FinishSetupPage page(controller);
+        page.setSteps({
+            {QStringLiteral("Transcription"), true, QStringLiteral("Transcription — Moonshine Small, on this computer"),
+             model.id},
+        });
+        page.show();
+        QCoreApplication::processEvents();
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("finishDownloadNotice"))->isHidden());
+        QVERIFY(!page.findChild<QWidget *>(QStringLiteral("finishDownloadProgress")));
+
+        controller.localSetup()->download(model);
+        QCoreApplication::processEvents();
+        QVERIFY(!page.findChild<QWidget *>(QStringLiteral("finishDownloadNotice"))->isHidden());
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("finishDownloadProgress")));
+        QStringList shown;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            if (label->isVisible()) {
+                shown << label->text();
+            }
+        }
+        QVERIFY(shown.contains(QStringLiteral("Setup is complete except for the speech model download.")));
+
+        page.findChild<QPushButton *>(QStringLiteral("finishDownloadCancel"))->click();
+        QCoreApplication::processEvents();
+        QVERIFY(!controller.localModelStore()->isDownloading(model.id));
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("finishDownloadNotice"))->isHidden());
     }
 
     void finishPageListsUnfinishedStepsAndGoesBackToThem()
@@ -1983,6 +2026,24 @@ private slots:
                               QStringLiteral("showSettingsWindow"),
                               QStringLiteral("showSetupAssistant"),
                               QStringLiteral("captureMainWindow /tmp/speecher-grab.png")}));
+    }
+
+    void aFinishedModelDownloadIsAnnouncedThroughTheFrontEnd()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FakeAppFrontEnd frontEnd;
+        controller.setFrontEnd(&frontEnd);
+        LocalSpeechSettings local = controller.settings()->localSpeechSettings();
+        local.modelId = QStringLiteral("moonshine-small");
+        controller.settings()->setLocalSpeechSettings(local);
+        controller.settings()->setSpeechProvider(QStringLiteral("local"));
+
+        emit controller.localModelStore()->downloadFinished(QStringLiteral("moonshine-small"));
+
+        QCOMPARE(frontEnd.calls,
+                 QStringList({QStringLiteral("notify Moonshine Small is ready: You can start "
+                                             "dictating. Speech stays on this computer.")}));
     }
 
     void unfinishedSetupSendsTheUserToTheAssistantInstead()

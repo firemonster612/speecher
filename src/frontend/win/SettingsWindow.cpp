@@ -1,6 +1,7 @@
 #include "frontend/win/SettingsWindow.h"
 
 #include "app/ApplicationController.h"
+#include "app/LocalSetup.h"
 #include "app/UpdateController.h"
 #include "core/InsightsLog.h"
 #include "core/SettingsStore.h"
@@ -8,6 +9,7 @@
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/ShortcutRecorder.h"
+#include "providers/LocalModelStore.h"
 #include "frontend/win/TranscribePane.h"
 
 #include <QEventLoop>
@@ -17,6 +19,7 @@
 #include <memory>
 
 #include <windows.h>
+#include <shellapi.h>
 #include <microsoft.ui.xaml.window.h>
 
 #pragma push_macro("GetCurrentTime")
@@ -30,6 +33,7 @@
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
 #pragma pop_macro("GetCurrentTime")
 
@@ -41,6 +45,7 @@ using namespace winrt;
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
+using winrt::Microsoft::UI::Xaml::Input::FocusManager;
 using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 
 const QString kPaneSetting = QStringLiteral("ui/settingsPane");
@@ -79,6 +84,7 @@ wchar_t glyphForIconId(const QString &iconId)
         {QStringLiteral("swap"), L'\uE8AB'},
         {QStringLiteral("key"), L'\uE192'},
         {QStringLiteral("shortcut"), L'\uE765'},
+        {QStringLiteral("localModels"), L'\uE977'},
         {QStringLiteral("transcribe"), L'\uE8D6'},
         {QStringLiteral("home"), L'\uE80F'},
     };
@@ -166,6 +172,22 @@ struct SettingsWindow::Native {
                              refreshBanner();
                              rebuildSidebar();
                          });
+        // What LocalSetup learns shows up in rows on three pages: endpoint
+        // verdicts, runners, the hardware and the model list. It also writes
+        // settings itself (the model in use after a delete, Speed Test
+        // results, a runner), which the draft takes in first.
+        QObject::connect(controller->localSetup(), &LocalSetup::changed, &lifetime, [this] {
+            // A closed window re-reads the store when it opens.
+            if (!window) {
+                return;
+            }
+            model.syncWithStore();
+            static const QStringList livePages{QStringLiteral("audio"), QStringLiteral("refinement"),
+                                               QStringLiteral("localModels")};
+            if (livePages.contains(currentPane)) {
+                queueLiveRebuild();
+            }
+        });
         // Only Home shows these; rebuilding another pane mid-dictation would
         // take focus from a field being dictated into.
         const auto rebuildHome = [this] {
@@ -249,6 +271,20 @@ struct SettingsWindow::Native {
         // The code-resolved secondary brushes follow the theme only through a
         // rebuild; this also covers the system flipping while set to System.
         root.ActualThemeChanged([this](const auto &, const auto &) { queueRebuild(); });
+        // A live rebuild held back for a text field goes ahead once focus
+        // has settled somewhere else.
+        root.LostFocus([this](const auto &, const auto &) {
+            if (!liveRebuildPending) {
+                return;
+            }
+            liveRebuildPending = false;
+            winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread().TryEnqueue(
+                [this, weak = std::weak_ptr<bool>(alive)] {
+                    if (!gone(weak)) {
+                        queueLiveRebuild();
+                    }
+                });
+        });
 
         titleBar = TitleBar();
         titleBar.Title(L"Speecher");
@@ -334,6 +370,8 @@ struct SettingsWindow::Native {
                                  return;
                              }
                              model.loadExpensiveRows();
+                             controller->localSetup()->probeHardware();
+                             controller->localSetup()->detectRunners();
                              rebuildPage();
                              // Only the keyring can stop to ask for an unlock,
                              // so it waits another turn.
@@ -352,6 +390,7 @@ struct SettingsWindow::Native {
         saveGeometry();
         // The editors hold XAML trees of the window that is going away.
         host.editors.clear();
+        host.localModels.reset();
         ShortcutRecorder::setRecording(host, false);
         transcribe->forget(host);
         window = nullptr;
@@ -492,6 +531,11 @@ struct SettingsWindow::Native {
         if (id != kShortcutPane) {
             ShortcutRecorder::setRecording(host, false);
         }
+        // The model browser belongs to its pane; left running, its download
+        // progress would keep updating controls no longer on screen.
+        if (id != currentPane) {
+            host.localModels.reset();
+        }
         if (id == kTranscribePane) {
             transcribe->enter();
         } else {
@@ -529,6 +573,8 @@ struct SettingsWindow::Native {
         if (id == QStringLiteral("whatsNew")) {
             showWhatsNew();
         }
+        // Every edit is already committed, so the draft is what is stored.
+        controller->localSetup()->runSettingsAction(id, model.draft());
         if (actionHook) {
             actionHook(id);
         }
@@ -551,6 +597,26 @@ struct SettingsWindow::Native {
                     refreshBanner();
                 }
             });
+    }
+
+    // A rebuild for news from LocalSetup, which may land at any moment: never
+    // while a text field has focus, whose half-typed value it would discard.
+    void queueLiveRebuild()
+    {
+        if (editingText()) {
+            liveRebuildPending = true;
+            return;
+        }
+        queueRebuild();
+    }
+
+    bool editingText() const
+    {
+        if (!root || !root.XamlRoot()) {
+            return false;
+        }
+        const auto focused = FocusManager::GetFocusedElement(root.XamlRoot());
+        return focused && (focused.try_as<TextBox>() || focused.try_as<PasswordBox>());
     }
 
     void rebuildPage()
@@ -813,6 +879,7 @@ struct SettingsWindow::Native {
     QString query;
     bool sidebarUpdating = false;
     bool rebuildQueued = false;
+    bool liveRebuildPending = false;
 
     // Update banner state, as AppWindow keeps it.
     QString bannerVersion;
@@ -836,6 +903,12 @@ bool SettingsWindow::offersWhatsNew(const QString &currentPane, const QString &p
 void SettingsWindow::show()
 {
     m_native->show();
+}
+
+void SettingsWindow::showPane(const QString &id)
+{
+    m_native->show();
+    m_native->selectPane(id);
 }
 
 void SettingsWindow::showWhatsNew()

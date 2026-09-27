@@ -114,9 +114,36 @@ ToggleSwitch toggleSwitch(const RowSnapshot &row, PaneHost &host)
     return toggle;
 }
 
+// A key or password: masked, and committed like any other text row.
+PasswordBox secretField(const RowSnapshot &row, PaneHost &host)
+{
+    PasswordBox box;
+    box.MinWidth(contentMinWidth(row));
+    box.Password(hs(row.value.toString()));
+    const auto commit = [rowId = row.id, stored = row.value.toString(), &host](
+                            const PasswordBox &box) {
+        const QString text = qs(box.Password());
+        if (text != stored) {
+            setValueAndCommit(host, rowId, text);
+        }
+    };
+    box.LostFocus([commit](const IInspectable &sender, const auto &) {
+        commit(sender.as<PasswordBox>());
+    });
+    box.KeyDown([commit](const IInspectable &sender, const Input::KeyRoutedEventArgs &args) {
+        if (args.Key() == Windows::System::VirtualKey::Enter) {
+            commit(sender.as<PasswordBox>());
+        }
+    });
+    return box;
+}
+
 UIElement textField(const RowSnapshot &row, PaneHost &host)
 {
-    if (row.suggestions.isEmpty()) {
+    if (row.secret) {
+        return secretField(row, host);
+    }
+    if (!row.suggests) {
         TextBox box;
         box.MinWidth(contentMinWidth(row));
         box.Text(hs(row.value.toString()));
@@ -574,8 +601,13 @@ Grid rowGrid(const RowSnapshot &row, const UIElement &control, PaneHost &host, b
     StackPanel header;
     header.VerticalAlignment(VerticalAlignment::Center);
     header.Spacing(2);
-    if (!row.label.isEmpty()) {
-        header.Children().Append(styledText(row.label, L"SettingsCardBodyStyle"));
+    // An Action row's value, where it has one, names what the row is about
+    // (the Local Runner found), in place of its fixed label.
+    const QString title = row.kind == RowKind::Action && !row.value.toString().isEmpty()
+        ? row.value.toString()
+        : row.label;
+    if (!title.isEmpty()) {
+        header.Children().Append(styledText(title, L"SettingsCardBodyStyle"));
     }
     // disabledHelp replaces the description while enabled says no.
     const QString description = row.enabled ? row.help : row.disabledHelp;
