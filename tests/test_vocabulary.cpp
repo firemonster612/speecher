@@ -54,6 +54,22 @@ private slots:
         QCOMPARE(settings.customVocabulary().size(), VocabularyLimit::maxKeyterms);
     }
 
+    void promptTextListsWholeTermsWithinTheCap()
+    {
+        QCOMPARE(VocabularyLimit::promptText({}), QString());
+        QCOMPARE(VocabularyLimit::promptText({QStringLiteral(" Speecher "), QString(),
+                                              QStringLiteral("Kirigami\nAddons"), QStringLiteral("<|en|>")}),
+                 QStringLiteral("Speecher, Kirigami Addons"));
+
+        // A term that would cross the cap is skipped, not cut; a shorter one
+        // after it still fits.
+        const QString long1 = QString(VocabularyLimit::maxPromptChars - 10, QLatin1Char('a'));
+        const QString prompt = VocabularyLimit::promptText(
+            {long1, QStringLiteral("far too long a term"), QStringLiteral("short")});
+        QCOMPARE(prompt, long1 + QStringLiteral(", short"));
+        QVERIFY(prompt.size() <= VocabularyLimit::maxPromptChars);
+    }
+
     void everyTermIsKeptWhileOnlyTheSentSubsetIsCapped()
     {
         QList<VocabularyEntry> many;

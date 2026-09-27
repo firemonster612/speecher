@@ -59,8 +59,9 @@ public:
     bool streams() const;
 
     // Audio is 16 kHz mono signed 16-bit PCM. A call that fails without
-    // setting error was aborted.
-    std::optional<QString> transcribe(const QByteArray &pcm16, QString *error);
+    // setting error was aborted. prompt biases decoding toward its words on a
+    // model that accepts an initial prompt; other models ignore it.
+    std::optional<QString> transcribe(const QByteArray &pcm16, const QString &prompt, QString *error);
 
     bool beginStream(QString *error);
     bool feed(const QByteArray &pcm16, StreamText *text, QString *error);

@@ -1814,6 +1814,26 @@ SettingsPage vocabularyPage()
             vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary))));
     };
 
+    const QString help = QStringLiteral("Names and words Speecher should recognize. Every term is "
+                                        "kept. When the list is longer than the transcription "
+                                        "service accepts, starred terms are sent first, then the "
+                                        "most used.");
+    SettingsRow entries = collectionRow(QStringLiteral("vocabularyEntries"),
+                                        QStringLiteral("Extra vocabulary"),
+                                        help,
+                                        std::move(terms));
+    entries.helpValue = [help](const AppSettings &settings) {
+        const QString &provider = settings.speech.providerId;
+        const QString speech = provider == QStringLiteral("claude")
+            ? QStringLiteral("Claude Voice receives them as key terms.")
+            : provider == QStringLiteral("endpoint")
+            ? QStringLiteral("The custom endpoint receives them as its prompt.")
+            : provider == QStringLiteral("local")
+            ? QStringLiteral("Local models that take a prompt, such as Whisper, receive them; the others do not.")
+            : QStringLiteral("This transcription service does not use them.");
+        return help + QLatin1Char(' ') + speech;
+    };
+
     return {
         QStringLiteral("vocabulary"),
         QStringLiteral("Vocabulary"),
@@ -1823,13 +1843,7 @@ SettingsPage vocabularyPage()
         {{QString(),
           QString(),
           {
-              collectionRow(QStringLiteral("vocabularyEntries"),
-                            QStringLiteral("Extra vocabulary"),
-                            QStringLiteral("Names and words Speecher should recognize. Every term is "
-                                           "kept. When the list is longer than the transcription "
-                                           "service accepts, starred terms are sent first, then the "
-                                           "most used."),
-                            std::move(terms)),
+              std::move(entries),
               std::move(limit),
           }}},
     };

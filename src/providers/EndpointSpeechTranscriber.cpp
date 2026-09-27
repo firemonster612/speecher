@@ -1,6 +1,7 @@
 #include "providers/EndpointSpeechTranscriber.h"
 #include "providers/EndpointRequest.h"
 
+#include "core/VocabularyLimit.h"
 #include "providers/PcmWav.h"
 #include "providers/ServerSentEvents.h"
 
@@ -34,7 +35,9 @@ QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
 
 } // namespace
 
-SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint, const QByteArray &pcm16kMono)
+SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint,
+                                          const QByteArray &pcm16kMono,
+                                          const QString &prompt)
 {
     QNetworkRequest request = endpointRequest(QUrl(endpoint.baseUrl + endpoint.path));
     if (!endpoint.apiKey.isEmpty()) {
@@ -52,6 +55,9 @@ SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint
     }
     parts->append(formField(QStringLiteral("response_format"), "json"));
     parts->append(formField(QStringLiteral("language"), "en"));
+    if (!prompt.isEmpty()) {
+        parts->append(formField(QStringLiteral("prompt"), prompt.toUtf8()));
+    }
     // Servers that stream answer with text/event-stream; the rest ignore it.
     parts->append(formField(QStringLiteral("stream"), "true"));
     return {request, parts};
@@ -109,6 +115,7 @@ void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSett
     cancelAttempt(m_attemptId);
     m_attemptId = attemptId;
     m_endpoint = settings.endpoint;
+    m_prompt = VocabularyLimit::promptText(settings.vocabulary);
     m_pcm.clear();
 }
 
@@ -128,7 +135,7 @@ void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
         emit attemptCompleted(attemptId);
         return;
     }
-    const SpeechEndpointUpload upload = speechEndpointUpload(m_endpoint, std::exchange(m_pcm, {}));
+    const SpeechEndpointUpload upload = speechEndpointUpload(m_endpoint, std::exchange(m_pcm, {}), m_prompt);
     m_sseBuffer.clear();
     m_streamedText.clear();
     m_doneText.clear();

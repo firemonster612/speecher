@@ -1,6 +1,7 @@
 #include "providers/LocalSpeechTranscriber.h"
 
 #include "core/LocalModelCatalog.h"
+#include "core/VocabularyLimit.h"
 #include "providers/LocalModelStore.h"
 
 #include <algorithm>
@@ -99,8 +100,9 @@ void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSetting
         });
         return;
     }
-    onWorker([this, attemptId, modelPath, deviceId = settings.local.deviceId] {
-        begin(attemptId, modelPath, deviceId);
+    onWorker([this, attemptId, modelPath, deviceId = settings.local.deviceId,
+              prompt = VocabularyLimit::promptText(settings.vocabulary)] {
+        begin(attemptId, modelPath, deviceId, prompt);
     });
 }
 
@@ -236,7 +238,7 @@ void LocalSpeechTranscriber::failAttempt(quint64 attemptId, const QString &messa
     });
 }
 
-void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, const QString &deviceId)
+void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, const QString &deviceId, const QString &prompt)
 {
     if (attemptId != m_liveAttempt.load()) {
         return;
@@ -244,6 +246,7 @@ void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, 
     m_workerAttempt = attemptId;
     m_workerAttemptFailed = false;
     m_batchPcm.clear();
+    m_prompt = prompt;
     m_emittedCommittedChars = 0;
     QString error;
     if (!ensureLoaded(modelPath, deviceId, &error)
@@ -305,7 +308,7 @@ void LocalSpeechTranscriber::finish(quint64 attemptId)
     // The final text can revise what streamed, so it replaces all of it.
     const std::optional<QString> transcript = m_engine.streams()
         ? m_engine.finalize(&error)
-        : m_engine.transcribe(m_batchPcm, &error);
+        : m_engine.transcribe(m_batchPcm, m_prompt, &error);
     m_batchPcm.clear();
     if (!transcript) {
         if (!error.isEmpty()) {
