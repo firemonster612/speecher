@@ -116,9 +116,7 @@ public:
         , m_mode(mode)
     {
         setMinimumWidth(fontMetrics().averageCharWidth() * 6);
-        if (toolTip().isEmpty()) {
-            setToolTip(text);
-        }
+        setToolTip(text);
     }
 
     QSize sizeHint() const override
@@ -253,8 +251,8 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     setup->setSpacing(0);
 
     m_filesCard = addCard(setup, QStringLiteral("Audio files"), m_setup);
-    QPushButton *choose = settings::makeButtonRow(QStringLiteral("Choose audio files\u2026"), mediaFilesHint(),
-                                                  m_filesCard);
+    // Its caption follows the list; see refreshFileList.
+    QPushButton *choose = settings::makeButtonRow(QString(), mediaFilesHint(), m_filesCard);
     choose->setObjectName(QStringLiteral("transcribeChooseFiles"));
     settings::addCardRow(settings::cardFormLayout(m_filesCard), choose, m_filesCard);
     connect(choose, &QPushButton::clicked, this, [this] {
@@ -762,8 +760,12 @@ void TranscribePage::refreshFile()
     m_loom->setPeaks(m_model->peaks());
     m_phase->setText(transcribePhaseLabel(m_model->phase()));
     if (m_partial->toPlainText() != m_model->partialText()) {
+        // Newest words stay in view unless the reader has scrolled back.
+        QScrollBar *scroll = m_partial->verticalScrollBar();
+        const bool following = scroll->value() == scroll->maximum();
+        const int position = scroll->value();
         m_partial->setPlainText(m_model->partialText());
-        m_partial->verticalScrollBar()->setValue(m_partial->verticalScrollBar()->maximum());
+        scroll->setValue(following ? scroll->maximum() : position);
     }
     refreshProgress();
     refreshQueue();

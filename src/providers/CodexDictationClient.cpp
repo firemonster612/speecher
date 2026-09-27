@@ -101,6 +101,8 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs)
                                          : (m_sessionStarted ? QStringLiteral("streaming")
                                                              : QStringLiteral("connect"))));
             });
+#else
+    Q_UNUSED(closeTimeoutMs)
 #endif
 }
 
