@@ -200,6 +200,8 @@ private:
     QString m_speedTestModel;
     QStringList m_speedTestQueue;
     QHash<QString, QString> m_speedTestErrors;
+    // Where the loaded Local Model runs; see LiveFacts::localModelRunsOn.
+    QString m_modelRunsOn;
     QList<DetectedRunner> m_runners;
     bool m_detectingRunners = false;
     OllamaPull m_ollamaPull;

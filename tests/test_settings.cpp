@@ -27,6 +27,19 @@ private slots:
         QVERIFY(SettingsStore().localSpeechSettings().modelChosen);
     }
 
+    void localRunsOnDefaultsToAutomatic()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QCOMPARE(settings.localSpeechSettings().runsOn, LocalRunsOn{});
+        QCOMPARE(settings.localSpeechSettings().runsOn.backend, QStringLiteral("auto"));
+
+        // A graphics card saved before backends could be chosen names no
+        // backend, so it reads as Automatic.
+        settings.raw().setValue(SettingsKeys::LocalDevice, QStringLiteral("0000:c1:00.0"));
+        QCOMPARE(settings.localSpeechSettings().runsOn, LocalRunsOn{});
+    }
+
     void settingsRespectConfiguredStorageFormat()
     {
         const auto previous = QSettings::defaultFormat();
@@ -461,7 +474,7 @@ private slots:
         AppSettings draft = settings.snapshot();
         draft.speech.local.modelId = QStringLiteral("cohere");
         draft.speech.local.modelChosen = true;
-        draft.speech.local.deviceId = QStringLiteral("0000:c1:00.0");
+        draft.speech.local.runsOn = {QStringLiteral("cuda"), QStringLiteral("0000:c1:00.0")};
         draft.speech.local.idleUnloadMinutes = 0;
         draft.speech.local.speedTestSeconds = {{QStringLiteral("parakeet"), 0.42},
                                                {QStringLiteral("cohere"), 1.7}};

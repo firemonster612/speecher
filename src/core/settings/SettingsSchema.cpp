@@ -1319,23 +1319,23 @@ SettingsPage localModelsPage(const SchemaContext &context)
             settings.speech.local.idleUnloadMinutes = value.toInt();
         });
 
-    SettingsRow device = choiceRow(
-        QStringLiteral("localDevice"),
-        QStringLiteral("Graphics card"),
-        QStringLiteral("Which GPU runs the model. Automatic picks the fastest."),
+    // Its description names where the loaded model actually runs, which
+    // Automatic leaves to transcribe.cpp.
+    SettingsRow runsOn = choiceRow(
+        QStringLiteral("localRunsOn"),
+        QStringLiteral("Runs on"),
+        QStringLiteral("Automatic picks the fastest graphics card and falls back to the CPU."),
         [facts](const AppSettings &settings) {
-            QList<RowOption> options{{QString(), QStringLiteral("Automatic")}};
-            options.append(facts().gpus);
-            const QString chosen = settings.speech.local.deviceId;
-            if (std::none_of(options.cbegin(), options.cend(),
-                             [&chosen](const RowOption &option) { return option.id == chosen; })) {
-                options.append({chosen, QStringLiteral("Missing graphics card"), QString(), false});
-            }
-            return options;
+            return localRunsOnOptions(facts().localGpus, settings.speech.local.runsOn);
         },
-        [](const AppSettings &settings) { return settings.speech.local.deviceId; },
-        [](AppSettings &settings, const QString &value) { settings.speech.local.deviceId = value; });
-    device.visible = [facts](const AppSettings &, const Capabilities &) { return facts().gpus.size() > 1; };
+        [](const AppSettings &settings) { return localRunsOnId(settings.speech.local.runsOn); },
+        [](AppSettings &settings, const QString &value) {
+            settings.speech.local.runsOn = localRunsOnFromId(value);
+        });
+    runsOn.helpValue = [facts, help = runsOn.help](const AppSettings &) {
+        const QString running = facts().localModelRunsOn;
+        return running.isEmpty() ? help : QStringLiteral("The model is running on %1.").arg(running);
+    };
 
     SettingsRow folder = actionRow(QStringLiteral("localModelFolder"),
                                    QStringLiteral("Model folder"),
@@ -1380,7 +1380,7 @@ SettingsPage localModelsPage(const SchemaContext &context)
             {QString(), QString(), {std::move(browser)}},
             {QStringLiteral("Behaviour"),
              QString(),
-             {std::move(idleUnload), std::move(device), std::move(folder)}},
+             {std::move(idleUnload), std::move(runsOn), std::move(folder)}},
             {QStringLiteral("Cleanup on this computer"),
              QStringLiteral("Refinement can run through one of these; choose Local model under "
                             "Refinement to use it."),
@@ -2319,6 +2319,41 @@ bool SettingsSchema::hasPage(const QString &id) const
     return std::any_of(pages.cbegin(), pages.cend(), [&id](const SettingsPage &page) { return page.id == id; });
 }
 
+QString localRunsOnId(const LocalRunsOn &runsOn)
+{
+    return runsOn.deviceId.isEmpty() ? runsOn.backend
+                                     : runsOn.backend + QLatin1Char(':') + runsOn.deviceId;
+}
+
+LocalRunsOn localRunsOnFromId(const QString &id)
+{
+    // PCI bus ids have colons of their own; the backend is what precedes the first.
+    const qsizetype colon = id.indexOf(QLatin1Char(':'));
+    if (colon < 0) {
+        return {id, QString()};
+    }
+    return {id.left(colon), id.mid(colon + 1)};
+}
+
+QList<RowOption> localRunsOnOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen)
+{
+    QList<RowOption> options{{localRunsOnId({}), QStringLiteral("Automatic")},
+                             {QStringLiteral("cpu"), QStringLiteral("CPU")}};
+    for (const LocalGpu &gpu : gpus) {
+        options.append({localRunsOnId({gpu.backend, gpu.deviceId}),
+                        QStringLiteral("%1 (%2)").arg(gpu.description, localBackendName(gpu.backend))});
+    }
+    const QString chosenId = localRunsOnId(chosen);
+    if (std::none_of(options.cbegin(), options.cend(),
+                     [&chosenId](const RowOption &option) { return option.id == chosenId; })) {
+        options.append({chosenId,
+                        QStringLiteral("Missing graphics card (%1)").arg(localBackendName(chosen.backend)),
+                        QStringLiteral("This saved choice is not available on this computer."),
+                        false});
+    }
+    return options;
+}
+
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QString &selectedDeviceId)
 {
     const RowOption missing{selectedDeviceId,
@@ -2480,7 +2515,7 @@ static QList<SettingsPane> settingsPanes()
              PaneLayout::Sections,
              {group("Speech Models", {QStringLiteral("localModelBrowser")}),
               group("Behaviour", {QStringLiteral("localIdleUnload"),
-                                  QStringLiteral("localDevice"),
+                                  QStringLiteral("localRunsOn"),
                                   QStringLiteral("localModelFolder")}),
               group("Cleanup on This Computer", {QStringLiteral("localModelsRunner")})}),
         pane("delivery", "Delivery", "arrow.right.doc.on.clipboard",

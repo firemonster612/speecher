@@ -69,18 +69,28 @@ LocalSpeechEngine::Device::Type deviceType(transcribe_device_type type)
     return LocalSpeechEngine::Device::Type::Cpu;
 }
 
-transcribe_device_t findDevice(const QString &deviceId)
+std::optional<transcribe_backend_request> backendRequest(const QString &backend)
 {
-    if (deviceId.isEmpty()) {
-        return nullptr;
-    }
-    const QByteArray id = deviceId.toUtf8();
+    if (backend == QStringLiteral("auto")) return TRANSCRIBE_BACKEND_AUTO;
+    if (backend == QStringLiteral("cpu")) return TRANSCRIBE_BACKEND_CPU;
+    if (backend == QStringLiteral("metal")) return TRANSCRIBE_BACKEND_METAL;
+    if (backend == QStringLiteral("vulkan")) return TRANSCRIBE_BACKEND_VULKAN;
+    if (backend == QStringLiteral("cuda")) return TRANSCRIBE_BACKEND_CUDA;
+    if (backend == QStringLiteral("rocm")) return TRANSCRIBE_BACKEND_ROCM;
+    return std::nullopt;
+}
+
+// The registered device of that backend with that PCI bus id.
+transcribe_device_t findDevice(const LocalRunsOn &runsOn)
+{
+    const QByteArray id = runsOn.deviceId.toUtf8();
+    const QByteArray kind = runsOn.backend.toUtf8();
     for (int index = 0; index < transcribe_device_count(); ++index) {
         transcribe_device_t device = transcribe_device_get(index);
         transcribe_device_info info;
         transcribe_device_info_init(&info);
         if (device && transcribe_device_get_info(device, &info) == TRANSCRIBE_OK
-            && info.device_id && id == info.device_id) {
+            && info.device_id && id == info.device_id && info.kind && kind == info.kind) {
             return device;
         }
     }
@@ -143,15 +153,39 @@ bool LocalSpeechEngine::abortRequested(void *engine)
     return static_cast<LocalSpeechEngine *>(engine)->m_shouldAbort();
 }
 
-bool LocalSpeechEngine::load(const QString &modelPath, const QString &deviceId, QString *error)
+bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn, QString *error)
 {
     unload();
     initBackendsOnce();
+    const QString backendName = localBackendName(runsOn.backend);
+    const std::optional<transcribe_backend_request> backend = backendRequest(runsOn.backend);
+    if (!backend || !transcribe_backend_available(*backend)) {
+        *error = QStringLiteral("%1 is not available on this computer. Choose where the model runs "
+                                "on the Local models page.")
+                     .arg(backendName);
+        return false;
+    }
     transcribe_model_load_params params;
     transcribe_model_load_params_init(&params);
-    params.device = findDevice(deviceId);
+    params.backend = *backend;
+    if (!runsOn.deviceId.isEmpty()) {
+        params.device = findDevice(runsOn);
+        if (!params.device) {
+            *error = QStringLiteral("The graphics card chosen for %1 is missing. Choose where the "
+                                    "model runs on the Local models page.")
+                         .arg(backendName);
+            return false;
+        }
+    }
     const QByteArray path = modelPath.toUtf8();
-    if (!succeeded(transcribe_model_load_file(path.constData(), &params, &m_model), error)) {
+    const transcribe_status status = transcribe_model_load_file(path.constData(), &params, &m_model);
+    if (status == TRANSCRIBE_ERR_BACKEND && *backend != TRANSCRIBE_BACKEND_AUTO) {
+        *error = QStringLiteral("%1 could not load the model. Choose where the model runs on the "
+                                "Local models page.")
+                     .arg(backendName);
+        return false;
+    }
+    if (!succeeded(status, error)) {
         return false;
     }
     if (!succeeded(transcribe_session_init(m_model, nullptr, &m_session), error)) {
@@ -164,7 +198,7 @@ bool LocalSpeechEngine::load(const QString &modelPath, const QString &deviceId, 
     m_streams = transcribe_model_get_capabilities(m_model, &capabilities) == TRANSCRIBE_OK
         && capabilities.supports_streaming;
     m_modelPath = modelPath;
-    m_deviceId = deviceId;
+    m_runsOn = runsOn;
     return true;
 }
 
@@ -175,13 +209,25 @@ void LocalSpeechEngine::unload()
     m_session = nullptr;
     m_model = nullptr;
     m_modelPath.clear();
-    m_deviceId.clear();
+    m_runsOn = {};
     m_streams = false;
 }
 
-bool LocalSpeechEngine::isLoaded(const QString &modelPath, const QString &deviceId) const
+bool LocalSpeechEngine::isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const
 {
-    return m_session && m_modelPath == modelPath && m_deviceId == deviceId;
+    return m_session && m_modelPath == modelPath && m_runsOn == runsOn;
+}
+
+QString LocalSpeechEngine::runsOnDescription() const
+{
+    transcribe_device_info info;
+    transcribe_device_info_init(&info);
+    const transcribe_device_t device = transcribe_model_device(m_model);
+    if (!device || transcribe_device_get_info(device, &info) != TRANSCRIBE_OK) {
+        return {};
+    }
+    return QStringLiteral("%1 (%2)").arg(QString::fromUtf8(info.description).simplified(),
+                                         localBackendName(QString::fromUtf8(info.kind)));
 }
 
 bool LocalSpeechEngine::streams() const

@@ -794,6 +794,16 @@ if(SPEECHER_WITH_LOCAL_SPEECH)
   if(NOT SPEECHER_LOCAL_SPEECH_VULKAN)
     message(STATUS "Local speech: Vulkan is off; models will run on the CPU.")
   endif()
+  # CUDA and ROCm are extra modules beside Vulkan for a machine that has the
+  # toolkit. Packages leave them off: they would need the CUDA or ROCm runtime
+  # libraries, which Speecher does not ship, and the module fails to load
+  # without them, leaving Vulkan and the CPU.
+  option(SPEECHER_LOCAL_SPEECH_CUDA "Build transcribe.cpp's CUDA backend (needs the CUDA toolkit)" OFF)
+  option(SPEECHER_LOCAL_SPEECH_ROCM "Build transcribe.cpp's ROCm backend (needs ROCm 6.1 or newer)" OFF)
+  if((SPEECHER_LOCAL_SPEECH_CUDA OR SPEECHER_LOCAL_SPEECH_ROCM) AND NOT SPEECHER_LOCAL_SPEECH_MODULES)
+    message(FATAL_ERROR "SPEECHER_LOCAL_SPEECH_CUDA and SPEECHER_LOCAL_SPEECH_ROCM build loadable "
+      "modules, which only x86-64 Linux and Windows builds use.")
+  endif()
 
   set(TRANSCRIBE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(TRANSCRIBE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -801,6 +811,8 @@ if(SPEECHER_WITH_LOCAL_SPEECH)
   # A package must not depend on whichever BLAS the build host has installed.
   set(TRANSCRIBE_USE_SYSTEM_BLAS OFF CACHE BOOL "" FORCE)
   set(TRANSCRIBE_VULKAN ${SPEECHER_LOCAL_SPEECH_VULKAN} CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_CUDA ${SPEECHER_LOCAL_SPEECH_CUDA} CACHE BOOL "" FORCE)
+  set(TRANSCRIBE_HIP ${SPEECHER_LOCAL_SPEECH_ROCM} CACHE BOOL "" FORCE)
   set(TRANSCRIBE_BUILD_SHARED ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
   set(TRANSCRIBE_GGML_BACKEND_DL ${SPEECHER_LOCAL_SPEECH_MODULES} CACHE BOOL "" FORCE)
   # Packages carry every CPU backend so they run on any x86-64 machine; a

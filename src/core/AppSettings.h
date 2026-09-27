@@ -87,11 +87,33 @@ struct UiSettings {
     bool soundsEnabled = false;
 };
 
+// What a person calls a transcribe.cpp backend, stored by its device kind.
+inline QString localBackendName(const QString &backend)
+{
+    if (backend == QStringLiteral("cpu")) return QStringLiteral("CPU");
+    if (backend == QStringLiteral("metal")) return QStringLiteral("Metal");
+    if (backend == QStringLiteral("vulkan")) return QStringLiteral("Vulkan");
+    if (backend == QStringLiteral("cuda")) return QStringLiteral("CUDA");
+    if (backend == QStringLiteral("rocm")) return QStringLiteral("ROCm");
+    return backend;
+}
+
+// Where Local Models run: the Local models page's Runs on choice.
+struct LocalRunsOn {
+    // "auto", or a transcribe.cpp device kind: "cpu", "metal", "vulkan",
+    // "cuda", "rocm".
+    QString backend = QStringLiteral("auto");
+    // A transcribe.cpp device_id (PCI bus id) of that backend, or empty for
+    // the backend's own choice. One card can appear under two backends.
+    QString deviceId;
+
+    bool operator==(const LocalRunsOn &other) const = default;
+};
+
 struct LocalSpeechSettings {
     // A LocalModelCatalog id.
     QString modelId = QStringLiteral("parakeet");
-    // A transcribe.cpp device_id (PCI bus id), or empty for automatic choice.
-    QString deviceId;
+    LocalRunsOn runsOn;
     // 0 keeps the model loaded until Speecher quits.
     int idleUnloadMinutes = 10;
     // Model id to the Speed Test's measured seconds for the bundled clip.
