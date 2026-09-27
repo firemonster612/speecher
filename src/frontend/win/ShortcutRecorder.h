@@ -20,6 +20,9 @@ public:
     // binder's suspension count, so every path that ends recording — chord,
     // Escape, cancel, pane switch, window close — must come through here.
     static void setRecording(PaneHost &host, bool recording);
+    // Whether element is block or one of its descendants in the visual tree.
+    static bool isWithin(const winrt::Microsoft::UI::Xaml::DependencyObject &element,
+                         const winrt::Microsoft::UI::Xaml::UIElement &block);
 
     // The Qt key a Windows virtual key stands for on the active keyboard
     // layout, or 0 for modifiers and keys no layout can print. Shared with the

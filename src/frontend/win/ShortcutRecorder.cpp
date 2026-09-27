@@ -14,6 +14,7 @@
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
+#include <winrt/Microsoft.UI.Xaml.Media.h>
 #pragma pop_macro("GetCurrentTime")
 
 namespace speecher::win {
@@ -144,6 +145,17 @@ Qt::KeyboardModifiers ShortcutRecorder::heldModifiers()
     return modifiers;
 }
 
+// Whether element is block or sits inside it.
+bool ShortcutRecorder::isWithin(const DependencyObject &element, const UIElement &block)
+{
+    for (DependencyObject node = element; node; node = Media::VisualTreeHelper::GetParent(node)) {
+        if (node == block) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
 {
     if (host.shortcutRecording == recording || !host.controller) {
@@ -164,6 +176,21 @@ void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
 StackPanel ShortcutRecorder::element(PaneHost &host)
 {
     StackPanel column;
+    // The recorder shares Dictation with other controls. A click or Tab onto
+    // one of them takes the keys away from this block, so the recording ends
+    // there and the suspended hotkey comes back. Programmatic moves are left
+    // alone: arming the recorder rebuilds the pane, which drops the focused
+    // button and focuses the new one.
+    column.LosingFocus([&host](const IInspectable &sender, const Input::LosingFocusEventArgs &args) {
+        const bool byUser = args.FocusState() == FocusState::Pointer
+            || args.FocusState() == FocusState::Keyboard;
+        if (!host.shortcutRecording || !byUser
+            || isWithin(args.NewFocusedElement(), sender.as<UIElement>())) {
+            return;
+        }
+        setRecording(host, false);
+        host.refresh();
+    });
     const QString display = host.controller->globalShortcut().displayText();
     Button recorder;
     recorder.Content(box_value(host.shortcutRecording
@@ -241,9 +268,9 @@ StackPanel ShortcutRecorder::element(PaneHost &host)
     }
 
     // The keys arrive on the recorder's block rather than the button, so
-    // moving focus within it cannot end the recording early. Escape abandons it rather than becoming
-    // the shortcut — so Escape itself is not recordable as a single key, like
-    // the mac recorder.
+    // moving focus within it cannot end the recording early. Escape abandons
+    // it rather than becoming the shortcut — so Escape itself is not
+    // recordable as a single key, like the mac recorder.
     column.PreviewKeyDown([&host](const IInspectable &, const Input::KeyRoutedEventArgs &args) {
         if (!host.shortcutRecording) {
             return;
