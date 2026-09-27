@@ -855,6 +855,13 @@ private slots:
         QVERIFY(problem->isVisibleTo(&page));
         QCOMPARE(problem->label()->text(), QStringLiteral("Could not save /nowhere: denied"));
         QCOMPARE(summary->text(), before);
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (!grabDir.isEmpty()) {
+            page.resize(620, 420);
+            page.show();
+            QTest::qWait(200);
+            page.grab().save(grabDir + QStringLiteral("/export-error.png"));
+        }
     }
 
     void programmaticNavigationUpdatesShellChrome()

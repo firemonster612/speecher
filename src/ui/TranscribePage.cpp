@@ -106,36 +106,46 @@ QString writeText(const QString &path, const QString &text)
     return {};
 }
 
-// A file name that fits whatever width its row gives it: a long name loses
-// its middle, keeping the start and the extension, and shows whole in the
-// tooltip.
-class FileNameLabel final : public QLabel {
+// A label that fits whatever width its row gives it, shortening its text with
+// an ellipsis where mode puts it; the whole text shows in the tooltip.
+class ElidingLabel final : public QLabel {
 public:
-    FileNameLabel(const QString &path, QWidget *parent)
-        : QLabel(parent)
-        , m_name(QFileInfo(path).fileName())
+    ElidingLabel(const QString &text, Qt::TextElideMode mode, QWidget *parent)
+        : QLabel(text, parent)
+        , m_text(text)
+        , m_mode(mode)
     {
-        setToolTip(QDir::toNativeSeparators(path));
-        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        setMinimumWidth(fontMetrics().averageCharWidth() * 8);
-        setText(m_name);
+        setMinimumWidth(fontMetrics().averageCharWidth() * 6);
+        if (toolTip().isEmpty()) {
+            setToolTip(text);
+        }
     }
 
     QSize sizeHint() const override
     {
-        return {fontMetrics().horizontalAdvance(m_name), QLabel::sizeHint().height()};
+        return {fontMetrics().horizontalAdvance(m_text) + contentsMargins().left() + contentsMargins().right(),
+                QLabel::sizeHint().height()};
     }
 
 protected:
     void resizeEvent(QResizeEvent *event) override
     {
         QLabel::resizeEvent(event);
-        setText(fontMetrics().elidedText(m_name, Qt::ElideMiddle, contentsRect().width()));
+        setText(fontMetrics().elidedText(m_text, m_mode, contentsRect().width()));
     }
 
 private:
-    QString m_name;
+    QString m_text;
+    Qt::TextElideMode m_mode;
 };
+
+// A file name that loses its middle, keeping the start and the extension.
+QLabel *fileNameLabel(const QString &path, QWidget *parent)
+{
+    auto *label = new ElidingLabel(QFileInfo(path).fileName(), Qt::ElideMiddle, parent);
+    label->setToolTip(QDir::toNativeSeparators(path));
+    return label;
+}
 
 } // namespace
 
@@ -744,7 +754,7 @@ void TranscribePage::refreshQueue()
         auto *mark = new QLabel(row);
         mark->setFixedSize(iconSize, iconSize);
         mark->setPixmap(icon.pixmap(iconSize, iconSize));
-        auto *name = new FileNameLabel(batch.at(i), row);
+        QLabel *name = fileNameLabel(batch.at(i), row);
         if (state == TranscribeQueueState::Waiting) {
             name->setForegroundRole(QPalette::PlaceholderText);
         }
@@ -782,9 +792,13 @@ void TranscribePage::showResults()
         expand->setArrowType(Qt::RightArrow);
         head->addWidget(expand);
         // The name takes the room; the meta and the buttons keep theirs.
-        head->addWidget(new FileNameLabel(result.path, headRow), 1);
+        head->addWidget(fileNameLabel(result.path, headRow), 1);
         const QString text = shownTranscript(result, raw);
-        head->addWidget(dimLabel(resultMeta(result, m_model->durationMs(result.path), raw), headRow));
+        auto *meta = new ElidingLabel(resultMeta(result, m_model->durationMs(result.path), raw), Qt::ElideRight,
+                                      headRow);
+        meta->setForegroundRole(QPalette::PlaceholderText);
+        meta->setFont(settings::smallFont(meta->font()));
+        head->addWidget(meta);
         if (!result.savedPath.isEmpty()) {
             auto *savedLabel = new QLabel(QStringLiteral("Saved"), headRow);
             savedLabel->setToolTip(QDir::toNativeSeparators(result.savedPath));
