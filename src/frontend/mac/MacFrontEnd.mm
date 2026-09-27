@@ -154,7 +154,7 @@ void MacFrontEnd::hideMainWindow()
 
 void MacFrontEnd::showSettingsWindow()
 {
-    [m_native->ui showSettingsWithPage:@"general"];
+    [m_native->ui openSettingsPage:@"general"];
     m_controller->frontEndReady();
 }
 

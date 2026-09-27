@@ -424,7 +424,10 @@ void AppWindow::buildPages()
             auto *tabs = new QTabWidget(this);
             tabs->setDocumentMode(true);
             for (const SettingsPaneGroup &group : pane.groups) {
-                tabs->addTab(m_pages->page(pane.id + QLatin1Char(':') + group.view), group.title);
+                // A tab reads & as a mnemonic marker ("Replacements & snippets").
+                QString title = group.title;
+                tabs->addTab(m_pages->page(pane.id + QLatin1Char(':') + group.view),
+                             title.replace(QLatin1Char('&'), QStringLiteral("&&")));
             }
             m_viewTabs.insert(pane.id, tabs);
             auto *content = new QWidget(this);

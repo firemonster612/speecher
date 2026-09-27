@@ -323,6 +323,11 @@ final class AppModel: ObservableObject {
         return nil
     }
 
+    /// The rows with these ids that the schema currently offers, in this order.
+    func rows(matching ids: [String]) -> [SettingsRowModel] {
+        ids.compactMap(row)
+    }
+
     /// A pane's groups, in order, each with the rows the schema currently offers
     /// it. A group whose rows are all hidden stays in the list and draws
     /// nothing, so the index a segmented picker holds keeps meaning what it did.

@@ -98,7 +98,7 @@ WinFrontEnd::WinFrontEnd(ApplicationController *controller,
     , m_native(std::make_unique<Native>(controller, this, std::move(host)))
 {
     connect(m_native->panel.get(), &DictationPanel::whatsNewRequested, this, [this] {
-        showSettingsWindow();
+        showMainWindow();
         m_native->settingsWindow()->showWhatsNew();
     });
     // On-screen windows only, never the microphone: an update restart must not
@@ -127,9 +127,12 @@ WinFrontEnd::~WinFrontEnd()
     m_controller->updates()->setRestoreStateProvider({});
 }
 
+// The window on the page it last showed.
 void WinFrontEnd::showMainWindow()
 {
-    showSettingsWindow();
+    m_native->trayReady->stop();
+    m_native->settingsWindow()->show();
+    QTimer::singleShot(0, this, &WinFrontEnd::reportReady);
 }
 
 void WinFrontEnd::hideMainWindow()
@@ -139,11 +142,11 @@ void WinFrontEnd::hideMainWindow()
     }
 }
 
+// "Settings…" and `speecher settings` open General on every platform.
 void WinFrontEnd::showSettingsWindow()
 {
-    m_native->trayReady->stop();
-    m_native->settingsWindow()->show();
-    QTimer::singleShot(0, this, &WinFrontEnd::reportReady);
+    showMainWindow();
+    m_native->settingsWindow()->showPage(QStringLiteral("general"));
 }
 
 void WinFrontEnd::showSetupAssistant(SetupAssistantPage page)
@@ -191,7 +194,7 @@ void WinFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &mes
         return;
     }
     m_native->tray->showMessage(title, message, [this, pageId] {
-        showSettingsWindow();
+        showMainWindow();
         m_native->settings->showPage(pageId);
     });
 }
