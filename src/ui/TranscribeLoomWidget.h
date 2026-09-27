@@ -1,37 +1,34 @@
 #pragma once
 
 #include <QElapsedTimer>
+#include <QProgressBar>
 #include <QTimer>
 #include <QVector>
-#include <QWidget>
 
 namespace speecher {
 
 // The Transcribe page's progress animation, approved as custom-painted
-// content the way WaveformWidget is: the file's waveform hangs at the top, a
-// playhead sweeps across it, and word pills write themselves into the page
-// below, line by line. Each run is laid out and paced from its own seed.
+// content the way WaveformWidget is: the file's waveform, with a playhead
+// sweeping across it as the audio is sent. A progress bar underneath, so
+// assistive technology reads it as one, with its name and percentage.
 // Palette colours only.
-class TranscribeLoomWidget : public QWidget {
+class TranscribeLoomWidget : public QProgressBar {
     Q_OBJECT
 
 public:
     explicit TranscribeLoomWidget(QWidget *parent = nullptr);
 
     QSize sizeHint() const override;
-    // True from finishFile() until the playhead has reached the end.
-    bool isLanding() const;
+    QSize minimumSizeHint() const override;
 
 public slots:
-    // A new file: its peak levels (0..1) and a fresh page of words.
-    void startFile(const QVector<float> &peaks, int seed);
+    // A new file: the playhead goes back to the start.
+    void startFile();
+    // The file's peak levels (0..1), once decoded; flat until then.
+    void setPeaks(const QVector<float> &peaks);
     void setProgress(qreal fraction);
-    // The file is done: the playhead runs to the end and the last words land,
-    // then landed() follows, on the clock whether or not the widget is shown.
+    // The file is done: the playhead runs to the end.
     void finishFile();
-
-signals:
-    void landed();
 
 protected:
     void hideEvent(QHideEvent *event) override;
@@ -39,38 +36,18 @@ protected:
     void showEvent(QShowEvent *event) override;
 
 private:
-    struct Word {
-        int line;
-        qreal x;
-        qreal width;
-        // The progress point where the word pops in.
-        qreal at;
-        // How long it takes to pop in, relative to the others.
-        qreal pace;
-    };
-    // What varies from run to run besides the page layout.
-    struct Look {
-        qreal breathPeriod = 300.0;
-        qreal breathSpread = 0.7;
-        qreal breathDepth = 0.1;
-        qreal drop = 6.0;
-        qreal lineIndent = 0.0;
-    };
-
-    qreal random();
     void tick();
-    void land();
 
     QTimer m_timer;
-    QTimer m_landTimer;
     QElapsedTimer m_clock;
     QVector<float> m_peaks;
-    QVector<Word> m_words;
-    Look m_look;
+    // How unread audio breathes; new for every file, so no two runs alike.
+    qreal m_breathPeriod = 300.0;
+    qreal m_breathSpread = 0.7;
+    qreal m_breathDepth = 0.1;
     qreal m_target = 0.0;
     // Eased toward m_target so progress that arrives in steps still glides.
     qreal m_shown = 0.0;
-    quint32 m_random = 1;
     bool m_landing = false;
     qreal m_landFrom = 0.0;
     qint64 m_landStarted = 0;

@@ -19,6 +19,9 @@
 #include "ui/settings/SettingsPageSupport.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "ui/Theme.h"
+#include "ui/TranscribeModel.h"
+#include "ui/TranscribePage.h"
+#include "ui/TranscribeWindow.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
@@ -797,6 +800,61 @@ private slots:
             }
         }
         QCOMPARE(listed, QStringList({QStringLiteral("second.wav")}));
+    }
+
+    // The main window's page and the compact window show one batch: files
+    // listed in either appear in both, a batch started in one runs in the
+    // other, and its results reach both.
+    void bothTranscribeViewsShowTheSameBatch()
+    {
+        ApplicationController controller(true);
+        TranscribePage page(&controller);
+        TranscribeWindow window(&controller);
+        const QString audio = writeHeaderOnlyWav();
+        const auto listed = [audio](QWidget *view) {
+            for (const QLabel *label : view->findChildren<QLabel *>()) {
+                if (label->text() == QFileInfo(audio).fileName() && label->isVisibleTo(view)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        window.page()->addFiles({audio});
+        QVERIFY(listed(&page));
+        auto *pageStart = page.findChild<QPushButton *>(QStringLiteral("transcribeStart"));
+        QVERIFY(pageStart->isEnabled());
+
+        // A header with no audio fails to decode, which still ends on results.
+        pageStart->click();
+        auto *windowAgain = window.findChild<QPushButton *>(QStringLiteral("transcribeAgain"));
+        QTRY_VERIFY_WITH_TIMEOUT(windowAgain->isVisibleTo(&window), 10000);
+        QVERIFY(page.findChild<QPushButton *>(QStringLiteral("transcribeAgain"))->isVisibleTo(&page));
+        QVERIFY(window.findChild<QToolButton *>(QStringLiteral("transcribeRetry")));
+
+        windowAgain->click();
+        QVERIFY(pageStart->isVisibleTo(&page));
+        QVERIFY(!listed(&page));
+    }
+
+    // An export that fails says why beside the results; the batch summary stays.
+    void anExportProblemLeavesTheSummary()
+    {
+        ApplicationController controller(true);
+        TranscribePage page(&controller);
+        page.addFiles({writeHeaderOnlyWav()});
+        page.findChild<QPushButton *>(QStringLiteral("transcribeStart"))->click();
+        auto *summary = page.findChild<QLabel *>(QStringLiteral("transcribeSummary"));
+        QTRY_VERIFY_WITH_TIMEOUT(summary->isVisibleTo(&page), 10000);
+        const QString before = summary->text();
+        QVERIFY(!before.isEmpty());
+
+        TranscribeModel::of(&controller)->setProblem(QStringLiteral("Could not save /nowhere: denied"));
+
+        auto *problem = page.findChild<InlineMessage *>(QStringLiteral("transcribeProblem"));
+        QVERIFY(problem->isVisibleTo(&page));
+        QCOMPARE(problem->label()->text(), QStringLiteral("Could not save /nowhere: denied"));
+        QCOMPARE(summary->text(), before);
     }
 
     void programmaticNavigationUpdatesShellChrome()

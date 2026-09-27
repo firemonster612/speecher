@@ -3,12 +3,8 @@
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/TranscribePresentation.h"
 
-#include <QElapsedTimer>
-#include <QHash>
 #include <QTimer>
 #include <QWidget>
-
-#include <functional>
 
 class QAbstractButton;
 class QButtonGroup;
@@ -16,6 +12,7 @@ class QComboBox;
 class QCheckBox;
 class QFrame;
 class QLabel;
+class QPlainTextEdit;
 class QPushButton;
 class QWidget;
 
@@ -24,16 +21,19 @@ namespace speecher {
 class ApplicationController;
 class InlineMessage;
 class TranscribeLoomWidget;
+class TranscribeModel;
 
-// Pick audio files, choose how to transcribe them, watch them go, read the
-// results. Its options start from the user's settings and never write back.
+// Pick audio and video files, choose how to transcribe them, watch them go,
+// read the results. A view of the controller's TranscribeModel: every
+// Transcribe page shows the same files and batch. Its options start from the
+// user's settings and never write back.
 class TranscribePage : public QWidget {
     Q_OBJECT
 
 public:
     explicit TranscribePage(ApplicationController *controller, QWidget *parent = nullptr);
 
-    // Lists the files (audio only, no duplicates), ready to start.
+    // Lists the files (media only, no duplicates), ready to start.
     void addFiles(const QStringList &paths);
 
 protected:
@@ -42,27 +42,25 @@ protected:
     void showEvent(QShowEvent *event) override;
 
 private:
-    void showStage(TranscribeStep step);
+    void showStep();
     void refreshSteps(TranscribeStep current);
     void seedOptionsFromSettings();
     void applyWritingProfile();
     void refreshRefinementRows();
     void refreshOutputRows();
     void refreshFileList();
-    void backToSetup();
     void startBatch();
-    void retry(int index);
-    void setPhase(TranscribePhase phase);
+    void refreshFile();
     void refreshProgress();
-    // Runs a batch event now, or once the loom has finished landing the file
-    // before it, so the next file never replaces a page still settling.
-    void afterLanding(std::function<void()> event);
     void refreshQueue();
     void showResults();
+    void exportAll();
+    void exportOne(const QString &audioPath, const QString &text);
     bool showingRaw() const;
     TranscribeOptions options() const;
 
     ApplicationController *m_controller;
+    TranscribeModel *m_model;
     QList<QLabel *> m_stepLabels;
     QLabel *m_stepHint;
     QWidget *m_setup;
@@ -88,45 +86,28 @@ private:
     QString m_folder;
     InlineMessage *m_startError;
     QPushButton *m_start;
-    QStringList m_files;
-    QHash<QString, qint64> m_durationsMs;
 
     // Processing
     QLabel *m_processingHeader;
     TranscribeLoomWidget *m_loom;
+    QPlainTextEdit *m_partial;
     QLabel *m_phase;
     QLabel *m_percent;
     QFrame *m_queueCard;
-    TranscribePhase m_phaseNow = TranscribePhase::Reading;
-    QElapsedTimer m_phaseClock;
-    qreal m_fractionSent = 0.0;
-    ForwardProgress m_progress;
+    // The step on screen, to tell where a change of step came from.
+    TranscribeStep m_shownStep = TranscribeStep::Configure;
+    // The file the loom is drawing, so a new one restarts it.
+    int m_loomFile = -1;
     // Eases the open-ended waits forward between engine signals.
     QTimer m_progressTimer;
-    QList<std::function<void()>> m_afterLanding;
 
     // Results
     QLabel *m_resultsHeader;
     QLabel *m_summary;
+    InlineMessage *m_problem;
     QWidget *m_variants;
     QAbstractButton *m_showRefined = nullptr;
     QFrame *m_resultsCard;
-
-    // The running or last batch.
-    // True while a batch this page started runs; another Transcribe surface
-    // shares the engine, and its batches are not this page's to show.
-    bool m_running = false;
-    QStringList m_batch;
-    TranscribeOptions m_batchOptions;
-    TranscribeBatchLabels m_batchLabels;
-    int m_current = -1;
-    QString m_currentPath;
-    // A new one for every file, so no two runs animate alike.
-    int m_loomSeed = 0;
-    QList<TranscribeFileResult> m_batchResults;
-    bool m_cancelled = false;
-    // The result row a retry is running for, or -1.
-    int m_retrying = -1;
 };
 
 } // namespace speecher
