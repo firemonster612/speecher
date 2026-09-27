@@ -74,6 +74,11 @@ public:
         setup.m_hardware.profile = profile;
         setup.m_hardwareKnown = true;
     }
+    static void setHardware(LocalSetup &setup, const HardwareSummary &hardware)
+    {
+        setup.m_hardware = hardware;
+        setup.m_hardwareKnown = true;
+    }
 };
 } // namespace speecher
 
@@ -348,8 +353,13 @@ private slots:
         auto speech = settings.snapshot().speech;
         auto state = setup.modelState(model, speech);
         QVERIFY(!state.downloaded && !state.downloading && !state.inUse);
+        // A result belongs to where it ran, so switching Runs on leaves the
+        // model unmeasured until it is tested there.
         auto local = settings.localSpeechSettings();
-        local.speedTestSeconds.insert(model.id, 0.8);
+        local.speedTestSeconds.insert(localSpeedTestKey(model.id, {QStringLiteral("cpu"), {}}), 0.8);
+        settings.setLocalSpeechSettings(local);
+        QCOMPARE(setup.measuredSeconds(model.id), std::nullopt);
+        local.runsOn = {QStringLiteral("cpu"), {}};
         settings.setLocalSpeechSettings(local);
         QCOMPARE(setup.modelState(model, speech).speedText, speechSecondsText(0.8));
         {
@@ -402,6 +412,44 @@ private slots:
         state = setup.modelState(voxtral);
         QVERIFY(state.tooLarge);
         QCOMPARE(state.tableCells.last(), QString("Too large"));
+    }
+
+    void fitFollowsWhereModelsRun()
+    {
+        // A 2 GiB card and 16 GB of free RAM: Qwen3-ASR's 2.95 GB is too
+        // large for the card, but fits on the CPU.
+        HardwareSummary hardware;
+        hardware.profile.accelerator = HardwareProfile::Accelerator::DedicatedGpu;
+        hardware.profile.availableRamBytes = 16 * gb;
+        hardware.profile.gpuMemoryBytes = 2 * gib;
+        LocalSpeechEngine::Device card;
+        card.id = QStringLiteral("0000:01:00.0");
+        card.kind = QStringLiteral("vulkan");
+        card.type = LocalSpeechEngine::Device::Type::Gpu;
+        card.memoryTotalBytes = 2 * gib;
+        hardware.gpus = {card};
+        const LocalModel &qwen = *findLocalModel(QStringLiteral("qwen3-asr"));
+
+        QCOMPARE(modelFit(qwen, runsOnProfile(hardware, {})), ModelFit::TooLarge);
+        QCOMPARE(modelFit(qwen, runsOnProfile(hardware, {QStringLiteral("cpu"), {}})), ModelFit::Fits);
+        QCOMPARE(modelFit(qwen, runsOnProfile(hardware, {QStringLiteral("vulkan"), card.id})), ModelFit::TooLarge);
+        // A card saved before backends could be chosen is still that card.
+        QCOMPARE(modelFit(qwen, runsOnProfile(hardware, {QStringLiteral("auto"), card.id})), ModelFit::TooLarge);
+
+        // LocalSetup re-reads the choice, so the page follows a change.
+        QTemporaryDir directory;
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+        LocalSetupTestAccess::setHardware(setup, hardware);
+        QVERIFY(setup.modelState(qwen).tooLarge);
+        LocalSpeechSettings local = settings.localSpeechSettings();
+        local.runsOn = {QStringLiteral("cpu"), {}};
+        settings.setLocalSpeechSettings(local);
+        QVERIFY(!setup.modelState(qwen).tooLarge);
+        QCOMPARE(setup.fitLabel(qwen), QStringLiteral("Fits"));
     }
 
     void catalogEntriesArePinned()

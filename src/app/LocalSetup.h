@@ -61,6 +61,11 @@ RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
 // gemma4:e4b", "qwen3 on your server". Empty for any other provider.
 QString ownModelRefinementSummary(const RefinementSettings &settings);
 
+// The machine as a model placed by runsOn sees it, for fit: the CPU budgets
+// system RAM, a chosen card its own memory, and Automatic the probe's pick.
+// A card that has gone away counts as the CPU, where nothing else would run.
+HardwareProfile runsOnProfile(const HardwareSummary &hardware, const LocalRunsOn &runsOn);
+
 // Everything a front end shows about running models on this computer beyond
 // the files themselves: the hardware, Local Runners, the Custom Endpoints'
 // connection tests, Speed Tests and cleanup models pulled through Ollama.
@@ -88,8 +93,8 @@ public:
     // "AMD Ryzen 7 PRO 4750U, 16 threads · AMD Radeon Graphics, Vulkan · 16 GB".
     QString hardwareLine() const;
     const LocalModel &suggestedModel() const;
-    // Empty until the hardware probe answers: nothing is too large before
-    // anyone knows.
+    // Against the memory of where Runs on puts models. Empty until the
+    // hardware probe answers: nothing is too large before anyone knows.
     std::optional<ModelFit> fit(const LocalModel &model) const;
     // What a list shows for fit: "Fits", "Tight fit", "Too large", or
     // "Checking…" before the probe answers.
@@ -198,6 +203,9 @@ private:
     QHash<QString, std::pair<qint64, qint64>> m_progress;
     QHash<QString, QString> m_downloadErrors;
     QString m_speedTestModel;
+    // Where m_speedTestModel's test runs, which is what its result is kept
+    // under even if Runs on changes meanwhile.
+    LocalRunsOn m_speedTestRunsOn;
     QStringList m_speedTestQueue;
     QHash<QString, QString> m_speedTestErrors;
     // Where the loaded Local Model runs; see LiveFacts::localModelRunsOn.

@@ -212,10 +212,16 @@ LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
         std::max(0, value(SettingsKeys::LocalIdleUnloadMinutes, defaults.idleUnloadMinutes).toInt());
     const QString speedTestPrefix = SettingsKeys::LocalSpeedTest + QLatin1Char('/');
     for (const QString &key : m_settings.allKeys()) {
-        if (key.startsWith(speedTestPrefix)) {
-            settings.speedTestSeconds.insert(key.mid(speedTestPrefix.size()),
-                                             m_settings.value(key).toDouble());
+        if (!key.startsWith(speedTestPrefix)) {
+            continue;
         }
+        // Results saved before they were kept per Runs on choice ran on
+        // Automatic, the only choice there was.
+        QString speedKey = key.mid(speedTestPrefix.size());
+        if (!speedKey.contains(QLatin1Char('/'))) {
+            speedKey = localSpeedTestKey(speedKey, {});
+        }
+        settings.speedTestSeconds.insert(speedKey, m_settings.value(key).toDouble());
     }
     return settings;
 }

@@ -1387,7 +1387,8 @@ SettingsPage localModelsPage(const SchemaContext &context)
         });
     runsOn.helpValue = [facts, help = runsOn.help](const AppSettings &) {
         const QString running = facts().localModelRunsOn;
-        return running.isEmpty() ? help : QStringLiteral("The model is running on %1.").arg(running);
+        return running.isEmpty() ? help
+                                 : help + QStringLiteral(" The loaded model is running on %1.").arg(running);
     };
 
     SettingsRow folder = actionRow(QStringLiteral("localModelFolder"),
@@ -2384,22 +2385,6 @@ const SettingsPage &SettingsSchema::page(const QString &id) const
 bool SettingsSchema::hasPage(const QString &id) const
 {
     return std::any_of(pages.cbegin(), pages.cend(), [&id](const SettingsPage &page) { return page.id == id; });
-}
-
-QString localRunsOnId(const LocalRunsOn &runsOn)
-{
-    return runsOn.deviceId.isEmpty() ? runsOn.backend
-                                     : runsOn.backend + QLatin1Char(':') + runsOn.deviceId;
-}
-
-LocalRunsOn localRunsOnFromId(const QString &id)
-{
-    // PCI bus ids have colons of their own; the backend is what precedes the first.
-    const qsizetype colon = id.indexOf(QLatin1Char(':'));
-    if (colon < 0) {
-        return {id, QString()};
-    }
-    return {id.left(colon), id.mid(colon + 1)};
 }
 
 QList<RowOption> localRunsOnOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen)

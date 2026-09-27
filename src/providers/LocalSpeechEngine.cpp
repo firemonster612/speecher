@@ -334,6 +334,11 @@ std::optional<double> LocalSpeechEngine::speedTestSeconds(QString *error)
         return std::nullopt;
     }
     const QByteArray pcm16 = clip.readAll();
+    // Untimed: a backend's first run pays one-off costs, such as Vulkan
+    // compiling its shaders, that dictation after it never sees.
+    if (!transcribe(pcm16, {}, error)) {
+        return std::nullopt;
+    }
     QElapsedTimer timer;
     timer.start();
     if (!transcribe(pcm16, {}, error)) {

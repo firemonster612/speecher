@@ -76,7 +76,7 @@ public:
     std::optional<QString> finalize(QString *error);
 
     // The Speed Test: seconds the loaded model takes for 10 s of speech,
-    // measured on a bundled clip.
+    // measured on a bundled clip after one untimed run of it.
     std::optional<double> speedTestSeconds(QString *error);
 
 private:

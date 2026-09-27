@@ -359,7 +359,5 @@ QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices,
 // placeholder for a saved card that has gone away. An option's id is
 // localRunsOnId of the LocalRunsOn it stands for.
 QList<RowOption> localRunsOnOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
-QString localRunsOnId(const LocalRunsOn &runsOn);
-LocalRunsOn localRunsOnFromId(const QString &id);
 
 } // namespace speecher

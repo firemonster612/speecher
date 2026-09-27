@@ -125,13 +125,37 @@ struct LocalRunsOn {
     bool operator==(const LocalRunsOn &other) const = default;
 };
 
+// "auto", "cpu", "cuda:0000:01:00.0": how Runs on stores a choice.
+inline QString localRunsOnId(const LocalRunsOn &runsOn)
+{
+    return runsOn.deviceId.isEmpty() ? runsOn.backend
+                                     : runsOn.backend + QLatin1Char(':') + runsOn.deviceId;
+}
+
+inline LocalRunsOn localRunsOnFromId(const QString &id)
+{
+    // PCI bus ids have colons of their own; the backend is what precedes the first.
+    const qsizetype colon = id.indexOf(QLatin1Char(':'));
+    if (colon < 0) {
+        return {id, QString()};
+    }
+    return {id.left(colon), id.mid(colon + 1)};
+}
+
+// A Speed Test result's key: the model, and where it ran.
+inline QString localSpeedTestKey(const QString &modelId, const LocalRunsOn &runsOn)
+{
+    return modelId + QLatin1Char('/') + localRunsOnId(runsOn);
+}
+
 struct LocalSpeechSettings {
     // A LocalModelCatalog id.
     QString modelId = QStringLiteral("parakeet");
     LocalRunsOn runsOn;
     // 0 keeps the model loaded until Speecher quits.
     int idleUnloadMinutes = 10;
-    // Model id to the Speed Test's measured seconds for the bundled clip.
+    // localSpeedTestKey to the Speed Test's measured seconds for the bundled
+    // clip, so a result from one Runs on choice never stands for another.
     QMap<QString, double> speedTestSeconds;
     // False only for an unchosen default; legacy saved model ids are choices.
     bool modelChosen = false;

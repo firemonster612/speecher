@@ -23,7 +23,7 @@ inline const QString LocalModel = QStringLiteral("local/model");
 inline const QString LocalBackend = QStringLiteral("local/backend");
 inline const QString LocalDevice = QStringLiteral("local/device");
 inline const QString LocalIdleUnloadMinutes = QStringLiteral("local/idleUnloadMinutes");
-// A group: one key per model id, holding the measured seconds for the clip.
+// A group: one key per localSpeedTestKey, holding the measured seconds for the clip.
 inline const QString LocalSpeedTest = QStringLiteral("local/speedTest");
 inline const QString VocabularyEntries = QStringLiteral("stt/vocabularyEntries");
 inline const QString LegacyVocabulary = QStringLiteral("stt/customVocabulary");
