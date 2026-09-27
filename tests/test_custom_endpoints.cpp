@@ -34,7 +34,9 @@ QByteArray readRequest(QTcpSocket *socket)
     QByteArray request;
     QElapsedTimer timer;
     timer.start();
-    while (timer.elapsed() < 2000) {
+    // Generous: a loaded CI runner can deliver the request line late, and a
+    // short read here turns into a spurious 404 from the route lookup.
+    while (timer.elapsed() < 10000) {
         request += socket->readAll();
         const int headerEnd = request.indexOf("\r\n\r\n");
         if (headerEnd >= 0
@@ -65,7 +67,9 @@ public:
                 };
                 const QByteArray response = m_routes.contains(route)
                     ? next()
-                    : httpResponse("404 Not Found", "text/plain", "404 page not found");
+                    : httpResponse("404 Not Found", "text/plain",
+                                   "404 page not found for [" + line + "] after " + QByteArray::number(request.size())
+                                       + " bytes");
                 socket->write(response);
                 socket->flush();
                 socket->disconnectFromHost();
