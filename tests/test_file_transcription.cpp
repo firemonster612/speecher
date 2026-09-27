@@ -622,12 +622,19 @@ private slots:
         QCOMPARE(packagingEntries(QStringLiteral("windows/speecher.iss"),
                                   QStringLiteral("SupportedTypes\"; ValueType: string; ValueName: \"\\.(\\w+)\"")),
                  extensions);
-        // Each extension's own type is one the .desktop file registers.
+        // Each extension's type is one the .desktop file registers, under its
+        // own name, an alias or a type it inherits: the databases disagree on
+        // which name is canonical (the one Qt bundles for macOS and Windows
+        // calls .aac audio/x-aac, shared-mime-info calls it audio/aac).
+        const QMimeDatabase mimes;
         for (const QString &extension : extensions) {
-            const QString type = QMimeDatabase()
-                                     .mimeTypeForFile(QStringLiteral("x.") + extension, QMimeDatabase::MatchExtension)
-                                     .name();
-            QVERIFY2(transcribableMimeTypes().contains(type), qPrintable(extension + QStringLiteral(" is ") + type));
+            const QMimeType type = mimes.mimeTypeForFile(QStringLiteral("x.") + extension, QMimeDatabase::MatchExtension);
+            const QStringList listed = transcribableMimeTypes();
+            const bool registered = std::any_of(listed.cbegin(), listed.cend(), [&](const QString &name) {
+                const QMimeType known = mimes.mimeTypeForName(name);
+                return known.isValid() && (type == known || type.inherits(known.name()));
+            });
+            QVERIFY2(registered, qPrintable(extension + QStringLiteral(" is ") + type.name()));
         }
     }
 
