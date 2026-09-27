@@ -253,6 +253,7 @@ struct RefinementProvider {
 // - refinementEndpointTest: LocalSetup::checkRefinementEndpoint(draft.refinement)
 // - localRunnerDetect, localModelsRunner: LocalSetup::detectRunners()
 // - localModelFolder: open LocalModelStore::directory() in the file manager
+// - speechLocalModelDownload: show the Local models page (a front-end job)
 struct LiveFacts {
     // The last connection check's verdict, "Checking…" while one runs, empty
     // before the first. LocalSetup runs one on its own once an endpoint in
@@ -269,6 +270,8 @@ struct LiveFacts {
     bool detectingRunners = false;
     // Where Local Model files live and how much room they take.
     QString modelFolder;
+    // Local Model ids with a finished download, in catalog order.
+    QStringList downloadedModels;
     // The GPUs a Local Model can run on, by transcribe.cpp device id. The
     // picker only shows when there is more than one.
     QList<RowOption> gpus;

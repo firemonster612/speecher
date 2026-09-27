@@ -662,6 +662,7 @@ LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
     for (const LocalModel &model : localModelCatalog()) {
         if (m_models.isDownloaded(model)) {
             used += model.sizeBytes;
+            facts.downloadedModels.append(model.id);
         }
     }
     facts.modelFolder = QStringLiteral("%1 · %2 used")
