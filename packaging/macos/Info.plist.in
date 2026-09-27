@@ -26,9 +26,11 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Speecher records short dictation sessions from your microphone.</string>
-	<!-- Open With for audio, which lands on the Transcribe pane. Alternate rank:
-	     Speecher is never the default player. The second entry names by extension
-	     the formats macOS may not declare as audio (webm is a movie type). -->
+	<!-- Open With for audio and video, which lands on the Transcribe pane.
+	     Alternate rank: Speecher is never the default player. The first entry
+	     takes any audio; the second names every extension the file pickers
+	     offer (transcribableExtensions() in FileTranscriptionSession, which a
+	     test holds this list to), video containers included. -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

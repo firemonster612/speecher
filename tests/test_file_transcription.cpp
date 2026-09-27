@@ -7,18 +7,21 @@
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/TranscribePresentation.h"
 
-#include <QAudioBufferInput>
 #include <QDir>
-#include <QImage>
-#include <QMediaCaptureSession>
+#include <QLibraryInfo>
 #include <QMediaFormat>
-#include <QMediaRecorder>
 #include <QMimeDatabase>
 #include <QRegularExpression>
 #include <QScopeGuard>
 #include <QFile>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+#include <QAudioBufferInput>
+#include <QImage>
+#include <QMediaCaptureSession>
+#include <QMediaRecorder>
 #include <QVideoFrame>
 #include <QVideoFrameInput>
+#endif
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QJsonDocument>
@@ -116,9 +119,11 @@ QString readFile(const QString &path)
     return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).trimmed() : QString();
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 // Records half a second of 440 Hz tone beside a few plain video frames into
-// path with Qt's own FFmpeg recorder, so the test needs no fixture files.
-// Returns why it could not, or empty once the file is written.
+// path with Qt's own FFmpeg recorder (its audio and video inputs arrived in
+// Qt 6.8), so the test needs no fixture files. Returns why it could not, or
+// empty once the file is written.
 QString recordClip(const QString &path, QMediaFormat::FileFormat container,
                    QMediaFormat::AudioCodec audioCodec, QMediaFormat::VideoCodec videoCodec)
 {
@@ -185,6 +190,22 @@ QString recordClip(const QString &path, QMediaFormat::FileFormat container,
     }
     return stopped && QFileInfo(path).size() > 0 ? QString() : QStringLiteral("the recorder wrote nothing");
 }
+
+// True where Qt Multimedia runs on its FFmpeg backend, which writes every
+// clip the decode test needs: Linux, with the plugin installed and no other
+// backend asked for.
+bool ffmpegMediaBackend()
+{
+#if defined(Q_OS_LINUX)
+    const QString asked = qEnvironmentVariable("QT_MEDIA_BACKEND");
+    return (asked.isEmpty() || asked == QStringLiteral("ffmpeg"))
+        && QFile::exists(QLibraryInfo::path(QLibraryInfo::PluginsPath)
+                         + QStringLiteral("/multimedia/libffmpegmediaplugin.so"));
+#else
+    return false;
+#endif
+}
+#endif
 
 // Every first capture of pattern in a file under packaging/, sorted.
 QStringList packagingEntries(const QString &file, const QString &pattern)
@@ -546,11 +567,20 @@ private slots:
         QFETCH(QMediaFormat::AudioCodec, audioCodec);
         QFETCH(QMediaFormat::VideoCodec, videoCodec);
         QVERIFY(transcribableExtensions().contains(extension));
+#if QT_VERSION < QT_VERSION_CHECK(6, 8, 0)
+        Q_UNUSED(container);
+        Q_UNUSED(audioCodec);
+        Q_UNUSED(videoCodec);
+        QSKIP("Writing the clips needs Qt 6.8's recorder inputs");
+#else
         const QString clip = m_dir.filePath(QStringLiteral("clip.") + extension);
         const QString recordError = recordClip(clip, container, audioCodec, videoCodec);
-        if (!recordError.isEmpty()) {
-            QSKIP(qPrintable(QStringLiteral("Qt cannot write this clip here: ") + recordError));
+        // Where the FFmpeg backend is there, a clip it cannot write is a
+        // failure: the container would go unproven.
+        if (!recordError.isEmpty() && !ffmpegMediaBackend()) {
+            QSKIP(qPrintable(QStringLiteral("No FFmpeg media backend to write the clip: ") + recordError));
         }
+        QVERIFY2(recordError.isEmpty(), qPrintable(recordError));
         QVERIFY(QMimeDatabase().mimeTypeForFile(clip).name().startsWith(QStringLiteral("video/")));
         QVERIFY(isAudioFile(clip));
         SettingsStore settings;
@@ -565,6 +595,31 @@ private slots:
         // Half a second of 16 kHz mono s16 is 16000 bytes; encoders pad the
         // start and end by a frame or two.
         QVERIFY2(m_script.bytes > 14000 && m_script.bytes < 20000, qPrintable(QString::number(m_script.bytes)));
+#endif
+    }
+
+    // A dropped or opened file need not be one the pickers list: any audio or
+    // video gets its try with the decoder. Other files do not.
+    void acceptsAnyAudioOrVideoFile_data()
+    {
+        QTest::addColumn<QString>("name");
+        QTest::addColumn<bool>("accepted");
+        QTest::newRow("ogv") << QStringLiteral("talk.ogv") << true;
+        QTest::newRow("mpg") << QStringLiteral("talk.mpg") << true;
+        QTest::newRow("aiff") << QStringLiteral("talk.aiff") << true;
+        QTest::newRow("text") << QStringLiteral("talk.txt") << false;
+    }
+
+    void acceptsAnyAudioOrVideoFile()
+    {
+        QFETCH(QString, name);
+        QFETCH(bool, accepted);
+        QVERIFY(!transcribableExtensions().contains(QFileInfo(name).suffix()));
+        // Empty, so the type comes from the name alone.
+        QFile file(m_dir.filePath(name));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        QCOMPARE(isAudioFile(file.fileName()), accepted);
     }
 
     // "Open with" offers Speecher for exactly the files its pickers take.

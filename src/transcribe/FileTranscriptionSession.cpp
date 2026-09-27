@@ -79,14 +79,8 @@ bool isAudioFile(const QString &path)
     if (!info.isFile()) {
         return false;
     }
-    // Any audio the decoder may read, as dropped files always were; video only
-    // in the containers the list names, since other video may carry no track
-    // the decoder can take.
-    const QMimeType mime = QMimeDatabase().mimeTypeForFile(info);
-    const QStringList types = transcribableMimeTypes();
-    return mime.name().startsWith(QStringLiteral("audio/"))
-        || std::any_of(types.cbegin(), types.cend(), [&mime](const QString &type) { return mime.inherits(type); })
-        || transcribableExtensions().contains(info.suffix().toLower());
+    const QString mime = QMimeDatabase().mimeTypeForFile(info).name();
+    return mime.startsWith(QStringLiteral("audio/")) || mime.startsWith(QStringLiteral("video/"));
 }
 
 void probeAudioDuration(const QString &path, QObject *receiver, std::function<void(qint64)> done)

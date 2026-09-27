@@ -60,17 +60,19 @@ struct TranscribeFileResult {
     bool failed() const { return refined.isEmpty(); }
 };
 
-// The files Speecher transcribes, audio and video alike: the file pickers
-// offer these extensions and the packaging registers "Open with" for them
-// (a test holds the .desktop, Info.plist and .iss lists to these). Every video
-// container here has a test proving the decoder reads its audio track.
+// The files Speecher offers to transcribe: the file pickers and their hint
+// name these extensions, and the packaging registers "Open with" for them (a
+// test holds the .desktop, Info.plist and .iss lists to these). A test
+// transcribes a clip in each video container, where Qt's FFmpeg backend can
+// write one. Dropped and opened files are not limited to the list; see
+// isAudioFile.
 QStringList transcribableExtensions();
 // The MIME types of those files, with the aliases older shared-mime-info
 // releases and file managers still use.
 QStringList transcribableMimeTypes();
 
-// True for audio of any kind, or for a file of one of the transcribable
-// types, by its content or name.
+// True for any audio or video file, by its content or name, so a dropped or
+// opened file the pickers do not list still gets its try with the decoder.
 bool isAudioFile(const QString &path);
 
 // Reads an audio file's length in the background and hands it to done, in
