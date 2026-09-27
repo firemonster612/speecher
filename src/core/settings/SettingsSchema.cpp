@@ -2411,13 +2411,24 @@ QList<RowOption> localRunsOnOptions(const QList<LocalGpu> &gpus, const LocalRuns
                         QStringLiteral("%1 (%2)").arg(gpu.description, localBackendName(gpu.backend))});
     }
     const QString chosenId = localRunsOnId(chosen);
-    if (std::none_of(options.cbegin(), options.cend(),
-                     [&chosenId](const RowOption &option) { return option.id == chosenId; })) {
-        options.append({chosenId,
-                        QStringLiteral("Missing graphics card (%1)").arg(localBackendName(chosen.backend)),
-                        QStringLiteral("This saved choice is not available on this computer."),
-                        false});
+    if (std::any_of(options.cbegin(), options.cend(),
+                    [&chosenId](const RowOption &option) { return option.id == chosenId; })) {
+        return options;
     }
+    // A card saved with no backend runs on whichever backend reaches it.
+    const bool anyBackend = chosen.backend == QStringLiteral("auto");
+    const auto card = std::find_if(gpus.cbegin(), gpus.cend(), [&chosen](const LocalGpu &gpu) {
+        return gpu.deviceId == chosen.deviceId;
+    });
+    if (anyBackend && card != gpus.cend()) {
+        options.append({chosenId, card->description});
+        return options;
+    }
+    options.append({chosenId,
+                    anyBackend ? QStringLiteral("Missing graphics card")
+                               : QStringLiteral("Missing graphics card (%1)").arg(localBackendName(chosen.backend)),
+                    QStringLiteral("This saved choice is not available on this computer."),
+                    false});
     return options;
 }
 

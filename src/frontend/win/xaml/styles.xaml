@@ -14,16 +14,27 @@
            this dictionary in code by the window's ActualTheme, so it cannot
            alias a theme resource that resolves against the app theme. -->
       <SolidColorBrush x:Key="SettingsCardDescriptionForeground" Color="#9E000000"/>
+      <!-- Model rating badges: WinUI's AccentFillColorDefault,
+           SystemFillColorCritical and SystemFillColorNeutral for this theme. -->
+      <SolidColorBrush x:Key="RatingBadgeAccent" Color="{ThemeResource SystemAccentColorDark1}"/>
+      <SolidColorBrush x:Key="RatingBadgeCritical" Color="#C42B1C"/>
+      <SolidColorBrush x:Key="RatingBadgeNeutral" Color="#72000000"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <StaticResource x:Key="SettingsCardBackground" ResourceKey="CardBackgroundFillColorDefaultBrush"/>
       <StaticResource x:Key="SettingsCardBorderBrush" ResourceKey="CardStrokeColorDefaultBrush"/>
       <SolidColorBrush x:Key="SettingsCardDescriptionForeground" Color="#C5FFFFFF"/>
+      <SolidColorBrush x:Key="RatingBadgeAccent" Color="{ThemeResource SystemAccentColorLight2}"/>
+      <SolidColorBrush x:Key="RatingBadgeCritical" Color="#FF99A4"/>
+      <SolidColorBrush x:Key="RatingBadgeNeutral" Color="#8BFFFFFF"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="HighContrast">
       <SolidColorBrush x:Key="SettingsCardBackground" Color="{ThemeResource SystemColorButtonFaceColor}"/>
       <SolidColorBrush x:Key="SettingsCardBorderBrush" Color="{ThemeResource SystemColorButtonTextColor}"/>
       <SolidColorBrush x:Key="SettingsCardDescriptionForeground" Color="{ThemeResource SystemColorButtonTextColor}"/>
+      <SolidColorBrush x:Key="RatingBadgeAccent" Color="{ThemeResource SystemColorWindowColor}"/>
+      <SolidColorBrush x:Key="RatingBadgeCritical" Color="{ThemeResource SystemColorWindowTextColor}"/>
+      <SolidColorBrush x:Key="RatingBadgeNeutral" Color="{ThemeResource SystemColorWindowTextColor}"/>
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 

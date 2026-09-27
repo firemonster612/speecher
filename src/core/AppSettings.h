@@ -9,6 +9,7 @@
 #include <QList>
 #include <QMap>
 
+#include <array>
 namespace speecher {
 
 enum class UpdateChannel {
@@ -87,24 +88,38 @@ struct UiSettings {
     bool soundsEnabled = false;
 };
 
-// What a person calls a transcribe.cpp backend, stored by its device kind.
-inline QString localBackendName(const QString &backend)
+// The backends Runs on can name: "auto", then transcribe.cpp's device kinds,
+// each with what a person calls it. LocalSpeechEngine maps them to
+// transcribe.cpp's requests in this order.
+struct LocalBackend {
+    const char *kind;
+    const char *name;
+};
+inline constexpr std::array<LocalBackend, 6> localBackends{{
+    {"auto", "Automatic"},
+    {"cpu", "CPU"},
+    {"metal", "Metal"},
+    {"vulkan", "Vulkan"},
+    {"cuda", "CUDA"},
+    {"rocm", "ROCm"},
+}};
+
+inline QString localBackendName(const QString &kind)
 {
-    if (backend == QStringLiteral("cpu")) return QStringLiteral("CPU");
-    if (backend == QStringLiteral("metal")) return QStringLiteral("Metal");
-    if (backend == QStringLiteral("vulkan")) return QStringLiteral("Vulkan");
-    if (backend == QStringLiteral("cuda")) return QStringLiteral("CUDA");
-    if (backend == QStringLiteral("rocm")) return QStringLiteral("ROCm");
-    return backend;
+    for (const LocalBackend &backend : localBackends) {
+        if (kind == QLatin1String(backend.kind)) return QString::fromLatin1(backend.name);
+    }
+    return kind;
 }
 
 // Where Local Models run: the Local models page's Runs on choice.
 struct LocalRunsOn {
-    // "auto", or a transcribe.cpp device kind: "cpu", "metal", "vulkan",
-    // "cuda", "rocm".
+    // A localBackends kind.
     QString backend = QStringLiteral("auto");
     // A transcribe.cpp device_id (PCI bus id) of that backend, or empty for
-    // the backend's own choice. One card can appear under two backends.
+    // the backend's own choice. One card can appear under two backends. With
+    // "auto", the card decides the backend: a card chosen before Runs on had
+    // backends is kept that way.
     QString deviceId;
 
     bool operator==(const LocalRunsOn &other) const = default;

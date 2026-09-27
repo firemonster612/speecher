@@ -63,6 +63,9 @@ public:
             item->setData(Qt::UserRole, model.id);
             item->setData(BadgeDelegate::TextRole, modelRatingLabel(model.rating));
             item->setData(BadgeDelegate::ToneRole, int(modelRatingTone(model.rating)));
+            // The badge is only painted, so a screen reader hears it here.
+            item->setData(Qt::AccessibleTextRole,
+                          QStringLiteral("%1, %2").arg(model.name, modelRatingLabel(model.rating)));
         }
         columns->addWidget(m_list, 0, Qt::AlignTop);
         columns->addWidget(makeFacts(), 1, Qt::AlignTop);

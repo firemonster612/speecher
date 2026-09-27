@@ -525,6 +525,8 @@ struct SetupWindow::Native {
 
         Grid root;
         root.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
+        // Rating badges pick their brushes by this window's theme.
+        themeHost.effectiveTheme = [root] { return root.ActualTheme(); };
         RowDefinition titleRow;
         titleRow.Height({48, GridUnitType::Pixel});
         RowDefinition contentRow;
@@ -1345,7 +1347,7 @@ struct SetupWindow::Native {
                 row.Children().Append(cell);
             }
             // After the cells, so they keep their indices.
-            Grid rating = win::ratingBadge(model.rating);
+            Grid rating = win::ratingBadge(model.rating, themeHost);
             Grid::SetRow(rating, 1);
             row.Children().Append(rating);
             AutomationProperties::SetName(row, win::hs(model.name));
@@ -1393,7 +1395,7 @@ struct SetupWindow::Native {
         card.hardware.Text(win::hs(localSpeech->hardwareLine()));
         card.caption.Text(state.suggested ? L"Suggested for this computer" : L"Your choice");
         card.name.Text(win::hs(model.name));
-        card.rating.Child(win::ratingBadge(model.rating));
+        card.rating.Child(win::ratingBadge(model.rating, themeHost));
         card.facts.Text(win::hs(state.cardFacts));
         card.download.IsEnabled(!state.tooLarge);
         card.download.Content(box_value(win::hs(state.tooLarge ? QStringLiteral("Too large for this computer")
@@ -3007,6 +3009,8 @@ struct SetupWindow::Native {
     ApplicationController *controller;
     std::function<void()> firstFrame;
     SetupWindow *setup;
+    // Only its effectiveTheme is set, for win::themeBrush.
+    win::PaneHost themeHost;
     Window window{nullptr};
     StackPanel content{nullptr};
     Button skip{nullptr};

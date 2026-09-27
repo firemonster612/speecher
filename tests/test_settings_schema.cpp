@@ -1231,6 +1231,17 @@ private slots:
         QCOMPARE(options.size(), 3);
         QCOMPARE(options.last().label, QStringLiteral("Missing graphics card (CUDA)"));
         QVERIFY(!options.last().enabled);
+
+        // A card saved before backends could be chosen shows as that card,
+        // or as missing once it has gone.
+        const LocalRunsOn legacy{QStringLiteral("auto"), bus};
+        options = localRunsOnOptions(gpus, legacy);
+        QCOMPARE(options.last().id, localRunsOnId(legacy));
+        QCOMPARE(options.last().label, QStringLiteral("NVIDIA GeForce RTX 3060"));
+        QVERIFY(options.last().enabled);
+        options = localRunsOnOptions({}, legacy);
+        QCOMPARE(options.last().label, QStringLiteral("Missing graphics card"));
+        QVERIFY(!options.last().enabled);
     }
 
     void localModelsPageFollowsRefinement()

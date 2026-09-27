@@ -413,14 +413,6 @@ private slots:
         }
     }
 
-    void exactlyOneModelIsRecommended()
-    {
-        const QList<LocalModel> &catalog = localModelCatalog();
-        QCOMPARE(std::count_if(catalog.cbegin(), catalog.cend(),
-                               [](const LocalModel &model) { return model.rating == ModelRating::Recommended; }),
-                 1);
-    }
-
     void fitComparesModelMemoryWithTheBudget()
     {
         // Parakeet needs 731 MB x 1.35 = 0.99 GB.

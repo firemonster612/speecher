@@ -27,17 +27,20 @@ private slots:
         QVERIFY(SettingsStore().localSpeechSettings().modelChosen);
     }
 
-    void localRunsOnDefaultsToAutomatic()
+    void localRunsOnDefaultsToAutomaticAndKeepsAnOldCard()
     {
         SettingsStore settings;
         settings.raw().clear();
         QCOMPARE(settings.localSpeechSettings().runsOn, LocalRunsOn{});
         QCOMPARE(settings.localSpeechSettings().runsOn.backend, QStringLiteral("auto"));
 
-        // A graphics card saved before backends could be chosen names no
-        // backend, so it reads as Automatic.
+        // A graphics card saved before backends could be chosen is kept, on
+        // whichever backend reaches it, and survives the next write.
         settings.raw().setValue(SettingsKeys::LocalDevice, QStringLiteral("0000:c1:00.0"));
-        QCOMPARE(settings.localSpeechSettings().runsOn, LocalRunsOn{});
+        const LocalRunsOn legacy{QStringLiteral("auto"), QStringLiteral("0000:c1:00.0")};
+        QCOMPARE(settings.localSpeechSettings().runsOn, legacy);
+        settings.setLocalSpeechSettings(settings.localSpeechSettings());
+        QCOMPARE(SettingsStore().localSpeechSettings().runsOn, legacy);
     }
 
     void settingsRespectConfiguredStorageFormat()

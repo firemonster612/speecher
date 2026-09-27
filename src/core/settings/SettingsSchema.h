@@ -243,6 +243,15 @@ struct RefinementProvider {
     bool supportsScreenshotContext = false;
 };
 
+// A graphics card as one transcribe.cpp backend reports it.
+struct LocalGpu {
+    // A localBackends kind other than "auto" or "cpu".
+    QString backend;
+    // The PCI bus id, empty when the backend reports none.
+    QString deviceId;
+    QString description;
+};
+
 // What the app layer last learned about this computer and the servers a
 // person named, for the rows that report it. ApplicationController's
 // LocalSetup builds it; a front end hands the schema a way to read it, runs the
@@ -254,15 +263,6 @@ struct RefinementProvider {
 // - localRunnerDetect, localModelsRunner: LocalSetup::detectRunners()
 // - localModelFolder: open LocalModelStore::directory() in the file manager
 // - speechLocalModelDownload: show the Local models page (a front-end job)
-// A graphics card as one transcribe.cpp backend reports it.
-struct LocalGpu {
-    // A transcribe.cpp device kind: "vulkan", "cuda", "rocm", "metal".
-    QString backend;
-    // The PCI bus id, empty when the backend reports none.
-    QString deviceId;
-    QString description;
-};
-
 struct LiveFacts {
     // The last connection check's verdict, "Checking…" while one runs, empty
     // before the first. LocalSetup runs one on its own once an endpoint in

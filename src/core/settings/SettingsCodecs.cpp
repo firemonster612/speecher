@@ -204,12 +204,10 @@ LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
     LocalSpeechSettings settings;
     settings.modelId = value(SettingsKeys::LocalModel, defaults.modelId).toString();
     settings.modelChosen = value(SettingsKeys::LocalModelChosen, m_settings.contains(SettingsKeys::LocalModel)).toBool();
+    // A graphics card saved before the backend was chosen too has no backend
+    // saved, and reads as Automatic on that card.
     settings.runsOn.backend = value(SettingsKeys::LocalBackend, defaults.runsOn.backend).toString();
-    // A graphics card saved before the backend was chosen too belongs to no
-    // backend in particular, so it reads as Automatic.
-    if (m_settings.contains(SettingsKeys::LocalBackend)) {
-        settings.runsOn.deviceId = value(SettingsKeys::LocalDevice, QString()).toString();
-    }
+    settings.runsOn.deviceId = value(SettingsKeys::LocalDevice, QString()).toString();
     settings.idleUnloadMinutes =
         std::max(0, value(SettingsKeys::LocalIdleUnloadMinutes, defaults.idleUnloadMinutes).toInt());
     const QString speedTestPrefix = SettingsKeys::LocalSpeedTest + QLatin1Char('/');

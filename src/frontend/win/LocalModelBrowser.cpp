@@ -23,7 +23,6 @@ using namespace winrt::Windows::Foundation;
 using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
 using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
-using winrt::Microsoft::UI::Xaml::Media::Brush;
 
 QString werText(double wer)
 {
@@ -37,18 +36,15 @@ void setVisible(const UIElement &element, bool visible)
 
 } // namespace
 
-Grid ratingBadge(ModelRating rating)
+Grid ratingBadge(ModelRating rating, const PaneHost &host)
 {
-    const wchar_t *key = L"SystemFillColorNeutralBrush";
+    const wchar_t *key = L"RatingBadgeNeutral";
     if (rating == ModelRating::Recommended) {
-        key = L"AccentFillColorDefaultBrush";
+        key = L"RatingBadgeAccent";
     } else if (rating == ModelRating::NotRecommended) {
-        key = L"SystemFillColorCriticalBrush";
+        key = L"RatingBadgeCritical";
     }
-    const auto resources = Application::Current().Resources();
-    const auto boxed = box_value(hstring(key));
-    const auto brush = resources.HasKey(boxed) ? resources.Lookup(boxed).as<Brush>() : nullptr;
-    Grid pill = badge(modelRatingLabel(rating), brush);
+    Grid pill = badge(modelRatingLabel(rating), themeBrush(key, host));
     AutomationProperties::SetName(pill, hs(modelRatingLabel(rating)));
     return pill;
 }
@@ -147,7 +143,7 @@ UIElement LocalModelBrowser::listItem(const LocalModel &model)
     TextBlock name = styledTextBlock(model.name, L"SettingsCardBodyStyle");
     name.VerticalAlignment(VerticalAlignment::Center);
     title.Children().Append(name);
-    title.Children().Append(ratingBadge(model.rating));
+    title.Children().Append(ratingBadge(model.rating, m_host));
     text.Children().Append(title);
     // Size and error rate only, so the list stays as narrow as its names and
     // badges; the fit is in the facts.
@@ -291,7 +287,7 @@ void LocalModelBrowser::showDetail()
     const LocalModel &model = selected();
     const LocalSetup::ModelState state = this->state(model);
     m_name.Text(hs(model.name));
-    m_rating.Child(ratingBadge(model.rating));
+    m_rating.Child(ratingBadge(model.rating, m_host));
     m_bestFor.Text(hs(model.bestFor));
     m_subtitle.Text(hs(state.suggested ? QStringLiteral("Suggested for this computer") : model.fileName));
     m_size.Text(hs(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes),

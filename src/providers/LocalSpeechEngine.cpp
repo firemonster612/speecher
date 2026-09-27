@@ -7,6 +7,7 @@
 #include <transcribe.h>
 #include <transcribe/whisper.h>
 
+#include <array>
 #include <mutex>
 #include <vector>
 
@@ -71,28 +72,33 @@ LocalSpeechEngine::Device::Type deviceType(transcribe_device_type type)
     return LocalSpeechEngine::Device::Type::Cpu;
 }
 
+// In localBackends order.
+constexpr std::array<transcribe_backend_request, localBackends.size()> backendRequests{
+    TRANSCRIBE_BACKEND_AUTO,   TRANSCRIBE_BACKEND_CPU,  TRANSCRIBE_BACKEND_METAL,
+    TRANSCRIBE_BACKEND_VULKAN, TRANSCRIBE_BACKEND_CUDA, TRANSCRIBE_BACKEND_ROCM,
+};
+
 std::optional<transcribe_backend_request> backendRequest(const QString &backend)
 {
-    if (backend == QStringLiteral("auto")) return TRANSCRIBE_BACKEND_AUTO;
-    if (backend == QStringLiteral("cpu")) return TRANSCRIBE_BACKEND_CPU;
-    if (backend == QStringLiteral("metal")) return TRANSCRIBE_BACKEND_METAL;
-    if (backend == QStringLiteral("vulkan")) return TRANSCRIBE_BACKEND_VULKAN;
-    if (backend == QStringLiteral("cuda")) return TRANSCRIBE_BACKEND_CUDA;
-    if (backend == QStringLiteral("rocm")) return TRANSCRIBE_BACKEND_ROCM;
+    for (size_t index = 0; index < localBackends.size(); ++index) {
+        if (backend == QLatin1String(localBackends[index].kind)) return backendRequests[index];
+    }
     return std::nullopt;
 }
 
-// The registered device of that backend with that PCI bus id.
+// The registered device with that PCI bus id, of that backend unless it is
+// "auto".
 transcribe_device_t findDevice(const LocalRunsOn &runsOn)
 {
     const QByteArray id = runsOn.deviceId.toUtf8();
     const QByteArray kind = runsOn.backend.toUtf8();
+    const bool anyKind = runsOn.backend == QStringLiteral("auto");
     for (int index = 0; index < transcribe_device_count(); ++index) {
         transcribe_device_t device = transcribe_device_get(index);
         transcribe_device_info info;
         transcribe_device_info_init(&info);
         if (device && transcribe_device_get_info(device, &info) == TRANSCRIBE_OK
-            && info.device_id && id == info.device_id && info.kind && kind == info.kind) {
+            && info.device_id && id == info.device_id && info.kind && (anyKind || kind == info.kind)) {
             return device;
         }
     }
@@ -173,9 +179,12 @@ bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn
     if (!runsOn.deviceId.isEmpty()) {
         params.device = findDevice(runsOn);
         if (!params.device) {
-            *error = QStringLiteral("The graphics card chosen for %1 is missing. Choose where the "
-                                    "model runs on the Local models page.")
-                         .arg(backendName);
+            *error = *backend == TRANSCRIBE_BACKEND_AUTO
+                ? QStringLiteral("The chosen graphics card is missing. Choose where the model runs "
+                                 "on the Local models page.")
+                : QStringLiteral("The graphics card chosen for %1 is missing. Choose where the "
+                                 "model runs on the Local models page.")
+                      .arg(backendName);
             return false;
         }
     }

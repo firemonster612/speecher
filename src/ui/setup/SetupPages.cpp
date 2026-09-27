@@ -1093,6 +1093,8 @@ void SpeechProviderSetupPage::showLocalChoice()
         QTableWidgetItem *name = m_compare->item(row, 0);
         name->setData(BadgeDelegate::TextRole, modelRatingLabel(entry.rating));
         name->setData(BadgeDelegate::ToneRole, int(modelRatingTone(entry.rating)));
+        name->setData(Qt::AccessibleTextRole,
+                      QStringLiteral("%1, %2").arg(cells.first(), modelRatingLabel(entry.rating)));
     }
     {
         const QSignalBlocker blocker(m_compare);
