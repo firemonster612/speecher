@@ -191,7 +191,9 @@ QString recordClip(const QString &path, QMediaFormat::FileFormat container,
 QStringList packagingEntries(const QString &file, const QString &pattern)
 {
     QFile source(QStringLiteral(SPEECHER_SOURCE_DIR "/packaging/") + file);
-    if (!source.open(QIODevice::ReadOnly)) {
+    // Text mode: a Windows checkout ends its lines in CRLF, and a stray CR
+    // would read as one more MIME type.
+    if (!source.open(QIODevice::ReadOnly | QIODevice::Text)) {
         return {};
     }
     QStringList entries;
