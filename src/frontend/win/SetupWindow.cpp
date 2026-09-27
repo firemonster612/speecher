@@ -10,6 +10,7 @@
 #include "core/ShortcutBinding.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
+#include "frontend/win/LocalModelBrowser.h"
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/ShortcutRecorder.h"
 #include "platform/GlobalShortcutBinder.h"
@@ -1260,8 +1261,16 @@ struct SetupWindow::Native {
         text.Spacing(2);
         card.caption = secondaryTextBlock(QString());
         text.Children().Append(card.caption);
+        StackPanel title;
+        title.Orientation(Orientation::Horizontal);
+        title.Spacing(8);
         card.name = strongTextBlock(QString());
-        text.Children().Append(card.name);
+        card.name.VerticalAlignment(VerticalAlignment::Center);
+        title.Children().Append(card.name);
+        // The badge is rebuilt with each model, so it sits in a holder.
+        card.rating = Border();
+        title.Children().Append(card.rating);
+        text.Children().Append(title);
         card.facts = textBlock(QString());
         text.Children().Append(card.facts);
 
@@ -1321,14 +1330,24 @@ struct SetupWindow::Native {
         container.Setters().Append(Setter(Control::PaddingProperty(), box_value(Thickness{12, 4, 12, 4})));
         card.compare.ItemContainerStyle(container);
         for (const LocalModel &model : localModelCatalog()) {
+            // Two lines: the name, and its rating under it, as the model
+            // column is too narrow for both on one; the facts span both.
             Grid row = columnGrid();
+            row.RowSpacing(2);
+            row.RowDefinitions().Append(RowDefinition());
+            row.RowDefinitions().Append(RowDefinition());
             for (int column = 0; column < titles.size(); ++column) {
                 // The name and the speed ("~0.7 s (estimated)") wrap rather than clip.
                 TextBlock cell = textBlock(QString(), column == 0 || column == 3);
                 cell.VerticalAlignment(VerticalAlignment::Center);
                 Grid::SetColumn(cell, column);
+                Grid::SetRowSpan(cell, column == 0 ? 1 : 2);
                 row.Children().Append(cell);
             }
+            // After the cells, so they keep their indices.
+            Grid rating = win::ratingBadge(model.rating);
+            Grid::SetRow(rating, 1);
+            row.Children().Append(rating);
             AutomationProperties::SetName(row, win::hs(model.name));
             card.compare.Items().Append(row);
         }
@@ -1374,6 +1393,7 @@ struct SetupWindow::Native {
         card.hardware.Text(win::hs(localSpeech->hardwareLine()));
         card.caption.Text(state.suggested ? L"Suggested for this computer" : L"Your choice");
         card.name.Text(win::hs(model.name));
+        card.rating.Child(win::ratingBadge(model.rating));
         card.facts.Text(win::hs(state.cardFacts));
         card.download.IsEnabled(!state.tooLarge);
         card.download.Content(box_value(win::hs(state.tooLarge ? QStringLiteral("Too large for this computer")
@@ -3015,6 +3035,7 @@ struct SetupWindow::Native {
         TextBlock hardware{nullptr};
         TextBlock caption{nullptr};
         TextBlock name{nullptr};
+        Border rating{nullptr};
         TextBlock facts{nullptr};
         Button download{nullptr};
         ProgressBar progress{nullptr};

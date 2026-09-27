@@ -182,6 +182,13 @@ bool highContrastOn();
 // gives. Null when the key is missing.
 winrt::Microsoft::UI::Xaml::Media::Brush themeBrush(const wchar_t *key, const PaneHost &host);
 
+// A short label on a pill of brush at the heatmap's lightest level: a Writing
+// Profile on Home, a Local Model's rating. WinUI's InfoBadge holds only a
+// number or an icon, so this is the text badge the Linux and macOS front ends
+// draw.
+winrt::Microsoft::UI::Xaml::Controls::Grid badge(const QString &label,
+                                                 const winrt::Microsoft::UI::Xaml::Media::Brush &brush);
+
 // A Choice row's control: options as items, disabled ones kept visible, the
 // write going through setValueAndCommit. Shared with the pickers the custom
 // rows supply options for.

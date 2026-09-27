@@ -6,6 +6,7 @@
 #include "common/test_auth.h"
 #include "core/VocabularyLimit.h"
 #include "ui/AccessibilityNotice.h"
+#include "ui/InsightsCharts.h"
 #include "core/SecretStore.h"
 #include "app/LocalSetup.h"
 #include "providers/LocalModelStore.h"
@@ -1103,6 +1104,8 @@ private slots:
         QVERIFY(download && name);
         QVERIFY(!setup.ready());
         QCOMPARE(name->text(), local.suggestedModel().name);
+        QCOMPARE(setup.findChild<Badge *>(QStringLiteral("speechLocalModelRating"))->accessibleName(),
+                 modelRatingLabel(local.suggestedModel().rating));
         QVERIFY(download->text().startsWith(QStringLiteral("Download ")));
 
         download->click();

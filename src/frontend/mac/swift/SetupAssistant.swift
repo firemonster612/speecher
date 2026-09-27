@@ -1798,7 +1798,10 @@ private struct LocalChoiceSections: View {
                     Text(choice.suggested ? "Suggested for this computer" : "Your choice")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    Text(choice.name).fontWeight(.semibold)
+                    HStack {
+                        Text(choice.name).fontWeight(.semibold)
+                        RatingBadge(entry: choice)
+                    }
                     Text(choice.cardFacts)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1850,9 +1853,15 @@ private struct LocalChoiceSections: View {
                                                         set: { if let id = $0 { flow.chooseLocalModel(id) } })) {
             // Each fact column is as wide as its longest value, and the model
             // column takes what is left, so every value reads whole at the
-            // assistant's width.
-            TableColumn("Model") { entry in Text(entry.tableCells[0]) }
-                .width(min: 150)
+            // assistant's width. Its ideal fits the longest name with its
+            // badge; below that the name truncates, never the badge.
+            TableColumn("Model") { entry in
+                HStack {
+                    Text(entry.tableCells[0]).lineLimit(1)
+                    RatingBadge(entry: entry)
+                }
+            }
+            .width(min: 150, ideal: 250)
             TableColumn("Download") { entry in Text(entry.tableCells[1]) }
                 .width(58)
             TableColumn("Word errors") { entry in Text(entry.tableCells[2]) }

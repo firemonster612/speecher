@@ -36,10 +36,14 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   Kirigami's frame contrast) because Qt Widgets has no such container; it uses
   palette colours only and lives in `SettingsPageSupport.cpp`. Hover on button
   rows comes from the style's own item primitive, not from us. Home's activity
-  heatmap, hour bar chart and Writing Profile badges are the other exception,
-  because Qt Widgets has no chart or badge widgets; they paint rounded cells,
-  bars and pills from Highlight mixed over Base and live in
-  `src/ui/InsightsCharts.cpp`. Home's progress bars use the
+  heatmap and hour bar chart are the other exception, because Qt Widgets has
+  no chart widgets; they paint rounded cells and bars from Highlight mixed over
+  Base. Badges (Home's Writing Profiles, Local models' ratings) are the third:
+  Qt Widgets has no badge widget, so `Badge` paints Kirigami.Badge's pill, a
+  border in a palette role (Highlight, the frame colour, or the colour
+  scheme's NegativeText) with a fifth of it over Base inside, and
+  `BadgeDelegate` paints the same pill in list and table items. All of these
+  live in `src/ui/InsightsCharts.cpp`. Home's progress bars use the
   same tint: every bar but the leading one gets a palette whose Highlight and
   Accent are that mix (`makeBar` in `src/ui/HomePage.cpp`).
 - **Settings pages follow Kirigami Addons FormCard.** Bold header above the

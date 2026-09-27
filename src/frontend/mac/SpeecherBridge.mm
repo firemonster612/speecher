@@ -52,6 +52,7 @@ using speecher::Capabilities;
 using speecher::CollectionColumn;
 using speecher::CollectionDescriptor;
 using speecher::ColumnKind;
+using speecher::ModelRating;
 using speecher::PaneLayout;
 using speecher::RowKind;
 using speecher::RowOption;
@@ -112,6 +113,20 @@ SpeecherPaneLayout bridgedPaneLayout(PaneLayout layout)
         return SpeecherPaneLayoutTranscribe;
     case PaneLayout::Home:
         return SpeecherPaneLayoutHome;
+    }
+}
+
+SpeecherModelRating bridgedModelRating(ModelRating rating)
+{
+    switch (rating) {
+    case ModelRating::Recommended:
+        return SpeecherModelRatingRecommended;
+    case ModelRating::Good:
+        return SpeecherModelRatingGood;
+    case ModelRating::Situational:
+        return SpeecherModelRatingSituational;
+    case ModelRating::NotRecommended:
+        return SpeecherModelRatingNotRecommended;
     }
 }
 
@@ -588,6 +603,9 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) double fleursWer;
 @property (nonatomic) BOOL streams;
 @property (nonatomic, copy) NSString *licence;
+@property (nonatomic) SpeecherModelRating rating;
+@property (nonatomic, copy) NSString *ratingLabel;
+@property (nonatomic, copy) NSString *bestFor;
 @property (nonatomic, copy) NSArray<NSString *> *pros;
 @property (nonatomic, copy) NSArray<NSString *> *cons;
 @property (nonatomic, copy) NSString *fitLabel;
@@ -2389,6 +2407,9 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
     info.fleursWer = model.fleursEnglishWer;
     info.streams = model.streams;
     info.licence = model.licence.toNSString();
+    info.rating = bridgedModelRating(model.rating);
+    info.ratingLabel = modelRatingLabel(model.rating).toNSString();
+    info.bestFor = model.bestFor.toNSString();
     info.pros = bridgedStrings(model.pros);
     info.cons = bridgedStrings(model.cons);
     info.fitLabel = setup.fitLabel(model).toNSString();

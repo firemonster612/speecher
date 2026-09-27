@@ -2,6 +2,7 @@
 
 #include "ui/settings/SettingsPageSupport.h"
 
+#include <QApplication>
 #include <QHelpEvent>
 #include <QLocale>
 #include <QMouseEvent>
@@ -9,6 +10,10 @@
 #include <QToolTip>
 
 #include <algorithm>
+
+#ifdef SPEECHER_WITH_KCOLORSCHEME
+#include <KColorScheme>
+#endif
 
 namespace speecher {
 
@@ -23,9 +28,8 @@ constexpr int kCellGap = 3;
 constexpr int kDot = 10;
 constexpr int kBarGap = 2;
 constexpr int kMutedBarPercent = 42;
-// The badge's fill: the heatmap's lightest active level, so it reads as a
-// tag in the same ramp without competing with the bars beside it.
-constexpr int kBadgePercent = 30;
+// Kirigami.Badge's fill: its tone colour at a fifth over the background.
+constexpr int kBadgePercent = 20;
 
 QColor mix(const QColor &from, const QColor &to, int percent)
 {
@@ -425,39 +429,166 @@ void InsightsBarChart::paintEvent(QPaintEvent *)
     }
 }
 
-InsightsBadge::InsightsBadge(const QString &text, QWidget *parent)
-    : QWidget(parent)
-    , m_text(text)
+namespace {
+
+struct BadgeColors {
+    QColor border;
+    QColor fill;
+    QColor text;
+};
+
+// Accent and Negative are Kirigami.Badge's: the role as the border, a fifth of
+// it over Base inside. Neutral is Kirigami.Chip's frame. A negative badge with
+// no colour scheme to name the colour keeps the frame and mutes its text.
+BadgeColors badgeColors(Badge::Tone tone, const QPalette &palette)
 {
-    setFont(settings::smallFont(font()));
-    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    setAccessibleName(text);
+    const QColor base = palette.color(QPalette::Base);
+    const auto tinted = [&](const QColor &role) {
+        return BadgeColors{role, mix(base, role, kBadgePercent), palette.color(QPalette::Text)};
+    };
+    switch (tone) {
+    case Badge::Tone::Accent:
+        return tinted(palette.color(QPalette::Highlight));
+    case Badge::Tone::Negative:
+#ifdef SPEECHER_WITH_KCOLORSCHEME
+        return tinted(KColorScheme(palette.currentColorGroup(), KColorScheme::View)
+                          .foreground(KColorScheme::NegativeText)
+                          .color());
+#else
+        return {settings::frameColor(palette), base, palette.color(QPalette::PlaceholderText)};
+#endif
+    case Badge::Tone::Neutral:
+        break;
+    }
+    return {settings::frameColor(palette), base, palette.color(QPalette::Text)};
 }
 
-QSize InsightsBadge::sizeHint() const
+QFont badgeFont(const QFont &font)
+{
+    QFont small = settings::smallFont(font);
+    small.setBold(true);
+    return small;
+}
+
+// Between an item's name and its badge.
+int badgeGap()
+{
+    return settings::smallSpacing() * 2;
+}
+
+} // namespace
+
+Badge::Badge(const QString &text, Tone tone, QWidget *parent)
+    : QWidget(parent)
+{
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    setBadge(text, tone);
+}
+
+void Badge::setBadge(const QString &text, Tone tone)
+{
+    m_text = text;
+    m_tone = tone;
+    setAccessibleName(text);
+    updateGeometry();
+    update();
+}
+
+QSize Badge::sizeFor(const QFont &font, const QString &text)
 {
     // Padding from the text's own height, so the pill scales with the font.
-    const QFontMetrics metrics = fontMetrics();
+    const QFontMetrics metrics(badgeFont(font));
     const int vertical = metrics.height() / 6;
-    return {metrics.horizontalAdvance(m_text) + metrics.height(), metrics.height() + 2 * vertical};
+    return {metrics.horizontalAdvance(text) + metrics.height(), metrics.height() + 2 * vertical};
 }
 
-QSize InsightsBadge::minimumSizeHint() const
+void Badge::paint(QPainter &painter, const QRect &rect, const QString &text, Tone tone,
+                  const QPalette &palette)
+{
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    const BadgeColors colors = badgeColors(tone, palette);
+    const QRectF pill = QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5);
+    const qreal radius = pill.height() / 2;
+    painter.setPen(QPen(colors.border, 1));
+    painter.setBrush(colors.fill);
+    painter.drawRoundedRect(pill, radius, radius);
+    painter.setFont(badgeFont(painter.font()));
+    painter.setPen(colors.text);
+    painter.drawText(rect, Qt::AlignCenter, text);
+    painter.restore();
+}
+
+QSize Badge::sizeHint() const
+{
+    return sizeFor(font(), m_text);
+}
+
+QSize Badge::minimumSizeHint() const
 {
     return sizeHint();
 }
 
-void InsightsBadge::paintEvent(QPaintEvent *)
+void Badge::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
-    const QRectF pill = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-    const qreal radius = pill.height() / 2;
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(accentTint(palette(), kBadgePercent));
-    painter.drawRoundedRect(pill, radius, radius);
-    painter.setPen(palette().color(QPalette::Text));
-    painter.drawText(rect(), Qt::AlignCenter, m_text);
+    paint(painter, rect(), m_text, m_tone, palette());
+}
+
+void BadgeDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
+{
+    const QString text = index.data(TextRole).toString();
+    if (text.isEmpty()) {
+        QStyledItemDelegate::paint(painter, option, index);
+        return;
+    }
+    QStyleOptionViewItem item = option;
+    initStyleOption(&item, index);
+    const QWidget *widget = option.widget;
+    QStyle *style = widget ? widget->style() : QApplication::style();
+    // Where the style puts the text, inset by its focus frame margin as
+    // QCommonStyle does, and the pill's room after the first line.
+    const int margin = style->pixelMetric(QStyle::PM_FocusFrameHMargin, &item, widget) + 1;
+    const QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &item, widget)
+                               .adjusted(margin, 0, -margin, 0);
+    QStringList lines = item.text.split(QChar::LineSeparator);
+    const QSize size = Badge::sizeFor(item.font, text);
+    const int room = textRect.width() - size.width() - badgeGap();
+    // Too narrow for the pill and a few letters of the name: the name alone.
+    const bool badged = room >= item.fontMetrics.averageCharWidth() * 6;
+    if (badged) {
+        lines.first() = item.fontMetrics.elidedText(lines.first(), item.textElideMode, room);
+        item.text = lines.join(QChar::LineSeparator);
+    }
+    style->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
+    if (!badged) {
+        return;
+    }
+    const int lineHeight = item.fontMetrics.height();
+    const int top = textRect.center().y() - int(lines.size()) * lineHeight / 2;
+    const int x = textRect.left() + item.fontMetrics.horizontalAdvance(lines.first()) + badgeGap();
+    const QRect pill(QPoint(x, top + (lineHeight - size.height()) / 2), size);
+    Badge::paint(*painter, pill, text, Badge::Tone(index.data(ToneRole).toInt()), item.palette);
+}
+
+QSize BadgeDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
+{
+    QSize size = QStyledItemDelegate::sizeHint(option, index);
+    const QString text = index.data(TextRole).toString();
+    if (text.isEmpty()) {
+        return size;
+    }
+    QStyleOptionViewItem item = option;
+    initStyleOption(&item, index);
+    const QStringList lines = item.text.split(QChar::LineSeparator);
+    int widest = 0;
+    for (const QString &line : lines) {
+        widest = std::max(widest, item.fontMetrics.horizontalAdvance(line));
+    }
+    const int badged = item.fontMetrics.horizontalAdvance(lines.first()) + badgeGap()
+        + Badge::sizeFor(item.font, text).width();
+    size.rwidth() += std::max(0, badged - widest);
+    return size;
 }
 
 } // namespace speecher

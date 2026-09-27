@@ -771,7 +771,7 @@ QFrame *HomePage::buildAppsCard(const InsightsSummary &summary, QWidget *parent)
         appLabel->setTextFormat(Qt::PlainText);
         nameLayout->addWidget(appLabel);
         if (!app.profileLabel.isEmpty()) {
-            nameLayout->addWidget(new InsightsBadge(app.profileLabel, name), 0, Qt::AlignVCenter);
+            nameLayout->addWidget(new Badge(app.profileLabel, Badge::Tone::Accent, name), 0, Qt::AlignVCenter);
         }
         nameLayout->addStretch();
         addBarRow(grid, name, makeBar(app.words, most, index == 0, host),

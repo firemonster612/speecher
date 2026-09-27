@@ -392,6 +392,14 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger firstDictationDaysAgo;
 @end
 
+// ModelRating, which the rating badge colours by.
+typedef NS_ENUM(NSInteger, SpeecherModelRating) {
+    SpeecherModelRatingRecommended,
+    SpeecherModelRatingGood,
+    SpeecherModelRatingSituational,
+    SpeecherModelRatingNotRecommended,
+};
+
 // One Local Model as the Local models page and the setup assistant show it:
 // the catalog's facts in core's words, and where this computer stands with it.
 @interface LocalModelInfo : NSObject
@@ -406,6 +414,11 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 // Text appears as the person speaks rather than after they stop.
 @property (nonatomic, readonly) BOOL streams;
 @property (nonatomic, readonly, copy) NSString *licence;
+@property (nonatomic, readonly) SpeecherModelRating rating;
+// The badge's words, "Recommended" to "Not recommended".
+@property (nonatomic, readonly, copy) NSString *ratingLabel;
+// Who should pick it, in one short line.
+@property (nonatomic, readonly, copy) NSString *bestFor;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *pros;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *cons;
 // "Fits", "Tight fit", "Too large", or "Checking…" before the hardware is known.
