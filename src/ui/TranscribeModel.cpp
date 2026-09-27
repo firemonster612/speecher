@@ -70,7 +70,7 @@ TranscribeModel::TranscribeModel(ApplicationController *controller)
                 deliver([this, results, cancelled] {
                     m_current = -1;
                     if (m_retrying >= 0) {
-                        if (!results.isEmpty()) {
+                        if (!results.isEmpty() && m_retrying < m_results.size()) {
                             m_results[m_retrying] = results.first();
                         }
                         m_retrying = -1;
@@ -127,6 +127,11 @@ qint64 TranscribeModel::durationMs(const QString &path) const
 
 bool TranscribeModel::start(const TranscribeOptions &options, QString *error)
 {
+    // Refused before anything changes, so a batch or retry still running
+    // keeps the list, results and choices it reports into.
+    if (m_controller->fileTranscription()->isRunning()) {
+        return m_controller->startFileTranscription(m_files, options, error);
+    }
     m_batch = m_files;
     m_batchOptions = options;
     m_batchLabels = batchLabels(options, *m_controller->providerRegistry(),
@@ -154,6 +159,11 @@ void TranscribeModel::cancel()
 // cancelled batch never reached, stay.
 void TranscribeModel::backToSetup()
 {
+    // A retry left running would report into results no longer shown, and
+    // hold up the next batch.
+    if (m_retrying >= 0) {
+        cancel();
+    }
     for (const TranscribeFileResult &result : std::as_const(m_results)) {
         m_files.removeOne(result.path);
     }

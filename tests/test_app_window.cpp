@@ -837,6 +837,55 @@ private slots:
         QVERIFY(!listed(&page));
     }
 
+    // Going back to setup while a retry runs, then starting the next batch:
+    // the retry stops, the batch starts, and its results are the new file's.
+    // A start refused while something runs changes nothing.
+    void aRetryLeftForTheNextBatchStopsAndLeavesItAlone()
+    {
+        ApplicationController controller(true);
+        TranscribeModel *model = TranscribeModel::of(&controller);
+        const QString first = writeHeaderOnlyWav();
+        const QString second = m_files.filePath(QStringLiteral("second.wav"));
+        QVERIFY(QFile::copy(first, second));
+        model->addFiles({first});
+        QString error;
+        // A header with no audio fails to decode, which still ends on results.
+        QVERIFY(model->start({}, &error));
+        QTRY_COMPARE_WITH_TIMEOUT(model->step(), TranscribeStep::Export, 10000);
+
+        // Real audio this time, so the retry decodes over later event-loop
+        // turns and is still running for the checks below.
+        {
+            QFile audio(first);
+            QVERIFY(audio.open(QIODevice::WriteOnly));
+            const QByteArray samples(16000 * 2, '\0');
+            QByteArray header("RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x80\x3e\0\0\0\x7d\0\0\x02\0\x10\0data", 40);
+            const quint32 size = quint32(samples.size());
+            header.append(reinterpret_cast<const char *>(&size), 4);
+            audio.write(header + samples);
+        }
+        model->retry(0);
+        QCOMPARE(model->retrying(), 0);
+        QVERIFY(controller.fileTranscription()->isRunning());
+        QVERIFY(!model->start({}, &error));
+        QCOMPARE(model->step(), TranscribeStep::Export);
+        QCOMPARE(model->results().size(), 1);
+        QCOMPARE(model->batch(), QStringList({first}));
+
+        model->backToSetup();
+        QCOMPARE(model->retrying(), -1);
+        QVERIFY(!controller.fileTranscription()->isRunning());
+        model->addFiles({second});
+        QVERIFY2(model->start({}, &error), qPrintable(error));
+        QTRY_COMPARE_WITH_TIMEOUT(model->step(), TranscribeStep::Export, 10000);
+        QTest::qWait(100);
+
+        QCOMPARE(model->batch(), QStringList({second}));
+        QCOMPARE(model->results().size(), 1);
+        QCOMPARE(model->results().first().path, second);
+        QCOMPARE(model->retrying(), -1);
+    }
+
     // An export that fails says why beside the results; the batch summary stays.
     void anExportProblemLeavesTheSummary()
     {
