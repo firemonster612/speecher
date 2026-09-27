@@ -865,19 +865,21 @@ private slots:
         ApplicationController controller(true, platform);
         controller.settings()->setSetupCompleted(false);
         SetupAssistant assistant(&controller);
-        assistant.show();
-        QCoreApplication::processEvents();
         auto *welcome = assistant.findChild<WelcomeSetupPage *>();
         auto *transcription = assistant.findChild<SpeechProviderSetupPage *>();
         QVERIFY(welcome && transcription);
+        QSignalSpy checked(welcome, &WelcomeSetupPage::checkFinished);
+        assistant.show();
+        QTRY_VERIFY(!checked.isEmpty());
         // With no sign-in, a build with speech on this computer takes that
         // path on Welcome, so the first unfinished step is Transcription,
         // where no model has been downloaded. Choosing it here does what the
-        // sign-in checks do on their own once they answer. Without local
-        // speech, no sign-in holds Welcome itself.
+        // sign-in checks do on their own. Without local speech, no sign-in
+        // holds Welcome itself.
         auto *localPath = welcome->findChild<QAbstractButton *>(QStringLiteral("welcomePathLocal"));
         const bool localSpeech = localPath != nullptr;
         if (localSpeech) localPath->click();
+        else if (welcome->ready()) QSKIP("A sign-in on this computer opens Welcome.");
 
         // Walked with Next, as a person would: QWizard goes back only through
         // pages it visited.
