@@ -147,6 +147,54 @@ QLabel *fileNameLabel(const QString &path, QWidget *parent)
     return label;
 }
 
+// A result's heading: the expander and file name, then its details (length,
+// Saved, the actions), on one line or with the details stacked under the
+// name, indented to its first letter. The page chooses, the same for every
+// result, from the width the widest needs on one line.
+class ResultHead final : public QWidget {
+public:
+    ResultHead(QWidget *lead, QLabel *name, QWidget *details, QWidget *parent)
+        : QWidget(parent)
+        , m_lead(lead)
+        , m_name(name)
+        , m_details(details)
+        , m_layout(new QBoxLayout(QBoxLayout::LeftToRight, this))
+    {
+        setObjectName(QStringLiteral("transcribeResultHead"));
+        m_layout->setContentsMargins(settings::rowPadding());
+        m_layout->setSpacing(settings::relatedSpacing());
+        auto *nameLine = new QHBoxLayout;
+        nameLine->setSpacing(settings::relatedSpacing());
+        nameLine->addWidget(lead);
+        nameLine->addWidget(name, 1);
+        m_layout->addLayout(nameLine, 1);
+        m_layout->addWidget(details);
+    }
+
+    // The width this head needs on one line with about 24 characters of name
+    // showing, enough to tell files apart.
+    int oneLineWidth() const
+    {
+        constexpr int kNameCharacters = 24;
+        const QMargins margins = m_layout->contentsMargins();
+        return margins.left() + m_lead->sizeHint().width() + m_name->fontMetrics().averageCharWidth() * kNameCharacters
+            + m_details->sizeHint().width() - m_details->contentsMargins().left() + m_layout->spacing() * 2
+            + margins.right();
+    }
+
+    void setStacked(bool stacked)
+    {
+        m_layout->setDirection(stacked ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+        m_details->setContentsMargins(stacked ? m_lead->sizeHint().width() + m_layout->spacing() : 0, 0, 0, 0);
+    }
+
+private:
+    QWidget *m_lead;
+    QLabel *m_name;
+    QWidget *m_details;
+    QBoxLayout *m_layout;
+};
+
 } // namespace
 
 TranscribePage::TranscribePage(ApplicationController *controller, QWidget *parent)
@@ -441,6 +489,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     topLayout->addWidget(m_problem);
     settings::addCardRow(settings::cardFormLayout(resultsCard), top, resultsCard);
     m_resultsCard = resultsCard;
+    m_resultsCard->installEventFilter(this);
     connect(copyAll, &QPushButton::clicked, this, [this, copyAll] {
         QGuiApplication::clipboard()->setText(allTranscripts(m_model->results(), showingRaw()));
         copyAll->setText(QStringLiteral("Copied"));
@@ -652,11 +701,14 @@ void TranscribePage::refreshFileList()
             // Deleting the row from inside its own button's click is not safe.
             QTimer::singleShot(0, m_model, [model = m_model, path] { model->removeFile(path); });
         });
-        settings::addCardRow(form,
-                             settings::makeRow(info.fileName(),
-                                               audioFileDetail(info.size(), m_model->durationMs(path)),
-                                               remove, m_filesCard),
-                             m_filesCard);
+        // The name shortens in its middle rather than wrapping: the row's own
+        // title gives way to one that elides.
+        QFrame *row = settings::makeRow(QString(), audioFileDetail(info.size(), m_model->durationMs(path)), remove,
+                                        m_filesCard);
+        row->findChild<QLabel *>(QStringLiteral("rowTitle"))->hide();
+        auto *text = qobject_cast<QVBoxLayout *>(row->findChild<QWidget *>(QStringLiteral("rowLabelCell"))->layout());
+        text->insertWidget(0, fileNameLabel(path, row));
+        settings::addCardRow(form, row, m_filesCard);
     }
     auto *choose = m_filesCard->findChild<QPushButton *>(QStringLiteral("transcribeChooseFiles"));
     settings::setButtonRowCaption(choose, files.isEmpty() ? QStringLiteral("Choose audio files…")
@@ -784,15 +836,15 @@ void TranscribePage::showResults()
         auto *itemLayout = new QVBoxLayout(item);
         itemLayout->setContentsMargins(0, 0, 0, 0);
         itemLayout->setSpacing(0);
-        QHBoxLayout *head = nullptr;
-        QWidget *headRow = plainRow(item, &head);
-        auto *expand = new QToolButton(headRow);
+        auto *expand = new QToolButton(item);
         expand->setAutoRaise(true);
         expand->setCheckable(true);
         expand->setArrowType(Qt::RightArrow);
-        head->addWidget(expand);
-        // The name takes the room; the meta and the buttons keep theirs.
-        head->addWidget(fileNameLabel(result.path, headRow), 1);
+        auto *details = new QWidget(item);
+        auto *head = new QHBoxLayout(details);
+        head->setContentsMargins(0, 0, 0, 0);
+        head->setSpacing(settings::relatedSpacing());
+        QWidget *headRow = details;
         const QString text = shownTranscript(result, raw);
         auto *meta = new ElidingLabel(resultMeta(result, m_model->durationMs(result.path), raw), Qt::ElideRight,
                                       headRow);
@@ -807,7 +859,9 @@ void TranscribePage::showResults()
             savedLabel->setPalette(palette);
             head->addWidget(savedLabel);
         }
-        itemLayout->addWidget(headRow);
+        // Stacked under the name, the actions keep to the right edge.
+        head->addStretch(1);
+        itemLayout->addWidget(new ResultHead(expand, fileNameLabel(result.path, item), details, item));
 
         auto *body = new QLabel(text, item);
         body->setWordWrap(true);
@@ -863,6 +917,31 @@ void TranscribePage::showResults()
 
     m_resultsHeader->setText(batchResults.size() > 1 ? QStringLiteral("Transcripts") : QStringLiteral("Transcript"));
     m_summary->setText(m_model->summary());
+    applyResultsWidth();
+}
+
+void TranscribePage::applyResultsWidth()
+{
+    QList<ResultHead *> heads;
+    for (QWidget *head : m_resultsCard->findChildren<QWidget *>(QStringLiteral("transcribeResultHead"))) {
+        heads << static_cast<ResultHead *>(head);
+    }
+    int oneLine = 0;
+    for (const ResultHead *head : heads) {
+        oneLine = std::max(oneLine, head->oneLineWidth());
+    }
+    const bool stacked = m_resultsCard->contentsRect().width() < oneLine;
+    for (ResultHead *head : heads) {
+        head->setStacked(stacked);
+    }
+}
+
+bool TranscribePage::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_resultsCard && event->type() == QEvent::Resize) {
+        applyResultsWidth();
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 // Every finished transcript into one folder, numbered rather than

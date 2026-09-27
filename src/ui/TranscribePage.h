@@ -40,6 +40,7 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void showStep();
@@ -54,6 +55,9 @@ private:
     void refreshProgress();
     void refreshQueue();
     void showResults();
+    // Stacks every result's details under its name when the card is too
+    // narrow for them beside it.
+    void applyResultsWidth();
     void exportAll();
     void exportOne(const QString &audioPath, const QString &text);
     bool showingRaw() const;
