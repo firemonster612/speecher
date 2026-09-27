@@ -154,7 +154,8 @@ void MacFrontEnd::hideMainWindow()
 
 void MacFrontEnd::showSettingsWindow()
 {
-    showMainWindow();
+    [m_native->ui showSettingsWithPage:@"general"];
+    m_controller->frontEndReady();
 }
 
 // The page parameter is the Linux front end's: the only single page anyone asks
@@ -223,9 +224,11 @@ void MacFrontEnd::alert()
     QApplication::beep();
 }
 
-void MacFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message)
+void MacFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId)
 {
-    [m_native->ui notifyIfNoWindowShownWithTitle:title.toNSString() message:message.toNSString()];
+    [m_native->ui notifyIfNoWindowShownWithTitle:title.toNSString()
+                                         message:message.toNSString()
+                                            page:pageId.toNSString()];
 }
 
 } // namespace speecher

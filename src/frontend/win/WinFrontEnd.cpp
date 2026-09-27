@@ -184,17 +184,15 @@ void WinFrontEnd::alert()
     MessageBeep(MB_OK);
 }
 
-void WinFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message)
+void WinFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId)
 {
     if ((m_native->settings && m_native->settings->isVisible())
         || (m_native->setup && m_native->setup->isVisible())) {
         return;
     }
-    // The only notification is a Local Model finishing its download, so a
-    // click opens the page that model lives on.
-    m_native->tray->showMessage(title, message, [this] {
+    m_native->tray->showMessage(title, message, [this, pageId] {
         showSettingsWindow();
-        m_native->settings->showPane(QStringLiteral("localModels"));
+        m_native->settings->showPage(pageId);
     });
 }
 

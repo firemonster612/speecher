@@ -76,8 +76,6 @@ struct SectionSnapshot {
 
 struct PageSnapshot {
     QString id;
-    QString title;
-    QString iconId;
     QList<SectionSnapshot> sections;
 };
 
@@ -91,6 +89,10 @@ public:
     ~SettingsModel();
 
     QList<PageSnapshot> pages() const;
+    // The pane arrangement, fixed for the life of the model.
+    const SettingsSchema &schema() const;
+    // A pane group's rows as the draft now has them, for its card.
+    SectionSnapshot section(const SettingsPaneGroup &group) const;
     void setValue(const QString &rowId, const QVariant &value);
     // Writes the draft back to the store, applies the theme and re-reads it.
     void commit();

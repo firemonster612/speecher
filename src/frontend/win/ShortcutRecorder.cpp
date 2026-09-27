@@ -169,7 +169,7 @@ void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
                          .Resources()
                          .Lookup(box_value(L"SettingsSectionHeaderStyle"))
                          .as<Style>());
-        header.Text(L"Shortcut");
+        header.Text(L"Global Shortcut");
         return header;
     }());
 

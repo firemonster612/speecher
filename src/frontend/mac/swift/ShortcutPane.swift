@@ -147,6 +147,8 @@ final class ShortcutRecorder: ObservableObject {
 
 struct ShortcutPane: View {
     @ObservedObject var model: AppModel
+    /// The schema's rows for this pane (Shortcut behavior), under the recorder.
+    let cards: [PaneCard]
     @StateObject private var recorder = ShortcutRecorder()
     /// A key the recorder caught but could not bind (a media key); shown in
     /// the footer while the recorder stays armed.
@@ -176,9 +178,18 @@ struct ShortcutPane: View {
                     Button("Grant Accessibility Access") { model.requestAccessibility() }
                 }
             } header: {
-                Text("Shortcut")
+                Text(cards.first?.title ?? "Global Shortcut")
             } footer: {
                 Text(footnote)
+            }
+            ForEach(cards) { card in
+                Section {
+                    ForEach(card.rows, id: \.rowId) { row in
+                        RowView(row: row, model: model)
+                    }
+                } footer: {
+                    if !card.help.isEmpty { Text(card.help) }
+                }
             }
         }
         .formStyle(.grouped)

@@ -284,7 +284,7 @@ QList<PageSnapshot> SettingsModel::pages() const
 {
     QList<PageSnapshot> pages;
     for (const SettingsPage &page : m_schema.pages) {
-        PageSnapshot pageSnapshot{page.id, page.title, page.iconId, {}};
+        PageSnapshot pageSnapshot{page.id, {}};
         for (const SettingsSection &section : page.sections) {
             SectionSnapshot sectionSnapshot{section.title, section.help, {}};
             for (const SettingsRow &row : section.rows) {
@@ -298,6 +298,23 @@ QList<PageSnapshot> SettingsModel::pages() const
         pages.append(pageSnapshot);
     }
     return pages;
+}
+
+const SettingsSchema &SettingsModel::schema() const
+{
+    return m_schema;
+}
+
+SectionSnapshot SettingsModel::section(const SettingsPaneGroup &group) const
+{
+    SectionSnapshot snapshot{group.title, group.help, {}};
+    for (const QString &rowId : group.rows) {
+        const SettingsRow *row = rowWithId(rowId);
+        if (row && (!row->visible || row->visible(m_draft, m_capabilities))) {
+            snapshot.rows.append(rowSnapshot(*row));
+        }
+    }
+    return snapshot;
 }
 
 void SettingsModel::setValue(const QString &rowId, const QVariant &value)

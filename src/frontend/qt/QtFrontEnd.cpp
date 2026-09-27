@@ -321,16 +321,20 @@ void QtFrontEnd::alert()
     QApplication::beep();
 }
 
-void QtFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message)
+void QtFrontEnd::notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId)
 {
     if ((m_appWindow && m_appWindow->isVisible()) || (m_setupAssistant && m_setupAssistant->isVisible())) {
         return;
     }
 #ifdef Q_OS_LINUX
-    m_tray->showMessage(title, message);
+    m_tray->showMessage(title, message, [this, pageId] {
+        showMainWindow();
+        m_appWindow->showPage(pageId);
+    });
 #else
     Q_UNUSED(title);
     Q_UNUSED(message);
+    Q_UNUSED(pageId);
 #endif
 }
 

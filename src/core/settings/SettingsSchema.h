@@ -207,9 +207,10 @@ struct SettingsPaneGroup {
     QStringList rows;
 };
 
-// One sidebar entry of the settings window, the same on every front end: the
-// schema's pages supply rows and values, and which pane a row appears on is
-// decided here.
+// One sidebar entry of the settings window. Linux, macOS and Windows all read
+// the panes and runs below to build their sidebars and pages: the schema's
+// pages supply rows and values, and which pane a row appears on is decided
+// here (docs/adr/0001-per-platform-front-ends.md).
 struct SettingsPane {
     QString id;
     QString title;

@@ -113,8 +113,6 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 
 @interface SettingsPageModel : NSObject
 @property (nonatomic, readonly, copy) NSString *pageId;
-@property (nonatomic, readonly, copy) NSString *title;
-@property (nonatomic, readonly, copy) NSString *symbolName;
 @property (nonatomic, readonly, copy) NSArray<SettingsSectionModel *> *sections;
 @end
 
@@ -127,9 +125,10 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
     SpeecherPaneLayoutHome,
 };
 
-// One card a pane shows: a heading, a footnote, and the schema rows it names.
-// A row pattern ending in `*` takes every row whose id starts with it.
+// One card a pane shows: a heading, a footnote, and the schema rows it names,
+// as this build has them. An Alternatives pane addresses it as "pane:view".
 @interface SettingsPaneGroupModel : NSObject
+@property (nonatomic, readonly, copy) NSString *view;
 @property (nonatomic, readonly, copy) NSString *title;
 @property (nonatomic, readonly, copy) NSString *help;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *rows;
@@ -139,9 +138,8 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 @interface SettingsPaneModel : NSObject
 @property (nonatomic, readonly, copy) NSString *paneId;
 @property (nonatomic, readonly, copy) NSString *title;
-@property (nonatomic, readonly, copy) NSString *symbolName;
-// Schema pages whose otherwise-unmapped rows fall back to this pane.
-@property (nonatomic, readonly, copy) NSArray<NSString *> *schemaPages;
+// Platform-neutral; PaneIcons.swift maps it to an SF Symbol.
+@property (nonatomic, readonly, copy) NSString *iconId;
 @property (nonatomic, readonly) SpeecherPaneLayout layout;
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneGroupModel *> *groups;
 @end
@@ -163,6 +161,13 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // The sidebar's panes and their runs, which never change while the app runs.
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneModel *> *panes;
 @property (nonatomic, readonly, copy) NSArray<NSArray<NSString *> *> *sidebarRuns;
+// A page id ("general", "vocabulary:corrections") as the pane and view it
+// names, speecher::resolvePage's answer: an unknown pane gives Home.
+- (NSArray<NSString *> *)resolvePage:(NSString *)pageId NS_SWIFT_NAME(resolvePage(_:));
+// The page a window opens on given the one remembered: never What's New.
+- (NSString *)launchPane:(NSString *)remembered NS_SWIFT_NAME(launchPane(_:));
+// The pane ids a sidebar search shows, from the core index.
+- (NSArray<NSString *> *)searchPanes:(NSString *)query NS_SWIFT_NAME(searchPanes(_:));
 // What an Action row's button does. The schema names the commands; what they do
 // belongs to the front end, as it does on Qt.
 @property (nonatomic, copy, nullable) void (^actionTriggered)(NSString *rowId);

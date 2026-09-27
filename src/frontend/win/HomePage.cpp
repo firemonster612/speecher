@@ -39,8 +39,8 @@ using namespace winrt::Microsoft::UI::Xaml::Controls;
 using winrt::Microsoft::UI::Xaml::Media::Brush;
 using winrt::Microsoft::UI::Xaml::Media::SolidColorBrush;
 
-const QString kGeneralPane = QStringLiteral("general");
-const QString kCorrectionsPane = QStringLiteral("corrections");
+const QString kGeneralPage = QStringLiteral("general");
+const QString kCorrectionsPage = QStringLiteral("vocabulary:corrections");
 constexpr double kHeatCell = 12;
 constexpr double kHeatGap = 3;
 // Wide enough for "Wed" in the caption style.
@@ -773,7 +773,7 @@ UIElement correctionsCard(PaneHost &host)
     HyperlinkButton open;
     open.Content(box_value(L"Review Corrections…"));
     open.Padding({0, 2, 0, 0});
-    open.Click([&host](const auto &, const auto &) { host.showPane(kCorrectionsPane); });
+    open.Click([&host](const auto &, const auto &) { host.showPage(kCorrectionsPage); });
     body.Children().Append(open);
     return cardContainer(body);
 }
@@ -859,7 +859,7 @@ UIElement privacyFooter(PaneHost &host)
     HyperlinkButton settings;
     settings.Content(box_value(L"Insights settings"));
     settings.Padding({0, 2, 0, 0});
-    settings.Click([&host](const auto &, const auto &) { host.showPane(kGeneralPane); });
+    settings.Click([&host](const auto &, const auto &) { host.showPage(kGeneralPage); });
     Grid::SetRow(settings, 1);
     Grid::SetColumn(settings, 1);
     footer.Children().Append(settings);
@@ -889,7 +889,7 @@ UIElement buildHomePage(PaneHost &host)
             host);
         Button settings;
         settings.Content(box_value(L"Insights settings…"));
-        settings.Click([&host](const auto &, const auto &) { host.showPane(kGeneralPane); });
+        settings.Click([&host](const auto &, const auto &) { host.showPage(kGeneralPage); });
         off.Children().Append(settings);
         cards.Children().Append(cardContainer(off));
         return scroll;

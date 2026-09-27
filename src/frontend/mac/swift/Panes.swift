@@ -2,13 +2,13 @@ import SwiftUI
 
 // The settings window's panes, exactly as the schema arranges them. The schema
 // supplies rows and values, and also which pane a row appears on and how the
-// sidebar runs group, so macOS and Windows read one arrangement (see
+// sidebar runs group, so every front end reads one arrangement (see
 // settingsPanes() in SettingsSchema.cpp). This file only renders it.
 
 /// One card this file asks a pane for: a heading, a footnote, and the schema
-/// rows it names. A row pattern ending in `*` takes every row whose id starts
-/// with it.
+/// rows it names. An Alternatives pane's view is addressed as "pane:view".
 struct PaneGroup: Identifiable {
+    let view: String
     let title: String
     let help: String
     let rows: [String]
@@ -16,15 +16,15 @@ struct PaneGroup: Identifiable {
     var id: String { title + rows.joined() }
 
     init(_ model: SettingsPaneGroupModel) {
+        view = model.view
         title = model.title
         help = model.help
         rows = model.rows
     }
 }
 
-/// One card a pane actually shows: a group's rows, or a schema section no group
-/// claimed. Both rendering and the sidebar's search read a pane as these, so a
-/// row cannot be visible on a pane and missing from its search.
+/// One card a pane actually shows: a group's rows as the schema currently
+/// offers them.
 struct PaneCard: Identifiable {
     let title: String
     let help: String
@@ -62,18 +62,34 @@ struct Pane: Identifiable {
     let id: String
     let title: String
     let symbol: String
-    /// Schema pages whose otherwise-unmapped rows fall back to this pane.
-    let schemaPages: [String]
     let layout: PaneLayout
     let groups: [PaneGroup]
 
     init(_ model: SettingsPaneModel) {
         id = model.paneId
         title = model.title
-        symbol = model.symbolName
-        schemaPages = model.schemaPages
+        symbol = Self.symbol(forIconId: model.iconId)
         layout = PaneLayout(model.layout)
         groups = model.groups.map(PaneGroup.init)
+    }
+
+    /// SF Symbols for the schema's platform-neutral icon ids.
+    private static func symbol(forIconId iconId: String) -> String {
+        switch iconId {
+        case "home": return "house"
+        case "settings": return "gearshape"
+        case "whatsNew": return "sparkles"
+        case "microphone": return "mic"
+        case "keyboard": return "command"
+        case "refinement": return "text.cursor"
+        case "localModels": return "cpu"
+        case "transcribe": return "waveform"
+        case "output": return "arrow.right.doc.on.clipboard"
+        case "apps": return "square.grid.2x2"
+        case "vocabulary": return "character.book.closed"
+        case "accounts": return "person.badge.key"
+        default: return "gearshape"
+        }
     }
 }
 
@@ -88,7 +104,7 @@ struct PaneView: View {
     var body: some View {
         switch pane.layout {
         case .shortcut:
-            ShortcutPane(model: model)
+            ShortcutPane(model: model, cards: model.groupCards(for: pane))
         case .transcribe:
             TranscribePane(model: model.transcription)
         case .home:
@@ -96,7 +112,6 @@ struct PaneView: View {
         case .sections:
             Form {
                 ForEach(model.groupCards(for: pane)) { card($0) }
-                unclaimedCards
             }
             .formStyle(.grouped)
         case .alternatives:
@@ -114,16 +129,15 @@ struct PaneView: View {
                 if groups.indices.contains(alternative) {
                     card(groups[alternative], titled: false)
                 }
-                unclaimedCards
             }
             .formStyle(.grouped)
-            // Another pane can link straight to one of these views, as Home
-            // does to Corrections.
-            .onChange(of: model.requestedGroup, initial: true) { _, title in
-                guard let title,
-                      let index = pane.groups.firstIndex(where: { $0.title == title }) else { return }
+            // A page id can name one of these views, as Home's link to
+            // vocabulary:corrections does.
+            .onChange(of: model.requestedView, initial: true) { _, view in
+                guard let view,
+                      let index = pane.groups.firstIndex(where: { $0.view == view }) else { return }
                 alternative = index
-                model.requestedGroup = nil
+                model.requestedView = nil
             }
         }
     }
@@ -142,7 +156,4 @@ struct PaneView: View {
         }
     }
 
-    @ViewBuilder private var unclaimedCards: some View {
-        ForEach(model.unclaimedCards(for: pane)) { card($0) }
-    }
 }

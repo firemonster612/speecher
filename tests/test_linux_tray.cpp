@@ -6,6 +6,8 @@
 #include "frontend/qt/QtFrontEnd.h"
 
 #include <QAction>
+#include <QApplication>
+#include <QLabel>
 #include <QMenu>
 #include <QSignalSpy>
 #include <QSystemTrayIcon>
@@ -95,14 +97,28 @@ private slots:
         QVERIFY(tray);
         QSignalSpy shown(tray, &LinuxTrayIcon::messageShown);
 
-        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."));
+        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."),
+                                       QStringLiteral("output"));
         QCOMPARE(shown.size(), 1);
         QCOMPARE(shown.first().first().toString(), QStringLiteral("Parakeet 0.6B is ready"));
+
+        // Clicking it opens the page it is about.
+        emit tray->messageClicked();
+        QWidget *window = nullptr;
+        for (QWidget *candidate : QApplication::topLevelWidgets()) {
+            if (candidate->objectName() == QStringLiteral("appWindow") && candidate->isVisible()) {
+                window = candidate;
+            }
+        }
+        QVERIFY(window);
+        QCOMPARE(window->findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Output"));
+        window->hide();
 
         // With the window up, the Local models page already says so.
         frontEnd.showMainWindow();
         QCoreApplication::processEvents();
-        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."));
+        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."),
+                                       QStringLiteral("output"));
         QCOMPARE(shown.size(), 1);
     }
 };

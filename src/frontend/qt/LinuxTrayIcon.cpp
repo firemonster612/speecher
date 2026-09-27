@@ -65,12 +65,20 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
                 }
             });
 
+    connect(m_tray, &QSystemTrayIcon::messageClicked, this, &LinuxTrayIcon::messageClicked);
+    connect(this, &LinuxTrayIcon::messageClicked, this, [this] {
+        if (m_messageClicked) {
+            m_messageClicked();
+        }
+    });
+
     applyState(controller->stateName());
     m_tray->show();
 }
 
-void LinuxTrayIcon::showMessage(const QString &title, const QString &message)
+void LinuxTrayIcon::showMessage(const QString &title, const QString &message, std::function<void()> clicked)
 {
+    m_messageClicked = std::move(clicked);
     m_tray->showMessage(title, message, QSystemTrayIcon::Information);
     emit messageShown(title, message);
 }

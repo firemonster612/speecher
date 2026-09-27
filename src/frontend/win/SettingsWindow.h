@@ -27,18 +27,16 @@ public:
     // Creates the window if none is open, brings it forward, reloads the
     // draft, and remembers the pane from last time.
     void show();
-    // show(), on the pane with this schema page id.
-    void showPane(const QString &id);
+    // show(), on this page id ("general", "vocabulary:corrections"); an
+    // unknown id shows Home.
+    void showPage(const QString &pageId);
     void showWhatsNew();
     // Closes the window, as its close button does.
     void close();
     bool isVisible() const;
 
-    // Saves a picture of the window for --grab. SPEECHER_GRAB_PAGE names a
-    // schema page id (general, audio, refinement, output, vocabulary,
-    // corrections, bindings, providers, whatsNew) or a hand-built pane
-    // (home, shortcut, transcribe), to show before the grab. A ":index" suffix
-    // is tolerated and ignored.
+    // Saves a picture of the window for --grab. SPEECHER_GRAB_PAGE names the
+    // page id to show before the grab, as on every front end.
     bool capture(const QString &path);
 
     // Asks in a ContentDialog over the window, Cancel being the default, and
