@@ -236,12 +236,9 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     });
     for (const SettingsPane &pane : std::as_const(m_schema.panes)) {
         if (pane.layout == PaneLayout::Alternatives) {
-            // The view's tab already carries its title, as macOS's segmented
-            // control does, so the card goes without it.
             for (const SettingsPaneGroup &group : pane.groups) {
-                SettingsSection view = m_schema.section(group);
-                view.title.clear();
-                addPage(pane.id + QLatin1Char(':') + group.view, {view}, parent, customRows);
+                addPage(pane.id + QLatin1Char(':') + group.view, {m_schema.section(group)}, parent,
+                        customRows);
             }
         } else if (!pane.groups.isEmpty()) {
             QList<SettingsSection> sections;

@@ -631,6 +631,7 @@ private slots:
                 for (const SettingsPaneGroup &group : pane.groups) {
                     const QString id = pane.id + QLatin1Char(':') + group.view;
                     QVERIFY2(pages.page(id), qPrintable(id));
+                    QCOMPARE(sectionLabels(*pages.page(id)), QStringList{group.title});
                 }
                 continue;
             }
