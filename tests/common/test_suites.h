@@ -45,6 +45,14 @@ inline int runTestSuite(QObject *suite, int argc, char **argv)
         }
         return 0;
     }
+#ifdef Q_OS_WIN
+    // QTest's default log goes to OutputDebugString, not stdout, when stdout
+    // is not a console, so under ctest on CI every PASS and FAIL line was
+    // lost. Naming stdout as the log keeps it in the captured output.
+    if (!arguments.contains(QByteArrayLiteral("-o"))) {
+        arguments << QByteArrayLiteral("-o") << QByteArrayLiteral("-,txt");
+    }
+#endif
     QVector<char *> copiedArguments;
     copiedArguments.reserve(arguments.size());
     for (QByteArray &argument : arguments) {

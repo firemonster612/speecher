@@ -54,6 +54,25 @@ QVector<float> peakLevels(const QByteArray &pcm)
 
 } // namespace
 
+QStringList transcribableExtensions()
+{
+    return {QStringLiteral("wav"), QStringLiteral("mp3"), QStringLiteral("m4a"), QStringLiteral("aac"),
+            QStringLiteral("flac"), QStringLiteral("ogg"), QStringLiteral("oga"), QStringLiteral("opus"),
+            QStringLiteral("webm"), QStringLiteral("mp4"), QStringLiteral("m4v"), QStringLiteral("mov"),
+            QStringLiteral("mkv"), QStringLiteral("avi")};
+}
+
+QStringList transcribableMimeTypes()
+{
+    return {QStringLiteral("audio/vnd.wave"), QStringLiteral("audio/wav"), QStringLiteral("audio/x-wav"),
+            QStringLiteral("audio/mpeg"), QStringLiteral("audio/mp4"), QStringLiteral("audio/x-m4a"),
+            QStringLiteral("audio/aac"), QStringLiteral("audio/flac"), QStringLiteral("audio/ogg"),
+            QStringLiteral("audio/x-vorbis+ogg"), QStringLiteral("audio/x-opus+ogg"), QStringLiteral("audio/webm"),
+            QStringLiteral("video/webm"), QStringLiteral("video/mp4"), QStringLiteral("video/x-m4v"),
+            QStringLiteral("video/quicktime"), QStringLiteral("video/x-matroska"), QStringLiteral("video/vnd.avi"),
+            QStringLiteral("video/x-msvideo")};
+}
+
 bool isAudioFile(const QString &path)
 {
     const QFileInfo info(path);

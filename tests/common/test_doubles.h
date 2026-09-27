@@ -3,10 +3,25 @@
 #include "dictation/DictationPorts.h"
 #include "providers/ProviderRegistry.h"
 #include <QThread>
+#include <QtEndian>
 
 #include <functional>
 
 namespace speecher::test {
+
+// A PCM WAV file: 16-bit samples, interleaved when there are several channels.
+inline QByteArray wavBytes(const QByteArray &samples, int sampleRate, int channels)
+{
+    const auto le32 = [](quint32 v) { QByteArray b(4, 0); qToLittleEndian(v, b.data()); return b; };
+    const auto le16 = [](quint16 v) { QByteArray b(2, 0); qToLittleEndian(v, b.data()); return b; };
+    constexpr quint16 pcmFormat = 1;
+    constexpr quint16 bitsPerSample = 16;
+    const quint16 blockAlign = quint16(channels * bitsPerSample / 8);
+    return "RIFF" + le32(quint32(36 + samples.size())) + "WAVE"
+        + "fmt " + le32(16) + le16(pcmFormat) + le16(quint16(channels)) + le32(quint32(sampleRate))
+        + le32(quint32(sampleRate) * blockAlign) + le16(blockAlign) + le16(bitsPerSample)
+        + "data" + le32(quint32(samples.size())) + samples;
+}
 
 class FakeAudioInput final : public AudioInput {
 public:

@@ -39,10 +39,26 @@ bool isAuthenticationError(const QString &message, const QJsonObject &event = {}
 
 } // namespace
 
-CodexDictationClient::CodexDictationClient(QObject *parent)
+CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs)
     : QObject(parent)
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    // Audio sent faster than real time (a file) is still being transcribed
+    // when the client asks to close, and the text keeps coming for seconds.
+    // The wait restarts with each piece of it, so only a silent service times
+    // out.
+    m_closeTimer.setSingleShot(true);
+    m_closeTimer.setInterval(closeTimeoutMs);
+    connect(&m_closeTimer, &QTimer::timeout, this, [this] {
+        if (m_finalizing && !m_sessionClosed && !m_failureEmitted) {
+            fail(QStringLiteral("Codex dictation stream timed out while closing the session"),
+                 true,
+                 QStringLiteral("finalize"));
+            m_socket.abort();
+        }
+    });
+    connect(this, &CodexDictationClient::partialTranscript, this, &CodexDictationClient::extendCloseWait);
+    connect(this, &CodexDictationClient::finalTranscript, this, &CodexDictationClient::extendCloseWait);
     connect(&m_socket, &QWebSocket::connected, this, [this] {
         sendSessionStart(m_socket.property("sampleRateHz").toInt());
     });
@@ -85,6 +101,8 @@ CodexDictationClient::CodexDictationClient(QObject *parent)
                                          : (m_sessionStarted ? QStringLiteral("streaming")
                                                              : QStringLiteral("connect"))));
             });
+#else
+    Q_UNUSED(closeTimeoutMs)
 #endif
 }
 
@@ -101,6 +119,7 @@ void CodexDictationClient::start(const QUrl &url,
     m_sessionClosed = false;
     m_cancelled = false;
     m_failureEmitted = false;
+    m_closeTimer.stop();
     ++m_sessionId;
 
     m_socket.setProperty("sampleRateHz", sampleRateHz);
@@ -222,19 +241,16 @@ void CodexDictationClient::requestFinalization()
     m_finalizing = true;
     m_socket.sendTextMessage(QStringLiteral("{\"type\":\"audio.flush\",\"reason\":\"client\"}"));
     m_socket.sendTextMessage(QStringLiteral("{\"type\":\"session.close\"}"));
+    m_closeTimer.start();
+#endif
+}
 
-    const quint64 sessionId = m_sessionId;
-    QTimer::singleShot(8000, this, [this, sessionId] {
-        if (sessionId == m_sessionId
-            && m_finalizing
-            && !m_sessionClosed
-            && !m_failureEmitted) {
-            fail(QStringLiteral("Codex dictation stream timed out while closing the session"),
-                 true,
-                 QStringLiteral("finalize"));
-            m_socket.abort();
-        }
-    });
+void CodexDictationClient::extendCloseWait()
+{
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    if (m_closeTimer.isActive()) {
+        m_closeTimer.start();
+    }
 #endif
 }
 
@@ -242,6 +258,7 @@ void CodexDictationClient::cancel()
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     m_cancelled = true;
+    m_closeTimer.stop();
     m_pendingAudio.clear();
     m_socket.abort();
 #endif

@@ -60,8 +60,19 @@ struct TranscribeFileResult {
     bool failed() const { return refined.isEmpty(); }
 };
 
-// True for a file the decoder can take: audio, or video whose audio track it
-// reads (shared-mime-info files audio-only .webm and .mp4 under video/).
+// The files Speecher offers to transcribe: the file pickers and their hint
+// name these extensions, and the packaging registers "Open with" for them (a
+// test holds the .desktop, Info.plist and .iss lists to these). A test writes
+// a clip in each video container and transcribes it, wherever the media
+// backend reports it can write that clip. Dropped and opened files are not
+// limited to the list; see isAudioFile.
+QStringList transcribableExtensions();
+// The MIME types of those files, with the aliases older shared-mime-info
+// releases and file managers still use.
+QStringList transcribableMimeTypes();
+
+// True for any audio or video file, by its content or name, so a dropped or
+// opened file the pickers do not list still gets its try with the decoder.
 bool isAudioFile(const QString &path);
 
 // Reads an audio file's length in the background and hands it to done, in
