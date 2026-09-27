@@ -502,7 +502,8 @@ QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts)
     SettingsRow model = choiceRow(
         QStringLiteral("speechLocalModel"),
         QStringLiteral("Model"),
-        QStringLiteral("Downloaded models. Get others on the Local models page."),
+        QStringLiteral("Downloaded models. Get others on the %1 page.")
+            .arg(paneTitle(QStringLiteral("localModels"))),
         [facts](const AppSettings &settings) {
             QList<RowOption> options;
             for (const QString &id : facts().downloadedModels) {
@@ -532,7 +533,7 @@ QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts)
                                      QStringLiteral("Model"),
                                      QStringLiteral("No model is downloaded yet. Download one to "
                                                     "dictate on this computer."),
-                                     QStringLiteral("Open Local models"));
+                                     QStringLiteral("Open %1").arg(paneTitle(QStringLiteral("localModels"))));
 
     const auto whileLocal = whileSpeechProvider(QStringLiteral("local"));
     model.visible = [whileLocal, facts](const AppSettings &settings, const Capabilities &capabilities) {

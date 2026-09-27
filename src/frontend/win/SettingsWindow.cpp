@@ -525,7 +525,7 @@ struct SettingsWindow::Native {
         if (id == QStringLiteral("whatsNew")) {
             showWhatsNew();
         } else if (id == QStringLiteral("speechLocalModelDownload")) {
-            host.showPane(QStringLiteral("localModels"));
+            host.showPage(QStringLiteral("localModels"));
         }
         // Every edit is already committed, so the draft is what is stored.
         controller->localSetup()->runSettingsAction(id, model.draft());

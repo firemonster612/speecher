@@ -170,8 +170,8 @@ bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn
     const std::optional<transcribe_backend_request> backend = backendRequest(runsOn.backend);
     if (!backend || !transcribe_backend_available(*backend)) {
         *error = QStringLiteral("%1 is not available on this computer. Choose where the model runs "
-                                "on the Local models page.")
-                     .arg(backendName);
+                                "on the %2 page.")
+                     .arg(backendName, paneTitleForRow(QStringLiteral("localAcceleration")));
         return false;
     }
     transcribe_model_load_params params;
@@ -182,10 +182,11 @@ bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn
         if (!params.device) {
             *error = *backend == TRANSCRIBE_BACKEND_AUTO
                 ? QStringLiteral("The chosen graphics card is missing. Choose where the model runs "
-                                 "on the Local models page.")
+                                 "on the %1 page.")
+                      .arg(paneTitleForRow(QStringLiteral("localAcceleration")))
                 : QStringLiteral("The graphics card chosen for %1 is missing. Choose where the "
-                                 "model runs on the Local models page.")
-                      .arg(backendName);
+                                 "model runs on the %2 page.")
+                      .arg(backendName, paneTitleForRow(QStringLiteral("localAcceleration")));
             return false;
         }
     }
@@ -193,8 +194,8 @@ bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn
     const transcribe_status status = transcribe_model_load_file(path.constData(), &params, &m_model);
     if (status == TRANSCRIBE_ERR_BACKEND && *backend != TRANSCRIBE_BACKEND_AUTO) {
         *error = QStringLiteral("%1 could not load the model. Choose where the model runs on the "
-                                "Local models page.")
-                     .arg(backendName);
+                                "%2 page.")
+                     .arg(backendName, paneTitleForRow(QStringLiteral("localAcceleration")));
         return false;
     }
     if (!succeeded(status, error)) {

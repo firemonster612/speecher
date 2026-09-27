@@ -338,7 +338,7 @@ final class AppModel: ObservableObject {
     func trigger(_ rowId: String) {
         if rowId == "whatsNew" { showWhatsNew() }
         if rowId == "speechLocalModelDownload" {
-            pane = "localModels"
+            showPage("localModels")
             return
         }
         // Asked here rather than in MacFrontEnd.mm: the confirmation is a

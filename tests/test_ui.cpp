@@ -651,12 +651,15 @@ private slots:
             if (pane.id != QStringLiteral("whatsNew") && pane.id != QStringLiteral("shortcut")) {
                 QCOMPARE(sectionLabels(*pages.page(pane.id)), titles);
             }
+            // Every row has a control named for it, except the custom blocks
+            // whose widgets carry names of their own.
             for (const SettingsPaneGroup &group : pane.groups) {
                 for (const QString &row : group.rows) {
                     QVERIFY2(pages.page(pane.id)->findChild<QWidget *>(row)
                                  || row == QStringLiteral("writingProfileBehavior")
                                  || row == QStringLiteral("whatsNewNotes")
-                                 || row == QStringLiteral("globalShortcut"),
+                                 || row == QStringLiteral("globalShortcut")
+                                 || row == QStringLiteral("localModelBrowser"),
                              qPrintable(pane.id + QLatin1Char('/') + row));
                 }
             }
