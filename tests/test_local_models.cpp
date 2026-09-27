@@ -718,6 +718,9 @@ private slots:
 
         SpeechSettings settings;
         settings.local.modelId = modelId;
+        // Local models get no key terms. Given to Whisper as a prompt, terms
+        // like these replaced whole clips with other text.
+        settings.vocabulary = {QStringLiteral("Speecher"), QStringLiteral("Kirigami")};
         QVERIFY(transcriber.prepare(settings).ok);
         QFile clip(QStringLiteral(":/speedtest/librispeech-6930-75918-0018.s16le"));
         QVERIFY(clip.open(QIODevice::ReadOnly));

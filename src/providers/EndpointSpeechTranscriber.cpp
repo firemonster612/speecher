@@ -115,7 +115,8 @@ void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSett
     cancelAttempt(m_attemptId);
     m_attemptId = attemptId;
     m_endpoint = settings.endpoint;
-    m_prompt = VocabularyLimit::promptText(settings.vocabulary);
+    // The terms Claude Voice would get, in the same priority order.
+    m_prompt = VocabularyLimit::limited(settings.vocabulary).join(QStringLiteral(", "));
     m_pcm.clear();
 }
 

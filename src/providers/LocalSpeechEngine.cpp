@@ -5,7 +5,6 @@
 #include <QtEndian>
 
 #include <transcribe.h>
-#include <transcribe/whisper.h>
 
 #include <array>
 #include <mutex>
@@ -246,7 +245,7 @@ bool LocalSpeechEngine::streams() const
     return m_streams;
 }
 
-std::optional<QString> LocalSpeechEngine::transcribe(const QByteArray &pcm16, const QString &prompt, QString *error)
+std::optional<QString> LocalSpeechEngine::transcribe(const QByteArray &pcm16, QString *error)
 {
     const std::vector<float> pcm = floatPcm(pcm16);
     if (pcm.empty()) {
@@ -258,16 +257,6 @@ std::optional<QString> LocalSpeechEngine::transcribe(const QByteArray &pcm16, co
     transcribe_run_params_init(&params);
     params.timestamps = TRANSCRIBE_TIMESTAMPS_NONE;
     params.language = language;
-    // Whisper's run extension is the only way in for a prompt today; a family
-    // that gains the feature with its own extension needs its own branch here.
-    const QByteArray promptBytes = prompt.toUtf8();
-    transcribe_whisper_run_ext whisper;
-    if (!prompt.isEmpty() && transcribe_model_supports(m_model, TRANSCRIBE_FEATURE_INITIAL_PROMPT)
-        && transcribe_model_accepts_ext_kind(m_model, TRANSCRIBE_EXT_SLOT_RUN, TRANSCRIBE_EXT_KIND_WHISPER_RUN)) {
-        transcribe_whisper_run_ext_init(&whisper);
-        whisper.initial_prompt = promptBytes.constData();
-        params.family = &whisper.ext;
-    }
     const transcribe_status status = transcribe_run(m_session, pcm.data(), int(pcm.size()), &params);
     if (status == TRANSCRIBE_ERR_ABORTED) {
         return std::nullopt;
@@ -336,12 +325,12 @@ std::optional<double> LocalSpeechEngine::speedTestSeconds(QString *error)
     const QByteArray pcm16 = clip.readAll();
     // Untimed: a backend's first run pays one-off costs, such as Vulkan
     // compiling its shaders, that dictation after it never sees.
-    if (!transcribe(pcm16, {}, error)) {
+    if (!transcribe(pcm16, error)) {
         return std::nullopt;
     }
     QElapsedTimer timer;
     timer.start();
-    if (!transcribe(pcm16, {}, error)) {
+    if (!transcribe(pcm16, error)) {
         return std::nullopt;
     }
     const double clipSeconds = double(pcm16.size() / 2) / sampleRateHz;

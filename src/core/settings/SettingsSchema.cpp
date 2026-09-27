@@ -1811,8 +1811,11 @@ SettingsPage vocabularyPage()
     limit.label = QStringLiteral("Limit");
     limit.kind = RowKind::Info;
     limit.value = [](const AppSettings &settings) {
-        return QVariant(VocabularyLimit::summary(
-            vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary))));
+        const QStringList terms = vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary));
+        if (settings.speech.providerId == QStringLiteral("local")) {
+            return QVariant(QStringLiteral("None are sent to local models"));
+        }
+        return QVariant(VocabularyLimit::summary(terms));
     };
 
     const QString help = QStringLiteral("Names and words Speecher should recognize. Every term is "
@@ -1829,8 +1832,6 @@ SettingsPage vocabularyPage()
             ? QStringLiteral("Claude Voice receives them as key terms.")
             : provider == QStringLiteral("endpoint")
             ? QStringLiteral("The custom endpoint receives them as its prompt.")
-            : provider == QStringLiteral("local")
-            ? QStringLiteral("Local models that take a prompt, such as Whisper, receive them; the others do not.")
             : QStringLiteral("This transcription service does not use them.");
         return help + QLatin1Char(' ') + speech;
     };

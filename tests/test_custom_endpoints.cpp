@@ -189,6 +189,25 @@ private slots:
         QVERIFY(server.requests.first().contains("name=\"prompt\"\r\n\r\nSpeecher, Kirigami Addons\r\n"));
     }
 
+    // The endpoint gets what Claude Voice gets: 101 short terms send 100.
+    void speechPromptUsesTheKeyTermLimits()
+    {
+        QStringList terms;
+        for (int index = 1; index <= 101; ++index) {
+            terms << QStringLiteral("term%1").arg(index, 4, 10, QLatin1Char('0'));
+        }
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"ok\"}"));
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        dictate(transcriber, server.origin(), 1, terms);
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
+        const QByteArray request = server.requests.first();
+        QVERIFY(request.contains("term0001, term0002, "));
+        QVERIFY(request.contains(", term0100\r\n"));
+        QVERIFY(!request.contains("term0101"));
+    }
+
     void endpointsRejectCrossOriginRedirects()
     {
         FakeServer destination;
