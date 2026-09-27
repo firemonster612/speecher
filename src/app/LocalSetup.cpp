@@ -25,14 +25,6 @@ QString gigabytesText(quint64 bytes)
     return QStringLiteral("%1 GB").arg(qRound(double(bytes) / 1e9));
 }
 
-QString acceleratorName(const QString &kind)
-{
-    if (kind == QStringLiteral("metal")) return QStringLiteral("Metal");
-    if (kind == QStringLiteral("vulkan")) return QStringLiteral("Vulkan");
-    if (kind == QStringLiteral("cuda")) return QStringLiteral("CUDA");
-    return kind;
-}
-
 // What a connection check depends on. The model is picked from its answer,
 // so choosing one keeps the verdict and the list.
 template <typename Endpoint>
@@ -233,6 +225,10 @@ LocalSetup::LocalSetup(SettingsStore &settings,
                     }
                     emit changed();
                 });
+        connect(local, &LocalSpeechTranscriber::runsOnChanged, this, [this](const QString &description) {
+            m_modelRunsOn = description;
+            emit changed();
+        });
     }
 #endif
     // An endpoint someone is filling in is checked once they pause, without
@@ -314,7 +310,7 @@ QString LocalSetup::hardwareLine() const
         parts << QStringLiteral("no graphics acceleration");
     } else {
         const LocalSpeechEngine::Device &gpu = m_hardware.gpus.first();
-        parts << QStringLiteral("%1, %2").arg(gpu.description, acceleratorName(gpu.kind));
+        parts << QStringLiteral("%1, %2").arg(gpu.description, localBackendName(gpu.kind));
     }
     parts << (profile.accelerator == HardwareProfile::Accelerator::DedicatedGpu
                   ? QStringLiteral("%1 memory, %2 on the graphics card")
@@ -419,7 +415,7 @@ void LocalSetup::runSpeedTest(const QString &modelId)
     m_speedTestModel = modelId;
     m_speedTestErrors.remove(modelId);
     emit changed();
-    local->runSpeedTest(modelId, m_settings.localSpeechSettings().deviceId);
+    local->runSpeedTest(modelId, m_settings.localSpeechSettings().runsOn);
 #else
     Q_UNUSED(modelId);
 #endif
@@ -667,11 +663,10 @@ LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
     }
     facts.modelFolder = QStringLiteral("%1 · %2 used")
                             .arg(QDir::toNativeSeparators(m_models.directory()), downloadSizeText(used));
-    if (m_hardware.gpus.size() > 1) {
-        for (const LocalSpeechEngine::Device &gpu : m_hardware.gpus) {
-            facts.gpus.append({gpu.id, gpu.description});
-        }
+    for (const LocalSpeechEngine::Device &gpu : m_hardware.gpus) {
+        facts.localGpus.append({gpu.kind, gpu.id, gpu.description});
     }
+    facts.localModelRunsOn = m_modelRunsOn;
     return facts;
 }
 

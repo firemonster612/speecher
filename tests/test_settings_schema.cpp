@@ -1204,6 +1204,35 @@ private slots:
         QCOMPARE(runners.first().label, QStringLiteral("Ollama (not running)"));
     }
 
+    void localRunsOnOffersEachCardUnderEachBackend()
+    {
+        const QString bus = QStringLiteral("0000:01:00.0");
+        const QList<LocalGpu> gpus{
+            {QStringLiteral("cuda"), bus, QStringLiteral("NVIDIA GeForce RTX 3060")},
+            {QStringLiteral("vulkan"), bus, QStringLiteral("NVIDIA GeForce RTX 3060")},
+            {QStringLiteral("vulkan"), QStringLiteral("0000:05:00.0"), QStringLiteral("AMD Radeon Graphics")},
+        };
+        QList<RowOption> options = localRunsOnOptions(gpus, {});
+        QStringList labels;
+        for (const RowOption &option : options) {
+            labels.append(option.label);
+            QVERIFY(option.enabled);
+            QCOMPARE(localRunsOnId(localRunsOnFromId(option.id)), option.id);
+        }
+        QCOMPARE(labels, (QStringList{QStringLiteral("Automatic"), QStringLiteral("CPU"),
+                                      QStringLiteral("NVIDIA GeForce RTX 3060 (CUDA)"),
+                                      QStringLiteral("NVIDIA GeForce RTX 3060 (Vulkan)"),
+                                      QStringLiteral("AMD Radeon Graphics (Vulkan)")}));
+        QCOMPARE(localRunsOnFromId(options.at(2).id), (LocalRunsOn{QStringLiteral("cuda"), bus}));
+
+        // A saved card that has gone stays selected, disabled, rather than
+        // quietly becoming another.
+        options = localRunsOnOptions({}, {QStringLiteral("cuda"), bus});
+        QCOMPARE(options.size(), 3);
+        QCOMPARE(options.last().label, QStringLiteral("Missing graphics card (CUDA)"));
+        QVERIFY(!options.last().enabled);
+    }
+
     void localModelsPageFollowsRefinement()
     {
         SchemaContext context = fakeContext();
@@ -1228,8 +1257,13 @@ private slots:
         QCOMPARE(settings.speech.local.modelId, QStringLiteral("moonshine-small"));
         QCOMPARE(browser.value(settings).toString(), QStringLiteral("moonshine-small"));
 
-        // The GPU picker only earns a row with more than one GPU.
-        QVERIFY(!rowById(page, QStringLiteral("localDevice")).visible(settings, Capabilities{}));
+        // Where models run is always a choice, even with no graphics card.
+        const SettingsRow &runsOn = rowById(page, QStringLiteral("localRunsOn"));
+        QVERIFY(!runsOn.visible || runsOn.visible(settings, Capabilities{}));
+        QCOMPARE(runsOn.value(settings).toString(), QStringLiteral("auto"));
+        runsOn.apply(settings, QStringLiteral("vulkan:0000:c1:00.0"));
+        QCOMPARE(settings.speech.local.runsOn,
+                 (LocalRunsOn{QStringLiteral("vulkan"), QStringLiteral("0000:c1:00.0")}));
 
         // On macOS and Windows it is its own pane, next to Text.
         const QStringList &run = schema.sidebarRuns.at(2);

@@ -45,6 +45,7 @@ LocalSpeechTranscriber::LocalSpeechTranscriber(const LocalModelStore &store, QOb
         onWorker([this] {
             if (m_liveAttempt.load() == 0) {
                 m_engine.unload();
+                announceRunsOn();
             }
         });
     });
@@ -100,9 +101,9 @@ void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSetting
         });
         return;
     }
-    onWorker([this, attemptId, modelPath, deviceId = settings.local.deviceId,
+    onWorker([this, attemptId, modelPath, runsOn = settings.local.runsOn,
               prompt = VocabularyLimit::promptText(settings.vocabulary)] {
-        begin(attemptId, modelPath, deviceId, prompt);
+        begin(attemptId, modelPath, runsOn, prompt);
     });
 }
 
@@ -134,7 +135,7 @@ void LocalSpeechTranscriber::cancelAttempt(quint64 attemptId)
     }
 }
 
-void LocalSpeechTranscriber::runSpeedTest(const QString &modelId, const QString &deviceId)
+void LocalSpeechTranscriber::runSpeedTest(const QString &modelId, const LocalRunsOn &runsOn)
 {
     QString error;
     const QString modelPath = downloadedModelPath(modelId, &error);
@@ -146,11 +147,11 @@ void LocalSpeechTranscriber::runSpeedTest(const QString &modelId, const QString 
         return;
     }
     m_idleTimer.stop();
-    onWorker([this, modelId, modelPath, deviceId] {
+    onWorker([this, modelId, modelPath, runsOn] {
         m_workerAttempt = 0;
         QString error;
         std::optional<double> seconds;
-        if (ensureLoaded(modelPath, deviceId, &error)) {
+        if (ensureLoaded(modelPath, runsOn, &error)) {
             seconds = m_engine.speedTestSeconds(&error);
             if (!seconds && error.isEmpty()) {
                 error = QStringLiteral("Dictation started, so the speed test stopped.");
@@ -219,9 +220,19 @@ void LocalSpeechTranscriber::startIdleTimer()
     }
 }
 
-bool LocalSpeechTranscriber::ensureLoaded(const QString &modelPath, const QString &deviceId, QString *error)
+bool LocalSpeechTranscriber::ensureLoaded(const QString &modelPath, const LocalRunsOn &runsOn, QString *error)
 {
-    return m_engine.isLoaded(modelPath, deviceId) || m_engine.load(modelPath, deviceId, error);
+    if (m_engine.isLoaded(modelPath, runsOn)) {
+        return true;
+    }
+    const bool loaded = m_engine.load(modelPath, runsOn, error);
+    announceRunsOn();
+    return loaded;
+}
+
+void LocalSpeechTranscriber::announceRunsOn()
+{
+    onCaller([this, description = m_engine.runsOnDescription()] { emit runsOnChanged(description); });
 }
 
 bool LocalSpeechTranscriber::attemptRunning(quint64 attemptId) const
@@ -238,7 +249,7 @@ void LocalSpeechTranscriber::failAttempt(quint64 attemptId, const QString &messa
     });
 }
 
-void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, const QString &deviceId, const QString &prompt)
+void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, const LocalRunsOn &runsOn, const QString &prompt)
 {
     if (attemptId != m_liveAttempt.load()) {
         return;
@@ -249,7 +260,7 @@ void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, 
     m_prompt = prompt;
     m_emittedCommittedChars = 0;
     QString error;
-    if (!ensureLoaded(modelPath, deviceId, &error)
+    if (!ensureLoaded(modelPath, runsOn, &error)
         || (m_engine.streams() && !m_engine.beginStream(&error))) {
         failAttempt(attemptId, error, QStringLiteral("load"));
         return;

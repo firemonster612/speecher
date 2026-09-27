@@ -50,11 +50,13 @@ public:
 
     // The Speed Test, on the same thread and engine dictation uses, so a large
     // model is never in memory twice.
-    void runSpeedTest(const QString &modelId, const QString &deviceId);
+    void runSpeedTest(const QString &modelId, const LocalRunsOn &runsOn);
 
 signals:
     // seconds is valid when error is empty.
     void speedTestFinished(const QString &modelId, double seconds, const QString &error);
+    // After every load and unload: where the model now runs, empty for nowhere.
+    void runsOnChanged(const QString &description);
 
 private:
     // The model file for modelId, or empty with error set.
@@ -66,8 +68,9 @@ private:
     void startIdleTimer();
 
     // Worker thread only.
-    bool ensureLoaded(const QString &modelPath, const QString &deviceId, QString *error);
-    void begin(quint64 attemptId, const QString &modelPath, const QString &deviceId, const QString &prompt);
+    bool ensureLoaded(const QString &modelPath, const LocalRunsOn &runsOn, QString *error);
+    void announceRunsOn();
+    void begin(quint64 attemptId, const QString &modelPath, const LocalRunsOn &runsOn, const QString &prompt);
     void feedPending();
     void finish(quint64 attemptId);
     bool attemptRunning(quint64 attemptId) const;

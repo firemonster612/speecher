@@ -204,7 +204,12 @@ LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
     LocalSpeechSettings settings;
     settings.modelId = value(SettingsKeys::LocalModel, defaults.modelId).toString();
     settings.modelChosen = value(SettingsKeys::LocalModelChosen, m_settings.contains(SettingsKeys::LocalModel)).toBool();
-    settings.deviceId = value(SettingsKeys::LocalDevice, QString()).toString();
+    settings.runsOn.backend = value(SettingsKeys::LocalBackend, defaults.runsOn.backend).toString();
+    // A graphics card saved before the backend was chosen too belongs to no
+    // backend in particular, so it reads as Automatic.
+    if (m_settings.contains(SettingsKeys::LocalBackend)) {
+        settings.runsOn.deviceId = value(SettingsKeys::LocalDevice, QString()).toString();
+    }
     settings.idleUnloadMinutes =
         std::max(0, value(SettingsKeys::LocalIdleUnloadMinutes, defaults.idleUnloadMinutes).toInt());
     const QString speedTestPrefix = SettingsKeys::LocalSpeedTest + QLatin1Char('/');
@@ -223,7 +228,8 @@ void SettingsCodecs::setLocalSpeechSettings(const LocalSpeechSettings &value)
     m_settings.setValue(SettingsKeys::LocalModelChosen, value.modelChosen || previous.modelChosen
                         || value.modelId != previous.modelId);
     m_settings.setValue(SettingsKeys::LocalModel, value.modelId);
-    m_settings.setValue(SettingsKeys::LocalDevice, value.deviceId);
+    m_settings.setValue(SettingsKeys::LocalBackend, value.runsOn.backend);
+    m_settings.setValue(SettingsKeys::LocalDevice, value.runsOn.deviceId);
     m_settings.setValue(SettingsKeys::LocalIdleUnloadMinutes, std::max(0, value.idleUnloadMinutes));
     m_settings.remove(SettingsKeys::LocalSpeedTest);
     m_settings.beginGroup(SettingsKeys::LocalSpeedTest);

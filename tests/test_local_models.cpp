@@ -2,6 +2,7 @@
 #include "core/SettingsStore.h"
 #include "core/SecretStore.h"
 #include "core/settings/SettingsKeys.h"
+#include "core/settings/SettingsSchema.h"
 #include "providers/ProviderRegistry.h"
 #include "common/test_http.h"
 #include "common/test_suites.h"
@@ -673,6 +674,7 @@ private slots:
         QSignalSpy transcripts(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
+        QSignalSpy runsOn(&transcriber, &LocalSpeechTranscriber::runsOnChanged);
 
         SpeechSettings settings;
         settings.local.modelId = modelId;
@@ -702,11 +704,35 @@ private slots:
         QVERIFY(text.contains(QStringLiteral("security everywhere"), Qt::CaseInsensitive));
 
         QSignalSpy speed(&transcriber, &LocalSpeechTranscriber::speedTestFinished);
-        transcriber.runSpeedTest(modelId, {});
+        // SPEECHER_TEST_LOCAL_RUNS_ON picks where the Speed Test runs, as the
+        // Runs on row stores it: "cpu", "vulkan", "cuda:0000:01:00.0".
+        transcriber.runSpeedTest(modelId, localRunsOnFromId(
+            qEnvironmentVariable("SPEECHER_TEST_LOCAL_RUNS_ON", QStringLiteral("auto"))));
         QVERIFY(speed.wait(120000));
         QVERIFY2(speed.first().at(2).toString().isEmpty(), qPrintable(speed.first().at(2).toString()));
+        if (!runsOn.isEmpty()) {
+            qInfo().noquote() << "runs on:" << runsOn.last().at(0).toString();
+        }
         qInfo() << "speed test:" << speed.first().at(1).toDouble() << "s for 10 s of speech";
         QVERIFY(speed.first().at(1).toDouble() > 0);
+    }
+
+    // An explicit backend that is missing fails the load rather than running
+    // somewhere else. No model file is needed to get that far.
+    void anUnavailableBackendFailsTheLoad()
+    {
+        const QList<LocalSpeechEngine::Device> devices = LocalSpeechEngine::devices();
+        if (std::any_of(devices.cbegin(), devices.cend(), [](const LocalSpeechEngine::Device &device) {
+                return device.kind == QStringLiteral("rocm");
+            })) {
+            QSKIP("This computer runs ROCm.");
+        }
+        LocalSpeechEngine engine([] { return false; });
+        QString error;
+        QVERIFY(!engine.load(QStringLiteral("/nonexistent.gguf"), {QStringLiteral("rocm"), {}}, &error));
+        QCOMPARE(error, QStringLiteral("ROCm is not available on this computer. Choose where the model "
+                                       "runs on the Local models page."));
+        QVERIFY(engine.runsOnDescription().isEmpty());
     }
 
     // An attempt that starts while the worker is busy must still get every

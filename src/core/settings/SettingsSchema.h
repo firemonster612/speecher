@@ -254,6 +254,15 @@ struct RefinementProvider {
 // - localRunnerDetect, localModelsRunner: LocalSetup::detectRunners()
 // - localModelFolder: open LocalModelStore::directory() in the file manager
 // - speechLocalModelDownload: show the Local models page (a front-end job)
+// A graphics card as one transcribe.cpp backend reports it.
+struct LocalGpu {
+    // A transcribe.cpp device kind: "vulkan", "cuda", "rocm", "metal".
+    QString backend;
+    // The PCI bus id, empty when the backend reports none.
+    QString deviceId;
+    QString description;
+};
+
 struct LiveFacts {
     // The last connection check's verdict, "Checking…" while one runs, empty
     // before the first. LocalSetup runs one on its own once an endpoint in
@@ -272,9 +281,12 @@ struct LiveFacts {
     QString modelFolder;
     // Local Model ids with a finished download, in catalog order.
     QStringList downloadedModels;
-    // The GPUs a Local Model can run on, by transcribe.cpp device id. The
-    // picker only shows when there is more than one.
-    QList<RowOption> gpus;
+    // The graphics cards a Local Model can run on, once per backend that
+    // reaches them.
+    QList<LocalGpu> localGpus;
+    // Where the loaded Local Model runs, e.g. "NVIDIA GeForce RTX 3060
+    // (CUDA)"; empty while none is loaded.
+    QString localModelRunsOn;
 };
 
 // What the descriptors need to be built. A value type, so a test can make one
@@ -341,5 +353,13 @@ QString keyStorageHelp();
 // that has gone away. Shared with the setup assistant's own device list.
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices,
                                     const QString &selectedDeviceId);
+
+// The Local models page's Runs on choice: Automatic, the CPU, then each
+// graphics card under each backend that reaches it, with a disabled
+// placeholder for a saved card that has gone away. An option's id is
+// localRunsOnId of the LocalRunsOn it stands for.
+QList<RowOption> localRunsOnOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
+QString localRunsOnId(const LocalRunsOn &runsOn);
+LocalRunsOn localRunsOnFromId(const QString &id);
 
 } // namespace speecher
