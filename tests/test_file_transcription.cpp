@@ -535,7 +535,10 @@ private slots:
         QTest::newRow("mp4") << QStringLiteral("mp4") << QMediaFormat::MPEG4 << A::AAC << V::MPEG4;
         QTest::newRow("m4v") << QStringLiteral("m4v") << QMediaFormat::MPEG4 << A::AAC << V::MPEG4;
         QTest::newRow("mov") << QStringLiteral("mov") << QMediaFormat::QuickTime << A::AAC << V::MPEG4;
-        QTest::newRow("mkv") << QStringLiteral("mkv") << QMediaFormat::Matroska << A::AAC << V::MPEG4;
+        // FLAC, which FFmpeg encodes itself: on Windows its AAC encoder is
+        // Media Foundation's, whose timestamps the Matroska muxer rejects,
+        // leaving a clip with a fraction of its audio.
+        QTest::newRow("mkv") << QStringLiteral("mkv") << QMediaFormat::Matroska << A::FLAC << V::MPEG4;
         QTest::newRow("webm") << QStringLiteral("webm") << QMediaFormat::WebM << A::Opus << V::AV1;
         QTest::newRow("avi") << QStringLiteral("avi") << QMediaFormat::AVI << A::AC3 << V::MPEG4;
     }
