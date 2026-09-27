@@ -266,6 +266,13 @@ struct SettingsWindow::Native {
             query = qs(sender.Text());
             rebuildSidebar();
         });
+        // Enter opens the first hit.
+        search.QuerySubmitted([this](const AutoSuggestBox &, const auto &) {
+            const QStringList hits = searchPanes(model.schema(), query);
+            if (!hits.isEmpty()) {
+                selectPane(hits.first());
+            }
+        });
         navigation.AutoSuggestBox(search);
         navigation.SelectionChanged([this](const NavigationView &, const auto &args) {
             if (sidebarUpdating) {
