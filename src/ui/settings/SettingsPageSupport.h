@@ -116,7 +116,6 @@ void addSectionRow(QFormLayout *form, const QString &title, QWidget *parent);
 // Configures the shared page container; makeSettingsPage and AppWindow both use it.
 void configurePageScroll(QScrollArea *scroll, QWidget *content);
 // Detaches a page's content for composing into another page container.
-QWidget *takePageContent(QScrollArea *scroll);
 QVBoxLayout *makeSettingsPage(QScrollArea *scroll);
 
 } // namespace speecher::settings

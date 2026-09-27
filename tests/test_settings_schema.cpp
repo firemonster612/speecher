@@ -1140,27 +1140,34 @@ private slots:
 
         QTest::ignoreMessage(QtWarningMsg, "no settings page nothing - showing Home");
         QCOMPARE(resolvePage(schema, QStringLiteral("nothing")).pane, QStringLiteral("home"));
-        QTest::ignoreMessage(QtWarningMsg, "no view nothing on settings page vocabulary");
-        QCOMPARE(resolvePage(schema, QStringLiteral("vocabulary:nothing")).view, QStringLiteral("terms"));
+        // A view the pane does not have is as unknown as a pane.
+        QTest::ignoreMessage(QtWarningMsg, "no settings page vocabulary:missing - showing Home");
+        QCOMPARE(resolvePage(schema, QStringLiteral("vocabulary:missing")).pane, QStringLiteral("home"));
+        QTest::ignoreMessage(QtWarningMsg, "no settings page general:missing - showing Home");
+        QCOMPARE(resolvePage(schema, QStringLiteral("general:missing")).pane, QStringLiteral("home"));
 
-        QCOMPARE(launchPane(schema, QStringLiteral("output")), QStringLiteral("output"));
-        QCOMPARE(launchPane(schema, QStringLiteral("vocabulary:corrections")),
-                 QStringLiteral("vocabulary:corrections"));
-        QCOMPARE(launchPane(schema, QStringLiteral("whatsNew")), QStringLiteral("home"));
-        QCOMPARE(launchPane(schema, QStringLiteral("providers")), QStringLiteral("home"));
-        QCOMPARE(launchPane(schema, QString()), QStringLiteral("home"));
     }
 
     void searchLooksThroughTitlesRowsAndHelpButNotWhatsNew()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        QCOMPARE(searchPanes(schema, QStringLiteral("keep before speech")),
+        const auto searchPanes = [&schema](const QString &query) {
+            return speecher::searchPanes(schema, query, AppSettings{}, Capabilities{});
+        };
+        QCOMPARE(searchPanes(QStringLiteral("keep before speech")),
                  QStringList{QStringLiteral("dictation")});
-        QCOMPARE(searchPanes(schema, QStringLiteral("Replacements")),
+        QCOMPARE(searchPanes(QStringLiteral("Replacements")),
                  QStringList{QStringLiteral("vocabulary")});
-        QVERIFY(searchPanes(schema, QStringLiteral("Sign-in")).contains(QStringLiteral("accounts")));
-        QCOMPARE(searchPanes(schema, QStringLiteral("What's New")), QStringList{QStringLiteral("general")});
-        QVERIFY(searchPanes(schema, QStringLiteral("Try the new settings")).isEmpty());
+        QVERIFY(searchPanes(QStringLiteral("Sign-in")).contains(QStringLiteral("accounts")));
+        QCOMPARE(searchPanes(QStringLiteral("What's New")), QStringList{QStringLiteral("general")});
+        QVERIFY(searchPanes(QStringLiteral("Try the new settings")).isEmpty());
+        // A hidden row is not found: the CLI Proxy API rows show only while a
+        // provider signs in through it.
+        QVERIFY(searchPanes(QStringLiteral("Account directory")).isEmpty());
+        AppSettings throughProxy;
+        throughProxy.refinement.openAiAuthMode = QStringLiteral("cliproxy");
+        QCOMPARE(speecher::searchPanes(schema, QStringLiteral("Account directory"), throughProxy, Capabilities{}),
+                 QStringList{QStringLiteral("accounts")});
     }
 
     // Help and error text that sends someone to a page names it through

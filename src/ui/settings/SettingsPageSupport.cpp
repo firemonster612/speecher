@@ -813,19 +813,6 @@ private:
 
 int cardStretchedWidth() { return gridUnit() * 60; }
 
-QWidget *takePageContent(QScrollArea *scroll)
-{
-    QWidget *content = scroll->takeWidget();
-    // The governor that sized the content for this scroll area must go with
-    // it, or a hidden viewport keeps pinning the content's width.
-    for (QObject *governor : scroll->findChildren<QObject *>(QStringLiteral("pageWidthGovernor"),
-                                                             Qt::FindDirectChildrenOnly)) {
-        delete governor;
-    }
-    content->setMaximumWidth(QWIDGETSIZE_MAX);
-    return content;
-}
-
 void configurePageScroll(QScrollArea *scroll, QWidget *content)
 {
     // The one page container: a frameless scroll area on the window colour

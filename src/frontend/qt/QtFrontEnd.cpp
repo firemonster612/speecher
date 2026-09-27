@@ -126,6 +126,10 @@ void QtFrontEnd::showMainWindow()
         m_appWindow = new AppWindow(m_controller);
         watchForFirstFrame(m_appWindow);
     }
+    // Opened from hidden it starts on Home; one already up keeps its page.
+    if (!m_appWindow->isVisible()) {
+        m_appWindow->showHome();
+    }
     m_appWindow->show();
     m_appWindow->raise();
     m_appWindow->activateWindow();

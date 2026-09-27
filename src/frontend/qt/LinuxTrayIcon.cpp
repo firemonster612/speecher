@@ -1,5 +1,7 @@
 #include "frontend/qt/LinuxTrayIcon.h"
 
+#include <utility>
+
 #include "app/ApplicationController.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
@@ -53,8 +55,7 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     // notification keeps the failure findable when nobody was watching.
     connect(controller->session(), &DictationSession::popupErrorRequested,
             this, [this](const QString &message) {
-                m_tray->showMessage(QStringLiteral("Speecher"), message,
-                                    QSystemTrayIcon::Critical);
+                showMessage(QStringLiteral("Speecher"), message, {}, QSystemTrayIcon::Critical);
             });
     connect(m_tray, &QSystemTrayIcon::activated,
             this, [controller](QSystemTrayIcon::ActivationReason reason) {
@@ -67,8 +68,8 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
 
     connect(m_tray, &QSystemTrayIcon::messageClicked, this, &LinuxTrayIcon::messageClicked);
     connect(this, &LinuxTrayIcon::messageClicked, this, [this] {
-        if (m_messageClicked) {
-            m_messageClicked();
+        if (const std::function<void()> clicked = std::exchange(m_messageClicked, {})) {
+            clicked();
         }
     });
 
@@ -76,10 +77,13 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     m_tray->show();
 }
 
-void LinuxTrayIcon::showMessage(const QString &title, const QString &message, std::function<void()> clicked)
+void LinuxTrayIcon::showMessage(const QString &title,
+                                const QString &message,
+                                std::function<void()> clicked,
+                                QSystemTrayIcon::MessageIcon icon)
 {
     m_messageClicked = std::move(clicked);
-    m_tray->showMessage(title, message, QSystemTrayIcon::Information);
+    m_tray->showMessage(title, message, icon);
     emit messageShown(title, message);
 }
 

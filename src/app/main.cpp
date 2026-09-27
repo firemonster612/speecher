@@ -417,7 +417,7 @@ int main(int argc, char **argv)
         controller.settings()->setUpdatesRestoreState({});
         if (!restore.isEmpty() && restoreAge >= 0 && restoreAge < 120000
             && restore.contains(QStringLiteral("settings"))) {
-            QTimer::singleShot(0, &controller, &ApplicationController::showSettings);
+            QTimer::singleShot(0, &controller, &ApplicationController::showMain);
         }
         if (!decision.grabPath.isEmpty()) {
             controller.showMainWindow();

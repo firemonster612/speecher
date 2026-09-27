@@ -62,8 +62,6 @@ namespace {
 constexpr int kTrafficLightInset = 28;
 #endif
 
-// The settings the window remembers between openings.
-const QString kLastPageSetting = QStringLiteral("ui/appWindow/lastPage");
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
 const QString kHomePane = QStringLiteral("home");
 // The id a sidebar row carries. Spacer rows between runs carry none.
@@ -226,7 +224,25 @@ QString AppWindow::currentPane() const
 void AppWindow::selectPane(const QString &paneId)
 {
     m_stack->setCurrentWidget(m_paneWidgets.value(paneId));
-    rebuildSidebar();
+    // What's New enters and leaves the list as it is shown and left; any other
+    // pick only moves the selection.
+    if (sidebarListsWhatsNew() != m_sidebarListsWhatsNew) {
+        rebuildSidebar();
+        return;
+    }
+    const QSignalBlocker blocker(m_navigation);
+    m_navigation->setCurrentItem(nullptr);
+    for (int row = 0; row < m_navigation->count(); ++row) {
+        if (m_navigation->item(row)->data(kPaneRole).toString() == paneId) {
+            m_navigation->setCurrentRow(row);
+        }
+    }
+}
+
+bool AppWindow::sidebarListsWhatsNew() const
+{
+    return m_query.isEmpty()
+        && (currentPane() == kWhatsNewPane || !m_controller->pendingWhatsNewVersion().isEmpty());
 }
 
 void AppWindow::showTranscribeFiles(const QStringList &paths)
@@ -675,33 +691,36 @@ void AppWindow::buildSidebarShell()
                                      settings::relatedSpacing());
     mac::applyMainWindowChrome(this, sidebar->width());
 #endif
+    // Every pick goes through showPage, so choosing What's New in the list is
+    // the same as any other way of opening it.
     connect(m_navigation, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
         const QString pane = item ? item->data(kPaneRole).toString() : QString();
         if (!pane.isEmpty() && pane != currentPane()) {
-            selectPane(pane);
+            showPage(pane);
         }
     });
     connect(m_stack, &QStackedWidget::currentChanged, this, [this] {
         const QString pane = currentPane();
         m_pageTitle->setText(paneTitle(pane));
         m_backButton->setVisible(pane == kWhatsNewPane);
-        if (pane != kWhatsNewPane) {
-            m_controller->settings()->raw().setValue(kLastPageSetting, pane);
+    });
+    connect(m_controller, &ApplicationController::whatsNewChanged, this, [this] {
+        if (sidebarListsWhatsNew() != m_sidebarListsWhatsNew) {
+            rebuildSidebar();
         }
     });
-    connect(m_controller, &ApplicationController::whatsNewChanged, this, &AppWindow::rebuildSidebar);
     connect(search, &QLineEdit::textChanged, this, [this](const QString &query) {
         m_query = query;
         rebuildSidebar();
     });
     connect(search, &QLineEdit::returnPressed, this, [this] {
-        const QStringList hits = searchPanes(m_pages->schema(), m_query);
+        const QStringList hits = m_pages->searchPanes(m_query);
         if (!hits.isEmpty()) {
-            selectPane(hits.first());
+            showPage(hits.first());
         }
     });
-    showPage(launchPane(m_pages->schema(),
-                        m_controller->settings()->raw().value(kLastPageSetting).toString()));
+    rebuildSidebar();
+    showPage(kHomePane);
     auto *clearSearch = new QShortcut(QKeySequence(Qt::Key_Escape), search);
     clearSearch->setContext(Qt::WidgetShortcut);
     connect(clearSearch, &QShortcut::activated, search, &QLineEdit::clear);
@@ -848,13 +867,14 @@ void AppWindow::rebuildSidebar()
         gap->setFlags(Qt::NoItemFlags);
         gap->setSizeHint(QSize(0, settings::relatedSpacing()));
     };
+    m_sidebarListsWhatsNew = sidebarListsWhatsNew();
     if (!m_query.isEmpty()) {
-        for (const QString &id : searchPanes(schema, m_query)) {
+        for (const QString &id : m_pages->searchPanes(m_query)) {
             addPane(id);
         }
         return;
     }
-    if (current == kWhatsNewPane || !m_controller->pendingWhatsNewVersion().isEmpty()) {
+    if (m_sidebarListsWhatsNew) {
         addPane(kWhatsNewPane);
         addGap();
     }
@@ -866,6 +886,11 @@ void AppWindow::rebuildSidebar()
             addPane(id);
         }
     }
+}
+
+void AppWindow::showHome()
+{
+    showPage(kHomePane);
 }
 
 void AppWindow::runAutoSave()

@@ -44,6 +44,8 @@ public:
     // view of an Alternatives pane. Null for a pane with no schema rows (Home,
     // Transcribe) and for one this build does not have.
     SchemaSettingsPage *page(const QString &id) const;
+    // The panes a sidebar search shows, with rows as the pages now show them.
+    QStringList searchPanes(const QString &query) const;
 
     void load();
     void loadBeforeShow();
@@ -68,6 +70,7 @@ private:
     void preserveScroll(QScrollArea *scroll);
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
     void applyCapabilities();
+    Capabilities capabilities() const;
     void runPageAction(const QString &rowId);
 #ifdef Q_OS_LINUX
     void removeSpeecher();

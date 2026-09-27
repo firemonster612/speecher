@@ -648,14 +648,22 @@ void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, boo
     applyCapabilities();
 }
 
+Capabilities SettingsPageSet::capabilities() const
+{
+    return {m_targetAccessibility, m_controller->updates()->supportsAutomaticDownloads(),
+            Theme::overrideHonored()};
+}
+
 void SettingsPageSet::applyCapabilities()
 {
-    const Capabilities capabilities{m_targetAccessibility,
-                                    m_controller->updates()->supportsAutomaticDownloads(),
-                                    Theme::overrideHonored()};
     for (SchemaSettingsPage *page : std::as_const(m_pages)) {
-        page->setCapabilities(capabilities);
+        page->setCapabilities(capabilities());
     }
+}
+
+QStringList SettingsPageSet::searchPanes(const QString &query) const
+{
+    return speecher::searchPanes(m_schema, query, m_draft, capabilities());
 }
 
 } // namespace speecher

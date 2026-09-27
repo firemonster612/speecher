@@ -148,22 +148,56 @@ private slots:
         QCOMPARE(title->text(), QStringLiteral("Home"));
     }
 
-    void theWindowOpensOnTheLastPageButNeverOnWhatsNew()
+    // Opened from hidden the window shows Home; brought forward while up it
+    // keeps its page.
+    void theWindowOpensOnHome()
     {
         ApplicationController controller(true);
-        {
-            AppWindow window(&controller);
-            window.showPage(QStringLiteral("output"));
-        }
-        {
-            AppWindow window(&controller);
-            QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(),
-                     QStringLiteral("Output"));
-            window.showWhatsNew();
-        }
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        const auto title = [] {
+            for (QWidget *widget : QApplication::topLevelWidgets()) {
+                if (qobject_cast<AppWindow *>(widget) && widget->isVisible()) {
+                    return widget->findChild<QLabel *>(QStringLiteral("pageTitle"))->text();
+                }
+            }
+            return QString();
+        };
+        controller.showMainWindow();
+        QCOMPARE(title(), QStringLiteral("Home"));
+        controller.showSettingsWindow();
+        QCOMPARE(title(), QStringLiteral("General"));
+        controller.showMainWindow();
+        QCOMPARE(title(), QStringLiteral("General"));
+        frontEnd.hideMainWindow();
+        controller.showMainWindow();
+        QCOMPARE(title(), QStringLiteral("Home"));
+        frontEnd.hideMainWindow();
+    }
+
+    // Picking What's New in the sidebar is the same as opening it any other
+    // way: Back returns to where it was opened from, and it is no longer
+    // pending.
+    void whatsNewPickedInTheSidebarReturnsWhereItCameFrom()
+    {
+        SettingsStore().setUpdatesPendingWhatsNewVersion(QStringLiteral("0.0.1"));
+        ApplicationController controller(true);
+        QVERIFY(!controller.pendingWhatsNewVersion().isEmpty());
         AppWindow window(&controller);
-        QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(),
-                 QStringLiteral("Output"));
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
+        window.showPage(QStringLiteral("output"));
+        QCOMPARE(navigation->item(0)->text(), QStringLiteral("What's New"));
+
+        navigation->setCurrentRow(0);
+        QCOMPARE(title->text(), QStringLiteral("What's New"));
+        QVERIFY(controller.pendingWhatsNewVersion().isEmpty());
+
+        window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"))->click();
+        QCOMPARE(title->text(), QStringLiteral("Output"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Output"));
+        QCOMPARE(navigation->item(0)->text(), QStringLiteral("Home"));
     }
 
     void settingsOpensGeneral()

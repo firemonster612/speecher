@@ -4,6 +4,7 @@
 #include "core/SettingsStore.h"
 #include "frontend/qt/LinuxTrayIcon.h"
 #include "frontend/qt/QtFrontEnd.h"
+#include "dictation/DictationSession.h"
 
 #include <QAction>
 #include <QApplication>
@@ -114,12 +115,18 @@ private slots:
         QCOMPARE(window->findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Output"));
         window->hide();
 
+        // An error that follows has nothing to open; clicking it must not
+        // replay the earlier balloon's action.
+        emit controller.session()->popupErrorRequested(QStringLiteral("The microphone stopped."));
+        emit tray->messageClicked();
+        QVERIFY(!window->isVisible());
+
         // With the window up, the Local models page already says so.
         frontEnd.showMainWindow();
         QCoreApplication::processEvents();
         frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."),
                                        QStringLiteral("output"));
-        QCOMPARE(shown.size(), 1);
+        QCOMPARE(shown.size(), 2);
     }
 };
 

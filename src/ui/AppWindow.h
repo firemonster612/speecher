@@ -39,6 +39,8 @@ public:
     // Shows a page by id: a pane id, or "pane:view" for one of its views.
     // An unknown id shows Home (see resolvePage).
     void showPage(const QString &pageId);
+    // Where a window opened from hidden starts.
+    void showHome();
     // Opens the Transcribe page with these files added to its list.
     void showTranscribeFiles(const QStringList &paths);
     void showWhatsNew();
@@ -57,6 +59,7 @@ private:
     void buildSidebarShell();
     void rebuildSidebar();
     void selectPane(const QString &paneId);
+    bool sidebarListsWhatsNew() const;
     QString currentPane() const;
     void refreshHeaderStripColor();
     void runAutoSave();
@@ -73,6 +76,8 @@ private:
     QHash<QString, QWidget *> m_paneWidgets;
     QHash<QString, QTabWidget *> m_viewTabs;
     QString m_query;
+    // Whether the list was last built with What's New at its top.
+    bool m_sidebarListsWhatsNew = false;
     QStackedWidget *m_stack = nullptr;
     QListWidget *m_navigation = nullptr;
     QSplitter *m_sidebarSplitter = nullptr;

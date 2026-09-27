@@ -195,9 +195,9 @@ enum class PaneLayout {
     Home,
 };
 
-// One card a pane shows. Its title and footnote are those of the schema
-// section its first row comes from, so a heading reads the same on every
-// platform and cannot drift from the section it names.
+// One card a pane shows: the schema section settingsPanes() names for it,
+// with that section's title and footnote, so a heading reads the same on every
+// platform and cannot drift from the section it shows.
 struct SettingsPaneGroup {
     // An Alternatives pane's view, addressed as "pane:view"; empty otherwise.
     QString view;
@@ -241,22 +241,21 @@ struct SettingsSchema {
 
 // Every page a front end can show is named by one id: a pane id, or
 // "pane:view" for one view of an Alternatives pane (vocabulary:corrections).
-// The same ids serve SPEECHER_GRAB_PAGE, links between pages, notification
-// targets and the remembered last page.
+// The same ids serve SPEECHER_GRAB_PAGE, links between pages and notification
+// targets. A window opened from hidden shows Home; "Settings…" shows General.
 struct PageId {
     QString pane;
     QString view;
 };
-// Case-insensitive. An unknown pane warns and gives Home; an unknown view
-// warns and gives the pane's first.
+// Case-insensitive. A bare Alternatives pane id gives its first view. An
+// unknown pane, or a view the pane does not have, warns and gives Home.
 PageId resolvePage(const SettingsSchema &schema, const QString &request);
-// The page id a settings window opens on: the one remembered, unless that is
-// What's New or a pane this build lacks, in which case Home.
-QString launchPane(const SettingsSchema &schema, const QString &remembered);
 // The panes a sidebar search shows, in sidebar order: those whose title,
-// group titles, row labels or help mention the query. What's New never
-// matches; an empty query matches every pane in a run.
-QStringList searchPanes(const SettingsSchema &schema, const QString &query);
+// group titles, or visible rows' labels or help mention the query. Rows are
+// visible as settings would show them. What's New never matches; an empty
+// query matches every pane in a run.
+QStringList searchPanes(const SettingsSchema &schema, const QString &query, const AppSettings &settings,
+                        const Capabilities &capabilities);
 
 // What help and error text calls a page, so a sentence that sends someone to
 // one names a page that exists. These read the arrangement every build shares.

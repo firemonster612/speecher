@@ -2582,7 +2582,6 @@ const QList<PaneSpec> &paneSpecs()
 }
 
 const QString kHomePane = QStringLiteral("home");
-const QString kWhatsNewPane = QStringLiteral("whatsNew");
 
 // A group whose section this build lacks or leaves empty (System on Linux,
 // Advanced without a virtual keyboard) is left out.
@@ -2684,31 +2683,23 @@ PageId resolvePage(const SettingsSchema &schema, const QString &request)
             pane = &candidate;
         }
     }
-    if (!pane) {
-        qWarning().noquote() << "no settings page" << request << "- showing Home";
-        return {kHomePane, {}};
+    const bool alternatives = pane && pane->layout == PaneLayout::Alternatives && !pane->groups.isEmpty();
+    if (pane && viewId.isEmpty()) {
+        return {pane->id, alternatives ? pane->groups.first().view : QString()};
     }
-    if (pane->layout != PaneLayout::Alternatives || pane->groups.isEmpty()) {
-        return {pane->id, {}};
-    }
-    for (const SettingsPaneGroup &group : pane->groups) {
-        if (group.view.compare(viewId, Qt::CaseInsensitive) == 0) {
-            return {pane->id, group.view};
+    if (alternatives) {
+        for (const SettingsPaneGroup &group : pane->groups) {
+            if (group.view.compare(viewId, Qt::CaseInsensitive) == 0) {
+                return {pane->id, group.view};
+            }
         }
     }
-    if (!viewId.isEmpty()) {
-        qWarning().noquote() << "no view" << viewId << "on settings page" << pane->id;
-    }
-    return {pane->id, pane->groups.first().view};
+    qWarning().noquote() << "no settings page" << request << "- showing Home";
+    return {kHomePane, {}};
 }
 
-QString launchPane(const SettingsSchema &schema, const QString &remembered)
-{
-    const QString pane = remembered.section(QLatin1Char(':'), 0, 0);
-    return pane == kWhatsNewPane || !schema.pane(pane) ? kHomePane : remembered;
-}
-
-QStringList searchPanes(const SettingsSchema &schema, const QString &query)
+QStringList searchPanes(const SettingsSchema &schema, const QString &query, const AppSettings &settings,
+                        const Capabilities &capabilities)
 {
     const auto hit = [needle = query.trimmed()](const QString &text) {
         return text.contains(needle, Qt::CaseInsensitive);
@@ -2722,6 +2713,10 @@ QStringList searchPanes(const SettingsSchema &schema, const QString &query)
                 matches = matches || hit(group.title) || hit(group.help);
                 for (const QString &rowId : group.rows) {
                     const SettingsRow *row = schema.row(rowId);
+                    // A row the pane is not showing is not something to find there.
+                    if (row->visible && !row->visible(settings, capabilities)) {
+                        continue;
+                    }
                     matches = matches || hit(row->label) || hit(row->help);
                 }
             }
