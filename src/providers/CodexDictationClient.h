@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QList>
 #include <QObject>
+#include <QTimer>
 #include <QSet>
 #include <QUrl>
 
@@ -23,7 +24,9 @@ class CodexDictationClient final : public QObject {
     Q_OBJECT
 
 public:
-    explicit CodexDictationClient(QObject *parent = nullptr);
+    // closeTimeoutMs: how long the service may go quiet after the client
+    // asks to close before the stream counts as failed.
+    explicit CodexDictationClient(QObject *parent = nullptr, int closeTimeoutMs = 8000);
 
     void start(const QUrl &url, const QString &accessToken, int sampleRateHz);
     void sendAudio(const QByteArray &pcm);
@@ -43,11 +46,13 @@ private:
     void sendAudioMessage(const QByteArray &pcm);
     void flushPendingAudio();
     void requestFinalization();
+    void extendCloseWait();
     void handleTextMessage(const QString &message);
     void fail(const QString &message, bool retryable, const QString &phase);
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     QWebSocket m_socket;
+    QTimer m_closeTimer;
 #endif
     QList<QByteArray> m_pendingAudio;
     QSet<QString> m_finalUtteranceIds;

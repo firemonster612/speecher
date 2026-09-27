@@ -110,6 +110,39 @@ private slots:
         peer->deleteLater();
     }
 
+    // A file is sent faster than real time, so the service is still
+    // transcribing it when the client asks to close. Text arriving meanwhile
+    // keeps the close waiting; only a service that goes quiet times out.
+    void codexCloseWaitsWhileTextKeepsComing()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        server.setSupportedSubprotocols({QStringLiteral("openai-bearer.test-token")});
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        CodexDictationClient client(nullptr, 300);
+        QSignalSpy connected(&client, &CodexDictationClient::connected);
+        QSignalSpy failed(&client, &CodexDictationClient::failed);
+        client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream").arg(server.serverPort())),
+                     QStringLiteral("test-token"), 16000);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{}}})"));
+        QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
+
+        client.stop();
+        // Twice the close timeout in all, text every 150 ms.
+        for (int i = 0; i < 4; ++i) {
+            QTest::qWait(150);
+            peer->sendTextMessage(QStringLiteral(
+                R"({"type":"transcript.segment","sequence_no":2,"utterance_id":"u%1","text":"still going"})").arg(i));
+        }
+        QTest::qWait(100);
+        QCOMPARE(failed.count(), 0);
+
+        QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
+        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("finalize"));
+    }
+
     void codexDictationClientEndsAStreamOnAnyServiceEnd_data()
     {
         QTest::addColumn<bool>("sessionStarted");
