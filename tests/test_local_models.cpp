@@ -193,6 +193,34 @@ private slots:
         QVERIFY(modelsForCheck().isEmpty());
     }
 
+    void aSavedEndpointIsCheckedOnceEditsPauseAndGetsTheFirstModel()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        auto snapshot = settings.snapshot();
+        snapshot.refinement.providerId = "endpoint";
+        snapshot.refinement.endpoint.baseUrl = "http://127.0.0.1:1/v";
+        settings.applySnapshot(snapshot);
+        // Still typing: the address grows before the pause.
+        snapshot.refinement.endpoint.baseUrl = QString("http://127.0.0.1:%1/v1").arg(server.serverPort());
+        settings.applySnapshot(snapshot);
+        QVERIFY(setup.liveFacts().refinementEndpointStatus.isEmpty());
+
+        QTRY_VERIFY(server.hasPendingConnections());
+        QVERIFY(serveOnce(server, "200 OK", R"({"data":[{"id":"first"},{"id":"second"}]})")
+                    .startsWith("GET /v1/models"));
+        QTRY_COMPARE(settings.refinementEndpointSettings().model, QString("first"));
+        QCOMPARE(setup.liveFacts().refinementEndpointStatus, QString("Connected. Models available: 2."));
+        QCOMPARE(setup.liveFacts().refinementEndpointModels, QStringList({"first", "second"}));
+        QVERIFY(!server.waitForNewConnection(1000));
+    }
+
     void sharedChoicesPreserveSavedConfiguration()
     {
         const QList<DetectedRunner> runners{{"ollama", "Ollama", {}, {}, {"other", "gemma4:e4b:latest"}},

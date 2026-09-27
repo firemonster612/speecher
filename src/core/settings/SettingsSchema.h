@@ -254,8 +254,9 @@ struct RefinementProvider {
 // - localRunnerDetect, localModelsRunner: LocalSetup::detectRunners()
 // - localModelFolder: open LocalModelStore::directory() in the file manager
 struct LiveFacts {
-    // The last Test connection's verdict, "Checking…" while one runs, empty
-    // before the first.
+    // The last connection check's verdict, "Checking…" while one runs, empty
+    // before the first. LocalSetup runs one on its own once an endpoint in
+    // use is filled in, as well as for Test connection.
     QString speechEndpointStatus;
     QStringList speechEndpointModels;
     QString refinementEndpointStatus;

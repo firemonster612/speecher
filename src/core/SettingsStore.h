@@ -184,6 +184,8 @@ public:
     QSettings &raw();
 
 signals:
+    // After applySnapshot, with what dictationSnapshot read just before it.
+    void snapshotApplied(const AppSettings &previous);
     void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
     void correctionLearningEnabledChanged(bool enabled);
     void updateSettingsChanged();

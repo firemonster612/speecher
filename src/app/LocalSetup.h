@@ -8,6 +8,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QTimer>
 
 #include <optional>
 
@@ -156,7 +157,9 @@ public:
     };
     Pull pull() const;
 
-    // A check that lists models while no model is saved saves the first.
+    // Also run on their own 800 ms after the saved endpoint in use gets a
+    // server, or its server, path, key or format changes. A check that lists
+    // models while no model is saved saves the first.
     void checkSpeechEndpoint(const SpeechEndpointSettings &endpoint);
     void checkRefinementEndpoint(const RefinementSettings &settings);
 
@@ -205,6 +208,8 @@ private:
     std::optional<RefinementEndpoint> m_checkedRefinement;
     EndpointState m_speechEndpoint;
     EndpointState m_refinementEndpoint;
+    QTimer m_speechCheckDelay;
+    QTimer m_refinementCheckDelay;
 };
 
 } // namespace speecher

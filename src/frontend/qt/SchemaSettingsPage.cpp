@@ -592,7 +592,11 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
             }
             connect(edit, &QLineEdit::textEdited, this, announce);
             row.value = [edit] { return edit->text(); };
-            row.setValue = [edit](const QVariant &value) { edit->setText(value.toString()); };
+            // setText moves the cursor to the end even for the same text, and
+            // an automatic connection check can reload the page mid-typing.
+            row.setValue = [edit](const QVariant &value) {
+                if (edit->text() != value.toString()) edit->setText(value.toString());
+            };
             return edit;
         }
         // Free text that has values worth offering is an editable combo: the

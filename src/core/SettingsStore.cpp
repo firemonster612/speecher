@@ -158,6 +158,7 @@ AppSettings SettingsStore::snapshotReading(bool waitForKeyring) const
 
 void SettingsStore::applySnapshot(const AppSettings &draft)
 {
+    const AppSettings previous = dictationSnapshot();
     const auto save = [this, &draft](SecretStore::Secret secret, const QString &value) {
         if (value.trimmed().isEmpty() && draft.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) return;
         m_secrets->saveSecret(secret, value);
@@ -219,6 +220,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     if (!setBindingRules(draft.bindings, &replacementError)) {
         qWarning("dropped invalid replacement rules: %s", qPrintable(replacementError));
     }
+    emit snapshotApplied(previous);
 }
 
 bool SettingsStore::launchAtLogin() const

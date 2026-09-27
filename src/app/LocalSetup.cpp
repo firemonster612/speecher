@@ -42,6 +42,26 @@ Endpoint connection(Endpoint endpoint)
     return endpoint;
 }
 
+// The endpoint dictation would use, once it has a server to ask.
+std::optional<SpeechEndpointSettings> speechEndpointInUse(const AppSettings &settings)
+{
+    if (settings.speech.providerId != QStringLiteral("endpoint") || settings.speech.endpoint.baseUrl.isEmpty()) {
+        return std::nullopt;
+    }
+    return connection(settings.speech.endpoint);
+}
+
+std::optional<RefinementEndpoint> refinementEndpointInUse(const AppSettings &settings)
+{
+    const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings.refinement);
+    if (settings.refinement.providerId != QStringLiteral("endpoint") || endpoint.apiBase.isEmpty()) {
+        return std::nullopt;
+    }
+    return connection(endpoint);
+}
+
+constexpr int kEndpointCheckDelayMs = 800;
+
 } // namespace
 
 bool offersSetupSpeechProvider(const QString &id, const QString &saved, bool localAvailable)
@@ -215,6 +235,26 @@ LocalSetup::LocalSetup(SettingsStore &settings,
                 });
     }
 #endif
+    // An endpoint someone is filling in is checked once they pause, without
+    // pressing Test connection; one request per pause, not per keystroke.
+    for (QTimer *delay : {&m_speechCheckDelay, &m_refinementCheckDelay}) {
+        delay->setSingleShot(true);
+        delay->setInterval(kEndpointCheckDelayMs);
+    }
+    connect(&m_speechCheckDelay, &QTimer::timeout, this,
+            [this] { checkSpeechEndpoint(m_settings.dictationSnapshot().speech.endpoint); });
+    connect(&m_refinementCheckDelay, &QTimer::timeout, this,
+            [this] { checkRefinementEndpoint(m_settings.dictationSnapshot().refinement); });
+    connect(&m_settings, &SettingsStore::snapshotApplied, this, [this](const AppSettings &previous) {
+        const AppSettings current = m_settings.dictationSnapshot();
+        const auto reschedule = [](QTimer &delay, const auto &now, const auto &before) {
+            if (now == before) return;
+            if (now) delay.start();
+            else delay.stop();
+        };
+        reschedule(m_speechCheckDelay, speechEndpointInUse(current), speechEndpointInUse(previous));
+        reschedule(m_refinementCheckDelay, refinementEndpointInUse(current), refinementEndpointInUse(previous));
+    });
     QTimer::singleShot(0, this, [this] {
         const auto pending = m_settings.raw().value(SettingsKeys::LocalPendingDownloads).toStringList();
         for (const auto &id : pending) {
@@ -524,6 +564,7 @@ LocalSetup::Pull LocalSetup::pull() const
 
 void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
 {
+    m_speechCheckDelay.stop();
     const auto generation = ++m_speechEndpoint.generation;
     m_checkedSpeech = connection(endpoint);
     m_speechEndpoint.result = {};
@@ -548,6 +589,7 @@ void LocalSetup::checkSpeechEndpoint(const SpeechEndpointSettings &endpoint)
 
 void LocalSetup::checkRefinementEndpoint(const RefinementSettings &settings)
 {
+    m_refinementCheckDelay.stop();
     const auto generation = ++m_refinementEndpoint.generation;
     m_checkedRefinement = connection(resolvedRefinementEndpoint(settings));
     m_refinementEndpoint.result = {};
