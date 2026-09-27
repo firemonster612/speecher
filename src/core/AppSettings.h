@@ -10,6 +10,7 @@
 #include <QMap>
 
 #include <array>
+
 namespace speecher {
 
 enum class UpdateChannel {

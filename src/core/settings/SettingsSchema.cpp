@@ -1811,11 +1811,11 @@ SettingsPage vocabularyPage()
     limit.label = QStringLiteral("Limit");
     limit.kind = RowKind::Info;
     limit.value = [](const AppSettings &settings) {
-        const QStringList terms = vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary));
         if (settings.speech.providerId == QStringLiteral("local")) {
             return QVariant(QStringLiteral("None are sent to local models"));
         }
-        return QVariant(VocabularyLimit::summary(terms));
+        return QVariant(VocabularyLimit::summary(
+            vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary))));
     };
 
     const QString help = QStringLiteral("Names and words Speecher should recognize. Every term is "
@@ -2390,8 +2390,8 @@ bool SettingsSchema::hasPage(const QString &id) const
 
 QList<RowOption> localRunsOnOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen)
 {
-    QList<RowOption> options{{localRunsOnId({}), QStringLiteral("Automatic")},
-                             {QStringLiteral("cpu"), QStringLiteral("CPU")}};
+    QList<RowOption> options{{localRunsOnId({}), localBackendName(QStringLiteral("auto"))},
+                             {QStringLiteral("cpu"), localBackendName(QStringLiteral("cpu"))}};
     for (const LocalGpu &gpu : gpus) {
         options.append({localRunsOnId({gpu.backend, gpu.deviceId}),
                         QStringLiteral("%1 (%2)").arg(gpu.description, localBackendName(gpu.backend))});

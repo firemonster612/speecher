@@ -161,13 +161,13 @@ QString ownModelRefinementSummary(const RefinementSettings &settings)
 HardwareProfile runsOnProfile(const HardwareSummary &hardware, const LocalRunsOn &runsOn)
 {
     HardwareProfile profile = hardware.profile;
-    if (runsOn.backend == QStringLiteral("auto") && runsOn.deviceId.isEmpty()) {
+    const bool anyBackend = runsOn.backend == QStringLiteral("auto");
+    if (anyBackend && runsOn.deviceId.isEmpty()) {
         return profile;
     }
     const auto card = std::find_if(hardware.gpus.cbegin(), hardware.gpus.cend(),
-                                   [&runsOn](const LocalSpeechEngine::Device &gpu) {
-                                       return gpu.id == runsOn.deviceId
-                                           && (runsOn.backend == QStringLiteral("auto") || gpu.kind == runsOn.backend);
+                                   [&](const LocalSpeechEngine::Device &gpu) {
+                                       return gpu.id == runsOn.deviceId && (anyBackend || gpu.kind == runsOn.backend);
                                    });
     if (runsOn.backend == QStringLiteral("cpu") || card == hardware.gpus.cend()) {
         profile.accelerator = HardwareProfile::Accelerator::Cpu;
