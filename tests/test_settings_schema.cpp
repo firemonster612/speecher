@@ -932,9 +932,10 @@ private slots:
         QCOMPARE(limit.value(settings).toString(),
                  VocabularyLimit::summary({QStringLiteral("Speecher")}));
 
-        // It counts what the speech provider in use receives: local models get none.
+        // It counts what the speech provider in use receives: local models get no hints.
         settings.speech.providerId = QStringLiteral("local");
-        QCOMPARE(limit.value(settings).toString(), QStringLiteral("None are sent to local models"));
+        QCOMPARE(limit.value(settings).toString(), QStringLiteral("1 term, used for refinement"));
+
     }
 
     void aCorrectionKeepsTheFieldsNoColumnShows()

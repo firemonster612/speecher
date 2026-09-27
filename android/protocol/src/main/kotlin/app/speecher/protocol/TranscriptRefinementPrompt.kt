@@ -163,10 +163,16 @@ private fun contextJson(context: RefinementContext): JsonObject = buildJsonObjec
     put("writing_profile", JsonPrimitive(context.profile.id))
 }
 
+/**
+ * How many vocabulary terms a refinement request carries, the desktop's ceiling. Refinement reads
+ * the list as prompt text, so it takes far more than the speech hints do.
+ */
+const val MAX_REFINEMENT_TERMS = 1000
+
 internal fun refinementUserMessage(raw: String, vocabulary: List<String>): String {
     val task = buildJsonObject {
         put("mode", JsonPrimitive("refine_dictation"))
         put("raw_transcript", JsonPrimitive(raw))
     }
-    return "Dictation refinement input. Refine raw_transcript using the system instructions and return only the final refined transcript.\n${task}\n\nPreferred vocabulary:\n${vocabulary.joinToString(", ")}\n\nBinding aliases:\n"
+    return "Dictation refinement input. Refine raw_transcript using the system instructions and return only the final refined transcript.\n${task}\n\nPreferred vocabulary:\n${vocabulary.take(MAX_REFINEMENT_TERMS).joinToString(", ")}\n\nBinding aliases:\n"
 }

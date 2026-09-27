@@ -2,6 +2,7 @@
 #include "providers/EndpointRequest.h"
 
 #include "core/EndpointUrl.h"
+#include "core/VocabularyLimit.h"
 #include "providers/TranscriptRefinementPrompt.h"
 
 #include <QDebug>
@@ -107,6 +108,9 @@ void ChatCompletionsRefiner::refine(const QString &rawTranscript,
     const bool smallModel = m_audience == Audience::SmallLocalModel;
     const QString systemPrompt = smallModel ? compactRefinementSystemPrompt(refinementStyle, context)
                                             : refinementSystemPrompt(refinementStyle, context);
+    // A long list swamps a small model the way the full prompt does, so it
+    // gets no more terms than the speech service.
+    const QStringList sentVocabulary = smallModel ? VocabularyLimit::limited(vocabulary) : vocabulary;
     m_buildRequest = [=](bool withReasoningFields) -> StreamingRefinement::Request {
         QNetworkRequest request = endpointRequest(QUrl(withoutTrailingSlashes(endpointBase) + QStringLiteral("/chat/completions")));
         request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
@@ -121,7 +125,7 @@ void ChatCompletionsRefiner::refine(const QString &rawTranscript,
                             {QStringLiteral("content"), systemPrompt}},
                 QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
                             {QStringLiteral("content"), transcriptRefinementUserMessage(
-                                 rawTranscript, vocabulary, bindingVocabulary, context)}},
+                                 rawTranscript, sentVocabulary, bindingVocabulary, context)}},
             }},
         };
         if (smallModel) {

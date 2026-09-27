@@ -541,6 +541,34 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(systemPrompt.contains(QStringLiteral("Rule: never_use_em_dashes")));
     }
 
+    void refinementGetsTheWholeVocabularyWhileSpeechGetsTheCappedHints()
+    {
+        AppSettings settings;
+        for (int index = 0; index < 1005; ++index) {
+            settings.vocabulary.append({QStringLiteral("term%1").arg(index, 4, 10, QLatin1Char('0'))});
+        }
+        settings.vocabulary.append({QStringLiteral("Starred"), QStringLiteral("manual"), true});
+        settings.speech.vocabulary = {QStringLiteral("only speech")};
+        settings.learnedCorrections = {
+            {QStringLiteral("0"), QStringLiteral("cute"), QStringLiteral("Qt"), QString(), 1, 0.98, true, 1, 1},
+        };
+
+        const QStringList refinement =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}).refinementVocabulary;
+        // Read from the stored list in priority order, not from the capped speech
+        // request, and cut at the refinement ceiling, which a correction cannot pass.
+        QCOMPARE(refinement.size(), 1000);
+        QCOMPARE(refinement.first(), QStringLiteral("Starred"));
+        QCOMPARE(refinement.at(150), QStringLiteral("term0149"));
+        QCOMPARE(refinement.last(), QStringLiteral("term0998"));
+        QVERIFY(!refinement.contains(QStringLiteral("only speech")));
+        QVERIFY(!refinement.contains(QStringLiteral("Qt")));
+
+        settings.vocabulary = {{QStringLiteral("Speecher")}};
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}).refinementVocabulary,
+                 (QStringList{QStringLiteral("Speecher"), QStringLiteral("Qt")}));
+    }
+
     void transcriptPipelineScopesLearnedCorrectionsAndPreservesUserBindingPrecedence()
     {
         AppSettings settings;

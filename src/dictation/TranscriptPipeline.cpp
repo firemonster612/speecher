@@ -1,5 +1,8 @@
 #include "dictation/TranscriptPipeline.h"
 
+#include "core/Vocabulary.h"
+#include "core/VocabularyLimit.h"
+
 #include <QSet>
 
 namespace speecher {
@@ -25,24 +28,28 @@ QList<BindingRule> withoutNoBindPhrases(const QList<BindingRule> &rules,
     return filtered;
 }
 
+// Every stored term in priority order, not the speech request's capped list:
+// the speech service takes a hundred hints, while refinement reads the list as
+// prompt text and can use the rest.
 QStringList refinementVocabulary(const AppSettings &settings)
 {
     QSet<QString> seen;
     QStringList deduplicated;
-    for (const QString &term : settings.speech.vocabulary) {
+    const auto append = [&seen, &deduplicated](const QString &term) {
         const QString cleaned = term.simplified();
         const QString key = cleaned.toCaseFolded();
-        if (!cleaned.isEmpty() && !seen.contains(key)) {
+        if (!cleaned.isEmpty() && !seen.contains(key)
+            && deduplicated.size() < VocabularyLimit::maxRefinementTerms) {
             seen.insert(key);
             deduplicated.append(cleaned);
         }
+    };
+    for (const VocabularyEntry &entry : normalizeVocabularyEntries(settings.vocabulary)) {
+        append(entry.term);
     }
     for (const LearnedCorrection &correction : settings.learnedCorrections) {
-        const QString cleaned = correction.corrected.simplified();
-        const QString key = cleaned.toCaseFolded();
-        if (correction.enabled && !cleaned.isEmpty() && !seen.contains(key)) {
-            seen.insert(key);
-            deduplicated.append(cleaned);
+        if (correction.enabled) {
+            append(correction.corrected);
         }
     }
     return deduplicated;

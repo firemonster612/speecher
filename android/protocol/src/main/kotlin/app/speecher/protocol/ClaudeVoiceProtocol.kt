@@ -53,19 +53,25 @@ fun claudeVoiceStreamQuery(env: (String) -> String? = System::getenv): List<Pair
  *
  * Every character is in U+0000..U+00FF, so the length is the byte count when sent as ISO-8859-1.
  */
-fun claudeVoiceKeytermsHeader(vocabulary: Iterable<String>): String {
-    val header = StringBuilder()
+fun claudeVoiceKeytermsHeader(vocabulary: Iterable<String>): String =
+    claudeVoiceKeyterms(vocabulary).joinToString(",")
+
+/** The terms [claudeVoiceKeytermsHeader] carries, as they appear in it. */
+fun claudeVoiceKeyterms(vocabulary: Iterable<String>): List<String> {
+    val terms = mutableListOf<String>()
+    var length = 0
     val seen = mutableSetOf<String>()
     for (value in vocabulary) {
         val term = value.simplified()
         val key = term.lowercaseAscii()
         if (term.isEmpty() || term.any { it > 'ÿ' } || key in seen) continue
-        val separator = if (header.isEmpty()) "" else ","
-        if (header.length + separator.length + term.length > MAX_KEYTERMS_BYTES) continue
+        val separator = if (terms.isEmpty()) 0 else 1
+        if (length + separator + term.length > MAX_KEYTERMS_BYTES) continue
         seen += key
-        header.append(separator).append(term)
+        terms += term
+        length += separator + term.length
     }
-    return header.toString()
+    return terms
 }
 
 /**

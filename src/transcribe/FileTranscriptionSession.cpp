@@ -181,6 +181,7 @@ bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeO
     m_batchSettings.refinement.providerId = options.refinementProviderId;
     if (!options.applyVocabulary) {
         m_batchSettings.speech.vocabulary.clear();
+        m_batchSettings.vocabulary.clear();
         m_batchSettings.learnedCorrections.clear();
         m_batchSettings.bindings.clear();
     }

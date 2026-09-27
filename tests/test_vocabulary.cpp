@@ -76,9 +76,17 @@ private slots:
         QCOMPARE(sent.first(), QStringLiteral("zzz starred"));
 
         QCOMPARE(VocabularyLimit::summary(vocabularyTermsOf(settings.vocabularyEntries())),
-                 QStringLiteral("183 terms, the 100 highest priority are sent"));
+                 QStringLiteral("183 terms. The first 100 are speech hints, and all are used for refinement."));
         QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}),
-                 QStringLiteral("2 of 100 terms, using 2 of 500 tokens"));
+                 QStringLiteral("2 of 100 speech hints, using 2 of 500 tokens"));
+        QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}, false),
+                 QStringLiteral("2 terms, all are used for refinement"));
+        QStringList tooMany;
+        for (int index = 0; index < 1001; ++index) {
+            tooMany << QStringLiteral("term%1").arg(index);
+        }
+        QCOMPARE(VocabularyLimit::summary(tooMany),
+                 QStringLiteral("1001 terms. The first 100 are speech hints, and the first 1000 are used for refinement."));
     }
 
     void learnedCorrectionsRespectTheSendCap()

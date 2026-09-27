@@ -354,4 +354,11 @@ class TranscriptRefinerTest {
             }
         }
     }
+
+    @Test
+    fun `refinement carries at most the desktop's thousand vocabulary terms`() {
+        val message = refinementUserMessage("helo", List(1001) { "t$it" })
+        assert(message.contains(", t999\n\nBinding aliases:")) { message.takeLast(40) }
+        assert(!message.contains("t1000")) { "t1000 was sent" }
+    }
 }
