@@ -64,7 +64,8 @@ which schema section each pane shows (`settingsPanes()` and
 `settingsSidebarRuns()` in `SettingsSchema.cpp`). A pane group's heading is its
 section's title, so the two cannot differ. Pages are addressed by one id space,
 a pane id or `pane:view` for one view of a pane, used for screenshot automation,
-links between pages, notification targets and the remembered last page. Text
+links between pages and notification targets. A window opened from hidden
+shows Home, and "Settings…" opens General. Text
 that names a page takes the name from `paneTitle` or `paneTitleForRow`, and the
 sidebar search runs over `searchPanes`. A front end maps icon ids to its own
 icons and otherwise holds no page list of its own.

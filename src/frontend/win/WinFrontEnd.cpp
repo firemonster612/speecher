@@ -32,7 +32,7 @@ struct WinFrontEnd::Native {
     {
         panel = std::make_unique<DictationPanel>(controller, frontEnd);
         tray = std::make_unique<TrayIcon>(
-            controller, [q] { q->showSettingsWindow(); }, frontEnd);
+            controller, [q] { q->showSettingsWindow(); }, [q] { q->showMainWindow(); }, frontEnd);
         trayReady = new QTimer(frontEnd);
         trayReady->setSingleShot(true);
         trayReady->setInterval(50);
@@ -127,7 +127,7 @@ WinFrontEnd::~WinFrontEnd()
     m_controller->updates()->setRestoreStateProvider({});
 }
 
-// The window on the page it last showed.
+// Opened from closed the window shows Home; one already up keeps its page.
 void WinFrontEnd::showMainWindow()
 {
     m_native->trayReady->stop();

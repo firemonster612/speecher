@@ -161,15 +161,15 @@ void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
     }
 }
 
-void ShortcutRecorder::appendPane(const StackPanel &column, PaneHost &host)
+void ShortcutRecorder::appendPane(const StackPanel &column, const QString &title, PaneHost &host)
 {
-    column.Children().Append([] {
+    column.Children().Append([&title] {
         TextBlock header;
         header.Style(Application::Current()
                          .Resources()
                          .Lookup(box_value(L"SettingsSectionHeaderStyle"))
                          .as<Style>());
-        header.Text(L"Global Shortcut");
+        header.Text(hs(title));
         return header;
     }());
 

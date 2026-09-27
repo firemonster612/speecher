@@ -97,6 +97,10 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         if settings == nil {
             settings = SpeecherSettingsWindow(model: model)
         }
+        // Opened from closed it starts on Home; one already up keeps its page.
+        if settings?.isVisible != true {
+            model.showPage("home")
+        }
         settings?.show()
         NSApp.activate(ignoringOtherApps: true)
     }

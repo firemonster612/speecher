@@ -11,8 +11,10 @@ class ApplicationController;
 
 class TrayIcon final : public QObject {
 public:
+    // showSettings runs for the menu's "Settings…", showMain for a double-click.
     explicit TrayIcon(ApplicationController *controller,
                       std::function<void()> showSettings,
+                      std::function<void()> showMain,
                       QObject *parent = nullptr);
     ~TrayIcon() override;
 

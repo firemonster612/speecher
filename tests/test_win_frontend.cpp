@@ -144,12 +144,10 @@ private slots:
         store->setLearnedCorrections({{"one", "githab", "GitHub", "editor", 100, 0.8, true, 1, 100}});
         win::SettingsModel model(controller.get());
         QList<QVariantMap> editorRecords;
-        for (const auto &page : model.pages()) {
-            for (const auto &section : page.sections) {
-                for (const auto &row : section.rows) {
-                    if (row.id == QStringLiteral("learnedCorrections")) {
-                        editorRecords = row.value.value<QList<QVariantMap>>();
-                    }
+        for (const SettingsPaneGroup &group : model.schema().pane(QStringLiteral("vocabulary"))->groups) {
+            for (const auto &row : model.section(group).rows) {
+                if (row.id == QStringLiteral("learnedCorrections")) {
+                    editorRecords = row.value.value<QList<QVariantMap>>();
                 }
             }
         }

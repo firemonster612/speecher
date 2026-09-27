@@ -1155,14 +1155,10 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return @[page.pane.toNSString(), page.view.toNSString()];
 }
 
-- (NSString *)launchPane:(NSString *)remembered
-{
-    return speecher::launchPane(_state->schema, QString::fromNSString(remembered)).toNSString();
-}
-
 - (NSArray<NSString *> *)searchPanes:(NSString *)query
 {
-    return bridgedStrings(speecher::searchPanes(_state->schema, QString::fromNSString(query)));
+    return bridgedStrings(speecher::searchPanes(_state->schema, QString::fromNSString(query),
+                                                _state->draft, _state->capabilities));
 }
 
 - (NSArray<NSArray<NSString *> *> *)sidebarRuns

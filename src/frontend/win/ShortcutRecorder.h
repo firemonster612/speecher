@@ -12,7 +12,9 @@ namespace speecher::win {
 class ShortcutRecorder {
 public:
     // Appends the pane's cards to an already-titled settings column.
+    // title is the pane group's heading, which core owns.
     static void appendPane(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column,
+                           const QString &title,
                            PaneHost &host);
 
     // Starts or ends recording, suspending the hotkey registration while it

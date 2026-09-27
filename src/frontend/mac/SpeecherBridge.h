@@ -164,9 +164,8 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // A page id ("general", "vocabulary:corrections") as the pane and view it
 // names, speecher::resolvePage's answer: an unknown pane gives Home.
 - (NSArray<NSString *> *)resolvePage:(NSString *)pageId NS_SWIFT_NAME(resolvePage(_:));
-// The page a window opens on given the one remembered: never What's New.
-- (NSString *)launchPane:(NSString *)remembered NS_SWIFT_NAME(launchPane(_:));
-// The pane ids a sidebar search shows, from the core index.
+// The pane ids a sidebar search shows, from the core index, with rows as
+// the draft shows them.
 - (NSArray<NSString *> *)searchPanes:(NSString *)query NS_SWIFT_NAME(searchPanes(_:));
 // What an Action row's button does. The schema names the commands; what they do
 // belongs to the front end, as it does on Qt.

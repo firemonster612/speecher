@@ -280,29 +280,14 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     return snapshot;
 }
 
-QList<PageSnapshot> SettingsModel::pages() const
-{
-    QList<PageSnapshot> pages;
-    for (const SettingsPage &page : m_schema.pages) {
-        PageSnapshot pageSnapshot{page.id, {}};
-        for (const SettingsSection &section : page.sections) {
-            SectionSnapshot sectionSnapshot{section.title, section.help, {}};
-            for (const SettingsRow &row : section.rows) {
-                if (row.visible && !row.visible(m_draft, m_capabilities)) {
-                    continue;
-                }
-                sectionSnapshot.rows.append(rowSnapshot(row));
-            }
-            pageSnapshot.sections.append(sectionSnapshot);
-        }
-        pages.append(pageSnapshot);
-    }
-    return pages;
-}
-
 const SettingsSchema &SettingsModel::schema() const
 {
     return m_schema;
+}
+
+QStringList SettingsModel::searchPanes(const QString &query) const
+{
+    return speecher::searchPanes(m_schema, query, m_draft, m_capabilities);
 }
 
 SectionSnapshot SettingsModel::section(const SettingsPaneGroup &group) const

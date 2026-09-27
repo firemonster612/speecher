@@ -48,7 +48,6 @@ using namespace winrt::Microsoft::UI::Xaml::Controls;
 using winrt::Microsoft::UI::Xaml::Input::FocusManager;
 using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 
-const QString kPaneSetting = QStringLiteral("ui/settingsPane");
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
 const QString kHomePane = QStringLiteral("home");
@@ -194,16 +193,8 @@ struct SettingsWindow::Native {
         }
         // Edits left from the last showing are not edits any more.
         model.reloadDraft();
-        // The last page, unless it was What's New or is gone.
-        const PageId launch = resolvePage(
-            model.schema(), launchPane(model.schema(), controller->settings()->raw().value(kPaneSetting).toString()));
-        currentPane = launch.pane;
-        if (!launch.view.isEmpty()) {
-            host.views.insert(launch.pane, launch.view);
-        }
-        if (currentPane == kTranscribePane) {
-            transcribe->enter();
-        }
+        // A window opened from closed starts on Home.
+        currentPane = kHomePane;
         createWindow();
         SetForegroundWindow(windowHandle());
     }
@@ -268,9 +259,9 @@ struct SettingsWindow::Native {
         });
         // Enter opens the first hit.
         search.QuerySubmitted([this](const AutoSuggestBox &, const auto &) {
-            const QStringList hits = searchPanes(model.schema(), query);
+            const QStringList hits = model.searchPanes(query);
             if (!hits.isEmpty()) {
-                selectPane(hits.first());
+                showPage(hits.first());
             }
         });
         navigation.AutoSuggestBox(search);
@@ -282,9 +273,11 @@ struct SettingsWindow::Native {
             if (!item) {
                 return;
             }
+            // Through showPage, so picking What's New here is the same as any
+            // other way of opening it.
             const QString id = qs(unbox_value<hstring>(item.as<NavigationViewItem>().Tag()));
             if (id != currentPane) {
-                selectPane(id);
+                showPage(id);
             }
         });
         Grid::SetRow(navigation, 1);
@@ -451,7 +444,7 @@ struct SettingsWindow::Native {
         };
         if (!query.isEmpty()) {
             // A search lists its hits alone, from the core index.
-            for (const QString &id : searchPanes(schema, query)) {
+            for (const QString &id : model.searchPanes(query)) {
                 append(id);
             }
         } else {
@@ -491,9 +484,6 @@ struct SettingsWindow::Native {
             transcribe->forget(host);
         }
         currentPane = id;
-        if (id != kWhatsNewPane) {
-            controller->settings()->raw().setValue(kPaneSetting, id);
-        }
         if (titleBar) {
             titleBar.IsBackButtonVisible(id == kWhatsNewPane);
         }

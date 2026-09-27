@@ -74,11 +74,6 @@ struct SectionSnapshot {
     QList<RowSnapshot> rows;
 };
 
-struct PageSnapshot {
-    QString id;
-    QList<SectionSnapshot> sections;
-};
-
 // The settings surface as the schema describes it, over a draft of the stored
 // settings — SpeecherBridge's SchemaState for the Windows front end. Reading
 // pages() re-derives every row's value, choices and enabled flag from the
@@ -88,11 +83,12 @@ public:
     explicit SettingsModel(ApplicationController *controller);
     ~SettingsModel();
 
-    QList<PageSnapshot> pages() const;
     // The pane arrangement, fixed for the life of the model.
     const SettingsSchema &schema() const;
     // A pane group's rows as the draft now has them, for its card.
     SectionSnapshot section(const SettingsPaneGroup &group) const;
+    // The panes a sidebar search shows, with rows as the draft shows them.
+    QStringList searchPanes(const QString &query) const;
     void setValue(const QString &rowId, const QVariant &value);
     // Writes the draft back to the store, applies the theme and re-reads it.
     void commit();

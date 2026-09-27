@@ -25,7 +25,7 @@ struct RootView: View {
         .searchable(text: $query, placement: .sidebar, prompt: "Search")
         // Return opens the first hit.
         .onSubmit(of: .search) {
-            if let first = model.searchPanes(query).first { model.pane = first.id }
+            if let first = model.searchPanes(query).first { model.showPage(first.id) }
         }
         .toolbar(removing: .sidebarToggle)
         .toolbar(removing: .title)
@@ -64,6 +64,9 @@ struct RootView: View {
                 }
                 .scenePadding([.top, .horizontal])
                 PaneView(pane: pane, model: model)
+                    // A fresh view per pane, so one pane's chosen view (Apps,
+                    // Vocabulary) does not carry over to the next.
+                    .id(pane.id)
             }
         }
     }
@@ -197,7 +200,10 @@ struct SidebarList: View {
     @Binding var query: String
 
     var body: some View {
-        List(selection: $model.pane) {
+        // Every pick goes through showPage, so choosing What's New here is the
+        // same as any other way of opening it.
+        List(selection: Binding(get: { model.pane },
+                                set: { if let id = $0, id != model.pane { model.showPage(id) } })) {
             if query.isEmpty {
                 if model.pane == "whatsNew" || model.whatsNewPending,
                    let pane = model.pane(withId: "whatsNew") {

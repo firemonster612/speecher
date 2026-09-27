@@ -103,9 +103,11 @@ HICON createListeningIcon(bool lightTaskbar)
 struct TrayIcon::Native {
     Native(ApplicationController *owner,
            std::function<void()> openSettings,
+           std::function<void()> openMain,
            TrayIcon *q)
         : controller(owner)
         , showSettings(std::move(openSettings))
+        , showMain(std::move(openMain))
         , flyout(owner, q)
     {
         callback = [this](UINT message, WPARAM wParam, LPARAM lParam) {
@@ -284,7 +286,7 @@ struct TrayIcon::Native {
             return 1;
         case WM_LBUTTONDBLCLK:
             flyout.hide();
-            showSettings();
+            showMain();
             return 1;
         case NIN_BALLOONUSERCLICK:
             flyout.hide();
@@ -302,6 +304,7 @@ struct TrayIcon::Native {
 
     ApplicationController *controller;
     std::function<void()> showSettings;
+    std::function<void()> showMain;
     // What clicking the balloon on screen does.
     std::function<void()> messageClicked;
     TrayFlyout flyout;
@@ -316,9 +319,10 @@ struct TrayIcon::Native {
 
 TrayIcon::TrayIcon(ApplicationController *controller,
                    std::function<void()> showSettings,
+                   std::function<void()> showMain,
                    QObject *parent)
     : QObject(parent)
-    , m_native(std::make_unique<Native>(controller, std::move(showSettings), this))
+    , m_native(std::make_unique<Native>(controller, std::move(showSettings), std::move(showMain), this))
 {
 }
 

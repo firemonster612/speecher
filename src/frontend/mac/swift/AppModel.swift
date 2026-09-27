@@ -61,11 +61,8 @@ final class AppModel: ObservableObject {
     /// The last single-key binding was refused for the missing Accessibility
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
-    /// The pane the sidebar is on, remembered between openings because people
-    /// adjust related settings more than once.
-    @Published var pane: String {
-        didSet { UserDefaults.standard.set(pane, forKey: Self.paneKey) }
-    }
+    /// The pane the sidebar is on. A window opened from closed starts on Home.
+    @Published var pane = "home"
     /// Home's numbers for the chosen period, re-read whole when the log, the
     /// Insights setting or the period changes.
     @Published private(set) var insights: SpeecherInsightsModel
@@ -88,7 +85,6 @@ final class AppModel: ObservableObject {
     /// The Transcribe pane's batch, kept here so it outlives the pane's view:
     /// a batch keeps running while another pane is on screen.
     let transcription: TranscriptionModel
-    private static let paneKey = "settingsPane"
     /// The pane that was showing when What's New opened.
     private var whatsNewReturnPane = "home"
     /// A keyring read that lands after typing started must not overwrite it.
@@ -131,11 +127,6 @@ final class AppModel: ObservableObject {
         accessibilityEnabled = bridge.accessibilityEnabled
         whatsNewPending = bridge.whatsNewPending
         anthropicCredentialStatus = bridge.anthropicCredentialStatus
-        // The last page, unless it was What's New or is gone.
-        let launch = bridge.settingsSchema.resolvePage(
-            bridge.settingsSchema.launchPane(UserDefaults.standard.string(forKey: Self.paneKey) ?? ""))
-        pane = launch[0]
-        requestedView = launch[1].isEmpty ? nil : launch[1]
         insights = bridge.insightsSummary(range: .last30Days)
         insightsEnabled = bridge.insightsEnabled
         bridge.statusChanged = { [weak self] status in
@@ -490,9 +481,6 @@ final class AppModel: ObservableObject {
         NSPasteboard.general.setString(transcript, forType: .string)
     }
 
-    /// Whether anything on a pane — its name, a card heading, a row, or the
-    /// help under one — answers to what was typed in the search field. The cards
-    /// are the ones the pane draws, so nothing visible is unsearchable.
     /// The panes a sidebar search shows, from the core index every front end
     /// searches.
     func searchPanes(_ query: String) -> [Pane] {

@@ -24,8 +24,8 @@ public:
     SettingsWindow(ApplicationController *controller, TranscribePane *transcribe);
     ~SettingsWindow();
 
-    // Creates the window if none is open, brings it forward, reloads the
-    // draft, and remembers the pane from last time.
+    // Creates the window on Home if none is open, reloading the draft, or
+    // brings the open one forward on its current page.
     void show();
     // show(), on this page id ("general", "vocabulary:corrections"); an
     // unknown id shows Home.

@@ -714,7 +714,7 @@ UIElement buildShortcutPage(const SettingsPane &pane, PaneHost &host)
 {
     StackPanel column;
     ScrollViewer scroll = pageScaffold(pane.title, column);
-    ShortcutRecorder::appendPane(column, host);
+    ShortcutRecorder::appendPane(column, pane.groups.isEmpty() ? QString() : pane.groups.first().title, host);
     for (const SettingsPaneGroup &group : pane.groups) {
         SectionSnapshot section = host.model->section(group);
         // The recorder's card already carries the heading.
