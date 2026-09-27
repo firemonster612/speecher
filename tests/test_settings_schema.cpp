@@ -1208,44 +1208,49 @@ private slots:
         QCOMPARE(runners.first().label, QStringLiteral("Ollama (not running)"));
     }
 
-    void localRunsOnOffersEachCardUnderEachBackend()
+    void localAccelerationAndGraphicsCardAreSeparateChoices()
     {
         const QString bus = QStringLiteral("0000:01:00.0");
+        const QString igpu = QStringLiteral("0000:05:00.0");
         const QList<LocalGpu> gpus{
             {QStringLiteral("cuda"), bus, QStringLiteral("NVIDIA GeForce RTX 3060")},
             {QStringLiteral("vulkan"), bus, QStringLiteral("NVIDIA GeForce RTX 3060")},
-            {QStringLiteral("vulkan"), QStringLiteral("0000:05:00.0"), QStringLiteral("AMD Radeon Graphics")},
+            {QStringLiteral("vulkan"), igpu, QStringLiteral("AMD Radeon Graphics")},
         };
-        QList<RowOption> options = localRunsOnOptions(gpus, {});
-        QStringList labels;
-        for (const RowOption &option : options) {
-            labels.append(option.label);
-            QVERIFY(option.enabled);
-            QCOMPARE(localRunsOnId(localRunsOnFromId(option.id)), option.id);
-        }
-        QCOMPARE(labels, (QStringList{QStringLiteral("Automatic"), QStringLiteral("CPU"),
-                                      QStringLiteral("NVIDIA GeForce RTX 3060 (CUDA)"),
-                                      QStringLiteral("NVIDIA GeForce RTX 3060 (Vulkan)"),
-                                      QStringLiteral("AMD Radeon Graphics (Vulkan)")}));
-        QCOMPARE(localRunsOnFromId(options.at(2).id), (LocalRunsOn{QStringLiteral("cuda"), bus}));
+        const auto labels = [](const QList<RowOption> &options) {
+            QStringList result;
+            for (const RowOption &option : options) {
+                result.append(option.label);
+            }
+            return result;
+        };
 
-        // A saved card that has gone stays selected, disabled, rather than
-        // quietly becoming another.
-        options = localRunsOnOptions({}, {QStringLiteral("cuda"), bus});
-        QCOMPARE(options.size(), 3);
-        QCOMPARE(options.last().label, QStringLiteral("Missing graphics card (CUDA)"));
-        QVERIFY(!options.last().enabled);
+        // Only backends that reach a card here, in localBackends order.
+        QCOMPARE(labels(localAccelerationOptions(gpus, {})),
+                 (QStringList{QStringLiteral("Automatic"), QStringLiteral("CPU"), QStringLiteral("Vulkan"),
+                              QStringLiteral("CUDA")}));
+        QCOMPARE(labels(localAccelerationOptions({}, {})),
+                 (QStringList{QStringLiteral("Automatic"), QStringLiteral("CPU")}));
 
-        // A card saved before backends could be chosen shows as that card,
-        // or as missing once it has gone.
-        const LocalRunsOn legacy{QStringLiteral("auto"), bus};
-        options = localRunsOnOptions(gpus, legacy);
-        QCOMPARE(options.last().id, localRunsOnId(legacy));
-        QCOMPARE(options.last().label, QStringLiteral("NVIDIA GeForce RTX 3060"));
-        QVERIFY(options.last().enabled);
-        options = localRunsOnOptions({}, legacy);
-        QCOMPARE(options.last().label, QStringLiteral("Missing graphics card"));
-        QVERIFY(!options.last().enabled);
+        // Cards follow the backend; the CPU and Automatic pick none.
+        QCOMPARE(labels(localGraphicsCardOptions(gpus, {QStringLiteral("vulkan"), bus})),
+                 (QStringList{QStringLiteral("NVIDIA GeForce RTX 3060"), QStringLiteral("AMD Radeon Graphics")}));
+        QCOMPARE(localGraphicsCardOptions(gpus, {QStringLiteral("cuda"), bus}).size(), 1);
+        QVERIFY(localGraphicsCardOptions(gpus, {QStringLiteral("cpu"), QString()}).isEmpty());
+        QVERIFY(localGraphicsCardOptions(gpus, {}).isEmpty());
+
+        // Saved choices this computer lacks stay selected, disabled.
+        const QList<RowOption> backends = localAccelerationOptions({}, {QStringLiteral("cuda"), bus});
+        QCOMPARE(backends.last().label, QStringLiteral("CUDA (not available)"));
+        QVERIFY(!backends.last().enabled);
+        const QList<RowOption> cards = localGraphicsCardOptions({}, {QStringLiteral("cuda"), bus});
+        QCOMPARE(cards.size(), 1);
+        QCOMPARE(cards.first().label, QStringLiteral("Missing graphics card"));
+        QVERIFY(!cards.first().enabled);
+
+        // A card saved before acceleration could be chosen is kept, as that card.
+        const QList<RowOption> legacy = localGraphicsCardOptions(gpus, {QStringLiteral("auto"), bus});
+        QCOMPARE(labels(legacy), QStringList{QStringLiteral("NVIDIA GeForce RTX 3060")});
     }
 
     void localModelsPageFollowsRefinement()
@@ -1272,13 +1277,18 @@ private slots:
         QCOMPARE(settings.speech.local.modelId, QStringLiteral("moonshine-small"));
         QCOMPARE(browser.value(settings).toString(), QStringLiteral("moonshine-small"));
 
-        // Where models run is always a choice, even with no graphics card.
-        const SettingsRow &runsOn = rowById(page, QStringLiteral("localRunsOn"));
-        QVERIFY(!runsOn.visible || runsOn.visible(settings, Capabilities{}));
-        QCOMPARE(runsOn.value(settings).toString(), QStringLiteral("auto"));
-        runsOn.apply(settings, QStringLiteral("vulkan:0000:c1:00.0"));
-        QCOMPARE(settings.speech.local.runsOn,
-                 (LocalRunsOn{QStringLiteral("vulkan"), QStringLiteral("0000:c1:00.0")}));
+        // Acceleration is always a choice, even with no graphics card; the
+        // card row only shows when there is a card to choose between.
+        const SettingsRow &acceleration = rowById(page, QStringLiteral("localAcceleration"));
+        const SettingsRow &card = rowById(page, QStringLiteral("localGraphicsCard"));
+        QVERIFY(!acceleration.visible || acceleration.visible(settings, Capabilities{}));
+        QCOMPARE(acceleration.value(settings).toString(), QStringLiteral("auto"));
+        QVERIFY(!card.visible(settings, Capabilities{}));
+        acceleration.apply(settings, QStringLiteral("cpu"));
+        QCOMPARE(settings.speech.local.runsOn, (LocalRunsOn{QStringLiteral("cpu"), QString()}));
+        card.apply(settings, QStringLiteral("0000:c1:00.0"));
+        acceleration.apply(settings, QStringLiteral("auto"));
+        QCOMPARE(settings.speech.local.runsOn, LocalRunsOn{});
 
         // On macOS and Windows it is its own pane, next to Text.
         const QStringList &run = schema.sidebarRuns.at(2);

@@ -354,10 +354,13 @@ QString keyStorageHelp();
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices,
                                     const QString &selectedDeviceId);
 
-// The Local models page's Runs on choice: Automatic, the CPU, then each
-// graphics card under each backend that reaches it, with a disabled
-// placeholder for a saved card that has gone away. An option's id is
-// localRunsOnId of the LocalRunsOn it stands for.
-QList<RowOption> localRunsOnOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
+// The Local models page's Acceleration choice: Automatic, the CPU, then each
+// GPU backend that reaches a card here, with a disabled placeholder for a
+// saved backend this computer lacks. Option ids are localBackends kinds.
+QList<RowOption> localAccelerationOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
+// Its Graphics card choice: each card the chosen backend reaches, by device
+// id, with a disabled placeholder for a saved card that has gone. Empty for
+// the CPU and plain Automatic, which pick no card.
+QList<RowOption> localGraphicsCardOptions(const QList<LocalGpu> &gpus, const LocalRunsOn &chosen);
 
 } // namespace speecher
