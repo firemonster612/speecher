@@ -32,7 +32,7 @@ struct LocalModelBrowser: View {
                     listRow(entry)
                 }
                 .listStyle(.bordered)
-                .frame(width: 250, height: CGFloat(local.models.count) * 44 + 8)
+                .frame(width: 200, height: CGFloat(local.models.count) * 44 + 8)
                 if let id = selection.wrappedValue, let entry = local.model(id) {
                     LocalModelDetail(entry: entry, model: model) {
                         model.setValue(entry.modelId, for: row.rowId)
@@ -46,8 +46,9 @@ struct LocalModelBrowser: View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
-                Text("\(entry.sizeText) · \(LocalModelText.wer(entry.librispeechWer)) WER · "
-                    + (entry.suggested ? "suggested" : entry.fitLabel.lowercased()))
+                // Size and error rate only, so the list stays narrow; the
+                // fit is in the facts.
+                Text("\(entry.sizeText) · \(LocalModelText.wer(entry.librispeechWer)) WER")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -86,9 +87,11 @@ private struct LocalModelDetail: View {
                         }
                         .foregroundStyle(.secondary)
                         Text(fact.value).fixedSize(horizontal: false, vertical: true)
+                            .help(fact.name == "Word error rate" ? model.local.wordErrorRateSources : "")
                     }
                 }
             }
+            Divider()
             Text((entry.pros.map { "+ \($0)" } + entry.cons.map { "− \($0)" }).joined(separator: "\n"))
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
@@ -97,6 +100,7 @@ private struct LocalModelDetail: View {
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Divider()
             actions
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -106,8 +110,8 @@ private struct LocalModelDetail: View {
     private var facts: [(name: String, value: String)] {
         [("Download", "\(entry.sizeText) · \(entry.fitLabel)"),
          ("Speed here", entry.speedDetail),
-         ("Word error rate", "\(LocalModelText.wer(entry.librispeechWer)) clear speech (LibriSpeech)\n"
-            + "\(LocalModelText.wer(entry.fleursWer)) everyday speech (FLEURS)"),
+         ("Word error rate", "\(LocalModelText.wer(entry.librispeechWer)) clear speech\n"
+            + "\(LocalModelText.wer(entry.fleursWer)) everyday speech"),
          ("Text shows", entry.streams ? "As you speak" : "After you stop"),
          ("Language", "English"),
          ("Licence", entry.licence)]

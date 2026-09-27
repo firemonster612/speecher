@@ -669,6 +669,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @interface LocalSetupState ()
 @property (nonatomic, copy) NSString *hardwareLine;
 @property (nonatomic) BOOL hardwareKnown;
+@property (nonatomic, copy) NSString *wordErrorRateSources;
 @property (nonatomic, copy) NSArray<LocalModelInfo *> *models;
 @property (nonatomic, copy) NSString *speechModelChoice;
 @property (nonatomic, strong) LocalRunnerChoice *runnerChoice;
@@ -2435,6 +2436,7 @@ static LocalRunnerChoice *bridgedRunnerChoice(const speecher::RunnerChoice &reso
     const LocalSetup &setup = *_state->controller->localSetup();
     LocalSetupState *state = [[LocalSetupState alloc] init];
     state.hardwareLine = setup.hardwareLine().toNSString();
+    state.wordErrorRateSources = speecher::wordErrorRateSources().toNSString();
     state.hardwareKnown = setup.hardwareKnown();
     NSMutableArray<LocalModelInfo *> *models = [NSMutableArray array];
     for (const LocalModel &model : localModelCatalog()) {

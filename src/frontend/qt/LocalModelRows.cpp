@@ -62,8 +62,19 @@ public:
             item->setData(Qt::UserRole, model.id);
         }
         columns->addWidget(m_list, 0, Qt::AlignTop);
-        columns->addWidget(makeDetail(), 1);
+        columns->addWidget(makeFacts(), 1, Qt::AlignTop);
         layout->addLayout(columns);
+        // The rest runs the card's full width, below the list and the facts,
+        // so none of it wraps into the facts' narrow column.
+        layout->addWidget(settings::makeSeparator(this));
+        m_prosCons = factLabel(this);
+        m_prosCons->setFont(settings::smallFont(m_prosCons->font()));
+        layout->addWidget(m_prosCons);
+        m_problem = factLabel(this);
+        m_problem->setObjectName(QStringLiteral("localModelProblem"));
+        layout->addWidget(m_problem);
+        layout->addWidget(settings::makeSeparator(this));
+        layout->addLayout(makeActions());
 
         // Only refresh() moves the selection with signals blocked, so any
         // change that arrives here is the person's, by mouse or keyboard.
@@ -85,7 +96,7 @@ public:
     }
 
 private:
-    QWidget *makeDetail()
+    QWidget *makeFacts()
     {
         auto *detail = new QWidget(this);
         auto *layout = new QVBoxLayout(detail);
@@ -122,34 +133,29 @@ private:
         m_textShows = addFact(QStringLiteral("Text shows"));
         m_language = addFact(QStringLiteral("Language"));
         m_licence = addFact(QStringLiteral("Licence"));
+        m_wer->setToolTip(wordErrorRateSources());
         layout->addLayout(facts);
+        return detail;
+    }
 
-        m_prosCons = factLabel(detail);
-        m_prosCons->setFont(settings::smallFont(m_prosCons->font()));
-        layout->addWidget(m_prosCons);
-
-        m_problem = factLabel(detail);
-        m_problem->setObjectName(QStringLiteral("localModelProblem"));
-        layout->addWidget(m_problem);
-
+    QHBoxLayout *makeActions()
+    {
         auto *actions = new QHBoxLayout;
         actions->setSpacing(settings::relatedSpacing());
-        m_state = new QLabel(detail);
+        m_state = new QLabel(this);
         m_state->setObjectName(QStringLiteral("localModelState"));
         actions->addWidget(m_state);
-        m_progress = new QProgressBar(detail);
+        m_progress = new QProgressBar(this);
         m_progress->setObjectName(QStringLiteral("localModelProgress"));
         m_progress->setTextVisible(false);
         m_progress->setMaximumWidth(settings::gridUnit() * 8);
         actions->addWidget(m_progress);
-        m_download = addButton(actions, QStringLiteral("localModelDownload"), detail);
-        m_cancel = addButton(actions, QStringLiteral("localModelCancel"), detail, QStringLiteral("Cancel"));
-        m_use = addButton(actions, QStringLiteral("localModelUse"), detail, QStringLiteral("Use this model"));
-        m_test = addButton(actions, QStringLiteral("localModelTestSpeed"), detail, QStringLiteral("Test speed"));
-        m_delete = addButton(actions, QStringLiteral("localModelDelete"), detail, QStringLiteral("Delete"));
         actions->addStretch();
-        layout->addLayout(actions);
-        layout->addStretch();
+        m_download = addButton(actions, QStringLiteral("localModelDownload"), this);
+        m_cancel = addButton(actions, QStringLiteral("localModelCancel"), this, QStringLiteral("Cancel"));
+        m_use = addButton(actions, QStringLiteral("localModelUse"), this, QStringLiteral("Use this model"));
+        m_test = addButton(actions, QStringLiteral("localModelTestSpeed"), this, QStringLiteral("Test speed"));
+        m_delete = addButton(actions, QStringLiteral("localModelDelete"), this, QStringLiteral("Delete"));
 
         connect(m_download, &QPushButton::clicked, this, [this] { m_setup.download(selected()); });
         connect(m_cancel, &QPushButton::clicked, this, [this] { m_setup.cancelDownload(selected().id); });
@@ -160,7 +166,7 @@ private:
         });
         connect(m_test, &QPushButton::clicked, this, [this] { m_setup.runSpeedTest(selected().id); });
         connect(m_delete, &QPushButton::clicked, this, [this] { m_setup.removeModel(selected()); });
-        return detail;
+        return actions;
     }
 
     QPushButton *addButton(QHBoxLayout *layout, const QString &name, QWidget *parent,
@@ -199,15 +205,14 @@ private:
         }
         const QString suggested = m_setup.suggestedModel().id;
         m_hardware->setText(m_setup.hardwareLine());
+        // Name, size and error rate only, so the list stays narrow and the
+        // facts beside it get the width; the fit verdict is in the facts.
         for (int row = 0; row < m_list->count(); ++row) {
             QListWidgetItem *item = m_list->item(row);
             const LocalModel &model = *findLocalModel(item->data(Qt::UserRole).toString());
-            const QString verdict = model.id == suggested && m_setup.hardwareKnown()
-                ? QStringLiteral("suggested")
-                : m_setup.fitLabel(model).toLower();
-            item->setText(QStringLiteral("%1\n%2 · %3 WER · %4")
+            item->setText(QStringLiteral("%1\n%2 · %3 WER")
                               .arg(model.name, downloadSizeText(model.sizeBytes),
-                                   werLine(model.librispeechCleanWer), verdict));
+                                   werLine(model.librispeechCleanWer)));
             const bool downloaded = m_setup.modelState(model).downloaded;
             item->setIcon(QIcon::fromTheme(downloaded ? QStringLiteral("dialog-ok")
                                                       : QStringLiteral("download")));
@@ -225,7 +230,7 @@ private:
                                 : model.fileName);
         m_size->setText(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes), m_setup.fitLabel(model)));
         m_speed->setText(state.speedDetail);
-        m_wer->setText(QStringLiteral("%1 clear speech (LibriSpeech)\n%2 everyday speech (FLEURS)")
+        m_wer->setText(QStringLiteral("%1 clear speech\n%2 everyday speech")
                            .arg(werLine(model.librispeechCleanWer), werLine(model.fleursEnglishWer)));
         m_textShows->setText(model.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"));
         m_language->setText(QStringLiteral("English"));

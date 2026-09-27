@@ -26,7 +26,7 @@ public:
     winrt::Microsoft::UI::Xaml::UIElement element(const RowSnapshot &row);
 
 private:
-    winrt::Microsoft::UI::Xaml::UIElement listItem(const LocalModel &model, const QString &suggested);
+    winrt::Microsoft::UI::Xaml::UIElement listItem(const LocalModel &model);
     winrt::Microsoft::UI::Xaml::Controls::StackPanel makeDetail();
     winrt::Microsoft::UI::Xaml::Controls::Button addButton(const wchar_t *text);
     const LocalModel &selected() const;

@@ -45,7 +45,6 @@ UIElement LocalModelBrowser::element(const RowSnapshot &row)
 {
     m_rowId = row.id;
     m_inUse = row.value.toString();
-    const QString suggested = m_setup.hardwareKnown() ? m_setup.suggestedModel().id : QString();
     // Open on the model in use, else on the suggestion, which is only known
     // once the hardware probe has answered.
     if (!m_userPicked) {
@@ -76,7 +75,7 @@ UIElement LocalModelBrowser::element(const RowSnapshot &row)
         if (model.id == m_selectedId) {
             selectedIndex = int(list.Items().Size());
         }
-        list.Items().Append(listItem(model, suggested));
+        list.Items().Append(listItem(model));
     }
     list.SelectedIndex(selectedIndex);
     // A rebuild re-selects the same model, and WinUI may report that late;
@@ -106,10 +105,8 @@ UIElement LocalModelBrowser::element(const RowSnapshot &row)
     return content;
 }
 
-UIElement LocalModelBrowser::listItem(const LocalModel &model, const QString &suggested)
+UIElement LocalModelBrowser::listItem(const LocalModel &model)
 {
-    const QString verdict = model.id == suggested ? QStringLiteral("suggested")
-                                                  : m_setup.fitLabel(model).toLower();
     Grid item;
     item.ColumnSpacing(12);
     item.Padding({0, 6, 0, 6});
@@ -127,9 +124,10 @@ UIElement LocalModelBrowser::listItem(const LocalModel &model, const QString &su
     item.Children().Append(icon);
     StackPanel text;
     text.Children().Append(styledTextBlock(model.name, L"SettingsCardBodyStyle"));
-    text.Children().Append(secondaryTextBlock(QStringLiteral("%1 · %2 WER · %3")
+    // Size and error rate only, so the list stays narrow; the fit is in the facts.
+    text.Children().Append(secondaryTextBlock(QStringLiteral("%1 · %2 WER")
                                                   .arg(downloadSizeText(model.sizeBytes),
-                                                       werText(model.librispeechCleanWer), verdict),
+                                                       werText(model.librispeechCleanWer)),
                                               L"SettingsCardDescriptionStyle", m_host));
     Grid::SetColumn(text, 1);
     item.Children().Append(text);
@@ -172,6 +170,7 @@ StackPanel LocalModelBrowser::makeDetail()
     m_size = addFact(QStringLiteral("Download"));
     m_speed = addFact(QStringLiteral("Speed here"));
     m_wer = addFact(QStringLiteral("Word error rate"));
+    ToolTipService::SetToolTip(m_wer, box_value(hs(wordErrorRateSources())));
     m_textShows = addFact(QStringLiteral("Text shows"));
     addFact(QStringLiteral("Language")).Text(L"English");
     m_licence = addFact(QStringLiteral("Licence"));
@@ -261,7 +260,7 @@ void LocalModelBrowser::showDetail()
     m_size.Text(hs(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes),
                                                  m_setup.fitLabel(model))));
     m_speed.Text(hs(state.speedDetail));
-    m_wer.Text(hs(QStringLiteral("%1 clear speech (LibriSpeech)\n%2 everyday speech (FLEURS)")
+    m_wer.Text(hs(QStringLiteral("%1 clear speech\n%2 everyday speech")
                       .arg(werText(model.librispeechCleanWer), werText(model.fleursEnglishWer))));
     m_textShows.Text(model.streams ? L"As you speak" : L"After you stop");
     m_licence.Text(hs(model.licence));

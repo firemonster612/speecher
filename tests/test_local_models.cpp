@@ -391,7 +391,7 @@ private slots:
         QVERIFY(state.suggested);
         QVERIFY(!state.tooLarge);
         QCOMPARE(state.cardFacts, QString("Words appear as you speak\n"
-                                          "About 0.4 s for 10 s of speech (measured on the same chip)\n"
+                                          "About 0.4 s per 10 s (measured on the same chip)\n"
                                           "1.6% of words wrong on clear speech, 3.99% on everyday speech"));
         QCOMPARE(state.tableCells, QStringList({"Parakeet 0.6B (suggested)", "731 MB", "1.6% / 3.99%",
                                                 "~0.4 s (estimated)", "As you speak", "Fits"}));

@@ -82,6 +82,8 @@ QString modelFitLabel(ModelFit fit);
 QString downloadSizeText(qint64 bytes);
 // "0.3 s", never below 0.1 s.
 QString speechSecondsText(double seconds);
+// Where the two word error rates come from, for a tooltip on them.
+QString wordErrorRateSources();
 // How long 10 s of speech takes here: the Speed Test's measurement when there
 // is one, else the catalog's estimate for this kind of machine.
 QString localModelSpeedLine(const LocalModel &model,

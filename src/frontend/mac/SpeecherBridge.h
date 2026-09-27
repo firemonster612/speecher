@@ -491,6 +491,8 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 // "Checking this computer…" until the probe answers.
 @property (nonatomic, readonly, copy) NSString *hardwareLine;
 @property (nonatomic, readonly) BOOL hardwareKnown;
+// Where the word error rates come from, for a tooltip on them.
+@property (nonatomic, readonly, copy) NSString *wordErrorRateSources;
 // The catalog, in the order it lists the models.
 @property (nonatomic, readonly, copy) NSArray<LocalModelInfo *> *models;
 // The Local Model dictation will use: the chosen one, else the suggestion.

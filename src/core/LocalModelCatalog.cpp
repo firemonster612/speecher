@@ -219,18 +219,23 @@ QString speechSecondsText(double seconds)
     return QStringLiteral("%1 s").arg(std::max(seconds, 0.1), 0, 'f', 1);
 }
 
+QString wordErrorRateSources()
+{
+    return QStringLiteral("Clear speech: LibriSpeech test-clean. Everyday speech: FLEURS English.");
+}
+
 QString localModelSpeedLine(const LocalModel &model,
                             const HardwareProfile &hardware,
                             std::optional<double> measuredSeconds)
 {
     if (measuredSeconds) {
-        return QStringLiteral("%1 for 10 s of speech, measured here").arg(speechSecondsText(*measuredSeconds));
+        return QStringLiteral("%1 per 10 s (measured)").arg(speechSecondsText(*measuredSeconds));
     }
     const std::optional<SpeedEstimate> estimate = estimatedSpeed(model, hardware);
     if (!estimate) {
         return QStringLiteral("Not measured on a computer like this one yet");
     }
-    return QStringLiteral("About %1 for 10 s of speech (%2)")
+    return QStringLiteral("About %1 per 10 s (%2)")
         .arg(speechSecondsText(estimate->secondsFor10sSpeech),
              estimate->measuredOnThisChip ? QStringLiteral("measured on the same chip")
                                           : QStringLiteral("estimated"));
