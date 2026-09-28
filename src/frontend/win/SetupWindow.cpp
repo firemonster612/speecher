@@ -3170,7 +3170,7 @@ bool SetupWindow::captureForTest(const QString &path)
 {
     HWND handle = nullptr;
     m_native->window.as<::IWindowNative>()->get_WindowHandle(&handle);
-    return printWindowTo(handle, path);
+    return win::printWindowTo(handle, path);
 }
 
 QStringList SetupWindow::welcomeCopyForTest()
