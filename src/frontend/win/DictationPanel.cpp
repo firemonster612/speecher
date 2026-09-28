@@ -724,9 +724,11 @@ struct DictationPanel::Native : QObject {
         // A finished delivery: the outcome message is the whole story, so the
         // spent preview words go and the icon and message centre in the pill.
         const bool finished = completed && !hasProblem;
-        glyph.Glyph(hstring((refining && !hasProblem ? QString::fromUtf16(u"\uE8A9")
-                             : finished               ? outcomeGlyph(outcome)
-                                                      : phaseGlyph(status, hasProblem))
+        // A receipt outranks the refining flag, which can still be set when
+        // the delivery lands.
+        glyph.Glyph(hstring((finished                   ? outcomeGlyph(outcome)
+                             : refining && !hasProblem ? QString::fromUtf16(u"\uE8A9")
+                                                       : phaseGlyph(status, hasProblem))
                                 .toStdWString()));
         const bool renewing = status == QStringLiteral("Renewing sign-in…");
         const bool waiting = !hasProblem && !finished && (phase != Phase::Live || renewing);
