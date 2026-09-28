@@ -2426,18 +2426,17 @@ struct SetupWindow::Native {
         });
         panel.Children().Append(settingRow(QStringLiteral("Default profile"), fallback));
 
-        const QList<QPair<QString, QString>> cleanup{
-            {QStringLiteral("none"), QStringLiteral("None")},
-            {QStringLiteral("light_cleanup"), QStringLiteral("Light")},
-            {QStringLiteral("balanced"), QStringLiteral("Medium")},
-            {QStringLiteral("strong_polish"), QStringLiteral("High")}};
-        const QList<QPair<QString, QString>> tones{
-            {QStringLiteral("none"), QStringLiteral("No tone override")},
-            {QStringLiteral("formal"), QStringLiteral("Formal")},
-            {QStringLiteral("casual"), QStringLiteral("Casual")},
-            {QStringLiteral("very_casual"), QStringLiteral("Very casual")},
-            {QStringLiteral("excited"), QStringLiteral("Excited")},
-            {QStringLiteral("gen_z"), QStringLiteral("Gen Z")}};
+        const auto pairs = [](const QList<RowOption> &options) {
+            QList<QPair<QString, QString>> pairs;
+            for (const RowOption &option : options) {
+                pairs.append({option.id, option.label});
+            }
+            return pairs;
+        };
+        const QList<QPair<QString, QString>> cleanup =
+            pairs(cleanupStrengths(controller->settings()->customCleanupLevels()));
+        const QList<QPair<QString, QString>> tones =
+            pairs(writingTones(controller->settings()->customTones()));
         QList<WritingProfileSettings> saved = controller->settings()->writingProfileSettings();
         // The mockup's table header, so the two unlabelled columns say which
         // is cleanup and which is tone.

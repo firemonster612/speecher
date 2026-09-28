@@ -11,6 +11,8 @@
 #include <QTableWidget>
 #include <QTableWidgetItem>
 
+#include <memory>
+
 namespace speecher {
 
 namespace {
@@ -36,8 +38,15 @@ QList<WritingProfileSettings> gridSettings(const QTableWidget *grid)
     return settings;
 }
 
+// The custom levels and tones each profile's pickers offer after the built-ins.
+struct GridChoices {
+    QList<CustomCleanupLevel> levels;
+    QList<CustomTone> tones;
+};
+
 void setGridSettings(QTableWidget *grid,
                      const QList<WritingProfileSettings> &settings,
+                     const GridChoices &choices,
                      const std::function<void()> &notifyChanged)
 {
     const QSignalBlocker blocker(grid);
@@ -51,11 +60,12 @@ void setGridSettings(QTableWidget *grid,
         profile->setFlags(Qt::ItemIsEnabled);
         profile->setData(Qt::UserRole, writingProfileName(fallback.profile));
         auto *strength = new QComboBox(grid);
-        for (const RowOption &option : cleanupStrengths()) strength->addItem(option.label, option.id);
-        settings::selectData(strength, profileSettings.cleanupStrength);
+        for (const RowOption &option : cleanupStrengths(choices.levels)) strength->addItem(option.label, option.id);
+        // A level or tone deleted from the draft shows as what saving makes it.
+        settings::selectData(strength, offeredCleanupLevel(profileSettings.cleanupStrength, choices.levels));
         auto *tone = new QComboBox(grid);
-        for (const RowOption &option : writingTones()) tone->addItem(option.label, option.id);
-        settings::selectData(tone, profileSettings.tone);
+        for (const RowOption &option : writingTones(choices.tones)) tone->addItem(option.label, option.id);
+        settings::selectData(tone, offeredTone(profileSettings.tone, choices.tones));
         QObject::connect(strength, &QComboBox::currentIndexChanged, grid, notifyChanged);
         QObject::connect(tone, &QComboBox::currentIndexChanged, grid, notifyChanged);
         grid->setItem(row, 0, profile);
@@ -90,13 +100,20 @@ SchemaCustomRow makeWritingProfileGrid(QWidget *parent, std::function<void()> no
 
     QObject::connect(grid, &QTableWidget::itemChanged, grid, notifyChanged);
 
+    // The page hands over its settings before each value, so the pickers
+    // offer the tones and levels those settings hold.
+    auto choices = std::make_shared<GridChoices>();
     return {
         grid,
         [grid] { return QVariant::fromValue(gridSettings(grid)); },
-        [grid, notifyChanged = std::move(notifyChanged)](const QVariant &value) {
-            setGridSettings(grid, value.value<QList<WritingProfileSettings>>(), notifyChanged);
+        [grid, choices, notifyChanged = std::move(notifyChanged)](const QVariant &value) {
+            setGridSettings(grid, value.value<QList<WritingProfileSettings>>(), *choices, notifyChanged);
         },
         true,
+        nullptr,
+        [choices](const AppSettings &settings) {
+            *choices = {settings.refinement.customCleanupLevels, settings.refinement.customTones};
+        },
     };
 }
 

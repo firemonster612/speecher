@@ -250,7 +250,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
             table.columns.append({column.id,
                                   column.title,
                                   column.kind,
-                                  column.options ? column.options() : QList<RowOption>(),
+                                  column.options ? column.options(m_draft) : QList<RowOption>(),
                                   column.stretch,
                                   column.multiline});
         }

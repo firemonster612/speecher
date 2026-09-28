@@ -46,13 +46,20 @@ import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
 import app.speecher.android.dictation.refinementModels
 import app.speecher.protocol.CleanupStrength
+import app.speecher.protocol.CustomCleanupLevel
+import app.speecher.protocol.CustomTone
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
 import app.speecher.protocol.Tone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.builtInDictationSystemPrompt
 import app.speecher.protocol.claudeVoiceKeyterms
+import app.speecher.protocol.cleanupLevelId
+import app.speecher.protocol.customChoiceId
 import app.speecher.protocol.modelSupportsFastMode
+import app.speecher.protocol.toneId
+import app.speecher.protocol.withCleanupLevel
+import app.speecher.protocol.withTone
 
 internal const val FAST_MODE_DESCRIPTION =
     "Makes refinement faster. Uses a little more of your usage, but the difference is tiny."
@@ -76,6 +83,10 @@ private val cleanupLabels =
         CleanupStrength.StrongPolish to "High",
     )
 
+/** What a custom cleanup level can build on. */
+private val baseLabels =
+    cleanupLabels - CleanupStrength.None + (CleanupStrength.CustomOnly to "Custom only")
+
 private val toneLabels =
     mapOf(
         Tone.None to "No tone override",
@@ -85,6 +96,15 @@ private val toneLabels =
         Tone.Excited to "Excited",
         Tone.GenZ to "Gen Z",
     )
+
+/** Every level a profile can choose, by id: the built-ins, then the custom ones. */
+internal fun cleanupChoices(settings: SpeecherSettings): Map<String, String> =
+    cleanupLabels.mapKeys { it.key.id } +
+        settings.customCleanupLevels.associate { it.id to it.name }
+
+/** Every tone a profile can choose, by id: no override and the built-ins, then the custom ones. */
+internal fun toneChoices(settings: SpeecherSettings): Map<String, String> =
+    toneLabels.mapKeys { it.key.id } + settings.customTones.associate { it.id to it.name }
 
 /** Settings. Every change goes out whole through [onChange]; the caller persists it. */
 @Composable
@@ -251,8 +271,7 @@ fun Settings(
         if (settings.refinementEnabled) {
             Section("Profile behavior")
             Text(
-                "Choose cleanup strength and an optional explicit tone for each automatically " +
-                    "detected profile.",
+                "Choose a cleanup level, a tone and optional instructions for each profile.",
                 Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -270,11 +289,11 @@ fun Settings(
                     supportingContent = {
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Dropdown(cleanupLabels, behavior.cleanupStrength) {
-                                    update(behavior.copy(cleanupStrength = it))
+                                Dropdown(cleanupChoices(settings), behavior.cleanupLevelId) {
+                                    update(behavior.withCleanupLevel(it))
                                 }
-                                Dropdown(toneLabels, behavior.tone) {
-                                    update(behavior.copy(tone = it))
+                                Dropdown(toneChoices(settings), behavior.toneId) {
+                                    update(behavior.withTone(it))
                                 }
                             }
                             OutlinedTextField(
@@ -287,6 +306,83 @@ fun Settings(
                         }
                     },
                     colors = rowColors,
+                )
+            }
+
+            Section("Tones")
+            BuiltInNames(toneLabels.values.drop(1))
+            settings.customTones.forEach { tone ->
+                CustomChoice(
+                    tone.name,
+                    tone.instruction,
+                    "Instruction",
+                    onEdit = { name, text ->
+                        onChange(
+                            settings.withCustomChoices(
+                                tones =
+                                    settings.customTones.map {
+                                        if (it.id == tone.id)
+                                            it.copy(name = name, instruction = text)
+                                        else it
+                                    }
+                            )
+                        )
+                    },
+                    onDelete = {
+                        onChange(settings.withCustomChoices(tones = settings.customTones - tone))
+                    },
+                )
+            }
+            AddChoice("Add tone", "Instruction", toneChoices(settings).values, needsText = true) {
+                name,
+                instruction ->
+                val id = customChoiceId(name, settings.customTones.map { it.id })
+                onChange(
+                    settings.withCustomChoices(
+                        tones = settings.customTones + CustomTone(id, name, instruction)
+                    )
+                )
+            }
+
+            Section("Cleanup levels")
+            BuiltInNames(cleanupLabels.values.drop(1))
+            settings.customCleanupLevels.forEach { level ->
+                fun edit(next: CustomCleanupLevel) =
+                    onChange(
+                        settings.withCustomChoices(
+                            levels =
+                                settings.customCleanupLevels.map {
+                                    if (it.id == level.id) next else it
+                                }
+                        )
+                    )
+                CustomChoice(
+                    level.name,
+                    level.instructions,
+                    "Instructions",
+                    onEdit = { name, text -> edit(level.copy(name = name, instructions = text)) },
+                    onDelete = {
+                        onChange(
+                            settings.withCustomChoices(
+                                levels = settings.customCleanupLevels - level
+                            )
+                        )
+                    },
+                ) {
+                    Dropdown(baseLabels, level.base) { edit(level.copy(base = it)) }
+                }
+            }
+            // A new level builds on Medium; its base can be changed once it is added.
+            AddChoice("Add cleanup level", "Instructions", cleanupChoices(settings).values) {
+                name,
+                instructions ->
+                val id = customChoiceId(name, settings.customCleanupLevels.map { it.id })
+                onChange(
+                    settings.withCustomChoices(
+                        levels =
+                            settings.customCleanupLevels +
+                                CustomCleanupLevel(id, name, CleanupStrength.Balanced, instructions)
+                    )
                 )
             }
 
@@ -485,6 +581,100 @@ private fun EffortPicker(provider: Provider, selected: String, onSelect: (String
             ) {
                 Text(effort.replaceFirstChar(Char::uppercase))
             }
+        }
+    }
+}
+
+/** The built-in tones or levels, which cannot be edited, as one line. */
+@Composable
+private fun BuiltInNames(names: List<String>) {
+    Text(
+        "Built-in: ${names.joinToString(", ")}",
+        Modifier.padding(horizontal = 16.dp),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
+ * One custom tone or level: its name and its instructions, editable, with [extra] controls beside
+ * the name and a delete button.
+ */
+@Composable
+private fun CustomChoice(
+    name: String,
+    text: String,
+    textLabel: String,
+    onEdit: (name: String, text: String) -> Unit,
+    onDelete: () -> Unit,
+    extra: @Composable () -> Unit = {},
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                name,
+                { onEdit(it, text) },
+                Modifier.weight(1f),
+                label = { Text("Name") },
+                singleLine = true,
+                isError = name.isBlank(),
+            )
+            extra()
+            IconButton(onDelete) {
+                Icon(painterResource(R.drawable.ic_close), contentDescription = "Delete $name")
+            }
+        }
+        OutlinedTextField(
+            text,
+            { onEdit(name, it) },
+            Modifier.fillMaxWidth(),
+            label = { Text(textLabel) },
+            minLines = 2,
+        )
+    }
+}
+
+/**
+ * A name and instructions for a new tone or level, added once the name is set and unlike [taken],
+ * and the instructions are set when [needsText]. The id comes from the name given here.
+ */
+@Composable
+private fun AddChoice(
+    action: String,
+    textLabel: String,
+    taken: Collection<String>,
+    needsText: Boolean = false,
+    onAdd: (name: String, text: String) -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var text by rememberSaveable { mutableStateOf("") }
+    val duplicate = taken.any { it.equals(name.trim(), ignoreCase = true) }
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        OutlinedTextField(
+            name,
+            { name = it },
+            Modifier.fillMaxWidth(),
+            label = { Text("Name") },
+            singleLine = true,
+            isError = duplicate,
+            supportingText = if (duplicate) ({ Text("That name is taken.") }) else null,
+        )
+        OutlinedTextField(
+            text,
+            { text = it },
+            Modifier.fillMaxWidth(),
+            label = { Text(textLabel) },
+            minLines = 2,
+        )
+        TextButton(
+            {
+                onAdd(name.trim(), text)
+                name = ""
+                text = ""
+            },
+            enabled = name.isNotBlank() && !duplicate && (!needsText || text.isNotBlank()),
+        ) {
+            Text(action)
         }
     }
 }

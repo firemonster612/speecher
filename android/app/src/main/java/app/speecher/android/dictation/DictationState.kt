@@ -1,8 +1,11 @@
 package app.speecher.android.dictation
 
+import app.speecher.protocol.CustomCleanupLevel
+import app.speecher.protocol.CustomTone
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.withoutDeleted
 
 /** The two accounts Speecher can sign in to. Each one can transcribe and refine. */
 enum class Provider {
@@ -214,6 +217,9 @@ data class SpeecherSettings(
     /** Replaces the built-in dictation rules while on; empty stands for the built-in prompt. */
     val customSystemPromptEnabled: Boolean = false,
     val customSystemPrompt: String = "",
+    /** Offered after the built-in tones and cleanup levels. */
+    val customTones: List<CustomTone> = emptyList(),
+    val customCleanupLevels: List<CustomCleanupLevel> = emptyList(),
     val buttonLayout: ButtonLayout = ButtonLayout.RefinedPrimary,
     /** The size the panel opens at. */
     val panelSize: PanelSize = PanelSize.Full,
@@ -237,6 +243,20 @@ data class SpeecherSettings(
     fun withFastMode(provider: Provider, enabled: Boolean): SpeecherSettings =
         if (provider == Provider.Claude) copy(claudeFastMode = enabled)
         else copy(chatGptFastMode = enabled)
+
+    /**
+     * With these tones and levels in place of the old ones. A profile that used one of those
+     * deleted falls back to no tone override or Medium, as on the desktop.
+     */
+    fun withCustomChoices(
+        tones: List<CustomTone> = customTones,
+        levels: List<CustomCleanupLevel> = customCleanupLevels,
+    ): SpeecherSettings =
+        copy(
+            customTones = tones,
+            customCleanupLevels = levels,
+            writingProfiles = writingProfiles.mapValues { it.value.withoutDeleted(tones, levels) },
+        )
 }
 
 /** What the setup checklist needs to know. Each flag is one step. */

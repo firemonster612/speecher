@@ -276,6 +276,9 @@ struct RefinementSettings {
     // Empty stands for the built-in prompt.
     bool customSystemPromptEnabled = false;
     QString customSystemPrompt;
+    // Offered after the built-in tones and cleanup levels.
+    QList<CustomTone> customTones;
+    QList<CustomCleanupLevel> customCleanupLevels;
 };
 
 struct OutputSettings {

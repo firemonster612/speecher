@@ -180,6 +180,9 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setAppRecognitionRules(draft.appRecognitionRules);
     setRefinementProvider(draft.refinement.providerId);
     setDefaultWritingProfile(draft.refinement.defaultWritingProfile);
+    // Before the profiles, which fall back from a tone or level deleted here.
+    setCustomTones(draft.refinement.customTones);
+    setCustomCleanupLevels(draft.refinement.customCleanupLevels);
     setWritingProfileSettings(draft.refinement.writingProfiles);
     setWritingProfileOverrides(draft.refinement.writingProfileOverrides);
     setUseTargetContext(draft.refinement.useTargetContext);

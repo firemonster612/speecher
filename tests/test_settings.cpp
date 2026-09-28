@@ -573,6 +573,37 @@ private slots:
         QCOMPARE(loaded.refinement.customSystemPrompt, QStringLiteral("Clean up my dictation."));
     }
 
+    // A profile keeps a custom tone or level that still exists, and falls back
+    // to no tone override and Medium once it is deleted.
+    void profilesKeepCustomChoicesUntilTheyAreDeleted()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.customTones = {
+            {QStringLiteral("custom_terse"), QStringLiteral("Terse"), QStringLiteral("Short.")}};
+        draft.refinement.customCleanupLevels = {{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                                 QStringLiteral("light_cleanup"), QStringLiteral("Bullets.")}};
+        draft.refinement.writingProfiles = {
+            {WritingProfile::Email, QStringLiteral("custom_notes"), QStringLiteral("custom_terse")}};
+        settings.applySnapshot(draft);
+        const auto email = [](const AppSettings &loaded) {
+            return writingProfileSettingsFor(loaded.refinement.writingProfiles, WritingProfile::Email);
+        };
+        AppSettings loaded = SettingsStore().snapshot();
+        QCOMPARE(loaded.refinement.customTones, draft.refinement.customTones);
+        QCOMPARE(loaded.refinement.customCleanupLevels, draft.refinement.customCleanupLevels);
+        QCOMPARE(email(loaded).cleanupStrength, QStringLiteral("custom_notes"));
+        QCOMPARE(email(loaded).tone, QStringLiteral("custom_terse"));
+
+        loaded.refinement.customTones.clear();
+        loaded.refinement.customCleanupLevels.clear();
+        settings.applySnapshot(loaded);
+        const AppSettings deleted = SettingsStore().snapshot();
+        QCOMPARE(email(deleted).cleanupStrength, QStringLiteral("balanced"));
+        QCOMPARE(email(deleted).tone, QStringLiteral("none"));
+    }
+
     void snapshotApplyNeverPinsADetectedCliProxyDirectory()
     {
         SettingsStore settings;

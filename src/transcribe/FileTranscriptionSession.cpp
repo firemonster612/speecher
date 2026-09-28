@@ -409,6 +409,7 @@ void FileTranscriptionSession::refine(const QString &raw)
         m_pipeline.refinementContext, m_pipeline.refinementSettings,
         writingProfileSettingsFor(m_pipeline.refinementSettings.writingProfiles,
                                   m_pipeline.refinementContext.writingProfile));
+    TranscriptPipeline::resolveCustomChoices(m_pipeline);
     const RefinementSettings &refinement = m_pipeline.refinementSettings;
     if (!m_refiner || refinement.style == QStringLiteral("none")
         || m_pipeline.bindingResult.canSkipRefinement) {

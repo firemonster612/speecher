@@ -43,8 +43,9 @@ struct CollectionColumn {
     QString id;
     QString title;
     ColumnKind kind = ColumnKind::Text;
-    // Choice columns only.
-    std::function<QList<RowOption>()> options;
+    // Choice columns only. They may depend on the settings, such as the
+    // custom tones a tone column also offers.
+    std::function<QList<RowOption>(const AppSettings &)> options;
     // The column that takes the leftover width; the others size to content.
     bool stretch = false;
     // Shown on the cells of this column.
@@ -353,8 +354,18 @@ struct SchemaContext {
     QString builtInSystemPrompt;
 };
 
-QList<RowOption> cleanupStrengths();
-QList<RowOption> writingTones();
+// The built-in cleanup levels, then the custom ones.
+QList<RowOption> cleanupStrengths(const QList<CustomCleanupLevel> &custom);
+// No tone override and the built-in tones, then the custom ones.
+QList<RowOption> writingTones(const QList<CustomTone> &custom);
+// The id when it is offered, otherwise what a profile whose choice was deleted
+// falls back to: no tone override, or Medium.
+QString offeredTone(const QString &id, const QList<CustomTone> &custom);
+QString offeredCleanupLevel(const QString &id, const QList<CustomCleanupLevel> &custom);
+// The id a new custom tone or cleanup level named `name` gets: custom_ and the
+// name in lowercase with every other character made _, so it never matches a
+// built-in id, then _2, _3 and so on until it is none of `taken`.
+QString customChoiceId(const QString &name, const QStringList &taken);
 CollectionDescriptor writingProfileGrid();
 QList<RowOption> authModeOptions(const QString &rowId);
 

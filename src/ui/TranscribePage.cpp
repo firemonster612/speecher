@@ -40,6 +40,9 @@
 namespace speecher {
 namespace {
 
+// The cleanup level a Cleanup button stands for.
+constexpr char kLevelIdProperty[] = "cleanupLevelId";
+
 const QString kSaveHint = QStringLiteral("Each transcript is saved as ⟨name⟩-transcribed.txt");
 
 QIcon themedIcon(const QString &name, const QString &fallback)
@@ -304,22 +307,14 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
                                           m_refinerModel, refineCard);
     settings::addCardRow(refineForm, m_refinerModelRow, refineCard);
 
-    auto *cleanup = new QWidget(refineCard);
-    auto *cleanupLayout = new QHBoxLayout(cleanup);
+    m_cleanupButtons = new QWidget(refineCard);
+    auto *cleanupLayout = new QHBoxLayout(m_cleanupButtons);
     cleanupLayout->setContentsMargins(0, 0, 0, 0);
     cleanupLayout->setSpacing(0);
     m_cleanup = new QButtonGroup(this);
-    const QList<RowOption> strengths = cleanupStrengths();
-    for (int i = 0; i < strengths.size(); ++i) {
-        auto *button = new QToolButton(cleanup);
-        button->setText(strengths.at(i).label);
-        button->setCheckable(true);
-        m_cleanup->addButton(button, i);
-        cleanupLayout->addWidget(button);
-    }
     QFrame *cleanupRow = settings::makeRow(QStringLiteral("Cleanup"),
                                            QStringLiteral("How much the model may rewrite"),
-                                           cleanup, refineCard);
+                                           m_cleanupButtons, refineCard);
     settings::addCardRow(refineForm, cleanupRow, refineCard);
 
     m_profile = new QComboBox(refineCard);
@@ -332,9 +327,6 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
                                            m_profile, refineCard);
     settings::addCardRow(refineForm, profileRow, refineCard);
     m_tone = new QComboBox(refineCard);
-    for (const RowOption &tone : writingTones()) {
-        m_tone->addItem(tone.label, tone.id);
-    }
     QFrame *toneRow = settings::makeRow(QStringLiteral("Tone"),
                                         QStringLiteral("Optional override on top of the profile"),
                                         m_tone, refineCard);
@@ -618,6 +610,7 @@ void TranscribePage::refreshSteps(TranscribeStep current)
 void TranscribePage::seedOptionsFromSettings()
 {
     const AppSettings settings = m_controller->settings()->snapshot();
+    showChoices(settings);
     settings::selectData(m_speech, settings.speech.providerId);
     m_vocabulary->setChecked(true);
     settings::selectData(m_refiner, settings.refinement.providerId);
@@ -638,25 +631,39 @@ void TranscribePage::seedOptionsFromSettings()
     m_speechSummary->setVisible(!summary.isEmpty());
 }
 
+void TranscribePage::showChoices(const AppSettings &settings)
+{
+    for (QAbstractButton *button : m_cleanup->buttons()) {
+        m_cleanup->removeButton(button);
+        delete button;
+    }
+    for (const RowOption &level : cleanupStrengths(settings.refinement.customCleanupLevels)) {
+        auto *button = new QToolButton(m_cleanupButtons);
+        button->setText(level.label);
+        button->setProperty(kLevelIdProperty, level.id);
+        button->setCheckable(true);
+        m_cleanup->addButton(button);
+        m_cleanupButtons->layout()->addWidget(button);
+    }
+    const QSignalBlocker blocker(m_tone);
+    m_tone->clear();
+    for (const RowOption &tone : writingTones(settings.refinement.customTones)) {
+        m_tone->addItem(tone.label, tone.id);
+    }
+}
+
 // A profile brings its own cleanup strength and tone, as it does for dictation.
 void TranscribePage::applyWritingProfile()
 {
+    const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
     const WritingProfileSettings profile = writingProfileSettingsFor(
-        m_controller->settings()->snapshot().refinement.writingProfiles,
-        writingProfileFromName(m_profile->currentData().toString()));
-    const QList<RowOption> strengths = cleanupStrengths();
-    const auto indexOf = [&strengths](const QString &id) {
-        return int(std::find_if(strengths.cbegin(), strengths.cend(),
-                                [&id](const RowOption &option) { return option.id == id; })
-                   - strengths.cbegin());
-    };
+        refinement.writingProfiles, writingProfileFromName(m_profile->currentData().toString()));
     // A stored strength this build does not know falls back to the middle one.
-    int checked = indexOf(profile.cleanupStrength);
-    if (checked == strengths.size()) {
-        checked = indexOf(QStringLiteral("balanced"));
-    }
-    if (QAbstractButton *button = m_cleanup->button(checked)) {
-        button->setChecked(true);
+    const QString level = offeredCleanupLevel(profile.cleanupStrength, refinement.customCleanupLevels);
+    for (QAbstractButton *button : m_cleanup->buttons()) {
+        if (button->property(kLevelIdProperty).toString() == level) {
+            button->setChecked(true);
+        }
     }
     settings::selectData(m_tone, profile.tone);
 }
@@ -724,8 +731,9 @@ TranscribeOptions TranscribePage::options() const
     options.speechProviderId = m_speech->currentData().toString();
     options.applyVocabulary = m_vocabulary->isChecked();
     options.refinementProviderId = m_refiner->currentData().toString();
-    options.cleanupStrength = m_cleanup->checkedId() >= 0 ? cleanupStrengths().value(m_cleanup->checkedId()).id
-                                                          : QStringLiteral("none");
+    options.cleanupStrength = m_cleanup->checkedButton()
+        ? m_cleanup->checkedButton()->property(kLevelIdProperty).toString()
+        : QStringLiteral("none");
     options.tone = m_tone->currentData().toString();
     options.writingProfile = m_profile->currentData().toString();
     options.destination = TranscriptDestination(m_destination->currentData().toInt());

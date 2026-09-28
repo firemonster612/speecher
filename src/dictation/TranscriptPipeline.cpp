@@ -93,6 +93,25 @@ void TranscriptPipeline::fillUserInstructions(RefinementContext &context,
         refinement.customSystemPromptEnabled ? refinement.customSystemPrompt : QString();
 }
 
+void TranscriptPipeline::resolveCustomChoices(TranscriptPipelineResult &pipeline)
+{
+    RefinementSettings &refinement = pipeline.refinementSettings;
+    RefinementContext &context = pipeline.refinementContext;
+    context.customTone.reset();
+    context.cleanupLevel.reset();
+    for (const CustomTone &tone : std::as_const(refinement.customTones)) {
+        if (tone.id == context.tone) {
+            context.customTone = tone;
+        }
+    }
+    for (const CustomCleanupLevel &level : std::as_const(refinement.customCleanupLevels)) {
+        if (level.id == refinement.style) {
+            context.cleanupLevel = level;
+            refinement.style = level.base;
+        }
+    }
+}
+
 RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSettings &settings,
                                                                    const Target &target)
 {
@@ -144,6 +163,7 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     fillUserInstructions(result.refinementContext, result.refinementSettings,
                          writingProfileSettingsFor(result.refinementSettings.writingProfiles,
                                                    result.refinementContext.writingProfile));
+    resolveCustomChoices(result);
     result.refinementContext.includeNearbyText = result.refinementSettings.useTargetContext && !target.secure;
     result.refinementContext.editSelection = result.editsSelection;
     if (!result.refinementSettings.useTargetContext) {

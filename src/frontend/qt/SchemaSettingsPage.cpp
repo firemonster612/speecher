@@ -306,6 +306,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
             row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
             row.value = custom.value;
             row.setValue = custom.setValue;
+            row.refresh = custom.refresh;
             m_rows.append(row);
             applyRow(m_rows.last(), AppSettings{});
             return;
@@ -337,6 +338,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         row.description = headerHelp;
         row.value = custom.value;
         row.setValue = custom.setValue;
+        row.refresh = custom.refresh;
         m_rows.append(row);
         applyRow(m_rows.last(), AppSettings{});
         return;
@@ -521,6 +523,11 @@ void SchemaSettingsPage::applyRow(const Row &row, const AppSettings &settings)
     const auto &choices = row.descriptor.options ? row.descriptor.options : row.descriptor.suggestions;
     if (choices) {
         setOptions(qobject_cast<QComboBox *>(row.control), choices(settings));
+    }
+    // First, so a row whose choices come from the settings offers them
+    // before its value is chosen among them.
+    if (row.refresh) {
+        row.refresh(settings);
     }
     if (row.descriptor.value && row.setValue) {
         row.setValue(row.descriptor.value(settings));

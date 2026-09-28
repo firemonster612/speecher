@@ -293,22 +293,11 @@ void addProfiles(QComboBox *combo)
     combo->addItem(QStringLiteral("AI coding"), QStringLiteral("ai_coding"));
 }
 
-void addCleanupLevels(QComboBox *combo)
+void addOptions(QComboBox *combo, const QList<RowOption> &options)
 {
-    combo->addItem(QStringLiteral("None"), QStringLiteral("none"));
-    combo->addItem(QStringLiteral("Light"), QStringLiteral("light_cleanup"));
-    combo->addItem(QStringLiteral("Medium"), QStringLiteral("balanced"));
-    combo->addItem(QStringLiteral("High"), QStringLiteral("strong_polish"));
-}
-
-void addTones(QComboBox *combo)
-{
-    combo->addItem(QStringLiteral("No tone override"), QStringLiteral("none"));
-    combo->addItem(QStringLiteral("Formal"), QStringLiteral("formal"));
-    combo->addItem(QStringLiteral("Casual"), QStringLiteral("casual"));
-    combo->addItem(QStringLiteral("Very casual"), QStringLiteral("very_casual"));
-    combo->addItem(QStringLiteral("Excited"), QStringLiteral("excited"));
-    combo->addItem(QStringLiteral("Gen Z"), QStringLiteral("gen_z"));
+    for (const RowOption &option : options) {
+        combo->addItem(option.label, option.id);
+    }
 }
 
 // One selectable provider as a card row: the company's mark, the name in bold
@@ -2507,12 +2496,14 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
 
     int row = 3;
     const QList<WritingProfileSettings> current = m_settings.writingProfileSettings();
+    const QList<RowOption> levels = cleanupStrengths(m_settings.customCleanupLevels());
+    const QList<RowOption> tones = writingTones(m_settings.customTones());
     for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
         const WritingProfileSettings saved = writingProfileSettingsFor(current, fallback.profile);
         auto *cleanup = new QComboBox(this);
         auto *tone = new QComboBox(this);
-        addCleanupLevels(cleanup);
-        addTones(tone);
+        addOptions(cleanup, levels);
+        addOptions(tone, tones);
         settings::selectData(cleanup, saved.cleanupStrength);
         settings::selectData(tone, saved.tone);
         grid->addWidget(new QLabel(profileLabel(fallback.profile), this), row, 0);

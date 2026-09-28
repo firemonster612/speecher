@@ -577,6 +577,27 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  (QStringList{QStringLiteral("Speecher"), QStringLiteral("Qt")}));
     }
 
+    // A profile's custom level refines at its base with its section, and a
+    // custom tone reaches the prompt; neither reads as None.
+    void transcriptPipelineResolvesCustomTonesAndLevels()
+    {
+        AppSettings settings;
+        const CustomTone terse{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
+                               QStringLiteral("Short sentences.")};
+        const CustomCleanupLevel notes{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                       QStringLiteral("custom_only"), QStringLiteral("Bullets.")};
+        settings.refinement.customTones = {terse};
+        settings.refinement.customCleanupLevels = {notes};
+        settings.refinement.writingProfiles = {
+            {WritingProfile::Other, notes.id, terse.id},
+        };
+        const TranscriptPipelineResult pipeline =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{});
+        QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("custom_only"));
+        QCOMPARE(pipeline.refinementContext.cleanupLevel, std::optional(notes));
+        QCOMPARE(pipeline.refinementContext.customTone, std::optional(terse));
+    }
+
     void transcriptPipelineScopesLearnedCorrectionsAndPreservesUserBindingPrecedence()
     {
         AppSettings settings;

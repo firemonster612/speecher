@@ -382,6 +382,14 @@ bool SettingsPageSet::save(bool showValidationErrors,
                            QStringLiteral("Paste rules not saved"),
                            pasteRuleProblems);
     }
+    SchemaSettingsPage *refinement = page(QStringLiteral("refinement"));
+    const QStringList refinementProblems = refinement->validate();
+    if (!refinementProblems.isEmpty()) {
+        return refuseAloud(SaveFailure::InvalidTonesOrCleanupLevels,
+                           refinement,
+                           QStringLiteral("Tones and cleanup levels not saved"),
+                           refinementProblems);
+    }
 
     settings->applySnapshot(mergeSettingsDraft(m_schema, m_loaded, m_draft, settings->snapshot()));
     Theme::apply(settings->theme());
