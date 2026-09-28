@@ -4,25 +4,24 @@
 
 namespace speecher::win {
 
-// The Global Shortcut row at the top of Dictation: one recorder that captures
-// the next input — a key combination, a bare key, or a lone modifier committed
-// on its release — and warns inline when a single key also types, shows the
-// current binding as the system writes it, a reset to the default, and the
-// binder's own error when it refuses a binding.
+// The Global Shortcut row at the top of Dictation: the current binding and a
+// "Set shortcut…" button that records the next one in a modal dialog — a key
+// combination, a bare key, or a lone modifier committed on its release — with
+// a reset to the default. The row says afterwards when the binder refused a
+// binding or when a single key also types.
 class ShortcutRecorder {
 public:
-    // The schema's "globalShortcut" custom row, which its card holds.
-    static winrt::Microsoft::UI::Xaml::Controls::StackPanel element(PaneHost &host);
+    // The schema's "globalShortcut" custom row, which its card holds; the
+    // row's label titles the dialog.
+    static winrt::Microsoft::UI::Xaml::Controls::StackPanel element(const RowSnapshot &row,
+                                                                    PaneHost &host);
 
     // Starts or ends recording, suspending the hotkey registration while it
     // runs: the bound chord is consumed system-wide and would never reach the
     // recorder (it would start a dictation instead). Balanced against the
-    // binder's suspension count, so every path that ends recording — chord,
-    // Escape, cancel, pane switch, window close — must come through here.
+    // binder's suspension count and idempotent; the dialog's Closed ends it,
+    // and the window's teardown does too in case the dialog never closed.
     static void setRecording(PaneHost &host, bool recording);
-    // Whether element is block or one of its descendants in the visual tree.
-    static bool isWithin(const winrt::Microsoft::UI::Xaml::DependencyObject &element,
-                         const winrt::Microsoft::UI::Xaml::UIElement &block);
 
     // The Qt key a Windows virtual key stands for on the active keyboard
     // layout, or 0 for modifiers and keys no layout can print. Shared with the

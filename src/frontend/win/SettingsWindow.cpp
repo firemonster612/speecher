@@ -468,11 +468,6 @@ struct SettingsWindow::Native {
 
     void selectPane(const QString &id)
     {
-        // Leaving Dictation ends a recording; the suspended hotkey must come
-        // back and the recorder's key handler is going away.
-        if (id != QStringLiteral("dictation")) {
-            ShortcutRecorder::setRecording(host, false);
-        }
         // The model browser belongs to its pane; left running, its download
         // progress would keep updating controls no longer on screen.
         if (id != currentPane) {
