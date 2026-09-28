@@ -76,7 +76,14 @@ else
   printf 'frames: %s\n' "$frame_count" >>"$CASE_DIR/event-checks.txt"
   (( frame_count >= 30 )) || errors+=("only $frame_count panel frames were captured")
   if command -v ffmpeg >/dev/null 2>&1; then
+    # The panel sizes to its content, so frames differ in size and can be odd;
+    # yuv420p needs one even size. Centre each on a canvas as large as the
+    # largest frame, rounded up to even.
+    canvas=$(for frame in "$CASE_DIR"/frames/frame-*.png; do sips -g pixelWidth -g pixelHeight "$frame"; done \
+      | awk '/pixelWidth/ { if ($2 > w) w = $2 } /pixelHeight/ { if ($2 > h) h = $2 }
+             END { printf "%d:%d", w + w % 2, h + h % 2 }')
     ffmpeg -y -framerate 10 -i "$CASE_DIR/frames/frame-%06d.png" \
+      -vf "pad=${canvas}:(ow-iw)/2:(oh-ih)/2" \
       -pix_fmt yuv420p "$CASE_DIR/panel-flow.mp4" >"$CASE_DIR/ffmpeg.out" 2>&1 \
       || errors+=("ffmpeg could not assemble the panel video")
   else
