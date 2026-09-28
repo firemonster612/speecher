@@ -223,9 +223,20 @@ ApplicationController::ApplicationController(bool popupOnly,
         }
     });
 #endif
-    connect(m_session, &DictationSession::statusChanged, this, &ApplicationController::statusChanged);
+    connect(m_session, &DictationSession::statusChanged, this, [this] { emit statusChanged(statusLabel()); });
     connect(m_session, &DictationSession::previewChanged, this, &ApplicationController::previewChanged);
     connect(m_session, &DictationSession::transcriptDelivered, this, &ApplicationController::transcriptDelivered);
+    // A session start clears the preview; the last transcript stays until
+    // the new dictation says something.
+    const auto keepTranscript = [this](const QString &text) {
+        if (text.isEmpty() || text == m_lastTranscript) {
+            return;
+        }
+        m_lastTranscript = text;
+        emit lastTranscriptChanged(text);
+    };
+    connect(m_session, &DictationSession::previewChanged, this, keepTranscript);
+    connect(m_session, &DictationSession::transcriptDelivered, this, keepTranscript);
     connect(m_session, &DictationSession::audioLevelChanged, this, &ApplicationController::audioLevelChanged);
     connect(m_session, &DictationSession::statusChanged, this, [this](const QString &status) {
         if (m_settings->soundsEnabled()
@@ -444,6 +455,16 @@ const PlatformComposition *ApplicationController::platform() const
 QString ApplicationController::stateName() const
 {
     return m_session->stateName();
+}
+
+QString ApplicationController::statusLabel() const
+{
+    return dictationStatusLabel(m_session->stateName(), m_session->lastMessage());
+}
+
+QString ApplicationController::lastTranscript() const
+{
+    return m_lastTranscript;
 }
 
 IpcResponse ApplicationController::response(bool ok, const QString &message) const

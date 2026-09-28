@@ -25,6 +25,53 @@ class DictationSessionLifecycleTests : public QObject {
     Q_OBJECT
 
 private slots:
+    // Every status line and Start/Stop control on the three platforms reads
+    // these, so each state's words are pinned here once.
+    void statusLabelAndToggleSayWhatEachStateMeans()
+    {
+        QCOMPARE(dictationStatusLabel(QStringLiteral("idle")), QStringLiteral("Idle"));
+        QCOMPARE(dictationStatusLabel(QStringLiteral("starting")), QStringLiteral("Listening…"));
+        QCOMPARE(dictationStatusLabel(QStringLiteral("listening")), QStringLiteral("Listening…"));
+        QCOMPARE(dictationStatusLabel(QStringLiteral("stopping")), QStringLiteral("Transcribing…"));
+        QCOMPARE(dictationStatusLabel(QStringLiteral("refining")), QStringLiteral("Refining…"));
+        QCOMPARE(dictationStatusLabel(QStringLiteral("delivering")), QStringLiteral("Delivering…"));
+        QCOMPARE(dictationStatusLabel(QStringLiteral("delivering"), QStringLiteral("Copied")),
+                 QStringLiteral("Copied"));
+        QCOMPARE(dictationStatusLabel(QStringLiteral("error"), QStringLiteral("Microphone unavailable")),
+                 QStringLiteral("Microphone unavailable"));
+        // A message outside delivering and error is the last session's.
+        QCOMPARE(dictationStatusLabel(QStringLiteral("idle"), QStringLiteral("Copied")), QStringLiteral("Idle"));
+
+        QCOMPARE(dictationToggleAction(QStringLiteral("idle")).label, QStringLiteral("Start dictation"));
+        QCOMPARE(dictationToggleAction(QStringLiteral("listening")).label, QStringLiteral("Stop dictation"));
+        QCOMPARE(dictationToggleAction(QStringLiteral("refining")).label, QStringLiteral("Cancel refinement"));
+        QVERIFY(dictationToggleAction(QStringLiteral("refining")).enabled);
+        QVERIFY(!dictationToggleAction(QStringLiteral("stopping")).enabled);
+        QVERIFY(!dictationToggleAction(QStringLiteral("delivering")).enabled);
+        QVERIFY(dictationToggleAction(QStringLiteral("error")).enabled);
+    }
+
+    // The tray panels' transcript is the preview, then the delivered text, and
+    // outlives the session: a new one starting keeps it until it hears words,
+    // and a failed one leaves what it heard.
+    void theControllerKeepsTheLastTranscriptAcrossSessions()
+    {
+        ApplicationController controller(true);
+        QSignalSpy changed(&controller, &ApplicationController::lastTranscriptChanged);
+        DictationSession *session = controller.session();
+
+        emit session->previewChanged(QStringLiteral("draft words"));
+        QCOMPARE(controller.lastTranscript(), QStringLiteral("draft words"));
+        emit session->transcriptDelivered(QStringLiteral("Draft words."));
+        QCOMPARE(controller.lastTranscript(), QStringLiteral("Draft words."));
+
+        emit session->previewChanged(QString());
+        QCOMPARE(controller.lastTranscript(), QStringLiteral("Draft words."));
+        emit session->previewChanged(QStringLiteral("words of a failed attempt"));
+        QCOMPARE(controller.lastTranscript(), QStringLiteral("words of a failed attempt"));
+        QCOMPARE(changed.count(), 3);
+    }
+
     void startupPreparationRunnerAppliesJobsInOrder()
     {
         StartupPreparationRunner runner;
