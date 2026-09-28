@@ -4,7 +4,9 @@
 #include "core/ShortcutBinding.h"
 #include "platform/win/WinGlobalShortcutBinder.h"
 
+#include <QDebug>
 #include <QKeySequence>
+#include <QStringList>
 
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
@@ -12,6 +14,7 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Core.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #pragma pop_macro("GetCurrentTime")
@@ -70,13 +73,48 @@ struct Recording {
     // captures as a single key; -1 once a second key joined it, since a
     // modifier-only chord is not a combination.
     int pendingModifier = 0;
+    // A key other than a modifier was pressed while modifiers were held, so
+    // the capture, not the held modifiers, is what to show.
+    bool chordKeyed = false;
 };
+
+// The modifiers being held, as the start of a combination: "Ctrl+Shift+…".
+QString heldModifiersText()
+{
+    const Qt::KeyboardModifiers modifiers = ShortcutRecorder::heldModifiers();
+    QStringList names;
+    if (modifiers & Qt::ControlModifier) {
+        names << QStringLiteral("Ctrl");
+    }
+    if (modifiers & Qt::AltModifier) {
+        names << QStringLiteral("Alt");
+    }
+    if (modifiers & Qt::ShiftModifier) {
+        names << QStringLiteral("Shift");
+    }
+    if (modifiers & Qt::MetaModifier) {
+        names << QStringLiteral("Win");
+    }
+    return names.isEmpty() ? QString() : names.join(QLatin1Char('+')) + QStringLiteral("+…");
+}
+
+// Keys the capture box leaves to the dialog: Escape is Cancel, a bare Tab
+// moves to the buttons and a bare Enter presses the default one. With a
+// modifier held, Tab and Enter are keys like any other.
+bool leftToDialog(const VirtualKey key)
+{
+    if (key == VirtualKey::Escape) {
+        return true;
+    }
+    return (key == VirtualKey::Tab || key == VirtualKey::Enter)
+        && ShortcutRecorder::heldModifiers() == Qt::NoModifier;
+}
 
 // Records the next shortcut in a modal dialog: the hotkey is suspended while it
 // is open and given back when it closes, whichever way that happens.
 void showRecorderDialog(PaneHost &host, const QString &title, const std::function<void()> &changed)
 {
-    if (!host.xamlRoot || !host.xamlRoot()) {
+    if (host.shortcutRecording || !host.xamlRoot || !host.xamlRoot()) {
         return;
     }
     host.shortcutProblem.clear();
@@ -104,19 +142,32 @@ void showRecorderDialog(PaneHost &host, const QString &title, const std::functio
         QStringLiteral("Press the keys you want: a combination, or a single key such as "
                        "Right Alt or F13."),
         L"BodyTextBlockStyle"));
-    TextBlock keys = styledTextBlock(QStringLiteral("Waiting for keys…"), L"SubtitleTextBlockStyle");
+    // The one focusable thing in the content, and the only place keys are
+    // recorded, so the buttons keep their own Enter and Space and the default
+    // button keeps its accent. It takes focus when the dialog opens.
+    TextBox keys;
+    keys.IsReadOnly(true);
+    keys.Text(L"Waiting for keys…");
+    Automation::AutomationProperties::SetName(keys, L"Shortcut keys");
     content.Children().Append(keys);
     TextBlock note = secondaryTextBlock(QString(), L"CaptionTextBlockStyle", host);
     note.TextWrapping(TextWrapping::Wrap);
     content.Children().Append(note);
     dialog.Content(content);
+    dialog.Opened([keys = make_weak(keys)](const auto &, const auto &) {
+        if (const auto box = keys.get()) {
+            box.Focus(FocusState::Programmatic);
+        }
+    });
 
     // Weak, because the dialog these handlers live on holds all three.
     const auto show = [recording, keys = make_weak(keys), note = make_weak(note),
                        dialog = make_weak(dialog)] {
         const Capture &capture = recording->capture;
-        if (const auto text = keys.get()) {
-            text.Text(hs(capture.binding.isEmpty() ? QStringLiteral("Waiting for keys…")
+        const QString held = recording->chordKeyed ? QString() : heldModifiersText();
+        if (const auto box = keys.get()) {
+            box.Text(hs(!held.isEmpty() ? held
+                        : capture.binding.isEmpty() ? QStringLiteral("Waiting for keys…")
                                                     : capture.binding.displayText()));
         }
         if (const auto text = note.get()) {
@@ -127,14 +178,10 @@ void showRecorderDialog(PaneHost &host, const QString &title, const std::functio
         }
     };
 
-    // On the dialog, so the keys arrive wherever its focus is. Escape is the
-    // dialog's own Cancel, so it is passed on and is not recordable as a
-    // single key, like the mac recorder. A bare Tab moves between the buttons;
-    // with a modifier it is a key like any other.
-    dialog.PreviewKeyDown([&host, recording, show](const IInspectable &,
-                                                   const Input::KeyRoutedEventArgs &args) {
-        if (args.Key() == VirtualKey::Escape
-            || (args.Key() == VirtualKey::Tab && ShortcutRecorder::heldModifiers() == Qt::NoModifier)) {
+    // Escape is not recordable as a single key, like the mac recorder.
+    keys.PreviewKeyDown([&host, recording, show](const IInspectable &,
+                                                 const Input::KeyRoutedEventArgs &args) {
+        if (leftToDialog(args.Key())) {
             return;
         }
         args.Handled(true);
@@ -150,35 +197,42 @@ void showRecorderDialog(PaneHost &host, const QString &title, const std::functio
             // on AltGr layouts.
             const bool altGr = recording->pendingModifier == 0x1D && scanCode == 0xE038;
             recording->pendingModifier = recording->pendingModifier == 0 || altGr ? scanCode : -1;
+            show();
             return;
         }
         recording->pendingModifier = -1;
-        recording->capture = ShortcutRecorder::heldModifiers() != Qt::NoModifier
-            ? combinationCapture(host, args.Key())
-            : singleKeyCapture(host, scanCode);
+        const bool combination = ShortcutRecorder::heldModifiers() != Qt::NoModifier;
+        recording->chordKeyed = combination;
+        recording->capture = combination ? combinationCapture(host, args.Key())
+                                         : singleKeyCapture(host, scanCode);
         show();
     });
-    dialog.PreviewKeyUp([&host, recording, show](const IInspectable &,
-                                                 const Input::KeyRoutedEventArgs &args) {
+    keys.PreviewKeyUp([&host, recording, show](const IInspectable &,
+                                               const Input::KeyRoutedEventArgs &args) {
+        if (leftToDialog(args.Key())) {
+            return;
+        }
         args.Handled(true);
         const auto keyStatus = args.KeyStatus();
         const int scanCode = int(keyStatus.ScanCode) | (keyStatus.IsExtendedKey ? 0xE000 : 0);
         if (recording->pendingModifier == scanCode) {
             recording->capture = singleKeyCapture(host, scanCode);
-            show();
         }
         if (ShortcutRecorder::heldModifiers() == Qt::NoModifier) {
             recording->pendingModifier = 0;
+            recording->chordKeyed = false;
         }
+        show();
     });
     // The one place a recording ends. Saving applies the captured binding,
     // Reset the default one; Cancel, Escape and the window closing apply none.
+    // The binding changes before the hotkey comes back, so what comes back,
+    // and any error it reports, is the binding now in force.
     dialog.Closed([&host, recording, changed, weak = std::weak_ptr<bool>(host.alive)](
                       const ContentDialog &, const ContentDialogClosedEventArgs &args) {
         if (gone(weak)) {
             return;
         }
-        ShortcutRecorder::setRecording(host, false);
         ShortcutBinding chosen;
         if (args.Result() == ContentDialogResult::Primary) {
             chosen = recording->capture.binding;
@@ -194,9 +248,18 @@ void showRecorderDialog(PaneHost &host, const QString &title, const std::functio
                                                        : error;
             }
         }
+        ShortcutRecorder::setRecording(host, false);
         changed();
     });
-    dialog.ShowAsync();
+    try {
+        dialog.ShowAsync();
+    } catch (const hresult_error &error) {
+        // Another dialog is already open, say: nothing was recorded, so the
+        // hotkey comes straight back.
+        qWarning() << "Global Shortcut dialog failed to open:"
+                   << QString::fromWCharArray(error.message().c_str());
+        ShortcutRecorder::setRecording(host, false);
+    }
 }
 
 } // namespace
@@ -275,7 +338,9 @@ void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
         return;
     }
     const QString error = host.controller->resumeGlobalShortcut();
-    if (!error.isEmpty()) {
+    // A binding the dialog could not apply says more than the old one failing
+    // to come back.
+    if (!error.isEmpty() && host.shortcutProblem.isEmpty()) {
         host.shortcutProblem = error;
     }
 }

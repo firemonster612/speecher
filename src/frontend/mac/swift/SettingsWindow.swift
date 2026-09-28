@@ -298,7 +298,7 @@ final class SpeecherSettingsWindow {
         closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
         ) { [weak model] _ in
-            MainActor.assumeIsolated { model?.stopShortcutRecorder() }
+            MainActor.assumeIsolated { model?.stopShortcutRecording() }
         }
     }
 

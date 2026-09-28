@@ -118,7 +118,7 @@ final class ShortcutRecorder: ObservableObject {
 
     private func begin(suspending model: AppModel) {
         stop()
-        model.beginShortcutRecording()
+        model.beginShortcutRecording(by: self)
         restoreShortcut = { model.endShortcutRecording() }
         recording = true
     }
@@ -176,11 +176,11 @@ struct ShortcutRecorderRow: View {
                 Button("Grant Accessibility Access") { model.requestAccessibility() }
             }
         }
-        // Not onDisappear: a Form lays its rows out lazily and takes one away
+        // No onDisappear: a Form lays its rows out lazily and takes one away
         // when it scrolls off, which would end a recording still in progress.
-        // The model says when one really has to end (pane change, window
-        // close); a recorder that is itself destroyed restores in deinit.
-        .onChange(of: model.endShortcutRecordings) { recorder.stop() }
+        // The model stops the recorder when one really has to end (pane
+        // change, window close); a recorder that is itself destroyed restores
+        // in deinit.
     }
 
     private var caption: String {
