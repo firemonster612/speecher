@@ -247,7 +247,8 @@ bool TrayStatusPanel::event(QEvent *event)
 {
     // A layer-shell surface or a plain window does not close itself when
     // something else is clicked, as a popup does; losing focus stands in.
-    if (event->type() == QEvent::WindowDeactivate && !windowFlags().testFlag(Qt::Popup)) {
+    // (windowType(), not testFlag: Qt::Tool's bits include Qt::Popup's.)
+    if (event->type() == QEvent::WindowDeactivate && windowType() != Qt::Popup) {
         hide();
     } else if (event->type() == QEvent::KeyPress
                && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
