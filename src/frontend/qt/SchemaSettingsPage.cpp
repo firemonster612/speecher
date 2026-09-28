@@ -279,6 +279,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         row.description = editor.widget->findChild<QLabel *>(QStringLiteral("rowDescription"));
         row.value = editor.value;
         row.setValue = editor.setValue;
+        row.refresh = editor.refresh;
         m_rows.append(row);
         applyRow(m_rows.last(), AppSettings{});
         return;
@@ -600,6 +601,9 @@ void SchemaSettingsPage::refreshRows()
         }
         if (row.descriptor.kind == RowKind::Info && row.descriptor.value && row.setValue) {
             row.setValue(row.descriptor.value(draft));
+        }
+        if (row.refresh) {
+            row.refresh(draft);
         }
         if (row.descriptor.kind == RowKind::Action && row.descriptor.value) {
             if (auto *button = qobject_cast<QPushButton *>(row.control)) {

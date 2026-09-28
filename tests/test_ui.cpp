@@ -712,6 +712,34 @@ private slots:
                                            QStringLiteral("Speecher")}));
     }
 
+    void starringATermMakesItAKeyTermAtOnce()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("claude");
+        for (int index = 0; index < 101; ++index) {
+            settings.vocabulary.append({QStringLiteral("term%1").arg(index, 3, 10, QLatin1Char('0'))});
+        }
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
+        QVERIFY(table);
+        const auto badge = [table](int row) {
+            return table->item(row, 1)->data(BadgeDelegate::TextRole).toString();
+        };
+        QCOMPARE(badge(0), QStringLiteral("Key term"));
+        QCOMPARE(badge(100), QString());
+
+        // Starring the last term pulls it into the key terms and pushes the
+        // 100th out, before anything is saved.
+        table->item(100, 0)->setCheckState(Qt::Checked);
+        QCOMPARE(badge(100), QStringLiteral("Key term"));
+        QCOMPARE(badge(99), QString());
+    }
+
     void addingAVocabularyTermSurvivesTheSettingsRoundTrip()
     {
         ProviderRegistry providers;

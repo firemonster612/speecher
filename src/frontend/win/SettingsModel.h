@@ -117,6 +117,9 @@ public:
     ImportResult recordsImportedFrom(const QByteArray &bytes,
                                      const QList<QVariantMap> &into,
                                      const QString &rowId) const;
+    // The pill beside each record's stretch column, empty for none, for these
+    // records as they stand and the draft's other settings.
+    QStringList badgesFor(const QList<QVariantMap> &records, const QString &rowId) const;
     // What a cell says on hover, which a learned correction answers per record.
     QString tooltipForColumn(const QString &columnId,
                              const QString &rowId,

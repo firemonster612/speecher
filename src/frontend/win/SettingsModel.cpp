@@ -397,6 +397,17 @@ SettingsModel::ImportResult SettingsModel::recordsImportedFrom(const QByteArray 
     return {merged, {}};
 }
 
+QStringList SettingsModel::badgesFor(const QList<QVariantMap> &records,
+                                     const QString &rowId) const
+{
+    const SettingsRow *row = rowWithId(rowId);
+    const CollectionDescriptor *collection = row ? collectionForRow(*row) : nullptr;
+    if (!collection || !collection->badges) {
+        return {};
+    }
+    return collection->badges(records, m_draft);
+}
+
 QString SettingsModel::tooltipForColumn(const QString &columnId,
                                         const QString &rowId,
                                         const QVariantMap &record) const

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Badge
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -310,9 +311,23 @@ fun Settings(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        val keyTerms = keyTerms(settings)
         settings.vocabulary.forEach { word ->
             ListItem(
-                headlineContent = { Text(word) },
+                headlineContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(word)
+                        if (word in keyTerms) {
+                            Badge(
+                                Modifier.padding(start = 8.dp),
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ) {
+                                Text("Key term")
+                            }
+                        }
+                    }
+                },
                 trailingContent = {
                     IconButton({
                         onChange(settings.copy(vocabulary = settings.vocabulary - word))
@@ -449,9 +464,17 @@ internal fun PasteCode(provider: Provider, onPasteCode: (String) -> Unit) {
     }
 }
 
+/** The words Claude Voice receives as key terms: as many as fit its header, in list order. */
+internal fun keyTerms(settings: SpeecherSettings): Set<String> =
+    if (settings.transcriptionProvider != Provider.Claude) emptySet()
+    else {
+        val sent = claudeVoiceKeyterms(settings.vocabulary).toSet()
+        settings.vocabulary.filter { it.trim().replace(Regex("\\s+"), " ") in sent }.toSet()
+    }
+
 /**
- * What the list amounts to: refinement uses every term up to its ceiling, and only Claude takes
- * speech hints, as many as fit its header.
+ * What the list amounts to: refinement uses every term up to its ceiling, and only Claude takes key
+ * terms, as many as fit its header.
  */
 internal fun vocabularySummary(settings: SpeecherSettings): String {
     val count = settings.vocabulary.size
@@ -460,11 +483,11 @@ internal fun vocabularySummary(settings: SpeecherSettings): String {
         else "all are used for refinement"
     if (settings.transcriptionProvider != Provider.Claude) {
         return "Names and terms Speecher should spell your way. ChatGPT dictation takes no " +
-            "speech hints, and $refinement."
+            "key terms, and $refinement."
     }
     val hints = claudeVoiceKeyterms(settings.vocabulary).size
-    return "Names and terms Speecher should spell your way. Claude takes the first $hints as " +
-        "speech hints, and $refinement."
+    return "Names and terms Speecher should spell your way. Claude takes the $hints marked Key " +
+        "term, and $refinement."
 }
 
 @Composable

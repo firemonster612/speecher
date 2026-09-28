@@ -10,20 +10,36 @@ class VocabularySummaryTest {
     fun `Claude counts the terms that fit its header, ChatGPT only refinement`() {
         val words = listOf("Speecher", "speecher", "Kotlin")
         assertEquals(
-            "Names and terms Speecher should spell your way. Claude takes the first 2 as speech " +
-                "hints, and all are used for refinement.",
+            "Names and terms Speecher should spell your way. Claude takes the 2 marked Key term, " +
+                "and all are used for refinement.",
             vocabularySummary(
                 SpeecherSettings(transcriptionProvider = Provider.Claude, vocabulary = words)
             ),
         )
         assertEquals(
-            "Names and terms Speecher should spell your way. ChatGPT dictation takes no speech " +
-                "hints, and the first 1000 are used for refinement.",
+            "Names and terms Speecher should spell your way. ChatGPT dictation takes no key " +
+                "terms, and the first 1000 are used for refinement.",
             vocabularySummary(
                 SpeecherSettings(
                     transcriptionProvider = Provider.ChatGpt,
                     vocabulary = List(1001) { "t$it" },
                 )
+            ),
+        )
+    }
+
+    @Test
+    fun `key terms are the words that fit the Claude header`() {
+        // 8 + 1 + 1010 bytes leaves room for KWin (to exactly 1024) but not Kotlin.
+        val words = listOf("Speecher", "speecher", "a".repeat(1010), "Kotlin", "KWin")
+        assertEquals(
+            setOf("Speecher", "a".repeat(1010), "KWin"),
+            keyTerms(SpeecherSettings(transcriptionProvider = Provider.Claude, vocabulary = words)),
+        )
+        assertEquals(
+            emptySet<String>(),
+            keyTerms(
+                SpeecherSettings(transcriptionProvider = Provider.ChatGpt, vocabulary = words)
             ),
         )
     }

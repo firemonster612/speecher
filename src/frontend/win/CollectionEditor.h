@@ -38,7 +38,8 @@ private:
     void save();
     void showProblems(const QStringList &problems);
     winrt::Microsoft::UI::Xaml::UIElement cellFor(const CollectionColumnSnapshot &column,
-                                                  int recordIndex);
+                                                  int recordIndex,
+                                                  const QString &badgeText);
     void openAddDialog();
     winrt::fire_and_forget importFromFile();
     void removeSelected();

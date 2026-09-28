@@ -194,6 +194,10 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 - (CollectionImportResult *)recordsImportedFrom:(NSData *)data
                                            into:(NSArray<SpeecherRecord *> *)records
                                        forRowId:(NSString *)rowId;
+// The pill beside each record's stretch column, empty for none, for these
+// records as they stand and the draft's other settings.
+- (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
+    NS_SWIFT_NAME(badges(for:forRowId:));
 // What a cell says on hover, which a learned correction answers per record.
 - (NSString *)tooltipForColumn:(NSString *)columnId
                       inRowId:(NSString *)rowId

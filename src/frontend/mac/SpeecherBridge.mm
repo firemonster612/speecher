@@ -1286,6 +1286,20 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return result;
 }
 
+- (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
+{
+    const SettingsRow *row = [self rowWithId:rowId];
+    const CollectionDescriptor *collection = row ? [self collectionForRow:*row] : nullptr;
+    if (!collection || !collection->badges) {
+        return @[];
+    }
+    NSMutableArray<NSString *> *badges = [NSMutableArray array];
+    for (const QString &badge : collection->badges(coreRecords(records), _state->draft)) {
+        [badges addObject:badge.toNSString()];
+    }
+    return badges;
+}
+
 - (NSString *)tooltipForColumn:(NSString *)columnId
                       inRowId:(NSString *)rowId
                        record:(SpeecherRecord *)record
