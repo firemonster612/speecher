@@ -642,6 +642,9 @@ private slots:
             "The transcription service rejected the request: the API key is invalid or has "
             "expired. Check the key on the Accounts page, then try again."));
         grab("error-long");
+        popup.showErrorMessage(QStringLiteral("Could not reach https://example.com/")
+                               + QString(160, QLatin1Char('x')));
+        grab("error-unbroken");
 
         popup.showPopup(2);
         popup.showListeningIndicator();
