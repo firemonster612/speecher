@@ -62,7 +62,20 @@ final class AppModel: ObservableObject {
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
     /// The pane the sidebar is on. A window opened from closed starts on Home.
-    @Published var pane = "home"
+    @Published var pane = "home" {
+        didSet { if pane != oldValue { endShortcutRecordings += 1 } }
+    }
+    /// Bumped when a shortcut recording in progress has to end: the pane
+    /// changed or the settings window closed. The recorder row watches it,
+    /// because SwiftUI can take a lazily laid-out Form row away while it is
+    /// still on the pane.
+    @Published private(set) var endShortcutRecordings = 0
+
+    /// Asks the recorder row to end a recording in progress, if any.
+    func stopShortcutRecorder() {
+        endShortcutRecordings += 1
+    }
+
     /// Home's numbers for the chosen period, re-read whole when the log, the
     /// Insights setting or the period changes.
     @Published private(set) var insights: SpeecherInsightsModel

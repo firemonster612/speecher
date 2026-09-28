@@ -155,9 +155,6 @@ struct ShortcutRecorderRow: View {
     @State private var captureProblem = ""
 
     var body: some View {
-        // One view, so leaving the pane stops the recording once; a Group
-        // would hand onDisappear to each child, and the Grant button going
-        // away would end a recording in progress.
         VStack(alignment: .leading) {
             LabeledContent {
                 Button(caption) {
@@ -179,7 +176,11 @@ struct ShortcutRecorderRow: View {
                 Button("Grant Accessibility Access") { model.requestAccessibility() }
             }
         }
-        .onDisappear { recorder.stop() }
+        // Not onDisappear: a Form lays its rows out lazily and takes one away
+        // when it scrolls off, which would end a recording still in progress.
+        // The model says when one really has to end (pane change, window
+        // close); a recorder that is itself destroyed restores in deinit.
+        .onChange(of: model.endShortcutRecordings) { recorder.stop() }
     }
 
     private var caption: String {
