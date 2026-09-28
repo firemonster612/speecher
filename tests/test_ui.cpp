@@ -1663,7 +1663,7 @@ private slots:
         // Both services are on the page, each with what its probe found.
         QVERIFY(claude->isChecked());
         QCOMPARE(claudeStatus->text(), QStringLiteral("Ready"));
-        QCOMPARE(codexStatus->text(), QStringLiteral("Not set up"));
+        QCOMPARE(codexStatus->text(), QStringLiteral("Not signed in"));
         QVERIFY(setup.ready());
         QVERIFY(setupHint->isHidden());
         QVERIFY(checkAgain->isHidden());

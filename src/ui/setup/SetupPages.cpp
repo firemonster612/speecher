@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
+#include "app/SetupSteps.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
@@ -78,19 +79,6 @@ QPixmap providerMark(const QString &providerId, int size, qreal devicePixelRatio
     // QIcon renders the SVG at the ratio asked for, so the mark stays sharp on
     // a scaled display.
     return QIcon(resource).pixmap(QSize(size, size), devicePixelRatio);
-}
-
-void setSetupStepCounter(QWidget *page, int step, int total)
-{
-    auto *layout = qobject_cast<QVBoxLayout *>(page->layout());
-    if (!layout) {
-        return;
-    }
-    auto *counter = new QLabel(QStringLiteral("Step %1 of %2").arg(step).arg(total), page);
-    counter->setObjectName(QStringLiteral("setupStepCounter"));
-    counter->setFont(settings::smallFont(counter->font()));
-    counter->setForegroundRole(QPalette::PlaceholderText);
-    layout->insertWidget(0, counter, 0, Qt::AlignRight);
 }
 
 ProviderStatsBlock::ProviderStatsBlock(QWidget *parent)
@@ -366,21 +354,6 @@ QWidget *makeGlyphLine(QWidget *parent, const QString &iconName, QLabel **textOu
     return line;
 }
 
-// What the shortcut actually does depends on the activation mode chosen a
-// page earlier, so the closing instruction has to follow it.
-QString activationInstruction(ShortcutActivationMode mode, const QString &shortcut)
-{
-    switch (mode) {
-    case ShortcutActivationMode::Toggle:
-        return QStringLiteral("press %1 to start, press it again to stop").arg(shortcut);
-    case ShortcutActivationMode::PushToTalk:
-        return QStringLiteral("hold %1 while you speak").arg(shortcut);
-    case ShortcutActivationMode::Hybrid:
-        break;
-    }
-    return QStringLiteral("tap %1 to toggle, or hold it to dictate until release").arg(shortcut);
-}
-
 } // namespace
 
 WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
@@ -393,15 +366,8 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
     , m_signIn(settings)
     , m_local(local)
 {
-    QVBoxLayout *layout = makePage(
-        this,
-        QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the app you were using."));
-    QString checksText = QStringLiteral(
-        "This assistant checks everything dictation needs: your speech service, microphone, and how text reaches your apps.");
-#ifdef Q_OS_LINUX
-    checksText += QStringLiteral(" It ends by setting up a Global Shortcut.");
-#endif
-    auto *checks = new QLabel(checksText, this);
+    QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("welcome"))->intro);
+    auto *checks = new QLabel(setupWelcomeDetail(), this);
     checks->setWordWrap(true);
     layout->addWidget(checks);
 
@@ -698,8 +664,7 @@ void WelcomeSetupPage::updateReady()
 
 QString WelcomeSetupPage::blockedReason() const
 {
-    return m_local ? QStringLiteral("No sign-in was found. Sign in, or choose to run on this computer.")
-                   : QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found.");
+    return setupSignInMissing(m_local != nullptr);
 }
 
 void WelcomeSetupPage::setReady(bool ready)
@@ -720,15 +685,13 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     , m_providers(providers)
     , m_local(local)
     , m_signIn(settings)
-    , m_accuracyPass(new QCheckBox(QStringLiteral("Extra transcription accuracy (will increase transcription time)"), this))
+    , m_accuracyPass(new QCheckBox(this))
     , m_stats(new ProviderStatsBlock(this))
     , m_hint(new WrappingLabel(this))
     , m_status(new WrappingLabel(this))
     , m_checkAgain(new QPushButton(QStringLiteral("Check again"), this))
 {
-    QVBoxLayout *layout = makePage(
-        this,
-        QStringLiteral("Choose the service Speecher uses to turn speech into a raw transcript."));
+    QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("transcription"))->intro);
 
     // Every service is on the page with its own readiness, so the choice does
     // not hide behind a dropdown the user has to open to find it.
@@ -804,7 +767,9 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     // Under the facts about the chosen service, where the refinement page puts
     // Fast mode: it is a setting for that service, not part of the sign-in
     // verdict below it. Codex only; see selectProvider().
-    layout->addWidget(m_accuracyPass);
+    const SettingsRow &accuracy = setupSchemaRow(QStringLiteral("codexFinalRetranscribe"));
+    m_accuracyRow = settings::makeRow(accuracy.label, accuracy.help, m_accuracyPass, this);
+    layout->addWidget(m_accuracyRow);
     layout->addWidget(m_status);
     layout->addWidget(m_hint);
     layout->addWidget(m_checkAgain, 0, Qt::AlignLeft);
@@ -1108,13 +1073,7 @@ int SpeechProviderSetupPage::selectedIndex() const
 QString SpeechProviderSetupPage::blockedReason() const
 {
     const int index = selectedIndex();
-    if (index < 0) {
-        return QStringLiteral("No transcription service is available.");
-    }
-    if (localSelected()) {
-        return QStringLiteral("Download a speech model to continue.");
-    }
-    return QStringLiteral("%1 is no longer signed in.").arg(m_options.at(index).label);
+    return setupTranscriptionBlocked(localSelected(), index < 0 ? QString() : m_options.at(index).label);
 }
 
 QString SpeechProviderSetupPage::readySummary() const
@@ -1125,13 +1084,13 @@ QString SpeechProviderSetupPage::readySummary() const
     }
     const ProviderOptionRow &option = m_options.at(index);
     if (localSelected()) {
-        return QStringLiteral("Transcription — %1, on this computer").arg(localChoice().name);
+        return setupChecklistLine(QStringLiteral("transcription"),
+                                  QStringLiteral("%1, on this computer").arg(localChoice().name));
     }
-    QString summary = QStringLiteral("Transcription — %1").arg(option.label);
-    if (m_signIn.usingCliproxy(option.id)) {
-        summary += QStringLiteral(" (CLI Proxy API)");
-    }
-    return summary;
+    return setupChecklistLine(QStringLiteral("transcription"),
+                              m_signIn.usingCliproxy(option.id)
+                                  ? QStringLiteral("%1 (CLI Proxy API)").arg(option.label)
+                                  : option.label);
 }
 
 void SpeechProviderSetupPage::setReady(bool ready)
@@ -1153,7 +1112,7 @@ void SpeechProviderSetupPage::selectProvider(const QString &providerId)
     m_hint->setText(it == providers.cend() ? QString() : it->setupHint);
     // The Local card explains itself; the generic facts would repeat it.
     m_stats->setStats(it == providers.cend() || localSelected() ? QVector<ProviderStat>{} : it->stats);
-    m_accuracyPass->setVisible(providerId == QStringLiteral("codex"));
+    m_accuracyRow->setVisible(providerId == QStringLiteral("codex"));
     updateSignInControls();
     showLocalChoice();
     showSelectedProvider();
@@ -1283,8 +1242,7 @@ void SpeechProviderSetupPage::finishProbe(int index,
     // The Local row's status is its download, which showLocalRowStatus keeps.
     if (option.id != QStringLiteral("local") || !m_local) {
         setStatusColor(option.status, result.ok);
-        option.status->setText(result.ok ? QStringLiteral("Ready")
-                                         : QStringLiteral("Not set up"));
+        option.status->setText(setupProviderVerdict(option.id, result.ok));
     }
     showSelectedProvider();
     // A single-provider re-probe runs outside the counted rounds; it must not
@@ -1368,32 +1326,29 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     , m_status(new QLabel(this))
     , m_noInputTimer(new QTimer(this))
 {
-    QVBoxLayout *layout = makePage(
-        this,
-        QStringLiteral("Choose the input Speecher should record. Speak normally; setup continues once the level moves."));
+    QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("microphone"))->intro);
     m_device->setMinimumContentsLength(28);
     m_level->setRange(0, 100);
     m_level->setValue(0);
-    m_level->setFormat(QStringLiteral("Input level %p%"));
+    m_level->setFormat(QStringLiteral("%p%"));
     m_status->setWordWrap(true);
 
     auto *form = new QGridLayout;
-    form->addWidget(new QLabel(QStringLiteral("Microphone"), this), 0, 0);
+    form->addWidget(new QLabel(setupSchemaRow(QStringLiteral("audioDevice")).label, this), 0, 0);
     form->addWidget(m_device, 0, 1);
-    form->addWidget(new QLabel(QStringLiteral("Live level"), this), 1, 0);
+    form->addWidget(new QLabel(setupInputLevelLabel(), this), 1, 0);
     form->addWidget(m_level, 1, 1);
     layout->addLayout(form);
     layout->addWidget(m_status);
     layout->addStretch();
 
     m_noInputTimer->setSingleShot(true);
-    m_noInputTimer->setInterval(5000);
+    m_noInputTimer->setInterval(kSetupSilentMicrophoneMs);
     connect(m_noInputTimer, &QTimer::timeout, this, [this] {
         if (m_inputDetected) {
             return;
         }
-        m_status->setText(
-            QStringLiteral("No input yet — check that the microphone isn't muted, or pick another device."));
+        m_status->setText(setupSilentMicrophoneHint());
     });
 
     m_input = m_platform.createAudioInput(&m_settings, this);
@@ -1417,15 +1372,15 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
 
 QString MicrophoneSetupPage::blockedReason() const
 {
-    return m_device->count() == 0 ? QStringLiteral("No microphone was found.")
-                                  : QStringLiteral("No input has been detected.");
+    return setupMicrophoneBlocked(m_device->count() == 0 ? SetupMicrophoneProblem::NoDevice
+                                                         : SetupMicrophoneProblem::Silent);
 }
 
 QString MicrophoneSetupPage::readySummary() const
 {
     const QString device = m_device->currentText();
     return device.isEmpty() ? QString()
-                            : QStringLiteral("Microphone — %1").arg(device);
+                            : setupChecklistLine(QStringLiteral("microphone"), device);
 }
 
 void MicrophoneSetupPage::setInputDetected(bool detected)
@@ -1533,7 +1488,7 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
 #ifdef Q_OS_WIN
         QStringLiteral("Windows UI Automation lets Speecher identify the target app, read nearby text, and learn corrections. It does not require a permission grant."));
 #else
-        QStringLiteral("Speecher pastes your dictation into the app you are using, and reads the text around your cursor so cleanup understands the context. On Linux both work through the desktop accessibility service (AT-SPI); it also lets Speecher learn your corrections."));
+        findSetupStep(QStringLiteral("accessibility"))->intro);
 #endif
     m_status->setWordWrap(true);
     m_enable->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
@@ -1642,7 +1597,7 @@ void AccessibilitySetupPage::showCapabilities(bool allowed)
 
 QString AccessibilitySetupPage::blockedReason() const
 {
-    return QStringLiteral("Accessibility is off, so Speecher cannot paste or read context.");
+    return findSetupStep(QStringLiteral("accessibility"))->blocked;
 }
 
 TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *parent)
@@ -1654,7 +1609,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     , m_clipboardOnly(new QCheckBox(
           QStringLiteral("Continue without the virtual keyboard; Speecher pastes from the clipboard instead"),
           this))
-    , m_restoreClipboard(new QCheckBox(restoreClipboardDescription(), this))
+    , m_restoreClipboard(new QCheckBox(this))
     , m_format(new QComboBox(this))
 {
     QVBoxLayout *layout = makePage(
@@ -1662,7 +1617,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
 #ifdef Q_OS_WIN
         QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Ctrl+V. Nothing extra needs to be installed."));
 #else
-        QStringLiteral("To type for you, Speecher installs a small virtual keyboard. Your computer will ask for your administrator password once; Speecher itself never runs privileged."));
+        findSetupStep(QStringLiteral("delivery"))->intro);
 #endif
     m_status->setWordWrap(true);
     m_progress->setRange(0, 0);
@@ -1700,11 +1655,12 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     settings::addCardRow(card, m_clipboardOnlyRow, host);
     settings::addCardRow(
         card,
-        settings::makeRow(QStringLiteral("Clipboard format"), QString(), m_format, host),
+        settings::makeRow(setupSchemaRow(QStringLiteral("outputFormat")).label, QString(), m_format, host),
         host);
+    const SettingsRow &restore = setupSchemaRow(QStringLiteral("restoreClipboardAfterTyping"));
     settings::addCardRow(
         card,
-        settings::makeRow(restoreClipboardDescription(), QString(), m_restoreClipboard, host),
+        settings::makeRow(restore.label, restore.help, m_restoreClipboard, host),
         host);
     layout->addStretch();
 #ifndef SPEECHER_WITH_YDOTOOL
@@ -1737,18 +1693,17 @@ bool TextDeliverySetupPage::needsSignIn() const
 
 QString TextDeliverySetupPage::blockedReason() const
 {
-    return QStringLiteral(
-        "The virtual keyboard is not set up, so Speecher cannot type into other apps.");
+    return findSetupStep(QStringLiteral("delivery"))->blocked;
 }
 
 QString TextDeliverySetupPage::readySummary() const
 {
 #ifdef SPEECHER_WITH_YDOTOOL
     if (!m_clipboardOnly->isChecked()) {
-        return QStringLiteral("Text delivery — virtual keyboard");
+        return setupChecklistLine(QStringLiteral("delivery"), QStringLiteral("virtual keyboard"));
     }
 #endif
-    return QStringLiteral("Text delivery — clipboard");
+    return setupChecklistLine(QStringLiteral("delivery"), QStringLiteral("clipboard"));
 }
 
 bool TextDeliverySetupPage::stepComplete() const
@@ -1858,9 +1813,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     , m_fastMode(new QCheckBox(QStringLiteral("Fast mode"), this))
     , m_fastModeHint(new QLabel(this))
 {
-    QVBoxLayout *layout = makePage(
-        this,
-        QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or skip cleanup."));
+    QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("refinement"))->intro);
 
     // The cloud providers use a sign-in; a local runner and a custom endpoint
     // are models the person runs. Each group is its own card.
@@ -2078,7 +2031,11 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
     m_endpointFormat->addItem(QStringLiteral("OpenAI-compatible (Chat Completions)"), QStringLiteral("openai"));
     m_endpointFormat->addItem(QStringLiteral("Anthropic-compatible (Messages)"), QStringLiteral("anthropic"));
     settings::selectData(m_endpointFormat, saved.format);
-    settings::addCardRow(card, settings::makeRow(QStringLiteral("Format"), QString(), m_endpointFormat, host), host);
+    settings::addCardRow(
+        card,
+        settings::makeRow(setupSchemaRow(QStringLiteral("refinementEndpointFormat")).label, QString(),
+                          m_endpointFormat, host),
+        host);
 
     m_endpointUrl = new QLineEdit(saved.apiBase, host);
     m_endpointUrl->setObjectName(QStringLiteral("refinementEndpointUrl"));
@@ -2269,11 +2226,38 @@ QString RefinementSetupPage::readySummary() const
 {
     const QString ownModel = ownModelRefinementSummary(m_settings.snapshot().refinement);
     if (!ownModel.isEmpty()) {
-        return QStringLiteral("Refinement — %1").arg(ownModel);
+        return setupChecklistLine(QStringLiteral("refinement"), ownModel);
     }
     const int index = selectedIndex();
-    return QStringLiteral("Refinement — %1")
-        .arg(index < 0 ? QStringLiteral("None") : m_options.at(index).label);
+    return setupChecklistLine(QStringLiteral("refinement"),
+                              index < 0 ? QStringLiteral("None") : m_options.at(index).label);
+}
+
+// The row's verdict as Settings would find it now: an own model by its saved
+// form, a sign-in by the page's last probe.
+std::optional<bool> RefinementSetupPage::providerReady() const
+{
+    const QString id = selectedProviderId();
+    if (id == QStringLiteral("local") || id == QStringLiteral("endpoint")) {
+        const RefinementSettings settings = m_settings.snapshot().refinement;
+        TranscriptRefiner *refiner = m_providers.refinementProvider(id);
+        return refiner && refiner->prepare(settings).ok;
+    }
+    const int index = selectedIndex();
+    if (index < 0 || !m_options.at(index).probed) {
+        return std::nullopt;
+    }
+    return m_options.at(index).ok;
+}
+
+QString RefinementSetupPage::readyVerdict() const
+{
+    return setupRefinementStatus(selectedProviderId(), providerReady());
+}
+
+bool RefinementSetupPage::readyVerdictPositive() const
+{
+    return providerReady().value_or(false);
 }
 
 QString RefinementSetupPage::selectedProviderId() const
@@ -2360,8 +2344,7 @@ void RefinementSetupPage::finishProbe(int index,
     option.ok = result.ok;
     option.message = result.message;
     setStatusColor(option.status, result.ok);
-    option.status->setText(result.ok ? QStringLiteral("Ready")
-                                     : QStringLiteral("Not set up"));
+    option.status->setText(setupProviderVerdict(option.id, result.ok));
     if (m_local && (option.id == QStringLiteral("local") || option.id == QStringLiteral("endpoint"))) {
         showLocalRunner();
     }
@@ -2455,16 +2438,14 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
     , m_settings(settings)
     , m_defaultProfile(new QComboBox(this))
 {
-    QVBoxLayout *layout = makePage(
-        this,
-        QStringLiteral("Choose the fallback Writing Profile and how much cleanup and tone adjustment each profile receives."));
+    QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("profiles"))->intro);
     const QList<WritingProfileSettings> current = m_settings.writingProfileSettings();
     const QList<RowOption> profiles = writingProfileChoices(current);
     addOptions(m_defaultProfile, profiles);
     settings::selectData(m_defaultProfile, m_settings.defaultWritingProfile());
 
     auto *grid = new QGridLayout;
-    grid->addWidget(new QLabel(QStringLiteral("Default profile"), this), 0, 0);
+    grid->addWidget(new QLabel(setupSchemaRow(QStringLiteral("defaultWritingProfile")).label, this), 0, 0);
     grid->addWidget(m_defaultProfile, 0, 1, 1, 2);
     grid->addWidget(new QLabel(QStringLiteral("Profile"), this), 2, 0);
     grid->addWidget(new QLabel(QStringLiteral("Cleanup"), this), 2, 1);
@@ -2492,9 +2473,7 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
         ++row;
     }
     layout->addLayout(grid);
-    auto *note = new WrappingLabel(
-        QStringLiteral("The default profile is used when Speecher does not recognise the app you are dictating into. Every profile can be changed later in Settings."),
-        this);
+    auto *note = new WrappingLabel(setupProfilesNote(), this);
     note->setWordWrap(true);
     note->setFont(settings::smallFont(note->font()));
     note->setForegroundRole(QPalette::PlaceholderText);
@@ -2530,7 +2509,7 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
     , m_completed(new QWidget(this))
     , m_blocked(new QWidget(this))
 {
-    QVBoxLayout *layout = makePage(this, QStringLiteral("Setup is complete."), &m_intro);
+    QVBoxLayout *layout = makePage(this, setupReadyIntro(false, false), &m_intro);
     setStatusColor(m_intro, true);
     m_downloadNotice = new InlineMessage(this);
     m_downloadNotice->setObjectName(QStringLiteral("finishDownloadNotice"));
@@ -2604,16 +2583,13 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
     auto *blockedLayout = new QVBoxLayout(m_blocked);
     blockedLayout->setContentsMargins(0, 0, 0, 0);
     blockedLayout->setSpacing(settings::largeSpacing());
-    blockedLayout->addWidget(settings::makeSectionLabel(
-        QStringLiteral("A few steps still need attention:"), m_blocked));
+    blockedLayout->addWidget(settings::makeSectionLabel(setupBlockedHeading(), m_blocked));
     m_blockedList = new QWidget(m_blocked);
     auto *blockedListLayout = new QVBoxLayout(m_blockedList);
     blockedListLayout->setContentsMargins(0, 0, 0, 0);
     blockedListLayout->setSpacing(0);
     blockedLayout->addWidget(m_blockedList);
-    auto *blockedFoot = new WrappingLabel(
-        QStringLiteral("Finish becomes available once every step above is resolved."),
-        m_blocked);
+    auto *blockedFoot = new WrappingLabel(setupBlockedFooter(), m_blocked);
     blockedFoot->setWordWrap(true);
     blockedFoot->setFont(settings::smallFont(blockedFoot->font()));
     blockedFoot->setForegroundRole(QPalette::PlaceholderText);
@@ -2630,10 +2606,7 @@ void FinishSetupPage::setSteps(const QList<SetupStepStatus> &steps)
     const bool blocked = std::any_of(steps.cbegin(), steps.cend(),
                                      [](const SetupStepStatus &step) { return !step.ok; });
     const bool downloading = !blocked && !downloadingModel().isEmpty();
-    m_intro->setText(blocked       ? QStringLiteral("Speecher can't dictate yet. Finish the steps below, or go back "
-                                                    "and change your choices.")
-                     : downloading ? QStringLiteral("Setup is complete except for the speech model download.")
-                                   : QStringLiteral("Setup is complete."));
+    m_intro->setText(setupReadyIntro(blocked, downloading));
     setStatusColor(m_intro, !blocked && !downloading);
     m_downloadNotice->setVisible(downloading);
     m_completed->setVisible(!blocked);
@@ -2717,8 +2690,8 @@ void FinishSetupPage::showCompletedSteps(const QList<SetupStepStatus> &steps)
         }
         const StatusRow row = makeStatusRow(host, nullptr, step.detail, false, download);
         if (!download) {
-            setStatusColor(row.status, true);
-            row.status->setText(QStringLiteral("Ready"));
+            setStatusColor(row.status, step.verdictReady);
+            row.status->setText(step.verdict.isEmpty() ? QStringLiteral("Ready") : step.verdict);
         }
         settings::addCardRow(card, row.widget, host);
     }
@@ -2765,9 +2738,7 @@ void FinishSetupPage::updateLinuxShortcutInstruction()
     const QString display = m_controller.globalShortcutDisplay();
     if (!display.isEmpty()) {
         m_shortcutStatus->setText(
-            QStringLiteral("To dictate, %1.")
-                .arg(activationInstruction(m_controller.settings()->shortcutActivationMode(),
-                                           display)));
+            setupActivationInstruction(m_controller.settings()->shortcutActivationMode(), display));
         m_manualCommand->hide();
         m_trayNote->setText(
             linuxTrayShortcutNote(QSystemTrayIcon::isSystemTrayAvailable()));

@@ -1,5 +1,7 @@
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 
+#include "app/SetupSteps.h"
+
 #include "app/ApplicationController.h"
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
@@ -403,7 +405,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     auto *modeRow = m_activationModeRow;
     auto *modeLayout = new QVBoxLayout(modeRow);
     modeLayout->setContentsMargins(0, 0, 0, 0);
-    modeLayout->addWidget(guidanceLabel(QStringLiteral("Shortcut behaviour"), modeRow));
+    modeLayout->addWidget(guidanceLabel(setupSchemaRow(QStringLiteral("activationMode")).label, modeRow));
     m_activationMode = new QComboBox(modeRow);
     m_activationMode->setObjectName(QStringLiteral("activationMode"));
     const auto addMode = [this](ShortcutActivationMode mode, const QString &label) {

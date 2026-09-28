@@ -821,7 +821,7 @@ private slots:
                  QStringList({QStringLiteral("Welcome to Speecher"),
                               QStringLiteral("Transcription"),
                               QStringLiteral("Microphone"),
-                              QStringLiteral("Desktop accessibility"),
+                              QStringLiteral("Accessibility"),
                               QStringLiteral("Text delivery"),
                               QStringLiteral("Refinement"),
                               QStringLiteral("Writing profiles"),
@@ -1116,7 +1116,7 @@ private slots:
         FinishSetupPage page(controller);
         page.setSteps({
             {QStringLiteral("Transcription"), true, QStringLiteral("Transcription — ChatGPT Codex")},
-            {QStringLiteral("Desktop accessibility"), true, QString()},
+            {QStringLiteral("Accessibility"), true, QString()},
             {QStringLiteral("Microphone"), true, QStringLiteral("Microphone — Yeti Stereo Microphone")},
         });
         page.show();
@@ -1132,8 +1132,30 @@ private slots:
         QVERIFY(shown.contains(QStringLiteral("Transcription — ChatGPT Codex")));
         QVERIFY(shown.contains(QStringLiteral("Microphone — Yeti Stereo Microphone")));
         // A step with nothing chosen has nothing to report back.
-        QVERIFY(!shown.contains(QStringLiteral("Desktop accessibility")));
+        QVERIFY(!shown.contains(QStringLiteral("Accessibility")));
         QVERIFY(!shown.contains(QStringLiteral("A few steps still need attention:")));
+    }
+
+    void finishPageReportsTheRefinementVerdict()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        FinishSetupPage page(controller);
+        SetupStepStatus refinement{QStringLiteral("Refinement"), true, QStringLiteral("Refinement — OpenAI")};
+        refinement.verdict = QStringLiteral("Not signed in");
+        refinement.verdictReady = false;
+        page.setSteps({refinement});
+        page.show();
+        QCoreApplication::processEvents();
+
+        QStringList shown;
+        for (const QLabel *label : page.findChildren<QLabel *>()) {
+            if (label->isVisible()) {
+                shown << label->text();
+            }
+        }
+        QVERIFY(shown.contains(QStringLiteral("Not signed in")));
+        QVERIFY(!shown.contains(QStringLiteral("Ready")));
     }
 
     void finishPageShowsADownloadThatIsStillGoing()
