@@ -990,6 +990,13 @@ void ApplicationController::completeSetup()
     });
 }
 
+void ApplicationController::setupAssistantClosed()
+{
+    if (!m_popupOnly && !heldFilesOpening()) {
+        showMainWindow();
+    }
+}
+
 bool ApplicationController::ensureSetupCompleted()
 {
     if (m_settings->setupCompleted()) {
