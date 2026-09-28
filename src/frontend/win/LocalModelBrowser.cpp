@@ -212,7 +212,7 @@ StackPanel LocalModelBrowser::makeDetail()
     detail.Children().Append(m_prosCons);
 
     m_problem = InfoBar();
-    m_problem.Severity(InfoBarSeverity::Error);
+    m_problem.Severity(InfoBarSeverity::Warning);
     m_problem.IsClosable(false);
     m_problem.Margin({0, 8, 0, 0});
     detail.Children().Append(m_problem);

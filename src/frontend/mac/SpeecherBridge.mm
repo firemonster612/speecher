@@ -638,6 +638,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *disabledHelp;
 @property (nonatomic, copy) NSString *disabledAction;
 @property (nonatomic, copy) NSString *disabledActionLabel;
+@property (nonatomic, copy) NSString *groupId;
 @property (nonatomic, strong, nullable) CollectionModel *collection;
 @property (nonatomic) BOOL secret;
 @property (nonatomic, copy) NSString *placeholder;
@@ -1198,6 +1199,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.disabledHelp = row.disabledHelp.toNSString();
     model.disabledAction = row.disabledAction.toNSString();
     model.disabledActionLabel = row.disabledActionLabel.toNSString();
+    model.groupId = row.groupId.toNSString();
     model.secret = row.secret;
     model.placeholder = row.placeholder.toNSString();
     model.multiline = row.multiline;

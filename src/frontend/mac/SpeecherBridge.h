@@ -110,6 +110,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // row dispatch understands — and its button caption. Empty when none.
 @property (nonatomic, readonly, copy) NSString *disabledAction;
 @property (nonatomic, readonly, copy) NSString *disabledActionLabel;
+// Rows naming the same group share one gate, so one note explains it.
+@property (nonatomic, readonly, copy) NSString *groupId;
 // Set on a Collection row, and on the one Custom row that is a table.
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
 // Text rows only: a key or password, shown masked.

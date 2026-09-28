@@ -7,10 +7,15 @@ import SwiftUI
 struct RowView: View {
     let row: SettingsRowModel
     @ObservedObject var model: AppModel
+    /// False on a row whose group's first row already explains the gate; it
+    /// keeps its own description instead.
+    var gateNote = true
 
     var body: some View {
         if row.enabled {
             control.help(row.tooltip)
+        } else if !gateNote {
+            control.disabled(true).help(row.disabledHelp)
         } else {
             // The schema requires the explanation visible beside the disabled
             // control and its recovery action usable (SettingsSchema.h's
@@ -153,7 +158,7 @@ struct RowView: View {
     // disabled, matching the Qt and Windows front ends; showing both would give
     // a gated row two competing descriptions.
     private var label: some View {
-        Self.label(row.label, help: row.enabled ? row.help : "")
+        Self.label(row.label, help: row.enabled || !gateNote ? row.help : "")
     }
 
     /// The name of a setting and, under it, what it does. Two Texts in a stock
@@ -199,15 +204,20 @@ struct NumberField: View {
     @FocusState private var editing: Bool
 
     var body: some View {
+        // A setting is a count, not an amount: 5000 ms, never "5,000". The
+        // suffix is spaced from the number only when the schema spaces it,
+        // so " ms" reads "500 ms" and "%" reads "5%".
         HStack {
-            TextField("", value: $value, format: .number)
-                .labelsHidden()
-                .multilineTextAlignment(.trailing)
-                .fixedSize()
-                .focused($editing)
-                .onSubmit { commit() }
-            if !row.suffix.isEmpty {
-                Text(row.suffix.trimmingCharacters(in: .whitespaces))
+            HStack(spacing: row.suffix.hasPrefix(" ") ? nil : 2) {
+                TextField("", value: $value, format: .number.grouping(.never))
+                    .labelsHidden()
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize()
+                    .focused($editing)
+                    .onSubmit { commit() }
+                if !row.suffix.isEmpty {
+                    Text(row.suffix.trimmingCharacters(in: .whitespaces))
+                }
             }
             Stepper("", value: $value, in: lowerBound...upperBound, step: row.step)
                 .labelsHidden()

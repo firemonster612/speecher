@@ -138,8 +138,12 @@ struct PaneView: View {
     @ViewBuilder private func card(_ card: PaneCard, titled: Bool = true) -> some View {
         if !card.rows.isEmpty {
             Section {
-                ForEach(card.rows, id: \.rowId) { row in
-                    RowView(row: row, model: model)
+                ForEach(Array(card.rows.enumerated()), id: \.element.rowId) { index, row in
+                    // Rows of a group share one gate, so only the first
+                    // explains it, as on Linux and Windows.
+                    let continuesGroup = index > 0 && !row.groupId.isEmpty
+                        && card.rows[index - 1].groupId == row.groupId
+                    RowView(row: row, model: model, gateNote: !continuesGroup)
                 }
             } header: {
                 if titled { Text(card.title) }

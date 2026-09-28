@@ -9,6 +9,8 @@
 #include "providers/ClaudeCredentials.h"
 #include "providers/ProviderSignIn.h"
 
+#include <QRegularExpression>
+
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
 #include <winrt/Windows.Foundation.h>
@@ -16,6 +18,7 @@
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Text.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Microsoft.UI.Xaml.Documents.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #pragma pop_macro("GetCurrentTime")
@@ -332,11 +335,35 @@ UIElement releaseNotes(const RowSnapshot &row)
                 lines.append(line);
             }
         }
-        TextBlock text = styledTextBlock(lines.join(QLatin1Char('\n')), L"SettingsCardBodyStyle");
+        // Inline [text](url) links become Hyperlinks; the rest is plain runs.
+        static const QRegularExpression link(QStringLiteral("\\[([^\\]]+)\\]\\(([^)\\s]+)\\)"));
+        const QString source = lines.join(QLatin1Char('\n'));
+        Documents::Paragraph paragraph;
+        const auto appendRun = [&paragraph](const QString &text) {
+            Documents::Run run;
+            run.Text(hs(text));
+            paragraph.Inlines().Append(run);
+        };
+        qsizetype consumed = 0;
+        for (const QRegularExpressionMatch &match : link.globalMatch(source)) {
+            appendRun(source.mid(consumed, match.capturedStart() - consumed));
+            Documents::Run label;
+            label.Text(hs(match.captured(1)));
+            Documents::Hyperlink hyperlink;
+            hyperlink.NavigateUri(Uri(hs(match.captured(2))));
+            hyperlink.Inlines().Append(label);
+            paragraph.Inlines().Append(hyperlink);
+            consumed = match.capturedEnd();
+        }
+        appendRun(source.mid(consumed));
+        // Body text by default, as SettingsCardBodyStyle's TextBlocks are.
+        RichTextBlock text;
+        text.TextWrapping(TextWrapping::Wrap);
         text.IsTextSelectionEnabled(true);
         if (heading) {
             text.FontWeight(winrt::Windows::UI::Text::FontWeights::Bold());
         }
+        text.Blocks().Append(paragraph);
         notes.Children().Append(text);
     }
     return notes;
