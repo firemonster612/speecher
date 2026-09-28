@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/SetupSteps.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
@@ -422,6 +423,16 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @end
 
 @implementation SpeecherProviderModel
+@end
+
+@interface SpeecherSetupStep ()
+@property (nonatomic, readwrite, copy) NSString *stepId;
+@property (nonatomic, readwrite, copy) NSString *title;
+@property (nonatomic, readwrite, copy) NSString *intro;
+@property (nonatomic, readwrite, copy) NSString *blocked;
+@end
+
+@implementation SpeecherSetupStep
 @end
 
 @implementation SpeecherTranscribeOptions
@@ -2298,6 +2309,78 @@ static void probeSpeechProvider(BridgeState *state,
 - (BOOL)isSetupSignInProvider:(NSString *)providerId
 {
     return speecher::isSetupSignInProvider(QString::fromNSString(providerId));
+}
+
+- (NSArray<SpeecherSetupStep *> *)setupSteps
+{
+    NSMutableArray<SpeecherSetupStep *> *steps = [NSMutableArray array];
+    for (const speecher::SetupStepInfo &info : speecher::setupSteps()) {
+        SpeecherSetupStep *step = [SpeecherSetupStep new];
+        step.stepId = info.id.toNSString();
+        step.title = info.title.toNSString();
+        step.intro = info.intro.toNSString();
+        step.blocked = info.blocked.toNSString();
+        [steps addObject:step];
+    }
+    return steps;
+}
+
+- (NSString *)setupWelcomeDetail { return speecher::setupWelcomeDetail().toNSString(); }
+- (NSString *)setupSilentMicrophoneHint { return speecher::setupSilentMicrophoneHint().toNSString(); }
+- (NSString *)setupInputLevelLabel { return speecher::setupInputLevelLabel().toNSString(); }
+- (NSString *)setupProfilesNote { return speecher::setupProfilesNote().toNSString(); }
+- (NSString *)setupBlockedHeading { return speecher::setupBlockedHeading().toNSString(); }
+- (NSString *)setupBlockedFooter { return speecher::setupBlockedFooter().toNSString(); }
+
+- (NSString *)setupStepCounter:(NSInteger)step of:(NSInteger)total
+{
+    return speecher::setupStepCounter(int(step), int(total)).toNSString();
+}
+
+- (NSString *)setupSignInMissing:(BOOL)localOffered
+{
+    return speecher::setupSignInMissing(localOffered).toNSString();
+}
+
+- (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
+{
+    return speecher::setupTranscriptionBlocked(localSelected, QString::fromNSString(providerLabel)).toNSString();
+}
+
+- (NSString *)setupMicrophoneBlocked:(BOOL)accessGranted
+{
+    return speecher::setupMicrophoneBlocked(accessGranted ? speecher::SetupMicrophoneProblem::Silent
+                                                          : speecher::SetupMicrophoneProblem::NoAccess)
+        .toNSString();
+}
+
+- (NSString *)setupReadyIntro:(BOOL)blocked downloading:(BOOL)downloading
+{
+    return speecher::setupReadyIntro(blocked, downloading).toNSString();
+}
+
+- (NSString *)setupActivationInstruction:(NSString *)shortcut
+{
+    return speecher::setupActivationInstruction(_state->controller->settings()->shortcutActivationMode(),
+                                                QString::fromNSString(shortcut))
+        .toNSString();
+}
+
+- (NSString *)setupProviderVerdict:(NSString *)providerId ready:(BOOL)ready
+{
+    return speecher::setupProviderVerdict(QString::fromNSString(providerId), ready).toNSString();
+}
+
+- (NSString *)setupRefinementStatus:(NSString *)providerId ready:(NSNumber *)ready
+{
+    return speecher::setupRefinementStatus(QString::fromNSString(providerId),
+                                           ready ? std::optional<bool>(ready.boolValue) : std::nullopt)
+        .toNSString();
+}
+
+- (NSString *)setupChecklistLine:(NSString *)stepId choice:(NSString *)choice
+{
+    return speecher::setupChecklistLine(QString::fromNSString(stepId), QString::fromNSString(choice)).toNSString();
 }
 
 - (NSString *)ownModelRefinementSummary

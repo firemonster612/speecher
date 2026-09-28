@@ -8,56 +8,10 @@ import SwiftUI
 // schema row holds — the provider check, the meter, the permissions and the
 // finish rules — lives in the flow model below.
 
-struct SetupStep: Identifiable {
-    let id: String
-    let title: String
-    let intro: String
-
-    static let all: [SetupStep] = [
-        SetupStep(id: "welcome",
-                  title: "Welcome to Speecher",
-                  intro: "Speecher records a short dictation, turns it into text, "
-                      + "and sends it to the app you were using."),
-        SetupStep(id: "transcription",
-                  title: "Transcription",
-                  intro: "Choose the service Speecher uses to turn speech into a raw transcript."),
-        SetupStep(id: "microphone",
-                  title: "Microphone",
-                  intro: "Choose the input Speecher should record. "
-                      + "Speak normally; setup continues once the level moves."),
-        SetupStep(id: "accessibility",
-                  title: "Accessibility",
-                  intro: "Speecher pastes your dictation into the frontmost app with a synthetic "
-                      + "Cmd+V. macOS calls that controlling your computer, so it needs "
-                      + "Accessibility permission."),
-        SetupStep(id: "delivery",
-                  title: "Text delivery",
-                  intro: "Speecher puts the finished text on your clipboard and pastes it into "
-                      + "the frontmost app with Cmd+V. The paste needs the Accessibility "
-                      + "permission from the previous step; without it the text still reaches "
-                      + "your clipboard."),
-        SetupStep(id: "refinement",
-                  title: "Refinement",
-                  intro: "Refinement can clean up a raw transcript after dictation. "
-                      + "Choose a provider, or skip cleanup."),
-        SetupStep(id: "profiles",
-                  title: "Writing profiles",
-                  intro: "Speecher picks a writing profile from the app you dictate into. "
-                      + "Choose the fallback profile and how much cleanup and tone "
-                      + "adjustment each one gets."),
-        SetupStep(id: "shortcut",
-                  title: "Dictation shortcut",
-                  intro: "Choose what starts dictation: a key combination, or one key on "
-                      + "its own, such as Right Option. Then choose what pressing it does."),
-        // The ready step's lead depends on whether anything is still unfinished,
-        // so the flow supplies it; see SetupFlowModel.intro(for:).
-        SetupStep(id: "ready",
-                  title: "Ready to dictate",
-                  intro: ""),
-        SetupStep(id: "login",
-                  title: "Start at login",
-                  intro: "Dictation only works while Speecher is running."),
-    ]
+/// One step as core words it; see app/SetupSteps.h.
+typealias SetupStep = SpeecherSetupStep
+extension SpeecherSetupStep: Identifiable {
+    var id: String { stepId }
 }
 
 /// A provider as the assistant lists it: the registry's strings, plus what the
@@ -92,10 +46,10 @@ struct ProviderRow: Identifiable {
     /// not find: the registry's hint, which every front end shares.
     var credentialHint: String { setupHint }
 
-    /// The verdict the transcription and refinement rows carry.
-    var readinessStatus: String {
+    /// The verdict the transcription and refinement rows carry, in core's words.
+    func readinessStatus(_ bridge: SpeecherBridge) -> String {
         guard probed else { return "Checking…" }
-        return ready ? "Ready" : "Not set up"
+        return bridge.setupProviderVerdict(id, ready: ready)
     }
 }
 
@@ -127,69 +81,14 @@ struct ReadyItem: Identifiable {
     let ready: Bool
 }
 
-/// The keys the finish step will hand the shortcut binder. Held rather than
-/// bound as they are typed: the Qt assistant only registered the shortcut when
-/// setup finished, and skipping must not leave a half-chosen binding behind.
-/// One binding, either a combination or a single key: recording one kind
-/// replaces the other.
-struct PendingShortcut {
-    let characters: String
-    let flags: NSEvent.ModifierFlags
-    /// The W3C KeyboardEvent.code name of a recorded single key; nil for a
-    /// combination.
-    let keyCode: String?
-    let display: String
-
-    init(characters: String,
-         flags: NSEvent.ModifierFlags,
-         keyCode: String? = nil,
-         display: String) {
-        self.characters = characters
-        self.flags = flags
-        self.keyCode = keyCode
-        self.display = display
-    }
-
-    /// ⌃⌥D, which reaches the binder as Qt's Meta+Alt+D.
-    static let standard = PendingShortcut(characters: "d",
-                                          flags: [.control, .option],
-                                          display: "⌃⌥D")
-
-    /// The HIG's modifier order, then the key the way the menu bar would
-    /// write it.
-    static func display(characters: String, flags: NSEvent.ModifierFlags) -> String {
-        var text = ""
-        if flags.contains(.control) { text += "⌃" }
-        if flags.contains(.option) { text += "⌥" }
-        if flags.contains(.shift) { text += "⇧" }
-        if flags.contains(.command) { text += "⌘" }
-        return text + keyName(characters)
-    }
-
-    private static func keyName(_ characters: String) -> String {
-        guard let scalar = characters.unicodeScalars.first else { return "" }
-        let functionKeyRange = UnicodeScalar(NSF1FunctionKey)!...UnicodeScalar(NSF12FunctionKey)!
-        if functionKeyRange.contains(scalar) {
-            return "F\(scalar.value - UInt32(NSF1FunctionKey) + 1)"
-        }
-        switch scalar {
-        case " ": return "Space"
-        case "\r": return "↩"
-        case "\t": return "⇥"
-        case "\u{1b}": return "⎋"
-        default: return characters.uppercased()
-        }
-    }
-}
-
 /// Everything the assistant shows that no schema row holds. The settings the
 /// steps edit go through the shared AppModel, exactly as the settings window
 /// writes them.
 @MainActor
 final class SetupFlowModel: ObservableObject {
     let model: AppModel
-    /// What happens once setup ends without a relaunch; the front end shows the
-    /// settings window here.
+    /// What happens once the assistant closes, finished or not, unless it
+    /// closes for a relaunch; the front end shows the settings window here.
     var onFinished: () -> Void = {}
     var closeWindow: () -> Void = {}
     /// E2E capture seam only: called from the step content's onAppear, so a
@@ -235,6 +134,8 @@ final class SetupFlowModel: ObservableObject {
     /// by the time they reach for Continue.
     @Published private var microphoneInputDetected = false
     private var meterRunning = false
+    /// Puts the silent-meter hint up when the meter has heard nothing.
+    private var silentMeterTimer: Timer?
     private var lastVolumeRefresh = Date.distantPast
     /// macOS grants microphone access in System Settings and tells this process
     /// nothing, so the only way to notice is to keep asking while the page is up.
@@ -245,12 +146,6 @@ final class SetupFlowModel: ObservableObject {
     @Published var accessibilityProblem = ""
     private var initialGrant: Bool?
     private var accessibilityPoll: Timer?
-
-    // Finish.
-    @Published var createShortcut = true { didSet { resetShortcutFailure() } }
-    @Published var pendingShortcut = PendingShortcut.standard { didSet { resetShortcutFailure() } }
-    @Published var shortcutStatus = SetupFlowModel.shortcutHint
-    private var shortcutFailureAcknowledged = false
 
     // Start at login, applied when setup finishes so a skip leaves it alone.
     @Published var launchAtLogin: Bool
@@ -263,14 +158,12 @@ final class SetupFlowModel: ObservableObject {
     /// models, runners) redraws them when AppModel changes.
     private var modelChanges: AnyCancellable?
 
-    static let shortcutHint = "Tap the shortcut to start dictation and tap it again to stop, "
-        + "or hold it and talk — dictation ends when you let go."
-
-    var steps: [SetupStep] { SetupStep.all }
+    let steps: [SetupStep]
     var isLastStep: Bool { step == steps.count - 1 }
 
     init(model: AppModel) {
         self.model = model
+        steps = model.bridge.setupSteps
         speechProviders = model.bridge.speechProviders.map(ProviderRow.init)
         refinementProviders = model.bridge.refinementProviders.map(ProviderRow.init)
         launchAtLogin = RowView.flag(model.row("launchAtLogin")?.value)
@@ -279,15 +172,10 @@ final class SetupFlowModel: ObservableObject {
         savedSpeechProvider = RowView.text(model.row("speechProvider")?.value)
         cliproxyDirectory = model.bridge.setupCliproxyDirectory
         modelChanges = model.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
-        if !model.shortcut.isEmpty {
-            // The binder already holds a shortcut; finishing keeps it unless a
-            // new one is recorded over it. A bound single key carries its code
-            // so it shows on the right recorder button.
-            pendingShortcut = PendingShortcut(characters: "",
-                                              flags: [],
-                                              keyCode: model.bridge.currentSingleKeyCode,
-                                              display: model.shortcut)
-        }
+        // The shortcut step's gate is a working registration, so the one the
+        // binder holds (its built-in default on a first run) is registered
+        // now rather than hoped for at Finish.
+        model.bindCurrentShortcut()
     }
 
     /// Whether the step showing may be left. Every gate is the state the step
@@ -298,7 +186,7 @@ final class SetupFlowModel: ObservableObject {
         // stats rendering, not gating (setup_run.sh covers the gates), and the
         // runner has no sign-ins, microphone, or accessibility grant to
         // satisfy them for real.
-        if ProcessInfo.processInfo.environment["SPEECHER_E2E_SKIP_SETUP_GATES"] == "1" {
+        if ProcessInfo.processInfo.environment["SPEECHER_E2E_SKIP_SETUP_GATES"] == "1", stepId != "shortcut" {
             return true
         }
         switch stepId {
@@ -313,6 +201,7 @@ final class SetupFlowModel: ObservableObject {
         case "microphone":
             return microphonePermission == .authorized && microphoneInputDetected
         case "accessibility": return model.accessibilityEnabled
+        case "shortcut": return shortcutRegistered
         // The ready step's own gate is every other gate: a Finish that could
         // not work is held here, next to the list of what is holding it.
         case "ready": return blockedSteps.isEmpty
@@ -326,9 +215,8 @@ final class SetupFlowModel: ObservableObject {
 
     /// The lead under the title. Only the ready step's changes with the flow.
     func intro(for step: SetupStep) -> String {
-        guard step.id == "ready", !blockedSteps.isEmpty else { return step.intro }
-        return "Speecher can't dictate yet. Finish the steps below, or go back "
-            + "and change your choices."
+        guard step.stepId == "ready" else { return step.intro }
+        return blockedSteps.isEmpty ? "" : model.bridge.setupReadyIntro(blocked: true, downloading: false)
     }
 
     /// Every gate still unmet, in flow order. Never includes the ready step,
@@ -345,22 +233,19 @@ final class SetupFlowModel: ObservableObject {
 
     /// Why one gate is shut, in the step's own words where it has them.
     private func blockedReason(_ stepId: String) -> String {
+        let bridge = model.bridge
         switch stepId {
         case "welcome":
-            return offersLocal ? "No sign-in was found. Sign in, or choose to run on this computer."
-                               : "No ChatGPT, Claude, or CLI Proxy API sign-in was found."
+            return bridge.setupSignInMissing(localOffered: offersLocal)
         case "transcription":
-            if localSelected { return "Download a speech model to continue." }
-            let line = providerStatus
-            return line.isEmpty ? "The transcription service is not signed in." : line
+            return bridge.setupTranscriptionBlocked(localSelected: localSelected,
+                                                    provider: selectedSpeechProvider?.label ?? "")
         case "microphone":
-            return microphonePermission == .authorized
-                ? "No microphone input has been detected."
-                : "Microphone access is off."
-        case "accessibility":
-            return "Accessibility is off, so Speecher cannot paste your dictation."
+            return bridge.setupMicrophoneBlocked(accessGranted: microphonePermission == .authorized)
+        case "shortcut" where !model.shortcutProblem.isEmpty:
+            return model.shortcutProblem
         default:
-            return ""
+            return steps.first { $0.stepId == stepId }?.blocked ?? ""
         }
     }
 
@@ -372,7 +257,8 @@ final class SetupFlowModel: ObservableObject {
             items.append(ReadyItem(id: "transcription",
                                    providerId: "local",
                                    symbol: "cpu",
-                                   label: "Transcription — \(chosen.name), on this computer",
+                                   label: model.bridge.setupChecklistLine("transcription",
+                                                                          choice: "\(chosen.name), on this computer"),
                                    status: "Ready",
                                    ready: true))
         } else if let speech = selectedSpeechProvider {
@@ -381,20 +267,21 @@ final class SetupFlowModel: ObservableObject {
             items.append(ReadyItem(id: "transcription",
                                    providerId: speech.id,
                                    symbol: "waveform",
-                                   label: "Transcription — \(speech.label)\(signIn)",
+                                   label: model.bridge.setupChecklistLine("transcription",
+                                                                          choice: "\(speech.label)\(signIn)"),
                                    status: "Ready",
                                    ready: true))
         }
         items.append(ReadyItem(id: "microphone",
                                providerId: "",
                                symbol: "mic",
-                               label: "Microphone — \(microphoneDeviceLabel)",
+                               label: model.bridge.setupChecklistLine("microphone", choice: microphoneDeviceLabel),
                                status: "Ready",
                                ready: true))
         items.append(ReadyItem(id: "delivery",
                                providerId: "",
                                symbol: "keyboard",
-                               label: "Text delivery — paste with Cmd+V",
+                               label: model.bridge.setupChecklistLine("delivery", choice: "paste with Cmd+V"),
                                status: "Ready",
                                ready: true))
         // Refinement is the one line that can say something other than Ready:
@@ -404,18 +291,20 @@ final class SetupFlowModel: ObservableObject {
         if let refinement = selectedRefinementProvider {
             let ownModel = model.bridge.ownModelRefinementSummary
             let ready = ownModel.isEmpty ? refinement.ready : model.bridge.ownModelRefinementReady
+            let verdict: NSNumber? = ownModel.isEmpty && !refinement.probed ? nil : NSNumber(value: ready)
             items.append(ReadyItem(id: "refinement",
                                    providerId: refinement.id,
                                    symbol: "server.rack",
-                                   label: "Refinement — \(ownModel.isEmpty ? refinement.label : ownModel)",
-                                   status: ready ? "Ready" : "Not set up",
+                                   label: model.bridge.setupChecklistLine(
+                                       "refinement", choice: ownModel.isEmpty ? refinement.label : ownModel),
+                                   status: model.bridge.setupRefinementStatus(refinement.id, ready: verdict),
                                    ready: ready))
         } else {
             items.append(ReadyItem(id: "refinement",
                                    providerId: "none",
                                    symbol: "minus.circle",
-                                   label: "Refinement — None",
-                                   status: "No cleanup",
+                                   label: model.bridge.setupChecklistLine("refinement", choice: "None"),
+                                   status: model.bridge.setupRefinementStatus("none", ready: nil),
                                    ready: false))
         }
         return items
@@ -423,9 +312,9 @@ final class SetupFlowModel: ObservableObject {
 
     /// What the audio device row currently names, for the ready checklist.
     private var microphoneDeviceLabel: String {
-        guard let row = model.row("audioDevice") else { return "system default" }
+        guard let row = model.row("audioDevice") else { return "System default" }
         let selected = RowView.text(row.value)
-        return row.options.first { $0.rowOptionId == selected }?.label ?? "system default"
+        return row.options.first { $0.rowOptionId == selected }?.label ?? "System default"
     }
 
     /// The ready step's "Go to step", which has to put the step being left
@@ -841,6 +730,13 @@ final class SetupFlowModel: ObservableObject {
         // device change clear it, matching the Qt page.
         refreshInputVolume()
         meterStatus = "Listening for microphone input…"
+        silentMeterTimer?.invalidate()
+        silentMeterTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, self.meterRunning, !self.microphoneInputDetected else { return }
+                self.meterStatus = self.model.bridge.setupSilentMicrophoneHint
+            }
+        }
         model.bridge.startMicrophoneMeter(onLevel: { [weak self] level in
             guard let self else { return }
             meterLevel = level
@@ -862,6 +758,8 @@ final class SetupFlowModel: ObservableObject {
 
     func stopMeter() {
         meterRunning = false
+        silentMeterTimer?.invalidate()
+        silentMeterTimer = nil
         model.bridge.stopMicrophoneMeter()
         meterLevel = 0
     }
@@ -935,88 +833,13 @@ final class SetupFlowModel: ObservableObject {
 
     // MARK: Shortcut
 
-    func recordShortcut(characters: String, flags: NSEvent.ModifierFlags) {
-        pendingShortcut = PendingShortcut(
-            characters: characters,
-            flags: flags,
-            display: PendingShortcut.display(characters: characters, flags: flags))
-    }
+    /// The step's gate: the binder holds a shortcut and registering it worked.
+    var shortcutRegistered: Bool { !model.shortcut.isEmpty && model.shortcutProblem.isEmpty }
 
-    func recordSingleKey(code: String) {
-        pendingShortcut = PendingShortcut(
-            characters: "",
-            flags: [],
-            keyCode: code,
-            display: model.bridge.display(forSingleKeyCode: code))
-    }
-
-    /// The inline, non-blocking note under a recorded single key: the
-    /// backend's refusal when it has one (missing Accessibility being the
-    /// common case), otherwise the caveat that the key keeps its normal job.
-    /// Empty for a combination or a silent key.
-    var pendingSingleKeyNote: String {
-        guard let code = pendingShortcut.keyCode else { return "" }
-        return model.bridge.unsupportedReason(forSingleKeyCode: code)
-            ?? model.bridge.warning(forSingleKeyCode: code)
-    }
-
-    /// Whether the backend refuses the recorded single key, which is what
-    /// makes the grant call-to-action appear.
-    var pendingSingleKeyRefused: Bool {
-        guard let code = pendingShortcut.keyCode else { return false }
-        return model.bridge.unsupportedReason(forSingleKeyCode: code) != nil
-    }
-
-    /// How the Ready page describes dictating, which has to match the
-    /// activation mode chosen on the shortcut step.
+    /// The Ready page's "How to dictate", following the mode the shortcut
+    /// step chose.
     var activationInstruction: String {
-        let key = pendingShortcut.display
-        switch RowView.text(model.row("activationMode")?.value) {
-        case "toggle": return "press \(key) to start, press it again to stop"
-        case "push_to_talk": return "hold \(key) while you speak"
-        default: return "tap \(key) to toggle, or hold it to dictate until release"
-        }
-    }
-
-    /// The Ready page's footer. A refused registration is let through on the
-    /// second finish, so the page says the app will have no shortcut rather
-    /// than repeating the offer to try again.
-    var readyStatus: String {
-        shortcutFailureAcknowledged
-            ? "No dictation shortcut is set. You can set one in Settings > "
-                + model.bridge.paneTitle(forRowId: "globalShortcut") + "."
-            : shortcutStatus
-    }
-
-    private func resetShortcutFailure() {
-        shortcutFailureAcknowledged = false
-        shortcutStatus = Self.shortcutHint
-    }
-
-    /// Mirrors the Qt assistant: finishing always tries to register the shown
-    /// binding — the binder reports its built-in default even before anything
-    /// was ever bound, so "nothing recorded" still has to register and store
-    /// it. A failed registration holds setup open once, back on the shortcut
-    /// step; finishing again continues without the shortcut.
-    private func applyShortcut() -> Bool {
-        guard createShortcut, !shortcutFailureAcknowledged else { return true }
-        if let code = pendingShortcut.keyCode {
-            model.bindSingleKey(code: code)
-        } else if pendingShortcut.characters.isEmpty {
-            model.bindCurrentShortcut()
-        } else {
-            model.bindShortcut(characters: pendingShortcut.characters,
-                               modifierFlags: pendingShortcut.flags)
-        }
-        if model.shortcutProblem.isEmpty {
-            shortcutStatus = "Dictation shortcut registered."
-            return true
-        }
-        shortcutFailureAcknowledged = true
-        shortcutStatus = "Could not register the shortcut: \(model.shortcutProblem). "
-            + "Change the shortcut and try again, or finish setup again to "
-            + "continue without it."
-        return false
+        model.bridge.setupActivationInstruction(shortcut: model.shortcut)
     }
 
     /// Jumps to another step the way next() and back() do, so the step being
@@ -1037,12 +860,11 @@ final class SetupFlowModel: ObservableObject {
         // one. The provider probes are not, so those answer from the re-check
         // the ready step kicked off.
         refreshMicrophonePermission()
+        // A combination another app took while the assistant sat open is
+        // stored happily and does nothing, so it is registered once more.
+        model.bindCurrentShortcut()
         if let blocked = firstUnsatisfiedStep {
             jump(to: blocked)
-            return
-        }
-        if !applyShortcut() {
-            jump(to: steps.firstIndex { $0.id == "shortcut" } ?? step)
             return
         }
         model.setValue(launchAtLogin as NSNumber, for: "launchAtLogin")
@@ -1061,12 +883,12 @@ final class SetupFlowModel: ObservableObject {
             alert.messageText = "Accessibility granted"
             alert.informativeText = "Speecher will now restart to apply the Accessibility grant."
             alert.runModal()
+            onFinished = {}
             closeWindow()
             model.bridge.relaunch()
             return
         }
         closeWindow()
-        onFinished()
     }
 
     /// Skip is Finish minus the pages in between: it is only offered when every
@@ -1380,8 +1202,14 @@ struct SetupAssistantView: View {
         let step = flow.steps[flow.step]
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(step.title)
-                    .font(.title2.weight(.semibold))
+                HStack(alignment: .firstTextBaseline) {
+                    Text(step.title)
+                        .font(.title2.weight(.semibold))
+                    Spacer()
+                    Text(flow.model.bridge.setupStepCounter(flow.step + 1, of: flow.steps.count))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
                 if !flow.intro(for: step).isEmpty {
                     Text(flow.intro(for: step))
                         .foregroundStyle(.secondary)
@@ -1402,7 +1230,7 @@ struct SetupAssistantView: View {
     }
 
     @ViewBuilder private func content(_ step: SetupStep) -> some View {
-        switch step.id {
+        switch step.stepId {
         case "welcome": WelcomeStep(flow: flow)
         case "transcription": TranscriptionStep(flow: flow, model: model)
         case "microphone": MicrophoneStep(flow: flow, model: model)
@@ -1428,10 +1256,6 @@ struct SetupAssistantView: View {
                 Button("Skip Setup") { flow.skip() }
             }
             Spacer()
-            Text("Step \(flow.step + 1) of \(flow.steps.count)")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Spacer()
             Button("Back") { flow.back() }
                 .disabled(flow.step == 0)
             Button(flow.isLastStep ? "Finish" : "Continue") { flow.advance() }
@@ -1452,8 +1276,7 @@ private struct WelcomeStep: View {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable()
                         .frame(width: 96, height: 96)
-                    Text("This assistant checks everything dictation needs: your speech "
-                        + "service, microphone, and how text reaches your apps.")
+                    Text(flow.model.bridge.setupWelcomeDetail)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: 420)
@@ -1678,7 +1501,7 @@ private struct TranscriptionStep: View {
                         } else {
                             ProviderOptionLabel(providerId: provider.id,
                                                 title: provider.label,
-                                                status: provider.readinessStatus,
+                                                status: provider.readinessStatus(model.bridge),
                                                 tone: StatusLabel.tone(for: provider))
                                 .tag(provider.id)
                         }
@@ -1894,7 +1717,7 @@ private struct MicrophoneStep: View {
                 if let row = model.row("audioDevice") {
                     RowView(row: row, model: model)
                 }
-                LabeledContent("Input level") {
+                LabeledContent(model.bridge.setupInputLevelLabel) {
                     ProgressView(value: min(max(flow.meterLevel, 0), 1))
                         .frame(width: 220)
                 }
@@ -2084,7 +1907,7 @@ private struct RefinementStep: View {
                                 status: "", tone: .pending, note: row.setupHint)
         default:
             ProviderOptionLabel(providerId: row.id, title: row.label,
-                                status: row.readinessStatus, tone: StatusLabel.tone(for: row),
+                                status: row.readinessStatus(model.bridge), tone: StatusLabel.tone(for: row),
                                 note: row.setupHint)
         }
     }
@@ -2266,9 +2089,7 @@ private struct ProfilesStep: View {
                     RowView(row: row, model: model)
                 }
             } footer: {
-                Text("The default profile is used when Speecher does not recognise the "
-                    + "app you are dictating into. Every profile can be changed later "
-                    + "in Settings.")
+                Text(model.bridge.setupProfilesNote)
             }
             Section("Profile behavior") {
                 if let row = model.row("writingProfileBehavior") {
@@ -2295,7 +2116,6 @@ private struct ShortcutStep: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Set up a dictation shortcut", isOn: $flow.createShortcut)
                 // The key itself reads as a fact on its own row; the button
                 // below is what changes it.
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -2304,18 +2124,17 @@ private struct ShortcutStep: View {
                         .accessibilityHidden(true)
                     Text("Dictation key")
                     Spacer(minLength: 12)
-                    Text(flow.pendingShortcut.display)
+                    Text(model.shortcut)
                         .fontWeight(.semibold)
                 }
                 LabeledContent {
                     Button(caption) { record() }
-                        .disabled(!flow.createShortcut)
                 } label: {
                     Text("Press a key combination, or a single key such as "
                          + "Right Option or F13.")
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if flow.pendingSingleKeyRefused, !model.accessibilityEnabled {
+                if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
                     Button("Grant Accessibility Access") { flow.requestAccessibility() }
                 }
             } footer: {
@@ -2334,14 +2153,11 @@ private struct ShortcutStep: View {
     private func record() {
         captureProblem = ""
         recorder.record(suspending: model, combination: { characters, flags in
-            flow.recordShortcut(characters: characters, flags: flags)
+            model.bindShortcut(characters: characters, modifierFlags: flags)
         }, singleKey: { keyCode in
-            guard let code = model.keyCodeName(forMacKeyCode: keyCode) else {
-                captureProblem = "That key cannot be a dictation key."
-                return false
-            }
-            flow.recordSingleKey(code: code)
-            return true
+            if model.bindSingleKey(macKeyCode: keyCode) { return true }
+            captureProblem = "That key cannot be a dictation key."
+            return false
         })
     }
 
@@ -2357,11 +2173,11 @@ private struct ShortcutStep: View {
             return "Press the keys you want — a bare modifier like Right Option works — "
                 + "or Escape to keep the current one."
         }
-        // A registration failure explains how to continue, so it outranks the
-        // recorded key's caveat; recording again resets it to the hint.
-        if flow.shortcutStatus != SetupFlowModel.shortcutHint { return flow.shortcutStatus }
-        let note = flow.pendingSingleKeyNote
-        return note.isEmpty ? flow.shortcutStatus : note
+        if !model.shortcutProblem.isEmpty {
+            return "Could not register the shortcut: \(model.shortcutProblem). Record a different one."
+        }
+        if !model.shortcutWarning.isEmpty { return model.shortcutWarning }
+        return "Shortcut registered. " + flow.activationInstruction
     }
 }
 
@@ -2386,19 +2202,17 @@ private struct ReadyStep: View {
     @ViewBuilder private var complete: some View {
         Section {
             if flow.downloadingModel != nil {
-                Text("Setup is complete except for the speech model download.")
+                Text(flow.model.bridge.setupReadyIntro(blocked: false, downloading: true))
                 Label("You can close this window. The download keeps going, and Speecher shows a "
                     + "notification when you can start dictating.", systemImage: "info.circle")
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                StatusLabel(text: "Setup is complete.", tone: .positive)
+                StatusLabel(text: flow.model.bridge.setupReadyIntro(blocked: false, downloading: false),
+                            tone: .positive)
             }
         }
         Section("How to dictate") {
-            Text(flow.createShortcut
-                ? "Finishing registers \(flow.pendingShortcut.display) as the "
-                    + "dictation shortcut. To dictate, \(flow.activationInstruction)."
-                : "Finishing completes setup without a dictation shortcut.")
+            Text(flow.activationInstruction)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Speecher stays out of the way until you press it. Its menu bar "
                 + "icon shows when it is listening.")
@@ -2423,8 +2237,6 @@ private struct ReadyStep: View {
                     }
                 }
             }
-        } footer: {
-            Text(flow.readyStatus)
         }
     }
 
@@ -2450,12 +2262,9 @@ private struct ReadyStep: View {
                 }
             }
         } header: {
-            Text("A few steps still need attention:")
+            Text(flow.model.bridge.setupBlockedHeading)
         } footer: {
-            // The mockup writes "Finish" here because its ready page is the
-            // last one. macOS keeps Start at login after this step, so the
-            // button being held is Continue, and naming Finish would be a lie.
-            Text("Continue becomes available once every step above is resolved.")
+            Text(flow.model.bridge.setupBlockedFooter)
         }
     }
 }
@@ -2533,12 +2342,16 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
     /// The front end going away takes the assistant with it; an orphaned
     /// window would keep a flow whose callbacks point into freed memory.
     func close() {
+        flow.onFinished = {}
         window.close()
     }
 
+    /// Finished or abandoned, the settings window follows, as on the other
+    /// platforms. An abandoned setup returns at next launch.
     func windowWillClose(_ notification: Notification) {
         flow.abandon()
         onClosed()
+        flow.onFinished()
     }
 
     /// The E2E seam: with SPEECHER_E2E_SETUP_CAPTURE_DIR set, every step lands
@@ -2556,7 +2369,7 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
         // settle lets the window finish drawing it.
         flow.stepRendered = { [weak self] (step: Int) in
             guard let self else { return }
-            let id = flow.steps[step].id
+            let id = flow.steps[step].stepId
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 guard self.flow.step == step else { return }
                 self.window.contentView?.layoutSubtreeIfNeeded()

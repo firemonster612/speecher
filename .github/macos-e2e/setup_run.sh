@@ -125,8 +125,8 @@ let pages = [
     ("welcome", "Welcome to Speecher"), ("transcription", "Transcription"),
     ("microphone", "Microphone"), ("accessibility", "Accessibility"),
     ("delivery", "Text delivery"), ("refinement", "Refinement"),
-    ("profiles", "Writing profiles"), ("shortcut", "Dictation shortcut"),
-    ("ready", "Ready to dictate"), ("login", "Start at login"),
+    ("profiles", "Writing profiles"), ("shortcut", "Global Shortcut"),
+    ("login", "Start at login"), ("ready", "Ready to dictate"),
 ]
 let reached = min(Int(CommandLine.arguments[2]) ?? pages.count, pages.count)
 for (index, page) in pages.prefix(reached).enumerated() {

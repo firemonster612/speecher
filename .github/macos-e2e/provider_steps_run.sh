@@ -9,7 +9,7 @@ TCC_SEED="$(dirname "$0")/tcc_seed.py"
 ASSISTANT_WINDOW='Speecher Setup Assistant'
 USER_TCC_DB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
 SYSTEM_TCC_DB='/Library/Application Support/com.apple.TCC/TCC.db'
-STEP_IDS=(welcome transcription microphone accessibility delivery refinement)
+STEP_IDS=(welcome transcription microphone accessibility delivery refinement profiles shortcut login ready)
 
 seed_setup_tcc() {
   python3 "$TCC_SEED" "$USER_TCC_DB" \
@@ -308,6 +308,36 @@ else
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
     pass_case "Driving the picker updates the stats live, and None shows no stats block."
+  fi
+fi
+
+# P4: the shortcut gate holds even with every other gate open. A saved Right
+# Option needs Accessibility, which the runner has not granted, so the binder
+# refuses it: the Global Shortcut step says why, and Ready lists it and holds
+# Finish.
+fresh_reset
+defaults write "$DOMAIN" shortcuts.toggleDictation "key:AltRight"
+case_begin P4
+if ! launch_setup || ! wait_for_assistant; then
+  fail_case "The setup assistant did not appear with a seeded single key."
+else
+  errors=()
+  walk_to_step 8 || errors+=("could not reach the Global Shortcut step")
+  if (( ${#errors[@]} == 0 )); then
+    cp "$CASE_DIR/pages/step-8-shortcut.png" "$CASE_DIR/shortcut-refused.png"
+    expect_text "$CASE_DIR/shortcut-refused.png" "Step 8 of 10" \
+      || errors+=("the shortcut step does not carry its counter on the title row")
+    # Continue is held on this step, so the walk stops here; Ready is
+    # reached through the seam-free way a person would, by going there last.
+    click_button Continue || true
+    sleep 1
+    [[ -s "$CASE_DIR/pages/step-9-login.png" ]] \
+      && errors+=("Continue left the Global Shortcut step with no shortcut registered")
+  fi
+  if (( ${#errors[@]} )); then
+    fail_case "$(IFS='; '; echo "${errors[*]}")"
+  else
+    pass_case "A refused shortcut holds the Global Shortcut step."
   fi
 fi
 

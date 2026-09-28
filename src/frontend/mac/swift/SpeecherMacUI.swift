@@ -171,7 +171,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
 
     /// A fresh flow every run: the assistant that was closed mid-way starts
     /// over, which is what a course of checks means. The completion runs when
-    /// setup finishes without a relaunch.
+    /// the assistant closes, finished or not, except for a relaunch.
     @MainActor
     @objc public func showSetupAssistant(completion: @escaping () -> Void) {
         model.reloadSettingsDraft()

@@ -621,8 +621,8 @@ struct SetupWindow::Native {
         SetForegroundWindow(handle);
     }
 
-    // A page's prerequisite, as the wizard currently knows it. Every page past
-    // lastGatedPage asks nothing of the user that can fail.
+    // A page's prerequisite, as the wizard currently knows it. Only Welcome,
+    // Transcription, Microphone and the Global Shortcut ask for anything.
     bool gateSatisfied(int index) const
     {
         const QString id = setupSteps().at(index).id;
@@ -3154,6 +3154,23 @@ void SetupWindow::skipForTest()
 QString SetupWindow::currentPageTitleForTest() const
 {
     return pageTitles().at(m_native->pageIndex);
+}
+
+void SetupWindow::showPageForTest(const QString &stepId)
+{
+    m_native->showPage(stepIndex(stepId));
+}
+
+bool SetupWindow::finishEnabledForTest() const
+{
+    return m_native->next && m_native->next.IsEnabled();
+}
+
+bool SetupWindow::captureForTest(const QString &path)
+{
+    HWND handle = nullptr;
+    m_native->window.as<::IWindowNative>()->get_WindowHandle(&handle);
+    return printWindowTo(handle, path);
 }
 
 QStringList SetupWindow::welcomeCopyForTest()

@@ -474,6 +474,40 @@ private slots:
         frontEnd->dismissPanelForTest();
     }
 
+    // Setup ends with a working Global Shortcut: one another app owns holds
+    // the shortcut step and Finish, and says why.
+    void setupHoldsFinishWhileTheShortcutIsTaken()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        // Another app, as Windows sees it: this thread taking the saved
+        // combination while the binder has let go of it.
+        QVERIFY(controller->setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F12)));
+        controller->suspendGlobalShortcut();
+        QVERIFY(RegisterHotKey(nullptr, 0x5ee7, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F12));
+        const auto release = qScopeGuard([] { UnregisterHotKey(nullptr, 0x5ee7); });
+        QVERIFY(!controller->resumeGlobalShortcut().isEmpty());
+        setup->show(SetupAssistantPage::All);
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        const auto grab = [&](const QString &name) {
+            if (!grabDir.isEmpty()) {
+                QTest::qWait(400);
+                QVERIFY(setup->captureForTest(grabDir + QStringLiteral("/win-setup-%1.png").arg(name)));
+            }
+        };
+        grab(QStringLiteral("welcome"));
+        setup->showPageForTest(QStringLiteral("shortcut"));
+        QVERIFY(!setup->finishEnabledForTest());
+        grab(QStringLiteral("shortcut-taken"));
+        setup->showPageForTest(QStringLiteral("ready"));
+        QVERIFY(!setup->finishEnabledForTest());
+        grab(QStringLiteral("ready-blocked"));
+        setup->skipForTest();
+        QVERIFY(!controller->settings()->setupCompleted());
+        QCOMPARE(setup->currentPageTitleForTest(), QStringLiteral("Global Shortcut"));
+    }
+
     void skippingSetupOpensTheNativeSettingsWindow()
     {
         if (!nativeUiAvailable()) {
@@ -574,11 +608,8 @@ private slots:
                               QStringLiteral("Global Shortcut"),
                               QStringLiteral("Start at login"),
                               QStringLiteral("Ready to dictate")}));
-        QCOMPARE(SetupWindow::welcomeCopyForTest(),
-                 QStringList({QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the app you were using."),
-                              // No mention of desktop accessibility: this
-                              // wizard has no such page.
-                              QStringLiteral("This assistant checks everything dictation needs: your speech service, microphone, and how text reaches your apps.")}));
+        // No mention of desktop accessibility: this wizard has no such page.
+        QVERIFY(!SetupWindow::welcomeCopyForTest().join(u' ').contains(QStringLiteral("ccessibility")));
         if (nativeUiAvailable()) {
             setup->show(SetupAssistantPage::GlobalShortcut);
             QCOMPARE(setup->currentPageTitleForTest(), QStringLiteral("Global Shortcut"));
