@@ -428,7 +428,10 @@ QSize TranscriberPopup::sizeHint() const
                                              : banner->sizeHint().height() + spacing;
     };
     const int pillHeight = m_pillLayout ? m_previewPill->height() : m_waveform->height();
-    return QSize(620, pillHeight + 4 + bannerHeight(m_updateBanner) + bannerHeight(m_whatsNewRow));
+    // Room for the widest a capsule gets, so an error's icon, wrapped text and
+    // Dismiss chip are never clipped by the window.
+    const int width = std::max(620, m_layout->sizeHint().width());
+    return QSize(width, pillHeight + 4 + bannerHeight(m_updateBanner) + bannerHeight(m_whatsNewRow));
 }
 
 void TranscriberPopup::setStatus(const QString &status)
@@ -611,8 +614,11 @@ void TranscriberPopup::showErrorMessage(const QString &message)
     const QFontMetrics metrics(m_preview->font());
     constexpr int maxTextWidth = kPopupErrorWrapWidth;
     // The capsule hugs a short error instead of stretching to the full wrap
-    // width around one small centred line.
-    const int textWidth = qBound(1, metrics.horizontalAdvance(text), maxTextWidth);
+    // width around one small centred line. The wrapped layout's own width,
+    // since a rounded advance can be a fraction short and break the line.
+    const int textWidth = qMax(1, metrics.boundingRect(QRect(0, 0, maxTextWidth, 1000),
+                                                       Qt::TextWordWrap, text)
+                                      .width());
     m_preview->setText(text);
     m_preview->setWordWrap(true);
     m_preview->setFixedWidth(textWidth);

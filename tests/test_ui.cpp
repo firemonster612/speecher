@@ -284,7 +284,9 @@ private slots:
         QVERIFY(preview);
         const QFontMetrics metrics(preview->font());
         const int textWidth = metrics.horizontalAdvance(QStringLiteral("Microphone unavailable"));
-        QCOMPARE(preview->width(), textWidth);
+        QVERIFY(preview->width() >= textWidth && preview->width() <= textWidth + 1);
+        // One line, not a word broken onto a second.
+        QCOMPARE(preview->heightForWidth(preview->width()), preview->heightForWidth(10000));
     }
 
     void popupRepositionsAfterShowingALongError()
@@ -429,8 +431,12 @@ private slots:
         QVERIFY(pill && dismiss);
         popup.adjustSize();
         // The chip must sit inside the painted capsule, not across its stroke.
-        QVERIFY(pill->sizeHint().width() >= 520 + dismiss->sizeHint().width());
+        auto *icon = popup.findChild<QLabel *>(QStringLiteral("errorIcon"));
+        QVERIFY(icon && !icon->isHidden());
+        QVERIFY(pill->sizeHint().width()
+                >= kPopupErrorWrapWidth + icon->sizeHint().width() + dismiss->sizeHint().width());
         QVERIFY(popup.width() >= pill->sizeHint().width());
+        QVERIFY(popup.sizeHint().width() >= pill->sizeHint().width());
     }
 
     void popupUsesTheApplicationFontAndNoStylesheet()
@@ -566,6 +572,60 @@ private slots:
         QVERIFY(trimmed.startsWith(QStringLiteral("…")));
         QVERIFY(trimmed.endsWith(QString::fromUtf8("👩‍💻")));
         QVERIFY(trimmed.size() <= 12);
+    }
+
+    // Screenshot seam for UI evidence: the popup in each state it presents.
+    void popupEvidenceGrabs()
+    {
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (grabDir.isEmpty()) {
+            QSKIP("SPEECHER_TEST_GRAB_DIR is not set");
+        }
+        TranscriberPopup popup(new SizingPopupPositioner);
+        const auto grab = [&](const char *name) {
+            // The size the platform positioner gives the window, once the
+            // window system has applied it.
+            popup.resize(popup.sizeHint());
+            QTest::qWait(50);
+            QVERIFY(popup.grab().save(grabDir + QStringLiteral("/linux-%1.png").arg(QLatin1String(name))));
+        };
+        popup.showPopup(1);
+        popup.showListeningIndicator();
+        grab("listening");
+        popup.setPreview(QStringLiteral("so the hiring plan for next quarter should come before "
+                                        "the budget review and then we can talk about the offsite"));
+        grab("long-preview");
+        popup.showMessage(QStringLiteral("Input sent"), PopupOutcome::Inserted);
+        grab("receipt-inserted");
+        popup.showMessage(QStringLiteral("Copied"), PopupOutcome::Copied);
+        grab("receipt-copied");
+        popup.showErrorMessage(QStringLiteral("Microphone unavailable"));
+        grab("error-short");
+        popup.showErrorMessage(QStringLiteral(
+            "The transcription service rejected the request: the API key is invalid or has "
+            "expired. Check the key on the Accounts page, then try again."));
+        grab("error-long");
+
+        popup.showPopup(2);
+        popup.showListeningIndicator();
+        UpdateBannerFacts facts;
+        facts.version = QStringLiteral("0.3.0");
+        facts.bannerVisible = true;
+        facts.percent = 42;
+        const QList<std::pair<UpdateController::State, const char *>> states{
+            {UpdateController::State::UpdateAvailable, "banner-available"},
+            {UpdateController::State::Downloading, "banner-downloading"},
+            {UpdateController::State::ReadyToRestart, "banner-ready"},
+            {UpdateController::State::Error, "banner-error"},
+        };
+        facts.error = QStringLiteral("The download stopped before it finished.");
+        for (const auto &[state, name] : states) {
+            facts.state = state;
+            popup.setUpdateBanner(updateBannerModel(facts));
+            grab(name);
+        }
+        popup.setWhatsNewBanner(whatsNewBanner(QStringLiteral("0.3.0")), true);
+        grab("banner-both");
     }
 
     void wordPreview()
