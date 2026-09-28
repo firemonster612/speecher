@@ -15,9 +15,16 @@ int tokenCount(const QString &term);
 int tokenCount(const QStringList &terms);
 // The prefix of `terms` a speech request can carry, within both caps.
 QStringList limited(const QStringList &terms);
+// What Claude Voice's x-config-keyterms header carries from `terms`, in
+// order: Latin-1 terms only, each spelling once ignoring case, and no more
+// than fit in its 1024 bytes.
+QStringList claudeVoiceKeyterms(const QStringList &terms);
+// The terms the chosen speech service receives from `terms`: none for one
+// that takes no hints, the capped prefix for a custom endpoint, and that
+// prefix as the Claude Voice header can carry it for Claude.
+QStringList speechKeyterms(const QStringList &terms, const QString &speechProviderId);
 // What the stored list amounts to, for a reader: the whole count, how much of
-// it goes to the speech service, and how much to refinement. A service that
-// takes no hints gets none, so only refinement is counted.
-QString summary(const QStringList &terms, bool speechTakesHints = true);
+// it goes to the speech service, and how much to refinement.
+QString summary(const QStringList &terms, const QString &speechProviderId);
 
 } // namespace speecher::VocabularyLimit

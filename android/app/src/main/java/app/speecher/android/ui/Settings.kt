@@ -57,6 +57,7 @@ import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.builtInDictationSystemPrompt
 import app.speecher.protocol.builtInRules
+import app.speecher.protocol.claudeVoiceKeytermIndices
 import app.speecher.protocol.claudeVoiceKeyterms
 import app.speecher.protocol.cleanupLevelId
 import app.speecher.protocol.customChoiceId
@@ -957,10 +958,7 @@ internal fun PasteCode(provider: Provider, onPasteCode: (String) -> Unit) {
 /** The words Claude Voice receives as key terms: as many as fit its header, in list order. */
 internal fun keyTerms(settings: SpeecherSettings): Set<String> =
     if (settings.transcriptionProvider != Provider.Claude) emptySet()
-    else {
-        val sent = claudeVoiceKeyterms(settings.vocabulary).toSet()
-        settings.vocabulary.filter { it.trim().replace(Regex("\\s+"), " ") in sent }.toSet()
-    }
+    else claudeVoiceKeytermIndices(settings.vocabulary).map { settings.vocabulary[it] }.toSet()
 
 /**
  * What the list amounts to: refinement uses every term up to its ceiling, and only Claude takes key

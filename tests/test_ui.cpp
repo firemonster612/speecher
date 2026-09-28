@@ -710,12 +710,12 @@ private slots:
         auto *limit = page->findChild<QLabel *>(QStringLiteral("vocabularyLimit"));
         QVERIFY(table && limit);
         QCOMPARE(limit->text(),
-                 VocabularyLimit::summary({QStringLiteral("Deepgram"), QStringLiteral("Speecher")}));
+                 VocabularyLimit::summary({QStringLiteral("Deepgram"), QStringLiteral("Speecher")}, QStringLiteral("claude")));
 
         table->item(0, 1)->setText(QStringLiteral("Deepgram Nova 3"));
         QCOMPARE(limit->text(),
                  VocabularyLimit::summary({QStringLiteral("Deepgram Nova 3"),
-                                           QStringLiteral("Speecher")}));
+                                           QStringLiteral("Speecher")}, QStringLiteral("claude")));
     }
 
     void starringATermMakesItAKeyTermAtOnce()

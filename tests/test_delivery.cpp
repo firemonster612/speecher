@@ -564,17 +564,14 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         const QStringList refinement =
             TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}).refinementVocabulary;
         // Read from the stored list in priority order, not from the capped speech
-        // request, and cut at the refinement ceiling, which a correction cannot pass.
+        // request, and cut at the refinement ceiling.
+        // Corrections lead, so a full list cannot push them out.
         QCOMPARE(refinement.size(), 1000);
-        QCOMPARE(refinement.first(), QStringLiteral("Starred"));
-        QCOMPARE(refinement.at(150), QStringLiteral("term0149"));
-        QCOMPARE(refinement.last(), QStringLiteral("term0998"));
+        QCOMPARE(refinement.first(), QStringLiteral("Qt"));
+        QCOMPARE(refinement.at(1), QStringLiteral("Starred"));
+        QCOMPARE(refinement.at(150), QStringLiteral("term0148"));
+        QCOMPARE(refinement.last(), QStringLiteral("term0997"));
         QVERIFY(!refinement.contains(QStringLiteral("only speech")));
-        QVERIFY(!refinement.contains(QStringLiteral("Qt")));
-
-        settings.vocabulary = {{QStringLiteral("Speecher")}};
-        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}).refinementVocabulary,
-                 (QStringList{QStringLiteral("Speecher"), QStringLiteral("Qt")}));
     }
 
     // A rule that points at a custom profile gives the target that profile's

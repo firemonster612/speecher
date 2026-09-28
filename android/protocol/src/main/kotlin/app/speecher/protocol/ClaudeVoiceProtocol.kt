@@ -57,21 +57,27 @@ fun claudeVoiceKeytermsHeader(vocabulary: Iterable<String>): String =
     claudeVoiceKeyterms(vocabulary).joinToString(",")
 
 /** The terms [claudeVoiceKeytermsHeader] carries, as they appear in it. */
-fun claudeVoiceKeyterms(vocabulary: Iterable<String>): List<String> {
-    val terms = mutableListOf<String>()
+fun claudeVoiceKeyterms(vocabulary: Iterable<String>): List<String> =
+    vocabulary.toList().let { words ->
+        claudeVoiceKeytermIndices(words).map { words[it].simplified() }
+    }
+
+/** Which of [vocabulary]'s words the header carries, by position. */
+fun claudeVoiceKeytermIndices(vocabulary: List<String>): List<Int> {
+    val kept = mutableListOf<Int>()
     var length = 0
     val seen = mutableSetOf<String>()
-    for (value in vocabulary) {
+    vocabulary.forEachIndexed { index, value ->
         val term = value.simplified()
         val key = term.lowercaseAscii()
-        if (term.isEmpty() || term.any { it > 'ÿ' } || key in seen) continue
-        val separator = if (terms.isEmpty()) 0 else 1
-        if (length + separator + term.length > MAX_KEYTERMS_BYTES) continue
+        if (term.isEmpty() || term.any { it > 'ÿ' } || key in seen) return@forEachIndexed
+        val separator = if (kept.isEmpty()) 0 else 1
+        if (length + separator + term.length > MAX_KEYTERMS_BYTES) return@forEachIndexed
         seen += key
-        terms += term
+        kept += index
         length += separator + term.length
     }
-    return terms
+    return kept
 }
 
 /**

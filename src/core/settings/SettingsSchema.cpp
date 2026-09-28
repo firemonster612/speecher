@@ -1964,14 +1964,6 @@ QStringList vocabularyTerms(const QList<VocabularyEntry> &entries)
     return terms;
 }
 
-// Claude Voice takes vocabulary as key terms and a custom endpoint as its
-// prompt; the other speech services take none.
-bool speechTakesHints(const AppSettings &settings)
-{
-    const QString &provider = settings.speech.providerId;
-    return provider == QStringLiteral("claude") || provider == QStringLiteral("endpoint");
-}
-
 QList<QVariantMap> vocabularyRecords(const QList<VocabularyEntry> &entries)
 {
     QList<QVariantMap> records;
@@ -2034,13 +2026,11 @@ SettingsPage vocabularyPage()
                          {kLastUsedMsKey, qint64(0)}};
     terms.badges = [](const QList<QVariantMap> &records, const AppSettings &settings) {
         QStringList badges(records.size());
-        if (!speechTakesHints(settings)) {
-            return badges;
-        }
         // The same entries the settings would store, so the badges follow
         // the priority order the speech request is cut from.
         const QList<VocabularyEntry> entries = vocabularyEntries(records);
-        const QStringList hints = VocabularyLimit::limited(vocabularyTerms(entries));
+        const QStringList hints = VocabularyLimit::speechKeyterms(vocabularyTerms(entries),
+                                                                  settings.speech.providerId);
         for (int index = 0; index < records.size(); ++index) {
             if (hints.contains(records.at(index).value(kTermColumn).toString().simplified(),
                                Qt::CaseInsensitive)) {
@@ -2069,7 +2059,7 @@ SettingsPage vocabularyPage()
     limit.value = [](const AppSettings &settings) {
         return QVariant(VocabularyLimit::summary(
             vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary)),
-            speechTakesHints(settings)));
+            settings.speech.providerId));
     };
 
     const QString help = QStringLiteral("Names and words Speecher should recognize. Refinement "

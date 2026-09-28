@@ -44,13 +44,15 @@ QStringList refinementVocabulary(const AppSettings &settings)
             deduplicated.append(cleaned);
         }
     };
-    for (const VocabularyEntry &entry : normalizeVocabularyEntries(settings.vocabulary)) {
-        append(entry.term);
-    }
+    // Learned corrections first: there are few of them, each came from a
+    // real edit, and a full list must not push them out.
     for (const LearnedCorrection &correction : settings.learnedCorrections) {
         if (correction.enabled) {
             append(correction.corrected);
         }
+    }
+    for (const VocabularyEntry &entry : normalizeVocabularyEntries(settings.vocabulary)) {
+        append(entry.term);
     }
     return deduplicated;
 }

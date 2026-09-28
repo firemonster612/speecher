@@ -332,9 +332,18 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
     // The pill after the field, as Home's Writing Profiles sit after a name.
     Grid pill = badge(badgeText, themeBrush(L"RatingBadgeAccent", m_host));
     AutomationProperties::SetName(pill, hs(badgeText));
-    StackPanel withBadge;
-    withBadge.Orientation(Orientation::Horizontal);
-    withBadge.Spacing(8);
+    // A Grid, not a horizontal StackPanel, so the field still fills the
+    // column and the pill takes only its own width.
+    Grid withBadge;
+    withBadge.ColumnSpacing(8);
+    ColumnDefinition field;
+    field.Width({1, GridUnitType::Star});
+    ColumnDefinition label;
+    label.Width({0, GridUnitType::Auto});
+    withBadge.ColumnDefinitions().Append(field);
+    withBadge.ColumnDefinitions().Append(label);
+    Grid::SetColumn(cell.as<FrameworkElement>(), 0);
+    Grid::SetColumn(pill, 1);
     withBadge.Children().Append(cell);
     withBadge.Children().Append(pill);
     return withBadge;

@@ -930,7 +930,7 @@ private slots:
         const SettingsRow &limit = rowById(schema.page(QStringLiteral("vocabulary")),
                                            QStringLiteral("vocabularyLimit"));
         QCOMPARE(limit.value(settings).toString(),
-                 VocabularyLimit::summary({QStringLiteral("Speecher")}));
+                 VocabularyLimit::summary({QStringLiteral("Speecher")}, QStringLiteral("claude")));
 
         // It counts what the speech provider in use receives: local models get no hints.
         settings.speech.providerId = QStringLiteral("local");
