@@ -11,11 +11,13 @@
 #include "frontend/win/SettingsWindow.h"
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SetupWindow.h"
+#include "frontend/win/TrayFlyout.h"
 #include "frontend/win/WinFrontEnd.h"
 #include "frontend/win/WinUiHost.h"
 #include "ui/TranscriberPopup.h"
 
 #include <windows.h>
+#include <shellapi.h>
 
 #include <QApplication>
 #include <QTest>
@@ -406,6 +408,46 @@ private slots:
             QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-banners.png")));
             panel->dismissForTest();
         }
+    }
+
+    // The flyout is as tall as what it holds, so a three-line transcript
+    // leaves Settings and Quit inside it.
+    void trayFlyoutGrowsWithItsTranscript()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI islands require an interactive desktop");
+        }
+        TrayFlyout *flyout = frontEnd->trayFlyoutForTest();
+        RECT work{};
+        SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+        const RECT icon{work.right - 60, work.bottom - 2, work.right - 40, work.bottom};
+        flyout->show(icon);
+        QTRY_VERIFY(!flyout->geometryForTest().isEmpty());
+        const QRect empty = flyout->geometryForTest();
+
+        emit controller->session()->previewChanged(QStringLiteral(
+            "Can we move the design review to Thursday afternoon, and could you send the "
+            "updated agenda to everyone on the list before the end of the day so people "
+            "have time to read it and come with questions about the budget"));
+        QTest::qWait(150);
+        const QRect grown = flyout->geometryForTest();
+        QVERIFY2(grown.height() > empty.height(), "the flyout kept its height for a transcript");
+        QVERIFY(grown.contains(flyout->quitGeometryForTest()));
+
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (!grabDir.isEmpty()) {
+            for (const QString theme : {QStringLiteral("light"), QStringLiteral("dark")}) {
+                SettingsStore settings;
+                settings.setTheme(theme);
+                flyout->hide();
+                flyout->show(icon);
+                QTest::qWait(300);
+                QVERIFY(flyout->saveGrabForTest(
+                    grabDir + QStringLiteral("/win-tray-flyout-%1.png").arg(theme)));
+            }
+            SettingsStore().setTheme(QStringLiteral("system"));
+        }
+        flyout->hide();
     }
 
     void nativeDictationPanelUsesNonActivatingTopmostToolWindowStyles()

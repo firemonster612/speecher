@@ -158,8 +158,7 @@ struct TrayIcon::Native {
         data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
         data.uCallbackMessage = trayMessage;
         data.hIcon = loadIcon();
-        StringCchCopyW(data.szTip, ARRAYSIZE(data.szTip),
-                       listening ? L"Speecher is listening" : L"Speecher");
+        copyToolTip(data);
         Shell_NotifyIconW(NIM_ADD, &data);
         data.uVersion = NOTIFYICON_VERSION_4;
         Shell_NotifyIconW(NIM_SETVERSION, &data);
@@ -173,9 +172,14 @@ struct TrayIcon::Native {
         NOTIFYICONDATAW data = iconData();
         data.uFlags = NIF_ICON | NIF_TIP | NIF_SHOWTIP;
         data.hIcon = loadIcon();
-        StringCchCopyW(data.szTip, ARRAYSIZE(data.szTip),
-                       listening ? L"Speecher is listening" : L"Speecher");
+        copyToolTip(data);
         Shell_NotifyIconW(NIM_MODIFY, &data);
+    }
+
+    void copyToolTip(NOTIFYICONDATAW &data) const
+    {
+        const std::wstring tip = trayToolTip(listening).toStdWString();
+        StringCchCopyW(data.szTip, ARRAYSIZE(data.szTip), tip.c_str());
     }
 
     HICON loadIcon()
@@ -247,9 +251,11 @@ struct TrayIcon::Native {
         const std::wstring toggleLabel = toggleAction.label.toStdWString();
         AppendMenuW(menu, MF_STRING | (toggleAction.enabled ? 0u : MF_GRAYED),
                     startStopCommand, toggleLabel.c_str());
-        AppendMenuW(menu, MF_STRING, settingsCommand, L"Settings...");
+        const std::wstring settingsLabel = traySettingsCaption().toStdWString();
+        const std::wstring quitLabel = trayQuitCaption().toStdWString();
+        AppendMenuW(menu, MF_STRING, settingsCommand, settingsLabel.c_str());
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(menu, MF_STRING, quitCommand, L"Quit");
+        AppendMenuW(menu, MF_STRING, quitCommand, quitLabel.c_str());
         SetForegroundWindow(window);
         const UINT command = TrackPopupMenu(
             menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
@@ -331,6 +337,11 @@ TrayIcon::~TrayIcon() = default;
 void TrayIcon::showMessage(const QString &title, const QString &message, std::function<void()> clicked)
 {
     m_native->showMessage(title, message, std::move(clicked));
+}
+
+TrayFlyout *TrayIcon::flyoutForTest()
+{
+    return &m_native->flyout;
 }
 
 } // namespace speecher

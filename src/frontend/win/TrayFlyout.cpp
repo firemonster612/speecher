@@ -27,6 +27,8 @@
 #include <QGuiApplication>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace speecher {
 namespace {
@@ -37,10 +39,14 @@ using namespace Microsoft::UI::Xaml::Controls;
 using namespace Microsoft::UI::Xaml::Hosting;
 using namespace Microsoft::UI::Xaml::Media;
 
-// DIPs, as the XAML content measures them; show() scales by the target
-// monitor's DPI before sizing the HWND and the island.
+// DIPs, as the XAML content measures them; place() scales by the target
+// monitor's DPI before sizing the HWND and the island. The height is the
+// content's own, so a long transcript never pushes Settings off the bottom.
 constexpr int flyoutWidth = 300;
-constexpr int flyoutHeight = 280;
+// The Segoe Fluent Icons microphone, plain while idle and with sound waves
+// (MicOn) while listening.
+constexpr wchar_t idleGlyph[] = L"\uE720";
+constexpr wchar_t listeningGlyph[] = L"\uEC71";
 constexpr auto windowClassName = L"SpeecherTrayFlyout";
 
 LRESULT CALLBACK flyoutWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -56,10 +62,10 @@ LRESULT CALLBACK flyoutWindowProc(HWND window, UINT message, WPARAM wParam, LPAR
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
-Button textButton(const wchar_t *label)
+Button textButton(const QString &label)
 {
     Button button;
-    button.Content(box_value(label));
+    button.Content(box_value(hstring(label.toStdWString())));
     button.HorizontalAlignment(HorizontalAlignment::Stretch);
     button.HorizontalContentAlignment(HorizontalAlignment::Center);
     return button;
@@ -73,23 +79,17 @@ struct TrayFlyout::Native {
         , flyout(q)
     {
         QObject::connect(controller, &ApplicationController::stateChanged, flyout,
-                         [this](const QString &value) {
-                             state = value;
-                             refresh();
-                         });
+                         [this] { refresh(); });
+        QObject::connect(controller, &ApplicationController::statusChanged, flyout,
+                         [this] { refresh(); });
         QObject::connect(controller, &ApplicationController::audioLevelChanged, flyout,
                          [this](float value) {
                              if (level) {
                                  level.Value(std::clamp(value, 0.0f, 1.0f));
                              }
                          });
-        QObject::connect(controller, &ApplicationController::transcriptDelivered, flyout,
-                         [this](const QString &value) {
-                             if (!value.isEmpty()) {
-                                 lastTranscript = value;
-                                 refresh();
-                             }
-                         });
+        QObject::connect(controller, &ApplicationController::lastTranscriptChanged, flyout,
+                         [this] { refresh(); });
         QObject::connect(controller, &ApplicationController::globalShortcutChanged, flyout,
                          [this] { refresh(); });
     }
@@ -116,7 +116,7 @@ struct TrayFlyout::Native {
         RegisterClassW(&windowClass);
         window = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST, windowClassName, L"Speecher",
-            WS_POPUP, 0, 0, flyoutWidth, flyoutHeight,
+            WS_POPUP, 0, 0, flyoutWidth, flyoutWidth,
             nullptr, nullptr, windowClass.hInstance, nullptr);
 
         const DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
@@ -125,7 +125,6 @@ struct TrayFlyout::Native {
 
         source = DesktopWindowXamlSource();
         source.Initialize(Microsoft::UI::GetWindowIdFromWindow(window));
-        source.SiteBridge().MoveAndResize({0, 0, flyoutWidth, flyoutHeight});
 
         StackPanel root;
         root.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
@@ -142,7 +141,6 @@ struct TrayFlyout::Native {
         heading.Orientation(Orientation::Horizontal);
         heading.Spacing(10);
         statusGlyph = FontIcon();
-        statusGlyph.Glyph(L"\uE720");
         statusGlyph.FontSize(20);
         statusText = TextBlock();
         statusText.Style(Application::Current().Resources()
@@ -158,7 +156,7 @@ struct TrayFlyout::Native {
         level.Maximum(1);
         root.Children().Append(level);
 
-        toggle = textButton(L"Start Dictation");
+        toggle = textButton(QString());
         toggle.Style(Application::Current().Resources()
                          .Lookup(box_value(L"AccentButtonStyle"))
                          .as<Style>());
@@ -175,9 +173,9 @@ struct TrayFlyout::Native {
         transcript.Opacity(0.72);
         root.Children().Append(transcript);
 
-        copy = textButton(L"Copy Transcript");
+        copy = textButton(copyTranscriptCaption());
         copy.Click([this](const auto &, const auto &) {
-            QGuiApplication::clipboard()->setText(lastTranscript);
+            QGuiApplication::clipboard()->setText(controller->lastTranscript());
         });
         root.Children().Append(copy);
 
@@ -195,14 +193,14 @@ struct TrayFlyout::Native {
         shortcutRow.Children().Append(shortcut);
         root.Children().Append(shortcutRow);
 
-        Button settings = textButton(L"Settings...");
+        Button settings = textButton(traySettingsCaption());
         settings.Click([this](const auto &, const auto &) {
             hide();
             controller->showSettingsWindow();
         });
         root.Children().Append(settings);
 
-        Button quit = textButton(L"Quit Speecher");
+        quit = textButton(trayQuitCaption());
         quit.Click([this](const auto &, const auto &) {
             hide();
             controller->quitApplication();
@@ -220,29 +218,24 @@ struct TrayFlyout::Native {
         if (!window) {
             return;
         }
-        const QString lowered = state.toLower();
-        QString displayState = state;
-        if (!displayState.isEmpty()) {
-            displayState.replace(0, 1, displayState.left(1).toUpper());
-        }
-        statusText.Text(hstring((lowered.isEmpty() || lowered == QStringLiteral("idle")
-                                     ? QStringLiteral("Speecher")
-                                     : displayState)
-                                    .toStdWString()));
-        statusGlyph.Glyph(L"\uE720");
-        level.Visibility(lowered == QStringLiteral("listening")
-                             ? Visibility::Visible : Visibility::Collapsed);
+        const QString state = controller->stateName();
+        const bool listening = dictationListeningPresentation(state);
+        statusText.Text(hstring(controller->statusLabel().toStdWString()));
+        statusGlyph.Glyph(listening ? listeningGlyph : idleGlyph);
+        level.Visibility(listening ? Visibility::Visible : Visibility::Collapsed);
         const DictationToggleAction toggleAction = dictationToggleAction(state);
         toggle.Content(box_value(hstring(toggleAction.label.toStdWString())));
         toggle.IsEnabled(toggleAction.enabled);
-        transcript.Text(hstring((lastTranscript.isEmpty()
-                                     ? QStringLiteral("Nothing dictated yet.")
-                                     : lastTranscript)
+        const QString lastTranscript = controller->lastTranscript();
+        transcript.Text(hstring((lastTranscript.isEmpty() ? noTranscriptYetText() : lastTranscript)
                                     .toStdWString()));
         copy.Visibility(lastTranscript.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
         const QString shortcutText = controller->globalShortcutDisplay();
         shortcut.Text(hstring((shortcutText.isEmpty() ? QStringLiteral("None") : shortcutText)
                                   .toStdWString()));
+        if (IsWindowVisible(window)) {
+            place();
+        }
     }
 
     void show(const RECT &iconRect)
@@ -251,14 +244,23 @@ struct TrayFlyout::Native {
         // The XAML tree outlives a theme change in Settings; the captured
         // RequestedTheme has to follow it on the next showing.
         content.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
-        RECT anchor = iconRect;
+        anchor = iconRect;
         // Land on the anchor's monitor first, while still hidden, so the
         // window's DPI is that monitor's before the DIP constants are scaled.
         SetWindowPos(window, HWND_TOPMOST, anchor.left, anchor.top, 0, 0,
                      SWP_NOSIZE | SWP_NOACTIVATE);
+        place();
+        ShowWindow(window, SW_SHOW);
+        SetForegroundWindow(window);
+    }
+
+    // Above the icon at the content's measured height, kept on its monitor.
+    void place()
+    {
         const double scale = GetDpiForWindow(window) / 96.0;
+        content.Measure({float(flyoutWidth), std::numeric_limits<float>::infinity()});
         const int width = int(flyoutWidth * scale + 0.5);
-        const int height = int(flyoutHeight * scale + 0.5);
+        const int height = int(std::ceil(content.DesiredSize().Height) * scale + 0.5);
         HMONITOR monitorHandle = MonitorFromRect(&anchor, MONITOR_DEFAULTTONEAREST);
         MONITORINFO monitor{sizeof(monitor)};
         GetMonitorInfoW(monitorHandle, &monitor);
@@ -267,9 +269,7 @@ struct TrayFlyout::Native {
         x = std::clamp(x, int(monitor.rcWork.left), int(monitor.rcWork.right) - width);
         y = std::clamp(y, int(monitor.rcWork.top), int(monitor.rcWork.bottom) - height);
         source.SiteBridge().MoveAndResize({0, 0, width, height});
-        SetWindowPos(window, HWND_TOPMOST, x, y, width, height,
-                     SWP_SHOWWINDOW);
-        SetForegroundWindow(window);
+        SetWindowPos(window, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
     }
 
     void hide()
@@ -291,8 +291,8 @@ struct TrayFlyout::Native {
     TextBlock transcript{nullptr};
     Button copy{nullptr};
     TextBlock shortcut{nullptr};
-    QString state;
-    QString lastTranscript;
+    Button quit{nullptr};
+    RECT anchor{};
 };
 
 TrayFlyout::TrayFlyout(ApplicationController *controller, QObject *parent)
@@ -311,6 +311,35 @@ void TrayFlyout::show(const tagRECT &iconRect)
 void TrayFlyout::hide()
 {
     m_native->hide();
+}
+
+QRect TrayFlyout::geometryForTest() const
+{
+    RECT bounds{};
+    if (!m_native->window || !IsWindowVisible(m_native->window)
+        || !GetWindowRect(m_native->window, &bounds)) {
+        return {};
+    }
+    return QRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
+}
+
+QRect TrayFlyout::quitGeometryForTest() const
+{
+    const QRect window = geometryForTest();
+    if (window.isEmpty()) {
+        return {};
+    }
+    const double scale = GetDpiForWindow(m_native->window) / 96.0;
+    const auto origin = m_native->quit.TransformToVisual(nullptr).TransformPoint({0, 0});
+    return QRect(window.left() + qRound(origin.X * scale), window.top() + qRound(origin.Y * scale),
+                 qRound(m_native->quit.ActualWidth() * scale),
+                 qRound(m_native->quit.ActualHeight() * scale));
+}
+
+bool TrayFlyout::saveGrabForTest(const QString &path) const
+{
+    return m_native->window && IsWindowVisible(m_native->window)
+        && win::printWindowTo(m_native->window, path);
 }
 
 } // namespace speecher

@@ -10,6 +10,7 @@ namespace speecher {
 
 class ApplicationController;
 class DictationPanel;
+class TrayFlyout;
 class WinFrontEndTests;
 class WinUiHost;
 class WinFrontEnd final : public QObject, public AppFrontEnd {
@@ -35,6 +36,7 @@ private:
     bool panelVisibleForTest() const;
     quint64 panelPresentedGenerationForTest() const;
     qintptr panelWindowStyleForTest() const;
+    TrayFlyout *trayFlyoutForTest();
     void actionTriggered(const QString &rowId);
     void reportReady();
 
