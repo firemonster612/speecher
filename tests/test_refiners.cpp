@@ -426,7 +426,9 @@ private slots:
     {
         QFile golden(QStringLiteral(SPEECHER_SOURCE_DIR
                                     "/android/protocol/src/test/resources/refinement-prompt/light-unknown.txt"));
-        QVERIFY(golden.open(QIODevice::ReadOnly));
+        // Text mode: a Windows checkout may have turned the file's line
+        // endings into CRLF.
+        QVERIFY(golden.open(QIODevice::ReadOnly | QIODevice::Text));
         RefinementContext context;
         context.includeNearbyText = false;
         context.additionalInstructions = QStringLiteral(" \n");
