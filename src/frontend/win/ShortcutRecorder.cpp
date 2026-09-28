@@ -310,10 +310,16 @@ StackPanel ShortcutRecorder::element(const RowSnapshot &row, PaneHost &host)
     set.IsEnabled(host.controller->globalShortcutsSupported());
     set.Click([&host, title = row.label, current = make_weak(current), shortcutText,
                showNote](const auto &, const auto &) {
-        showRecorderDialog(host, title, [current, shortcutText, showNote] {
-            if (const auto text = current.get()) {
-                text.Text(hs(shortcutText()));
+        showRecorderDialog(host, title, [&host, current, shortcutText, showNote] {
+            // A rebuild while the dialog was open (a theme flip, news from
+            // LocalSetup) replaced this row with one built before the change,
+            // so the page is built again to show it.
+            const auto text = current.get();
+            if (!text || !text.IsLoaded()) {
+                host.refresh();
+                return;
             }
+            text.Text(hs(shortcutText()));
             showNote();
         });
     });
