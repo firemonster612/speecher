@@ -9,37 +9,39 @@ import SwiftUI
 /// One captured state: the file it lands in and the view rendered into it.
 @MainActor
 @objc public final class SpeecherUpdatePreview: NSObject {
-    /// Renders the five update states as PNGs into `directory`, returning the
-    /// file names written. Empty on the first failure.
+    /// Renders the update states as PNGs into `directory`, from the banners
+    /// the bridge derives for this app's own updater state. The caller seeds
+    /// the states through `banners`, in the order of the files.
     @MainActor
-    @objc public static func render(toDirectory directory: String) -> [String] {
+    @objc public static func render(toDirectory directory: String,
+                                    banners: [SpeecherUpdateBanner],
+                                    whatsNew: SpeecherWhatsNewBanner) -> [String] {
         let base = URL(fileURLWithPath: directory, isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-
-        let available = AppModel.UpdateStatus(state: .updateAvailable, version: "0.2.0")
-        let ready = AppModel.UpdateStatus(state: .readyToRestart)
 
         let updateBannerState = DictationPanelState()
         updateBannerState.status = "Listening"
         updateBannerState.preview = "the quick brown fox"
-        updateBannerState.updateMessage = "Speecher 0.2.0 available"
-        updateBannerState.updateAction = "Install and restart"
+        if let first = banners.first {
+            updateBannerState.updateMessage = first.text
+            updateBannerState.updateAction = first.action
+        }
 
         let whatsNewBannerState = DictationPanelState()
         whatsNewBannerState.status = "Listening"
         whatsNewBannerState.preview = "the quick brown fox"
-        whatsNewBannerState.whatsNewMessage = "Speecher 0.2.0 installed"
+        whatsNewBannerState.whatsNewMessage = whatsNew.text
 
-        let jobs: [(String, CGSize, AnyView)] = [
-            ("01-settings-banner-update-available.png", CGSize(width: 640, height: 90),
-             AnyView(card(UpdateBannerContent(update: available).row))),
-            ("02-settings-banner-ready-to-restart.png", CGSize(width: 640, height: 90),
-             AnyView(card(UpdateBannerContent(update: ready).row))),
-            ("03-settings-whats-new-strip.png", CGSize(width: 640, height: 90),
-             AnyView(card(WhatsNewStrip(installedNumber: "0.2.0").row))),
-            ("04-panel-update-chip.png", CGSize(width: 520, height: 150),
+        var jobs: [(String, CGSize, AnyView)] = banners.enumerated().map { index, banner in
+            (String(format: "%02d-settings-banner.png", index + 1), CGSize(width: 640, height: 90),
+             AnyView(card(UpdateBannerContent(banner: banner).row)))
+        }
+        jobs += [
+            ("20-settings-whats-new-strip.png", CGSize(width: 640, height: 90),
+             AnyView(card(WhatsNewStrip(banner: whatsNew).row))),
+            ("21-panel-update-chip.png", CGSize(width: 520, height: 150),
              AnyView(panel(updateBannerState))),
-            ("05-panel-whats-new-chip.png", CGSize(width: 520, height: 150),
+            ("22-panel-whats-new-chip.png", CGSize(width: 520, height: 150),
              AnyView(panel(whatsNewBannerState))),
         ]
 

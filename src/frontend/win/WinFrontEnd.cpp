@@ -1,6 +1,7 @@
 #include "frontend/win/WinFrontEnd.h"
 
 #include "app/ApplicationController.h"
+#include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -245,11 +246,7 @@ void WinFrontEnd::actionTriggered(const QString &rowId)
                 }
             });
     } else if (rowId == QStringLiteral("checkForUpdates")) {
-        if (m_controller->updates()->state() == UpdateController::State::UpdateAvailable) {
-            m_controller->updates()->updateNow();
-        } else {
-            m_controller->updates()->checkForUpdates(m_controller->settings()->updateChannel());
-        }
+        m_controller->updateBanner()->runCheckRow(m_controller->settings()->updateChannel());
     } else if (rowId == QStringLiteral("whatsNew")) {
         m_controller->clearPendingWhatsNew();
     }

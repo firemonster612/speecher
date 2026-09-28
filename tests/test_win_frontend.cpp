@@ -1,9 +1,11 @@
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
+#include "app/UpdateController.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
+#include "dictation/PopupPresentation.h"
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/DictationPanel.h"
 #include "frontend/win/SettingsWindow.h"
@@ -72,60 +74,6 @@ private slots:
         setup.reset();
         frontEnd.reset();
         controller.reset();
-    }
-
-    void updateChipFollowsUpdaterAndSessionState()
-    {
-        using State = UpdateController::State;
-        const auto chip = [](State state, DictationState session = DictationState::Idle,
-                             const QString &error = {}, bool repeated = false,
-                             bool manualInstall = false) {
-            return win::updateChipState(state, QStringLiteral("0.2.0"), 42,
-                                        error, repeated, manualInstall, session);
-        };
-        const auto available = chip(State::UpdateAvailable, DictationState::Listening);
-        QCOMPARE(available.text, QStringLiteral("Speecher 0.2.0 available"));
-        QCOMPARE(available.action, QStringLiteral("Install and restart"));
-        QVERIFY(available.visible && available.enabled);
-        // The caller passes availableVersionDisplay(), so a nightly offer names
-        // its build and commit verbatim.
-        QCOMPARE(win::updateChipState(State::UpdateAvailable,
-                                      QStringLiteral("nightly build 481 (gabc1234)"), 0, {},
-                                      false, false, DictationState::Idle)
-                     .text,
-                 QStringLiteral("Speecher nightly build 481 (gabc1234) available"));
-        const auto downloading = chip(State::Downloading);
-        QCOMPARE(downloading.text, QStringLiteral("Downloading 42%"));
-        QVERIFY(downloading.visible && downloading.action.isEmpty() && !downloading.enabled);
-        const auto ready = chip(State::ReadyToRestart, DictationState::Listening);
-        QCOMPARE(ready.text, QStringLiteral("Update ready"));
-        QCOMPARE(ready.action, QStringLiteral("Restart now"));
-        QVERIFY(ready.visible && ready.enabled);
-        QCOMPARE(chip(State::ReadyToRestart, DictationState::Idle, "Install failed").text,
-                 QStringLiteral("Install failed"));
-        const auto pending = chip(State::RestartPending);
-        QCOMPARE(pending.text, QStringLiteral("Restarting after this dictation…"));
-        QVERIFY(pending.visible && pending.action.isEmpty() && !pending.enabled);
-        const auto restarting = chip(State::Restarting);
-        QCOMPARE(restarting.text, QStringLiteral("Restarting…"));
-        QVERIFY(restarting.visible && restarting.action.isEmpty() && !restarting.enabled);
-        const auto error = chip(State::Error, DictationState::Idle, "Download failed");
-        QCOMPARE(error.text, QStringLiteral("Download failed"));
-        QCOMPARE(error.action, QStringLiteral("Try again"));
-        QVERIFY(error.visible && error.enabled);
-        QCOMPARE(chip(State::Error, DictationState::Idle, "Download failed", false, true).action,
-                 QStringLiteral("Open release page"));
-        QVERIFY(!chip(State::Error, DictationState::Listening).enabled);
-        QVERIFY(chip(State::Error, DictationState::Error).enabled);
-        const auto failed = chip(State::CheckFailed, DictationState::Idle, {}, true);
-        QCOMPARE(failed.text, QStringLiteral("Update check failed"));
-        QCOMPARE(failed.action, QStringLiteral("Try again"));
-        QVERIFY(failed.visible && failed.enabled);
-        QVERIFY(!chip(State::CheckFailed, DictationState::Listening, {}, true).enabled);
-        for (State state : {State::Idle, State::Checking, State::UpToDate, State::CheckFailed}) {
-            const auto hidden = chip(state);
-            QVERIFY(!hidden.visible && !hidden.enabled);
-        }
     }
 
     void retainedCollectionBaseline_data()
@@ -417,17 +365,38 @@ private slots:
         controller->session()->popupOAuthRefreshRequested();
         QTest::qWait(150);
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-renewal.png")));
-        controller->session()->popupMessageRequested(QStringLiteral("Copied to clipboard"));
+        controller->session()->popupMessageRequested(QStringLiteral("Copied"), PopupOutcome::Copied);
         QTest::qWait(150);
-        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-outcome.png")));
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-receipt-copied.png")));
+        controller->session()->popupMessageRequested(QStringLiteral("Input sent"),
+                                                     PopupOutcome::Inserted);
+        QTest::qWait(150);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-receipt-inserted.png")));
         panel->dismissForTest();
 
-        frontEnd->showDictationError(QStringLiteral(
-            "The transcription service rejected the request: the API key is "
-            "invalid or has expired."));
+        frontEnd->showDictationError(QStringLiteral("Microphone unavailable"));
         QTest::qWait(300);
-        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-error.png")));
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-error-short.png")));
         panel->dismissForTest();
+        frontEnd->showDictationError(QStringLiteral(
+            "The transcription service rejected the request: the API key is invalid or has "
+            "expired. Check the key on the Accounts page, then try again."));
+        QTest::qWait(1500);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-error-long.png")));
+        panel->dismissForTest();
+
+        // With SPEECHER_TEST_PANEL_BANNERS and an update manifest to offer,
+        // both notices stack above the pill, each in its own capsule.
+        if (qEnvironmentVariableIsSet("SPEECHER_TEST_PANEL_BANNERS")) {
+            controller->updates()->checkForUpdates(controller->settings()->updateChannel());
+            QTRY_VERIFY_WITH_TIMEOUT(
+                controller->updates()->state() != UpdateController::State::Checking, 15000);
+            panel->showForTest(13);
+            panel->driveStatusForTest(QStringLiteral("Listening"));
+            QTest::qWait(500);
+            QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-banners.png")));
+            panel->dismissForTest();
+        }
     }
 
     void nativeDictationPanelUsesNonActivatingTopmostToolWindowStyles()

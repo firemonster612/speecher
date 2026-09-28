@@ -45,11 +45,11 @@ struct RootView: View {
     @ViewBuilder private var detail: some View {
         if let pane = model.pane(withId: model.pane) {
             VStack(alignment: .leading, spacing: 0) {
-                if model.updateBannerShown {
+                if model.update.visible {
                     UpdateBanner(model: model)
                         .scenePadding([.top, .horizontal])
                 } else if model.whatsNewPending {
-                    WhatsNewStrip(installedNumber: model.installedVersionNumber,
+                    WhatsNewStrip(banner: model.whatsNewBanner,
                                   seeWhatsNew: { model.showWhatsNew() },
                                   dismiss: { model.dismissWhatsNew() })
                         .scenePadding([.top, .horizontal])
@@ -73,30 +73,25 @@ struct RootView: View {
 }
 
 /// The update banner over the detail column, bound to the live model. The
-/// state-driven content is a separate value view so an offscreen renderer can
-/// seed each state directly.
+/// content is a separate value view so an offscreen renderer can seed each
+/// state directly.
 struct UpdateBanner: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        UpdateBannerContent(update: model.update,
-                            install: { model.installUpdateAndRestart() },
-                            restart: { model.updateNow() },
-                            later: { model.updateBannerDeferred = true },
-                            retry: { model.updateNow() },
+        UpdateBannerContent(banner: model.update,
+                            act: { model.runUpdateAction() },
+                            later: { model.deferUpdate() },
                             dismiss: { model.dismissUpdate() })
     }
 }
 
-/// The banner's look for one update state, mirroring the Linux settings banner:
-/// offer, download progress, restart, and error. Value-driven, so the actions
-/// default to nothing and a renderer can show a state without a model.
+/// One update banner as core words it: the message, download progress, and
+/// whichever of the action, Later and Dismiss buttons the state offers.
 struct UpdateBannerContent: View {
-    let update: AppModel.UpdateStatus
-    var install: () -> Void = {}
-    var restart: () -> Void = {}
+    let banner: SpeecherUpdateBanner
+    var act: () -> Void = {}
     var later: () -> Void = {}
-    var retry: () -> Void = {}
     var dismiss: () -> Void = {}
 
     var body: some View {
@@ -107,65 +102,30 @@ struct UpdateBannerContent: View {
     /// preview renderer can place it on a card ImageRenderer can rasterise.
     @ViewBuilder var row: some View {
         HStack {
-            Label(text, systemImage: icon)
+            Label(banner.text, systemImage: icon)
             Spacer()
-            if update.state == .downloading {
-                ProgressView(value: Double(update.percent), total: 100)
+            if banner.progress >= 0 {
+                ProgressView(value: Double(banner.progress), total: 100)
                     .frame(width: 120)
-            } else if update.state == .checking {
-                ProgressView().controlSize(.small)
             }
-            switch update.state {
-            case .updateAvailable:
-                Button("Install and restart", action: install)
-                Button("Dismiss", action: dismiss)
-            case .readyToRestart:
-                Button("Restart now", action: restart)
-                Button("Later", action: later)
-            case .error, .checkFailed:
-                Button("Try again", action: retry)
-                Button("Dismiss", action: dismiss)
-            case .upToDate:
-                Button("Dismiss", action: dismiss)
-            default:
-                // Checking, downloading, restart pending and restarting carry
-                // no actions: the sentence is the whole message.
-                EmptyView()
+            if !banner.action.isEmpty {
+                Button(banner.action, action: act)
+                    .disabled(!banner.actionEnabled)
+            }
+            if !banner.later.isEmpty {
+                Button(banner.later, action: later)
+            }
+            if !banner.dismiss.isEmpty {
+                Button(banner.dismiss, action: dismiss)
             }
         }
     }
 
     private var icon: String {
-        switch update.state {
-        case .error, .checkFailed: return "exclamationmark.triangle.fill"
-        case .upToDate: return "checkmark.circle"
-        case .checking: return "arrow.triangle.2.circlepath"
+        switch banner.tone {
+        case .error: return "exclamationmark.triangle.fill"
+        case .positive: return "checkmark.circle"
         default: return "arrow.down.circle"
-        }
-    }
-
-    private var text: String {
-        switch update.state {
-        case .checking:
-            return "Checking for updates…"
-        case .upToDate:
-            return "Speecher is up to date"
-        case .updateAvailable:
-            return update.stableReplacement
-                ? "Switch to Stable Release \(update.version) (replaces this Nightly Build)"
-                : "Speecher \(update.version) is available"
-        case .downloading:
-            return "Downloading Speecher \(update.version)"
-        case .readyToRestart:
-            return update.error.isEmpty ? "Restart to finish updating" : update.error
-        case .restartPending:
-            return "Restarting after this dictation…"
-        case .restarting:
-            return "Restarting…"
-        case .error, .checkFailed:
-            return update.error.isEmpty ? "Update check failed" : update.error
-        default:
-            return ""
         }
     }
 }
@@ -173,7 +133,7 @@ struct UpdateBannerContent: View {
 /// The post-update strip: the installed version and a way into What's New. Value
 /// driven for the same reason as the banner content.
 struct WhatsNewStrip: View {
-    let installedNumber: String
+    let banner: SpeecherWhatsNewBanner
     var seeWhatsNew: () -> Void = {}
     var dismiss: () -> Void = {}
 
@@ -183,10 +143,10 @@ struct WhatsNewStrip: View {
 
     @ViewBuilder var row: some View {
         HStack {
-            Label("Speecher \(installedNumber) is installed", systemImage: "sparkles")
+            Label(banner.text, systemImage: "sparkles")
             Spacer()
-            Button("See what's new", action: seeWhatsNew)
-            Button("Dismiss", action: dismiss)
+            Button(banner.action, action: seeWhatsNew)
+            Button(banner.dismiss, action: dismiss)
         }
     }
 }

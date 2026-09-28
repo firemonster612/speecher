@@ -105,8 +105,11 @@ private struct DictationPanelBackground: View {
     var body: some View {
         // Liquid Glass cannot render the concave preview contour reliably.
         // Only the background branches, so waveform state survives preview changes.
+        // A 24pt radius is the capsule at the pill's 48pt height, and keeps the
+        // same corners when a wrapped problem makes it taller.
         if #available(macOS 26.0, *), shape.shoulder == 0 {
-            Capsule().fill(.regularMaterial).glassEffect(in: .capsule)
+            RoundedRectangle(cornerRadius: 24).fill(.regularMaterial)
+                .glassEffect(in: .rect(cornerRadius: 24))
         } else {
             shape.fill(.regularMaterial)
         }
@@ -127,16 +130,26 @@ final class DictationPanelState: ObservableObject {
     @Published var pillWidth: CGFloat = minimumPillWidth
     var waveformFloor: Float = 0
     @Published var problem = ""
+    /// When a problem appeared and when it dismisses itself, for its countdown.
+    @Published var problemCountdown = Date.distantPast...Date.distantPast
+    /// The problem's height once wrapped at the shared width.
+    @Published var problemHeight: CGFloat = pillHeight
+    /// How the delivery ended, once it has; nil while the session is live.
+    @Published var outcome: SpeecherPopupOutcome?
     /// The update banner's message, empty while there is nothing to offer, and
     /// the label of the button beside it, empty for a passive progress state.
     @Published var updateMessage = ""
     @Published var updateAction = ""
+    @Published var updateActionEnabled = true
     /// The what's-new banner's message, empty once hidden or dismissed.
     @Published var whatsNewMessage = ""
 
     var presentation: (symbol: String, label: String, finished: Bool) {
         if !problem.isEmpty {
             return ("exclamationmark.triangle.fill", "Dictation problem", false)
+        }
+        if let outcome {
+            return (Self.symbol(for: outcome), status, true)
         }
         switch status.lowercased() {
         case "", "preparing", "starting":
@@ -148,7 +161,18 @@ final class DictationPanelState: ObservableObject {
         // outcome, so it must not present as a finished delivery.
         case "renewing sign-in…":
             return ("arrow.triangle.2.circlepath", status, false)
-        default: return ("paperplane.fill", status, true)
+        default: return ("waveform", status, false)
+        }
+    }
+
+    /// The receipt's symbol: sent into the Target, or left on the clipboard.
+    static func symbol(for outcome: SpeecherPopupOutcome) -> String {
+        switch outcome {
+        case .inserted: return "paperplane.fill"
+        case .copied: return "doc.on.clipboard"
+        case .fallback: return "info.circle"
+        case .error: return "exclamationmark.triangle.fill"
+        @unknown default: return "info.circle"
         }
     }
 
@@ -171,7 +195,8 @@ final class DictationPanelState: ObservableObject {
     }
     var stripHeight: CGFloat { showsPreview ? waitingLabel == nil ? compactStripHeight : lineHeight + 6 : pillHeight }
     var height: CGFloat {
-        showsPreview
+        if !problem.isEmpty { return problemHeight }
+        return showsPreview
             ? previewTopPadding + lineHeight + previewStripSpacing + stripHeight + previewBottomPadding
             : pillHeight
     }
@@ -191,8 +216,10 @@ final class DictationPanelState: ObservableObject {
 private struct PanelBanner: View {
     let message: String
     var actionLabel = ""
+    var actionEnabled = true
     var action: () -> Void = {}
     var dismiss: (() -> Void)? = nil
+    var dismissLabel = ""
 
     var body: some View {
         HStack(spacing: 10) {
@@ -203,6 +230,7 @@ private struct PanelBanner: View {
                 Button(actionLabel, action: action)
                     .buttonStyle(.borderedProminent)
                     .buttonBorderShape(.capsule)
+                    .disabled(!actionEnabled)
             }
             if let dismiss {
                 Button(action: dismiss) {
@@ -211,7 +239,7 @@ private struct PanelBanner: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.circle)
-                .accessibilityLabel("Dismiss what's new")
+                .accessibilityLabel(dismissLabel)
             }
         }
         .padding(.leading, 16)
@@ -228,6 +256,7 @@ struct DictationPanelView: View {
     let installUpdate: () -> Void
     let openWhatsNew: () -> Void
     let dismissWhatsNew: () -> Void
+    var whatsNew = SpeecherWhatsNewBanner.preview(forVersion: "")
 
     var body: some View {
         VStack(spacing: bannerSpacing) {
@@ -235,13 +264,15 @@ struct DictationPanelView: View {
             // panels stack them in.
             if !state.whatsNewMessage.isEmpty {
                 PanelBanner(message: state.whatsNewMessage,
-                            actionLabel: "See what's new",
+                            actionLabel: whatsNew.action,
                             action: openWhatsNew,
-                            dismiss: dismissWhatsNew)
+                            dismiss: dismissWhatsNew,
+                            dismissLabel: whatsNew.dismiss)
             }
             if !state.updateMessage.isEmpty {
                 PanelBanner(message: state.updateMessage,
                             actionLabel: state.updateAction,
+                            actionEnabled: state.updateActionEnabled,
                             action: installUpdate)
             }
             pill
@@ -254,19 +285,23 @@ struct DictationPanelView: View {
                                  inkWidth: state.inkWidth)
         return VStack(spacing: 0) {
             if state.showsPreview {
-                Text(state.preview)
+                Text(SpeecherBridge.trimPreview(state.preview,
+                                                toWidth: state.pillWidth - previewChromeWidth,
+                                                font: .systemFont(ofSize: NSFont.systemFontSize)))
                     .font(.body)
                     .lineLimit(1)
-                    .truncationMode(.head)
                     .frame(height: state.lineHeight)
                     .padding(.horizontal, 24)
                     .padding(.top, previewTopPadding)
             }
             HStack(spacing: 10) {
                 if !state.problem.isEmpty {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .symbolRenderingMode(.multicolor)
                     Text(state.problem)
                         .font(.body)
-                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity)
                     Button("Dismiss", action: dismiss)
                 } else if finished {
@@ -284,9 +319,21 @@ struct DictationPanelView: View {
                 }
             }
             .padding(.horizontal, state.problem.isEmpty && !finished ? 0 : 24)
-            .frame(height: state.stripHeight)
+            .frame(height: state.problem.isEmpty ? state.stripHeight : nil)
+            .padding(.vertical, state.problem.isEmpty ? 0 : 10)
             .padding(.top, state.showsPreview ? previewStripSpacing : 0)
             .padding(.bottom, state.showsPreview ? previewBottomPadding : 0)
+            if !state.problem.isEmpty {
+                // The time left before the problem dismisses itself.
+                ProgressView(timerInterval: state.problemCountdown, countsDown: true) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .progressViewStyle(.linear)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 10)
+            }
         }
         .frame(width: state.pillWidth, height: state.height)
         .background(DictationPanelBackground(shape: shape))
@@ -466,12 +513,13 @@ final class SpeecherDictationPanel {
         panel.contentView = NSHostingView(rootView: DictationPanelView(
             state: state,
             dismiss: { [weak self] in self?.dismiss() },
-            installUpdate: { [weak self] in self?.bridge.installUpdateAndRestart() },
+            installUpdate: { [weak self] in self?.bridge.runUpdateAction() },
             openWhatsNew: { [weak self] in self?.openWhatsNew?() },
             dismissWhatsNew: { [weak self] in
                 self?.setWhatsNewMessage("")
                 self?.bridge.clearPendingWhatsNew()
-            }))
+            },
+            whatsNew: model.whatsNewBanner))
         wire()
         installE2ECaptureSeam()
         // The level arrives through the model, which is the one reader of the
@@ -499,6 +547,8 @@ final class SpeecherDictationPanel {
         bridge.popupStatusChanged = { [weak self] status in
             guard let self else { return }
             E2EPanelEvidence.record("status", status)
+            // A live state follows any earlier receipt.
+            state.outcome = nil
             state.status = status
             // The mic is closed but the provider is still finalising, so the
             // shimmer takes the line and the stale speech preview goes away.
@@ -506,6 +556,14 @@ final class SpeecherDictationPanel {
                 state.phase = .transcribing
                 state.preview = ""
             }
+            syncFrameHeight()
+        }
+        bridge.popupMessageRequested = { [weak self] message, outcome in
+            guard let self else { return }
+            // The receipt is also a status, which the E2E flow waits for.
+            E2EPanelEvidence.record("status", message)
+            state.outcome = outcome
+            state.status = message
             syncFrameHeight()
         }
         bridge.popupPreviewChanged = { [weak self] preview in self?.setPreview(preview) }
@@ -547,6 +605,7 @@ final class SpeecherDictationPanel {
         }
         bridge.popupShowRequested = { [weak self] generation in
             self?.state.problem = ""
+            self?.state.outcome = nil
             self?.show(generation: generation)
         }
         bridge.popupHideRequested = { [weak self] in
@@ -578,12 +637,15 @@ final class SpeecherDictationPanel {
         // of the attempt that failed goes with it rather than lingering in the
         // state for the next show to flash.
         state.preview = ""
+        state.outcome = nil
+        let seconds = SpeecherBridge.popupErrorDismissSeconds
+        state.problemCountdown = Date.now...Date.now.addingTimeInterval(seconds)
         state.problem = problem
         applyPreview("")
         state.phase = .live
         present()
         problemAutoDismiss?.invalidate()
-        problemAutoDismiss = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+        problemAutoDismiss = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             DispatchQueue.main.async { self?.autoDismissProblem() }
         }
     }
@@ -658,41 +720,23 @@ final class SpeecherDictationPanel {
         panel.orderFrontRegardless()
     }
 
-    /// The update banner's message and button for the state, exactly as the Qt
-    /// popup words them.
-    private func refreshUpdateBanner(_ update: AppModel.UpdateStatus) {
+    /// The update chip, as core words it for every platform's popup.
+    private func refreshUpdateBanner(_ update: SpeecherUpdateBanner) {
         guard !e2eBanners else {
-            setUpdateBanner("Speecher 9.9.9 available", action: "Install and restart")
+            setUpdateBanner("Speecher 9.9.9 is available", action: "Install and restart")
             return
         }
-        switch update.state {
-        case .updateAvailable:
-            // The bare number only: a nightly identifier's "-nightly…" suffix
-            // would stretch the banner across the screen, exactly as on the Qt
-            // popup (and as installedVersionNumber trims for the offer below).
-            // Clicking during a dictation is safe: the restart parks until the
-            // session is idle and the relaunch restores what was on screen.
-            let number = String(update.version.split(separator: "-").first ?? "")
-            setUpdateBanner("Speecher \(number) available", action: "Install and restart")
-        case .downloading:
-            setUpdateBanner("Downloading \(update.percent)%")
-        case .readyToRestart:
-            setUpdateBanner(update.error.isEmpty ? "Update ready" : update.error,
-                            action: "Restart now")
-        case .restartPending:
-            setUpdateBanner("Restarting after this dictation…")
-        case .restarting:
-            setUpdateBanner("Restarting…")
-        case .error:
-            setUpdateBanner(update.error, action: "Try again")
-        default:
+        guard update.visible, update.showInPopup else {
             setUpdateBanner("")
+            return
         }
+        setUpdateBanner(update.text, action: update.action, enabled: update.actionEnabled)
     }
 
-    private func setUpdateBanner(_ message: String, action: String = "") {
+    private func setUpdateBanner(_ message: String, action: String = "", enabled: Bool = true) {
         state.updateMessage = message
         state.updateAction = action
+        state.updateActionEnabled = enabled
         syncFrameHeight()
     }
 
@@ -700,12 +744,10 @@ final class SpeecherDictationPanel {
     /// six seconds later; only the dismiss button clears the pending state.
     private func refreshWhatsNewBanner() {
         guard !e2eBanners else {
-            setWhatsNewMessage("Speecher \(model.installedVersionNumber) installed")
+            setWhatsNewMessage(model.whatsNewBanner.text)
             return
         }
-        setWhatsNewMessage(model.whatsNewPending
-            ? "Speecher \(model.installedVersionNumber) installed"
-            : "")
+        setWhatsNewMessage(model.whatsNewPending ? model.whatsNewBanner.text : "")
         whatsNewAutoHide?.invalidate()
         guard !state.whatsNewMessage.isEmpty else { return }
         whatsNewAutoHide = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
@@ -723,15 +765,30 @@ final class SpeecherDictationPanel {
     private func syncFrameHeight() {
         let banners = (state.updateMessage.isEmpty ? 0 : 1)
             + (state.whatsNewMessage.isEmpty ? 0 : 1)
-        let height = state.height + CGFloat(banners) * (bannerHeight + bannerSpacing)
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let message = !state.problem.isEmpty ? state.problem : state.finished ? state.status : state.showsPreview ? state.preview : state.waitingLabel ?? ""
-        let textWidth = (message as NSString).size(withAttributes: [.font: font]).width
         let screenArea = (panel.screen ?? NSScreen.main)?.visibleFrame
         let availableWidth = screenArea?.width ?? maximumPreviewWidth + screenEdgeMargin
-        let widthLimit: CGFloat = state.problem.isEmpty && state.showsPreview ? maximumPreviewWidth : 568
+        // A problem wraps at the width every platform shares, and the capsule
+        // grows taller rather than wider.
+        let wrapWidth = SpeecherBridge.popupErrorWrapWidth
+        let problemChrome = problemChromeWidth(font: font)
+        let widthLimit: CGFloat = !state.problem.isEmpty ? wrapWidth + problemChrome
+            : state.showsPreview ? maximumPreviewWidth : 568
         let maximumWidth = max(minimumPillWidth, min(widthLimit, availableWidth - screenEdgeMargin))
-        let chrome = !state.problem.isEmpty ? 150 : state.finished ? 78
+        let textWidth: CGFloat
+        if state.problem.isEmpty {
+            textWidth = (message as NSString).size(withAttributes: [.font: font]).width
+        } else {
+            let bounds = (message as NSString).boundingRect(
+                with: NSSize(width: maximumWidth - problemChrome, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin], attributes: [.font: font])
+            textWidth = ceil(bounds.width)
+            // Text, the air around it and the countdown bar beneath.
+            state.problemHeight = max(pillHeight, ceil(bounds.height) + 20 + 14)
+        }
+        let height = state.height + CGFloat(banners) * (bannerHeight + bannerSpacing)
+        let chrome = !state.problem.isEmpty ? problemChrome : state.finished ? 78
             : state.showsPreview ? previewChromeWidth : state.waitingLabel == nil ? 0 : 32
         let minimumWidth = state.showsPreview ? minimumPillWidth + previewChromeWidth : minimumPillWidth
         let contentWidth = min(max(minimumWidth, textWidth + chrome), maximumWidth)
@@ -744,6 +801,13 @@ final class SpeecherDictationPanel {
         frame.origin.x = (screenArea?.midX ?? frame.midX) - width / 2
         frame.size = NSSize(width: width, height: height)
         panel.setFrame(frame, display: true)
+    }
+
+    /// What sits beside a problem's text: the padding, the warning symbol and
+    /// the Dismiss button, with the gaps between them.
+    private func problemChromeWidth(font: NSFont) -> CGFloat {
+        let dismiss = ("Dismiss" as NSString).size(withAttributes: [.font: font]).width
+        return 2 * 24 + font.pointSize + 10 + 10 + dismiss + 24
     }
 
     private func position() {
