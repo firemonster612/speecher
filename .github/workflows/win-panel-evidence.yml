@@ -95,6 +95,15 @@ jobs:
           New-Item -ItemType Directory -Force -Path evidence | Out-Null
           $env:SPEECHER_TEST_GRAB_DIR = (Resolve-Path evidence).Path
           build/speecher_tests.exe
+          # Again with both notices: a pending What's New and a real check
+          # against a local manifest that offers a newer build.
+          $manifest = Join-Path $env:RUNNER_TEMP "update-manifest.json"
+          @{ version = "9.9.9"; buildNumber = 999999; "windows-x86_64" = @{
+               installer = "https://example.com/speecher-setup.exe"; sha256 = ("0" * 64) } } |
+            ConvertTo-Json | Set-Content $manifest
+          $env:SPEECHER_UPDATE_MANIFEST_URL = ([Uri]$manifest).AbsoluteUri
+          $env:SPEECHER_TEST_PANEL_BANNERS = "1"
+          build/speecher_tests.exe
 
       - name: Upload panel pictures
         if: always()

@@ -61,6 +61,8 @@ private slots:
         settings.raw().clear();
         if (qEnvironmentVariableIsSet("SPEECHER_TEST_PANEL_BANNERS")) {
             settings.setUpdatesPendingWhatsNewVersion(QStringLiteral("0.0.1"));
+            // The offer stays an offer rather than a download.
+            settings.setAutoInstallUpdates(false);
         }
         existingQtPopups = widgetCount<TranscriberPopup>();
         controller = std::make_unique<ApplicationController>(false);
