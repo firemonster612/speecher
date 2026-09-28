@@ -20,27 +20,25 @@ inline int httpContentLength(const QByteArray &headers)
     return -1;
 }
 
+// The socket has buffered the headers and the whole Content-Length body (none
+// without the header). Peeks, so the request stays readable.
+inline bool hasWholeRequest(QTcpSocket *socket)
+{
+    const QByteArray buffered = socket->peek(socket->bytesAvailable());
+    const int headerEnd = buffered.indexOf("\r\n\r\n");
+    return headerEnd >= 0
+        && buffered.size() >= headerEnd + 4 + qMax(0, httpContentLength(buffered.left(headerEnd)));
+}
+
 inline QByteArray readHttpRequest(QTcpSocket *socket, int timeoutMs)
 {
-    QByteArray request;
     QElapsedTimer timer;
     timer.start();
-    while (timer.elapsed() < timeoutMs) {
+    while (timer.elapsed() < timeoutMs && !hasWholeRequest(socket)) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-        request += socket->readAll();
-
-        const int headerEnd = request.indexOf("\r\n\r\n");
-        if (headerEnd >= 0) {
-            const int contentLength = httpContentLength(request.left(headerEnd));
-            if (contentLength >= 0 && request.size() >= headerEnd + 4 + contentLength) {
-                return request;
-            }
-        }
-
         socket->waitForReadyRead(20);
     }
-    request += socket->readAll();
-    return request;
+    return socket->readAll();
 }
 
 } // namespace speecher::test

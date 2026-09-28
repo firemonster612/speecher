@@ -348,11 +348,11 @@ QString SecretStore::keyringSecret(Secret secret) const
         const int delay = qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_READ_DELAY_MS");
         if (delay > 0) QThread::msleep(delay);
     }
-#ifdef SPEECHER_WITH_QKEYCHAIN
     if (keyringReadsTimeOut()) {
         m_lastError = QStringLiteral("Desktop keyring request timed out");
         return {};
     }
+#ifdef SPEECHER_WITH_QKEYCHAIN
     auto job = makeKeychainJob<QKeychain::ReadPasswordJob>();
     job->setKey(keyringEntry(secret));
     QString error;

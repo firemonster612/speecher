@@ -28,28 +28,10 @@ QByteArray json(const QJsonObject &object)
     return QJsonDocument(object).toJson(QJsonDocument::Compact);
 }
 
-// readHttpRequest waits out its timeout on a request without a body.
-QByteArray readRequest(QTcpSocket *socket)
-{
-    QByteArray request;
-    QElapsedTimer timer;
-    timer.start();
-    // Generous: a loaded CI runner can deliver the request line late, and a
-    // short read here turns into a spurious 404 from the route lookup.
-    while (timer.elapsed() < 10000) {
-        request += socket->readAll();
-        const int headerEnd = request.indexOf("\r\n\r\n");
-        if (headerEnd >= 0
-            && request.size() >= headerEnd + 4 + qMax(0, httpContentLength(request.left(headerEnd)))) {
-            return request;
-        }
-        socket->waitForReadyRead(20);
-    }
-    return request;
-}
-
 // Answers each request with the route's canned response and records the
-// requests it saw.
+// requests it saw. It never blocks the GUI thread: Qt's HTTP thread gets an
+// upload's body from this thread, so a blocking read here stalls the request
+// it is waiting for.
 class FakeServer : public QObject {
 public:
     FakeServer()
@@ -57,22 +39,9 @@ public:
         QVERIFY(m_server.listen(QHostAddress::LocalHost));
         connect(&m_server, &QTcpServer::newConnection, this, [this] {
             while (QTcpSocket *socket = m_server.nextPendingConnection()) {
-                const QByteArray request = readRequest(socket);
-                requests << request;
-                const QByteArray line = request.left(request.indexOf("\r\n"));
-                const QByteArray route = line.split(' ').value(0) + ' ' + line.split(' ').value(1);
-                const auto next = [this, &route] {
-                    QList<QByteArray> &queued = m_routes[route];
-                    return queued.size() > 1 ? queued.takeFirst() : queued.value(0);
-                };
-                const QByteArray response = m_routes.contains(route)
-                    ? next()
-                    : httpResponse("404 Not Found", "text/plain",
-                                   "404 page not found for [" + line + "] after " + QByteArray::number(request.size())
-                                       + " bytes");
-                socket->write(response);
-                socket->flush();
-                socket->disconnectFromHost();
+                connect(socket, &QTcpSocket::readyRead, this, [this, socket] {
+                    if (hasWholeRequest(socket)) answer(socket);
+                });
             }
         });
     }
@@ -94,6 +63,24 @@ public:
     QList<QByteArray> requests;
 
 private:
+    void answer(QTcpSocket *socket)
+    {
+        const QByteArray request = socket->readAll();
+        requests << request;
+        const QByteArray line = request.left(request.indexOf("\r\n"));
+        const QByteArray route = line.split(' ').value(0) + ' ' + line.split(' ').value(1);
+        const auto next = [this, &route] {
+            QList<QByteArray> &queued = m_routes[route];
+            return queued.size() > 1 ? queued.takeFirst() : queued.value(0);
+        };
+        const QByteArray response = m_routes.contains(route)
+            ? next()
+            : httpResponse("404 Not Found", "text/plain", "404 page not found for [" + line + "]");
+        socket->write(response);
+        socket->flush();
+        socket->disconnectFromHost();
+    }
+
     QTcpServer m_server;
     QHash<QByteArray, QList<QByteArray>> m_routes;
 };
@@ -332,7 +319,7 @@ private slots:
         dictate(transcriber, QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
         QTcpSocket *socket = server.nextPendingConnection();
-        QVERIFY(!readRequest(socket).isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(hasWholeRequest(socket), 2000);
         socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n");
         for (const char *word : {"One", " two", " three", " four"}) {
             socket->write("data: {\"type\":\"transcript.text.delta\",\"delta\":\"" + QByteArray(word) + "\"}\n\n");
@@ -366,7 +353,7 @@ private slots:
         dictate(transcriber, QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()), 4);
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
         QTcpSocket *socket = server.nextPendingConnection();
-        QVERIFY(!readRequest(socket).isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(hasWholeRequest(socket), 2000);
         transcriber.cancelAttempt(4);
         socket->write(httpResponse("200 OK", "application/json", "{\"text\":\"too late\"}"));
         socket->flush();
