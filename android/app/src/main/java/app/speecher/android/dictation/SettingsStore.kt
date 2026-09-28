@@ -3,10 +3,14 @@ package app.speecher.android.dictation
 import android.content.Context
 import androidx.core.content.edit
 import app.speecher.android.auth.TokenStore
+import app.speecher.protocol.CleanupStrength
+import app.speecher.protocol.CustomCleanupLevel
+import app.speecher.protocol.CustomTone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import kotlin.enums.enumEntries
 import org.json.JSONArray
+import org.json.JSONObject
 
 class SettingsStore(private val context: Context) {
     private val preferences =
@@ -17,46 +21,81 @@ class SettingsStore(private val context: Context) {
         // fixed provider, so neither Claude nor ChatGPT is favoured on a fresh install.
         val default = defaultProvider(TokenStore(context).signedIn())
         return SpeecherSettings(
-            transcriptionProvider = enumOf(preferences.getString("transcription", null), default),
-            refinementEnabled = preferences.getBoolean("refinement", true),
-            refinementProvider = enumOf(preferences.getString("refinementProvider", null), default),
-            transcribePassEnabled = preferences.getBoolean("transcribePass", true),
-            chatGptRefinement = loadRefinement(Provider.ChatGpt),
-            claudeRefinement = loadRefinement(Provider.Claude),
-            chatGptFastMode = preferences.getBoolean("openAiFastMode", true),
-            claudeFastMode = preferences.getBoolean("anthropicFastMode", true),
-            vocabulary =
-                JSONArray(preferences.getString("vocabulary", "[]")).let { items ->
-                    List(items.length()) { index -> items.getString(index) }
-                },
-            chipDockOnMic = preferences.getBoolean("chipDockOnMic", true),
-            chipOffsetX = preferences.getInt("chipOffsetX", NO_OFFSET).takeIf { it != NO_OFFSET },
-            chipOffsetY = preferences.getInt("chipOffsetY", NO_OFFSET).takeIf { it != NO_OFFSET },
-            keepScreenOn = preferences.getBoolean("keepScreenOn", true),
-            useTargetContext = preferences.getBoolean("useTargetContext", true),
-            includeScreenText = preferences.getBoolean("includeScreenText", false),
-            includeScreenshot = preferences.getBoolean("includeScreenshot", false),
-            defaultWritingProfile =
-                enumOf(preferences.getString("defaultWritingProfile", null), WritingProfile.Other),
-            writingProfiles =
-                WritingProfile.entries.associateWith { profile ->
-                    val default = WritingProfileSettings()
-                    WritingProfileSettings(
-                        enumOf(
-                            preferences.getString("${profile.name}Cleanup", null),
-                            default.cleanupStrength,
-                        ),
-                        enumOf(preferences.getString("${profile.name}Tone", null), default.tone),
-                        preferences.getString("${profile.name}Instructions", "")!!,
-                    )
-                },
-            additionalInstructions = preferences.getString("additionalInstructions", "")!!,
-            customSystemPromptEnabled = preferences.getBoolean("customSystemPromptEnabled", false),
-            customSystemPrompt = preferences.getString("customSystemPrompt", "")!!,
-            buttonLayout =
-                enumOf(preferences.getString("buttonLayout", null), ButtonLayout.RefinedPrimary),
-            panelSize = enumOf(preferences.getString("panelSize", null), PanelSize.Full),
-        )
+                transcriptionProvider =
+                    enumOf(preferences.getString("transcription", null), default),
+                refinementEnabled = preferences.getBoolean("refinement", true),
+                refinementProvider =
+                    enumOf(preferences.getString("refinementProvider", null), default),
+                transcribePassEnabled = preferences.getBoolean("transcribePass", true),
+                chatGptRefinement = loadRefinement(Provider.ChatGpt),
+                claudeRefinement = loadRefinement(Provider.Claude),
+                chatGptFastMode = preferences.getBoolean("openAiFastMode", true),
+                claudeFastMode = preferences.getBoolean("anthropicFastMode", true),
+                vocabulary =
+                    JSONArray(preferences.getString("vocabulary", "[]")).let { items ->
+                        List(items.length()) { index -> items.getString(index) }
+                    },
+                chipDockOnMic = preferences.getBoolean("chipDockOnMic", true),
+                chipOffsetX =
+                    preferences.getInt("chipOffsetX", NO_OFFSET).takeIf { it != NO_OFFSET },
+                chipOffsetY =
+                    preferences.getInt("chipOffsetY", NO_OFFSET).takeIf { it != NO_OFFSET },
+                keepScreenOn = preferences.getBoolean("keepScreenOn", true),
+                useTargetContext = preferences.getBoolean("useTargetContext", true),
+                includeScreenText = preferences.getBoolean("includeScreenText", false),
+                includeScreenshot = preferences.getBoolean("includeScreenshot", false),
+                defaultWritingProfile =
+                    enumOf(
+                        preferences.getString("defaultWritingProfile", null),
+                        WritingProfile.Other,
+                    ),
+                writingProfiles =
+                    WritingProfile.entries.associateWith { profile ->
+                        val default = WritingProfileSettings()
+                        WritingProfileSettings(
+                            enumOf(
+                                preferences.getString("${profile.name}Cleanup", null),
+                                default.cleanupStrength,
+                            ),
+                            enumOf(
+                                preferences.getString("${profile.name}Tone", null),
+                                default.tone,
+                            ),
+                            preferences.getString("${profile.name}Instructions", "")!!,
+                            preferences.getString("${profile.name}CustomCleanup", null),
+                            preferences.getString("${profile.name}CustomTone", null),
+                        )
+                    },
+                additionalInstructions = preferences.getString("additionalInstructions", "")!!,
+                customSystemPromptEnabled =
+                    preferences.getBoolean("customSystemPromptEnabled", false),
+                customSystemPrompt = preferences.getString("customSystemPrompt", "")!!,
+                customTones =
+                    objects("customTones").map {
+                        CustomTone(
+                            it.getString("id"),
+                            it.getString("name"),
+                            it.getString("instruction"),
+                        )
+                    },
+                customCleanupLevels =
+                    objects("customCleanupLevels").map {
+                        CustomCleanupLevel(
+                            it.getString("id"),
+                            it.getString("name"),
+                            enumOf(it.getString("base"), CleanupStrength.Balanced),
+                            it.getString("instructions"),
+                        )
+                    },
+                buttonLayout =
+                    enumOf(
+                        preferences.getString("buttonLayout", null),
+                        ButtonLayout.RefinedPrimary,
+                    ),
+                panelSize = enumOf(preferences.getString("panelSize", null), PanelSize.Full),
+            )
+            // So no profile names a tone or level that is gone.
+            .withCustomChoices()
     }
 
     fun save(settings: SpeecherSettings) {
@@ -85,14 +124,52 @@ class SettingsStore(private val context: Context) {
                 putString("${profile.name}Cleanup", choice.cleanupStrength.name)
                 putString("${profile.name}Tone", choice.tone.name)
                 putString("${profile.name}Instructions", choice.instructions)
+                putString("${profile.name}CustomCleanup", choice.customCleanupLevel)
+                putString("${profile.name}CustomTone", choice.customTone)
             }
             putString("additionalInstructions", settings.additionalInstructions)
             putBoolean("customSystemPromptEnabled", settings.customSystemPromptEnabled)
             putString("customSystemPrompt", settings.customSystemPrompt)
+            putString(
+                "customTones",
+                JSONArray(
+                        settings.customTones.map {
+                            JSONObject(
+                                mapOf(
+                                    "id" to it.id,
+                                    "name" to it.name,
+                                    "instruction" to it.instruction,
+                                )
+                            )
+                        }
+                    )
+                    .toString(),
+            )
+            putString(
+                "customCleanupLevels",
+                JSONArray(
+                        settings.customCleanupLevels.map {
+                            JSONObject(
+                                mapOf(
+                                    "id" to it.id,
+                                    "name" to it.name,
+                                    "base" to it.base.name,
+                                    "instructions" to it.instructions,
+                                )
+                            )
+                        }
+                    )
+                    .toString(),
+            )
             putString("buttonLayout", settings.buttonLayout.name)
             putString("panelSize", settings.panelSize.name)
         }
     }
+
+    private fun objects(key: String): List<JSONObject> =
+        JSONArray(preferences.getString(key, "[]")).let { items ->
+            List(items.length()) { index -> items.getJSONObject(index) }
+        }
 
     private fun loadRefinement(provider: Provider): RefinementChoice {
         val default = provider.defaultRefinement

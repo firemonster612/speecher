@@ -55,12 +55,12 @@ QTableWidgetItem *readOnlyItem(const QString &text)
     return item;
 }
 
-QString optionLabel(const CollectionColumn &column, const QString &id)
+QString optionLabel(const CollectionColumn &column, const QString &id, const AppSettings &settings)
 {
     if (!column.options) {
         return id;
     }
-    for (const RowOption &option : column.options()) {
+    for (const RowOption &option : column.options(settings)) {
         if (option.id == id) {
             return option.label;
         }
@@ -84,8 +84,9 @@ public:
     QList<QVariantMap> records() const;
     // What the settings hold, which starts the editor's history over.
     void setRecords(const QList<QVariantMap> &records);
-    // Re-derives the badges beside each record for these settings.
-    void showBadges(const AppSettings &settings);
+    // Keeps the settings a choice column's options come from, and re-derives
+    // the badges beside each record for them.
+    void refresh(const AppSettings &settings);
 
 private:
     void showRecords(const QList<QVariantMap> &records);
@@ -97,6 +98,7 @@ private:
     void updateButtons();
 
     CollectionDescriptor m_collection;
+    AppSettings m_settings;
     QTableWidget *m_table;
     QPushButton *m_add = nullptr;
     QPushButton *m_delete;
@@ -288,7 +290,7 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
             column.recordTooltip ? column.recordTooltip(record) : column.tooltip;
         if (locked || column.kind == ColumnKind::ReadOnly) {
             QTableWidgetItem *item = readOnlyItem(column.kind == ColumnKind::Choice
-                                                      ? optionLabel(column, value.toString())
+                                                      ? optionLabel(column, value.toString(), m_settings)
                                                       : value.toString());
             item->setToolTip(tooltip);
             m_table->setItem(row, index, item);
@@ -303,7 +305,7 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
         }
         if (column.kind == ColumnKind::Choice) {
             auto *combo = new QComboBox(m_table);
-            for (const RowOption &option : column.options()) {
+            for (const RowOption &option : column.options(m_settings)) {
                 combo->addItem(option.label, option.id);
             }
             settings::selectData(combo, value.toString());
@@ -372,8 +374,9 @@ void CollectionEditor::showRecords(const QList<QVariantMap> &records)
     updateButtons();
 }
 
-void CollectionEditor::showBadges(const AppSettings &settings)
+void CollectionEditor::refresh(const AppSettings &settings)
 {
+    m_settings = settings;
     if (!m_collection.badges) {
         return;
     }
@@ -476,7 +479,7 @@ SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
         [editor](const QVariant &value) { editor->setRecords(value.value<QList<QVariantMap>>()); },
         true,
         nullptr,
-        [editor](const AppSettings &settings) { editor->showBadges(settings); },
+        [editor](const AppSettings &settings) { editor->refresh(settings); },
     };
 }
 

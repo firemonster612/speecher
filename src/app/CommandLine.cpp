@@ -3,6 +3,8 @@
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
 #include "app/SingleInstanceIpc.h"
+#include "core/settings/SettingsCodecs.h"
+#include "core/settings/SettingsSchema.h"
 #include "providers/ProviderRegistry.h"
 #include "transcribe/FileTranscriptionSession.h"
 
@@ -148,6 +150,29 @@ const CliNames kToneNames{{QStringLiteral("none"), QStringLiteral("none")},
                           {QStringLiteral("excited"), QStringLiteral("excited")},
                           {QStringLiteral("gen_z"), QStringLiteral("gen-z")}};
 
+// The built-in names, then each custom tone or level the settings hold, by its
+// id without custom_ and with - for _.
+CliNames withCustomNames(CliNames names, const QList<RowOption> &options)
+{
+    const QString prefix = QStringLiteral("custom_");
+    for (const RowOption &option : options) {
+        if (option.id.startsWith(prefix)) {
+            names.append({option.id, option.id.mid(prefix.size()).replace(QLatin1Char('_'), QLatin1Char('-'))});
+        }
+    }
+    return names;
+}
+
+CliNames cleanupNames()
+{
+    return withCustomNames(kCleanupNames, cleanupStrengths(SettingsCodecs().customCleanupLevels()));
+}
+
+CliNames toneNames()
+{
+    return withCustomNames(kToneNames, writingTones(SettingsCodecs().customTones()));
+}
+
 QStringList cliNames(const CliNames &choices)
 {
     QStringList names;
@@ -177,9 +202,9 @@ QString helpText()
     return QString::fromUtf8(kHelp)
         .arg(providerIds(registry.speechProviders()).join(separator),
              providerIds(registry.refinementProviders()).join(separator),
-             cliNames(kCleanupNames).join(separator),
+             cliNames(cleanupNames()).join(separator),
              cliNames(kProfileNames).join(separator),
-             cliNames(kToneNames).join(separator));
+             cliNames(toneNames()).join(separator));
 }
 
 // The stored id for a command-line name, or nothing for a name not offered.
@@ -252,11 +277,11 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
                                                        : options.refinementProviderId) = given->toLower();
             }
         } else if (argument == QStringLiteral("--cleanup")) {
-            error = choice(kCleanupNames, &options.cleanupStrength);
+            error = choice(cleanupNames(), &options.cleanupStrength);
         } else if (argument == QStringLiteral("--profile")) {
             error = choice(kProfileNames, &options.writingProfile);
         } else if (argument == QStringLiteral("--tone")) {
-            error = choice(kToneNames, &options.tone);
+            error = choice(toneNames(), &options.tone);
         } else if (argument == QStringLiteral("--output")) {
             const std::optional<QString> given = value();
             if (!given) {

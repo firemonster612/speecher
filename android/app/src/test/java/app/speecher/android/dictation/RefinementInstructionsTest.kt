@@ -1,7 +1,14 @@
 package app.speecher.android.dictation
 
+import app.speecher.protocol.CleanupStrength
+import app.speecher.protocol.CustomCleanupLevel
+import app.speecher.protocol.CustomTone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.cleanupLevelId
+import app.speecher.protocol.toneId
+import app.speecher.protocol.withCleanupLevel
+import app.speecher.protocol.withTone
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,6 +42,38 @@ class RefinementInstructionsTest {
             listOf("Spell it Speecher.", "true", "Clean up my dictation."),
             instructionFields(loaded),
         )
+    }
+
+    @Test
+    fun `profiles keep custom tones and levels until they are deleted`() {
+        val store = SettingsStore(RuntimeEnvironment.getApplication())
+        val tone = CustomTone("custom_terse", "Terse", "Short.")
+        val level =
+            CustomCleanupLevel("custom_notes", "Notes", CleanupStrength.CustomOnly, "Bullets.")
+        val chosen = WritingProfileSettings().withCleanupLevel(level.id).withTone(tone.id)
+        store.save(
+            SpeecherSettings(
+                customTones = listOf(tone),
+                customCleanupLevels = listOf(level),
+                writingProfiles =
+                    SpeecherSettings().writingProfiles + (WritingProfile.Email to chosen),
+            )
+        )
+        val loaded = store.load()
+        assertEquals(listOf(tone), loaded.customTones)
+        assertEquals(listOf(level), loaded.customCleanupLevels)
+        val email = loaded.writingProfiles.getValue(WritingProfile.Email)
+        assertEquals(
+            listOf("custom_notes", "custom_terse"),
+            listOf(email.cleanupLevelId, email.toneId),
+        )
+
+        val deleted =
+            loaded
+                .withCustomChoices(tones = emptyList(), levels = emptyList())
+                .writingProfiles
+                .getValue(WritingProfile.Email)
+        assertEquals(listOf("balanced", "none"), listOf(deleted.cleanupLevelId, deleted.toneId))
     }
 
     private fun instructionFields(settings: SpeecherSettings) =

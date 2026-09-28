@@ -1068,8 +1068,10 @@ private slots:
         for (const SettingsPaneGroup &group : schema.pane(QStringLiteral("refinement"))->groups) {
             groups.append(group.title + QLatin1Char(':') + group.rows.join(QLatin1Char(',')));
         }
-        QCOMPARE(groups.mid(groups.size() - 3),
+        QCOMPARE(groups.mid(groups.size() - 5),
                  (QStringList{QStringLiteral("Profile behavior:writingProfileBehavior"),
+                              QStringLiteral("Tones:customTones"),
+                              QStringLiteral("Cleanup levels:customCleanupLevels"),
                               QStringLiteral("Additional instructions:additionalInstructions"),
                               QStringLiteral("Custom system prompt:customSystemPromptEnabled,"
                                              "customSystemPrompt,resetCustomSystemPrompt")}));
@@ -1094,6 +1096,84 @@ private slots:
         settings.refinement.providerId = QStringLiteral("none");
         QVERIFY(!instructions.enabled(settings, {}));
         QVERIFY(!prompt.enabled(settings, {}));
+    }
+
+    void customChoiceIdsAreSlugsOfTheName()
+    {
+        QCOMPARE(customChoiceId(QStringLiteral(" Very Terse! "), {}), QStringLiteral("custom_very_terse_"));
+        QCOMPARE(customChoiceId(QStringLiteral("Terse"),
+                                {QStringLiteral("custom_terse"), QStringLiteral("custom_terse_2")}),
+                 QStringLiteral("custom_terse_3"));
+    }
+
+    // Built-ins come first, locked; the custom records get an id from their
+    // name once, and validation names what is wrong.
+    void tonesAndCleanupLevelsAreCollectionsAfterTheBuiltIns()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const CollectionDescriptor &tones = schema.row(QStringLiteral("customTones"))->collection;
+        const CollectionDescriptor &levels = schema.row(QStringLiteral("customCleanupLevels"))->collection;
+        QCOMPARE(tones.lockedRecordCount(), 5);
+        QCOMPARE(levels.lockedRecordCount(), 3);
+
+        AppSettings settings;
+        QList<QVariantMap> records = tones.records(settings);
+        records.append({{QStringLiteral("name"), QStringLiteral("Terse")},
+                        {QStringLiteral("instruction"), QStringLiteral("Short.")}});
+        tones.apply(settings, records);
+        QCOMPARE(settings.refinement.customTones,
+                 (QList<CustomTone>{{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
+                                     QStringLiteral("Short.")}}));
+        records = levels.records(settings);
+        records.append({{QStringLiteral("name"), QStringLiteral("Notes")},
+                        {QStringLiteral("base"), QStringLiteral("custom_only")},
+                        {QStringLiteral("instructions"), QStringLiteral("Bullets.")}});
+        levels.apply(settings, records);
+        QCOMPARE(settings.refinement.customCleanupLevels,
+                 (QList<CustomCleanupLevel>{{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                             QStringLiteral("custom_only"), QStringLiteral("Bullets.")}}));
+
+        QCOMPARE(tones.validate({{{QStringLiteral("name"), QStringLiteral(" ")},
+                                  {QStringLiteral("instruction"), QStringLiteral(" ")}},
+                                 {{QStringLiteral("name"), QStringLiteral("casual")},
+                                  {QStringLiteral("instruction"), QStringLiteral("x")}}}),
+                 (QStringList{QStringLiteral("Every tone needs a name."),
+                              QStringLiteral("There is already a tone named casual."),
+                              QStringLiteral("Every tone needs an instruction.")}));
+        QCOMPARE(levels.validate({{{QStringLiteral("name"), QStringLiteral("Notes")},
+                                   {QStringLiteral("base"), QStringLiteral("custom_only")}},
+                                  {{QStringLiteral("name"), QStringLiteral("notes")},
+                                   {QStringLiteral("base"), QStringLiteral("balanced")}}}),
+                 (QStringList{QStringLiteral("There is already a cleanup level named notes."),
+                              QStringLiteral("A Custom only cleanup level needs instructions.")}));
+    }
+
+    void profileChoicesOfferTheCustomTonesAndLevels()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        AppSettings settings;
+        settings.refinement.customTones = {
+            {QStringLiteral("custom_terse"), QStringLiteral("Terse"), QStringLiteral("Short.")}};
+        settings.refinement.customCleanupLevels = {{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                                    QStringLiteral("balanced"), QString()}};
+        const auto ids = [](const QList<RowOption> &options) {
+            QStringList ids;
+            for (const RowOption &option : options) {
+                ids.append(option.id + QLatin1Char('=') + option.label);
+            }
+            return ids;
+        };
+        const QList<CollectionColumn> &columns =
+            schema.row(QStringLiteral("writingProfileBehavior"))->collection.columns;
+        QCOMPARE(ids(columns.at(1).options(settings)),
+                 (QStringList{QStringLiteral("none=None"), QStringLiteral("light_cleanup=Light"),
+                              QStringLiteral("balanced=Medium"), QStringLiteral("strong_polish=High"),
+                              QStringLiteral("custom_notes=Notes")}));
+        QCOMPARE(ids(columns.at(2).options(settings)),
+                 (QStringList{QStringLiteral("none=No tone override"), QStringLiteral("formal=Formal"),
+                              QStringLiteral("casual=Casual"), QStringLiteral("very_casual=Very casual"),
+                              QStringLiteral("excited=Excited"), QStringLiteral("gen_z=Gen Z"),
+                              QStringLiteral("custom_terse=Terse")}));
     }
 
     // A row no pane shows is a setting nobody can reach, and a row two panes

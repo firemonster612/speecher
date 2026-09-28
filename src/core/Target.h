@@ -65,6 +65,30 @@ QList<WritingProfileSettings> defaultWritingProfileSettings();
 WritingProfileSettings writingProfileSettingsFor(const QList<WritingProfileSettings> &settings,
                                                   WritingProfile profile);
 
+// A tone the user defined: the model is told its name and follows the
+// instruction.
+struct CustomTone {
+    QString id;
+    QString name;
+    QString instruction;
+
+    bool operator==(const CustomTone &other) const = default;
+};
+
+// A cleanup level the user defined: the built-in level it builds on
+// (light_cleanup, balanced, strong_polish, or custom_only for none of the
+// level rules) plus the user's instructions.
+struct CustomCleanupLevel {
+    QString id;
+    QString name;
+    QString base = QStringLiteral("balanced");
+    QString instructions;
+
+    bool operator==(const CustomCleanupLevel &other) const = default;
+};
+
+inline const QString kCustomOnlyCleanupBase = QStringLiteral("custom_only");
+
 struct Target {
     QString applicationId;
     QString applicationName;
@@ -128,6 +152,10 @@ struct RefinementContext {
     QString profileInstructions;
     // Replaces the built-in dictation rules when not blank.
     QString customSystemPrompt;
+    // Set when the tone or the cleanup level is one the user defined. The
+    // refinement style is then the level's base.
+    std::optional<CustomTone> customTone;
+    std::optional<CustomCleanupLevel> cleanupLevel;
     bool includeNearbyText = true;
     bool editSelection = false;
     QByteArray screenshotData;

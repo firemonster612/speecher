@@ -517,9 +517,10 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
                                      secondaryTextBlock(model, L"SettingsInfoTextStyle", host),
                                      true));
     }
+    const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
     refine.Children().Append(row(QStringLiteral("Cleanup"),
                                  QStringLiteral("How much the model may rewrite"),
-                                 comboBox(cleanupStrengths(), m_cleanup,
+                                 comboBox(cleanupStrengths(refinement.customCleanupLevels), m_cleanup,
                                           [this](const QString &id) { m_cleanup = id; }),
                                  true, refining));
     QList<RowOption> profiles;
@@ -540,7 +541,7 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
                                  true, refining));
     refine.Children().Append(row(QStringLiteral("Tone"),
                                  QStringLiteral("Optional override on top of the profile"),
-                                 comboBox(writingTones(), m_tone,
+                                 comboBox(writingTones(refinement.customTones), m_tone,
                                           [this](const QString &id) { m_tone = id; }),
                                  true, refining));
     card(QStringLiteral("Refinement"), refine);

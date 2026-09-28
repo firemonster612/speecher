@@ -437,6 +437,90 @@ private slots:
                  QString::fromUtf8(golden.readAll()));
     }
 
+    // A custom tone's instruction follows the built-in tone rule, and the
+    // context names the tone rather than giving its id.
+    void customToneFollowsTheBuiltInToneRule()
+    {
+        RefinementContext context;
+        context.includeNearbyText = false;
+        context.tone = QStringLiteral("custom_terse");
+        context.customTone = CustomTone{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
+                                        QStringLiteral("Short sentences, lowercase.\n")};
+        const QString rule = QStringLiteral(
+            "Rule: custom_writing_tone.\n"
+            "The user defined the tone named in requested_tone as follows. Apply it without "
+            "changing facts or intent:\n"
+            "Short sentences, lowercase.");
+        const QString dictation = dictationRefinementSystemPrompt(QStringLiteral("balanced"), context);
+        QVERIFY(dictation.contains(QStringLiteral("Never infer or learn a tone from target text.\n\n")
+                                   + rule + QStringLiteral("\n\nRule: literal_technical_text.")));
+        QVERIFY(dictation.contains(QStringLiteral(R"("requested_tone":"Terse")")));
+        QVERIFY(compactRefinementSystemPrompt(QStringLiteral("balanced"), context)
+                    .endsWith(QStringLiteral("without quotes.\n\n") + rule));
+        context.customSystemPrompt = QStringLiteral("Clean up my dictation.");
+        QVERIFY(dictationRefinementSystemPrompt(QStringLiteral("balanced"), context)
+                    .contains(QStringLiteral("tone from target text.\n\n") + rule
+                              + QStringLiteral("\n\nCurrent refinement configuration")));
+        context.editSelection = true;
+        QVERIFY(selectedDocumentEditingSystemPrompt(QStringLiteral("balanced"), context)
+                    .contains(QStringLiteral("surrounding explanation or label.\n\n") + rule
+                              + QStringLiteral("\n\nCurrent editing configuration")));
+    }
+
+    // A custom level adds its section after the rules of its base; custom
+    // only keeps the always-on rules and drops every level rule.
+    void customCleanupLevelBuildsOnItsBase()
+    {
+        RefinementContext context;
+        context.includeNearbyText = false;
+        context.target.category = AppCategory::AiCoding;
+        context.cleanupLevel = CustomCleanupLevel{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                                  QString(), QStringLiteral("Use bullet points.")};
+        const QString section = QStringLiteral("Cleanup level: Notes.\nUse bullet points.");
+        const auto dictation = [&context](const QString &base) {
+            context.cleanupLevel->base = base;
+            return dictationRefinementSystemPrompt(base, context);
+        };
+
+        const QString light = dictation(QStringLiteral("light_cleanup"));
+        QVERIFY(light.contains(QStringLiteral("allows clearer wording.\n\n") + section
+                               + QStringLiteral("\n\nAI coding prompt rules apply")));
+        QVERIFY(!light.contains(QStringLiteral("Rule: remove_speech_artifacts.")));
+        QVERIFY(light.contains(QStringLiteral(R"("refinement_style":"light_cleanup")")));
+
+        const QString balanced = dictation(QStringLiteral("balanced"));
+        QVERIFY(balanced.contains(QStringLiteral("Rule: remove_speech_artifacts.")));
+        QVERIFY(!balanced.contains(QStringLiteral("Rule: useful_organization.")));
+        QVERIFY(balanced.contains(QStringLiteral("\n\n") + section + QStringLiteral("\n\nAI coding")));
+
+        const QString strong = dictation(QStringLiteral("strong_polish"));
+        QVERIFY(strong.contains(QStringLiteral("already implied.\n\n") + section
+                                + QStringLiteral("\n\nAI coding prompt rules apply")));
+
+        const QString customOnly = dictation(QStringLiteral("custom_only"));
+        QVERIFY(customOnly.contains(QStringLiteral("Rule: remove_meta_when_clear.")));
+        for (const QString &levelRule : {QStringLiteral("Light cleanup rules apply"),
+                                         QStringLiteral("Balanced cleanup rules apply"),
+                                         QStringLiteral("Strong polish rules apply"),
+                                         QStringLiteral("AI prompt style:")}) {
+            QVERIFY2(!customOnly.contains(levelRule), qPrintable(levelRule));
+        }
+        QVERIFY(customOnly.contains(QStringLiteral("\n\n") + section
+                                    + QStringLiteral("\n\nAI coding prompt rules apply")));
+        QVERIFY(customOnly.contains(QStringLiteral("Rule: preserve_material_unknowns.")));
+        QVERIFY(customOnly.contains(QStringLiteral("\n\nOutput style: adaptive_markdown.")));
+        QVERIFY(customOnly.contains(QStringLiteral(R"("refinement_style":"custom")")));
+
+        // Editing and the compact prompt treat custom only as Medium.
+        QVERIFY(compactRefinementSystemPrompt(QStringLiteral("custom_only"), context)
+                    .endsWith(QStringLiteral("without quotes.\n\n") + section));
+        context.editSelection = true;
+        const QString editing = selectedDocumentEditingSystemPrompt(QStringLiteral("custom_only"), context);
+        QVERIFY(editing.contains(QStringLiteral("Editing style: balanced.")));
+        QVERIFY(editing.contains(QStringLiteral("AI prompt style: balanced.")));
+        QVERIFY(editing.contains(QStringLiteral("surrounding explanation or label.\n\n") + section));
+    }
+
     void openAiRefinerSendsAdaptiveInstructions()
     {
         QTcpServer server;

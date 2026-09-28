@@ -47,6 +47,8 @@ public:
     QString additionalInstructions() const; void setAdditionalInstructions(const QString &value);
     bool customSystemPromptEnabled() const; void setCustomSystemPromptEnabled(bool value);
     QString customSystemPrompt() const; void setCustomSystemPrompt(const QString &value);
+    QList<CustomTone> customTones() const; void setCustomTones(const QList<CustomTone> &value);
+    QList<CustomCleanupLevel> customCleanupLevels() const; void setCustomCleanupLevels(const QList<CustomCleanupLevel> &value);
     QString openAiModel() const; void setOpenAiModel(const QString &value);
     QString openAiAuthMode() const; void setOpenAiAuthMode(const QString &value);
     QString openAiEffort() const; void setOpenAiEffort(const QString &value);

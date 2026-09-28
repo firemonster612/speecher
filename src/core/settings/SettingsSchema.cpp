@@ -1197,6 +1197,205 @@ SettingsPage audioPage(const SchemaContext &context)
     };
 }
 
+bool offers(const QList<RowOption> &options, const QString &id)
+{
+    return std::any_of(options.cbegin(), options.cend(),
+                       [&id](const RowOption &option) { return option.id == id; });
+}
+
+// What a custom tone or level record holds besides its columns.
+const QString kChoiceIdKey = QStringLiteral("id");
+const QString kChoiceNameColumn = QStringLiteral("name");
+const QString kToneInstructionColumn = QStringLiteral("instruction");
+const QString kLevelBaseColumn = QStringLiteral("base");
+const QString kLevelInstructionsColumn = QStringLiteral("instructions");
+
+// The id a record already has, or a new one made from its name. A record with
+// no name yet gets none, so the id comes from the name it is given.
+QString recordChoiceId(const QVariantMap &record, QStringList &taken)
+{
+    QString id = record.value(kChoiceIdKey).toString();
+    const QString name = record.value(kChoiceNameColumn).toString().trimmed();
+    if (id.isEmpty() && !name.isEmpty()) {
+        id = customChoiceId(name, taken);
+        taken << id;
+    }
+    return id;
+}
+
+QStringList takenChoiceIds(const QList<QVariantMap> &records)
+{
+    QStringList ids;
+    for (const QVariantMap &record : records) {
+        ids << record.value(kChoiceIdKey).toString();
+    }
+    return ids;
+}
+
+// The records a person added. A settings merge hands apply the locked
+// built-in records too.
+QList<QVariantMap> customChoiceRecords(const QList<QVariantMap> &records,
+                                       const QList<RowOption> &builtIns)
+{
+    QList<QVariantMap> custom;
+    for (const QVariantMap &record : records) {
+        if (!offers(builtIns, record.value(kChoiceIdKey).toString())) {
+            custom.append(record);
+        }
+    }
+    return custom;
+}
+
+// Blank and repeated names, built-in ones included, since both would show as
+// the same entry in a profile's choices.
+QStringList choiceNameProblems(const QList<QVariantMap> &records,
+                               const QList<RowOption> &builtIns,
+                               const QString &noun)
+{
+    QStringList problems;
+    QStringList names;
+    for (const RowOption &option : builtIns) {
+        names << option.label.toCaseFolded();
+    }
+    for (const QVariantMap &record : records) {
+        const QString name = record.value(kChoiceNameColumn).toString().trimmed();
+        if (name.isEmpty()) {
+            problems << QStringLiteral("Every %1 needs a name.").arg(noun);
+        } else if (names.contains(name.toCaseFolded())) {
+            problems << QStringLiteral("There is already a %1 named %2.").arg(noun, name);
+        }
+        names << name.toCaseFolded();
+    }
+    return problems;
+}
+
+SettingsRow customTonesRow()
+{
+    const QList<RowOption> builtIns = writingTones({}).mid(1);
+    CollectionDescriptor tones;
+    tones.columns = {
+        {kChoiceNameColumn, QStringLiteral("Name"), ColumnKind::Text},
+        {kToneInstructionColumn, QStringLiteral("Instruction"), ColumnKind::Text, {}, true},
+    };
+    tones.columns.last().multiline = true;
+    tones.records = [builtIns](const AppSettings &settings) {
+        QList<QVariantMap> records;
+        for (const RowOption &tone : builtIns) {
+            records.append({{kChoiceIdKey, tone.id}, {kChoiceNameColumn, tone.label}});
+        }
+        for (const CustomTone &tone : settings.refinement.customTones) {
+            records.append({{kChoiceIdKey, tone.id},
+                            {kChoiceNameColumn, tone.name},
+                            {kToneInstructionColumn, tone.instruction}});
+        }
+        return records;
+    };
+    tones.apply = [builtIns](AppSettings &settings, const QList<QVariantMap> &all) {
+        const QList<QVariantMap> records = customChoiceRecords(all, builtIns);
+        QStringList taken = takenChoiceIds(records);
+        QList<CustomTone> custom;
+        for (const QVariantMap &record : records) {
+            custom.append({recordChoiceId(record, taken),
+                           record.value(kChoiceNameColumn).toString().trimmed(),
+                           record.value(kToneInstructionColumn).toString()});
+        }
+        settings.refinement.customTones = custom;
+    };
+    tones.validate = [](const QList<QVariantMap> &records) {
+        QStringList problems =
+            choiceNameProblems(records, writingTones({}), QStringLiteral("tone"));
+        for (const QVariantMap &record : records) {
+            if (record.value(kToneInstructionColumn).toString().trimmed().isEmpty()) {
+                problems << QStringLiteral("Every tone needs an instruction.");
+            }
+        }
+        problems.removeDuplicates();
+        return problems;
+    };
+    tones.blankRecord = {{kChoiceNameColumn, QString()}, {kToneInstructionColumn, QString()}};
+    tones.lockedRecordCount = [count = int(builtIns.size())] { return count; };
+    tones.addLabel = QStringLiteral("Add tone");
+    tones.minimumHeight = 220;
+
+    SettingsRow row = collectionRow(
+        QStringLiteral("customTones"),
+        QString(),
+        QStringLiteral("Built-in tones are read-only. A tone you add is offered in every "
+                       "profile's Tone choice, and the model follows its instruction."),
+        std::move(tones));
+    gateOnRefinementProvider(row);
+    return row;
+}
+
+SettingsRow customCleanupLevelsRow()
+{
+    const QList<RowOption> builtIns = cleanupStrengths({}).mid(1);
+    const QList<RowOption> bases = builtIns
+        + QList<RowOption>{{kCustomOnlyCleanupBase, QStringLiteral("Custom only")}};
+    CollectionDescriptor levels;
+    levels.columns = {
+        {kChoiceNameColumn, QStringLiteral("Name"), ColumnKind::Text},
+        {kLevelBaseColumn, QStringLiteral("Based on"), ColumnKind::Choice, fixedOptions(bases)},
+        {kLevelInstructionsColumn, QStringLiteral("Instructions"), ColumnKind::Text, {}, true},
+    };
+    levels.columns.last().multiline = true;
+    levels.records = [builtIns](const AppSettings &settings) {
+        QList<QVariantMap> records;
+        for (const RowOption &level : builtIns) {
+            records.append({{kChoiceIdKey, level.id},
+                            {kChoiceNameColumn, level.label},
+                            {kLevelBaseColumn, level.id}});
+        }
+        for (const CustomCleanupLevel &level : settings.refinement.customCleanupLevels) {
+            records.append({{kChoiceIdKey, level.id},
+                            {kChoiceNameColumn, level.name},
+                            {kLevelBaseColumn, level.base},
+                            {kLevelInstructionsColumn, level.instructions}});
+        }
+        return records;
+    };
+    levels.apply = [builtIns](AppSettings &settings, const QList<QVariantMap> &all) {
+        const QList<QVariantMap> records = customChoiceRecords(all, builtIns);
+        QStringList taken = takenChoiceIds(records);
+        QList<CustomCleanupLevel> custom;
+        for (const QVariantMap &record : records) {
+            custom.append({recordChoiceId(record, taken),
+                           record.value(kChoiceNameColumn).toString().trimmed(),
+                           record.value(kLevelBaseColumn).toString(),
+                           record.value(kLevelInstructionsColumn).toString()});
+        }
+        settings.refinement.customCleanupLevels = custom;
+    };
+    levels.validate = [](const QList<QVariantMap> &records) {
+        QStringList problems = choiceNameProblems(
+            records, cleanupStrengths({}), QStringLiteral("cleanup level"));
+        for (const QVariantMap &record : records) {
+            if (record.value(kLevelBaseColumn).toString() == kCustomOnlyCleanupBase
+                && record.value(kLevelInstructionsColumn).toString().trimmed().isEmpty()) {
+                problems << QStringLiteral("A Custom only cleanup level needs instructions.");
+            }
+        }
+        problems.removeDuplicates();
+        return problems;
+    };
+    levels.blankRecord = {{kChoiceNameColumn, QString()},
+                          {kLevelBaseColumn, QStringLiteral("balanced")},
+                          {kLevelInstructionsColumn, QString()}};
+    levels.lockedRecordCount = [count = int(builtIns.size())] { return count; };
+    levels.addLabel = QStringLiteral("Add cleanup level");
+    levels.minimumHeight = 220;
+
+    SettingsRow row = collectionRow(
+        QStringLiteral("customCleanupLevels"),
+        QString(),
+        QStringLiteral("Built-in levels are read-only. A level you add follows the rules of the "
+                       "level it is based on plus your instructions. Custom only keeps just the "
+                       "rules every level shares, such as keeping facts and returning only the text."),
+        std::move(levels));
+    gateOnRefinementProvider(row);
+    return row;
+}
+
 SettingsPage refinementPage(const SchemaContext &context)
 {
     QList<RowOption> refiners;
@@ -1264,7 +1463,7 @@ SettingsPage refinementPage(const SchemaContext &context)
     profileBehavior.id = QStringLiteral("writingProfileBehavior");
     profileBehavior.label = QStringLiteral("Profile behavior");
     profileBehavior.help = QStringLiteral(
-        "Choose cleanup strength and an optional explicit tone for each automatically detected profile.");
+        "Choose a cleanup level, a tone and optional instructions for each profile.");
     profileBehavior.kind = RowKind::Custom;
     profileBehavior.collection = writingProfileGrid();
     profileBehavior.value = [](const AppSettings &settings) {
@@ -1341,6 +1540,8 @@ SettingsPage refinementPage(const SchemaContext &context)
                  std::move(screenshots),
              }},
             {QStringLiteral("Profile behavior"), QString(), {std::move(profileBehavior)}},
+            {QStringLiteral("Tones"), QString(), {customTonesRow()}},
+            {QStringLiteral("Cleanup levels"), QString(), {customCleanupLevelsRow()}},
             {QStringLiteral("Additional instructions"), QString(), {std::move(additionalInstructions)}},
             {QStringLiteral("Custom system prompt"),
              QString(),
@@ -1536,8 +1737,8 @@ SettingsSection applicationRecognitionSection()
          {},
          true,
          QStringLiteral("Matches the application ID, application name, process name, or accessible role.")},
-        {kCategoryColumn, QStringLiteral("App type"), ColumnKind::Choice, appCategoryOptions},
-        {kProfileColumn, QStringLiteral("Writing profile"), ColumnKind::Choice, writingProfileOptions},
+        {kCategoryColumn, QStringLiteral("App type"), ColumnKind::Choice, fixedOptions(appCategoryOptions())},
+        {kProfileColumn, QStringLiteral("Writing profile"), ColumnKind::Choice, fixedOptions(writingProfileOptions())},
         {kSourceColumn, QStringLiteral("Source"), ColumnKind::ReadOnly},
     };
     rules.records = recognitionRecords;
@@ -1592,7 +1793,7 @@ SettingsRow applicationPasteRuleRow()
         {kMethodColumn,
          QStringLiteral("Paste behavior"),
          ColumnKind::Choice,
-         [] { return pasteMethodOptions(true, false); }},
+         fixedOptions(pasteMethodOptions(true, false))},
     };
     descriptor.records = [](const AppSettings &settings) {
         QList<QVariantMap> records;
@@ -2625,6 +2826,8 @@ const QList<PaneSpec> &paneSpecs()
           {"providers", "OpenAI"},
           {"providers", "Anthropic"},
           {"refinement", "Profile behavior"},
+          {"refinement", "Tones"},
+          {"refinement", "Cleanup levels"},
           {"refinement", "Additional instructions"},
           {"refinement", "Custom system prompt"}}},
         {"localModels", "Local models", "localModels", PaneLayout::Sections,
@@ -2860,19 +3063,23 @@ QString paneTitleForRow(const QString &rowId)
     qFatal("settings row %s is on no pane", qPrintable(rowId));
 }
 
-QList<RowOption> cleanupStrengths()
+QList<RowOption> cleanupStrengths(const QList<CustomCleanupLevel> &custom)
 {
-    return {
+    QList<RowOption> options{
         {QStringLiteral("none"), QStringLiteral("None")},
         {QStringLiteral("light_cleanup"), QStringLiteral("Light")},
         {QStringLiteral("balanced"), QStringLiteral("Medium")},
         {QStringLiteral("strong_polish"), QStringLiteral("High")},
     };
+    for (const CustomCleanupLevel &level : custom) {
+        options.append({level.id, level.name});
+    }
+    return options;
 }
 
-QList<RowOption> writingTones()
+QList<RowOption> writingTones(const QList<CustomTone> &custom)
 {
-    return {
+    QList<RowOption> options{
         {QStringLiteral("none"), QStringLiteral("No tone override")},
         {QStringLiteral("formal"), QStringLiteral("Formal")},
         {QStringLiteral("casual"), QStringLiteral("Casual")},
@@ -2880,6 +3087,36 @@ QList<RowOption> writingTones()
         {QStringLiteral("excited"), QStringLiteral("Excited")},
         {QStringLiteral("gen_z"), QStringLiteral("Gen Z")},
     };
+    for (const CustomTone &tone : custom) {
+        options.append({tone.id, tone.name});
+    }
+    return options;
+}
+
+QString offeredTone(const QString &id, const QList<CustomTone> &custom)
+{
+    return offers(writingTones(custom), id) ? id : QStringLiteral("none");
+}
+
+QString offeredCleanupLevel(const QString &id, const QList<CustomCleanupLevel> &custom)
+{
+    return offers(cleanupStrengths(custom), id) ? id : QStringLiteral("balanced");
+}
+
+QString customChoiceId(const QString &name, const QStringList &taken)
+{
+    QString slug = name.trimmed().toLower();
+    for (QChar &character : slug) {
+        if (!character.isLetterOrNumber()) {
+            character = QLatin1Char('_');
+        }
+    }
+    const QString base = QStringLiteral("custom_") + slug;
+    QString id = base;
+    for (int suffix = 2; taken.contains(id); ++suffix) {
+        id = base + QStringLiteral("_%1").arg(suffix);
+    }
+    return id;
 }
 
 CollectionDescriptor writingProfileGrid()
@@ -2892,8 +3129,16 @@ CollectionDescriptor writingProfileGrid()
     grid.identityColumn = kProfileIdKey;
     grid.columns = {
         {kProfileColumn, QStringLiteral("Profile"), ColumnKind::ReadOnly},
-        {kCleanupColumn, QStringLiteral("Cleanup"), ColumnKind::Choice, cleanupStrengths},
-        {kToneColumn, QStringLiteral("Tone"), ColumnKind::Choice, writingTones},
+        {kCleanupColumn,
+         QStringLiteral("Cleanup"),
+         ColumnKind::Choice,
+         [](const AppSettings &settings) {
+             return cleanupStrengths(settings.refinement.customCleanupLevels);
+         }},
+        {kToneColumn,
+         QStringLiteral("Tone"),
+         ColumnKind::Choice,
+         [](const AppSettings &settings) { return writingTones(settings.refinement.customTones); }},
         {kInstructionsColumn, QStringLiteral("Instructions"), ColumnKind::Text, {}, true},
     };
     grid.columns.last().multiline = true;

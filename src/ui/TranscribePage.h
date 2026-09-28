@@ -46,6 +46,8 @@ private:
     void showStep();
     void refreshSteps(TranscribeStep current);
     void seedOptionsFromSettings();
+    // Offers the built-in and custom cleanup levels and tones in the settings.
+    void showChoices(const AppSettings &settings);
     void applyWritingProfile();
     void refreshRefinementRows();
     void refreshOutputRows();
@@ -80,6 +82,7 @@ private:
     QFrame *m_refinerModelRow;
     QLabel *m_refinerModel;
     QList<QWidget *> m_refinementDependents;
+    QWidget *m_cleanupButtons;
     QButtonGroup *m_cleanup;
     QComboBox *m_profile;
     QComboBox *m_tone;

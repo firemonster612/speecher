@@ -1059,7 +1059,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         model.columnId = column.id.toNSString();
         model.title = column.title.toNSString();
         model.kind = bridgedColumnKind(column.kind);
-        model.options = column.options ? [self bridgedOptions:column.options()] : @[];
+        model.options = column.options ? [self bridgedOptions:column.options(_state->draft)] : @[];
         model.stretch = column.stretch;
         model.multiline = column.multiline;
         [columns addObject:model];
@@ -2610,12 +2610,14 @@ static std::optional<QString> optionalString(NSString *value)
 
 - (NSArray<RowOptionModel *> *)cleanupStrengths
 {
-    return [_settingsSchema bridgedOptions:speecher::cleanupStrengths()];
+    return [_settingsSchema bridgedOptions:speecher::cleanupStrengths(
+                                _state->controller->settings()->customCleanupLevels())];
 }
 
 - (NSArray<RowOptionModel *> *)writingTones
 {
-    return [_settingsSchema bridgedOptions:speecher::writingTones()];
+    return [_settingsSchema bridgedOptions:speecher::writingTones(
+                                _state->controller->settings()->customTones())];
 }
 
 - (NSArray<RowOptionModel *> *)writingProfiles
