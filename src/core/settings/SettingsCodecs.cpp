@@ -2,6 +2,7 @@
 
 #include "core/EndpointUrl.h"
 #include "core/settings/SettingsKeys.h"
+#include "core/settings/SettingsSchema.h"
 
 #include "core/BindingProcessor.h"
 #include "core/CliToolDiscovery.h"
@@ -365,8 +366,20 @@ void SettingsCodecs::setAudioCaptureSettings(const AudioCaptureSettings &value)
     m_settings.setValue(SettingsKeys::AudioVadThresholdPercent, settings.vadThresholdPercent);
 }
 
+// A rule pointing at a deleted profile loses the profile, here where settings
+// are read and written; the callers then drop a rule left with nothing to set.
+static AppRecognitionRule withoutDeletedProfile(AppRecognitionRule rule,
+                                                const QList<WritingProfileSettings> &profiles)
+{
+    if (rule.writingProfile && offeredWritingProfile(*rule.writingProfile, profiles, QString()).isEmpty()) {
+        rule.writingProfile.reset();
+    }
+    return rule;
+}
+
 QList<AppRecognitionRule> SettingsCodecs::appRecognitionRules() const
 {
+    const QList<WritingProfileSettings> profiles = writingProfileSettings();
     const QJsonDocument document = QJsonDocument::fromJson(
         value(SettingsKeys::AppRecognitionRules, QByteArray()).toByteArray());
     QList<AppRecognitionRule> rules;
@@ -385,6 +398,7 @@ QList<AppRecognitionRule> SettingsCodecs::appRecognitionRules() const
         if (!profile.isEmpty()) {
             rule.writingProfile = writingProfileFromName(profile);
         }
+        rule = withoutDeletedProfile(rule, profiles);
         if (!rule.match.isEmpty() && (rule.category || rule.writingProfile)) {
             rules.append(rule);
         }
@@ -394,8 +408,10 @@ QList<AppRecognitionRule> SettingsCodecs::appRecognitionRules() const
 
 void SettingsCodecs::setAppRecognitionRules(const QList<AppRecognitionRule> &rules)
 {
+    const QList<WritingProfileSettings> profiles = writingProfileSettings();
     QJsonArray array;
-    for (const AppRecognitionRule &rule : rules) {
+    for (const AppRecognitionRule &stored : rules) {
+        const AppRecognitionRule rule = withoutDeletedProfile(stored, profiles);
         const QString match = rule.match.trimmed();
         if (match.isEmpty() || (!rule.category && !rule.writingProfile)) {
             continue;
@@ -405,7 +421,7 @@ void SettingsCodecs::setAppRecognitionRules(const QList<AppRecognitionRule> &rul
             object.insert(QStringLiteral("category"), appCategoryName(*rule.category));
         }
         if (rule.writingProfile) {
-            object.insert(QStringLiteral("writingProfile"), writingProfileName(*rule.writingProfile));
+            object.insert(QStringLiteral("writingProfile"), *rule.writingProfile);
         }
         array.append(object);
     }
@@ -551,40 +567,39 @@ void SettingsCodecs::setRefinementStyle(const QString &value)
 
 QString SettingsCodecs::defaultWritingProfile() const
 {
-    const QString profile = value(SettingsKeys::DefaultWritingProfile, QStringLiteral("other")).toString();
-    return writingProfileName(writingProfileFromName(profile));
+    const QString profile = value(SettingsKeys::DefaultWritingProfile, WritingProfile::Other).toString();
+    return offeredWritingProfile(writingProfileFromName(profile), writingProfileSettings());
 }
 
 void SettingsCodecs::setDefaultWritingProfile(const QString &value)
 {
-    m_settings.setValue(
-        SettingsKeys::DefaultWritingProfile,
-        writingProfileName(writingProfileFromName(value)));
+    m_settings.setValue(SettingsKeys::DefaultWritingProfile,
+                        offeredWritingProfile(writingProfileFromName(value), writingProfileSettings()));
 }
 
-static QString cleanupStrength(const QString &value)
+// A profile whose tone or level was deleted falls back to no tone override or
+// Medium, here where settings are read and written, so no stored profile
+// names one that is gone.
+static QString cleanupStrength(const QString &value, const QList<CustomCleanupLevel> &levels)
 {
-    const QString normalized = value.trimmed().toLower();
-    if (normalized == QStringLiteral("none")
-        || normalized == QStringLiteral("light_cleanup")
-        || normalized == QStringLiteral("balanced")
-        || normalized == QStringLiteral("strong_polish")) {
-        return normalized;
-    }
-    return QStringLiteral("balanced");
+    return offeredCleanupLevel(value.trimmed().toLower(), levels);
 }
 
-static QString writingTone(const QString &value)
+static QString writingTone(const QString &value, const QList<CustomTone> &tones)
 {
-    const QString normalized = value.trimmed().toLower();
-    if (normalized == QStringLiteral("formal")
-        || normalized == QStringLiteral("casual")
-        || normalized == QStringLiteral("very_casual")
-        || normalized == QStringLiteral("excited")
-        || normalized == QStringLiteral("gen_z")) {
-        return normalized;
+    return offeredTone(value.trimmed().toLower(), tones);
+}
+
+// The profiles the user added, which follow the built-ins in stored order.
+static QList<WritingProfileSettings> customWritingProfiles(const QList<WritingProfileSettings> &profiles)
+{
+    QList<WritingProfileSettings> custom;
+    for (const WritingProfileSettings &profile : profiles) {
+        if (profile.profile.startsWith(kCustomIdPrefix)) {
+            custom.append(profile);
+        }
     }
-    return QStringLiteral("none");
+    return custom;
 }
 
 QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
@@ -603,13 +618,17 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
     if (!document.isArray()) {
         return defaultWritingProfileSettings();
     }
+    const QList<CustomCleanupLevel> levels = customCleanupLevels();
+    const QList<CustomTone> tones = customTones();
     QList<WritingProfileSettings> settings;
     for (const QJsonValue &item : document.array()) {
         const QJsonObject object = item.toObject();
         settings.append({
             writingProfileFromName(object.value(QStringLiteral("profile")).toString()),
-            cleanupStrength(object.value(QStringLiteral("cleanupStrength")).toString()),
-            writingTone(object.value(QStringLiteral("tone")).toString()),
+            cleanupStrength(object.value(QStringLiteral("cleanupStrength")).toString(), levels),
+            writingTone(object.value(QStringLiteral("tone")).toString(), tones),
+            object.value(QStringLiteral("instructions")).toString(),
+            object.value(QStringLiteral("name")).toString(),
         });
     }
     bool hasAiCoding = false;
@@ -630,19 +649,29 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
         }
         complete.append(resolved);
     }
-    return complete;
+    return complete + customWritingProfiles(settings);
 }
 
 void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSettings> &value)
 {
-    QJsonArray array;
+    const QList<CustomCleanupLevel> levels = customCleanupLevels();
+    const QList<CustomTone> tones = customTones();
+    QList<WritingProfileSettings> profiles;
     for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
-        const WritingProfileSettings settings = writingProfileSettingsFor(value, fallback.profile);
-        array.append(QJsonObject{
-            {QStringLiteral("profile"), writingProfileName(fallback.profile)},
-            {QStringLiteral("cleanupStrength"), cleanupStrength(settings.cleanupStrength)},
-            {QStringLiteral("tone"), writingTone(settings.tone)},
-        });
+        profiles.append(writingProfileSettingsFor(value, fallback.profile));
+    }
+    QJsonArray array;
+    for (const WritingProfileSettings &settings : profiles + customWritingProfiles(value)) {
+        QJsonObject object{
+            {QStringLiteral("profile"), settings.profile},
+            {QStringLiteral("cleanupStrength"), cleanupStrength(settings.cleanupStrength, levels)},
+            {QStringLiteral("tone"), writingTone(settings.tone, tones)},
+            {QStringLiteral("instructions"), settings.instructions},
+        };
+        if (!isBuiltInWritingProfile(settings.profile)) {
+            object.insert(QStringLiteral("name"), settings.name);
+        }
+        array.append(object);
     }
     m_settings.setValue(SettingsKeys::WritingProfiles,
                         QJsonDocument(array).toJson(QJsonDocument::Compact));
@@ -677,7 +706,7 @@ void SettingsCodecs::setWritingProfileOverrides(const QList<WritingProfileOverri
         }
         array.append(QJsonObject{
             {QStringLiteral("applicationId"), applicationId},
-            {QStringLiteral("profile"), writingProfileName(override.profile)},
+            {QStringLiteral("profile"), override.profile},
             {QStringLiteral("enabled"), override.enabled},
         });
     }
@@ -703,6 +732,90 @@ bool SettingsCodecs::includeScreenshotContext() const
 void SettingsCodecs::setIncludeScreenshotContext(bool value)
 {
     m_settings.setValue(SettingsKeys::IncludeScreenshotContext, value);
+}
+
+QString SettingsCodecs::additionalInstructions() const
+{
+    return value(SettingsKeys::AdditionalInstructions, QString()).toString();
+}
+
+void SettingsCodecs::setAdditionalInstructions(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::AdditionalInstructions, value);
+}
+
+bool SettingsCodecs::customSystemPromptEnabled() const
+{
+    return value(SettingsKeys::CustomSystemPromptEnabled, false).toBool();
+}
+
+void SettingsCodecs::setCustomSystemPromptEnabled(bool value)
+{
+    m_settings.setValue(SettingsKeys::CustomSystemPromptEnabled, value);
+}
+
+QString SettingsCodecs::customSystemPrompt() const
+{
+    return value(SettingsKeys::CustomSystemPrompt, QString()).toString();
+}
+
+void SettingsCodecs::setCustomSystemPrompt(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::CustomSystemPrompt, value);
+}
+
+QList<CustomTone> SettingsCodecs::customTones() const
+{
+    QList<CustomTone> tones;
+    const QJsonArray array =
+        QJsonDocument::fromJson(value(SettingsKeys::CustomTones, QByteArray()).toByteArray()).array();
+    for (const QJsonValue &item : array) {
+        const QJsonObject object = item.toObject();
+        tones.append({object.value(QStringLiteral("id")).toString(),
+                      object.value(QStringLiteral("name")).toString(),
+                      object.value(QStringLiteral("instruction")).toString()});
+    }
+    return tones;
+}
+
+void SettingsCodecs::setCustomTones(const QList<CustomTone> &value)
+{
+    QJsonArray array;
+    for (const CustomTone &tone : value) {
+        array.append(QJsonObject{{QStringLiteral("id"), tone.id},
+                                 {QStringLiteral("name"), tone.name},
+                                 {QStringLiteral("instruction"), tone.instruction}});
+    }
+    m_settings.setValue(SettingsKeys::CustomTones, QJsonDocument(array).toJson(QJsonDocument::Compact));
+}
+
+QList<CustomCleanupLevel> SettingsCodecs::customCleanupLevels() const
+{
+    QList<CustomCleanupLevel> levels;
+    const QJsonArray array = QJsonDocument::fromJson(
+                                 value(SettingsKeys::CustomCleanupLevels, QByteArray()).toByteArray())
+                                 .array();
+    for (const QJsonValue &item : array) {
+        const QJsonObject object = item.toObject();
+        levels.append({object.value(QStringLiteral("id")).toString(),
+                       object.value(QStringLiteral("name")).toString(),
+                       object.value(QStringLiteral("base")).toString(),
+                       object.value(QStringLiteral("instructions")).toString()});
+    }
+    return levels;
+}
+
+void SettingsCodecs::setCustomCleanupLevels(const QList<CustomCleanupLevel> &value)
+{
+    QJsonArray array;
+    for (const CustomCleanupLevel &level : value) {
+        array.append(QJsonObject{{QStringLiteral("id"), level.id},
+                                 {QStringLiteral("name"), level.name},
+                                 {QStringLiteral("base"), level.base},
+                                 {QStringLiteral("instructions"), level.instructions}});
+    }
+    m_settings.setValue(SettingsKeys::CustomCleanupLevels,
+                        QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
 QString SettingsCodecs::openAiModel() const
@@ -1223,6 +1336,11 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.writingProfileOverrides = writingProfileOverrides();
     settings.refinement.useTargetContext = useTargetContext();
     settings.refinement.includeScreenshotContext = includeScreenshotContext();
+    settings.refinement.additionalInstructions = additionalInstructions();
+    settings.refinement.customSystemPromptEnabled = customSystemPromptEnabled();
+    settings.refinement.customSystemPrompt = customSystemPrompt();
+    settings.refinement.customTones = customTones();
+    settings.refinement.customCleanupLevels = customCleanupLevels();
 
     settings.output.method = outputMethod();
     settings.output.format = outputFormat();

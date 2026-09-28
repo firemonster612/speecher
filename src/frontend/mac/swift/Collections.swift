@@ -156,6 +156,17 @@ final class CollectionEditor: ObservableObject {
         save()
     }
 
+    /// The pill after each record's stretch column, by record, re-derived from
+    /// the records as they now stand whenever they change.
+    var badges: [UUID: String] {
+        let texts = model.bridge.settingsSchema.badges(for: records.map(\.values), forRowId: row.rowId)
+        var byRecord: [UUID: String] = [:]
+        for (record, text) in zip(records, texts) where !text.isEmpty {
+            byRecord[record.id] = text
+        }
+        return byRecord
+    }
+
     func tooltip(_ columnId: String, record id: UUID) -> String {
         guard let record = records.first(where: { $0.id == id }) else { return "" }
         return model.bridge.settingsSchema.tooltip(forColumn: columnId,
@@ -202,11 +213,17 @@ struct CollectionRow: View {
     }
 
     private var table: some View {
-        Table(editor.records, selection: $editor.selection) {
+        let badges = editor.badges
+        return Table(editor.records, selection: $editor.selection) {
             TableColumnForEach(editor.collection.columns, id: \.columnId) { column in
                 TableColumn(column.title) { record in
-                    RecordCell(editor: editor, column: column, record: record)
-                        .help(editor.tooltip(column.columnId, record: record.id))
+                    HStack {
+                        RecordCell(editor: editor, column: column, record: record)
+                        if column.stretch, let badge = badges[record.id] {
+                            RecordBadge(text: badge)
+                        }
+                    }
+                    .help(editor.tooltip(column.columnId, record: record.id))
                 }
                 .width(min: Self.width(column).min,
                        ideal: Self.width(column).ideal,
@@ -343,6 +360,22 @@ struct AddRecordSheet: View {
     }
 }
 
+/// A short label on a capsule after a record's name, in the accent colour, as
+/// the Local models pane shows a rating.
+struct RecordBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color(nsColor: .controlAccentColor).opacity(0.3)))
+            .accessibilityLabel(text)
+    }
+}
+
 /// One table cell. A locked or read-only column is text; anything else is the
 /// control its column kind names, editable in place.
 struct RecordCell: View {
@@ -395,7 +428,8 @@ struct RecordField: View {
             }
             .labelsHidden()
         default:
-            CellField(text: text, commitsImmediately: commitsImmediately) { value = $0 }
+            CellField(text: text, multiline: column.multiline,
+                      commitsImmediately: commitsImmediately) { value = $0 }
         }
     }
 
@@ -428,13 +462,15 @@ struct RecordField: View {
 /// duplicates another one has to survive long enough to be finished.
 struct CellField: View {
     let text: String
+    /// A snippet's lines: the field grows downward to show them.
+    var multiline = false
     var commitsImmediately = false
     let commit: (String) -> Void
     @State private var edited = ""
     @FocusState private var editing: Bool
 
     var body: some View {
-        TextField("", text: $edited)
+        TextField("", text: $edited, axis: multiline ? .vertical : .horizontal)
             .labelsHidden()
             .focused($editing)
             .onSubmit { commit(edited) }

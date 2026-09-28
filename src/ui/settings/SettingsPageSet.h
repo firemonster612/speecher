@@ -24,6 +24,7 @@ public:
         None,
         InvalidReplacementRules,
         DuplicatePasteRuleIds,
+        InvalidTonesOrCleanupLevels,
         ProviderSecret,
     };
 

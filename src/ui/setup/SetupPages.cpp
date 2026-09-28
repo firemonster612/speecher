@@ -284,31 +284,11 @@ void setStatusColor(QLabel *label, bool positive)
     label->setPalette(palette);
 }
 
-void addProfiles(QComboBox *combo)
+void addOptions(QComboBox *combo, const QList<RowOption> &options)
 {
-    combo->addItem(QStringLiteral("Work"), QStringLiteral("work"));
-    combo->addItem(QStringLiteral("Email"), QStringLiteral("email"));
-    combo->addItem(QStringLiteral("Personal"), QStringLiteral("personal"));
-    combo->addItem(QStringLiteral("Other"), QStringLiteral("other"));
-    combo->addItem(QStringLiteral("AI coding"), QStringLiteral("ai_coding"));
-}
-
-void addCleanupLevels(QComboBox *combo)
-{
-    combo->addItem(QStringLiteral("None"), QStringLiteral("none"));
-    combo->addItem(QStringLiteral("Light"), QStringLiteral("light_cleanup"));
-    combo->addItem(QStringLiteral("Medium"), QStringLiteral("balanced"));
-    combo->addItem(QStringLiteral("High"), QStringLiteral("strong_polish"));
-}
-
-void addTones(QComboBox *combo)
-{
-    combo->addItem(QStringLiteral("No tone override"), QStringLiteral("none"));
-    combo->addItem(QStringLiteral("Formal"), QStringLiteral("formal"));
-    combo->addItem(QStringLiteral("Casual"), QStringLiteral("casual"));
-    combo->addItem(QStringLiteral("Very casual"), QStringLiteral("very_casual"));
-    combo->addItem(QStringLiteral("Excited"), QStringLiteral("excited"));
-    combo->addItem(QStringLiteral("Gen Z"), QStringLiteral("gen_z"));
+    for (const RowOption &option : options) {
+        combo->addItem(option.label, option.id);
+    }
 }
 
 // One selectable provider as a card row: the company's mark, the name in bold
@@ -399,23 +379,6 @@ QString activationInstruction(ShortcutActivationMode mode, const QString &shortc
         break;
     }
     return QStringLiteral("tap %1 to toggle, or hold it to dictate until release").arg(shortcut);
-}
-
-QString profileLabel(WritingProfile profile)
-{
-    switch (profile) {
-    case WritingProfile::Work:
-        return QStringLiteral("Work");
-    case WritingProfile::Email:
-        return QStringLiteral("Email");
-    case WritingProfile::Personal:
-        return QStringLiteral("Personal");
-    case WritingProfile::Other:
-        return QStringLiteral("Other");
-    case WritingProfile::AiCoding:
-        return QStringLiteral("AI coding");
-    }
-    return QStringLiteral("Other");
 }
 
 } // namespace
@@ -2495,7 +2458,9 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
     QVBoxLayout *layout = makePage(
         this,
         QStringLiteral("Choose the fallback Writing Profile and how much cleanup and tone adjustment each profile receives."));
-    addProfiles(m_defaultProfile);
+    const QList<WritingProfileSettings> current = m_settings.writingProfileSettings();
+    const QList<RowOption> profiles = writingProfileChoices(current);
+    addOptions(m_defaultProfile, profiles);
     settings::selectData(m_defaultProfile, m_settings.defaultWritingProfile());
 
     auto *grid = new QGridLayout;
@@ -2506,19 +2471,20 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
     grid->addWidget(new QLabel(QStringLiteral("Tone"), this), 2, 2);
 
     int row = 3;
-    const QList<WritingProfileSettings> current = m_settings.writingProfileSettings();
-    for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
-        const WritingProfileSettings saved = writingProfileSettingsFor(current, fallback.profile);
+    const QList<RowOption> levels = cleanupStrengths(m_settings.customCleanupLevels());
+    const QList<RowOption> tones = writingTones(m_settings.customTones());
+    for (const RowOption &profile : profiles) {
+        const WritingProfileSettings saved = writingProfileSettingsFor(current, profile.id);
         auto *cleanup = new QComboBox(this);
         auto *tone = new QComboBox(this);
-        addCleanupLevels(cleanup);
-        addTones(tone);
+        addOptions(cleanup, levels);
+        addOptions(tone, tones);
         settings::selectData(cleanup, saved.cleanupStrength);
         settings::selectData(tone, saved.tone);
-        grid->addWidget(new QLabel(profileLabel(fallback.profile), this), row, 0);
+        grid->addWidget(new QLabel(profile.label, this), row, 0);
         grid->addWidget(cleanup, row, 1);
         grid->addWidget(tone, row, 2);
-        m_profiles.append({fallback.profile, cleanup, tone});
+        m_profiles.append({profile.id, cleanup, tone});
         connect(cleanup, &QComboBox::currentIndexChanged,
                 this, &WritingProfilesSetupPage::saveProfiles);
         connect(tone, &QComboBox::currentIndexChanged,
@@ -2541,13 +2507,16 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
 
 void WritingProfilesSetupPage::saveProfiles()
 {
-    QList<WritingProfileSettings> profiles;
+    // Instructions and names have no field here; they keep what Settings
+    // gave them.
+    QList<WritingProfileSettings> profiles = m_settings.writingProfileSettings();
     for (const ProfileControls &controls : m_profiles) {
-        profiles.append({
-            controls.profile,
-            controls.cleanup->currentData().toString(),
-            controls.tone->currentData().toString(),
-        });
+        for (WritingProfileSettings &profile : profiles) {
+            if (profile.profile == controls.profile) {
+                profile.cleanupStrength = controls.cleanup->currentData().toString();
+                profile.tone = controls.tone->currentData().toString();
+            }
+        }
     }
     m_settings.setWritingProfileSettings(profiles);
 }

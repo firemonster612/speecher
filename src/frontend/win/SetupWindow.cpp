@@ -412,15 +412,6 @@ void showProviderStats(const StackPanel &panel, const QList<ProviderDescriptor> 
     panel.Visibility(panel.Children().Size() ? Visibility::Visible : Visibility::Collapsed);
 }
 
-QList<QPair<QString, QString>> profileOptions()
-{
-    return {{QStringLiteral("work"), QStringLiteral("Work")},
-            {QStringLiteral("email"), QStringLiteral("Email")},
-            {QStringLiteral("personal"), QStringLiteral("Personal")},
-            {QStringLiteral("other"), QStringLiteral("Other")},
-            {QStringLiteral("ai_coding"), QStringLiteral("AI coding")}};
-}
-
 QStringList welcomeCopy()
 {
     return {QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the app you were using."),
@@ -2419,26 +2410,26 @@ struct SetupWindow::Native {
         StackPanel panel = page(
             QStringLiteral("Writing profiles"),
             QStringLiteral("Speecher picks a writing profile from the app you dictate into. Choose the fallback profile and how much cleanup and tone adjustment each one gets."));
-        const auto profiles = profileOptions();
+        const auto pairs = [](const QList<RowOption> &options) {
+            QList<QPair<QString, QString>> pairs;
+            for (const RowOption &option : options) {
+                pairs.append({option.id, option.label});
+            }
+            return pairs;
+        };
+        QList<WritingProfileSettings> saved = controller->settings()->writingProfileSettings();
+        const QList<RowOption> profileChoices = writingProfileChoices(saved);
+        const auto profiles = pairs(profileChoices);
         ComboBox fallback = combo(profiles, controller->settings()->defaultWritingProfile());
         fallback.SelectionChanged([this, fallback, profiles](const auto &, const auto &) {
             controller->settings()->setDefaultWritingProfile(profiles.at(fallback.SelectedIndex()).first);
         });
         panel.Children().Append(settingRow(QStringLiteral("Default profile"), fallback));
 
-        const QList<QPair<QString, QString>> cleanup{
-            {QStringLiteral("none"), QStringLiteral("None")},
-            {QStringLiteral("light_cleanup"), QStringLiteral("Light")},
-            {QStringLiteral("balanced"), QStringLiteral("Medium")},
-            {QStringLiteral("strong_polish"), QStringLiteral("High")}};
-        const QList<QPair<QString, QString>> tones{
-            {QStringLiteral("none"), QStringLiteral("No tone override")},
-            {QStringLiteral("formal"), QStringLiteral("Formal")},
-            {QStringLiteral("casual"), QStringLiteral("Casual")},
-            {QStringLiteral("very_casual"), QStringLiteral("Very casual")},
-            {QStringLiteral("excited"), QStringLiteral("Excited")},
-            {QStringLiteral("gen_z"), QStringLiteral("Gen Z")}};
-        QList<WritingProfileSettings> saved = controller->settings()->writingProfileSettings();
+        const QList<QPair<QString, QString>> cleanup =
+            pairs(cleanupStrengths(controller->settings()->customCleanupLevels()));
+        const QList<QPair<QString, QString>> tones =
+            pairs(writingTones(controller->settings()->customTones()));
         // The mockup's table header, so the two unlabelled columns say which
         // is cleanup and which is tone.
         StackPanel header;
@@ -2454,22 +2445,22 @@ struct SetupWindow::Native {
         header.Children().Append(cleanupHeading);
         header.Children().Append(toneHeading);
         panel.Children().Append(header);
-        for (const WritingProfileSettings &entry : defaultWritingProfileSettings()) {
-            const WritingProfileSettings current = writingProfileSettingsFor(saved, entry.profile);
+        for (const RowOption &choice : profileChoices) {
+            const WritingProfileSettings current = writingProfileSettingsFor(saved, choice.id);
             StackPanel row;
             row.Orientation(Orientation::Horizontal);
             row.Spacing(12);
-            TextBlock label = textBlock(writingProfileLabel(entry.profile), false);
+            TextBlock label = textBlock(choice.label, false);
             label.Width(110);
             label.VerticalAlignment(VerticalAlignment::Center);
             ComboBox cleanupChoice = combo(cleanup, current.cleanupStrength);
             cleanupChoice.MinWidth(140);
             ComboBox toneChoice = combo(tones, current.tone);
             toneChoice.MinWidth(170);
-            const auto save = [this, entry, cleanupChoice, toneChoice, cleanup, tones] {
+            const auto save = [this, id = choice.id, cleanupChoice, toneChoice, cleanup, tones] {
                 QList<WritingProfileSettings> values = controller->settings()->writingProfileSettings();
                 for (WritingProfileSettings &value : values) {
-                    if (value.profile == entry.profile) {
+                    if (value.profile == id) {
                         value.cleanupStrength = cleanup.at(cleanupChoice.SelectedIndex()).first;
                         value.tone = tones.at(toneChoice.SelectedIndex()).first;
                     }

@@ -3,6 +3,8 @@
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
 #include "app/SingleInstanceIpc.h"
+#include "core/settings/SettingsCodecs.h"
+#include "core/settings/SettingsSchema.h"
 #include "providers/ProviderRegistry.h"
 #include "transcribe/FileTranscriptionSession.h"
 
@@ -136,17 +138,45 @@ const CliNames kCleanupNames{{QStringLiteral("none"), QStringLiteral("none")},
                              {QStringLiteral("light_cleanup"), QStringLiteral("light")},
                              {QStringLiteral("balanced"), QStringLiteral("medium")},
                              {QStringLiteral("strong_polish"), QStringLiteral("high")}};
-const CliNames kProfileNames{{QStringLiteral("work"), QStringLiteral("work")},
-                             {QStringLiteral("email"), QStringLiteral("email")},
-                             {QStringLiteral("personal"), QStringLiteral("personal")},
-                             {QStringLiteral("ai_coding"), QStringLiteral("ai-coding")},
-                             {QStringLiteral("other"), QStringLiteral("other")}};
+const CliNames kProfileNames{{WritingProfile::Work, QStringLiteral("work")},
+                             {WritingProfile::Email, QStringLiteral("email")},
+                             {WritingProfile::Personal, QStringLiteral("personal")},
+                             {WritingProfile::AiCoding, QStringLiteral("ai-coding")},
+                             {WritingProfile::Other, QStringLiteral("other")}};
 const CliNames kToneNames{{QStringLiteral("none"), QStringLiteral("none")},
                           {QStringLiteral("formal"), QStringLiteral("formal")},
                           {QStringLiteral("casual"), QStringLiteral("casual")},
                           {QStringLiteral("very_casual"), QStringLiteral("very-casual")},
                           {QStringLiteral("excited"), QStringLiteral("excited")},
                           {QStringLiteral("gen_z"), QStringLiteral("gen-z")}};
+
+// The built-in names, then each custom tone, level or profile the settings
+// hold, by its id without custom_ and with - for _.
+CliNames withCustomNames(CliNames names, const QList<RowOption> &options)
+{
+    for (const RowOption &option : options) {
+        if (option.id.startsWith(kCustomIdPrefix)) {
+            names.append({option.id,
+                          option.id.mid(kCustomIdPrefix.size()).replace(QLatin1Char('_'), QLatin1Char('-'))});
+        }
+    }
+    return names;
+}
+
+CliNames cleanupNames()
+{
+    return withCustomNames(kCleanupNames, cleanupStrengths(SettingsCodecs().customCleanupLevels()));
+}
+
+CliNames profileNames()
+{
+    return withCustomNames(kProfileNames, writingProfileChoices(SettingsCodecs().writingProfileSettings()));
+}
+
+CliNames toneNames()
+{
+    return withCustomNames(kToneNames, writingTones(SettingsCodecs().customTones()));
+}
 
 QStringList cliNames(const CliNames &choices)
 {
@@ -177,9 +207,9 @@ QString helpText()
     return QString::fromUtf8(kHelp)
         .arg(providerIds(registry.speechProviders()).join(separator),
              providerIds(registry.refinementProviders()).join(separator),
-             cliNames(kCleanupNames).join(separator),
-             cliNames(kProfileNames).join(separator),
-             cliNames(kToneNames).join(separator));
+             cliNames(cleanupNames()).join(separator),
+             cliNames(profileNames()).join(separator),
+             cliNames(toneNames()).join(separator));
 }
 
 // The stored id for a command-line name, or nothing for a name not offered.
@@ -252,11 +282,11 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
                                                        : options.refinementProviderId) = given->toLower();
             }
         } else if (argument == QStringLiteral("--cleanup")) {
-            error = choice(kCleanupNames, &options.cleanupStrength);
+            error = choice(cleanupNames(), &options.cleanupStrength);
         } else if (argument == QStringLiteral("--profile")) {
-            error = choice(kProfileNames, &options.writingProfile);
+            error = choice(profileNames(), &options.writingProfile);
         } else if (argument == QStringLiteral("--tone")) {
-            error = choice(kToneNames, &options.tone);
+            error = choice(toneNames(), &options.tone);
         } else if (argument == QStringLiteral("--output")) {
             const std::optional<QString> given = value();
             if (!given) {

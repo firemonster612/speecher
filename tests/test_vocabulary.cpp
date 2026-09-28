@@ -75,10 +75,35 @@ private slots:
         QCOMPARE(sent.size(), VocabularyLimit::maxKeyterms);
         QCOMPARE(sent.first(), QStringLiteral("zzz starred"));
 
-        QCOMPARE(VocabularyLimit::summary(vocabularyTermsOf(settings.vocabularyEntries())),
-                 QStringLiteral("183 terms, the 100 highest priority are sent"));
-        QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}),
-                 QStringLiteral("2 of 100 terms, using 2 of 500 tokens"));
+        QCOMPARE(VocabularyLimit::summary(vocabularyTermsOf(settings.vocabularyEntries()), QStringLiteral("claude")),
+                 QStringLiteral("183 terms. 100 are key terms, and all are used for refinement."));
+        QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}, QStringLiteral("claude")),
+                 QStringLiteral("2 of 100 key terms, using 2 of 500 tokens"));
+        QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}, QStringLiteral("codex")),
+                 QStringLiteral("2 terms, all are used for refinement"));
+        QStringList tooMany;
+        for (int index = 0; index < 1001; ++index) {
+            tooMany << QStringLiteral("term%1").arg(index);
+        }
+        QCOMPARE(VocabularyLimit::summary(tooMany, QStringLiteral("claude")),
+                 QStringLiteral("1001 terms. 100 are key terms, and the first 1000 are used for refinement."));
+    }
+
+    void claudeKeyTermsAreWhatItsHeaderCarries()
+    {
+        // 90 twelve-byte terms fill 1169 bytes, past the header's 1024: Claude
+        // gets the first 78, a custom endpoint all 90.
+        QStringList terms{QString::fromUtf8("東京")};
+        for (int index = 0; index < 90; ++index) {
+            terms << QStringLiteral("project%1").arg(index, 5, 10, QLatin1Char('0'));
+        }
+        const QStringList claude = VocabularyLimit::speechKeyterms(terms, QStringLiteral("claude"));
+        QCOMPARE(claude.size(), 78);
+        QCOMPARE(claude.first(), QStringLiteral("project00000"));
+        QCOMPARE(VocabularyLimit::speechKeyterms(terms, QStringLiteral("endpoint")).size(), 91);
+        QCOMPARE(VocabularyLimit::speechKeyterms(terms, QStringLiteral("codex")), QStringList());
+        QCOMPARE(VocabularyLimit::summary(terms, QStringLiteral("claude")),
+                 QStringLiteral("91 terms. 78 are key terms, and all are used for refinement."));
     }
 
     void learnedCorrectionsRespectTheSendCap()

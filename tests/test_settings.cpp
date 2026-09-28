@@ -544,6 +544,120 @@ private slots:
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
     }
 
+    // Files from before instructions existed load with none, and the new
+    // fields survive a save and a reload.
+    void refinementInstructionsRoundTrip()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(QStringLiteral("refinement/writingProfiles"),
+                                QByteArray(R"([{"profile":"email","cleanupStrength":"balanced","tone":"casual"}])"));
+        AppSettings draft = settings.snapshot();
+        QCOMPARE(writingProfileSettingsFor(draft.refinement.writingProfiles, WritingProfile::Email).instructions,
+                 QString());
+        QCOMPARE(draft.refinement.additionalInstructions, QString());
+        QCOMPARE(draft.refinement.customSystemPromptEnabled, false);
+        QCOMPARE(draft.refinement.customSystemPrompt, QString());
+
+        draft.refinement.writingProfiles[1].instructions = QStringLiteral("Sign off with Best,\nEnzo");
+        draft.refinement.additionalInstructions = QStringLiteral("Spell it Speecher.");
+        draft.refinement.customSystemPromptEnabled = true;
+        draft.refinement.customSystemPrompt = QStringLiteral("Clean up my dictation.");
+        settings.applySnapshot(draft);
+
+        const AppSettings loaded = SettingsStore().snapshot();
+        QCOMPARE(writingProfileSettingsFor(loaded.refinement.writingProfiles, WritingProfile::Email).instructions,
+                 QStringLiteral("Sign off with Best,\nEnzo"));
+        QCOMPARE(loaded.refinement.additionalInstructions, QStringLiteral("Spell it Speecher."));
+        QCOMPARE(loaded.refinement.customSystemPromptEnabled, true);
+        QCOMPARE(loaded.refinement.customSystemPrompt, QStringLiteral("Clean up my dictation."));
+    }
+
+    // A profile keeps a custom tone or level that still exists, and falls back
+    // to no tone override and Medium once it is deleted.
+    void profilesKeepCustomChoicesUntilTheyAreDeleted()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.customTones = {
+            {QStringLiteral("custom_terse"), QStringLiteral("Terse"), QStringLiteral("Short.")}};
+        draft.refinement.customCleanupLevels = {{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                                 QStringLiteral("light_cleanup"), QStringLiteral("Bullets.")}};
+        draft.refinement.writingProfiles = {
+            {WritingProfile::Email, QStringLiteral("custom_notes"), QStringLiteral("custom_terse")}};
+        settings.applySnapshot(draft);
+        const auto email = [](const AppSettings &loaded) {
+            return writingProfileSettingsFor(loaded.refinement.writingProfiles, WritingProfile::Email);
+        };
+        AppSettings loaded = SettingsStore().snapshot();
+        QCOMPARE(loaded.refinement.customTones, draft.refinement.customTones);
+        QCOMPARE(loaded.refinement.customCleanupLevels, draft.refinement.customCleanupLevels);
+        QCOMPARE(email(loaded).cleanupStrength, QStringLiteral("custom_notes"));
+        QCOMPARE(email(loaded).tone, QStringLiteral("custom_terse"));
+
+        loaded.refinement.customTones.clear();
+        loaded.refinement.customCleanupLevels.clear();
+        settings.applySnapshot(loaded);
+        const AppSettings deleted = SettingsStore().snapshot();
+        QCOMPARE(email(deleted).cleanupStrength, QStringLiteral("balanced"));
+        QCOMPARE(email(deleted).tone, QStringLiteral("none"));
+    }
+
+    // A file from before custom profiles loads the five built-ins, and saving
+    // it back writes the same array.
+    void oldSettingsLoadTheSameProfiles()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        const QByteArray stored(
+            R"([{"cleanupStrength":"strong_polish","instructions":"","profile":"work","tone":"formal"},)"
+            R"({"cleanupStrength":"balanced","instructions":"","profile":"email","tone":"none"},)"
+            R"({"cleanupStrength":"balanced","instructions":"","profile":"personal","tone":"none"},)"
+            R"({"cleanupStrength":"balanced","instructions":"","profile":"ai_coding","tone":"none"},)"
+            R"({"cleanupStrength":"light_cleanup","instructions":"","profile":"other","tone":"none"}])");
+        settings.raw().setValue(QStringLiteral("refinement/writingProfiles"), stored);
+        QStringList ids;
+        for (const WritingProfileSettings &profile : settings.writingProfileSettings()) {
+            ids << profile.profile;
+        }
+        QCOMPARE(ids, (QStringList{QStringLiteral("work"), QStringLiteral("email"), QStringLiteral("personal"),
+                                   QStringLiteral("ai_coding"), QStringLiteral("other")}));
+        settings.applySnapshot(settings.snapshot());
+        QCOMPARE(settings.raw().value(QStringLiteral("refinement/writingProfiles")).toByteArray(), stored);
+        settings.raw().clear();
+    }
+
+    // A rule keeps a custom profile while it exists. Deleting the profile
+    // clears it from a rule that also sets an app type, drops a rule that set
+    // nothing else, and turns a fallback that named it into Other.
+    void deletingAProfileClearsItsRulesAndTheFallback()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.writingProfiles.append(
+            {QStringLiteral("custom_standup"), QStringLiteral("light_cleanup"), QStringLiteral("none"), QString(),
+             QStringLiteral("Standup")});
+        draft.refinement.defaultWritingProfile = QStringLiteral("custom_standup");
+        draft.appRecognitionRules = {
+            {QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup")},
+            {QStringLiteral("mattermost"), AppCategory::Browser, QStringLiteral("custom_standup")},
+        };
+        settings.applySnapshot(draft);
+        AppSettings loaded = SettingsStore().snapshot();
+        QCOMPARE(loaded.appRecognitionRules, draft.appRecognitionRules);
+        QCOMPARE(loaded.refinement.defaultWritingProfile, QStringLiteral("custom_standup"));
+
+        loaded.refinement.writingProfiles.removeLast();
+        settings.applySnapshot(loaded);
+        const AppSettings deleted = SettingsStore().snapshot();
+        QCOMPARE(deleted.appRecognitionRules,
+                 (QList<AppRecognitionRule>{{QStringLiteral("mattermost"), AppCategory::Browser, std::nullopt}}));
+        QCOMPARE(deleted.refinement.defaultWritingProfile, QStringLiteral("other"));
+        settings.raw().clear();
+    }
+
     void snapshotApplyNeverPinsADetectedCliProxyDirectory()
     {
         SettingsStore settings;

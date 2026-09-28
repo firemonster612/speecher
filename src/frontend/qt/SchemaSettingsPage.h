@@ -30,6 +30,9 @@ struct SchemaCustomRow {
     bool fullWidth = false;
     // Sits beside the row's title rather than in its control column.
     QWidget *titleAccessory = nullptr;
+    // Called with the page's draft each time the page re-derives its rows,
+    // for a widget showing something that depends on other settings.
+    std::function<void(const AppSettings &)> refresh;
 };
 
 // How a front end hands the renderer a widget for a row it wants to draw
@@ -79,6 +82,7 @@ private:
         QWidget *gateNote = nullptr;
         std::function<QVariant()> value;
         std::function<void(const QVariant &)> setValue;
+        std::function<void(const AppSettings &)> refresh;
     };
 
     // A section's chrome — its card, title and help note — only earns its

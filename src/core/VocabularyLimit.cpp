@@ -41,18 +41,60 @@ QStringList limited(const QStringList &terms)
     return result;
 }
 
-QString summary(const QStringList &terms)
+QStringList claudeVoiceKeyterms(const QStringList &terms)
 {
-    // `terms` is the whole stored list. Saying how many of them a request
-    // actually carries is the point of the row, so the over-cap sentence names
-    // the sent count rather than pretending the rest are gone.
-    const QStringList sent = limited(terms);
-    if (sent.size() < terms.size()) {
-        return QStringLiteral("%1 terms, the %2 highest priority are sent")
-            .arg(terms.size())
-            .arg(sent.size());
+    constexpr qsizetype maxHeaderBytes = 1024;
+    QStringList kept;
+    QSet<QString> seen;
+    qsizetype bytes = 0;
+    for (const QString &value : terms) {
+        const QString term = value.simplified();
+        const QString key = QString::fromLatin1(term.toLatin1().toLower());
+        if (term.isEmpty() || QString::fromLatin1(term.toLatin1()) != term || seen.contains(key)) {
+            continue;
+        }
+        const qsizetype separator = kept.isEmpty() ? 0 : 1;
+        if (bytes + separator + term.size() > maxHeaderBytes) {
+            continue;
+        }
+        seen.insert(key);
+        kept.append(term);
+        bytes += separator + term.size();
     }
-    return QStringLiteral("%1 of %2 terms, using %3 of %4 tokens")
+    return kept;
+}
+
+QStringList speechKeyterms(const QStringList &terms, const QString &speechProviderId)
+{
+    if (speechProviderId == QStringLiteral("claude")) {
+        return claudeVoiceKeyterms(limited(terms));
+    }
+    if (speechProviderId == QStringLiteral("endpoint")) {
+        return limited(terms);
+    }
+    return {};
+}
+
+QString summary(const QStringList &terms, const QString &speechProviderId)
+{
+    // `terms` is the whole stored list. Saying how many of them each consumer
+    // actually receives is the point of the row, so the over-cap sentences
+    // name the sent counts rather than pretending the rest are gone.
+    const QString refinement = terms.size() > maxRefinementTerms
+        ? QStringLiteral("the first %1 are used for refinement").arg(maxRefinementTerms)
+        : QStringLiteral("all are used for refinement");
+    if (speechProviderId != QStringLiteral("claude") && speechProviderId != QStringLiteral("endpoint")) {
+        return (terms.size() == 1 ? QStringLiteral("1 term, used for refinement")
+                                  : QStringLiteral("%1 terms, %2").arg(terms.size()).arg(refinement));
+    }
+    const QStringList sent = speechKeyterms(terms, speechProviderId);
+    if (sent.size() < terms.size()) {
+        return QStringLiteral("%1 terms. %2 are key terms, and %3.")
+            .arg(terms.size())
+            .arg(sent.size())
+            .arg(refinement);
+    }
+    return QStringLiteral("%1 of %2 key terms, using %3 of %4 tokens")
         .arg(terms.size())
         .arg(maxKeyterms)
         .arg(tokenCount(terms))

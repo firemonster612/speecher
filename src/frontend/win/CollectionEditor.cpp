@@ -17,6 +17,7 @@
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #pragma pop_macro("GetCurrentTime")
 
@@ -28,6 +29,7 @@ using namespace winrt;
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
+using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
 
 const QString kUndoDelete = QStringLiteral("undoDelete");
 const QString kUndoLatestLearn = QStringLiteral("undoLatestLearn");
@@ -214,12 +216,19 @@ void CollectionEditor::build()
 void CollectionEditor::rebuildRows()
 {
     m_list.Items().Clear();
+    QList<QVariantMap> values;
+    for (const Record &record : m_records) {
+        values.append(record.values);
+    }
+    const QStringList badges = m_host.model->badgesFor(values, m_rowId);
     for (qsizetype index = 0; index < m_records.size(); ++index) {
         Grid row = columnGrid(m_collection.columns);
         row.Tag(box_value(static_cast<int32_t>(index)));
         for (qsizetype columnIndex = 0; columnIndex < m_collection.columns.size(); ++columnIndex) {
-            const UIElement cell = cellFor(m_collection.columns.at(columnIndex),
-                                           static_cast<int>(index));
+            const CollectionColumnSnapshot &column = m_collection.columns.at(columnIndex);
+            const UIElement cell = cellFor(column,
+                                           static_cast<int>(index),
+                                           column.stretch ? badges.value(index) : QString());
             Grid::SetColumn(cell.as<FrameworkElement>(), static_cast<int32_t>(columnIndex));
             row.Children().Append(cell);
         }
@@ -228,7 +237,9 @@ void CollectionEditor::rebuildRows()
     updateToolbar();
 }
 
-UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column, int recordIndex)
+UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
+                                   int recordIndex,
+                                   const QString &badgeText)
 {
     const Record &record = m_records.at(recordIndex);
     const QVariant value = record.values.value(column.id);
@@ -285,6 +296,9 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column, int 
         // momentarily duplicates another one has to survive being typed.
         TextBox box;
         box.Text(hs(value.toString()));
+        if (column.multiline) {
+            makeMultiline(box);
+        }
         const auto commit = [weak = weak_from_this(), columnId = column.id, recordIndex](
                                 const TextBox &box) {
             auto self = weak.lock();
@@ -300,8 +314,9 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column, int 
         box.LostFocus([commit](const IInspectable &sender, const auto &) {
             commit(sender.as<TextBox>());
         });
-        box.KeyDown([commit](const IInspectable &sender, const Input::KeyRoutedEventArgs &args) {
-            if (args.Key() == Windows::System::VirtualKey::Enter) {
+        box.KeyDown([commit, multiline = column.multiline](const IInspectable &sender,
+                                                           const Input::KeyRoutedEventArgs &args) {
+            if (!multiline && args.Key() == Windows::System::VirtualKey::Enter) {
                 commit(sender.as<TextBox>());
             }
         });
@@ -311,7 +326,27 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column, int 
     if (!tooltip.isEmpty()) {
         ToolTipService::SetToolTip(cell, box_value(hs(tooltip)));
     }
-    return cell;
+    if (badgeText.isEmpty()) {
+        return cell;
+    }
+    // The pill after the field, as Home's Writing Profiles sit after a name.
+    Grid pill = badge(badgeText, themeBrush(L"RatingBadgeAccent", m_host));
+    AutomationProperties::SetName(pill, hs(badgeText));
+    // A Grid, not a horizontal StackPanel, so the field still fills the
+    // column and the pill takes only its own width.
+    Grid withBadge;
+    withBadge.ColumnSpacing(8);
+    ColumnDefinition field;
+    field.Width({1, GridUnitType::Star});
+    ColumnDefinition label;
+    label.Width({0, GridUnitType::Auto});
+    withBadge.ColumnDefinitions().Append(field);
+    withBadge.ColumnDefinitions().Append(label);
+    Grid::SetColumn(cell.as<FrameworkElement>(), 0);
+    Grid::SetColumn(pill, 1);
+    withBadge.Children().Append(cell);
+    withBadge.Children().Append(pill);
+    return withBadge;
 }
 
 QList<int> CollectionEditor::selectedIndexes() const
@@ -429,12 +464,8 @@ void CollectionEditor::openAddDialog()
             TextBox box;
             box.Header(box_value(hs(column.title)));
             box.Text(hs(blank.toString()));
-            // Snippets hold several lines; a single-line field would fold them.
-            if (m_rowId == QStringLiteral("bindingRules")
-                && column.id == QStringLiteral("replacement")) {
-                box.AcceptsReturn(true);
-                box.Height(96);
-                box.TextWrapping(TextWrapping::Wrap);
+            if (column.multiline) {
+                makeMultiline(box);
             }
             readers.append({column.id, [box] { return QVariant(qs(box.Text())); }});
             fields.Children().Append(box);

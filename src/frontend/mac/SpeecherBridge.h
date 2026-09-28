@@ -51,6 +51,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *options;
 // The column that takes the leftover width; the others size to content.
 @property (nonatomic, readonly) BOOL stretch;
+// Text columns only: the value may hold several lines.
+@property (nonatomic, readonly) BOOL multiline;
 @end
 
 // A table of records with typed columns. Everything about it that does not
@@ -103,6 +105,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
 // Text rows only: a key or password, shown masked.
 @property (nonatomic, readonly) BOOL secret;
+// Text rows only: the value may hold several lines.
+@property (nonatomic, readonly) BOOL multiline;
 @end
 
 @interface SettingsSectionModel : NSObject
@@ -186,6 +190,10 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 - (void)loadExpensiveRows;
 // Empty when these records are consistent; otherwise one message per problem.
 - (NSArray<NSString *> *)problemsWith:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId;
+// What deleting the custom Writing Profile `profileId` changes in the draft,
+// empty when nothing points at it.
+- (NSString *)writingProfileDeletionNotice:(NSString *)profileId
+    NS_SWIFT_NAME(writingProfileDeletionNotice(_:));
 // Save against the records this editor last submitted, not a later model refresh.
 - (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
                     previousRecords:(NSArray<SpeecherRecord *> *)previous
@@ -194,6 +202,10 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 - (CollectionImportResult *)recordsImportedFrom:(NSData *)data
                                            into:(NSArray<SpeecherRecord *> *)records
                                        forRowId:(NSString *)rowId;
+// The pill beside each record's stretch column, empty for none, for these
+// records as they stand and the draft's other settings.
+- (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
+    NS_SWIFT_NAME(badges(for:forRowId:));
 // What a cell says on hover, which a learned correction answers per record.
 - (NSString *)tooltipForColumn:(NSString *)columnId
                       inRowId:(NSString *)rowId
@@ -819,6 +831,10 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // Transcribing audio files: the Transcribe pane's seams into the core's
 // FileTranscriptionSession. One batch runs at a time, and it and dictation
 // exclude each other.
+
+// The built-in dictation prompt at Medium cleanup with no tone, which the
+// custom system prompt resets to.
+@property (nonatomic, readonly, copy) NSString *builtInSystemPrompt;
 
 // The same lists the Qt Transcribe page offers. Refinement's "None" is the
 // pane's own first choice and is not in refinementProviders.

@@ -115,9 +115,12 @@ struct InsightsSummary {
     QDate firstDictation;
 };
 
+// `profiles` names the custom profiles the records' labels come from. A record
+// whose profile is gone reads as the name it stored, or "Deleted profile".
 InsightsSummary summarize(const QList<DictationRecord> &records,
                           InsightsRange range,
-                          const QDate &today);
+                          const QDate &today,
+                          const QList<WritingProfileSettings> &profiles = {});
 
 // What the activity heatmap colours its days by.
 enum class HeatMeasure {

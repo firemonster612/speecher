@@ -1,5 +1,8 @@
 #include "dictation/TranscriptPipeline.h"
 
+#include "core/Vocabulary.h"
+#include "core/VocabularyLimit.h"
+
 #include <QSet>
 
 namespace speecher {
@@ -25,25 +28,31 @@ QList<BindingRule> withoutNoBindPhrases(const QList<BindingRule> &rules,
     return filtered;
 }
 
+// Every stored term in priority order, not the speech request's capped list:
+// the speech service takes a hundred hints, while refinement reads the list as
+// prompt text and can use the rest.
 QStringList refinementVocabulary(const AppSettings &settings)
 {
     QSet<QString> seen;
     QStringList deduplicated;
-    for (const QString &term : settings.speech.vocabulary) {
+    const auto append = [&seen, &deduplicated](const QString &term) {
         const QString cleaned = term.simplified();
         const QString key = cleaned.toCaseFolded();
-        if (!cleaned.isEmpty() && !seen.contains(key)) {
+        if (!cleaned.isEmpty() && !seen.contains(key)
+            && deduplicated.size() < VocabularyLimit::maxRefinementTerms) {
             seen.insert(key);
             deduplicated.append(cleaned);
+        }
+    };
+    // Learned corrections first: there are few of them, each came from a
+    // real edit, and a full list must not push them out.
+    for (const LearnedCorrection &correction : settings.learnedCorrections) {
+        if (correction.enabled) {
+            append(correction.corrected);
         }
     }
-    for (const LearnedCorrection &correction : settings.learnedCorrections) {
-        const QString cleaned = correction.corrected.simplified();
-        const QString key = cleaned.toCaseFolded();
-        if (correction.enabled && !cleaned.isEmpty() && !seen.contains(key)) {
-            seen.insert(key);
-            deduplicated.append(cleaned);
-        }
+    for (const VocabularyEntry &entry : normalizeVocabularyEntries(settings.vocabulary)) {
+        append(entry.term);
     }
     return deduplicated;
 }
@@ -76,13 +85,42 @@ QList<BindingRule> activeBindings(const AppSettings &settings, const Target &tar
 
 } // namespace
 
+void TranscriptPipeline::fillUserInstructions(RefinementContext &context,
+                                              const RefinementSettings &refinement,
+                                              const WritingProfileSettings &profile)
+{
+    context.additionalInstructions = refinement.additionalInstructions;
+    context.profileInstructions = profile.instructions;
+    context.customSystemPrompt =
+        refinement.customSystemPromptEnabled ? refinement.customSystemPrompt : QString();
+}
+
+void TranscriptPipeline::resolveCustomChoices(TranscriptPipelineResult &pipeline)
+{
+    RefinementSettings &refinement = pipeline.refinementSettings;
+    RefinementContext &context = pipeline.refinementContext;
+    context.customTone.reset();
+    context.cleanupLevel.reset();
+    for (const CustomTone &tone : std::as_const(refinement.customTones)) {
+        if (tone.id == context.tone) {
+            context.customTone = tone;
+        }
+    }
+    for (const CustomCleanupLevel &level : std::as_const(refinement.customCleanupLevels)) {
+        if (level.id == refinement.style) {
+            context.cleanupLevel = level;
+            refinement.style = level.base;
+        }
+    }
+}
+
 RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSettings &settings,
                                                                    const Target &target)
 {
     RefinementSettings refinement = settings.refinement;
     refinement.bindingVocabulary = BindingProcessor::refinementVocabulary(
         activeBindings(settings, target));
-    const WritingProfile resolved = resolveWritingProfile(
+    const QString resolved = resolveWritingProfile(
         target,
         refinement.writingProfileOverrides,
         settings.appRecognitionRules,
@@ -124,6 +162,10 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
         settings.appRecognitionRules,
         writingProfileFromName(result.refinementSettings.defaultWritingProfile));
     result.refinementContext.tone = result.refinementSettings.tone;
+    fillUserInstructions(result.refinementContext, result.refinementSettings,
+                         writingProfileSettingsFor(result.refinementSettings.writingProfiles,
+                                                   result.refinementContext.writingProfile));
+    resolveCustomChoices(result);
     result.refinementContext.includeNearbyText = result.refinementSettings.useTargetContext && !target.secure;
     result.refinementContext.editSelection = result.editsSelection;
     if (!result.refinementSettings.useTargetContext) {

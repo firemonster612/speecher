@@ -4,6 +4,7 @@
 #include "frontend/qt/CollectionRow.h"
 #include "frontend/qt/WritingProfileGrid.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/TranscriptRefinementPrompt.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
@@ -14,6 +15,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMediaDevices>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSizePolicy>
@@ -121,6 +123,9 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
 #endif
         QStringLiteral(SPEECHER_VERSION),
         lastSeenVersion,
+        {},
+        {},
+        builtInDictationSystemPrompt(),
     };
 }
 
@@ -279,6 +284,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         row.description = editor.widget->findChild<QLabel *>(QStringLiteral("rowDescription"));
         row.value = editor.value;
         row.setValue = editor.setValue;
+        row.refresh = editor.refresh;
         m_rows.append(row);
         applyRow(m_rows.last(), AppSettings{});
         return;
@@ -300,6 +306,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
             row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
             row.value = custom.value;
             row.setValue = custom.setValue;
+            row.refresh = custom.refresh;
             m_rows.append(row);
             applyRow(m_rows.last(), AppSettings{});
             return;
@@ -331,6 +338,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         row.description = headerHelp;
         row.value = custom.value;
         row.setValue = custom.setValue;
+        row.refresh = custom.refresh;
         m_rows.append(row);
         applyRow(m_rows.last(), AppSettings{});
         return;
@@ -451,6 +459,20 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
         return spin;
     }
     case RowKind::Text: {
+        if (descriptor.multiline) {
+            auto *edit = new QPlainTextEdit(card);
+            connect(edit, &QPlainTextEdit::textChanged, this, announce);
+            row.value = [edit] { return edit->toPlainText(); };
+            // Every edit reloads the page, and setPlainText would move the
+            // cursor out from under the person typing.
+            row.setValue = [edit](const QVariant &value) {
+                if (!edit->hasFocus() && edit->toPlainText() != value.toString()) {
+                    const QSignalBlocker blocker(edit);
+                    edit->setPlainText(value.toString());
+                }
+            };
+            return edit;
+        }
         if (!descriptor.suggestions) {
             auto *edit = new QLineEdit(card);
             if (descriptor.secret) {
@@ -501,6 +523,11 @@ void SchemaSettingsPage::applyRow(const Row &row, const AppSettings &settings)
     const auto &choices = row.descriptor.options ? row.descriptor.options : row.descriptor.suggestions;
     if (choices) {
         setOptions(qobject_cast<QComboBox *>(row.control), choices(settings));
+    }
+    // First, so a row whose choices come from the settings offers them
+    // before its value is chosen among them.
+    if (row.refresh) {
+        row.refresh(settings);
     }
     if (row.descriptor.value && row.setValue) {
         row.setValue(row.descriptor.value(settings));
@@ -600,6 +627,9 @@ void SchemaSettingsPage::refreshRows()
         }
         if (row.descriptor.kind == RowKind::Info && row.descriptor.value && row.setValue) {
             row.setValue(row.descriptor.value(draft));
+        }
+        if (row.refresh) {
+            row.refresh(draft);
         }
         if (row.descriptor.kind == RowKind::Action && row.descriptor.value) {
             if (auto *button = qobject_cast<QPushButton *>(row.control)) {

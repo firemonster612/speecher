@@ -43,8 +43,9 @@ struct CollectionColumn {
     QString id;
     QString title;
     ColumnKind kind = ColumnKind::Text;
-    // Choice columns only.
-    std::function<QList<RowOption>()> options;
+    // Choice columns only. They may depend on the settings, such as the
+    // custom tones a tone column also offers.
+    std::function<QList<RowOption>(const AppSettings &)> options;
     // The column that takes the leftover width; the others size to content.
     bool stretch = false;
     // Shown on the cells of this column.
@@ -52,6 +53,8 @@ struct CollectionColumn {
     // Shown instead when what to say depends on the record, such as the
     // confidence behind a learned correction.
     std::function<QString(const QVariantMap &)> recordTooltip;
+    // Text columns only: the value may hold several lines, such as a snippet.
+    bool multiline = false;
 };
 
 // Records a collection can be filled from a file with. Core owns the parse; the
@@ -92,6 +95,11 @@ struct CollectionDescriptor {
     // because both of today's two undo its own edit history.
     QList<RowOption> actions;
     int minimumHeight = 0;
+    // A short label shown as a pill beside a record's stretch column, one per
+    // record in order, empty for none: which vocabulary terms the speech
+    // service receives. It depends on the other records, so a front end asks
+    // again with its current records each time it redraws them.
+    std::function<QStringList(const QList<QVariantMap> &, const AppSettings &)> badges;
 };
 
 struct NumberRange {
@@ -154,6 +162,8 @@ struct SettingsRow {
     std::function<QList<RowOption>(const AppSettings &)> suggestions;
     // Text rows only: a key or password, shown masked.
     bool secret = false;
+    // Text rows only: the value may hold several lines.
+    bool multiline = false;
     std::function<bool(const AppSettings &, const Capabilities &)> enabled;
     // A row that is only worth showing sometimes, such as a caution about the
     // model currently chosen. Absent means always.
@@ -339,10 +349,32 @@ struct SchemaContext {
     std::function<LiveFacts()> liveFacts;
     // Endpoint verdicts must match the draft currently on screen.
     std::function<LiveFacts(const AppSettings &)> liveFactsForDraft;
+    // builtInDictationSystemPrompt(), which the custom system prompt editor
+    // shows while nothing is stored. The prompt lives with the providers.
+    QString builtInSystemPrompt;
 };
 
-QList<RowOption> cleanupStrengths();
-QList<RowOption> writingTones();
+// The built-in cleanup levels, then the custom ones.
+QList<RowOption> cleanupStrengths(const QList<CustomCleanupLevel> &custom);
+// No tone override and the built-in tones, then the custom ones.
+QList<RowOption> writingTones(const QList<CustomTone> &custom);
+// The id when it is offered, otherwise what a profile whose choice was deleted
+// falls back to: no tone override, or Medium.
+QString offeredTone(const QString &id, const QList<CustomTone> &custom);
+QString offeredCleanupLevel(const QString &id, const QList<CustomCleanupLevel> &custom);
+// The id a new custom tone, cleanup level or profile named `name` gets: custom_ and the
+// name in lowercase with every other character made _, so it never matches a
+// built-in id, then _2, _3 and so on until it is none of `taken`.
+QString customChoiceId(const QString &name, const QStringList &taken);
+// The built-in profiles, then the custom ones `profiles` holds.
+QList<RowOption> writingProfileChoices(const QList<WritingProfileSettings> &profiles);
+// Each named profile without an id, one just added, gets customChoiceId of
+// its name.
+QList<WritingProfileSettings> withCustomProfileIds(QList<WritingProfileSettings> profiles);
+// What deleting a profile changes, for the person deleting it to read first:
+// how many application rules lose it, and whether the fallback profile becomes
+// Other. Empty when nothing points at it.
+QString writingProfileDeletionNotice(const AppSettings &settings, const QString &profileId);
 CollectionDescriptor writingProfileGrid();
 QList<RowOption> authModeOptions(const QString &rowId);
 

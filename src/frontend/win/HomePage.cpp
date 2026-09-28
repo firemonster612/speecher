@@ -903,7 +903,8 @@ UIElement buildHomePage(PaneHost &host)
         return scroll;
     }
 
-    const InsightsSummary summary = summarize(records, host.homeRange, today);
+    const InsightsSummary summary =
+        summarize(records, host.homeRange, today, controller->settings()->writingProfileSettings());
     const ChartBrushes brushes = chartBrushes(host);
     const Brush &accent = brushes.accent;
     const Brush &empty = brushes.empty;

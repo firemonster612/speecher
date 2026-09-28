@@ -1,5 +1,7 @@
 #include "providers/ClaudeVoiceProtocol.h"
 
+#include "core/VocabularyLimit.h"
+
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -7,8 +9,6 @@
 
 namespace speecher {
 namespace {
-
-constexpr qsizetype kMaximumKeytermBytes = 1024;
 
 QString redactedErrorSummary(const QJsonObject &object)
 {
@@ -90,28 +90,7 @@ QUrlQuery claudeVoiceStreamQuery()
 
 QByteArray claudeVoiceKeytermsHeader(const QStringList &vocabulary)
 {
-    QByteArray header;
-    QSet<QByteArray> seen;
-    for (const QString &value : vocabulary) {
-        const QString simplified = value.simplified();
-        const QByteArray term = simplified.toLatin1();
-        const QByteArray key = term.toLower();
-        if (term.isEmpty()
-            || QString::fromLatin1(term) != simplified
-            || seen.contains(key)) {
-            continue;
-        }
-        const qsizetype separatorBytes = header.isEmpty() ? 0 : 1;
-        if (header.size() + separatorBytes + term.size() > kMaximumKeytermBytes) {
-            continue;
-        }
-        seen.insert(key);
-        if (!header.isEmpty()) {
-            header.append(',');
-        }
-        header.append(term);
-    }
-    return header;
+    return VocabularyLimit::claudeVoiceKeyterms(vocabulary).join(QLatin1Char(',')).toLatin1();
 }
 
 } // namespace speecher

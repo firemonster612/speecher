@@ -464,7 +464,7 @@ public:
 
 private:
     struct ProfileControls {
-        WritingProfile profile;
+        QString profile;
         QComboBox *cleanup;
         QComboBox *tone;
     };

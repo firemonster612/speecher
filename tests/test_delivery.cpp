@@ -473,11 +473,14 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.refinement.includeScreenshotContext = true;
         settings.refinement.writingProfiles = {
             {WritingProfile::Work, QStringLiteral("balanced"), QStringLiteral("formal")},
-            {WritingProfile::Email, QStringLiteral("strong_polish"), QStringLiteral("excited")},
+            {WritingProfile::Email, QStringLiteral("strong_polish"), QStringLiteral("excited"),
+             QStringLiteral("Sign off with Best.")},
             {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
             {WritingProfile::AiCoding, QStringLiteral("balanced"), QStringLiteral("none")},
             {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
         };
+        settings.refinement.additionalInstructions = QStringLiteral("Spell it Speecher.");
+        settings.refinement.customSystemPrompt = QStringLiteral("Clean up my dictation.");
 
         Target target;
         target.applicationId = QStringLiteral("org.mozilla.Thunderbird");
@@ -503,6 +506,11 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(pipeline.refinementContext.target.selectedText, target.selectedText);
         QCOMPARE(pipeline.refinementContext.writingProfile, WritingProfile::Email);
         QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("excited"));
+        // The resolved profile's instructions ride with the global ones; a
+        // custom prompt that is switched off stays out.
+        QCOMPARE(pipeline.refinementContext.additionalInstructions, QStringLiteral("Spell it Speecher."));
+        QCOMPARE(pipeline.refinementContext.profileInstructions, QStringLiteral("Sign off with Best."));
+        QCOMPARE(pipeline.refinementContext.customSystemPrompt, QString());
 
         TranscriptPipelineResult screenshotPipeline = pipeline;
         TranscriptPipeline::includeScreenshotContext(screenshotPipeline,
@@ -539,6 +547,71 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(systemPrompt.contains(QStringLiteral("T3 Code — Project update")));
         QVERIFY(!systemPrompt.contains(QStringLiteral("the release is tomorrow")));
         QVERIFY(systemPrompt.contains(QStringLiteral("Rule: never_use_em_dashes")));
+    }
+
+    void refinementGetsTheWholeVocabularyWhileSpeechGetsTheCappedHints()
+    {
+        AppSettings settings;
+        for (int index = 0; index < 1005; ++index) {
+            settings.vocabulary.append({QStringLiteral("term%1").arg(index, 4, 10, QLatin1Char('0'))});
+        }
+        settings.vocabulary.append({QStringLiteral("Starred"), QStringLiteral("manual"), true});
+        settings.speech.vocabulary = {QStringLiteral("only speech")};
+        settings.learnedCorrections = {
+            {QStringLiteral("0"), QStringLiteral("cute"), QStringLiteral("Qt"), QString(), 1, 0.98, true, 1, 1},
+        };
+
+        const QStringList refinement =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{}).refinementVocabulary;
+        // Read from the stored list in priority order, not from the capped speech
+        // request, and cut at the refinement ceiling.
+        // Corrections lead, so a full list cannot push them out.
+        QCOMPARE(refinement.size(), 1000);
+        QCOMPARE(refinement.first(), QStringLiteral("Qt"));
+        QCOMPARE(refinement.at(1), QStringLiteral("Starred"));
+        QCOMPARE(refinement.at(150), QStringLiteral("term0148"));
+        QCOMPARE(refinement.last(), QStringLiteral("term0997"));
+        QVERIFY(!refinement.contains(QStringLiteral("only speech")));
+    }
+
+    // A rule that points at a custom profile gives the target that profile's
+    // settings, and the prompt names its id.
+    void transcriptPipelineResolvesACustomProfileThroughARule()
+    {
+        AppSettings settings;
+        settings.refinement.writingProfiles.append({QStringLiteral("custom_standup"),
+                                                    QStringLiteral("strong_polish"), QStringLiteral("formal"),
+                                                    QStringLiteral("Bullets."), QStringLiteral("Standup")});
+        settings.appRecognitionRules = {{QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup")}};
+        Target target;
+        target.applicationId = QStringLiteral("org.zulip.Zulip");
+        const TranscriptPipelineResult pipeline =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, target);
+        QCOMPARE(pipeline.refinementContext.writingProfile, QStringLiteral("custom_standup"));
+        QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("strong_polish"));
+        QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("formal"));
+        QCOMPARE(pipeline.refinementContext.profileInstructions, QStringLiteral("Bullets."));
+    }
+
+    // A profile's custom level refines at its base with its section, and a
+    // custom tone reaches the prompt; neither reads as None.
+    void transcriptPipelineResolvesCustomTonesAndLevels()
+    {
+        AppSettings settings;
+        const CustomTone terse{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
+                               QStringLiteral("Short sentences.")};
+        const CustomCleanupLevel notes{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                       QStringLiteral("custom_only"), QStringLiteral("Bullets.")};
+        settings.refinement.customTones = {terse};
+        settings.refinement.customCleanupLevels = {notes};
+        settings.refinement.writingProfiles = {
+            {WritingProfile::Other, notes.id, terse.id},
+        };
+        const TranscriptPipelineResult pipeline =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{});
+        QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("custom_only"));
+        QCOMPARE(pipeline.refinementContext.cleanupLevel, std::optional(notes));
+        QCOMPARE(pipeline.refinementContext.customTone, std::optional(terse));
     }
 
     void transcriptPipelineScopesLearnedCorrectionsAndPreservesUserBindingPrecedence()
@@ -642,7 +715,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  WritingProfile::Work);
         QCOMPARE(writingProfileFromName(QStringLiteral("technical")), WritingProfile::Work);
         QCOMPARE(writingProfileFromName(QStringLiteral("ai_coding")), WritingProfile::AiCoding);
-        QCOMPARE(writingProfileName(WritingProfile::AiCoding), QStringLiteral("ai_coding"));
         QCOMPARE(writingProfileFromName(QStringLiteral("general")), WritingProfile::Other);
         QCOMPARE(appCategoryFromName(QStringLiteral("ai_coding")), AppCategory::AiCoding);
         QCOMPARE(appCategoryName(AppCategory::AiCoding), QStringLiteral("ai_coding"));

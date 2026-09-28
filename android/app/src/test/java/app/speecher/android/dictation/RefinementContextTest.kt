@@ -64,6 +64,32 @@ class RefinementContextTest {
     }
 
     @Test
+    fun `instructions reach the context, and the custom prompt only while it is on`() {
+        val settings =
+            SpeecherSettings(
+                writingProfiles =
+                    WritingProfile.entries.associateWith {
+                        WritingProfileSettings(instructions = "Sign off with Best.")
+                    },
+                additionalInstructions = "Spell it Speecher.",
+                customSystemPrompt = "Clean up my dictation.",
+            )
+        val sent = { chosen: SpeecherSettings ->
+            refinementContext(chosen, messages, null, null) { null }
+                .let {
+                    listOf(it.additionalInstructions, it.profileInstructions, it.customSystemPrompt)
+                }
+        }
+        assertEquals(
+            listOf(
+                listOf("Spell it Speecher.", "Sign off with Best.", ""),
+                listOf("Spell it Speecher.", "Sign off with Best.", "Clean up my dictation."),
+            ),
+            listOf(sent(settings), sent(settings.copy(customSystemPromptEnabled = true))),
+        )
+    }
+
+    @Test
     fun `surrounding text splits at the selection, offset into the field when known, or is dropped when out of range`() {
         assertEquals(
             listOf(

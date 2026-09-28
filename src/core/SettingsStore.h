@@ -67,6 +67,8 @@ public:
     using SettingsCodecs::clearStoredApiKeyFallback;
     using SettingsCodecs::completionStatusDurationMs;
     using SettingsCodecs::correctionLearningEnabled;
+    using SettingsCodecs::customCleanupLevels;
+    using SettingsCodecs::customTones;
     using SettingsCodecs::customVocabulary;
     using SettingsCodecs::defaultWritingProfile;
     using SettingsCodecs::includeScreenshotContext;

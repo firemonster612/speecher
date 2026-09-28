@@ -190,6 +190,10 @@ winrt::Microsoft::UI::Xaml::Controls::Grid badge(const QString &label,
 winrt::Microsoft::UI::Xaml::Controls::ComboBox choiceComboBox(const RowSnapshot &row,
                                                               PaneHost &host);
 
+// Lets a TextBox hold several lines, for a multi-line row or column: Return
+// starts a new line, so the value is saved when the box loses focus.
+void makeMultiline(const winrt::Microsoft::UI::Xaml::Controls::TextBox &box);
+
 // Writes a row's value through the model, commits, and queues a pane rebuild
 // so gated rows re-derive — the immediate-apply save model the mac front end
 // uses.

@@ -11,6 +11,7 @@
 #include "providers/CodexCredentialStorage.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/TranscriptRefinementPrompt.h"
 
 #include <QDebug>
 #include <QDir>
@@ -71,6 +72,7 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
         lastSeenVersion,
         [&localSetup] { return localSetup.liveFacts(); },
         [&localSetup](const AppSettings &draft) { return localSetup.liveFacts(draft); },
+        builtInDictationSystemPrompt(),
     };
 }
 
@@ -235,6 +237,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.suggestions = row.suggestions ? row.suggestions(m_draft) : QList<RowOption>();
     snapshot.suggests = bool(row.suggestions);
     snapshot.secret = row.secret;
+    snapshot.multiline = row.multiline;
     snapshot.enabled = !row.enabled || row.enabled(m_draft, m_capabilities);
     snapshot.tooltip = row.tooltip;
     snapshot.disabledHelp = row.disabledHelp;
@@ -247,8 +250,9 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
             table.columns.append({column.id,
                                   column.title,
                                   column.kind,
-                                  column.options ? column.options() : QList<RowOption>(),
-                                  column.stretch});
+                                  column.options ? column.options(m_draft) : QList<RowOption>(),
+                                  column.stretch,
+                                  column.multiline});
         }
         table.lockedRecordCount = collection->lockedRecordCount ? collection->lockedRecordCount() : 0;
         table.blankRecord = collection->blankRecord;
@@ -395,6 +399,22 @@ SettingsModel::ImportResult SettingsModel::recordsImportedFrom(const QByteArray 
         }
     }
     return {merged, {}};
+}
+
+QString SettingsModel::writingProfileDeletionNotice(const QString &profileId) const
+{
+    return speecher::writingProfileDeletionNotice(m_draft, profileId);
+}
+
+QStringList SettingsModel::badgesFor(const QList<QVariantMap> &records,
+                                     const QString &rowId) const
+{
+    const SettingsRow *row = rowWithId(rowId);
+    const CollectionDescriptor *collection = row ? collectionForRow(*row) : nullptr;
+    if (!collection || !collection->badges) {
+        return {};
+    }
+    return collection->badges(records, m_draft);
 }
 
 QString SettingsModel::tooltipForColumn(const QString &columnId,

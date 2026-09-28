@@ -181,6 +181,7 @@ bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeO
     m_batchSettings.refinement.providerId = options.refinementProviderId;
     if (!options.applyVocabulary) {
         m_batchSettings.speech.vocabulary.clear();
+        m_batchSettings.vocabulary.clear();
         m_batchSettings.learnedCorrections.clear();
         m_batchSettings.bindings.clear();
     }
@@ -404,6 +405,11 @@ void FileTranscriptionSession::refine(const QString &raw)
     m_pipeline.refinementSettings.tone = m_options.tone;
     m_pipeline.refinementContext.tone = m_options.tone;
     m_pipeline.refinementContext.writingProfile = writingProfileFromName(m_options.writingProfile);
+    TranscriptPipeline::fillUserInstructions(
+        m_pipeline.refinementContext, m_pipeline.refinementSettings,
+        writingProfileSettingsFor(m_pipeline.refinementSettings.writingProfiles,
+                                  m_pipeline.refinementContext.writingProfile));
+    TranscriptPipeline::resolveCustomChoices(m_pipeline);
     const RefinementSettings &refinement = m_pipeline.refinementSettings;
     if (!m_refiner || refinement.style == QStringLiteral("none")
         || m_pipeline.bindingResult.canSkipRefinement) {

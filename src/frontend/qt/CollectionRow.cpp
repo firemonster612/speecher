@@ -1,5 +1,6 @@
 #include "frontend/qt/CollectionRow.h"
 
+#include "ui/InsightsCharts.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
@@ -10,8 +11,10 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QStyledItemDelegate>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -23,6 +26,28 @@ namespace speecher {
 
 namespace {
 
+// Edits a cell in a QPlainTextEdit, where Return starts a new line rather
+// than committing the edit.
+class MultilineDelegate final : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &, const QModelIndex &) const override
+    {
+        return new QPlainTextEdit(parent);
+    }
+
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override
+    {
+        static_cast<QPlainTextEdit *>(editor)->setPlainText(index.data(Qt::EditRole).toString());
+    }
+
+    void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const override
+    {
+        model->setData(index, static_cast<QPlainTextEdit *>(editor)->toPlainText(), Qt::EditRole);
+    }
+};
+
 QTableWidgetItem *readOnlyItem(const QString &text)
 {
     auto *item = new QTableWidgetItem(text);
@@ -30,12 +55,12 @@ QTableWidgetItem *readOnlyItem(const QString &text)
     return item;
 }
 
-QString optionLabel(const CollectionColumn &column, const QString &id)
+QString optionLabel(const CollectionColumn &column, const QString &id, const AppSettings &settings)
 {
     if (!column.options) {
         return id;
     }
-    for (const RowOption &option : column.options()) {
+    for (const RowOption &option : column.options(settings)) {
         if (option.id == id) {
             return option.label;
         }
@@ -59,6 +84,9 @@ public:
     QList<QVariantMap> records() const;
     // What the settings hold, which starts the editor's history over.
     void setRecords(const QList<QVariantMap> &records);
+    // Keeps the settings a choice column's options come from, and re-derives
+    // the badges beside each record for them.
+    void refresh(const AppSettings &settings);
 
 private:
     void showRecords(const QList<QVariantMap> &records);
@@ -70,6 +98,7 @@ private:
     void updateButtons();
 
     CollectionDescriptor m_collection;
+    AppSettings m_settings;
     QTableWidget *m_table;
     QPushButton *m_add = nullptr;
     QPushButton *m_delete;
@@ -128,12 +157,24 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
             m_collection.columns.at(column).stretch ? QHeaderView::Stretch
                                                     : QHeaderView::ResizeToContents);
     }
+    for (int column = 0; column < m_collection.columns.size(); ++column) {
+        if (m_collection.columns.at(column).multiline) {
+            useMultilineEditor(m_table, column);
+        }
+    }
     m_table->verticalHeader()->hide();
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     // Extended, not single: deleting a batch of learned corrections or imported
     // vocabulary one row at a time is the slowest way to use this editor.
     m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_table->setMinimumHeight(m_collection.minimumHeight);
+    if (m_collection.badges) {
+        for (int column = 0; column < m_collection.columns.size(); ++column) {
+            if (m_collection.columns.at(column).stretch) {
+                m_table->setItemDelegateForColumn(column, new BadgeDelegate(m_table));
+            }
+        }
+    }
     m_delete->setObjectName(buttonObjectName(QStringLiteral("delete"), descriptor.id));
     m_delete->setEnabled(false);
 
@@ -249,7 +290,7 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
             column.recordTooltip ? column.recordTooltip(record) : column.tooltip;
         if (locked || column.kind == ColumnKind::ReadOnly) {
             QTableWidgetItem *item = readOnlyItem(column.kind == ColumnKind::Choice
-                                                      ? optionLabel(column, value.toString())
+                                                      ? optionLabel(column, value.toString(), m_settings)
                                                       : value.toString());
             item->setToolTip(tooltip);
             m_table->setItem(row, index, item);
@@ -264,7 +305,7 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
         }
         if (column.kind == ColumnKind::Choice) {
             auto *combo = new QComboBox(m_table);
-            for (const RowOption &option : column.options()) {
+            for (const RowOption &option : column.options(m_settings)) {
                 combo->addItem(option.label, option.id);
             }
             settings::selectData(combo, value.toString());
@@ -331,6 +372,26 @@ void CollectionEditor::showRecords(const QList<QVariantMap> &records)
     }
     m_table->clearSelection();
     updateButtons();
+}
+
+void CollectionEditor::refresh(const AppSettings &settings)
+{
+    m_settings = settings;
+    if (!m_collection.badges) {
+        return;
+    }
+    const auto stretch = std::find_if(m_collection.columns.cbegin(), m_collection.columns.cend(),
+                                      [](const CollectionColumn &column) { return column.stretch; });
+    const int column = int(stretch - m_collection.columns.cbegin());
+    const QStringList badges = m_collection.badges(lockedRecords() + records(), settings);
+    // Item data, not text, so it is no edit: nothing announces a change.
+    const QSignalBlocker blocker(m_table);
+    for (int row = 0; row < m_table->rowCount() && row < badges.size(); ++row) {
+        if (QTableWidgetItem *item = m_table->item(row, column)) {
+            item->setData(BadgeDelegate::TextRole, badges.at(row));
+            item->setData(BadgeDelegate::ToneRole, int(Badge::Tone::Accent));
+        }
+    }
 }
 
 QList<QVariantMap> CollectionEditor::lockedRecords() const
@@ -402,6 +463,11 @@ std::optional<QList<QVariantMap>> importedRecords(QWidget *parent,
     return merged;
 }
 
+void useMultilineEditor(QTableWidget *table, int column)
+{
+    table->setItemDelegateForColumn(column, new MultilineDelegate(table));
+}
+
 SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
                                   QWidget *parent,
                                   std::function<void()> notifyChanged)
@@ -412,6 +478,8 @@ SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
         [editor] { return QVariant::fromValue(editor->records()); },
         [editor](const QVariant &value) { editor->setRecords(value.value<QList<QVariantMap>>()); },
         true,
+        nullptr,
+        [editor](const AppSettings &settings) { editor->refresh(settings); },
     };
 }
 

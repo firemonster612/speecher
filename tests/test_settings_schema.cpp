@@ -930,11 +930,30 @@ private slots:
         const SettingsRow &limit = rowById(schema.page(QStringLiteral("vocabulary")),
                                            QStringLiteral("vocabularyLimit"));
         QCOMPARE(limit.value(settings).toString(),
-                 VocabularyLimit::summary({QStringLiteral("Speecher")}));
+                 VocabularyLimit::summary({QStringLiteral("Speecher")}, QStringLiteral("claude")));
 
-        // It counts what the speech provider in use receives: local models get none.
+        // It counts what the speech provider in use receives: local models get no hints.
         settings.speech.providerId = QStringLiteral("local");
-        QCOMPARE(limit.value(settings).toString(), QStringLiteral("None are sent to local models"));
+        QCOMPARE(limit.value(settings).toString(), QStringLiteral("1 term, used for refinement"));
+
+        // The badges follow the terms the speech request is cut from: the
+        // starred one is a key term even at the bottom, and takes a slot, so
+        // the 100th unstarred term is left out.
+        settings.speech.providerId = QStringLiteral("claude");
+        QList<QVariantMap> shown;
+        for (int index = 0; index < 101; ++index) {
+            shown.append({{QStringLiteral("term"), QStringLiteral("term%1").arg(index, 3, 10, QLatin1Char('0'))}});
+        }
+        shown.append({{QStringLiteral("term"), QStringLiteral("late")}, {QStringLiteral("starred"), true}});
+        QStringList badges = row.collection.badges(shown, settings);
+        QCOMPARE(badges.size(), 102);
+        QCOMPARE(badges.first(), QStringLiteral("Key term"));
+        QCOMPARE(badges.at(98), QStringLiteral("Key term"));
+        QCOMPARE(badges.at(99), QString());
+        QCOMPARE(badges.last(), QStringLiteral("Key term"));
+        settings.speech.providerId = QStringLiteral("codex");
+        QCOMPARE(row.collection.badges(shown, settings).first(), QString());
+
     }
 
     void aCorrectionKeepsTheFieldsNoColumnShows()
@@ -1035,6 +1054,176 @@ private slots:
                  QStringLiteral("Restore the previous clipboard once Speecher confirms the "
                                 "paste. If it cannot confirm, your dictation stays on the "
                                 "clipboard."));
+    }
+
+    // Instructions and the custom prompt are cards of their own at the end
+    // of Refinement, gated like its other rows; the prompt shows the built-in
+    // one until something is stored.
+    void refinementPageCarriesInstructionsAndTheCustomPrompt()
+    {
+        SchemaContext context = fakeContext();
+        context.builtInSystemPrompt = QStringLiteral("Built-in rules.");
+        const SettingsSchema schema = buildSettingsSchema(context);
+        QStringList groups;
+        for (const SettingsPaneGroup &group : schema.pane(QStringLiteral("refinement"))->groups) {
+            groups.append(group.title + QLatin1Char(':') + group.rows.join(QLatin1Char(',')));
+        }
+        QCOMPARE(groups.mid(groups.size() - 5),
+                 (QStringList{QStringLiteral("Profile behavior:writingProfileBehavior"),
+                              QStringLiteral("Tones:customTones"),
+                              QStringLiteral("Cleanup levels:customCleanupLevels"),
+                              QStringLiteral("Additional instructions:additionalInstructions"),
+                              QStringLiteral("Custom system prompt:customSystemPromptEnabled,"
+                                             "customSystemPrompt,resetCustomSystemPrompt")}));
+        const SettingsRow &instructions = *schema.row(QStringLiteral("additionalInstructions"));
+        const SettingsRow &prompt = *schema.row(QStringLiteral("customSystemPrompt"));
+        QVERIFY(instructions.multiline);
+        QVERIFY(prompt.multiline);
+        const QStringList gridColumns = [&schema] {
+            QStringList ids;
+            for (const CollectionColumn &column : schema.row(QStringLiteral("writingProfileBehavior"))->collection.columns) {
+                ids.append(column.id + (column.multiline ? QStringLiteral("*") : QString()));
+            }
+            return ids;
+        }();
+        QCOMPARE(gridColumns, (QStringList{QStringLiteral("profile"), QStringLiteral("cleanup"),
+                                           QStringLiteral("tone"), QStringLiteral("instructions*")}));
+
+        AppSettings settings;
+        QCOMPARE(prompt.value(settings).toString(), QStringLiteral("Built-in rules."));
+        prompt.apply(settings, QStringLiteral("Mine."));
+        QCOMPARE(prompt.value(settings).toString(), QStringLiteral("Mine."));
+        settings.refinement.providerId = QStringLiteral("none");
+        QVERIFY(!instructions.enabled(settings, {}));
+        QVERIFY(!prompt.enabled(settings, {}));
+    }
+
+    void customChoiceIdsAreSlugsOfTheName()
+    {
+        QCOMPARE(customChoiceId(QStringLiteral(" Very Terse! "), {}), QStringLiteral("custom_very_terse_"));
+        QCOMPARE(customChoiceId(QStringLiteral("Terse"),
+                                {QStringLiteral("custom_terse"), QStringLiteral("custom_terse_2")}),
+                 QStringLiteral("custom_terse_3"));
+    }
+
+    // Built-ins come first, locked; the custom records get an id from their
+    // name once, and validation names what is wrong.
+    void tonesAndCleanupLevelsAreCollectionsAfterTheBuiltIns()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const CollectionDescriptor &tones = schema.row(QStringLiteral("customTones"))->collection;
+        const CollectionDescriptor &levels = schema.row(QStringLiteral("customCleanupLevels"))->collection;
+        QCOMPARE(tones.lockedRecordCount(), 5);
+        QCOMPARE(levels.lockedRecordCount(), 3);
+
+        AppSettings settings;
+        QList<QVariantMap> records = tones.records(settings);
+        records.append({{QStringLiteral("name"), QStringLiteral("Terse")},
+                        {QStringLiteral("instruction"), QStringLiteral("Short.")}});
+        tones.apply(settings, records);
+        QCOMPARE(settings.refinement.customTones,
+                 (QList<CustomTone>{{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
+                                     QStringLiteral("Short.")}}));
+        records = levels.records(settings);
+        records.append({{QStringLiteral("name"), QStringLiteral("Notes")},
+                        {QStringLiteral("base"), QStringLiteral("custom_only")},
+                        {QStringLiteral("instructions"), QStringLiteral("Bullets.")}});
+        levels.apply(settings, records);
+        QCOMPARE(settings.refinement.customCleanupLevels,
+                 (QList<CustomCleanupLevel>{{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                             QStringLiteral("custom_only"), QStringLiteral("Bullets.")}}));
+
+        QCOMPARE(tones.validate({{{QStringLiteral("name"), QStringLiteral(" ")},
+                                  {QStringLiteral("instruction"), QStringLiteral(" ")}},
+                                 {{QStringLiteral("name"), QStringLiteral("casual")},
+                                  {QStringLiteral("instruction"), QStringLiteral("x")}}}),
+                 (QStringList{QStringLiteral("Every tone needs a name."),
+                              QStringLiteral("There is already a tone named casual."),
+                              QStringLiteral("Every tone needs an instruction.")}));
+        QCOMPARE(levels.validate({{{QStringLiteral("name"), QStringLiteral("Notes")},
+                                   {QStringLiteral("base"), QStringLiteral("custom_only")}},
+                                  {{QStringLiteral("name"), QStringLiteral("notes")},
+                                   {QStringLiteral("base"), QStringLiteral("balanced")}}}),
+                 (QStringList{QStringLiteral("There is already a cleanup level named notes."),
+                              QStringLiteral("A Custom only cleanup level needs instructions.")}));
+    }
+
+    // The grid lists the built-ins locked, then the custom profiles; one added
+    // gets an id from its name, and every profile choice offers it.
+    void customProfilesFollowTheBuiltInsInEveryProfileChoice()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const CollectionDescriptor &grid = schema.row(QStringLiteral("writingProfileBehavior"))->collection;
+        QCOMPARE(grid.lockedRecordCount(), 5);
+        AppSettings settings;
+        QList<QVariantMap> records = grid.records(settings);
+        records.append({{QStringLiteral("profile"), QStringLiteral(" Stand up ")},
+                        {QStringLiteral("cleanup"), QStringLiteral("light_cleanup")},
+                        {QStringLiteral("tone"), QStringLiteral("none")},
+                        {QStringLiteral("instructions"), QString()}});
+        grid.apply(settings, records);
+        QCOMPARE(settings.refinement.writingProfiles.last(),
+                 (WritingProfileSettings{QStringLiteral("custom_stand_up"), QStringLiteral("light_cleanup"),
+                                         QStringLiteral("none"), QString(), QStringLiteral("Stand up")}));
+
+        const auto ids = [](const QList<RowOption> &options) {
+            QStringList ids;
+            for (const RowOption &option : options) {
+                ids.append(option.id + QLatin1Char('=') + option.label);
+            }
+            return ids;
+        };
+        const QStringList profiles{QStringLiteral("work=Work"), QStringLiteral("email=Email"),
+                                   QStringLiteral("personal=Personal"), QStringLiteral("ai_coding=AI coding"),
+                                   QStringLiteral("other=Other"), QStringLiteral("custom_stand_up=Stand up")};
+        QCOMPARE(ids(schema.row(QStringLiteral("defaultWritingProfile"))->options(settings)), profiles);
+        const CollectionColumn &ruleProfile =
+            schema.row(QStringLiteral("appRecognitionRules"))->collection.columns.at(2);
+        QCOMPARE(ids(ruleProfile.options(settings)), QStringList{QStringLiteral("=Automatic")} + profiles);
+    }
+
+    // Before a profile goes, the person is told what points at it.
+    void deletingAProfileSaysWhatItChanges()
+    {
+        AppSettings settings;
+        const QString standup = QStringLiteral("custom_standup");
+        QCOMPARE(writingProfileDeletionNotice(settings, standup), QString());
+        settings.appRecognitionRules = {{QStringLiteral("zulip"), std::nullopt, standup}};
+        QCOMPARE(writingProfileDeletionNotice(settings, standup),
+                 QStringLiteral("1 application rule uses this profile and will lose it."));
+        settings.appRecognitionRules.append({QStringLiteral("mattermost"), AppCategory::Browser, standup});
+        settings.refinement.defaultWritingProfile = standup;
+        QCOMPARE(writingProfileDeletionNotice(settings, standup),
+                 QStringLiteral("2 application rules use this profile and will lose it. "
+                                "The fallback profile will become Other."));
+    }
+
+    void profileChoicesOfferTheCustomTonesAndLevels()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        AppSettings settings;
+        settings.refinement.customTones = {
+            {QStringLiteral("custom_terse"), QStringLiteral("Terse"), QStringLiteral("Short.")}};
+        settings.refinement.customCleanupLevels = {{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                                    QStringLiteral("balanced"), QString()}};
+        const auto ids = [](const QList<RowOption> &options) {
+            QStringList ids;
+            for (const RowOption &option : options) {
+                ids.append(option.id + QLatin1Char('=') + option.label);
+            }
+            return ids;
+        };
+        const QList<CollectionColumn> &columns =
+            schema.row(QStringLiteral("writingProfileBehavior"))->collection.columns;
+        QCOMPARE(ids(columns.at(1).options(settings)),
+                 (QStringList{QStringLiteral("none=None"), QStringLiteral("light_cleanup=Light"),
+                              QStringLiteral("balanced=Medium"), QStringLiteral("strong_polish=High"),
+                              QStringLiteral("custom_notes=Notes")}));
+        QCOMPARE(ids(columns.at(2).options(settings)),
+                 (QStringList{QStringLiteral("none=No tone override"), QStringLiteral("formal=Formal"),
+                              QStringLiteral("casual=Casual"), QStringLiteral("very_casual=Very casual"),
+                              QStringLiteral("excited=Excited"), QStringLiteral("gen_z=Gen Z"),
+                              QStringLiteral("custom_terse=Terse")}));
     }
 
     // A row no pane shows is a setting nobody can reach, and a row two panes

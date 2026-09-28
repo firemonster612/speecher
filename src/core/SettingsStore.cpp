@@ -177,13 +177,20 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setSpeechEndpointSettings(draft.speech.endpoint);
     save(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);
     setAudioCaptureSettings(draft.audio);
-    setAppRecognitionRules(draft.appRecognitionRules);
     setRefinementProvider(draft.refinement.providerId);
-    setDefaultWritingProfile(draft.refinement.defaultWritingProfile);
+    // Before the profiles, which fall back from a tone or level deleted here.
+    setCustomTones(draft.refinement.customTones);
+    setCustomCleanupLevels(draft.refinement.customCleanupLevels);
     setWritingProfileSettings(draft.refinement.writingProfiles);
+    // After the profiles, since both fall back from a profile deleted there.
+    setAppRecognitionRules(draft.appRecognitionRules);
+    setDefaultWritingProfile(draft.refinement.defaultWritingProfile);
     setWritingProfileOverrides(draft.refinement.writingProfileOverrides);
     setUseTargetContext(draft.refinement.useTargetContext);
     setIncludeScreenshotContext(draft.refinement.includeScreenshotContext);
+    setAdditionalInstructions(draft.refinement.additionalInstructions);
+    setCustomSystemPromptEnabled(draft.refinement.customSystemPromptEnabled);
+    setCustomSystemPrompt(draft.refinement.customSystemPrompt);
     setOpenAiModel(draft.refinement.openAiModel);
     setOpenAiEffort(draft.refinement.openAiEffort);
     setOpenAiFastMode(draft.refinement.openAiFastMode);

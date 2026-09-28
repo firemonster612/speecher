@@ -3,6 +3,7 @@
 #include "core/OutputFormat.h"
 #include "core/PasteRules.h"
 #include "core/LearnedCorrection.h"
+#include "core/Target.h"
 
 #include <QString>
 #include <QStringList>
@@ -265,12 +266,20 @@ struct RefinementSettings {
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;
-    QString defaultWritingProfile = QStringLiteral("other");
+    QString defaultWritingProfile = WritingProfile::Other;
     QList<WritingProfileSettings> writingProfiles = defaultWritingProfileSettings();
     QList<WritingProfileOverride> writingProfileOverrides;
     QString tone = QStringLiteral("none");
     bool useTargetContext = true;
     bool includeScreenshotContext = false;
+    // Added to every refinement prompt.
+    QString additionalInstructions;
+    // Empty stands for the built-in prompt.
+    bool customSystemPromptEnabled = false;
+    QString customSystemPrompt;
+    // Offered after the built-in tones and cleanup levels.
+    QList<CustomTone> customTones;
+    QList<CustomCleanupLevel> customCleanupLevels;
 };
 
 struct OutputSettings {

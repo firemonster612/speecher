@@ -146,6 +146,11 @@ UIElement textField(const RowSnapshot &row, PaneHost &host)
         TextBox box;
         box.MinWidth(contentMinWidth(row));
         box.Text(hs(row.value.toString()));
+        if (row.multiline) {
+            // Wide enough to read a paragraph beside the row's title.
+            box.MinWidth(360);
+            makeMultiline(box);
+        }
         const auto commit = [rowId = row.id, stored = row.value.toString(), &host](
                                 const TextBox &box) {
             const QString text = qs(box.Text());
@@ -156,8 +161,9 @@ UIElement textField(const RowSnapshot &row, PaneHost &host)
         box.LostFocus([commit](const IInspectable &sender, const auto &) {
             commit(sender.as<TextBox>());
         });
-        box.KeyDown([commit](const IInspectable &sender, const Input::KeyRoutedEventArgs &args) {
-            if (args.Key() == Windows::System::VirtualKey::Enter) {
+        box.KeyDown([commit, multiline = row.multiline](const IInspectable &sender,
+                                                        const Input::KeyRoutedEventArgs &args) {
+            if (!multiline && args.Key() == Windows::System::VirtualKey::Enter) {
                 commit(sender.as<TextBox>());
             }
         });
@@ -661,6 +667,13 @@ Grid rowGrid(const RowSnapshot &row, const UIElement &control, PaneHost &host, b
         grid.Children().Append(control);
     }
     return grid;
+}
+
+void makeMultiline(const TextBox &box)
+{
+    box.AcceptsReturn(true);
+    box.TextWrapping(TextWrapping::Wrap);
+    box.Height(96);
 }
 
 void setValueAndCommit(PaneHost &host, const QString &rowId, const QVariant &value)

@@ -745,6 +745,54 @@ private slots:
                  2);
     }
 
+    // A custom tone or level is named by its id without custom_, with - for _.
+    void transcribeTakesCustomTonesAndLevels()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.customTones = {
+            {QStringLiteral("custom_very_terse"), QStringLiteral("Very terse"), QStringLiteral("Short.")}};
+        draft.refinement.customCleanupLevels = {{QStringLiteral("custom_notes"), QStringLiteral("Notes"),
+                                                 QStringLiteral("balanced"), QString()}};
+        settings.applySnapshot(draft);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        const CommandLineDecision decision = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--tone"),
+             QStringLiteral("very-terse"), QStringLiteral("--cleanup"), QStringLiteral("notes"), audio},
+            {});
+        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("custom_very_terse")));
+        QCOMPARE(decision.headless.cleanupStrength, std::optional(QStringLiteral("custom_notes")));
+        settings.raw().clear();
+    }
+
+    // A custom profile is named like a custom tone: its id without custom_,
+    // with - for _.
+    void transcribeTakesACustomProfile()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
+                                                 QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
+        settings.applySnapshot(draft);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        const CommandLineDecision decision = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--profile"),
+             QStringLiteral("stand-up"), audio},
+            {});
+        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("custom_stand_up")));
+        settings.raw().clear();
+    }
+
     void quitIsAClientCommand()
     {
         const CommandLineDecision decision = parseCommandLine(

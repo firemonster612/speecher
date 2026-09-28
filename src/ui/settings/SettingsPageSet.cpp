@@ -9,6 +9,7 @@
 #include "frontend/qt/LocalModelRows.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "providers/LocalModelStore.h"
+#include "providers/TranscriptRefinementPrompt.h"
 #ifdef Q_OS_LINUX
 #include "output/YdotoolSetup.h"
 #include "platform/KeywatchSetup.h"
@@ -381,6 +382,14 @@ bool SettingsPageSet::save(bool showValidationErrors,
                            QStringLiteral("Paste rules not saved"),
                            pasteRuleProblems);
     }
+    SchemaSettingsPage *refinement = page(QStringLiteral("refinement"));
+    const QStringList refinementProblems = refinement->validate();
+    if (!refinementProblems.isEmpty()) {
+        return refuseAloud(SaveFailure::InvalidTonesOrCleanupLevels,
+                           refinement,
+                           QStringLiteral("Tones and cleanup levels not saved"),
+                           refinementProblems);
+    }
 
     settings->applySnapshot(mergeSettingsDraft(m_schema, m_loaded, m_draft, settings->snapshot()));
     Theme::apply(settings->theme());
@@ -464,6 +473,15 @@ void SettingsPageSet::runPageAction(const QString &rowId)
                                  QStringLiteral("Clear insights history"),
                                  QStringLiteral("Speecher couldn't delete the insights history."));
         }
+        return;
+    }
+    if (rowId == QStringLiteral("resetCustomSystemPrompt")) {
+        m_draft.refinement.customSystemPrompt = builtInDictationSystemPrompt();
+        for (SchemaSettingsPage *candidate : std::as_const(m_pages)) {
+            const QSignalBlocker blocker(candidate);
+            candidate->load(m_draft);
+        }
+        emit changed();
         return;
     }
     if (rowId == QStringLiteral("checkForUpdates")) {

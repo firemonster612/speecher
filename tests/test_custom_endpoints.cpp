@@ -409,7 +409,12 @@ private slots:
                                        ChatCompletionsRefiner::Audience::SmallLocalModel);
         QSignalSpy completed(&refiner, &ChatCompletionsRefiner::completed);
         RefinementContext context;
-        refiner.refine(QStringLiteral("um hello there"), {QStringLiteral("Qt")}, {}, {},
+        // More terms than speech takes: a small model gets only the speech cap.
+        QStringList vocabulary{QStringLiteral("Qt")};
+        for (int index = 0; index < 150; ++index) {
+            vocabulary << QStringLiteral("term%1").arg(index);
+        }
+        refiner.refine(QStringLiteral("um hello there"), vocabulary, {}, {},
                        server.origin() + QStringLiteral("/v1"), QStringLiteral("lfm2.5"),
                        QStringLiteral("balanced"), context);
 
@@ -424,7 +429,9 @@ private slots:
         QVERIFY2(system.split(QLatin1Char(' ')).size() < 150, qPrintable(system));
         QVERIFY(system.contains(QStringLiteral("preferred_vocabulary")));
         const QString user = messages.at(1).toObject().value(QStringLiteral("content")).toString();
-        QVERIFY(user.contains(QStringLiteral("\"preferred_vocabulary\":[\"Qt\"]")));
+        QVERIFY(user.contains(QStringLiteral("\"preferred_vocabulary\":[\"Qt\",\"term0\",")));
+        QVERIFY(user.contains(QStringLiteral("\"term98\"]")));
+        QVERIFY(!user.contains(QStringLiteral("\"term99\"")));
     }
 
     void chatCompletionsRetriesOnceWithoutTheReasoningFields()

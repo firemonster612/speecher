@@ -22,6 +22,7 @@
 #include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
+#include "providers/TranscriptRefinementPrompt.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/TranscribePresentation.h"
 #include "ui/Theme.h"
@@ -507,6 +508,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) SpeecherColumnKind kind;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *options;
 @property (nonatomic) BOOL stretch;
+@property (nonatomic) BOOL multiline;
 @end
 
 @implementation CollectionColumnModel
@@ -547,6 +549,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *disabledActionLabel;
 @property (nonatomic, strong, nullable) CollectionModel *collection;
 @property (nonatomic) BOOL secret;
+@property (nonatomic) BOOL multiline;
 @end
 
 @implementation SettingsRowModel
@@ -1056,8 +1059,9 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         model.columnId = column.id.toNSString();
         model.title = column.title.toNSString();
         model.kind = bridgedColumnKind(column.kind);
-        model.options = column.options ? [self bridgedOptions:column.options()] : @[];
+        model.options = column.options ? [self bridgedOptions:column.options(_state->draft)] : @[];
         model.stretch = column.stretch;
+        model.multiline = column.multiline;
         [columns addObject:model];
     }
     CollectionModel *model = [[CollectionModel alloc] init];
@@ -1095,6 +1099,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.disabledAction = row.disabledAction.toNSString();
     model.disabledActionLabel = row.disabledActionLabel.toNSString();
     model.secret = row.secret;
+    model.multiline = row.multiline;
     if (const CollectionDescriptor *collection = [self collectionForRow:row]) {
         model.collection = [self collectionModel:*collection];
         model.value = bridgedRecords(collection->records(_state->draft));
@@ -1241,6 +1246,12 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return problems;
 }
 
+- (NSString *)writingProfileDeletionNotice:(NSString *)profileId
+{
+    return speecher::writingProfileDeletionNotice(_state->draft, QString::fromNSString(profileId))
+        .toNSString();
+}
+
 - (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
                     previousRecords:(NSArray<SpeecherRecord *> *)previous
                            forRowId:(NSString *)rowId
@@ -1284,6 +1295,20 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     }
     result.records = bridgedRecords(merged);
     return result;
+}
+
+- (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
+{
+    const SettingsRow *row = [self rowWithId:rowId];
+    const CollectionDescriptor *collection = row ? [self collectionForRow:*row] : nullptr;
+    if (!collection || !collection->badges) {
+        return @[];
+    }
+    NSMutableArray<NSString *> *badges = [NSMutableArray array];
+    for (const QString &badge : collection->badges(coreRecords(records), _state->draft)) {
+        [badges addObject:badge.toNSString()];
+    }
+    return badges;
 }
 
 - (NSString *)tooltipForColumn:(NSString *)columnId
@@ -1750,7 +1775,8 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 {
     const QList<speecher::DictationRecord> &records = _state->controller->insightsLog()->records();
     const QDate today = _state->controller->insightsToday();
-    return bridgedInsights(speecher::summarize(records, coreInsightsRange(range), today),
+    return bridgedInsights(speecher::summarize(records, coreInsightsRange(range), today,
+                                               _state->controller->settings()->writingProfileSettings()),
                            records.size(),
                            today);
 }
@@ -2584,25 +2610,27 @@ static std::optional<QString> optionalString(NSString *value)
 }
 
 
+- (NSString *)builtInSystemPrompt
+{
+    return speecher::builtInDictationSystemPrompt().toNSString();
+}
+
 - (NSArray<RowOptionModel *> *)cleanupStrengths
 {
-    return [_settingsSchema bridgedOptions:speecher::cleanupStrengths()];
+    return [_settingsSchema bridgedOptions:speecher::cleanupStrengths(
+                                _state->controller->settings()->customCleanupLevels())];
 }
 
 - (NSArray<RowOptionModel *> *)writingTones
 {
-    return [_settingsSchema bridgedOptions:speecher::writingTones()];
+    return [_settingsSchema bridgedOptions:speecher::writingTones(
+                                _state->controller->settings()->customTones())];
 }
 
 - (NSArray<RowOptionModel *> *)writingProfiles
 {
-    using speecher::WritingProfile;
-    QList<RowOption> profiles;
-    for (WritingProfile profile : {WritingProfile::Work, WritingProfile::Email, WritingProfile::Personal,
-                                   WritingProfile::AiCoding, WritingProfile::Other}) {
-        profiles.append({speecher::writingProfileName(profile), speecher::writingProfileLabel(profile)});
-    }
-    return [_settingsSchema bridgedOptions:profiles];
+    return [_settingsSchema bridgedOptions:speecher::writingProfileChoices(
+                                _state->controller->settings()->writingProfileSettings())];
 }
 
 - (SpeecherTranscribeOptions *)transcribeOptionsWithWritingProfile:(NSString *)profile
@@ -2618,7 +2646,7 @@ static std::optional<QString> optionalString(NSString *value)
     options.refinementProviderId = settings.refinement.providerId.toNSString();
     options.cleanupStrength = chosen.cleanupStrength.toNSString();
     options.tone = chosen.tone.toNSString();
-    options.writingProfile = speecher::writingProfileName(chosen.profile).toNSString();
+    options.writingProfile = chosen.profile.toNSString();
     options.destination = SpeecherTranscriptDestinationBesideInput;
     options.folder = @"";
     return options;

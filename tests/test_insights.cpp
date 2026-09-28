@@ -26,7 +26,7 @@ DictationRecord recordAt(const QDate &date, int hour)
     return {QDateTime(date, QTime(hour, 0)), 5000, 10, QStringLiteral("Kate"), WritingProfile::Other};
 }
 
-DictationRecord recordIn(const QString &app, int words, WritingProfile profile = WritingProfile::Other)
+DictationRecord recordIn(const QString &app, int words, const QString &profile = WritingProfile::Other)
 {
     return {QDateTime(kToday, QTime(10, 0)), 5000, words, app, profile};
 }
@@ -97,6 +97,33 @@ private slots:
         QCOMPARE(loaded.words, 108);
         QCOMPARE(loaded.appName, QStringLiteral("Claude Code"));
         QCOMPARE(loaded.profile, WritingProfile::AiCoding);
+    }
+
+    // A custom profile's record stores its name; a record from before that
+    // has none. Once the profile is gone the first reads by that name and the
+    // second as Deleted profile.
+    void aRecordOfADeletedProfileKeepsItsLabel()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
+        {
+            InsightsLog log(path);
+            log.append({QDateTime(kToday, QTime(9, 0)), 1000, 5, QStringLiteral("Zulip"),
+                        QStringLiteral("custom_standup"), QStringLiteral("Standup")});
+        }
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::Append | QIODevice::Text));
+        file.write(R"({"finishedAt":"2026-09-23T10:00:00","audioMs":1000,"words":3,"app":"Slack","profile":"custom_old"})"
+                   "\n");
+        file.close();
+        const InsightsLog log(path);
+        const QList<WritingProfileSettings> kept{{QStringLiteral("custom_standup"), QStringLiteral("balanced"),
+                                                  QStringLiteral("none"), QString(), QStringLiteral("Daily")}};
+        QCOMPARE(summarize(log.records(), InsightsRange::AllTime, kToday, kept).apps.at(0).profileLabel,
+                 QStringLiteral("Daily"));
+        const InsightsSummary deleted = summarize(log.records(), InsightsRange::AllTime, kToday);
+        QCOMPARE(deleted.apps.at(0).profileLabel, QStringLiteral("Standup"));
+        QCOMPARE(deleted.apps.at(1).profileLabel, QStringLiteral("Deleted profile"));
     }
 
     void logSkipsACorruptLine()
