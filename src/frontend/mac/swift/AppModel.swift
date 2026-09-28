@@ -16,8 +16,12 @@ final class AppModel: ObservableObject {
     /// Fixed for the life of the app, so a plain let.
     let panes: [Pane]
     let sidebarGroups: [SidebarGroupModel]
-    /// The dictation state's name, as the controller reports it.
+    /// What dictation is doing, in the words and controls core gives every
+    /// platform, re-read whole on every state change.
     @Published private(set) var status: String
+    @Published private(set) var listening: Bool
+    @Published private(set) var toggleLabel: String
+    @Published private(set) var toggleEnabled: Bool
     @Published private(set) var level: Float = 0
     /// The last thing Speecher heard, which the menu bar panel offers to copy.
     @Published private(set) var transcript: String
@@ -91,22 +95,6 @@ final class AppModel: ObservableObject {
 
     var accessibilitySupported: Bool { bridge.accessibilitySupported }
     var shortcutSupported: Bool { bridge.shortcutSupported }
-    var listening: Bool { Self.listening(status) }
-    /// The states toggle() stops, which DictationSession::toggleSession
-    /// defines: starting, listening, and refining (a toggle mid-refinement
-    /// cancels the refinement).
-    var stoppable: Bool {
-        ["starting", "listening", "refining"].contains(status.lowercased())
-    }
-    /// The states toggle() ignores: a stop or delivery already under way.
-    var busy: Bool {
-        ["stopping", "delivering"].contains(status.lowercased())
-    }
-
-    /// Whether a state name is one where the microphone is open.
-    static func listening(_ status: String) -> Bool {
-        ["starting", "listening"].contains(status.lowercased())
-    }
 
     init(bridge: SpeecherBridge) {
         self.bridge = bridge
@@ -115,7 +103,10 @@ final class AppModel: ObservableObject {
         let panes = bridge.settingsSchema.panes.map(Pane.init)
         self.panes = panes
         sidebarGroups = bridge.settingsSchema.sidebarGroups
-        status = bridge.stateName
+        status = bridge.statusLabel
+        listening = bridge.listening
+        toggleLabel = bridge.toggleLabel
+        toggleEnabled = bridge.toggleEnabled
         transcript = bridge.lastTranscript
         local = bridge.localSetupState
         shortcut = bridge.shortcutDisplay
@@ -126,7 +117,11 @@ final class AppModel: ObservableObject {
         insights = bridge.insightsSummary(range: .last30Days)
         insightsEnabled = bridge.insightsEnabled
         bridge.statusChanged = { [weak self] status in
-            self?.status = status
+            guard let self else { return }
+            self.status = status
+            listening = self.bridge.listening
+            toggleLabel = self.bridge.toggleLabel
+            toggleEnabled = self.bridge.toggleEnabled
         }
         bridge.audioLevelChanged = { [weak self] level in
             self?.level = level
