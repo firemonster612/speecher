@@ -22,6 +22,12 @@
 
 int main(int argc, char **argv)
 {
+#ifdef Q_OS_WIN
+    // Without a console, QTest sends its stdout log to OutputDebugString,
+    // including with "-o -,txt", so ctest captured no PASS or FAIL lines. Qt
+    // reads this once, at the first log message, so set it before any.
+    qputenv("QT_FORCE_STDERR_LOGGING", "1");
+#endif
 #ifdef SPEECHER_WITH_WAYLAND
     // Exercise the background Wayland clipboard path without Qt's offscreen
     // clipboard taking precedence over the command-line clipboard helpers.
