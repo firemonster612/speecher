@@ -22,9 +22,13 @@ Inno Setup 6 is also required to make an installer:
 pwsh packaging/windows/build-installer.ps1 -BuildDir build
 ```
 
-The script runs `windeployqt --compiler-runtime`, downloads the pinned Windows
-App Runtime 2.4.0 installer, checks its SHA-256 value, and writes
-`dist\Speecher-Setup-x64.exe` plus its checksum.
+The script runs `windeployqt`, copies the Visual C++ runtime DLLs from the MSVC
+redist folder next to `speecher.exe`, downloads the pinned Windows App Runtime
+2.4.0 installer, checks its SHA-256 value, and writes
+`dist\Speecher-Setup-x64.exe` plus its checksum. Run it from an MSVC developer
+shell so that `VCToolsRedistDir` is set. Windows Update does not service these
+app-local runtime copies; each Speecher release brings the build toolset's
+current runtime.
 
 ## Installing
 

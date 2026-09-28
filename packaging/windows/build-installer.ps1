@@ -60,6 +60,9 @@ if ($LASTEXITCODE -ne 0) {
 # The Visual C++ runtime ships beside speecher.exe (app-local deployment)
 # rather than as vc_redist.x64.exe, which installs per-machine and needs
 # administrator rights that this per-user installer does not have.
+if (-not $env:VCToolsRedistDir) {
+    throw "VCToolsRedistDir is not set; run this from an MSVC developer shell"
+}
 $VcRuntime = Get-ChildItem (Join-Path $env:VCToolsRedistDir "x64\Microsoft.VC*.CRT\*.dll")
 if (-not $VcRuntime) {
     throw "Visual C++ runtime DLLs not found under VCToolsRedistDir '$env:VCToolsRedistDir'"
