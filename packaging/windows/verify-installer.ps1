@@ -26,13 +26,50 @@ try {
     }
 
     $Exe = Join-Path $InstallDir "speecher.exe"
-    foreach ($Required in "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll") {
+    foreach ($Required in "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll") {
         if (-not (Test-Path (Join-Path $InstallDir $Required))) {
             throw "Installed application is missing $Required"
         }
     }
     if (-not (Get-ChildItem (Join-Path $InstallDir "multimedia") -Filter *.dll)) {
         throw "Installed application has no multimedia plugins"
+    }
+
+    # Every DLL an installed binary imports must ship beside speecher.exe or come
+    # with Windows. The runner's System32 has the Visual C++ runtime and a clean
+    # Windows install does not, so any DLL from the MSVC redist folder counts only
+    # when it is app-local. API sets are resolved by the loader, not found as
+    # files. Delay-load imports are left out: the WinUI ones come from the
+    # Windows App Runtime package.
+    if (-not $env:VCToolsRedistDir) {
+        throw "VCToolsRedistDir is not set; run this from an MSVC developer shell"
+    }
+    $VcRuntime = (Get-ChildItem (Join-Path $env:VCToolsRedistDir "x64\*\*.dll")).Name
+    if (-not $VcRuntime) {
+        throw "No Visual C++ runtime DLLs found under VCToolsRedistDir '$env:VCToolsRedistDir'"
+    }
+    $Missing = foreach ($Binary in Get-ChildItem $InstallDir -Recurse -Include *.exe, *.dll) {
+        $Dump = (& dumpbin /nologo /dependents $Binary.FullName) -join "`n"
+        if ($LASTEXITCODE -ne 0) {
+            throw "dumpbin failed on $($Binary.FullName) with exit code $LASTEXITCODE"
+        }
+        $Imports = [regex]::Match($Dump, '(?i)has the following dependencies:\s+((?:\S+\.\w+\s+)+)').Groups[1].Value
+        if (-not $Imports) {
+            throw "dumpbin listed no imports for $($Binary.FullName)"
+        }
+        foreach ($Dll in -split $Imports) {
+            # vulkan-1.dll comes with the GPU driver and is optional: without it
+            # ggml falls back to the CPU.
+            $Found = (Test-Path (Join-Path $InstallDir $Dll)) -or $Dll -match '^(api|ext)-ms-' -or
+                $Dll -eq "vulkan-1.dll" -or
+                ($VcRuntime -notcontains $Dll -and (Test-Path (Join-Path "$env:SystemRoot\System32" $Dll)))
+            if (-not $Found) {
+                "$($Binary.FullName.Substring($InstallDir.Length + 1)) imports $Dll"
+            }
+        }
+    }
+    if ($Missing) {
+        throw "Installed binaries import DLLs that neither ship with Speecher nor come with Windows:`n$($Missing -join "`n")"
     }
 
     # Open with: offered for audio files without becoming their default.

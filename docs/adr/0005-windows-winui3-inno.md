@@ -51,6 +51,8 @@ Speecher again.
 
 - Installation, updates, settings, and credentials stay in the user's profile.
 - Windows App Runtime remains a machine dependency serviced by Microsoft.
+- The Visual C++ runtime ships next to `speecher.exe`, so Windows Update does
+  not service those copies; each release brings the build toolset's runtime.
 - The first browser download has real SmartScreen friction while releases are
   unsigned.
 - Moving to MSIX later would require a new packaging and update path. The
