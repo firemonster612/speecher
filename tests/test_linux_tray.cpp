@@ -196,6 +196,16 @@ private slots:
         emit controller.stateChanged(QStringLiteral("refining"));
         QCOMPARE(toggle->text(), QStringLiteral("Cancel refinement"));
         QVERIFY(!level->isVisible());
+
+        // A long error wraps, and the panel grows with it rather than
+        // clipping what follows.
+        emit controller.statusChanged(QStringLiteral("Refining…"));
+        const int shortHeight = panel.height();
+        emit controller.statusChanged(QStringLiteral(
+            "The transcription service rejected the request: the API key is invalid or has "
+            "expired. Sign in again on the Accounts page."));
+        QVERIFY(panel.height() > shortHeight);
+        QCOMPARE(panel.height(), panel.heightForWidth(panel.width()));
     }
 
     // Screenshot seam for UI evidence, as on Windows: the panel idle,

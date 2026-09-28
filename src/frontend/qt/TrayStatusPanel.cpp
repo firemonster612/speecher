@@ -94,18 +94,20 @@ TrayStatusPanel::TrayStatusPanel(ApplicationController *controller, QWidget *par
     layout->setContentsMargins(settings::rowPadding());
     layout->setSpacing(settings::largeSpacing());
 
-    auto *heading = new QHBoxLayout;
-    heading->setSpacing(settings::relatedSpacing());
+    m_headingRow = new QHBoxLayout;
+    m_headingRow->setSpacing(settings::relatedSpacing());
     m_icon = new QLabel(this);
     m_heading = new QLabel(this);
     m_heading->setObjectName(QStringLiteral("trayPanelHeading"));
     m_heading->setWordWrap(true);
+    // A receipt or an error can quote what was dictated.
+    m_heading->setTextFormat(Qt::PlainText);
     QFont bold = m_heading->font();
     bold.setBold(true);
     m_heading->setFont(bold);
-    heading->addWidget(m_icon, 0, Qt::AlignTop);
-    heading->addWidget(m_heading, 1);
-    layout->addLayout(heading);
+    m_headingRow->addWidget(m_icon, 0, Qt::AlignTop);
+    m_headingRow->addWidget(m_heading, 1);
+    layout->addLayout(m_headingRow);
 
     m_level = new QProgressBar(this);
     m_level->setObjectName(QStringLiteral("trayPanelLevel"));
@@ -123,6 +125,7 @@ TrayStatusPanel::TrayStatusPanel(ApplicationController *controller, QWidget *par
     m_transcript = new QLabel(this);
     m_transcript->setObjectName(QStringLiteral("trayPanelTranscript"));
     m_transcript->setWordWrap(true);
+    m_transcript->setTextFormat(Qt::PlainText);
     m_transcript->setForegroundRole(QPalette::PlaceholderText);
     layout->addWidget(m_transcript);
     m_copy = panelButton(copyTranscriptCaption(), this);
@@ -154,7 +157,7 @@ TrayStatusPanel::TrayStatusPanel(ApplicationController *controller, QWidget *par
         m_controller->quitApplication();
     });
     connect(controller, &ApplicationController::stateChanged, this, &TrayStatusPanel::applyState);
-    connect(controller, &ApplicationController::statusChanged, m_heading, &QLabel::setText);
+    connect(controller, &ApplicationController::statusChanged, this, &TrayStatusPanel::showStatus);
     connect(controller, &ApplicationController::audioLevelChanged, this, [this](float level) {
         m_level->setValue(qRound(std::clamp(level, 0.0f, 1.0f) * 100));
     });
@@ -162,8 +165,14 @@ TrayStatusPanel::TrayStatusPanel(ApplicationController *controller, QWidget *par
             &TrayStatusPanel::showTranscript);
 
     applyState(controller->stateName());
-    m_heading->setText(controller->statusLabel());
+    showStatus(controller->statusLabel());
     showTranscript(controller->lastTranscript());
+}
+
+void TrayStatusPanel::showStatus(const QString &status)
+{
+    m_heading->setText(status);
+    fitHeight();
 }
 
 void TrayStatusPanel::applyState(const QString &stateName)
@@ -197,6 +206,10 @@ void TrayStatusPanel::fitHeight()
 {
     // adjustSize() measures a window at its size hint's width, which is wider
     // than the fixed width the wrapped heading and transcript are laid out at.
+    // The layouts' cached heights only drop on the next event-loop pass, too
+    // late for a change made just now, so they are dropped first.
+    m_headingRow->invalidate();
+    layout()->invalidate();
     resize(width(), heightForWidth(width()));
 }
 
@@ -214,13 +227,18 @@ void TrayStatusPanel::popUp(const QRect &anchor)
             layer->setScope(QStringLiteral("speecher-tray"));
             layer->setLayer(LayerShellQt::Window::LayerTop);
             layer->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityOnDemand);
-            layer->setAnchors(LayerShellQt::Window::Anchors(LayerShellQt::Window::AnchorBottom
-                                                            | LayerShellQt::Window::AnchorRight));
-            // With no exclusive zone of its own the surface is placed inside
-            // what the panels leave free, so this corner is beside the tray
-            // of Plasma's default bottom panel.
+            // Layer-shell places by edges only, so the panel goes in the
+            // corner of the free area nearest the click. With no exclusive
+            // zone of its own it stays inside what the panels leave free.
+            const QRect full = screen->geometry();
+            const QPoint click = anchor.center();
+            const bool top = click.y() < full.center().y();
+            const bool left = click.x() < full.center().x();
+            layer->setAnchors(LayerShellQt::Window::Anchors(
+                (top ? LayerShellQt::Window::AnchorTop : LayerShellQt::Window::AnchorBottom)
+                | (left ? LayerShellQt::Window::AnchorLeft : LayerShellQt::Window::AnchorRight)));
             const int gap = settings::smallSpacing();
-            layer->setMargins(QMargins(0, 0, gap, gap));
+            layer->setMargins(QMargins(gap, gap, gap, gap));
 #ifdef SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN
             layer->setScreen(screen);
 #endif

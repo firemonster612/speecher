@@ -2,6 +2,7 @@
 
 #include <QFrame>
 
+class QHBoxLayout;
 class QLabel;
 class QProgressBar;
 class QPushButton;
@@ -30,10 +31,12 @@ protected:
 
 private:
     void applyState(const QString &stateName);
+    void showStatus(const QString &status);
     void showTranscript(const QString &text);
     void fitHeight();
 
     ApplicationController *m_controller;
+    QHBoxLayout *m_headingRow;
     QLabel *m_icon;
     QLabel *m_heading;
     QProgressBar *m_level;

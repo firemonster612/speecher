@@ -137,16 +137,26 @@ struct TrayFlyout::Native {
             }
         });
 
-        StackPanel heading;
-        heading.Orientation(Orientation::Horizontal);
-        heading.Spacing(10);
+        // A grid, not a horizontal stack, so the heading's star column gives
+        // a receipt or an error a width to wrap at and Measure its height.
+        Grid heading;
+        heading.ColumnSpacing(10);
+        ColumnDefinition glyphColumn;
+        glyphColumn.Width({0, GridUnitType::Auto});
+        ColumnDefinition textColumn;
+        textColumn.Width({1, GridUnitType::Star});
+        heading.ColumnDefinitions().Append(glyphColumn);
+        heading.ColumnDefinitions().Append(textColumn);
         statusGlyph = FontIcon();
         statusGlyph.FontSize(20);
+        statusGlyph.VerticalAlignment(VerticalAlignment::Top);
         statusText = TextBlock();
         statusText.Style(Application::Current().Resources()
                              .Lookup(box_value(L"BodyStrongTextBlockStyle"))
                              .as<Style>());
+        statusText.TextWrapping(TextWrapping::Wrap);
         statusText.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(statusText, 1);
         heading.Children().Append(statusGlyph);
         heading.Children().Append(statusText);
         root.Children().Append(heading);
