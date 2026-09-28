@@ -11,6 +11,7 @@
 #include "providers/CodexCredentialStorage.h"
 #include "providers/OpenAiAuthProvider.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/TranscriptRefinementPrompt.h"
 
 #include <QDebug>
 #include <QDir>
