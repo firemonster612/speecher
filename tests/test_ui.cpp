@@ -47,6 +47,7 @@
 #include <QSpinBox>
 #include <QStyleHints>
 #include <QTableWidget>
+#include <QTextBoundaryFinder>
 #include <QVBoxLayout>
 
 using namespace speecher::test;
@@ -439,6 +440,17 @@ private slots:
         QVERIFY(popup.sizeHint().width() >= pill->sizeHint().width());
     }
 
+    void popupErrorBreaksAnUnbrokenRunAtTheSharedWidth()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        popup.showErrorMessage(QStringLiteral("Could not reach ")
+                               + QStringLiteral("https://example.com/") + QString(200, QLatin1Char('x')));
+        auto *preview = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        QVERIFY(preview);
+        QVERIFY(preview->width() <= kPopupErrorWrapWidth);
+        QVERIFY(preview->heightForWidth(preview->width()) > preview->fontMetrics().lineSpacing() * 2);
+    }
+
     void popupUsesTheApplicationFontAndNoStylesheet()
     {
         TranscriberPopup popup(new SizingPopupPositioner);
@@ -488,6 +500,9 @@ private slots:
         QCOMPARE(ready.text, QStringLiteral("Restart to finish updating"));
         QCOMPARE(ready.action, QStringLiteral("Restart now"));
         QCOMPARE(ready.later, QStringLiteral("Later"));
+        // Mid-dictation the restart waits for the session, and says so.
+        QCOMPARE(banner(State::ReadyToRestart, [](auto &f) { f.dictating = true; }).action,
+                 QStringLiteral("Restart after this dictation"));
         QVERIFY(!banner(State::ReadyToRestart, [](auto &f) { f.deferred = true; }).visible);
         QVERIFY(!banner(State::RestartPending, [](auto &f) { f.deferred = true; }).visible);
         // Once restarting, the banner explains the exit even after Later.
@@ -544,6 +559,11 @@ private slots:
         QCOMPARE(row(State::Downloading).caption, QStringLiteral("Downloading…"));
         QVERIFY(!row(State::Downloading).enabled);
         QCOMPARE(row(State::ReadyToRestart).caption, QStringLiteral("Restart now"));
+        UpdateBannerFacts dictatingReady;
+        dictatingReady.state = State::ReadyToRestart;
+        dictatingReady.dictating = true;
+        QCOMPARE(updateCheckRow(dictatingReady, UpdateChannel::Stable).caption,
+                 QStringLiteral("Restart after this dictation"));
         QVERIFY(row(State::ReadyToRestart).enabled);
         QCOMPARE(row(State::CheckFailed).caption, QStringLiteral("Try again"));
         QCOMPARE(row(State::Error, true).caption, QStringLiteral("Open release page"));
@@ -572,6 +592,23 @@ private slots:
         QVERIFY(trimmed.startsWith(QStringLiteral("…")));
         QVERIFY(trimmed.endsWith(QString::fromUtf8("👩‍💻")));
         QVERIFY(trimmed.size() <= 12);
+    }
+
+    void previewTrimsCjkAtWordBoundaries()
+    {
+        // No spaces: the Unicode word boundaries decide where the cut falls.
+        const QString text = QString::fromUtf8("今日は良い天気ですね明日も晴れるでしょう");
+        const QString trimmed = trimPreviewToFit(text, [](const QString &candidate) {
+            return candidate.size() <= 10;
+        });
+        QVERIFY(trimmed.startsWith(QStringLiteral("…")));
+        QVERIFY(trimmed.endsWith(QString::fromUtf8("でしょう")));
+        QVERIFY(trimmed.size() <= 10);
+        // What is kept starts at one of the text's word boundaries.
+        const QString kept = trimmed.mid(1).trimmed();
+        QTextBoundaryFinder words(QTextBoundaryFinder::Word, text);
+        words.setPosition(text.size() - kept.size());
+        QVERIFY(words.isAtBoundary());
     }
 
     // Screenshot seam for UI evidence: the popup in each state it presents.

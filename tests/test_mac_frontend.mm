@@ -287,6 +287,11 @@ private slots:
         QVERIFY(panel.frame.size.height > shortError);
         QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
         QVERIFY(capture("error-long"));
+        bridge.popupErrorRequested(@"Could not reach https://example.com/"
+                                   @"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+        settle();
+        QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
+        QVERIFY(capture("error-unbroken"));
     }
 
     // Skip, all nine pages, and Finish are driven through the native AX tree

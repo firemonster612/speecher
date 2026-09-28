@@ -1,11 +1,56 @@
 #include "dictation/PopupPresentation.h"
 
-#include "core/WordPreview.h"
-
 #include <QList>
 #include <QTextBoundaryFinder>
 
 namespace speecher {
+
+namespace {
+
+// Where the text may be cut, in order: each position a word starts at, which
+// Unicode puts between CJK words as well as after spaces.
+QList<qsizetype> boundaries(QTextBoundaryFinder::BoundaryType type, const QString &text,
+                            bool wordStartsOnly)
+{
+    QList<qsizetype> starts;
+    QTextBoundaryFinder finder(type, text);
+    for (qsizetype position = 0; position >= 0 && position < text.size();
+         position = finder.toNextBoundary()) {
+        if (!wordStartsOnly || finder.boundaryReasons().testFlag(QTextBoundaryFinder::StartOfItem)
+            || position == 0) {
+            starts.append(position);
+        }
+    }
+    return starts;
+}
+
+// The longest tail from these cut points that fits, or empty. Never the whole
+// text (the first cut point), which the caller already found too wide.
+QString longestFittingTail(const QString &text, const QList<qsizetype> &starts,
+                           const QString &prefix,
+                           const std::function<bool(const QString &)> &fits)
+{
+    // Later starts are shorter tails, so the first that fits is the longest.
+    qsizetype low = 1;
+    qsizetype high = starts.size();
+    while (low < high) {
+        const qsizetype middle = (low + high) / 2;
+        if (fits(prefix + text.mid(starts[middle]).trimmed())) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    if (low < starts.size()) {
+        const QString tail = prefix + text.mid(starts[low]).trimmed();
+        if (fits(tail)) {
+            return tail;
+        }
+    }
+    return {};
+}
+
+} // namespace
 
 QString trimPreviewToFit(const QString &preview, const std::function<bool(const QString &)> &fits)
 {
@@ -13,37 +58,15 @@ QString trimPreviewToFit(const QString &preview, const std::function<bool(const 
     if (whole.isEmpty() || fits(whole)) {
         return whole;
     }
-    const QString ellipsis = QStringLiteral("… ");
-    const int words = int(whole.count(QLatin1Char(' '))) + 1;
-    // The most trailing words that fit; fewer words is always narrower.
-    int low = 0;
-    int high = words - 1;
-    while (low < high) {
-        const int middle = (low + high + 1) / 2;
-        if (fits(ellipsis + WordPreview::lastWords(whole, middle))) {
-            low = middle;
-        } else {
-            high = middle - 1;
-        }
-    }
-    if (low > 0) {
-        return ellipsis + WordPreview::lastWords(whole, low);
+    const QString atWord = longestFittingTail(
+        whole, boundaries(QTextBoundaryFinder::Word, whole, true), QStringLiteral("… "), fits);
+    if (!atWord.isEmpty()) {
+        return atWord;
     }
     // Not even the last word fits: keep as much of its end as does.
-    const QString last = WordPreview::lastWords(whole, 1);
-    const QString cut = QStringLiteral("…");
-    QList<qsizetype> starts;
-    QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme, last);
-    for (qsizetype position = 0; position >= 0 && position < last.size();
-         position = finder.toNextBoundary()) {
-        starts.append(position);
-    }
-    for (const qsizetype start : std::as_const(starts)) {
-        if (fits(cut + last.mid(start))) {
-            return cut + last.mid(start);
-        }
-    }
-    return cut;
+    const QString atGrapheme = longestFittingTail(
+        whole, boundaries(QTextBoundaryFinder::Grapheme, whole, false), QStringLiteral("…"), fits);
+    return atGrapheme.isEmpty() ? QStringLiteral("…") : atGrapheme;
 }
 
 } // namespace speecher

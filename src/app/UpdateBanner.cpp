@@ -24,6 +24,14 @@ QString retryCaption(const UpdateBannerFacts &facts)
                                        : QStringLiteral("Try again");
 }
 
+// A restart asked for mid-dictation waits for the session to end, and the
+// caption says so.
+QString restartCaption(const UpdateBannerFacts &facts)
+{
+    return facts.dictating ? QStringLiteral("Restart after this dictation")
+                           : QStringLiteral("Restart now");
+}
+
 QString failureText(const UpdateBannerFacts &facts)
 {
     return facts.error.isEmpty() ? QStringLiteral("Update check failed") : facts.error;
@@ -79,7 +87,7 @@ UpdateBannerModel updateBannerModel(const UpdateBannerFacts &facts)
     case State::ReadyToRestart:
         model.text = facts.error.isEmpty() ? QStringLiteral("Restart to finish updating")
                                            : facts.error;
-        model.action = QStringLiteral("Restart now");
+        model.action = restartCaption(facts);
         model.later = QStringLiteral("Later");
         break;
     case State::RestartPending:
@@ -123,7 +131,7 @@ UpdateCheckRow updateCheckRow(const UpdateBannerFacts &facts, UpdateChannel chan
                 QStringLiteral("Downloading Speecher %1 (%2%)").arg(facts.version).arg(facts.percent),
                 false};
     case State::ReadyToRestart:
-        return {QStringLiteral("Restart now"),
+        return {restartCaption(facts),
                 facts.error.isEmpty() ? QStringLiteral("Restart to finish updating.") : facts.error};
     case State::RestartPending:
         return {QStringLiteral("Restarting…"), QStringLiteral("Restarting after this dictation…"),

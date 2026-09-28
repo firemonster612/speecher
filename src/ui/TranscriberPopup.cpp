@@ -577,6 +577,29 @@ void TranscriberPopup::showListeningIndicator()
     adjustSize();
 }
 
+// A run with no break point, such as a long URL, gets zero-width spaces
+// wherever it would pass the wrap width, so QLabel's word wrap can break it
+// instead of the capsule growing past the width every platform shares.
+static QString breakableRuns(const QString &text, const QFontMetrics &metrics, int width)
+{
+    QString result;
+    for (const QString &word : text.split(QLatin1Char(' '))) {
+        if (!result.isEmpty()) {
+            result += QLatin1Char(' ');
+        }
+        QString line;
+        for (const QChar c : word) {
+            if (metrics.horizontalAdvance(line + c) > width) {
+                result += line + QChar(0x200B);
+                line.clear();
+            }
+            line += c;
+        }
+        result += line;
+    }
+    return result;
+}
+
 // The theme icon for each receipt: the document went out, or it sits on the
 // clipboard. A fallback delivered text, but not the text asked for.
 static QIcon outcomeIcon(PopupOutcome outcome)
@@ -610,15 +633,18 @@ void TranscriberPopup::showErrorMessage(const QString &message)
     m_phase = Phase::Live;
     m_errorDismissAnimation->stop();
     m_waveform->hide();
-    const QString text = message.simplified();
     const QFontMetrics metrics(m_preview->font());
     constexpr int maxTextWidth = kPopupErrorWrapWidth;
+    const QString text = breakableRuns(message.simplified(), metrics, maxTextWidth);
     // The capsule hugs a short error instead of stretching to the full wrap
     // width around one small centred line. The wrapped layout's own width,
     // since a rounded advance can be a fraction short and break the line.
-    const int textWidth = qMax(1, metrics.boundingRect(QRect(0, 0, maxTextWidth, 1000),
-                                                       Qt::TextWordWrap, text)
-                                      .width());
+    constexpr int wrapFlags = Qt::TextWordWrap;
+    const int textWidth = qBound(1,
+                                 metrics.boundingRect(QRect(0, 0, maxTextWidth, 1000),
+                                                      wrapFlags, text)
+                                     .width(),
+                                 maxTextWidth);
     m_preview->setText(text);
     m_preview->setWordWrap(true);
     m_preview->setFixedWidth(textWidth);
@@ -635,7 +661,7 @@ void TranscriberPopup::showErrorMessage(const QString &message)
 
     const int textHeight = metrics.boundingRect(
                                       QRect(0, 0, textWidth, 1000),
-                                      Qt::AlignCenter | Qt::TextWordWrap,
+                                      Qt::AlignCenter | wrapFlags,
                                       text)
                                .height();
     // 24 keeps the label's 12px above and below the text; 3 is the countdown

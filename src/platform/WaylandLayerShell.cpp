@@ -30,9 +30,10 @@ void WaylandLayerShell::configurePopup(PopupSurface &surface)
         window->setAnchors(LayerShellQt::Window::AnchorBottom);
         window->setMargins(QMargins(0, 0, 0, 28));
 #ifdef SPEECHER_LAYER_SHELL_HAS_ACTIVE_SCREEN
-        // A background client cannot read the pointer on Wayland, so the
-        // compositor picks its active screen each time the popup shows. KWin's
-        // active screen follows the pointer unless the user turned that off.
+        // Wayland gives a background client no way to read the pointer, so
+        // the popup asks for the compositor's active screen. On KWin that is
+        // the screen with the pointer by default ("Active screen follows mouse"
+        // in Window Management); other compositors choose by their own rule.
         window->setWantsToBeOnActiveScreen(true);
 #endif
 #ifdef SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE

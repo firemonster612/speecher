@@ -723,7 +723,7 @@ final class SpeecherDictationPanel {
     /// The update chip, as core words it for every platform's popup.
     private func refreshUpdateBanner(_ update: SpeecherUpdateBanner) {
         guard !e2eBanners else {
-            setUpdateBanner("Speecher 9.9.9 is available", action: "Install and restart")
+            setUpdateBanner("Speecher nightly build 481 (gabc1234) is available", action: "Install and restart")
             return
         }
         guard update.visible, update.showInPopup else {
@@ -793,7 +793,10 @@ final class SpeecherDictationPanel {
         let minimumWidth = state.showsPreview ? minimumPillWidth + previewChromeWidth : minimumPillWidth
         let contentWidth = min(max(minimumWidth, textWidth + chrome), maximumWidth)
         state.pillWidth = contentWidth
-        let width = max(contentWidth, banners > 0 ? 420 : minimumPillWidth)
+        // Each banner is one line sized to its message and buttons, so the
+        // window is as wide as the widest, within the screen.
+        let width = min(max(contentWidth, bannerWidth(font: font)),
+                        max(minimumPillWidth, availableWidth - screenEdgeMargin))
         var frame = panel.frame
         guard abs(frame.width - width) >= 1 || abs(frame.height - height) >= 1 else { return }
         // AppKit rounds window frames. Reusing the previous frame's center
@@ -801,6 +804,23 @@ final class SpeecherDictationPanel {
         frame.origin.x = (screenArea?.midX ?? frame.midX) - width / 2
         frame.size = NSSize(width: width, height: height)
         panel.setFrame(frame, display: true)
+    }
+
+    /// The widest banner showing: its message in the callout font, the
+    /// capsule buttons beside it and the padding around them.
+    private func bannerWidth(font: NSFont) -> CGFloat {
+        let callout = NSFont.preferredFont(forTextStyle: .callout)
+        let button = { (title: String) -> CGFloat in
+            title.isEmpty ? 0 : (title as NSString).size(withAttributes: [.font: font]).width + 34
+        }
+        let rows: [(String, String, Bool)] = [
+            (state.updateMessage, state.updateAction, false),
+            (state.whatsNewMessage, model.whatsNewBanner.action, true),
+        ]
+        return rows.filter { !$0.0.isEmpty }.map { message, action, closes in
+            ceil((message as NSString).size(withAttributes: [.font: callout]).width)
+                + button(action) + (closes ? 38 : 0) + 16 + 5 + 10 * 2 + 4
+        }.max() ?? minimumPillWidth
     }
 
     /// What sits beside a problem's text: the padding, the warning symbol and

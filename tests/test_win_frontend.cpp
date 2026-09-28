@@ -386,6 +386,13 @@ private slots:
         QTest::qWait(1500);
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-error-long.png")));
         panel->dismissForTest();
+        frontEnd->showDictationError(QStringLiteral("Could not reach https://example.com/")
+                                     + QString(160, QLatin1Char('x')));
+        QTest::qWait(1500);
+        QVERIFY(panel->capsuleGeometryForTest().width()
+                <= int((520 + 150) * GetDpiForSystem() / 96.0) + 2);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-error-unbroken.png")));
+        panel->dismissForTest();
 
         // With SPEECHER_TEST_PANEL_BANNERS and an update manifest to offer,
         // both notices stack above the pill, each in its own capsule.
