@@ -28,16 +28,6 @@ QByteArray json(const QJsonObject &object)
     return QJsonDocument(object).toJson(QJsonDocument::Compact);
 }
 
-// The socket has buffered the headers and the whole Content-Length body.
-// Peeks, so the request stays readable.
-bool hasWholeRequest(QTcpSocket *socket)
-{
-    const QByteArray buffered = socket->peek(socket->bytesAvailable());
-    const int headerEnd = buffered.indexOf("\r\n\r\n");
-    return headerEnd >= 0
-        && buffered.size() >= headerEnd + 4 + qMax(0, httpContentLength(buffered.left(headerEnd)));
-}
-
 // Answers each request with the route's canned response and records the
 // requests it saw. It never blocks the GUI thread: Qt's HTTP thread gets an
 // upload's body from this thread, so a blocking read here stalls the request
@@ -85,9 +75,7 @@ private:
         };
         const QByteArray response = m_routes.contains(route)
             ? next()
-            : httpResponse("404 Not Found", "text/plain",
-                           "404 page not found for [" + line + "] after " + QByteArray::number(request.size())
-                               + " bytes");
+            : httpResponse("404 Not Found", "text/plain", "404 page not found for [" + line + "]");
         socket->write(response);
         socket->flush();
         socket->disconnectFromHost();

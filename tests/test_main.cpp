@@ -23,9 +23,9 @@
 int main(int argc, char **argv)
 {
 #ifdef Q_OS_WIN
-    // Without a console, QTest sends its stdout log to OutputDebugString,
-    // including with "-o -,txt", so ctest captured no PASS or FAIL lines. Qt
-    // reads this once, at the first log message, so set it before any.
+    // QTest's plain logger sends stdout to OutputDebugString unless Qt should
+    // log to stderr, which it decides without a console only from this
+    // variable. Qt reads it once, at the first log message, so set it first.
     qputenv("QT_FORCE_STDERR_LOGGING", "1");
 #endif
 #ifdef SPEECHER_WITH_WAYLAND
