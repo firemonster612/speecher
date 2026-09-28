@@ -483,9 +483,9 @@ private slots:
         }
         // Another app, as Windows sees it: this thread taking the saved
         // combination while the binder has let go of it.
-        QVERIFY(controller->setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F12)));
+        QVERIFY(controller->setGlobalShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F9)));
         controller->suspendGlobalShortcut();
-        QVERIFY(RegisterHotKey(nullptr, 0x5ee7, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F12));
+        QVERIFY(RegisterHotKey(nullptr, 0x5ee7, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F9));
         const auto release = qScopeGuard([] { UnregisterHotKey(nullptr, 0x5ee7); });
         QVERIFY(!controller->resumeGlobalShortcut().isEmpty());
         setup->show(SetupAssistantPage::All);
