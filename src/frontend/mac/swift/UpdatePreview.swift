@@ -19,9 +19,12 @@ import SwiftUI
         let base = URL(fileURLWithPath: directory, isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
 
+        // The live panel sizes the pill to its words; this harness has no
+        // panel, so it gives the pill room for them.
         let updateBannerState = DictationPanelState()
         updateBannerState.status = "Listening"
         updateBannerState.preview = "the quick brown fox"
+        updateBannerState.pillWidth = 240
         if let first = banners.first {
             updateBannerState.updateMessage = first.text
             updateBannerState.updateAction = first.action
@@ -30,6 +33,7 @@ import SwiftUI
         let whatsNewBannerState = DictationPanelState()
         whatsNewBannerState.status = "Listening"
         whatsNewBannerState.preview = "the quick brown fox"
+        whatsNewBannerState.pillWidth = 240
         whatsNewBannerState.whatsNewMessage = whatsNew.text
 
         var jobs: [(String, CGSize, AnyView)] = banners.enumerated().map { index, banner in

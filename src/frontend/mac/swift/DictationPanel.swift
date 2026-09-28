@@ -804,10 +804,16 @@ final class SpeecherDictationPanel {
     }
 
     /// What sits beside a problem's text: the padding, the warning symbol and
-    /// the Dismiss button, with the gaps between them.
+    /// the bordered Dismiss button, with the gaps between them. Measured from
+    /// the real controls, so a one-line problem never wraps for want of a point.
     private func problemChromeWidth(font: NSFont) -> CGFloat {
-        let dismiss = ("Dismiss" as NSString).size(withAttributes: [.font: font]).width
-        return 2 * 24 + font.pointSize + 10 + 10 + dismiss + 24
+        let dismiss = NSButton(title: "Dismiss", target: nil, action: nil)
+        dismiss.bezelStyle = .push
+        let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
+                             accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
+        return 2 * 24 + ceil(symbol?.size.width ?? font.pointSize) + 10 + 10
+            + ceil(dismiss.fittingSize.width)
     }
 
     private func position() {
