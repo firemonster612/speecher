@@ -1,5 +1,6 @@
 #include "frontend/qt/CollectionRow.h"
 
+#include "ui/InsightsCharts.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
@@ -59,6 +60,8 @@ public:
     QList<QVariantMap> records() const;
     // What the settings hold, which starts the editor's history over.
     void setRecords(const QList<QVariantMap> &records);
+    // Re-derives the badges beside each record for these settings.
+    void showBadges(const AppSettings &settings);
 
 private:
     void showRecords(const QList<QVariantMap> &records);
@@ -134,6 +137,13 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     // vocabulary one row at a time is the slowest way to use this editor.
     m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_table->setMinimumHeight(m_collection.minimumHeight);
+    if (m_collection.badges) {
+        for (int column = 0; column < m_collection.columns.size(); ++column) {
+            if (m_collection.columns.at(column).stretch) {
+                m_table->setItemDelegateForColumn(column, new BadgeDelegate(m_table));
+            }
+        }
+    }
     m_delete->setObjectName(buttonObjectName(QStringLiteral("delete"), descriptor.id));
     m_delete->setEnabled(false);
 
@@ -333,6 +343,25 @@ void CollectionEditor::showRecords(const QList<QVariantMap> &records)
     updateButtons();
 }
 
+void CollectionEditor::showBadges(const AppSettings &settings)
+{
+    if (!m_collection.badges) {
+        return;
+    }
+    const auto stretch = std::find_if(m_collection.columns.cbegin(), m_collection.columns.cend(),
+                                      [](const CollectionColumn &column) { return column.stretch; });
+    const int column = int(stretch - m_collection.columns.cbegin());
+    const QStringList badges = m_collection.badges(lockedRecords() + records(), settings);
+    // Item data, not text, so it is no edit: nothing announces a change.
+    const QSignalBlocker blocker(m_table);
+    for (int row = 0; row < m_table->rowCount() && row < badges.size(); ++row) {
+        if (QTableWidgetItem *item = m_table->item(row, column)) {
+            item->setData(BadgeDelegate::TextRole, badges.at(row));
+            item->setData(BadgeDelegate::ToneRole, int(Badge::Tone::Accent));
+        }
+    }
+}
+
 QList<QVariantMap> CollectionEditor::lockedRecords() const
 {
     QList<QVariantMap> locked;
@@ -412,6 +441,8 @@ SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
         [editor] { return QVariant::fromValue(editor->records()); },
         [editor](const QVariant &value) { editor->setRecords(value.value<QList<QVariantMap>>()); },
         true,
+        nullptr,
+        [editor](const AppSettings &settings) { editor->showBadges(settings); },
     };
 }
 

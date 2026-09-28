@@ -92,6 +92,11 @@ struct CollectionDescriptor {
     // because both of today's two undo its own edit history.
     QList<RowOption> actions;
     int minimumHeight = 0;
+    // A short label shown as a pill beside a record's stretch column, one per
+    // record in order, empty for none: which vocabulary terms the speech
+    // service receives. It depends on the other records, so a front end asks
+    // again with its current records each time it redraws them.
+    std::function<QStringList(const QList<QVariantMap> &, const AppSettings &)> badges;
 };
 
 struct NumberRange {

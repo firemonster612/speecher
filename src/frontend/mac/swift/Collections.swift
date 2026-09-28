@@ -156,6 +156,17 @@ final class CollectionEditor: ObservableObject {
         save()
     }
 
+    /// The pill after each record's stretch column, by record, re-derived from
+    /// the records as they now stand whenever they change.
+    var badges: [UUID: String] {
+        let texts = model.bridge.settingsSchema.badges(for: records.map(\.values), forRowId: row.rowId)
+        var byRecord: [UUID: String] = [:]
+        for (record, text) in zip(records, texts) where !text.isEmpty {
+            byRecord[record.id] = text
+        }
+        return byRecord
+    }
+
     func tooltip(_ columnId: String, record id: UUID) -> String {
         guard let record = records.first(where: { $0.id == id }) else { return "" }
         return model.bridge.settingsSchema.tooltip(forColumn: columnId,
@@ -202,11 +213,17 @@ struct CollectionRow: View {
     }
 
     private var table: some View {
-        Table(editor.records, selection: $editor.selection) {
+        let badges = editor.badges
+        return Table(editor.records, selection: $editor.selection) {
             TableColumnForEach(editor.collection.columns, id: \.columnId) { column in
                 TableColumn(column.title) { record in
-                    RecordCell(editor: editor, column: column, record: record)
-                        .help(editor.tooltip(column.columnId, record: record.id))
+                    HStack {
+                        RecordCell(editor: editor, column: column, record: record)
+                        if column.stretch, let badge = badges[record.id] {
+                            RecordBadge(text: badge)
+                        }
+                    }
+                    .help(editor.tooltip(column.columnId, record: record.id))
                 }
                 .width(min: Self.width(column).min,
                        ideal: Self.width(column).ideal,
@@ -340,6 +357,22 @@ struct AddRecordSheet: View {
     private func draft(_ columnId: String) -> Binding<Any?> {
         Binding(get: { editor.draft[columnId] },
                 set: { editor.draft[columnId] = $0 })
+    }
+}
+
+/// A short label on a capsule after a record's name, in the accent colour, as
+/// the Local models pane shows a rating.
+struct RecordBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color(nsColor: .controlAccentColor).opacity(0.3)))
+            .accessibilityLabel(text)
     }
 }
 

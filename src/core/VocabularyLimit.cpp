@@ -55,12 +55,12 @@ QString summary(const QStringList &terms, bool speechTakesHints)
     }
     const QStringList sent = limited(terms);
     if (sent.size() < terms.size()) {
-        return QStringLiteral("%1 terms. The first %2 are speech hints, and %3.")
+        return QStringLiteral("%1 terms. %2 are key terms, and %3.")
             .arg(terms.size())
             .arg(sent.size())
             .arg(refinement);
     }
-    return QStringLiteral("%1 of %2 speech hints, using %3 of %4 tokens")
+    return QStringLiteral("%1 of %2 key terms, using %3 of %4 tokens")
         .arg(terms.size())
         .arg(maxKeyterms)
         .arg(tokenCount(terms))

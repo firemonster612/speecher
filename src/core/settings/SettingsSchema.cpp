@@ -1792,6 +1792,23 @@ SettingsPage vocabularyPage()
                          {kUsesColumn, 0},
                          {kLastUsedColumn, lastUsedLabel(0)},
                          {kLastUsedMsKey, qint64(0)}};
+    terms.badges = [](const QList<QVariantMap> &records, const AppSettings &settings) {
+        QStringList badges(records.size());
+        if (!speechTakesHints(settings)) {
+            return badges;
+        }
+        // The same entries the settings would store, so the badges follow
+        // the priority order the speech request is cut from.
+        const QList<VocabularyEntry> entries = vocabularyEntries(records);
+        const QStringList hints = VocabularyLimit::limited(vocabularyTerms(entries));
+        for (int index = 0; index < records.size(); ++index) {
+            if (hints.contains(records.at(index).value(kTermColumn).toString().simplified(),
+                               Qt::CaseInsensitive)) {
+                badges[index] = QStringLiteral("Key term");
+            }
+        }
+        return badges;
+    };
     terms.addLabel = QStringLiteral("Add");
     terms.supportsImport = {
         QStringLiteral("Import CSV"),
@@ -1816,9 +1833,8 @@ SettingsPage vocabularyPage()
     };
 
     const QString help = QStringLiteral("Names and words Speecher should recognize. Refinement "
-                                        "uses every term. The list is in priority order, starred "
-                                        "terms first and then the most used, and speech hints are "
-                                        "taken from the top.");
+                                        "uses every term. Terms marked Key term also go to the "
+                                        "transcription service; star a term to make it one.");
     SettingsRow entries = collectionRow(QStringLiteral("vocabularyEntries"),
                                         QStringLiteral("Extra vocabulary"),
                                         help,
@@ -1826,10 +1842,10 @@ SettingsPage vocabularyPage()
     entries.helpValue = [help](const AppSettings &settings) {
         const QString &provider = settings.speech.providerId;
         const QString speech = provider == QStringLiteral("claude")
-            ? QStringLiteral("Claude Voice receives the first 100 as key terms.")
+            ? QStringLiteral("Claude Voice receives them as key terms.")
             : provider == QStringLiteral("endpoint")
-            ? QStringLiteral("The custom endpoint receives the first 100 as its prompt.")
-            : QStringLiteral("This transcription service takes no speech hints.");
+            ? QStringLiteral("The custom endpoint receives them as its prompt.")
+            : QStringLiteral("This transcription service takes no key terms.");
         return help + QLatin1Char(' ') + speech;
     };
 

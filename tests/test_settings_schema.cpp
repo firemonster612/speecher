@@ -936,6 +936,24 @@ private slots:
         settings.speech.providerId = QStringLiteral("local");
         QCOMPARE(limit.value(settings).toString(), QStringLiteral("1 term, used for refinement"));
 
+        // The badges follow the terms the speech request is cut from: the
+        // starred one is a key term even at the bottom, and takes a slot, so
+        // the 100th unstarred term is left out.
+        settings.speech.providerId = QStringLiteral("claude");
+        QList<QVariantMap> shown;
+        for (int index = 0; index < 101; ++index) {
+            shown.append({{QStringLiteral("term"), QStringLiteral("term%1").arg(index, 3, 10, QLatin1Char('0'))}});
+        }
+        shown.append({{QStringLiteral("term"), QStringLiteral("late")}, {QStringLiteral("starred"), true}});
+        QStringList badges = row.collection.badges(shown, settings);
+        QCOMPARE(badges.size(), 102);
+        QCOMPARE(badges.first(), QStringLiteral("Key term"));
+        QCOMPARE(badges.at(98), QStringLiteral("Key term"));
+        QCOMPARE(badges.at(99), QString());
+        QCOMPARE(badges.last(), QStringLiteral("Key term"));
+        settings.speech.providerId = QStringLiteral("codex");
+        QCOMPARE(row.collection.badges(shown, settings).first(), QString());
+
     }
 
     void aCorrectionKeepsTheFieldsNoColumnShows()
