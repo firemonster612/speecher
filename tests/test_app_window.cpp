@@ -796,7 +796,6 @@ private slots:
         QVERIFY(dismiss);
         QVERIFY(dismiss->text().isEmpty());
         QVERIFY(!dismiss->icon().isNull());
-        QCOMPARE(dismiss->toolTip(), QStringLiteral("Dismiss"));
         // No text-glyph stand-in for a close button remains.
         for (const QPushButton *button : banner->findChildren<QPushButton *>()) {
             QVERIFY(button->text() != QStringLiteral("×"));

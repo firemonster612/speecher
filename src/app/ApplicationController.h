@@ -30,6 +30,7 @@ class LocalSetup;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
+class UpdateBanner;
 class UpdateController;
 
 class ApplicationController : public QObject {
@@ -65,6 +66,8 @@ public:
     bool popupOnly() const;
     SettingsStore *settings() const;
     UpdateController *updates() const;
+    // What every update banner and the Check for updates row show.
+    UpdateBanner *updateBanner() const;
     InsightsLog *insightsLog() const;
     // The day Home summarizes up to. SPEECHER_INSIGHTS_TODAY pins it for
     // screenshots, so front ends ask here rather than reading the clock.
@@ -200,6 +203,7 @@ private:
     // The main window is up only because a plain launch shows it.
     bool m_mainWindowByDefault = false;
     UpdateController *m_updates = nullptr;
+    UpdateBanner *m_updateBanner = nullptr;
     InsightsLog *m_insightsLog = nullptr;
     std::optional<DictationRecord> m_lastRecord;
     QDate m_insightsToday;

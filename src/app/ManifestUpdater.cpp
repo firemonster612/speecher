@@ -368,7 +368,8 @@ void ManifestUpdater::writeRestoreState()
 
 void ManifestUpdater::dismissAvailableVersion()
 {
-    if (m_state == State::Error) {
+    // A failure's Dismiss acknowledges it.
+    if (m_state == State::Error || m_state == State::CheckFailed) {
         m_manualInstallRequired = false;
         setState(State::Idle);
         return;

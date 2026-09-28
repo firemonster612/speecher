@@ -734,6 +734,7 @@ private slots:
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(),
                  QStringLiteral("Used raw transcript • Input sent • Part of the dictation may be missing. The connection dropped."));
+        QCOMPARE(message.first().at(1).value<PopupOutcome>(), PopupOutcome::Fallback);
     }
 
     void dictationSessionReconnectsSpeechStreamAfterRetryableFailureWhileListening()

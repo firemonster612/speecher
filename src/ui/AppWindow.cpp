@@ -1,6 +1,7 @@
 #include "ui/AppWindow.h"
 
 #include "app/ApplicationController.h"
+#include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #include "core/SettingsStore.h"
 #include "frontend/qt/SchemaSettingsPage.h"
@@ -46,6 +47,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <utility>
 
 #ifdef Q_OS_MACOS
@@ -162,8 +164,8 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     connect(m_pages, &SettingsPageSet::localModelsRequested, this,
             [this] { showPage(QStringLiteral("localModels")); });
     connect(m_home, &HomePage::pageRequested, this, &AppWindow::showPage);
-    connect(m_controller->updates(),
-            &UpdateController::changed,
+    connect(m_controller->updateBanner(),
+            &UpdateBanner::changed,
             this,
             &AppWindow::refreshUpdateBanner);
     connect(m_controller,
@@ -612,30 +614,26 @@ void AppWindow::buildSidebarShell()
     m_updateAction = new QPushButton(m_updateBanner);
     m_updateAction->setObjectName(QStringLiteral("updateAction"));
     m_updateBanner->addAction(m_updateAction);
-    m_updateLater = new QPushButton(QStringLiteral("Later"), m_updateBanner);
+    m_updateLater = new QPushButton(m_updateBanner);
     m_updateBanner->addAction(m_updateLater);
     m_updateDismiss = m_updateBanner->closeButton();
     m_updateDismiss->setObjectName(QStringLiteral("dismissUpdate"));
-    m_updateDismiss->setToolTip(QStringLiteral("Dismiss"));
-    m_updateDismiss->setAccessibleName(QStringLiteral("Dismiss update"));
     // The controller decides when the banner goes; the button only reports.
     disconnect(m_updateDismiss, &QToolButton::clicked, m_updateBanner, nullptr);
     connect(m_updateAction, &QPushButton::clicked, this, [this] {
         if (m_showingWhatsNewBanner) {
             showWhatsNew();
         } else {
-            m_controller->updates()->installAndRestart();
+            m_controller->updateBanner()->runAction();
         }
     });
-    connect(m_updateLater, &QPushButton::clicked, this, [this] {
-        m_updateBannerDeferred = true;
-        m_updateBanner->hide();
-    });
+    connect(m_updateLater, &QPushButton::clicked,
+            m_controller->updateBanner(), &UpdateBanner::later);
     connect(m_updateDismiss, &QToolButton::clicked, this, [this] {
         if (m_showingWhatsNewBanner) {
             m_controller->clearPendingWhatsNew();
         } else {
-            m_controller->updates()->dismissAvailableVersion();
+            m_controller->updateBanner()->dismiss();
         }
     });
     rightLayout->addWidget(m_updateBanner);
@@ -735,98 +733,42 @@ void AppWindow::refreshUpdateBanner()
     if (!m_updateBanner) {
         return;
     }
-    UpdateController *updates = m_controller->updates();
-    const QString availableVersion = updates->availableVersion();
-    if ((!availableVersion.isEmpty() && m_updateBannerVersion != availableVersion)
-        || m_updateBannerInstalledVersion != updates->currentVersion()) {
-        m_updateBannerDeferred = false;
-        m_updateBannerVersion = availableVersion;
-        m_updateBannerInstalledVersion = updates->currentVersion();
-    }
-    if (!updates->bannerVisible() && !m_controller->pendingWhatsNewVersion().isEmpty()) {
-        m_showingWhatsNewBanner = true;
+    const UpdateBannerModel banner = m_controller->updateBanner()->model();
+    m_showingWhatsNewBanner = !banner.visible && !m_controller->pendingWhatsNewVersion().isEmpty();
+    if (m_showingWhatsNewBanner) {
+        const WhatsNewBannerModel whatsNew = whatsNewBanner(m_controller->updates()->currentVersion());
         m_updateBanner->setType(InlineMessage::Type::Positive);
-        m_updateBanner->show();
-        m_updateBannerText->setText(
-            QStringLiteral("Speecher %1 is installed")
-                .arg(updates->currentVersion().section(QLatin1Char('-'), 0, 0)));
+        m_updateBannerText->setText(whatsNew.text);
         m_updateProgress->hide();
-        m_updateAction->setText(QStringLiteral("See what's new"));
+        m_updateAction->setText(whatsNew.action);
         m_updateAction->setEnabled(true);
         m_updateAction->show();
         m_updateLater->hide();
+        m_updateDismiss->setToolTip(whatsNew.dismiss);
+        m_updateDismiss->setAccessibleName(whatsNew.dismiss);
         m_updateDismiss->show();
+        m_updateBanner->show();
         return;
     }
-    m_showingWhatsNewBanner = false;
-    // "Later" hides states where restart is not yet underway.
-    // Once restarting has begun, keep its status visible to explain the exit.
-    if (m_updateBannerDeferred
-        && (updates->state() == UpdateController::State::ReadyToRestart
-            || updates->state() == UpdateController::State::RestartPending)) {
-        m_updateBanner->hide();
+    m_updateBanner->setVisible(banner.visible);
+    if (!banner.visible) {
         return;
     }
-    m_updateBanner->setVisible(updates->bannerVisible());
-    if (!updates->bannerVisible()) {
-        return;
-    }
-
-    m_updateProgress->hide();
-    m_updateAction->show();
-    m_updateAction->setEnabled(true);
-    m_updateLater->hide();
-    m_updateDismiss->hide();
-    m_updateBanner->setType(updates->state() == UpdateController::State::Error
-                                ? InlineMessage::Type::Error
+    m_updateBanner->setType(banner.tone == UpdateBannerModel::Tone::Error ? InlineMessage::Type::Error
+                            : banner.tone == UpdateBannerModel::Tone::Positive
+                                ? InlineMessage::Type::Positive
                                 : InlineMessage::Type::Information);
-    switch (updates->state()) {
-    case UpdateController::State::UpdateAvailable:
-        m_updateBannerText->setText(updates->stableReplacementAvailable()
-                                        ? QStringLiteral("Switch to Stable Release %1 (replaces "
-                                                         "this Nightly Build)")
-                                              .arg(updates->availableVersionDisplay())
-                                        : QStringLiteral("Speecher %1 is available")
-                                              .arg(updates->availableVersionDisplay()));
-        m_updateAction->setText(QStringLiteral("Install and restart"));
-        m_updateDismiss->show();
-        break;
-    case UpdateController::State::Downloading:
-        m_updateBannerText->setText(
-            QStringLiteral("Downloading Speecher %1").arg(updates->availableVersionDisplay()));
-        m_updateProgress->setValue(updates->downloadPercent());
-        m_updateProgress->show();
-        m_updateAction->hide();
-        m_updateDismiss->hide();
-        break;
-    case UpdateController::State::ReadyToRestart:
-        m_updateBannerText->setText(updates->errorMessage().isEmpty()
-                                        ? QStringLiteral("Restart to finish updating")
-                                        : updates->errorMessage());
-        m_updateAction->setText(QStringLiteral("Restart now"));
-        m_updateLater->show();
-        break;
-    case UpdateController::State::RestartPending:
-        // The sentence is the whole message; a disabled button repeating it
-        // would only add a control that cannot be used.
-        m_updateBannerText->setText(QStringLiteral("Restarting after this dictation…"));
-        m_updateAction->hide();
-        break;
-    case UpdateController::State::Restarting:
-        m_updateBannerText->setText(QStringLiteral("Restarting…"));
-        m_updateAction->hide();
-        break;
-    case UpdateController::State::Error:
-        m_updateBannerText->setText(updates->errorMessage());
-        m_updateAction->setText(updates->manualInstallRequired()
-                                    ? QStringLiteral("Open release page")
-                                    : QStringLiteral("Try again"));
-        m_updateDismiss->show();
-        break;
-    default:
-        m_updateBanner->hide();
-        break;
-    }
+    m_updateBannerText->setText(banner.text);
+    m_updateProgress->setVisible(banner.progress >= 0);
+    m_updateProgress->setValue(std::max(banner.progress, 0));
+    m_updateAction->setText(banner.action);
+    m_updateAction->setVisible(!banner.action.isEmpty());
+    m_updateAction->setEnabled(banner.actionEnabled);
+    m_updateLater->setText(banner.later);
+    m_updateLater->setVisible(!banner.later.isEmpty());
+    m_updateDismiss->setToolTip(banner.dismiss);
+    m_updateDismiss->setAccessibleName(banner.dismiss);
+    m_updateDismiss->setVisible(!banner.dismiss.isEmpty());
 }
 
 void AppWindow::showWhatsNew()

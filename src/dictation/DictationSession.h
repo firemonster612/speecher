@@ -3,6 +3,7 @@
 #include "core/DictationRecord.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
+#include "dictation/PopupPresentation.h"
 #include "dictation/StartupPreparationRunner.h"
 #include "dictation/TranscriptPipeline.h"
 
@@ -86,7 +87,8 @@ signals:
     void popupRefinementPreviewChanged(const QString &preview);
     void popupOAuthRefreshRequested();
     void popupListeningIndicatorRequested();
-    void popupMessageRequested(const QString &message);
+    // A delivery's receipt, and which kind of outcome it reports.
+    void popupMessageRequested(const QString &message, PopupOutcome outcome);
     void popupErrorRequested(const QString &message);
 
 private:

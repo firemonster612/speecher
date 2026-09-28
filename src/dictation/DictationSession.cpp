@@ -721,7 +721,11 @@ void DictationSession::deliverFinal(const QString &text)
             outcome += QStringLiteral(" • ") + m_speechWarning;
         }
         m_lastMessage = outcome;
-        emit popupMessageRequested(outcome);
+        emit popupMessageRequested(outcome,
+                                   usedFallback ? PopupOutcome::Fallback
+                                   : result.receipt == DeliveryReceipt::Copied
+                                       ? PopupOutcome::Copied
+                                       : PopupOutcome::Inserted);
         emit statusChanged(outcome);
         m_completionTimer->start(settings.output.completionStatusDurationMs);
     } else {

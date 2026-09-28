@@ -3,6 +3,7 @@
 #include "ui/WaveformModel.h"
 
 #include <QElapsedTimer>
+#include <QIcon>
 #include <QTimer>
 #include <QString>
 #include <QWidget>
@@ -33,7 +34,8 @@ public:
 public slots:
     void setLevel(float level);
     void setMode(Mode mode);
-    void setMessage(const QString &message);
+    // A receipt, with the icon for its outcome before the text.
+    void setMessage(const QString &message, const QIcon &icon = {});
     void setStatusText(const QString &text);
 
 protected:
@@ -43,6 +45,8 @@ protected:
 
 private:
     void applyGeometry();
+    int iconSize() const;
+    int iconSpacing() const;
     void paintWaveform(QPainter &painter, const QColor &bar);
     void paintMessage(QPainter &painter, const QColor &bar);
     void paintStatus(QPainter &painter, const QColor &bar);
@@ -52,6 +56,7 @@ private:
     // across Frozen spells; the wave phase, not the clock, is what freezes.
     QElapsedTimer m_clock;
     QString m_message;
+    QIcon m_icon;
     waveform::LevelModel m_level;
     qint64 m_lastFrameMs = 0;
     float m_wavePhase = 0.0f;

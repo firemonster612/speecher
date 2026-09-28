@@ -2,7 +2,6 @@
 
 #include "platform/PopupSurface.h"
 
-#include <QCursor>
 #include <QDebug>
 #include <QGuiApplication>
 #include <QScreen>
@@ -56,14 +55,6 @@ void MacPopupPositioner::configurePopup(PopupSurface &surface)
         | NSWindowCollectionBehaviorFullScreenAuxiliary
         | NSWindowCollectionBehaviorStationary;
     window.animationBehavior = NSWindowAnimationBehaviorNone;
-}
-
-void MacPopupPositioner::positionBottomCenter(PopupSurface &surface)
-{
-    // The popup belongs on the display the user is working on, which on a
-    // multi-display Mac is often not the primary one.
-    const QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
-    positionBottomCenterOn(surface, screen ? screen : QGuiApplication::primaryScreen());
 }
 
 } // namespace speecher

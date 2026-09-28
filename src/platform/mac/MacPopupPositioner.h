@@ -10,7 +10,6 @@ class MacPopupPositioner : public FallbackPopupPositioner {
 public:
     explicit MacPopupPositioner(QObject *parent = nullptr);
     void configurePopup(PopupSurface &surface) override;
-    void positionBottomCenter(PopupSurface &surface) override;
 };
 
 } // namespace speecher

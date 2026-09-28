@@ -29,6 +29,12 @@ void WaylandLayerShell::configurePopup(PopupSurface &surface)
 #endif
         window->setAnchors(LayerShellQt::Window::AnchorBottom);
         window->setMargins(QMargins(0, 0, 0, 28));
+#ifdef SPEECHER_LAYER_SHELL_HAS_ACTIVE_SCREEN
+        // A background client cannot read the pointer on Wayland, so the
+        // compositor picks its active screen each time the popup shows. KWin's
+        // active screen follows the pointer unless the user turned that off.
+        window->setWantsToBeOnActiveScreen(true);
+#endif
 #ifdef SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE
         window->setDesiredSize(surface.preferredSize());
 #endif
@@ -40,13 +46,9 @@ void WaylandLayerShell::configurePopup(PopupSurface &surface)
 
 void WaylandLayerShell::positionBottomCenter(PopupSurface &surface)
 {
-    const QScreen *screen = QGuiApplication::primaryScreen();
-    if (!screen) {
-        return;
-    }
 #ifdef SPEECHER_WITH_LAYER_SHELL
     // The compositor owns the popup's placement once layer-shell accepted it;
-    // it only needs the size and the screen.
+    // it only needs the size and, without an active-screen request, the screen.
     QWindow *handle = surface.nativeWindow();
     if (auto *window = LayerShellQt::Window::get(handle)) {
         const QSize size = surface.preferredSize();
@@ -54,12 +56,18 @@ void WaylandLayerShell::positionBottomCenter(PopupSurface &surface)
 #ifdef SPEECHER_LAYER_SHELL_HAS_DESIRED_SIZE
         window->setDesiredSize(size);
 #endif
+#ifndef SPEECHER_LAYER_SHELL_HAS_ACTIVE_SCREEN
+        auto *screen = const_cast<QScreen *>(pointerScreen());
+        if (!screen) {
+            return;
+        }
 #ifdef SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN
-        window->setScreen(const_cast<QScreen *>(screen));
+        window->setScreen(screen);
 #else
         if (handle) {
-            handle->setScreen(const_cast<QScreen *>(screen));
+            handle->setScreen(screen);
         }
+#endif
 #endif
         return;
     }
