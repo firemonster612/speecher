@@ -311,24 +311,25 @@ else
   fi
 fi
 
-# P4: the shortcut gate holds even with every other gate open. A saved Right
-# Option needs Accessibility, which the runner has not granted, so the binder
-# refuses it: the Global Shortcut step says why, and Ready lists it and holds
-# Finish.
+# P4: the shortcut gate holds even with every other gate open. A saved Scroll
+# Lock is refused on any Mac, trusted or not, because Mac keyboards have no
+# such key. The Global Shortcut step holds Continue and says why, and Ready
+# lists the step.
 fresh_reset
-defaults write "$DOMAIN" shortcuts.toggleDictation "key:AltRight"
+defaults write "$DOMAIN" shortcuts.toggleDictation "key:ScrollLock"
 case_begin P4
 if ! launch_setup || ! wait_for_assistant; then
-  fail_case "The setup assistant did not appear with a seeded single key."
+  fail_case "The setup assistant did not appear with a seeded Scroll Lock."
 else
   errors=()
   walk_to_step 8 || errors+=("could not reach the Global Shortcut step")
   if (( ${#errors[@]} == 0 )); then
+    sleep 1
     cp "$CASE_DIR/pages/step-8-shortcut.png" "$CASE_DIR/shortcut-refused.png"
     expect_text "$CASE_DIR/shortcut-refused.png" "Step 8 of 10" \
       || errors+=("the shortcut step does not carry its counter on the title row")
-    # Continue is held on this step, so the walk stops here; Ready is
-    # reached through the seam-free way a person would, by going there last.
+    expect_text "$CASE_DIR/shortcut-refused.png" "Scroll Lock" \
+      || errors+=("the shortcut step does not say why the shortcut was refused")
     click_button Continue || true
     sleep 1
     [[ -s "$CASE_DIR/pages/step-9-login.png" ]] \
@@ -337,7 +338,7 @@ else
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
-    pass_case "A refused shortcut holds the Global Shortcut step."
+    pass_case "A refused shortcut holds the Global Shortcut step and says why."
   fi
 fi
 
