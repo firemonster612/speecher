@@ -31,7 +31,9 @@ public:
     QPushButton *toggleButton() const;
 
 public slots:
-    void setStatus(const QString &status);
+    // Shows a session state name: the toggle, the waveform and the status
+    // line (dictationStatusLabel).
+    void setStatus(const QString &stateName);
     // Rebuilds the insights from the log and the Insights setting.
     void refresh();
 
@@ -60,9 +62,7 @@ private:
     void applyWidth();
     void refreshLastTranscript();
     void applyState(const QString &stateName);
-    void setDisplayStatus(const QString &status);
     void updateShortcutHint();
-    void applyToggleState(bool active, bool refining, const QString &state) const;
 
     ApplicationController *m_controller;
     QScrollArea *m_scroll;

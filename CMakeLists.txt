@@ -626,6 +626,7 @@ set(SPEECHER_FRONTEND_QT_HEADERS
 set(SPEECHER_FRONTEND_QT_LINUX_SOURCES
   src/frontend/qt/LinuxAuthPrompt.cpp
   src/frontend/qt/LinuxTrayIcon.cpp
+  src/frontend/qt/TrayStatusPanel.cpp
   src/output/YdotoolSetupFlow.cpp
   src/ui/setup/LinuxGlobalShortcutSetupPage.cpp
 )
@@ -633,6 +634,7 @@ set(SPEECHER_FRONTEND_QT_LINUX_SOURCES
 set(SPEECHER_FRONTEND_QT_LINUX_HEADERS
   src/frontend/qt/LinuxAuthPrompt.h
   src/frontend/qt/LinuxTrayIcon.h
+  src/frontend/qt/TrayStatusPanel.h
   src/output/YdotoolSetupFlow.h
   src/ui/setup/LinuxGlobalShortcutSetupPage.h
 )

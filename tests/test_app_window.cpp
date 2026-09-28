@@ -588,7 +588,7 @@ private slots:
 
         int startControls = 0;
         for (const QPushButton *button : window.findChildren<QPushButton *>()) {
-            startControls += button->text() == QStringLiteral("Start Dictation");
+            startControls += button->text() == QStringLiteral("Start dictation");
         }
         QCOMPARE(startControls, 1);
     }
@@ -637,22 +637,38 @@ private slots:
         QCOMPARE(copy->toolButtonStyle(), Qt::ToolButtonTextOnly);
     }
 
-    void homeShowsHonestBusyActions()
+    // The status line says what is happening; the button says what a click
+    // does, which is nothing while a stop or delivery is under way.
+    void homeShowsHonestStatusAndActions()
     {
         ApplicationController controller(true);
         HomePage page(&controller);
+        auto *status = page.findChild<QLabel *>(QStringLiteral("dictationStatus"));
+        QVERIFY(status);
 
-        page.setStatus(QStringLiteral("Refining"));
-        QCOMPARE(page.toggleButton()->text(), QStringLiteral("Cancel Refinement"));
+        page.setStatus(QStringLiteral("idle"));
+        QCOMPARE(status->text(), QStringLiteral("Idle"));
+        QCOMPARE(page.toggleButton()->text(), QStringLiteral("Start dictation"));
+
+        page.setStatus(QStringLiteral("listening"));
+        QCOMPARE(status->text(), QStringLiteral("Listening…"));
+        QCOMPARE(page.toggleButton()->text(), QStringLiteral("Stop dictation"));
+
+        page.setStatus(QStringLiteral("refining"));
+        QCOMPARE(status->text(), QStringLiteral("Refining…"));
+        QCOMPARE(page.toggleButton()->text(), QStringLiteral("Cancel refinement"));
         QVERIFY(page.toggleButton()->isEnabled());
 
-        page.setStatus(QStringLiteral("Stopping"));
-        QCOMPARE(page.toggleButton()->text(), QStringLiteral("Stopping…"));
+        page.setStatus(QStringLiteral("stopping"));
+        QCOMPARE(status->text(), QStringLiteral("Transcribing…"));
         QVERIFY(!page.toggleButton()->isEnabled());
 
-        page.setStatus(QStringLiteral("Delivering"));
-        QCOMPARE(page.toggleButton()->text(), QStringLiteral("Delivering…"));
+        page.setStatus(QStringLiteral("delivering"));
         QVERIFY(!page.toggleButton()->isEnabled());
+
+        // A receipt or an error reaches the line as the session words it.
+        emit controller.statusChanged(QStringLiteral("Input sent"));
+        QCOMPARE(status->text(), QStringLiteral("Input sent"));
     }
 
     void sidebarFlushesPendingAutoSaveOnClose()
