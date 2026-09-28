@@ -260,6 +260,39 @@ class TargetTest {
     }
 
     @Test
+    fun `a custom rule wins over a built-in one and gives the app a custom profile`() {
+        val standup = WritingProfile("custom_standup")
+        val context =
+            resolveRefinementContext(
+                "com.slack",
+                "Slack",
+                null,
+                null,
+                WritingProfile.Other,
+                mapOf(
+                    standup to
+                        WritingProfileSettings(
+                            CleanupStrength.StrongPolish,
+                            Tone.Formal,
+                            "Bullets.",
+                            name = "Standup",
+                        )
+                ),
+                rules = listOf(RecognitionRule("slac", AppCategory.Browser, standup)),
+            )
+        assertEquals(
+            listOf("custom_standup", "strong_polish", "formal", "Bullets.", "browser"),
+            listOf(
+                context.profile.id,
+                context.style.id,
+                context.tone.id,
+                context.profileInstructions,
+                context.category.id,
+            ),
+        )
+    }
+
+    @Test
     fun `the platform category applies only when no rule names the app`() {
         assertEquals(
             AppCategory.Email,

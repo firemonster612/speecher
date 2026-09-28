@@ -138,11 +138,11 @@ const CliNames kCleanupNames{{QStringLiteral("none"), QStringLiteral("none")},
                              {QStringLiteral("light_cleanup"), QStringLiteral("light")},
                              {QStringLiteral("balanced"), QStringLiteral("medium")},
                              {QStringLiteral("strong_polish"), QStringLiteral("high")}};
-const CliNames kProfileNames{{QStringLiteral("work"), QStringLiteral("work")},
-                             {QStringLiteral("email"), QStringLiteral("email")},
-                             {QStringLiteral("personal"), QStringLiteral("personal")},
-                             {QStringLiteral("ai_coding"), QStringLiteral("ai-coding")},
-                             {QStringLiteral("other"), QStringLiteral("other")}};
+const CliNames kProfileNames{{WritingProfile::Work, QStringLiteral("work")},
+                             {WritingProfile::Email, QStringLiteral("email")},
+                             {WritingProfile::Personal, QStringLiteral("personal")},
+                             {WritingProfile::AiCoding, QStringLiteral("ai-coding")},
+                             {WritingProfile::Other, QStringLiteral("other")}};
 const CliNames kToneNames{{QStringLiteral("none"), QStringLiteral("none")},
                           {QStringLiteral("formal"), QStringLiteral("formal")},
                           {QStringLiteral("casual"), QStringLiteral("casual")},
@@ -150,14 +150,14 @@ const CliNames kToneNames{{QStringLiteral("none"), QStringLiteral("none")},
                           {QStringLiteral("excited"), QStringLiteral("excited")},
                           {QStringLiteral("gen_z"), QStringLiteral("gen-z")}};
 
-// The built-in names, then each custom tone or level the settings hold, by its
-// id without custom_ and with - for _.
+// The built-in names, then each custom tone, level or profile the settings
+// hold, by its id without custom_ and with - for _.
 CliNames withCustomNames(CliNames names, const QList<RowOption> &options)
 {
-    const QString prefix = QStringLiteral("custom_");
     for (const RowOption &option : options) {
-        if (option.id.startsWith(prefix)) {
-            names.append({option.id, option.id.mid(prefix.size()).replace(QLatin1Char('_'), QLatin1Char('-'))});
+        if (option.id.startsWith(kCustomIdPrefix)) {
+            names.append({option.id,
+                          option.id.mid(kCustomIdPrefix.size()).replace(QLatin1Char('_'), QLatin1Char('-'))});
         }
     }
     return names;
@@ -166,6 +166,11 @@ CliNames withCustomNames(CliNames names, const QList<RowOption> &options)
 CliNames cleanupNames()
 {
     return withCustomNames(kCleanupNames, cleanupStrengths(SettingsCodecs().customCleanupLevels()));
+}
+
+CliNames profileNames()
+{
+    return withCustomNames(kProfileNames, writingProfileChoices(SettingsCodecs().writingProfileSettings()));
 }
 
 CliNames toneNames()
@@ -203,7 +208,7 @@ QString helpText()
         .arg(providerIds(registry.speechProviders()).join(separator),
              providerIds(registry.refinementProviders()).join(separator),
              cliNames(cleanupNames()).join(separator),
-             cliNames(kProfileNames).join(separator),
+             cliNames(profileNames()).join(separator),
              cliNames(toneNames()).join(separator));
 }
 
@@ -279,7 +284,7 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         } else if (argument == QStringLiteral("--cleanup")) {
             error = choice(cleanupNames(), &options.cleanupStrength);
         } else if (argument == QStringLiteral("--profile")) {
-            error = choice(kProfileNames, &options.writingProfile);
+            error = choice(profileNames(), &options.writingProfile);
         } else if (argument == QStringLiteral("--tone")) {
             error = choice(toneNames(), &options.tone);
         } else if (argument == QStringLiteral("--output")) {

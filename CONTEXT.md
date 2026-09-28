@@ -21,8 +21,20 @@ The desktop application and editable control selected when a Dictation Session s
 _Avoid_: Destination, focused app
 
 **Writing Profile**:
-The Work, Email, Personal, AI coding, or Other category inferred from the Target, with a user-selected fallback and optional override. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
+How refinement treats a Target, inferred from it, with a user-selected fallback and optional override. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone and Additional Instructions. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
 _Avoid_: Style preset, persona
+
+**Cleanup Level**:
+How much refinement may rewrite the Raw Transcript: None, Light, Medium, High, or a user-defined level built on one of them.
+_Avoid_: Refinement style, polish level
+
+**Tone**:
+The voice a Writing Profile asks refinement to write in, built-in or user-defined, or no tone override.
+_Avoid_: Style, voice preset
+
+**Additional Instructions**:
+The user's own text added to the refinement prompt: once for every refinement, then once per Writing Profile.
+_Avoid_: Custom prompt, system prompt
 
 **Paste Rule**:
 A setting that chooses how Speecher attempts insertion for an application or application category.

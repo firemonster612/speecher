@@ -133,6 +133,7 @@ fun refinementContext(
                 settings.writingProfiles,
                 settings.customTones,
                 settings.customCleanupLevels,
+                settings.appRules,
             )
             .copy(
                 controlRole = target?.role.orEmpty(),

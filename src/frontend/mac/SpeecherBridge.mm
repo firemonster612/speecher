@@ -1246,6 +1246,12 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return problems;
 }
 
+- (NSString *)writingProfileDeletionNotice:(NSString *)profileId
+{
+    return speecher::writingProfileDeletionNotice(_state->draft, QString::fromNSString(profileId))
+        .toNSString();
+}
+
 - (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
                     previousRecords:(NSArray<SpeecherRecord *> *)previous
                            forRowId:(NSString *)rowId
@@ -1769,7 +1775,8 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 {
     const QList<speecher::DictationRecord> &records = _state->controller->insightsLog()->records();
     const QDate today = _state->controller->insightsToday();
-    return bridgedInsights(speecher::summarize(records, coreInsightsRange(range), today),
+    return bridgedInsights(speecher::summarize(records, coreInsightsRange(range), today,
+                                               _state->controller->settings()->writingProfileSettings()),
                            records.size(),
                            today);
 }
@@ -2622,13 +2629,8 @@ static std::optional<QString> optionalString(NSString *value)
 
 - (NSArray<RowOptionModel *> *)writingProfiles
 {
-    using speecher::WritingProfile;
-    QList<RowOption> profiles;
-    for (WritingProfile profile : {WritingProfile::Work, WritingProfile::Email, WritingProfile::Personal,
-                                   WritingProfile::AiCoding, WritingProfile::Other}) {
-        profiles.append({speecher::writingProfileName(profile), speecher::writingProfileLabel(profile)});
-    }
-    return [_settingsSchema bridgedOptions:profiles];
+    return [_settingsSchema bridgedOptions:speecher::writingProfileChoices(
+                                _state->controller->settings()->writingProfileSettings())];
 }
 
 - (SpeecherTranscribeOptions *)transcribeOptionsWithWritingProfile:(NSString *)profile
@@ -2644,7 +2646,7 @@ static std::optional<QString> optionalString(NSString *value)
     options.refinementProviderId = settings.refinement.providerId.toNSString();
     options.cleanupStrength = chosen.cleanupStrength.toNSString();
     options.tone = chosen.tone.toNSString();
-    options.writingProfile = speecher::writingProfileName(chosen.profile).toNSString();
+    options.writingProfile = chosen.profile.toNSString();
     options.destination = SpeecherTranscriptDestinationBesideInput;
     options.folder = @"";
     return options;

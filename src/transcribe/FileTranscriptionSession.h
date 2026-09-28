@@ -39,7 +39,7 @@ struct TranscribeOptions {
     QString refinementProviderId = QStringLiteral("none");
     QString cleanupStrength = QStringLiteral("none");
     QString tone = QStringLiteral("none");
-    QString writingProfile = QStringLiteral("other");
+    QString writingProfile = WritingProfile::Other;
     TranscriptDestination destination = TranscriptDestination::BesideInput;
     QString folder;
 };

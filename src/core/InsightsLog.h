@@ -10,7 +10,8 @@ namespace speecher {
 
 // The local log behind Home, one JSON object per line:
 // {"finishedAt":"2025-10-03T09:55:00","audioMs":38000,"words":90,"app":"Thunderbird","profile":"email"}
-// finishedAt is local time without a zone; profile is writingProfileName().
+// finishedAt is local time without a zone; profile is the Writing Profile's
+// id, and profileName, only present for a custom profile, its name then.
 class InsightsLog : public QObject {
     Q_OBJECT
 

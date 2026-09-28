@@ -1,8 +1,10 @@
 package app.speecher.android.dictation
 
+import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
+import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.cleanupLevelId
@@ -74,6 +76,41 @@ class RefinementInstructionsTest {
                 .writingProfiles
                 .getValue(WritingProfile.Email)
         assertEquals(listOf("balanced", "none"), listOf(deleted.cleanupLevelId, deleted.toneId))
+    }
+
+    @Test
+    fun `deleting a profile clears its rules and the fallback, and says so first`() {
+        val store = SettingsStore(RuntimeEnvironment.getApplication())
+        val standup = WritingProfile("custom_standup")
+        store.save(
+            SpeecherSettings(
+                writingProfiles =
+                    SpeecherSettings().writingProfiles +
+                        (standup to WritingProfileSettings(name = "Standup")),
+                defaultWritingProfile = standup,
+                appRules =
+                    listOf(
+                        RecognitionRule("zulip", null, standup),
+                        RecognitionRule("mattermost", AppCategory.Browser, standup),
+                    ),
+            )
+        )
+        val loaded = store.load()
+        assertEquals("Standup", loaded.writingProfiles.getValue(standup).name)
+        assertEquals(standup, loaded.defaultWritingProfile)
+        assertEquals(
+            "2 application rules use this profile and will lose it. " +
+                "The fallback profile will become Other.",
+            loaded.profileDeletionNotice(standup),
+        )
+
+        val deleted = loaded.withWritingProfiles(loaded.writingProfiles - standup)
+        assertEquals(
+            listOf(RecognitionRule("mattermost", AppCategory.Browser, null)),
+            deleted.appRules,
+        )
+        assertEquals(WritingProfile.Other, deleted.defaultWritingProfile)
+        assertEquals("", deleted.profileDeletionNotice(standup))
     }
 
     private fun instructionFields(settings: SpeecherSettings) =

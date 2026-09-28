@@ -3,6 +3,8 @@
 #include <QRegularExpression>
 #include <QStringList>
 
+#include <algorithm>
+
 namespace speecher {
 
 QString appCategoryName(AppCategory category)
@@ -55,37 +57,20 @@ AppCategory appCategoryFromName(const QString &name)
     return AppCategory::Unknown;
 }
 
-QString writingProfileName(WritingProfile profile)
+bool isBuiltInWritingProfile(const QString &id)
 {
-    switch (profile) {
-    case WritingProfile::Work:
-        return QStringLiteral("work");
-    case WritingProfile::Email:
-        return QStringLiteral("email");
-    case WritingProfile::Personal:
-        return QStringLiteral("personal");
-    case WritingProfile::Other:
-        return QStringLiteral("other");
-    case WritingProfile::AiCoding:
-        return QStringLiteral("ai_coding");
-    }
-    return QStringLiteral("other");
+    return id == WritingProfile::Work || id == WritingProfile::Email || id == WritingProfile::Personal
+        || id == WritingProfile::AiCoding || id == WritingProfile::Other;
 }
 
-WritingProfile writingProfileFromName(const QString &name)
+QString writingProfileFromName(const QString &name)
 {
     const QString normalized = name.trimmed().toLower();
-    if (normalized == QStringLiteral("work") || normalized == QStringLiteral("technical")) {
+    if (normalized == QStringLiteral("technical")) {
         return WritingProfile::Work;
     }
-    if (normalized == QStringLiteral("email")) {
-        return WritingProfile::Email;
-    }
-    if (normalized == QStringLiteral("personal")) {
-        return WritingProfile::Personal;
-    }
-    if (normalized == QStringLiteral("ai_coding")) {
-        return WritingProfile::AiCoding;
+    if (isBuiltInWritingProfile(normalized) || normalized.startsWith(kCustomIdPrefix)) {
+        return normalized;
     }
     return WritingProfile::Other;
 }
@@ -113,21 +98,31 @@ QString appCategoryLabel(AppCategory category)
     return QStringLiteral("Automatic");
 }
 
-QString writingProfileLabel(WritingProfile profile)
+QString writingProfileLabel(const QString &id, const QList<WritingProfileSettings> &profiles)
 {
-    switch (profile) {
-    case WritingProfile::Work:
-        return QStringLiteral("Work");
-    case WritingProfile::Email:
-        return QStringLiteral("Email");
-    case WritingProfile::Personal:
-        return QStringLiteral("Personal");
-    case WritingProfile::AiCoding:
-        return QStringLiteral("AI coding");
-    case WritingProfile::Other:
-        break;
+    if (id == WritingProfile::Work) return QStringLiteral("Work");
+    if (id == WritingProfile::Email) return QStringLiteral("Email");
+    if (id == WritingProfile::Personal) return QStringLiteral("Personal");
+    if (id == WritingProfile::AiCoding) return QStringLiteral("AI coding");
+    if (id == WritingProfile::Other) return QStringLiteral("Other");
+    for (const WritingProfileSettings &profile : profiles) {
+        if (profile.profile == id) {
+            return profile.name;
+        }
     }
-    return QStringLiteral("Other");
+    return {};
+}
+
+QString offeredWritingProfile(const QString &id,
+                              const QList<WritingProfileSettings> &profiles,
+                              const QString &fallback)
+{
+    if (isBuiltInWritingProfile(id)) {
+        return id;
+    }
+    const bool held = std::any_of(profiles.cbegin(), profiles.cend(),
+                                  [&id](const WritingProfileSettings &profile) { return profile.profile == id; });
+    return held ? id : fallback;
 }
 
 QList<WritingProfileSettings> defaultWritingProfileSettings()
@@ -142,7 +137,7 @@ QList<WritingProfileSettings> defaultWritingProfileSettings()
 }
 
 WritingProfileSettings writingProfileSettingsFor(const QList<WritingProfileSettings> &settings,
-                                                  WritingProfile profile)
+                                                  const QString &profile)
 {
     for (const WritingProfileSettings &candidate : settings) {
         if (candidate.profile == profile) {
@@ -335,7 +330,7 @@ AppCategory classifyTarget(const Target &target,
     return target.hasIdentity() ? AppCategory::General : AppCategory::Unknown;
 }
 
-WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback)
+QString inferWritingProfile(const Target &target, const QString &fallback)
 {
     // The category already encodes the precedence classifyTarget decided:
     // custom rules first, then a detected coding agent, then built-ins. A
@@ -370,17 +365,17 @@ WritingProfile inferWritingProfile(const Target &target, WritingProfile fallback
     return fallback;
 }
 
-WritingProfile resolveWritingProfile(const Target &target,
-                                     const QList<WritingProfileOverride> &overrides,
-                                     WritingProfile fallback)
+QString resolveWritingProfile(const Target &target,
+                              const QList<WritingProfileOverride> &overrides,
+                              const QString &fallback)
 {
     return resolveWritingProfile(target, overrides, {}, fallback);
 }
 
-WritingProfile resolveWritingProfile(const Target &target,
-                                     const QList<WritingProfileOverride> &overrides,
-                                     const QList<AppRecognitionRule> &recognitionRules,
-                                     WritingProfile fallback)
+QString resolveWritingProfile(const Target &target,
+                              const QList<WritingProfileOverride> &overrides,
+                              const QList<AppRecognitionRule> &recognitionRules,
+                              const QString &fallback)
 {
     for (const WritingProfileOverride &override : overrides) {
         if (override.enabled

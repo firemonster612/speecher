@@ -770,6 +770,29 @@ private slots:
         settings.raw().clear();
     }
 
+    // A custom profile is named like a custom tone: its id without custom_,
+    // with - for _.
+    void transcribeTakesACustomProfile()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
+                                                 QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
+        settings.applySnapshot(draft);
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        const CommandLineDecision decision = parseCommandLine(
+            {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("--profile"),
+             QStringLiteral("stand-up"), audio},
+            {});
+        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("custom_stand_up")));
+        settings.raw().clear();
+    }
+
     void quitIsAClientCommand()
     {
         const CommandLineDecision decision = parseCommandLine(

@@ -523,11 +523,7 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
                                  comboBox(cleanupStrengths(refinement.customCleanupLevels), m_cleanup,
                                           [this](const QString &id) { m_cleanup = id; }),
                                  true, refining));
-    QList<RowOption> profiles;
-    for (WritingProfile profile : {WritingProfile::Work, WritingProfile::Email, WritingProfile::Personal,
-                                   WritingProfile::AiCoding, WritingProfile::Other}) {
-        profiles.append({writingProfileName(profile), writingProfileLabel(profile)});
-    }
+    const QList<RowOption> profiles = writingProfileChoices(refinement.writingProfiles);
     refine.Children().Append(row(QStringLiteral("Writing profile"),
                                  QStringLiteral("Sets cleanup and tone; you can still adjust them here"),
                                  comboBox(profiles, m_profile,

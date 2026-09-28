@@ -274,7 +274,16 @@ void summarizeHours(const QList<DictationRecord> &period, InsightsSummary &summa
     summary.hasHourData = period.size() >= kHourDataMinimum;
 }
 
-void summarizeApps(const QList<DictationRecord> &period, InsightsSummary &summary)
+QString profileLabel(const DictationRecord &record, const QList<WritingProfileSettings> &profiles)
+{
+    const QString label = writingProfileLabel(record.profile, profiles);
+    if (!label.isEmpty()) return label;
+    return record.profileName.isEmpty() ? QStringLiteral("Deleted profile") : record.profileName;
+}
+
+void summarizeApps(const QList<DictationRecord> &period,
+                   const QList<WritingProfileSettings> &profiles,
+                   InsightsSummary &summary)
 {
     QList<AppShare> totals;
     for (const DictationRecord &record : period) {
@@ -285,7 +294,7 @@ void summarizeApps(const QList<DictationRecord> &period, InsightsSummary &summar
             app = totals.end() - 1;
         }
         app->words += record.words;
-        app->profileLabel = writingProfileLabel(record.profile);
+        app->profileLabel = profileLabel(record, profiles);
     }
     std::stable_sort(totals.begin(), totals.end(),
                      [](const AppShare &a, const AppShare &b) { return a.words > b.words; });
@@ -345,7 +354,8 @@ void summarizeRecords(const QList<DictationRecord> &records,
 
 InsightsSummary summarize(const QList<DictationRecord> &records,
                           InsightsRange range,
-                          const QDate &today)
+                          const QDate &today,
+                          const QList<WritingProfileSettings> &profiles)
 {
     InsightsSummary summary;
     QDate from;
@@ -401,7 +411,7 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
                 .arg(kTypingWpm);
     }
     summarizeHours(period, summary);
-    summarizeApps(period, summary);
+    summarizeApps(period, profiles, summary);
 
     const QMap<QDate, DayTotals> allDays = byDay(records);
     summarizeStreaks(allDays, today, summary);

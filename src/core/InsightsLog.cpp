@@ -27,7 +27,10 @@ QByteArray encode(const DictationRecord &record)
         + ",\"audioMs\":" + QByteArray::number(record.audioMs)
         + ",\"words\":" + QByteArray::number(record.words)
         + ",\"app\":" + jsonString(record.appName)
-        + ",\"profile\":" + jsonString(writingProfileName(record.profile)) + "}\n";
+        + ",\"profile\":" + jsonString(record.profile)
+        + (record.profileName.isEmpty() ? QByteArray()
+                                        : ",\"profileName\":" + jsonString(record.profileName))
+        + "}\n";
 }
 
 std::optional<DictationRecord> decode(const QByteArray &line)
@@ -44,6 +47,7 @@ std::optional<DictationRecord> decode(const QByteArray &line)
         object.value(QLatin1String("words")).toInt(),
         object.value(QLatin1String("app")).toString(),
         writingProfileFromName(object.value(QLatin1String("profile")).toString()),
+        object.value(QLatin1String("profileName")).toString(),
     };
 }
 

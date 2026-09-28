@@ -401,6 +401,11 @@ SettingsModel::ImportResult SettingsModel::recordsImportedFrom(const QByteArray 
     return {merged, {}};
 }
 
+QString SettingsModel::writingProfileDeletionNotice(const QString &profileId) const
+{
+    return speecher::writingProfileDeletionNotice(m_draft, profileId);
+}
+
 QStringList SettingsModel::badgesFor(const QList<QVariantMap> &records,
                                      const QString &rowId) const
 {

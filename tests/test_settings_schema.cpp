@@ -1148,6 +1148,56 @@ private slots:
                               QStringLiteral("A Custom only cleanup level needs instructions.")}));
     }
 
+    // The grid lists the built-ins locked, then the custom profiles; one added
+    // gets an id from its name, and every profile choice offers it.
+    void customProfilesFollowTheBuiltInsInEveryProfileChoice()
+    {
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const CollectionDescriptor &grid = schema.row(QStringLiteral("writingProfileBehavior"))->collection;
+        QCOMPARE(grid.lockedRecordCount(), 5);
+        AppSettings settings;
+        QList<QVariantMap> records = grid.records(settings);
+        records.append({{QStringLiteral("profile"), QStringLiteral(" Stand up ")},
+                        {QStringLiteral("cleanup"), QStringLiteral("light_cleanup")},
+                        {QStringLiteral("tone"), QStringLiteral("none")},
+                        {QStringLiteral("instructions"), QString()}});
+        grid.apply(settings, records);
+        QCOMPARE(settings.refinement.writingProfiles.last(),
+                 (WritingProfileSettings{QStringLiteral("custom_stand_up"), QStringLiteral("light_cleanup"),
+                                         QStringLiteral("none"), QString(), QStringLiteral("Stand up")}));
+
+        const auto ids = [](const QList<RowOption> &options) {
+            QStringList ids;
+            for (const RowOption &option : options) {
+                ids.append(option.id + QLatin1Char('=') + option.label);
+            }
+            return ids;
+        };
+        const QStringList profiles{QStringLiteral("work=Work"), QStringLiteral("email=Email"),
+                                   QStringLiteral("personal=Personal"), QStringLiteral("ai_coding=AI coding"),
+                                   QStringLiteral("other=Other"), QStringLiteral("custom_stand_up=Stand up")};
+        QCOMPARE(ids(schema.row(QStringLiteral("defaultWritingProfile"))->options(settings)), profiles);
+        const CollectionColumn &ruleProfile =
+            schema.row(QStringLiteral("appRecognitionRules"))->collection.columns.at(2);
+        QCOMPARE(ids(ruleProfile.options(settings)), QStringList{QStringLiteral("=Automatic")} + profiles);
+    }
+
+    // Before a profile goes, the person is told what points at it.
+    void deletingAProfileSaysWhatItChanges()
+    {
+        AppSettings settings;
+        const QString standup = QStringLiteral("custom_standup");
+        QCOMPARE(writingProfileDeletionNotice(settings, standup), QString());
+        settings.appRecognitionRules = {{QStringLiteral("zulip"), std::nullopt, standup}};
+        QCOMPARE(writingProfileDeletionNotice(settings, standup),
+                 QStringLiteral("1 application rule uses this profile and will lose it."));
+        settings.appRecognitionRules.append({QStringLiteral("mattermost"), AppCategory::Browser, standup});
+        settings.refinement.defaultWritingProfile = standup;
+        QCOMPARE(writingProfileDeletionNotice(settings, standup),
+                 QStringLiteral("2 application rules use this profile and will lose it. "
+                                "The fallback profile will become Other."));
+    }
+
     void profileChoicesOfferTheCustomTonesAndLevels()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());

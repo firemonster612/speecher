@@ -190,6 +190,10 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 - (void)loadExpensiveRows;
 // Empty when these records are consistent; otherwise one message per problem.
 - (NSArray<NSString *> *)problemsWith:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId;
+// What deleting the custom Writing Profile `profileId` changes in the draft,
+// empty when nothing points at it.
+- (NSString *)writingProfileDeletionNotice:(NSString *)profileId
+    NS_SWIFT_NAME(writingProfileDeletionNotice(_:));
 // Save against the records this editor last submitted, not a later model refresh.
 - (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
                     previousRecords:(NSArray<SpeecherRecord *> *)previous

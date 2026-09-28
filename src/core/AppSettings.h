@@ -3,6 +3,7 @@
 #include "core/OutputFormat.h"
 #include "core/PasteRules.h"
 #include "core/LearnedCorrection.h"
+#include "core/Target.h"
 
 #include <QString>
 #include <QStringList>
@@ -265,7 +266,7 @@ struct RefinementSettings {
     QString anthropicEndpointBase = QStringLiteral("https://api.anthropic.com/v1");
     QString claudeCredentialsPath;
     QStringList bindingVocabulary;
-    QString defaultWritingProfile = QStringLiteral("other");
+    QString defaultWritingProfile = WritingProfile::Other;
     QList<WritingProfileSettings> writingProfiles = defaultWritingProfileSettings();
     QList<WritingProfileOverride> writingProfileOverrides;
     QString tone = QStringLiteral("none");

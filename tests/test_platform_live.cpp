@@ -16,7 +16,7 @@ private slots:
         AtSpiTargetProvider provider;
         const Target target = provider.capture();
         const AppSettings settings = SettingsStore().snapshot();
-        const WritingProfile profile = resolveWritingProfile(
+        const QString profile = resolveWritingProfile(
             target,
             settings.refinement.writingProfileOverrides,
             writingProfileFromName(settings.refinement.defaultWritingProfile));
@@ -29,7 +29,7 @@ private slots:
                         target.processName,
                         target.role,
                         appCategoryName(target.category),
-                        writingProfileName(profile),
+                        profile,
                         target.accessible ? QStringLiteral("yes") : QStringLiteral("no"),
                         target.secure ? QStringLiteral("yes") : QStringLiteral("no"),
                         provider.stillFocused(target) ? QStringLiteral("yes") : QStringLiteral("no"))

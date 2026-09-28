@@ -318,10 +318,6 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     settings::addCardRow(refineForm, cleanupRow, refineCard);
 
     m_profile = new QComboBox(refineCard);
-    for (WritingProfile profile : {WritingProfile::Work, WritingProfile::Email, WritingProfile::Personal,
-                                   WritingProfile::AiCoding, WritingProfile::Other}) {
-        m_profile->addItem(writingProfileLabel(profile), writingProfileName(profile));
-    }
     QFrame *profileRow = settings::makeRow(QStringLiteral("Writing profile"),
                                            QStringLiteral("Sets cleanup and tone; you can still adjust them here"),
                                            m_profile, refineCard);
@@ -644,6 +640,13 @@ void TranscribePage::showChoices(const AppSettings &settings)
         button->setCheckable(true);
         m_cleanup->addButton(button);
         m_cleanupButtons->layout()->addWidget(button);
+    }
+    {
+        const QSignalBlocker blocker(m_profile);
+        m_profile->clear();
+        for (const RowOption &profile : writingProfileChoices(settings.refinement.writingProfiles)) {
+            m_profile->addItem(profile.label, profile.id);
+        }
     }
     const QSignalBlocker blocker(m_tone);
     m_tone->clear();

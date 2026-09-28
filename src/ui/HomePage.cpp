@@ -527,7 +527,8 @@ void HomePage::refresh()
     m_insightsHeader->setVisible(showStats);
     m_summarizedDay = m_controller->insightsToday();
     if (showStats) {
-        m_insights = buildInsights(summarize(records, currentRange(), m_summarizedDay));
+        m_insights = buildInsights(summarize(records, currentRange(), m_summarizedDay,
+                                               m_controller->settings()->writingProfileSettings()));
         m_columnLayout->insertWidget(m_columnLayout->indexOf(m_insightsHeader) + 1, m_insights);
         applyWidth();
     }
@@ -879,7 +880,8 @@ QToolButton *HomePage::buildShareButton(QWidget *parent)
         });
     };
     const auto current = [this] {
-        return summarize(m_controller->insightsLog()->records(), currentRange(), m_summarizedDay);
+        return summarize(m_controller->insightsLog()->records(), currentRange(), m_summarizedDay,
+                         m_controller->settings()->writingProfileSettings());
     };
     auto *menu = new QMenu(button);
     connect(menu->addAction(themedIcon(QStringLiteral("image-x-generic")),

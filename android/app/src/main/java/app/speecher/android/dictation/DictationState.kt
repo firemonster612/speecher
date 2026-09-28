@@ -3,6 +3,7 @@ package app.speecher.android.dictation
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.OAuthProvider
+import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.withoutDeleted
@@ -210,8 +211,11 @@ data class SpeecherSettings(
     val includeScreenshot: Boolean = false,
     /** The profile used when the target app does not imply one. */
     val defaultWritingProfile: WritingProfile = WritingProfile.Other,
+    /** The built-in profiles, then the custom ones in the order they were added. */
     val writingProfiles: Map<WritingProfile, WritingProfileSettings> =
         WritingProfile.entries.associateWith { WritingProfileSettings() },
+    /** The user's application rules, checked before the built-in ones. */
+    val appRules: List<RecognitionRule> = emptyList(),
     /** Added to every refinement prompt, before the profile's own instructions. */
     val additionalInstructions: String = "",
     /** Replaces the built-in dictation rules while on; empty stands for the built-in prompt. */
@@ -257,6 +261,42 @@ data class SpeecherSettings(
             customCleanupLevels = levels,
             writingProfiles = writingProfiles.mapValues { it.value.withoutDeleted(tones, levels) },
         )
+
+    /**
+     * With these profiles in place of the old ones. A rule that pointed at a deleted profile loses
+     * it, and is dropped when it sets no app type either; a fallback that named one becomes Other,
+     * as on the desktop.
+     */
+    fun withWritingProfiles(
+        profiles: Map<WritingProfile, WritingProfileSettings> = writingProfiles
+    ): SpeecherSettings =
+        copy(
+            writingProfiles = profiles,
+            appRules =
+                appRules
+                    .map { if (it.profile in profiles) it else it.copy(profile = null) }
+                    .filter { it.category != null || it.profile != null },
+            defaultWritingProfile =
+                defaultWritingProfile.takeIf { it in profiles } ?: WritingProfile.Other,
+        )
+}
+
+/**
+ * What deleting [profile] changes, for the person deleting it to read first: how many rules lose
+ * it, and whether the fallback becomes Other. Empty when nothing points at it. The desktop's
+ * writingProfileDeletionNotice.
+ */
+fun SpeecherSettings.profileDeletionNotice(profile: WritingProfile): String {
+    val rules = appRules.count { it.profile == profile }
+    return listOfNotNull(
+            when (rules) {
+                0 -> null
+                1 -> "1 application rule uses this profile and will lose it."
+                else -> "$rules application rules use this profile and will lose it."
+            },
+            "The fallback profile will become Other.".takeIf { defaultWritingProfile == profile },
+        )
+        .joinToString(" ")
 }
 
 /** What the setup checklist needs to know. Each flag is one step. */

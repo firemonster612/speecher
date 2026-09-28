@@ -261,17 +261,10 @@ QList<RowOption> appCategoryOptions()
     return options;
 }
 
-QList<RowOption> writingProfileOptions()
+QList<RowOption> writingProfileOptions(const AppSettings &settings)
 {
-    QList<RowOption> options{{QString(), QStringLiteral("Automatic")}};
-    for (WritingProfile profile : {WritingProfile::Work,
-                                   WritingProfile::Email,
-                                   WritingProfile::Personal,
-                                   WritingProfile::AiCoding,
-                                   WritingProfile::Other}) {
-        options.append({writingProfileName(profile), writingProfileLabel(profile)});
-    }
-    return options;
+    return QList<RowOption>{{QString(), QStringLiteral("Automatic")}}
+        + writingProfileChoices(settings.refinement.writingProfiles);
 }
 
 Options fixedOptions(QList<RowOption> options)
@@ -1446,14 +1439,11 @@ SettingsPage refinementPage(const SchemaContext &context)
         QStringLiteral("defaultWritingProfile"),
         QStringLiteral("Fallback profile"),
         QStringLiteral("Writing profile used when the target app does not imply one."),
-        fixedOptions({
-            {QStringLiteral("work"), QStringLiteral("Work")},
-            {QStringLiteral("email"), QStringLiteral("Email")},
-            {QStringLiteral("personal"), QStringLiteral("Personal")},
-            {QStringLiteral("ai_coding"), QStringLiteral("AI coding")},
-            {QStringLiteral("other"), QStringLiteral("Other")},
-        }),
-        [](const AppSettings &settings) { return settings.refinement.defaultWritingProfile; },
+        [](const AppSettings &settings) { return writingProfileChoices(settings.refinement.writingProfiles); },
+        [](const AppSettings &settings) {
+            return offeredWritingProfile(settings.refinement.defaultWritingProfile,
+                                         settings.refinement.writingProfiles);
+        },
         [](AppSettings &settings, const QString &value) {
             settings.refinement.defaultWritingProfile = value;
         });
@@ -1470,7 +1460,7 @@ SettingsPage refinementPage(const SchemaContext &context)
         return QVariant::fromValue(settings.refinement.writingProfiles);
     };
     profileBehavior.apply = [](AppSettings &settings, const QVariant &value) {
-        settings.refinement.writingProfiles = value.value<QList<WritingProfileSettings>>();
+        settings.refinement.writingProfiles = withCustomProfileIds(value.value<QList<WritingProfileSettings>>());
     };
     gateOnRefinementProvider(profileBehavior);
 
@@ -1688,11 +1678,14 @@ SettingsPage localModelsPage(const SchemaContext &context)
 QList<QVariantMap> recognitionRecords(const AppSettings &settings)
 {
     QList<QVariantMap> records;
-    const auto append = [&records](const AppRecognitionRule &rule, const QString &source) {
+    // A profile deleted in the draft shows as none, which is what saving makes it.
+    const auto append = [&records, &settings](const AppRecognitionRule &rule, const QString &source) {
         records.append({
             {kMatchColumn, rule.match},
             {kCategoryColumn, rule.category ? appCategoryName(*rule.category) : QString()},
-            {kProfileColumn, rule.writingProfile ? writingProfileName(*rule.writingProfile) : QString()},
+            {kProfileColumn,
+             offeredWritingProfile(rule.writingProfile.value_or(QString()),
+                                   settings.refinement.writingProfiles, QString())},
             {kSourceColumn, source},
         });
     };
@@ -1738,7 +1731,7 @@ SettingsSection applicationRecognitionSection()
          true,
          QStringLiteral("Matches the application ID, application name, process name, or accessible role.")},
         {kCategoryColumn, QStringLiteral("App type"), ColumnKind::Choice, fixedOptions(appCategoryOptions())},
-        {kProfileColumn, QStringLiteral("Writing profile"), ColumnKind::Choice, fixedOptions(writingProfileOptions())},
+        {kProfileColumn, QStringLiteral("Writing profile"), ColumnKind::Choice, writingProfileOptions},
         {kSourceColumn, QStringLiteral("Source"), ColumnKind::ReadOnly},
     };
     rules.records = recognitionRecords;
@@ -3109,12 +3102,60 @@ QString customChoiceId(const QString &name, const QStringList &taken)
             character = QLatin1Char('_');
         }
     }
-    const QString base = QStringLiteral("custom_") + slug;
+    const QString base = kCustomIdPrefix + slug;
     QString id = base;
     for (int suffix = 2; taken.contains(id); ++suffix) {
         id = base + QStringLiteral("_%1").arg(suffix);
     }
     return id;
+}
+
+QList<RowOption> writingProfileChoices(const QList<WritingProfileSettings> &profiles)
+{
+    QList<RowOption> options;
+    for (const WritingProfileSettings &builtIn : defaultWritingProfileSettings()) {
+        options.append({builtIn.profile, writingProfileLabel(builtIn.profile, {})});
+    }
+    for (const WritingProfileSettings &profile : profiles) {
+        if (!isBuiltInWritingProfile(profile.profile)) {
+            options.append({profile.profile, profile.name});
+        }
+    }
+    return options;
+}
+
+QList<WritingProfileSettings> withCustomProfileIds(QList<WritingProfileSettings> profiles)
+{
+    QStringList taken;
+    for (const WritingProfileSettings &profile : profiles) {
+        taken << profile.profile;
+    }
+    for (WritingProfileSettings &profile : profiles) {
+        profile.name = profile.name.trimmed();
+        if (profile.profile.isEmpty() && !profile.name.isEmpty()) {
+            profile.profile = customChoiceId(profile.name, taken);
+            taken << profile.profile;
+        }
+    }
+    return profiles;
+}
+
+QString writingProfileDeletionNotice(const AppSettings &settings, const QString &profileId)
+{
+    const auto rules = std::count_if(settings.appRecognitionRules.cbegin(), settings.appRecognitionRules.cend(),
+                                     [&profileId](const AppRecognitionRule &rule) {
+                                         return rule.writingProfile == profileId;
+                                     });
+    QStringList notice;
+    if (rules > 0) {
+        notice << (rules == 1 ? QStringLiteral("1 application rule uses this profile and will lose it.")
+                              : QStringLiteral("%1 application rules use this profile and will lose it.")
+                                    .arg(rules));
+    }
+    if (settings.refinement.defaultWritingProfile == profileId) {
+        notice << QStringLiteral("The fallback profile will become Other.");
+    }
+    return notice.join(QLatin1Char(' '));
 }
 
 CollectionDescriptor writingProfileGrid()
@@ -3126,6 +3167,7 @@ CollectionDescriptor writingProfileGrid()
     CollectionDescriptor grid;
     grid.identityColumn = kProfileIdKey;
     grid.columns = {
+        // Read-only for the built-ins; a custom profile's name can be edited.
         {kProfileColumn, QStringLiteral("Profile"), ColumnKind::ReadOnly},
         {kCleanupColumn,
          QStringLiteral("Cleanup"),
@@ -3140,31 +3182,41 @@ CollectionDescriptor writingProfileGrid()
         {kInstructionsColumn, QStringLiteral("Instructions"), ColumnKind::Text, {}, true},
     };
     grid.columns.last().multiline = true;
-    // The profiles are the ones that exist, so the stored list only says what
-    // each of them was set to.
+    // The built-ins always exist, so the stored list only says what each of
+    // them was set to; the custom profiles follow in stored order.
     grid.records = [=](const AppSettings &settings) {
+        const QList<WritingProfileSettings> &stored = settings.refinement.writingProfiles;
         QList<QVariantMap> records;
-        for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
-            const WritingProfileSettings chosen =
-                writingProfileSettingsFor(settings.refinement.writingProfiles, fallback.profile);
-            records.append({{kProfileColumn, writingProfileLabel(fallback.profile)},
-                            {kProfileIdKey, writingProfileName(fallback.profile)},
+        for (const RowOption &profile : writingProfileChoices(stored)) {
+            const WritingProfileSettings chosen = writingProfileSettingsFor(stored, profile.id);
+            records.append({{kProfileColumn, profile.label},
+                            {kProfileIdKey, profile.id},
                             {kCleanupColumn, chosen.cleanupStrength},
                             {kToneColumn, chosen.tone},
                             {kInstructionsColumn, chosen.instructions}});
         }
         return records;
     };
+    // A record without an id is a profile just added, which gets one from
+    // its name.
     grid.apply = [=](AppSettings &settings, const QList<QVariantMap> &records) {
         QList<WritingProfileSettings> profiles;
         for (const QVariantMap &record : records) {
-            profiles.append({writingProfileFromName(record.value(kProfileIdKey).toString()),
+            const QString id = record.value(kProfileIdKey).toString();
+            profiles.append({id,
                              record.value(kCleanupColumn).toString(),
                              record.value(kToneColumn).toString(),
-                             record.value(kInstructionsColumn).toString()});
+                             record.value(kInstructionsColumn).toString(),
+                             isBuiltInWritingProfile(id) ? QString() : record.value(kProfileColumn).toString()});
         }
-        settings.refinement.writingProfiles = profiles;
+        settings.refinement.writingProfiles = withCustomProfileIds(profiles);
     };
+    grid.blankRecord = {{kProfileColumn, QStringLiteral("New profile")},
+                        {kCleanupColumn, QStringLiteral("balanced")},
+                        {kToneColumn, QStringLiteral("none")},
+                        {kInstructionsColumn, QString()}};
+    grid.lockedRecordCount = [] { return int(defaultWritingProfileSettings().size()); };
+    grid.addLabel = QStringLiteral("Add profile");
     return grid;
 }
 

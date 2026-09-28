@@ -577,6 +577,25 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  (QStringList{QStringLiteral("Speecher"), QStringLiteral("Qt")}));
     }
 
+    // A rule that points at a custom profile gives the target that profile's
+    // settings, and the prompt names its id.
+    void transcriptPipelineResolvesACustomProfileThroughARule()
+    {
+        AppSettings settings;
+        settings.refinement.writingProfiles.append({QStringLiteral("custom_standup"),
+                                                    QStringLiteral("strong_polish"), QStringLiteral("formal"),
+                                                    QStringLiteral("Bullets."), QStringLiteral("Standup")});
+        settings.appRecognitionRules = {{QStringLiteral("zulip"), std::nullopt, QStringLiteral("custom_standup")}};
+        Target target;
+        target.applicationId = QStringLiteral("org.zulip.Zulip");
+        const TranscriptPipelineResult pipeline =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, target);
+        QCOMPARE(pipeline.refinementContext.writingProfile, QStringLiteral("custom_standup"));
+        QCOMPARE(pipeline.refinementSettings.style, QStringLiteral("strong_polish"));
+        QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("formal"));
+        QCOMPARE(pipeline.refinementContext.profileInstructions, QStringLiteral("Bullets."));
+    }
+
     // A profile's custom level refines at its base with its section, and a
     // custom tone reaches the prompt; neither reads as None.
     void transcriptPipelineResolvesCustomTonesAndLevels()
@@ -699,7 +718,6 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  WritingProfile::Work);
         QCOMPARE(writingProfileFromName(QStringLiteral("technical")), WritingProfile::Work);
         QCOMPARE(writingProfileFromName(QStringLiteral("ai_coding")), WritingProfile::AiCoding);
-        QCOMPARE(writingProfileName(WritingProfile::AiCoding), QStringLiteral("ai_coding"));
         QCOMPARE(writingProfileFromName(QStringLiteral("general")), WritingProfile::Other);
         QCOMPARE(appCategoryFromName(QStringLiteral("ai_coding")), AppCategory::AiCoding);
         QCOMPARE(appCategoryName(AppCategory::AiCoding), QStringLiteral("ai_coding"));

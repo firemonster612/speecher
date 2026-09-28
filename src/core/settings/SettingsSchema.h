@@ -362,10 +362,19 @@ QList<RowOption> writingTones(const QList<CustomTone> &custom);
 // falls back to: no tone override, or Medium.
 QString offeredTone(const QString &id, const QList<CustomTone> &custom);
 QString offeredCleanupLevel(const QString &id, const QList<CustomCleanupLevel> &custom);
-// The id a new custom tone or cleanup level named `name` gets: custom_ and the
+// The id a new custom tone, cleanup level or profile named `name` gets: custom_ and the
 // name in lowercase with every other character made _, so it never matches a
 // built-in id, then _2, _3 and so on until it is none of `taken`.
 QString customChoiceId(const QString &name, const QStringList &taken);
+// The built-in profiles, then the custom ones `profiles` holds.
+QList<RowOption> writingProfileChoices(const QList<WritingProfileSettings> &profiles);
+// Each named profile without an id, one just added, gets customChoiceId of
+// its name.
+QList<WritingProfileSettings> withCustomProfileIds(QList<WritingProfileSettings> profiles);
+// What deleting a profile changes, for the person deleting it to read first:
+// how many application rules lose it, and whether the fallback profile becomes
+// Other. Empty when nothing points at it.
+QString writingProfileDeletionNotice(const AppSettings &settings, const QString &profileId);
 CollectionDescriptor writingProfileGrid();
 QList<RowOption> authModeOptions(const QString &rowId);
 

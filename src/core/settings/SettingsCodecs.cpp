@@ -366,8 +366,20 @@ void SettingsCodecs::setAudioCaptureSettings(const AudioCaptureSettings &value)
     m_settings.setValue(SettingsKeys::AudioVadThresholdPercent, settings.vadThresholdPercent);
 }
 
+// A rule pointing at a deleted profile loses the profile, here where settings
+// are read and written; the callers then drop a rule left with nothing to set.
+static AppRecognitionRule withoutDeletedProfile(AppRecognitionRule rule,
+                                                const QList<WritingProfileSettings> &profiles)
+{
+    if (rule.writingProfile && offeredWritingProfile(*rule.writingProfile, profiles, QString()).isEmpty()) {
+        rule.writingProfile.reset();
+    }
+    return rule;
+}
+
 QList<AppRecognitionRule> SettingsCodecs::appRecognitionRules() const
 {
+    const QList<WritingProfileSettings> profiles = writingProfileSettings();
     const QJsonDocument document = QJsonDocument::fromJson(
         value(SettingsKeys::AppRecognitionRules, QByteArray()).toByteArray());
     QList<AppRecognitionRule> rules;
@@ -386,6 +398,7 @@ QList<AppRecognitionRule> SettingsCodecs::appRecognitionRules() const
         if (!profile.isEmpty()) {
             rule.writingProfile = writingProfileFromName(profile);
         }
+        rule = withoutDeletedProfile(rule, profiles);
         if (!rule.match.isEmpty() && (rule.category || rule.writingProfile)) {
             rules.append(rule);
         }
@@ -395,8 +408,10 @@ QList<AppRecognitionRule> SettingsCodecs::appRecognitionRules() const
 
 void SettingsCodecs::setAppRecognitionRules(const QList<AppRecognitionRule> &rules)
 {
+    const QList<WritingProfileSettings> profiles = writingProfileSettings();
     QJsonArray array;
-    for (const AppRecognitionRule &rule : rules) {
+    for (const AppRecognitionRule &stored : rules) {
+        const AppRecognitionRule rule = withoutDeletedProfile(stored, profiles);
         const QString match = rule.match.trimmed();
         if (match.isEmpty() || (!rule.category && !rule.writingProfile)) {
             continue;
@@ -406,7 +421,7 @@ void SettingsCodecs::setAppRecognitionRules(const QList<AppRecognitionRule> &rul
             object.insert(QStringLiteral("category"), appCategoryName(*rule.category));
         }
         if (rule.writingProfile) {
-            object.insert(QStringLiteral("writingProfile"), writingProfileName(*rule.writingProfile));
+            object.insert(QStringLiteral("writingProfile"), *rule.writingProfile);
         }
         array.append(object);
     }
@@ -552,15 +567,14 @@ void SettingsCodecs::setRefinementStyle(const QString &value)
 
 QString SettingsCodecs::defaultWritingProfile() const
 {
-    const QString profile = value(SettingsKeys::DefaultWritingProfile, QStringLiteral("other")).toString();
-    return writingProfileName(writingProfileFromName(profile));
+    const QString profile = value(SettingsKeys::DefaultWritingProfile, WritingProfile::Other).toString();
+    return offeredWritingProfile(writingProfileFromName(profile), writingProfileSettings());
 }
 
 void SettingsCodecs::setDefaultWritingProfile(const QString &value)
 {
-    m_settings.setValue(
-        SettingsKeys::DefaultWritingProfile,
-        writingProfileName(writingProfileFromName(value)));
+    m_settings.setValue(SettingsKeys::DefaultWritingProfile,
+                        offeredWritingProfile(writingProfileFromName(value), writingProfileSettings()));
 }
 
 // A profile whose tone or level was deleted falls back to no tone override or
@@ -574,6 +588,18 @@ static QString cleanupStrength(const QString &value, const QList<CustomCleanupLe
 static QString writingTone(const QString &value, const QList<CustomTone> &tones)
 {
     return offeredTone(value.trimmed().toLower(), tones);
+}
+
+// The profiles the user added, which follow the built-ins in stored order.
+static QList<WritingProfileSettings> customWritingProfiles(const QList<WritingProfileSettings> &profiles)
+{
+    QList<WritingProfileSettings> custom;
+    for (const WritingProfileSettings &profile : profiles) {
+        if (profile.profile.startsWith(kCustomIdPrefix)) {
+            custom.append(profile);
+        }
+    }
+    return custom;
 }
 
 QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
@@ -602,6 +628,7 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
             cleanupStrength(object.value(QStringLiteral("cleanupStrength")).toString(), levels),
             writingTone(object.value(QStringLiteral("tone")).toString(), tones),
             object.value(QStringLiteral("instructions")).toString(),
+            object.value(QStringLiteral("name")).toString(),
         });
     }
     bool hasAiCoding = false;
@@ -622,22 +649,29 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
         }
         complete.append(resolved);
     }
-    return complete;
+    return complete + customWritingProfiles(settings);
 }
 
 void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSettings> &value)
 {
     const QList<CustomCleanupLevel> levels = customCleanupLevels();
     const QList<CustomTone> tones = customTones();
-    QJsonArray array;
+    QList<WritingProfileSettings> profiles;
     for (const WritingProfileSettings &fallback : defaultWritingProfileSettings()) {
-        const WritingProfileSettings settings = writingProfileSettingsFor(value, fallback.profile);
-        array.append(QJsonObject{
-            {QStringLiteral("profile"), writingProfileName(fallback.profile)},
+        profiles.append(writingProfileSettingsFor(value, fallback.profile));
+    }
+    QJsonArray array;
+    for (const WritingProfileSettings &settings : profiles + customWritingProfiles(value)) {
+        QJsonObject object{
+            {QStringLiteral("profile"), settings.profile},
             {QStringLiteral("cleanupStrength"), cleanupStrength(settings.cleanupStrength, levels)},
             {QStringLiteral("tone"), writingTone(settings.tone, tones)},
             {QStringLiteral("instructions"), settings.instructions},
-        });
+        };
+        if (!isBuiltInWritingProfile(settings.profile)) {
+            object.insert(QStringLiteral("name"), settings.name);
+        }
+        array.append(object);
     }
     m_settings.setValue(SettingsKeys::WritingProfiles,
                         QJsonDocument(array).toJson(QJsonDocument::Compact));
@@ -672,7 +706,7 @@ void SettingsCodecs::setWritingProfileOverrides(const QList<WritingProfileOverri
         }
         array.append(QJsonObject{
             {QStringLiteral("applicationId"), applicationId},
-            {QStringLiteral("profile"), writingProfileName(override.profile)},
+            {QStringLiteral("profile"), override.profile},
             {QStringLiteral("enabled"), override.enabled},
         });
     }

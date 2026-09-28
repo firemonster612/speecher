@@ -121,6 +121,9 @@ public:
     ImportResult recordsImportedFrom(const QByteArray &bytes,
                                      const QList<QVariantMap> &into,
                                      const QString &rowId) const;
+    // What deleting the custom Writing Profile `profileId` changes in the
+    // draft, empty when nothing points at it.
+    QString writingProfileDeletionNotice(const QString &profileId) const;
     // The pill beside each record's stretch column, empty for none, for these
     // records as they stand and the draft's other settings.
     QStringList badgesFor(const QList<QVariantMap> &records, const QString &rowId) const;

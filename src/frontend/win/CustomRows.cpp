@@ -147,9 +147,43 @@ UIElement credentialField(PaneHost &host)
     return panel;
 }
 
+// Deletes the custom profile at `index`, first saying what that changes when
+// a rule or the fallback points at it.
+void deleteWritingProfile(const QString &rowId, const QList<QVariantMap> &records, qsizetype index,
+                          PaneHost &host)
+{
+    const auto remove = [rowId, records, index, &host] {
+        QList<QVariantMap> edited = records;
+        edited.removeAt(index);
+        host.model->save(edited, rowId, records);
+        host.refresh();
+    };
+    const QString notice =
+        host.model->writingProfileDeletionNotice(records.at(index).value(kProfileIdKey).toString());
+    if (notice.isEmpty()) {
+        remove();
+        return;
+    }
+    ContentDialog dialog;
+    dialog.XamlRoot(host.xamlRoot());
+    dialog.Title(box_value(L"Delete profile"));
+    dialog.Content(box_value(hs(notice)));
+    dialog.PrimaryButtonText(L"Delete");
+    dialog.CloseButtonText(L"Cancel");
+    dialog.DefaultButton(ContentDialogButton::Close);
+    dialog.Closed([remove, weak = std::weak_ptr<bool>(host.alive)](const ContentDialog &,
+                                                                    const ContentDialogClosedEventArgs &args) {
+        if (args.Result() == ContentDialogResult::Primary && !gone(weak)) {
+            remove();
+        }
+    });
+    dialog.ShowAsync();
+}
+
 // One row per writing profile, each with its cleanup and tone pickers and its
 // instructions under them — the mac WritingProfileRows over the same grid
-// descriptor.
+// descriptor. A custom profile adds its name and a Delete button, and Add
+// profile follows the rows.
 UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
 {
     StackPanel rows;
@@ -211,8 +245,34 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 pickers.Children().Append(combo);
             }
         }
+        const bool custom = !isBuiltInWritingProfile(records.at(index).value(kProfileIdKey).toString());
+        if (custom) {
+            Button remove;
+            remove.Content(box_value(L"Delete"));
+            remove.VerticalAlignment(VerticalAlignment::Bottom);
+            remove.Click([rowId = row.id, records, index, &host](const auto &, const auto &) {
+                deleteWritingProfile(rowId, records, index, host);
+            });
+            pickers.Children().Append(remove);
+        }
         StackPanel controls;
         controls.Spacing(8);
+        if (custom) {
+            TextBox name;
+            name.PlaceholderText(L"Name");
+            name.Text(hs(records.at(index).value(kProfileColumn).toString()));
+            name.LostFocus([rowId = row.id, records, index, &host](const IInspectable &sender, const auto &) {
+                const QString text = qs(sender.as<TextBox>().Text());
+                if (text == records.at(index).value(kProfileColumn).toString()) {
+                    return;
+                }
+                QList<QVariantMap> edited = records;
+                edited[index].insert(kProfileColumn, text);
+                host.model->save(edited, rowId, records);
+                host.refresh();
+            });
+            controls.Children().Append(name);
+        }
         controls.Children().Append(pickers);
         for (const CollectionColumnSnapshot &column : texts) {
             TextBox box;
@@ -238,6 +298,18 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         profileRow.id = row.id + QLatin1Char('.') + records.at(index).value(kProfileIdKey).toString();
         profileRow.label = records.at(index).value(kProfileColumn).toString();
         rows.Children().Append(rowGrid(profileRow, controls, host, index > 0));
+    }
+    if (row.collection && !row.collection->addLabel.isEmpty()) {
+        Button add;
+        add.Content(box_value(hs(row.collection->addLabel)));
+        add.HorizontalAlignment(HorizontalAlignment::Right);
+        add.Margin({16, 8, 16, 12});
+        add.Click([rowId = row.id, records, blank = row.collection->blankRecord, &host](const auto &,
+                                                                                      const auto &) {
+            host.model->save(records + QList<QVariantMap>{blank}, rowId, records);
+            host.refresh();
+        });
+        rows.Children().Append(add);
     }
     return rows;
 }

@@ -385,12 +385,14 @@ struct CredentialField: View {
 }
 
 /// The cleanup strength, optional tone and instructions of each writing
-/// profile. The profiles are fixed, so this is a run of ordinary settings rows
-/// rather than an editable table — one row per profile, each with its pop-up
-/// buttons and its instructions under them.
+/// profile. This is a run of ordinary settings rows rather than an editable
+/// table — one row per profile, each with its pop-up buttons and its
+/// instructions under them. A custom profile adds its name and Delete, and
+/// Add profile follows the rows.
 struct WritingProfileRows: View {
     let row: SettingsRowModel
     @ObservedObject var model: AppModel
+    @State private var deleting: Int?
 
     private var records: [[String: Any]] { row.value as? [[String: Any]] ?? [] }
 
@@ -400,6 +402,10 @@ struct WritingProfileRows: View {
 
     private var texts: [CollectionColumnModel] {
         row.collection?.columns.filter { $0.kind == .text } ?? []
+    }
+
+    private func isCustom(_ index: Int) -> Bool {
+        index >= (row.collection?.lockedRecordCount ?? 0)
     }
 
     var body: some View {
@@ -415,6 +421,17 @@ struct WritingProfileRows: View {
                             }
                             .labelsHidden()
                         }
+                        if isCustom(index) {
+                            Button("Delete") { delete(index) }
+                        }
+                    }
+                }
+                if isCustom(index) {
+                    LabeledContent("Name") {
+                        CellField(text: RecordField.string(record["profile"])) { edited in
+                            let field = choice(index, "profile")
+                            if edited != field.wrappedValue { field.wrappedValue = edited }
+                        }
                     }
                 }
                 ForEach(texts, id: \.columnId) { column in
@@ -428,6 +445,48 @@ struct WritingProfileRows: View {
                 }
             }
         }
+        HStack {
+            Spacer()
+            Button(row.collection?.addLabel ?? "") {
+                guard let blank = row.collection?.blankRecord else { return }
+                _ = model.save(records: records + [blank], previous: records, for: row.rowId)
+            }
+        }
+        .confirmationDialog("Delete profile",
+                            isPresented: Binding(get: { deleting != nil },
+                                                 set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if let index = deleting { remove(index) }
+            }
+        } message: {
+            Text(deletionNotice)
+        }
+    }
+
+    private var deletionNotice: String {
+        guard let index = deleting, records.indices.contains(index) else { return "" }
+        return notice(index)
+    }
+
+    private func notice(_ index: Int) -> String {
+        model.bridge.settingsSchema.writingProfileDeletionNotice(records[index]["profileId"] as? String ?? "")
+    }
+
+    /// Asks first when a rule or the fallback points at the profile.
+    private func delete(_ index: Int) {
+        if notice(index).isEmpty {
+            remove(index)
+        } else {
+            deleting = index
+        }
+    }
+
+    private func remove(_ index: Int) {
+        var edited = records
+        guard edited.indices.contains(index) else { return }
+        edited.remove(at: index)
+        _ = model.save(records: edited, previous: records, for: row.rowId)
     }
 
     private func choice(_ index: Int, _ columnId: String) -> Binding<String> {

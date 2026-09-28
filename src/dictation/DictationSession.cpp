@@ -644,7 +644,7 @@ void DictationSession::beginRefinement(quint64 generation)
             << "placeholderLength=" << pipeline.refinementInput.size()
             << "selectionEdit=" << pipeline.editsSelection
             << "selectedLength=" << pipeline.refinementContext.target.selectedText.size()
-            << "writingProfile=" << writingProfileName(pipeline.refinementContext.writingProfile)
+            << "writingProfile=" << pipeline.refinementContext.writingProfile
             << "screenshotIncluded=" << pipeline.refinementContext.hasScreenshot()
             << "bindingCount=" << pipeline.bindingResult.placeholders.size()
             << "noBindCount=" << pipeline.noBindPhrases.size()
@@ -679,7 +679,10 @@ void DictationSession::deliverFinal(const QString &text)
     const QString appName = !m_target.applicationName.isEmpty() ? m_target.applicationName
         : !m_target.processName.isEmpty()                      ? m_target.processName
                                                                : QStringLiteral("Unknown app");
-    const WritingProfile profile = m_transcriptPipeline.refinementContext.writingProfile;
+    const QString profile = m_transcriptPipeline.refinementContext.writingProfile;
+    const QString profileName = isBuiltInWritingProfile(profile)
+        ? QString()
+        : writingProfileLabel(profile, settings.refinement.writingProfiles);
     // A selection edit delivers the revised selection; what was dictated is
     // the instruction.
     const int words = countWords(m_transcriptPipeline.editsSelection ? m_transcript->text() : text);
@@ -709,7 +712,7 @@ void DictationSession::deliverFinal(const QString &text)
         // mid-session must stop this one being recorded.
         if (m_settings->insightsEnabled()) {
             emit dictationRecorded(
-                {QDateTime::currentDateTime(), m_listeningMs, words, appName, profile});
+                {QDateTime::currentDateTime(), m_listeningMs, words, appName, profile, profileName});
         }
         QString outcome = usedFallback
             ? QStringLiteral("Used raw transcript • %1").arg(result.message)

@@ -348,7 +348,7 @@ static QJsonObject promptContext(const QString &style,
     QJsonObject object{
         {QStringLiteral("refinement_style"),
          style == kCustomOnlyCleanupBase ? QStringLiteral("custom") : style},
-        {QStringLiteral("writing_profile"), writingProfileName(context.writingProfile)},
+        {QStringLiteral("writing_profile"), context.writingProfile},
         {QStringLiteral("requested_tone"), context.customTone ? context.customTone->name : context.tone},
         {QStringLiteral("application_id"), context.target.applicationId},
         {QStringLiteral("application_name"), context.target.applicationName},

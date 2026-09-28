@@ -118,7 +118,7 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
     RefinementSettings refinement = settings.refinement;
     refinement.bindingVocabulary = BindingProcessor::refinementVocabulary(
         activeBindings(settings, target));
-    const WritingProfile resolved = resolveWritingProfile(
+    const QString resolved = resolveWritingProfile(
         target,
         refinement.writingProfileOverrides,
         settings.appRecognitionRules,

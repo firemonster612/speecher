@@ -4,6 +4,8 @@ import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
+import app.speecher.protocol.WritingProfile
+import app.speecher.protocol.WritingProfileSettings
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -39,6 +41,21 @@ class ProfileChoicesTest {
                 "custom_terse",
             ),
             toneChoices(settings).keys.toList(),
+        )
+    }
+
+    @Test
+    fun `profile choices list the built-ins, then the custom profiles`() {
+        val settings =
+            SpeecherSettings(
+                writingProfiles =
+                    SpeecherSettings().writingProfiles +
+                        (WritingProfile("custom_standup") to
+                            WritingProfileSettings(name = "Standup"))
+            )
+        assertEquals(
+            listOf("Work", "Email", "Personal", "AI coding", "Other", "Standup"),
+            profileChoices(settings).values.toList(),
         )
     }
 }

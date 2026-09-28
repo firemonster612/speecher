@@ -13,12 +13,22 @@ enum class AppCategory(val id: String) {
     Unknown("unknown"),
 }
 
-enum class WritingProfile(val id: String) {
-    Work("work"),
-    Email("email"),
-    Personal("personal"),
-    AiCoding("ai_coding"),
-    Other("other"),
+/** A writing profile, by id: one of the built-ins below, or a custom profile's custom_ id. */
+@JvmInline
+value class WritingProfile(val id: String) {
+    val isBuiltIn: Boolean
+        get() = this in entries
+
+    companion object {
+        val Work = WritingProfile("work")
+        val Email = WritingProfile("email")
+        val Personal = WritingProfile("personal")
+        val AiCoding = WritingProfile("ai_coding")
+        val Other = WritingProfile("other")
+
+        /** The built-ins, in the desktop's order. */
+        val entries = listOf(Work, Email, Personal, AiCoding, Other)
+    }
 }
 
 enum class CleanupStrength(val id: String) {
@@ -52,9 +62,9 @@ data class CustomCleanupLevel(
 )
 
 /**
- * The id a new custom tone or level named [name] gets: custom_ and the name in lowercase with every
- * other character made _, so it never matches a built-in id, then _2, _3 and so on until it is none
- * of [taken]. The desktop's customChoiceId.
+ * The id a new custom tone, level or profile named [name] gets: custom_ and the name in lowercase
+ * with every other character made _, so it never matches a built-in id, then _2, _3 and so on until
+ * it is none of [taken]. The desktop's customChoiceId.
  */
 fun customChoiceId(name: String, taken: Collection<String>): String {
     val base =
@@ -68,7 +78,8 @@ fun customChoiceId(name: String, taken: Collection<String>): String {
  * How one writing profile refines. Every profile defaults to balanced with no tone override. The
  * [instructions] follow the global ones in the prompt. [customCleanupLevel] and [customTone] name a
  * custom level or tone chosen instead of [cleanupStrength] or [tone], which then hold what a
- * deletion falls back to: Medium and no tone override.
+ * deletion falls back to: Medium and no tone override. [name] is a custom profile's; a built-in is
+ * called by its label.
  */
 data class WritingProfileSettings(
     val cleanupStrength: CleanupStrength = CleanupStrength.Balanced,
@@ -76,6 +87,7 @@ data class WritingProfileSettings(
     val instructions: String = "",
     val customCleanupLevel: String? = null,
     val customTone: String? = null,
+    val name: String = "",
 )
 
 /** The chosen level's id: a built-in's or a custom level's. */
@@ -154,13 +166,15 @@ data class RefinementContext(
     val cleanupLevel: CustomCleanupLevel? = null,
 )
 
-private class RecognitionRule(
+/** An app a rule recognises by [match], and the app type and profile it gets. */
+data class RecognitionRule(
     val match: String,
     val category: AppCategory?,
     val profile: WritingProfile?,
 )
 
-private val builtInRules: List<RecognitionRule> =
+/** The desktop's built-in rules, in its order. */
+val builtInRules: List<RecognitionRule> =
     listOf(
             "t3code",
             "chatgpt",
@@ -228,8 +242,16 @@ private val builtInRules: List<RecognitionRule> =
 
 private fun compact(value: String) = value.filter(Char::isLetterOrDigit).lowercase()
 
-/** A built-in rule matches a whole word of an identity part, or the whole part once compacted. */
-private fun RecognitionRule.matches(identity: List<String>): Boolean {
+/**
+ * A built-in rule matches a whole word of an identity part, or the whole part once compacted. A
+ * custom rule matches anywhere in the identity, compacted or not, as the desktop's ruleMatches.
+ */
+private fun RecognitionRule.matches(identity: List<String>, builtIn: Boolean = true): Boolean {
+    if (compact(match).isEmpty()) return false
+    if (!builtIn) {
+        val joined = identity.joinToString(" ")
+        return joined.contains(match, ignoreCase = true) || compact(joined).contains(compact(match))
+    }
     val boundary =
         Regex(
             "(^|[^\\p{L}\\p{N}])${Regex.escape(match)}([^\\p{L}\\p{N}]|$)",
@@ -239,9 +261,9 @@ private fun RecognitionRule.matches(identity: List<String>): Boolean {
 }
 
 /**
- * The category and profile for an app, then that profile's cleanup and tone. [platformCategory] is
- * what the OS reports, used only when no built-in rule names the app; the desktop has no such
- * signal.
+ * The category and profile for an app, then that profile's cleanup and tone. The user's [rules] are
+ * checked before the built-in ones. [platformCategory] is what the OS reports, used only when no
+ * rule names the app; the desktop has no such signal.
  */
 fun resolveRefinementContext(
     applicationId: String,
@@ -252,6 +274,7 @@ fun resolveRefinementContext(
     profiles: Map<WritingProfile, WritingProfileSettings>,
     tones: List<CustomTone> = emptyList(),
     levels: List<CustomCleanupLevel> = emptyList(),
+    rules: List<RecognitionRule> = emptyList(),
 ): RefinementContext {
     // The desktop also matches the process name, the accessibility role and, outside AI coding
     // rules, the window title. Android has no process name apart from the package, the role here is
@@ -259,12 +282,14 @@ fun resolveRefinementContext(
     // opts into screen text, so apps are recognised by id and name alone.
     val identity = listOf(applicationId, applicationName)
     val category =
-        builtInRules.firstOrNull { it.category != null && it.matches(identity) }?.category
+        rules.firstOrNull { it.category != null && it.matches(identity, builtIn = false) }?.category
+            ?: builtInRules.firstOrNull { it.category != null && it.matches(identity) }?.category
             ?: platformCategory
             ?: if (applicationId.isEmpty() && applicationName.isEmpty()) AppCategory.Unknown
             else AppCategory.General
     val profile =
-        builtInRules.firstOrNull { it.profile != null && it.matches(identity) }?.profile
+        rules.firstOrNull { it.profile != null && it.matches(identity, builtIn = false) }?.profile
+            ?: builtInRules.firstOrNull { it.profile != null && it.matches(identity) }?.profile
             ?: when (category) {
                 AppCategory.Email -> WritingProfile.Email
                 AppCategory.AiCoding -> WritingProfile.AiCoding

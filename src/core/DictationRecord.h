@@ -14,7 +14,10 @@ struct DictationRecord {
     int audioMs = 0;
     int words = 0;
     QString appName;
-    WritingProfile profile = WritingProfile::Other;
+    QString profile = WritingProfile::Other;
+    // A custom profile's name when the record was made, so it still reads
+    // after the profile is deleted. Empty for a built-in.
+    QString profileName;
 };
 
 // Words as a reader counts them: word-boundary segments that contain a letter

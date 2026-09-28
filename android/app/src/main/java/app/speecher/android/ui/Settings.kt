@@ -42,17 +42,21 @@ import app.speecher.android.R
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.label
+import app.speecher.android.dictation.profileDeletionNotice
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
 import app.speecher.android.dictation.refinementModels
+import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
+import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.Tone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.builtInDictationSystemPrompt
+import app.speecher.protocol.builtInRules
 import app.speecher.protocol.claudeVoiceKeyterms
 import app.speecher.protocol.cleanupLevelId
 import app.speecher.protocol.customChoiceId
@@ -65,7 +69,7 @@ internal const val FAST_MODE_DESCRIPTION =
     "Makes refinement faster. Uses a little more of your usage, but the difference is tiny."
 private const val FAST_MODE_OPUS_ONLY = "Only works with Opus models."
 
-// Labels from the desktop's SettingsSchema.cpp, in its order.
+// Labels from the desktop's Target.cpp, in its order.
 private val profileLabels =
     mapOf(
         WritingProfile.Work to "Work",
@@ -73,6 +77,18 @@ private val profileLabels =
         WritingProfile.Personal to "Personal",
         WritingProfile.AiCoding to "AI coding",
         WritingProfile.Other to "Other",
+    )
+
+// The desktop's appCategoryLabel, in the order its rules offer them.
+private val appTypeLabels =
+    mapOf(
+        AppCategory.General to "Other app",
+        AppCategory.Terminal to "Terminal",
+        AppCategory.Browser to "Browser",
+        AppCategory.Email to "Email",
+        AppCategory.Office to "Office",
+        AppCategory.CodeEditor to "Code editor",
+        AppCategory.AiCoding to "AI coding",
     )
 
 private val cleanupLabels =
@@ -101,6 +117,11 @@ private val toneLabels =
 internal fun cleanupChoices(settings: SpeecherSettings): Map<String, String> =
     cleanupLabels.mapKeys { it.key.id } +
         settings.customCleanupLevels.associate { it.id to it.name }
+
+/** Every profile, by id: the built-ins, then the custom ones by name. */
+internal fun profileChoices(settings: SpeecherSettings): Map<WritingProfile, String> =
+    profileLabels +
+        settings.writingProfiles.filterKeys { !it.isBuiltIn }.mapValues { it.value.name }
 
 /** Every tone a profile can choose, by id: no override and the built-ins, then the custom ones. */
 internal fun toneChoices(settings: SpeecherSettings): Map<String, String> =
@@ -185,7 +206,7 @@ fun Settings(
                     Text("Writing profile used when the target app does not imply one.")
                 },
                 trailingContent = {
-                    Dropdown(profileLabels, settings.defaultWritingProfile) {
+                    Dropdown(profileChoices(settings), settings.defaultWritingProfile) {
                         onChange(settings.copy(defaultWritingProfile = it))
                     }
                 },
@@ -276,7 +297,8 @@ fun Settings(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            profileLabels.forEach { (profile, label) ->
+            val profiles = profileChoices(settings)
+            profiles.forEach { (profile, label) ->
                 val behavior = settings.writingProfiles.getValue(profile)
                 fun update(next: WritingProfileSettings) =
                     onChange(
@@ -285,7 +307,18 @@ fun Settings(
                         )
                     )
                 ListItem(
-                    headlineContent = { Text(label) },
+                    headlineContent = {
+                        if (profile.isBuiltIn) Text(label)
+                        else
+                            OutlinedTextField(
+                                behavior.name,
+                                { update(behavior.copy(name = it)) },
+                                Modifier.fillMaxWidth(),
+                                label = { Text("Name") },
+                                singleLine = true,
+                                isError = behavior.name.isBlank(),
+                            )
+                    },
                     supportingContent = {
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -303,10 +336,72 @@ fun Settings(
                                 label = { Text("Instructions") },
                                 minLines = 2,
                             )
+                            if (!profile.isBuiltIn) {
+                                DeleteProfile(settings.profileDeletionNotice(profile)) {
+                                    onChange(
+                                        settings.withWritingProfiles(
+                                            settings.writingProfiles - profile
+                                        )
+                                    )
+                                }
+                            }
                         }
                     },
                     colors = rowColors,
                 )
+            }
+            AddChoice("Add profile", "Instructions", profiles.values) { name, instructions ->
+                val id = customChoiceId(name, settings.writingProfiles.keys.map { it.id })
+                onChange(
+                    settings.copy(
+                        writingProfiles =
+                            settings.writingProfiles +
+                                (WritingProfile(id) to
+                                    WritingProfileSettings(
+                                        instructions = instructions,
+                                        name = name,
+                                    ))
+                    )
+                )
+            }
+
+            Section("Application rules")
+            Text(
+                "Built-in rules are read-only. Your rules come first and can set the app type, " +
+                    "the writing profile, or both.",
+                Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            BuiltInRules(profiles)
+            val appTypes = mapOf<AppCategory?, String>(null to "Automatic") + appTypeLabels
+            val ruleProfiles = mapOf<WritingProfile?, String>(null to "Automatic") + profiles
+            settings.appRules.forEachIndexed { index, rule ->
+                fun edit(next: RecognitionRule) =
+                    onChange(
+                        settings.copy(
+                            appRules =
+                                settings.appRules.mapIndexed { at, it ->
+                                    if (at == index) next else it
+                                }
+                        )
+                    )
+                RuleEditor(
+                    rule,
+                    appTypes,
+                    ruleProfiles,
+                    onEdit = ::edit,
+                    onDelete = {
+                        onChange(
+                            settings.copy(
+                                appRules = settings.appRules.filterIndexed { at, _ -> at != index }
+                            )
+                        )
+                    },
+                )
+            }
+            AddRule(appTypes, ruleProfiles) {
+                onChange(settings.copy(appRules = settings.appRules + it))
             }
 
             Section("Tones")
@@ -675,6 +770,140 @@ private fun AddChoice(
             enabled = name.isNotBlank() && !duplicate && (!needsText || text.isNotBlank()),
         ) {
             Text(action)
+        }
+    }
+}
+
+/**
+ * Deletes a custom profile. When a rule or the fallback points at it, the first tap shows what the
+ * delete changes and asks again, as the desktop's confirmation does.
+ */
+@Composable
+private fun DeleteProfile(notice: String, onDelete: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    if (confirming) {
+        Text(
+            notice,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Row {
+        if (confirming) TextButton({ confirming = false }) { Text("Cancel") }
+        TextButton({ if (notice.isEmpty() || confirming) onDelete() else confirming = true }) {
+            Text("Delete")
+        }
+    }
+}
+
+/** The app type and profile a rule sets, as one line. */
+private fun ruleSummary(
+    rule: RecognitionRule,
+    profiles: Map<WritingProfile, String>,
+): String =
+    listOfNotNull(
+            rule.category?.let { appTypeLabels[it] },
+            rule.profile?.let { profiles[it] },
+        )
+        .joinToString(" · ")
+
+/** The desktop's built-in rules, read-only and folded away until asked for. */
+@Composable
+private fun BuiltInRules(profiles: Map<WritingProfile, String>) {
+    var shown by rememberSaveable { mutableStateOf(false) }
+    TextButton({ shown = !shown }, Modifier.padding(horizontal = 8.dp)) {
+        Text(if (shown) "Hide built-in rules" else "Show ${builtInRules.size} built-in rules")
+    }
+    if (shown) {
+        builtInRules.forEach { rule ->
+            ListItem(
+                headlineContent = { Text(rule.match) },
+                supportingContent = { Text(ruleSummary(rule, profiles)) },
+            )
+        }
+    }
+}
+
+/** One of the user's rules: its match text, app type and profile, editable, and delete. */
+@Composable
+private fun RuleEditor(
+    rule: RecognitionRule,
+    appTypes: Map<AppCategory?, String>,
+    profiles: Map<WritingProfile?, String>,
+    onEdit: (RecognitionRule) -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                rule.match,
+                { onEdit(rule.copy(match = it)) },
+                Modifier.weight(1f),
+                label = { Text("App name or ID contains") },
+                singleLine = true,
+                isError = rule.match.isBlank(),
+            )
+            IconButton(onDelete) {
+                Icon(
+                    painterResource(R.drawable.ic_close),
+                    contentDescription = "Delete ${rule.match}",
+                )
+            }
+        }
+        RuleChoices(rule.category, rule.profile, appTypes, profiles) { category, profile ->
+            onEdit(rule.copy(category = category, profile = profile))
+        }
+    }
+}
+
+@Composable
+private fun RuleChoices(
+    category: AppCategory?,
+    profile: WritingProfile?,
+    appTypes: Map<AppCategory?, String>,
+    profiles: Map<WritingProfile?, String>,
+    onChange: (AppCategory?, WritingProfile?) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("App type", style = MaterialTheme.typography.bodyMedium)
+        Dropdown(appTypes, category) { onChange(it, profile) }
+        Text("Profile", style = MaterialTheme.typography.bodyMedium)
+        Dropdown(profiles, profile) { onChange(category, it) }
+    }
+}
+
+/** A new rule, added once it has a match text and sets an app type or a profile. */
+@Composable
+private fun AddRule(
+    appTypes: Map<AppCategory?, String>,
+    profiles: Map<WritingProfile?, String>,
+    onAdd: (RecognitionRule) -> Unit,
+) {
+    var match by rememberSaveable { mutableStateOf("") }
+    var category by remember { mutableStateOf<AppCategory?>(null) }
+    var profile by remember { mutableStateOf<WritingProfile?>(null) }
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        OutlinedTextField(
+            match,
+            { match = it },
+            Modifier.fillMaxWidth(),
+            label = { Text("App name or ID contains") },
+            singleLine = true,
+        )
+        RuleChoices(category, profile, appTypes, profiles) { nextCategory, nextProfile ->
+            category = nextCategory
+            profile = nextProfile
+        }
+        TextButton(
+            {
+                onAdd(RecognitionRule(match.trim(), category, profile))
+                match = ""
+                category = null
+                profile = null
+            },
+            enabled = match.isNotBlank() && (category != null || profile != null),
+        ) {
+            Text("Add rule")
         }
     }
 }
