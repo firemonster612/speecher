@@ -1,8 +1,9 @@
 name: Insights evidence
 
-# Screenshots of Home and the General page's Insights group on macOS and
-# Windows, from the seeded insights log (docs/insights-mockup/seed-active.jsonl)
-# with today pinned so the numbers match the mockup. Uploads evidence/.
+# Screenshots of Home, the General page's Insights group and the settings
+# pages on macOS and Windows, from the seeded insights log
+# (docs/insights-mockup/seed-active.jsonl) with today pinned so the numbers
+# match the mockup. Uploads evidence/.
 
 on:
   workflow_dispatch:
@@ -128,6 +129,21 @@ jobs:
           defaults write com.io-github-firemonster612.speecher insights.enabled -bool true
           pkill -9 -x speecher || true
           find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
+          # The settings pages rows and collections change: a multi-line
+          # snippet, and What's New with notes pending.
+          defaults write com.io-github-firemonster612.speecher bindings.rules -string \
+            '[{"phrase":"sign off","replacement":"Thanks,\nEnzo\nSpeecher"}]'
+          defaults write com.io-github-firemonster612.speecher updates.pendingWhatsNewVersion -string 0.0.1
+          for page in output accounts localModels refinement vocabulary:replacements vocabulary:terms whatsNew; do
+            shot="mac-${page//:/-}"
+            SPEECHER_GRAB_PAGE="$page" QT_LOGGING_RULES="*.debug=false" \
+              build/speecher.app/Contents/MacOS/speecher \
+              --grab "evidence/$shot.png" > "evidence/$shot-grab.log" 2>&1 || failed=1
+            pkill -9 -x speecher || true
+            find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
+          done
+          defaults delete com.io-github-firemonster612.speecher bindings.rules || true
+          defaults delete com.io-github-firemonster612.speecher updates.pendingWhatsNewVersion || true
           exit $failed
 
       - name: Screen capture with the window shown
@@ -264,6 +280,26 @@ jobs:
             throw "speecher --grab for general-off exited with code $($process.ExitCode)"
           }
           Remove-ItemProperty -Path $key -Name enabled
+          # The settings pages rows and collections change: a multi-line
+          # snippet, and What's New with notes pending, whose nightly bullets
+          # link their pull requests.
+          $root = "HKCU:\Software\io.github.firemonster612\speecher"
+          New-Item -Path "$root\bindings" -Force | Out-Null
+          New-ItemProperty -Path "$root\bindings" -Name rules -PropertyType String -Force `
+            -Value '[{"phrase":"sign off","replacement":"Thanks,\nEnzo\nSpeecher"}]' | Out-Null
+          New-Item -Path "$root\updates" -Force | Out-Null
+          New-ItemProperty -Path "$root\updates" -Name pendingWhatsNewVersion -Value "0.0.1" `
+            -PropertyType String -Force | Out-Null
+          foreach ($page in "output", "accounts", "localModels", "refinement", "vocabulary:replacements", "vocabulary:terms", "whatsNew") {
+            $env:SPEECHER_GRAB_PAGE = $page
+            $out = Join-Path (Resolve-Path evidence).Path ("win-" + ($page -replace ':', '-') + ".png")
+            $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+            if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+              throw "speecher --grab for $page exited with code $($process.ExitCode)"
+            }
+          }
+          Remove-ItemProperty -Path "$root\bindings" -Name rules
+          Remove-ItemProperty -Path "$root\updates" -Name pendingWhatsNewVersion
 
       - name: Upload Windows pictures
         if: always()
