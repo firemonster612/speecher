@@ -45,7 +45,10 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw "dumpbin failed on $($Binary.FullName) with exit code $LASTEXITCODE"
         }
-        $Imports = [regex]::Match($Dump, 'has the following dependencies:\s+((?:\S+\.dll\s+)+)').Groups[1].Value
+        $Imports = [regex]::Match($Dump, '(?i)has the following dependencies:\s+((?:\S+\.dll\s+)+)').Groups[1].Value
+        if (-not $Imports) {
+            throw "dumpbin listed no imports for $($Binary.FullName)"
+        }
         foreach ($Dll in -split $Imports) {
             $Found = (Test-Path (Join-Path $InstallDir $Dll)) -or $Dll -match '^(api|ext)-ms-' -or
                 ($Dll -notmatch '^(vcruntime|msvcp)140' -and (Test-Path (Join-Path "$env:SystemRoot\System32" $Dll)))
