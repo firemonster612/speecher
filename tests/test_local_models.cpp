@@ -271,12 +271,12 @@ private slots:
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
         QCOMPARE(ids.indexOf("login"), ids.size() - 2);
 #endif
-        QCOMPARE(ids.contains("accessibility"),
 #ifdef Q_OS_WIN
-                 false);
+        const bool accessibilityStep = false;
 #else
-                 true);
+        const bool accessibilityStep = true;
 #endif
+        QCOMPARE(ids.contains("accessibility"), accessibilityStep);
         QCOMPARE(findSetupStep("shortcut")->title, QString("Global Shortcut"));
         QCOMPARE(setupChecklistLine("delivery", "clipboard"), QString("Text delivery — clipboard"));
         QCOMPARE(setupProviderVerdict("codex", false), QString("Not signed in"));
