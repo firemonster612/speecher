@@ -11,7 +11,7 @@ import SwiftUI
 /// One step as core words it; see app/SetupSteps.h.
 typealias SetupStep = SpeecherSetupStep
 extension SpeecherSetupStep: Identifiable {
-    var id: String { stepId }
+    public var id: String { stepId }
 }
 
 /// A provider as the assistant lists it: the registry's strings, plus what the

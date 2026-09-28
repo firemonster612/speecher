@@ -326,7 +326,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     if (!m_singlePage) {
         const QList<int> ids = pageIds();
         for (int index = 0; index < ids.size(); ++index) {
-            page(ids.at(index))->setSubTitle(setupStepCounter(index + 1, ids.size()));
+            QWizard::page(ids.at(index))->setSubTitle(setupStepCounter(index + 1, ids.size()));
         }
     }
 #endif
