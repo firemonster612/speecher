@@ -3,10 +3,10 @@
 #include <utility>
 
 #include "app/ApplicationController.h"
-#include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
 
 #include <QAction>
+#include <QCursor>
 #include <QIcon>
 #include <QSystemTrayIcon>
 
@@ -17,51 +17,41 @@ namespace {
 QIcon trayIcon(bool listening)
 {
     // The app icon lands in hicolor once Speecher is installed; a themed
-    // microphone stands in until then (the AppImage bundles breeze as the
-    // fallback theme, so both names resolve there too).
-    QIcon idle = QIcon::fromTheme(QStringLiteral("io.github.firemonster612.speecher"));
-    if (idle.isNull()) {
-        idle = QIcon::fromTheme(QStringLiteral("audio-input-microphone"));
-    }
-    if (!listening) {
-        return idle;
-    }
-    // A theme without media-record must not blank the icon mid-dictation.
-    const QIcon recording = QIcon::fromTheme(QStringLiteral("media-record"));
-    return recording.isNull() ? idle : recording;
+    // microphone stands in until then, and says "listening" while the
+    // microphone is open (the AppImage bundles breeze as the fallback theme,
+    // so both names resolve there too).
+    const QIcon microphone = QIcon::fromTheme(QStringLiteral("audio-input-microphone"));
+    return listening ? microphone
+                     : QIcon::fromTheme(QStringLiteral("io.github.firemonster612.speecher"), microphone);
 }
 
 } // namespace
 
 LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     : QObject(parent)
+    , m_panel(controller)
     , m_tray(new QSystemTrayIcon(this))
 {
-    m_toggleAction = m_menu.addAction(QStringLiteral("Start Dictation"),
-                                      controller, &ApplicationController::toggle);
+    m_toggleAction = m_menu.addAction(QString(), controller, &ApplicationController::toggle);
     m_toggleAction->setObjectName(QStringLiteral("trayToggleDictation"));
-    QAction *settings = m_menu.addAction(QStringLiteral("Settings…"),
+    QAction *settings = m_menu.addAction(traySettingsCaption(),
                                          controller, &ApplicationController::showSettingsWindow);
     settings->setObjectName(QStringLiteral("traySettings"));
     m_menu.addSeparator();
-    QAction *quit = m_menu.addAction(QStringLiteral("Quit"),
+    QAction *quit = m_menu.addAction(trayQuitCaption(),
                                      controller, &ApplicationController::quitApplication);
     quit->setObjectName(QStringLiteral("trayQuit"));
     m_tray->setContextMenu(&m_menu);
 
     connect(controller, &ApplicationController::stateChanged,
             this, &LinuxTrayIcon::applyState);
-    // The popup's error banner dismisses itself after a few seconds; the tray
-    // notification keeps the failure findable when nobody was watching.
-    connect(controller->session(), &DictationSession::popupErrorRequested,
-            this, [this](const QString &message) {
-                showMessage(QStringLiteral("Speecher"), message, {}, QSystemTrayIcon::Critical);
-            });
     connect(m_tray, &QSystemTrayIcon::activated,
-            this, [controller](QSystemTrayIcon::ActivationReason reason) {
-                // The window as it was: Home if hidden, its page if up.
+            this, [this, controller](QSystemTrayIcon::ActivationReason reason) {
                 if (reason == QSystemTrayIcon::Trigger) {
-                    controller->showMainWindow();
+                    // A StatusNotifierItem tray reports no geometry, so the
+                    // pointer, which just clicked the icon, stands in.
+                    const QRect icon = m_tray->geometry();
+                    m_panel.popUp(icon.isValid() ? icon : QRect(QCursor::pos(), QSize(1, 1)));
                 } else if (reason == QSystemTrayIcon::MiddleClick) {
                     controller->toggle();
                 }
@@ -78,13 +68,15 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     m_tray->show();
 }
 
-void LinuxTrayIcon::showMessage(const QString &title,
-                                const QString &message,
-                                std::function<void()> clicked,
-                                QSystemTrayIcon::MessageIcon icon)
+TrayStatusPanel *LinuxTrayIcon::panel()
+{
+    return &m_panel;
+}
+
+void LinuxTrayIcon::showMessage(const QString &title, const QString &message, std::function<void()> clicked)
 {
     m_messageClicked = std::move(clicked);
-    m_tray->showMessage(title, message, icon);
+    m_tray->showMessage(title, message);
     emit messageShown(title, message);
 }
 
@@ -94,8 +86,7 @@ void LinuxTrayIcon::applyState(const QString &stateName)
     const DictationToggleAction toggle = dictationToggleAction(stateName);
     m_toggleAction->setText(toggle.label);
     m_toggleAction->setEnabled(toggle.enabled);
-    m_tray->setToolTip(listening ? QStringLiteral("Speecher is listening")
-                                 : QStringLiteral("Speecher"));
+    m_tray->setToolTip(trayToolTip(listening));
     m_tray->setIcon(trayIcon(listening));
 }
 

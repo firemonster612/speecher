@@ -149,33 +149,33 @@ def main() -> None:
     menu_path = sni_property(service, path, "Menu")
     items = menu_items(service, menu_path)
     log(f"menu items={items}")
-    for label in ("Start Dictation", "Settings...", "Quit"):
+    for label in ("Start dictation", "Settings…", "Quit Speecher"):
         if label not in items:
             fail(f"menu is missing {label!r}")
-    ok("the menu offers Start Dictation, Settings... and Quit")
+    ok("the menu offers Start dictation, Settings… and Quit Speecher")
 
-    menu_click(service, menu_path, items["Start Dictation"])
+    menu_click(service, menu_path, items["Start dictation"])
     if not wait_tooltip(service, path, "Speecher is listening"):
         fail(f"tooltip never showed listening; status={app_status()!r}")
-    ok("Start Dictation from the tray menu starts listening")
+    ok("Start dictation from the tray menu starts listening")
     if not wait_status("listening"):
         fail(f"daemon state is {app_status()!r}, not listening")
     ok("the daemon reports the listening state over IPC")
     items = menu_items(service, menu_path)
-    if "Stop Dictation" not in items:
-        fail(f"menu did not flip to Stop Dictation while listening: {items}")
-    ok("the menu flips to Stop Dictation while listening")
+    if "Stop dictation" not in items:
+        fail(f"menu did not flip to Stop dictation while listening: {items}")
+    ok("the menu flips to Stop dictation while listening")
 
-    menu_click(service, menu_path, items["Stop Dictation"])
+    menu_click(service, menu_path, items["Stop dictation"])
     if not wait_tooltip(service, path, "Speecher"):
         fail(f"tooltip never returned to idle; status={app_status()!r}")
     if not wait_status("idle"):
         fail(f"daemon state is {app_status()!r}, not idle after the stop")
-    ok("Stop Dictation from the tray menu returns the daemon to idle")
+    ok("Stop dictation from the tray menu returns the daemon to idle")
     items = menu_items(service, menu_path)
-    if "Start Dictation" not in items:
-        fail(f"menu did not flip back to Start Dictation: {items}")
-    ok("the menu flips back to Start Dictation when idle")
+    if "Start dictation" not in items:
+        fail(f"menu did not flip back to Start dictation: {items}")
+    ok("the menu flips back to Start dictation when idle")
 
     # Qt registers the item by object path, so `service` is a unique bus name;
     # resolve the daemon pid from the bus before quitting.
@@ -187,7 +187,7 @@ def main() -> None:
     except GLib.Error as error:
         fail(f"could not resolve the daemon pid from {service!r}: {error}")
     log(f"daemon pid={pid}")
-    menu_click(service, menu_path, items["Quit"])
+    menu_click(service, menu_path, items["Quit Speecher"])
     if not item_unregistered():
         fail("the StatusNotifierItem is still on the bus after Quit")
     ok("Quit removes the tray item from the bus")

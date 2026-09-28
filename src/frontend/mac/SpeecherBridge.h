@@ -595,7 +595,22 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @interface SpeecherBridge : NSObject
 @property (nonatomic, readonly, strong) SettingsSchemaModel *settingsSchema;
 @property (nonatomic, readonly, copy) NSString *stateName;
+// What a status line says about dictation now (speecher::dictationStatusLabel).
+@property (nonatomic, readonly, copy) NSString *statusLabel;
+// Every dictation state change, carrying the new status label.
 @property (nonatomic, copy, nullable) void (^statusChanged)(NSString *status);
+// What the Start/Stop control says and whether it does anything now
+// (speecher::dictationToggleAction), and whether the microphone is open
+// (speecher::dictationListeningPresentation).
+@property (nonatomic, readonly, copy) NSString *toggleLabel;
+@property (nonatomic, readonly) BOOL toggleEnabled;
+@property (nonatomic, readonly) BOOL listening;
+// The captions the menu bar panel shares with the Linux and Windows trays.
+@property (nonatomic, readonly, copy) NSString *traySettingsCaption;
+@property (nonatomic, readonly, copy) NSString *trayQuitCaption;
+@property (nonatomic, readonly, copy) NSString *copyTranscriptCaption;
+@property (nonatomic, readonly, copy) NSString *noTranscriptYetText;
+- (void)quit;
 @property (nonatomic, copy, nullable) void (^audioLevelChanged)(float level);
 // A capability the schema gates rows on moved — the Accessibility grant, or
 // whether this computer took the last launch-at-login change — so the settings
@@ -647,8 +662,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (void)notePopupPresented:(uint64_t)generation NS_SWIFT_NAME(notePopupPresented(generation:));
 
 // The last transcript Speecher heard, which the menu bar panel offers to copy
-// again: the running preview, then the text as delivered. Empty until one
-// exists.
+// again (ApplicationController::lastTranscript). Empty until one exists.
 @property (nonatomic, readonly, copy) NSString *lastTranscript;
 @property (nonatomic, copy, nullable) void (^transcriptChanged)(NSString *transcript);
 // The last transcript's word count (speecher::countWords).

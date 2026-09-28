@@ -8,8 +8,11 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QClipboard>
 #include <QLabel>
 #include <QMenu>
+#include <QProgressBar>
+#include <QPushButton>
 #include <QSignalSpy>
 #include <QSystemTrayIcon>
 
@@ -39,12 +42,12 @@ private slots:
         const QList<QAction *> actions = menu->actions();
         QCOMPARE(actions.size(), 4);
         QCOMPARE(actions.at(0)->objectName(), QStringLiteral("trayToggleDictation"));
-        QCOMPARE(actions.at(0)->text(), QStringLiteral("Start Dictation"));
+        QCOMPARE(actions.at(0)->text(), QStringLiteral("Start dictation"));
         QCOMPARE(actions.at(1)->objectName(), QStringLiteral("traySettings"));
         QCOMPARE(actions.at(1)->text(), QStringLiteral("Settings…"));
         QVERIFY(actions.at(2)->isSeparator());
         QCOMPARE(actions.at(3)->objectName(), QStringLiteral("trayQuit"));
-        QCOMPARE(actions.at(3)->text(), QStringLiteral("Quit"));
+        QCOMPARE(actions.at(3)->text(), QStringLiteral("Quit Speecher"));
     }
 
     void listeningStateFlipsToggleTextAndTooltip()
@@ -55,16 +58,16 @@ private slots:
         QAction *toggle = icon->contextMenu()->actions().first();
 
         emit controller.stateChanged(QStringLiteral("listening"));
-        QCOMPARE(toggle->text(), QStringLiteral("Stop Dictation"));
+        QCOMPARE(toggle->text(), QStringLiteral("Stop dictation"));
         QCOMPARE(icon->toolTip(), QStringLiteral("Speecher is listening"));
 
         emit controller.stateChanged(QStringLiteral("starting"));
-        QCOMPARE(toggle->text(), QStringLiteral("Stop Dictation"));
+        QCOMPARE(toggle->text(), QStringLiteral("Stop dictation"));
 
-        // Toggling mid-refinement cancels the refinement, so the action must
-        // not promise a start; during stopping/delivering it does nothing.
+        // Toggling mid-refinement cancels the refinement, so the action says
+        // so; during stopping/delivering it does nothing.
         emit controller.stateChanged(QStringLiteral("refining"));
-        QCOMPARE(toggle->text(), QStringLiteral("Stop Dictation"));
+        QCOMPARE(toggle->text(), QStringLiteral("Cancel refinement"));
         QVERIFY(toggle->isEnabled());
 
         emit controller.stateChanged(QStringLiteral("stopping"));
@@ -74,7 +77,7 @@ private slots:
         QVERIFY(!toggle->isEnabled());
 
         emit controller.stateChanged(QStringLiteral("idle"));
-        QCOMPARE(toggle->text(), QStringLiteral("Start Dictation"));
+        QCOMPARE(toggle->text(), QStringLiteral("Start dictation"));
         QVERIFY(toggle->isEnabled());
         QCOMPARE(icon->toolTip(), QStringLiteral("Speecher"));
     }
@@ -119,47 +122,119 @@ private slots:
         window->hide();
     }
 
-    // An error balloon has nothing to open, so clicking it must not run the
-    // action of a notice it replaced.
-    void anErrorBalloonDoesNotReplayTheNoticeBeforeIt()
+    // The popup and Home already show a dictation error, so the tray posts
+    // no notification of its own.
+    void aDictationErrorPostsNoNotification()
     {
         ApplicationController controller(true);
         QtFrontEnd frontEnd(&controller);
         auto *tray = frontEnd.findChild<LinuxTrayIcon *>();
-        frontEnd.notifyIfNoWindowShown(QStringLiteral("Parakeet 0.6B is ready"), QStringLiteral("Dictate."),
-                                       QStringLiteral("output"));
+        QSignalSpy shown(tray, &LinuxTrayIcon::messageShown);
         emit controller.session()->popupErrorRequested(QStringLiteral("The microphone stopped."));
-        emit tray->messageClicked();
-        QVERIFY(!visibleAppWindow());
+        QVERIFY(shown.isEmpty());
     }
 
-    // Clicking the icon brings the window up as it was: Home when hidden, the
-    // page it shows when already up. "Settings…" opens General.
-    void clickingTheIconShowsTheWindowAndSettingsOpensGeneral()
+    // Clicking the icon opens the status panel, as on macOS and Windows; its
+    // Settings… opens General.
+    void clickingTheIconOpensTheStatusPanel()
     {
         ApplicationController controller(true);
         QtFrontEnd frontEnd(&controller);
         controller.setFrontEnd(&frontEnd);
-        auto *icon = frontEnd.findChild<LinuxTrayIcon *>()->findChild<QSystemTrayIcon *>();
-        const auto title = [] {
-            QWidget *window = visibleAppWindow();
-            return window ? window->findChild<QLabel *>(QStringLiteral("pageTitle"))->text() : QString();
-        };
+        auto *tray = frontEnd.findChild<LinuxTrayIcon *>();
+        auto *icon = tray->findChild<QSystemTrayIcon *>();
+        TrayStatusPanel *panel = tray->panel();
 
         emit icon->activated(QSystemTrayIcon::Trigger);
-        QCOMPARE(title(), QStringLiteral("Home"));
-        for (QAction *action : icon->contextMenu()->actions()) {
-            if (action->objectName() == QStringLiteral("traySettings")) {
-                action->trigger();
-            }
+        QVERIFY(panel->isVisible());
+        QVERIFY(!visibleAppWindow());
+
+        panel->findChild<QPushButton *>(QStringLiteral("trayPanelSettings"))->click();
+        QVERIFY(!panel->isVisible());
+        QWidget *window = visibleAppWindow();
+        QVERIFY(window);
+        QCOMPARE(window->findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("General"));
+        frontEnd.hideMainWindow();
+    }
+
+    void thePanelFollowsTheSessionAndKeepsTheLastTranscript()
+    {
+        ApplicationController controller(true);
+        TrayStatusPanel panel(&controller);
+        auto *heading = panel.findChild<QLabel *>(QStringLiteral("trayPanelHeading"));
+        auto *level = panel.findChild<QProgressBar *>(QStringLiteral("trayPanelLevel"));
+        auto *toggle = panel.findChild<QPushButton *>(QStringLiteral("trayPanelToggle"));
+        auto *transcript = panel.findChild<QLabel *>(QStringLiteral("trayPanelTranscript"));
+        auto *copy = panel.findChild<QPushButton *>(QStringLiteral("trayPanelCopy"));
+        auto *quit = panel.findChild<QPushButton *>(QStringLiteral("trayPanelQuit"));
+        panel.show();
+
+        QCOMPARE(heading->text(), QStringLiteral("Idle"));
+        QVERIFY(!level->isVisible());
+        QCOMPARE(toggle->text(), QStringLiteral("Start dictation"));
+        QCOMPARE(transcript->text(), QStringLiteral("Nothing dictated yet."));
+        QVERIFY(!copy->isVisible());
+        QCOMPARE(quit->text(), QStringLiteral("Quit Speecher"));
+
+        emit controller.stateChanged(QStringLiteral("listening"));
+        emit controller.statusChanged(QStringLiteral("Listening…"));
+        QCOMPARE(heading->text(), QStringLiteral("Listening…"));
+        QVERIFY(level->isVisible());
+        QCOMPARE(toggle->text(), QStringLiteral("Stop dictation"));
+
+        emit controller.session()->previewChanged(QStringLiteral("hello tray"));
+        QCOMPARE(transcript->text(), QStringLiteral("hello tray"));
+        QVERIFY(copy->isVisible());
+        copy->click();
+        QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("hello tray"));
+
+        // The next dictation clears its preview; the panel keeps offering the
+        // last words until new ones arrive.
+        emit controller.session()->previewChanged(QString());
+        QCOMPARE(transcript->text(), QStringLiteral("hello tray"));
+
+        emit controller.stateChanged(QStringLiteral("refining"));
+        QCOMPARE(toggle->text(), QStringLiteral("Cancel refinement"));
+        QVERIFY(!level->isVisible());
+
+        // A long error wraps, and the panel grows with it rather than
+        // clipping what follows.
+        emit controller.statusChanged(QStringLiteral("Refining…"));
+        const int shortHeight = panel.height();
+        emit controller.statusChanged(QStringLiteral(
+            "The transcription service rejected the request: the API key is invalid or has "
+            "expired. Sign in again on the Accounts page."));
+        QVERIFY(panel.height() > shortHeight);
+        QCOMPARE(panel.height(), panel.heightForWidth(panel.width()));
+    }
+
+    // Screenshot seam for UI evidence, as on Windows: the panel idle,
+    // listening, and offering a transcript.
+    void panelEvidenceGrabsForDocumentation()
+    {
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (grabDir.isEmpty()) {
+            QSKIP("SPEECHER_TEST_GRAB_DIR is not set");
         }
-        QCOMPARE(title(), QStringLiteral("General"));
-        emit icon->activated(QSystemTrayIcon::Trigger);
-        QCOMPARE(title(), QStringLiteral("General"));
-        frontEnd.hideMainWindow();
-        emit icon->activated(QSystemTrayIcon::Trigger);
-        QCOMPARE(title(), QStringLiteral("Home"));
-        frontEnd.hideMainWindow();
+        ApplicationController controller(true);
+        TrayStatusPanel panel(&controller);
+        panel.show();
+        const auto grab = [&](const QString &name) {
+            QCoreApplication::processEvents();
+            QVERIFY(panel.grab().save(grabDir + QStringLiteral("/tray-panel-%1.png").arg(name)));
+        };
+        grab(QStringLiteral("idle"));
+        emit controller.stateChanged(QStringLiteral("listening"));
+        emit controller.statusChanged(QStringLiteral("Listening…"));
+        emit controller.audioLevelChanged(0.6f);
+        grab(QStringLiteral("listening"));
+        emit controller.session()->transcriptDelivered(QStringLiteral(
+            "Can we move the design review to Thursday afternoon, and could you send the "
+            "updated agenda to everyone on the list before the end of the day so people "
+            "have time to read it?"));
+        emit controller.stateChanged(QStringLiteral("idle"));
+        emit controller.statusChanged(QStringLiteral("Idle"));
+        grab(QStringLiteral("transcript"));
     }
 
 private:

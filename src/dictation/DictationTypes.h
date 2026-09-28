@@ -17,10 +17,10 @@ enum class DictationState {
 QString dictationStateName(DictationState state);
 QString dictationStateLabel(DictationState state, const QString &message = {});
 
-// What a tray Start/Stop control presents for a session state name, matching
+// What a Start/Stop control presents for a session state name, matching
 // what toggle() would actually do (DictationSession::toggleSession): it stops
-// starting, listening and refining — a toggle mid-refinement cancels the
-// refinement — and does nothing during stopping and delivering.
+// starting and listening, cancels a refinement, and does nothing during
+// stopping and delivering.
 struct DictationToggleAction {
     QString label;
     bool enabled = true;
@@ -28,9 +28,23 @@ struct DictationToggleAction {
 
 DictationToggleAction dictationToggleAction(const QString &stateName);
 
-// Whether a tray shows the listening icon and tooltip for a session state
-// name: the states where the microphone is open or about to be.
+// What a status line (Home, a tray panel's heading) says for a session state
+// name. message is the session's own words, DictationSession::lastMessage():
+// an error's reason, or while delivering the receipt ("Input sent"); the
+// other states ignore it.
+QString dictationStatusLabel(const QString &stateName, const QString &message = {});
+
+// Whether a tray shows the listening icon, tooltip and level meter for a
+// session state name: the states where the microphone is open or about to be.
 bool dictationListeningPresentation(const QString &stateName);
+
+// The captions every tray menu, tray panel and menu bar panel shares.
+QString trayToolTip(bool listening);
+QString traySettingsCaption();
+QString trayQuitCaption();
+QString copyTranscriptCaption();
+// Where a tray panel's last transcript goes before there is one.
+QString noTranscriptYetText();
 
 struct SessionResponse {
     bool ok = true;

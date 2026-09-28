@@ -12,6 +12,7 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
+#include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"
 #include "frontend/mac/MacCustomRows.h"
 // The schema context: what this machine can offer the descriptors. Shared with
@@ -273,9 +274,6 @@ struct BridgeState {
     // Owns the signal connections, so they end when the bridge does.
     QObject lifetime;
     QFileSystemWatcher credentialWatcher;
-    // The transcript survives the dictation that produced it, so the menu bar
-    // panel can still offer it once the panel that showed it has gone.
-    QString lastTranscript;
     // The setup assistant's microphone meter. Made per start and destroyed on
     // stop: an input object kept past the assistant can hold the capture
     // source open alongside dictation's own.
@@ -1571,6 +1569,15 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                              bridge.lastRecordChanged();
                          }
                      });
+    QObject::connect(controller,
+                     &speecher::ApplicationController::lastTranscriptChanged,
+                     &_state->lifetime,
+                     [weakSelf](const QString &text) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.transcriptChanged) {
+                             bridge.transcriptChanged(text.toNSString());
+                         }
+                     });
     [self connectPanelTo:controller->session()];
     [self connectLocalSetup:controller->localSetup()];
     [self connectTranscriptionTo:controller->fileTranscription()];
@@ -1700,7 +1707,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 {
     using speecher::DictationSession;
     __weak SpeecherBridge *weakSelf = self;
-    BridgeState *state = _state;
     QObject::connect(session,
                      &DictationSession::popupShowRequested,
                      &_state->lifetime,
@@ -1798,33 +1804,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                              bridge.popupErrorRequested(message.toNSString());
                          }
                      });
-    // The running transcript, kept only while it says something: clearing it at
-    // the start of the next dictation would take away the one the menu bar
-    // panel is still offering.
-    QObject::connect(session,
-                     &DictationSession::previewChanged,
-                     &_state->lifetime,
-                     [weakSelf, state](const QString &transcript) {
-                         if (transcript.isEmpty()) {
-                             return;
-                         }
-                         state->lastTranscript = transcript;
-                         SpeecherBridge *bridge = weakSelf;
-                         if (bridge.transcriptChanged) {
-                             bridge.transcriptChanged(transcript.toNSString());
-                         }
-                     });
-    // What was delivered, which refinement can make differ from the preview.
-    QObject::connect(session,
-                     &DictationSession::transcriptDelivered,
-                     &_state->lifetime,
-                     [weakSelf, state](const QString &text) {
-                         state->lastTranscript = text;
-                         SpeecherBridge *bridge = weakSelf;
-                         if (bridge.transcriptChanged) {
-                             bridge.transcriptChanged(text.toNSString());
-                         }
-                     });
 }
 
 - (void)notePopupPresented:(uint64_t)generation
@@ -1834,12 +1813,12 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 - (NSString *)lastTranscript
 {
-    return _state->lastTranscript.toNSString();
+    return _state->controller->lastTranscript().toNSString();
 }
 
 - (NSInteger)lastTranscriptWords
 {
-    return speecher::countWords(_state->lastTranscript);
+    return speecher::countWords(_state->controller->lastTranscript());
 }
 
 - (NSString *)lastRecordApp
@@ -1992,6 +1971,51 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (NSString *)stateName
 {
     return _state->controller->stateName().toNSString();
+}
+
+- (NSString *)statusLabel
+{
+    return _state->controller->statusLabel().toNSString();
+}
+
+- (NSString *)toggleLabel
+{
+    return speecher::dictationToggleAction(_state->controller->stateName()).label.toNSString();
+}
+
+- (BOOL)toggleEnabled
+{
+    return speecher::dictationToggleAction(_state->controller->stateName()).enabled;
+}
+
+- (BOOL)listening
+{
+    return speecher::dictationListeningPresentation(_state->controller->stateName());
+}
+
+- (NSString *)traySettingsCaption
+{
+    return speecher::traySettingsCaption().toNSString();
+}
+
+- (NSString *)trayQuitCaption
+{
+    return speecher::trayQuitCaption().toNSString();
+}
+
+- (NSString *)copyTranscriptCaption
+{
+    return speecher::copyTranscriptCaption().toNSString();
+}
+
+- (NSString *)noTranscriptYetText
+{
+    return speecher::noTranscriptYetText().toNSString();
+}
+
+- (void)quit
+{
+    _state->controller->quitApplication();
 }
 
 - (void)toggle

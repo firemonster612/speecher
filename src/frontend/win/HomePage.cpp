@@ -264,12 +264,8 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
     ApplicationController *controller = host.controller;
     StackPanel body = cardBody();
 
-    const QString state = controller->stateName().toLower();
-    const QString status = state.isEmpty() || state == QStringLiteral("idle")
-        ? QStringLiteral("Idle")
-        : state == QStringLiteral("listening") ? QStringLiteral("Listening…")
-                                               : capitalized(state);
-    body.Children().Append(styledTextBlock(status, L"BodyStrongTextBlockStyle"));
+    const QString state = controller->stateName();
+    body.Children().Append(styledTextBlock(controller->statusLabel(), L"BodyStrongTextBlockStyle"));
 
     const QString shortcut = controller->globalShortcutDisplay();
     body.Children().Append(secondaryCaption(

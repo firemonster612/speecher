@@ -230,6 +230,11 @@ qintptr WinFrontEnd::panelWindowStyleForTest() const
     return m_native->panel->windowStyleForTest();
 }
 
+TrayFlyout *WinFrontEnd::trayFlyoutForTest()
+{
+    return m_native->tray->flyoutForTest();
+}
+
 void WinFrontEnd::actionTriggered(const QString &rowId)
 {
     if (rowId == QStringLiteral("runSetup")) {

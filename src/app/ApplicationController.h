@@ -89,6 +89,14 @@ public:
     LocalSetup *localSetup() const;
     const PlatformComposition *platform() const;
     QString stateName() const;
+    // What a status line says about dictation now (dictationStatusLabel);
+    // statusChanged carries it.
+    QString statusLabel() const;
+    // The last transcript Speecher heard, which tray panels offer to copy
+    // again: the running preview, then the text as delivered. It outlives the
+    // dictation that produced it, including a failed one, so it is empty only
+    // until the first dictation says something.
+    QString lastTranscript() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
     QString outputSummary() const;
     bool accessibilitySupported() const;
@@ -163,6 +171,7 @@ signals:
     void statusChanged(const QString &status);
     void previewChanged(const QString &preview);
     void transcriptDelivered(const QString &text);
+    void lastTranscriptChanged(const QString &text);
     void lastRecordChanged();
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
@@ -206,6 +215,7 @@ private:
     UpdateBanner *m_updateBanner = nullptr;
     InsightsLog *m_insightsLog = nullptr;
     std::optional<DictationRecord> m_lastRecord;
+    QString m_lastTranscript;
     QDate m_insightsToday;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     SingleInstanceIpc *m_ipc = nullptr;

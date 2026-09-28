@@ -83,12 +83,12 @@ struct HomePane: View {
             LabeledContent {
                 // Labelled and enabled by what toggle() would do, as in the
                 // menu bar panel.
-                Button(model.stoppable ? "Stop Dictation" : "Start Dictation") {
+                Button(model.toggleLabel) {
                     model.bridge.toggle()
                 }
-                .disabled(model.busy)
+                .disabled(!model.toggleEnabled)
             } label: {
-                Label(statusLabel, systemImage: model.listening ? "mic.fill" : "mic")
+                Label(model.status, systemImage: model.listening ? "mic.fill" : "mic")
                 Text(model.shortcut.isEmpty
                      ? "Set a Global Shortcut to dictate from anywhere."
                      : "Press \(model.shortcut) anywhere to dictate into the app you're using.")
@@ -104,12 +104,6 @@ struct HomePane: View {
                 }
             }
         }
-    }
-
-    private var statusLabel: String {
-        if model.listening { return "Listening…" }
-        let state = model.status
-        return state.isEmpty ? "Idle" : state.prefix(1).uppercased() + state.dropFirst()
     }
 
     /// The one card that stands in for the insights while there are none to

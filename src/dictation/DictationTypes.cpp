@@ -19,24 +19,72 @@ QString dictationStateName(DictationState state)
 DictationToggleAction dictationToggleAction(const QString &stateName)
 {
     const QString lowered = stateName.toLower();
-    if (lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")
-        || lowered == QStringLiteral("refining")) {
-        return {QStringLiteral("Stop Dictation"), true};
+    if (lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")) {
+        return {QStringLiteral("Stop dictation"), true};
+    }
+    if (lowered == QStringLiteral("refining")) {
+        return {QStringLiteral("Cancel refinement"), true};
     }
     if (lowered == QStringLiteral("stopping") || lowered == QStringLiteral("delivering")) {
-        return {QStringLiteral("Start Dictation"), false};
+        return {QStringLiteral("Start dictation"), false};
     }
     // Keyed on the state name because that is what the callers receive over
     // their state-change signals, so the compiler cannot enforce coverage:
     // an unrecognised or future state name deliberately falls through to an
     // enabled Start, which is also what idle and error present.
-    return {QStringLiteral("Start Dictation"), true};
+    return {QStringLiteral("Start dictation"), true};
+}
+
+QString dictationStatusLabel(const QString &stateName, const QString &message)
+{
+    const QString lowered = stateName.toLower();
+    if (lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")) {
+        return QStringLiteral("Listening…");
+    }
+    if (lowered == QStringLiteral("stopping")) {
+        return QStringLiteral("Transcribing…");
+    }
+    if (lowered == QStringLiteral("refining")) {
+        return QStringLiteral("Refining…");
+    }
+    if (lowered == QStringLiteral("delivering")) {
+        return message.isEmpty() ? QStringLiteral("Delivering…") : message;
+    }
+    if (lowered == QStringLiteral("error")) {
+        return message.isEmpty() ? QStringLiteral("Dictation failed") : message;
+    }
+    return QStringLiteral("Idle");
 }
 
 bool dictationListeningPresentation(const QString &stateName)
 {
     const QString lowered = stateName.toLower();
     return lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening");
+}
+
+QString trayToolTip(bool listening)
+{
+    return listening ? QStringLiteral("Speecher is listening") : QStringLiteral("Speecher");
+}
+
+QString traySettingsCaption()
+{
+    return QStringLiteral("Settings…");
+}
+
+QString trayQuitCaption()
+{
+    return QStringLiteral("Quit Speecher");
+}
+
+QString copyTranscriptCaption()
+{
+    return QStringLiteral("Copy transcript");
+}
+
+QString noTranscriptYetText()
+{
+    return QStringLiteral("Nothing dictated yet.");
 }
 
 QString dictationStateLabel(DictationState state, const QString &message)

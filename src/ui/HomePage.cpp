@@ -368,7 +368,7 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
     connect(controller->insightsLog(), &InsightsLog::changed, this, &HomePage::refresh);
     connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
     connect(controller, &ApplicationController::stateChanged, this, &HomePage::applyState);
-    connect(controller, &ApplicationController::statusChanged, this, &HomePage::setDisplayStatus);
+    connect(controller, &ApplicationController::statusChanged, m_status, &QLabel::setText);
     connect(controller, &ApplicationController::audioLevelChanged, m_waveform, &WaveformWidget::setLevel);
     connect(controller, &ApplicationController::transcriptDelivered, this,
             &HomePage::refreshLastTranscript);
@@ -1035,31 +1035,22 @@ void HomePage::updateShortcutHint()
                               .arg(shortcut));
 }
 
-void HomePage::applyToggleState(bool active, bool refining, const QString &state) const
+void HomePage::setStatus(const QString &stateName)
 {
-    const bool busy = state == QStringLiteral("stopping") || state == QStringLiteral("delivering");
-    m_toggle->setEnabled(!busy);
-    m_toggle->setText(active                               ? QStringLiteral("Stop Dictation")
-                      : refining                           ? QStringLiteral("Cancel Refinement")
-                      : state == QStringLiteral("stopping")   ? QStringLiteral("Stopping…")
-                      : state == QStringLiteral("delivering") ? QStringLiteral("Delivering…")
-                                                           : QStringLiteral("Start Dictation"));
-    m_toggle->setIcon(QIcon::fromTheme(active || refining ? QStringLiteral("media-playback-stop")
-                                                          : QStringLiteral("media-record")));
-}
-
-void HomePage::setStatus(const QString &status)
-{
-    applyState(status);
-    setDisplayStatus(status);
+    applyState(stateName);
+    m_status->setText(dictationStatusLabel(stateName, m_controller->session()->lastMessage()));
 }
 
 void HomePage::applyState(const QString &stateName)
 {
     const QString state = stateName.toCaseFolded();
-    const bool active = state == QStringLiteral("starting") || state == QStringLiteral("listening");
-    const bool refining = state == QStringLiteral("refining");
-    applyToggleState(active, refining, state);
+    const bool active = dictationListeningPresentation(state);
+    const DictationToggleAction toggle = dictationToggleAction(state);
+    m_toggle->setText(toggle.label);
+    m_toggle->setEnabled(toggle.enabled);
+    m_toggle->setIcon(QIcon::fromTheme(active || state == QStringLiteral("refining")
+                                           ? QStringLiteral("media-playback-stop")
+                                           : QStringLiteral("media-record")));
     m_waveform->setVisible(active);
     if (active && !m_sessionActive) {
         m_errorText->clear();
@@ -1069,17 +1060,6 @@ void HomePage::applyState(const QString &stateName)
     if (!active) {
         m_waveform->setLevel(0.0f);
     }
-}
-
-void HomePage::setDisplayStatus(const QString &status)
-{
-    const QString state = status.toCaseFolded();
-    static const QStringList states{
-        QStringLiteral("idle"),     QStringLiteral("starting"),   QStringLiteral("listening"),
-        QStringLiteral("stopping"), QStringLiteral("refining"),   QStringLiteral("delivering"),
-        QStringLiteral("error"),
-    };
-    m_status->setText(states.contains(state) ? state.left(1).toUpper() + state.mid(1) : status);
 }
 
 } // namespace speecher

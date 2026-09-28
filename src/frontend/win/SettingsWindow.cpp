@@ -153,7 +153,9 @@ struct SettingsWindow::Native {
                 queueRebuild();
             }
         };
-        QObject::connect(controller, &ApplicationController::stateChanged, &lifetime, rebuildHome);
+        // Every state change, and a delivery's receipt, which changes only
+        // the status line.
+        QObject::connect(controller, &ApplicationController::statusChanged, &lifetime, rebuildHome);
         QObject::connect(controller->insightsLog(), &InsightsLog::changed, &lifetime, rebuildHome);
         QObject::connect(controller, &ApplicationController::lastRecordChanged, &lifetime, rebuildHome);
     }

@@ -8,6 +8,7 @@
 namespace speecher {
 
 class ApplicationController;
+class TrayFlyout;
 
 class TrayIcon final : public QObject {
 public:
@@ -21,6 +22,8 @@ public:
     // A balloon from the notification-area icon, which Windows 11 shows as a
     // toast. Clicking it runs clicked.
     void showMessage(const QString &title, const QString &message, std::function<void()> clicked);
+
+    TrayFlyout *flyoutForTest();
 
 private:
     struct Native;

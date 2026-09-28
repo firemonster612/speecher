@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <QObject>
+#include <QRect>
 
 struct tagRECT;
 
@@ -17,6 +18,12 @@ public:
 
     void show(const tagRECT &iconRect);
     void hide();
+
+    // For tests: the window and the Quit button, in screen pixels (empty while
+    // hidden), and the window's pixels.
+    QRect geometryForTest() const;
+    QRect quitGeometryForTest() const;
+    bool saveGrabForTest(const QString &path) const;
 
 private:
     struct Native;

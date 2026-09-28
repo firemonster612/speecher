@@ -16,7 +16,7 @@ struct MenuBarPanel: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            Label(statusLabel, systemImage: model.listening ? "mic.fill" : "mic")
+            Label(model.status, systemImage: model.listening ? "mic.fill" : "mic")
                 .font(.headline)
             if model.listening {
                 // A level meter is not progress towards anything, so it is a
@@ -26,31 +26,32 @@ struct MenuBarPanel: View {
                     .gaugeStyle(.linearCapacity)
                     .accessibilityLabel("Input level")
             }
-            // Labelled and enabled by what toggle() would actually do: it also
-            // stops a refinement, and does nothing during stopping/delivering.
-            Button(model.stoppable ? "Stop Dictation" : "Start Dictation") {
+            // Labelled and enabled by what toggle() would actually do: it
+            // cancels a refinement, and does nothing during stopping/delivering.
+            Button(model.toggleLabel) {
                 model.bridge.toggle()
             }
             .buttonStyle(.borderedProminent)
-            .disabled(model.busy)
+            .disabled(!model.toggleEnabled)
             if model.accessibilitySupported && !model.accessibilityEnabled {
                 Divider()
                 accessibilityNotice
             }
             Divider()
             if model.transcript.isEmpty {
-                Text("Nothing dictated yet.")
+                Text(model.bridge.noTranscriptYetText)
             } else {
                 Text(model.transcript)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
-                Button("Copy Transcript", systemImage: "doc.on.doc") { model.copyTranscript() }
+                Button(model.bridge.copyTranscriptCaption, systemImage: "doc.on.doc") { model.copyTranscript() }
             }
             Divider()
             LabeledContent("Shortcut") {
                 Text(model.shortcut.isEmpty ? "None" : model.shortcut)
             }
-            Button("Settings…") { openSettings() }
+            Button(model.bridge.traySettingsCaption) { openSettings() }
+            Button(model.bridge.trayQuitCaption) { model.bridge.quit() }
         }
         // Every button spans the panel, which is what Apple's own example for
         // this modifier is for: buttons in a narrow context.
@@ -75,11 +76,6 @@ struct MenuBarPanel: View {
         if !model.accessibilityProblem.isEmpty {
             Text(model.accessibilityProblem)
         }
-    }
-
-    private var statusLabel: String {
-        let state = model.status
-        return state.isEmpty ? "Speecher" : state.prefix(1).uppercased() + state.dropFirst()
     }
 }
 
@@ -113,8 +109,8 @@ final class SpeecherMenuBarExtra: NSObject {
         symbol(listening: model.listening)
         // The item has to say what dictation is doing even while every window
         // is shut, which is the whole reason it exists.
-        stateObserver = model.$status.sink { [weak self] status in
-            self?.symbol(listening: AppModel.listening(status))
+        stateObserver = model.$listening.sink { [weak self] listening in
+            self?.symbol(listening: listening)
         }
     }
 
