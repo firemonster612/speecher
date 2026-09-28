@@ -35,6 +35,29 @@ try {
         throw "Installed application has no multimedia plugins"
     }
 
+    # Every DLL an installed binary imports must ship beside speecher.exe or come
+    # with Windows. The runner's System32 has the Visual C++ runtime and a clean
+    # Windows install does not, so those DLLs count only when they are app-local.
+    # API sets are resolved by the loader, not found as files. Delay-load imports
+    # are left out: the WinUI ones come from the Windows App Runtime package.
+    $Missing = foreach ($Binary in Get-ChildItem $InstallDir -Recurse -Include *.exe, *.dll) {
+        $Dump = (& dumpbin /nologo /dependents $Binary.FullName) -join "`n"
+        if ($LASTEXITCODE -ne 0) {
+            throw "dumpbin failed on $($Binary.FullName) with exit code $LASTEXITCODE"
+        }
+        $Imports = [regex]::Match($Dump, 'has the following dependencies:\s+((?:\S+\.dll\s+)+)').Groups[1].Value
+        foreach ($Dll in -split $Imports) {
+            $Found = (Test-Path (Join-Path $InstallDir $Dll)) -or $Dll -match '^(api|ext)-ms-' -or
+                ($Dll -notmatch '^(vcruntime|msvcp)140' -and (Test-Path (Join-Path "$env:SystemRoot\System32" $Dll)))
+            if (-not $Found) {
+                "$($Binary.FullName.Substring($InstallDir.Length + 1)) imports $Dll"
+            }
+        }
+    }
+    if ($Missing) {
+        throw "Installed binaries import DLLs that neither ship with Speecher nor come with Windows:`n$($Missing -join "`n")"
+    }
+
     # Open with: offered for audio files without becoming their default.
     $Command = (Get-ItemProperty "HKCU:\Software\Classes\Speecher.AudioFile\shell\open\command")."(default)"
     if ($Command -ne "`"$Exe`" `"%1`"") {

@@ -34,6 +34,12 @@ ChangesAssociations=yes
 Source: "{#SourceDir}\app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceDir}\redist\WindowsAppRuntimeInstall-x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
+; Earlier installers left these behind: the redist, now replaced by app-local
+; runtime DLLs, and a nested copy of the multimedia plugins with debug builds.
+[InstallDelete]
+Type: files; Name: "{app}\vc_redist.x64.exe"
+Type: filesandordirs; Name: "{app}\multimedia\multimedia"
+
 [Icons]
 Name: "{group}\Speecher"; Filename: "{app}\speecher.exe"
 

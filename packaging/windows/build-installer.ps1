@@ -53,10 +53,18 @@ Get-ChildItem $BuildDir -Filter "ggml*.dll" | Copy-Item -Destination $AppDir
 Copy-Item (Join-Path $BuildDir "transcribe.cpp-licenses.md") $AppDir
 
 $WinDeployQt = (Get-Command windeployqt.exe).Source
-& $WinDeployQt --release --no-translations --compiler-runtime (Join-Path $AppDir "speecher.exe")
+& $WinDeployQt --release --no-translations --no-compiler-runtime (Join-Path $AppDir "speecher.exe")
 if ($LASTEXITCODE -ne 0) {
     throw "windeployqt failed with exit code $LASTEXITCODE"
 }
+# The Visual C++ runtime ships beside speecher.exe (app-local deployment)
+# rather than as vc_redist.x64.exe, which installs per-machine and needs
+# administrator rights that this per-user installer does not have.
+$VcRuntime = Get-ChildItem (Join-Path $env:VCToolsRedistDir "x64\Microsoft.VC*.CRT\*.dll")
+if (-not $VcRuntime) {
+    throw "Visual C++ runtime DLLs not found under VCToolsRedistDir '$env:VCToolsRedistDir'"
+}
+$VcRuntime | Copy-Item -Destination $AppDir
 
 $QtBin = Split-Path $WinDeployQt
 $QtPlugins = Join-Path (Split-Path $QtBin) "plugins"
@@ -67,11 +75,6 @@ foreach ($Dll in "Qt6WebSockets.dll", "Qt6Multimedia.dll") {
     }
     Copy-Item $Source $AppDir -Force
 }
-$MultimediaPlugins = Join-Path $QtPlugins "multimedia"
-if (-not (Test-Path $MultimediaPlugins)) {
-    throw "Qt multimedia plugins not found: $MultimediaPlugins"
-}
-Copy-Item $MultimediaPlugins (Join-Path $AppDir "multimedia") -Recurse -Force
 $OffscreenPlugin = Join-Path $QtPlugins "platforms\qoffscreen.dll"
 if (-not (Test-Path $OffscreenPlugin)) {
     throw "Qt offscreen platform plugin not found: $OffscreenPlugin"
