@@ -260,8 +260,13 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
         table.lockedRecordCount = collection->lockedRecordCount ? collection->lockedRecordCount() : 0;
         table.blankRecord = collection->blankRecord;
         table.addLabel = collection->addLabel;
+        table.addDialogTitle = collection->addDialogTitle;
+        table.deleteLabel = collection->deleteLabel;
+        table.emptyTitle = collection->emptyTitle;
+        table.emptyHelp = collection->emptyHelp;
         table.importLabel = collection->supportsImport.parse ? collection->supportsImport.actionLabel
                                                              : QString();
+        table.importFailureTitle = collection->supportsImport.failureTitle;
         table.importFileExtensions = collection->supportsImport.parse
             ? fileExtensions(collection->supportsImport.fileFilter)
             : QStringList();

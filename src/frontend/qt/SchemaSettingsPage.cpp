@@ -85,7 +85,7 @@ SchemaCustomRow builtInRow(const SettingsRow &descriptor,
         return makeCollectionRow(descriptor, parent, std::move(notifyChanged));
     }
     if (descriptor.id == QStringLiteral("writingProfileBehavior")) {
-        return makeWritingProfileGrid(parent, std::move(notifyChanged));
+        return makeWritingProfileGrid(descriptor.collection, parent, std::move(notifyChanged));
     }
     qFatal("the Qt front end has no widget for settings row %s", qPrintable(descriptor.id));
 }

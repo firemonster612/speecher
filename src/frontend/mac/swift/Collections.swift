@@ -5,9 +5,10 @@ import UniformTypeIdentifiers
 // learned corrections, replacements — are one table driven by the descriptor
 // behind whichever row asked for it.
 //
-// The shape is System Settings': a table, a +/− accessory bar under it, adding
-// through a sheet so the record can be checked before it exists, and removing
-// through a confirmation. A grouped form caps its content width, which is why
+// The shape is System Settings': a table, a +/− accessory bar under it, and
+// adding through a sheet so the record can be checked before it exists.
+// Removing asks nothing, because Undo delete puts it back, as on Linux and
+// Windows. A grouped form caps its content width, which is why
 // the table is as wide as the card and not as wide as the window; that is the
 // same width System Settings gives its own lists.
 
@@ -26,8 +27,9 @@ final class CollectionEditor: ObservableObject {
     @Published var selection = Set<UUID>()
     /// Why the records were refused, which is also why they were not saved.
     @Published private(set) var problems: [String] = []
+    /// Set when an import is what was refused.
+    @Published private(set) var problemsTitle = ""
     @Published var adding = false
-    @Published var confirmingRemoval = false
     @Published var importing = false
     /// The record the add sheet is filling in.
     @Published var draft: [String: Any] = [:]
@@ -136,19 +138,19 @@ final class CollectionEditor: ObservableObject {
         // The open dialog hands back a security-scoped URL, which has to be
         // claimed before it can be read and released afterwards.
         guard url.startAccessingSecurityScopedResource() else {
-            problems = ["Speecher was not allowed to read \(url.lastPathComponent)."]
+            refuseImport("Speecher was not allowed to read \(url.lastPathComponent).")
             return
         }
         defer { url.stopAccessingSecurityScopedResource() }
         guard let data = try? Data(contentsOf: url) else {
-            problems = ["Could not read \(url.lastPathComponent)."]
+            refuseImport("Could not read \(url.lastPathComponent).")
             return
         }
         let result = model.bridge.settingsSchema.recordsImported(from: data,
                                                                 into: editableRecords,
                                                                 forRowId: row.rowId)
         guard let merged = result.records else {
-            problems = [result.problem]
+            refuseImport(result.problem)
             return
         }
         records = records.filter(\.locked)
@@ -174,9 +176,15 @@ final class CollectionEditor: ObservableObject {
                                                   record: record.values)
     }
 
+    private func refuseImport(_ problem: String) {
+        problems = [problem]
+        problemsTitle = collection.importFailureTitle
+    }
+
     private func save() {
         let submitted = editableRecords
         problems = model.save(records: submitted, previous: savedRecords, for: row.rowId)
+        problemsTitle = ""
         if problems.isEmpty { savedRecords = submitted }
     }
 }
@@ -207,8 +215,19 @@ struct CollectionRow: View {
         // The window and this view survive close/reopen, so a reopened draft
         // arrives as a generation bump rather than a fresh onAppear.
         .onChange(of: model.draftGeneration) { editor.reload(from: row) }
-        ForEach(editor.problems, id: \.self) { problem in
-            Text(problem)
+        if !editor.problems.isEmpty {
+            // Refusals are errors: the records were not saved.
+            Label {
+                VStack(alignment: .leading) {
+                    if !editor.problemsTitle.isEmpty {
+                        Text(editor.problemsTitle).bold()
+                    }
+                    ForEach(editor.problems, id: \.self) { Text($0) }
+                }
+            } icon: {
+                Image(systemName: "exclamationmark.octagon.fill")
+            }
+            .foregroundStyle(.red)
         }
     }
 
@@ -231,13 +250,11 @@ struct CollectionRow: View {
             }
         }
         .overlay {
-            if editor.records.isEmpty {
+            if editor.records.isEmpty && !editor.collection.emptyTitle.isEmpty {
                 ContentUnavailableView {
-                    Label("No \(row.label.isEmpty ? "Records" : row.label)", systemImage: "tray")
+                    Label(editor.collection.emptyTitle, systemImage: "tray")
                 } description: {
-                    Text(editor.canAdd
-                         ? "Records you add will appear here."
-                         : "Speecher fills this in as it learns.")
+                    Text(editor.collection.emptyHelp)
                 } actions: {
                     if editor.canAdd {
                         Button(editor.collection.addLabel) { editor.adding = true }
@@ -273,7 +290,8 @@ struct CollectionRow: View {
                 Button("Add", systemImage: "plus") { editor.adding = true }
                     .help(editor.collection.addLabel)
             }
-            Button("Remove", systemImage: "minus") { editor.confirmingRemoval = true }
+            Button(editor.collection.deleteLabel, systemImage: "minus") { editor.removeSelected() }
+                .help(editor.collection.deleteLabel)
                 .disabled(!editor.canRemove)
             Spacer()
             if !editor.collection.importLabel.isEmpty {
@@ -290,10 +308,6 @@ struct CollectionRow: View {
         .labelStyle(.iconOnly)
         .sheet(isPresented: $editor.adding) {
             AddRecordSheet(editor: editor)
-        }
-        .confirmationDialog("Remove the selected records?",
-                            isPresented: $editor.confirmingRemoval) {
-            Button("Remove", role: .destructive) { editor.removeSelected() }
         }
         .fileImporter(isPresented: $editor.importing,
                       allowedContentTypes: editor.importContentTypes) { result in
@@ -328,7 +342,7 @@ struct AddRecordSheet: View {
                         }
                     }
                 } header: {
-                    Text(editor.collection.addLabel)
+                    Text(editor.collection.addDialogTitle)
                 } footer: {
                     ForEach(refusals, id: \.self) { refusal in
                         Text(refusal)
@@ -470,7 +484,10 @@ struct CellField: View {
     @FocusState private var editing: Bool
 
     var body: some View {
+        // Option-Return starts a new line, as in every multi-line field. The
+        // add sheet shows room for four; a table cell grows to at most four.
         TextField("", text: $edited, axis: multiline ? .vertical : .horizontal)
+            .lineLimit(4, reservesSpace: multiline && commitsImmediately)
             .labelsHidden()
             .focused($editing)
             .onSubmit { commit(edited) }

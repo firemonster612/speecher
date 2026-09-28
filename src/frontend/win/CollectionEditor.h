@@ -36,7 +36,8 @@ private:
     QList<QVariantMap> editableRecords() const;
     // Saves the editable records, showing whatever the validator refused.
     void save();
-    void showProblems(const QStringList &problems);
+    // Titled only when an import was refused.
+    void showProblems(const QStringList &problems, const QString &title = {});
     winrt::Microsoft::UI::Xaml::UIElement cellFor(const CollectionColumnSnapshot &column,
                                                   int recordIndex,
                                                   const QString &badgeText);
@@ -56,10 +57,14 @@ private:
     // What Delete took, newest last, so undo can put it back.
     QList<Record> m_deleted;
     QStringList m_lastProblems;
+    QString m_lastProblemsTitle;
 
     winrt::Microsoft::UI::Xaml::Controls::Border m_card{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::ListView m_list{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::InfoBar m_problems{nullptr};
+    // What the editor says while it holds no records; null when the
+    // descriptor has nothing to say.
+    winrt::Microsoft::UI::Xaml::Controls::TextBlock m_empty{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::Button m_deleteButton{nullptr};
     QList<QPair<QString, winrt::Microsoft::UI::Xaml::Controls::Button>> m_actionButtons;
 };

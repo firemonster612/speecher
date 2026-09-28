@@ -687,6 +687,29 @@ private slots:
         }
     }
 
+    void everyDeletableCollectionCanUndoADelete()
+    {
+        // No editor asks before it deletes, so each one must be able to put a
+        // record back, and must say what an empty table means.
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        for (const SettingsPage &page : schema.pages) {
+            for (const SettingsSection &section : page.sections) {
+                for (const SettingsRow &row : section.rows) {
+                    if (row.kind != RowKind::Collection) {
+                        continue;
+                    }
+                    const QList<RowOption> &actions = row.collection.actions;
+                    QVERIFY2(std::any_of(actions.cbegin(), actions.cend(),
+                                         [](const RowOption &action) { return action.id == QStringLiteral("undoDelete"); }),
+                             qPrintable(row.id));
+                    const bool alwaysHasRecords = row.collection.lockedRecordCount
+                        && row.collection.lockedRecordCount() > 0;
+                    QVERIFY2(alwaysHasRecords || !row.collection.emptyTitle.isEmpty(), qPrintable(row.id));
+                }
+            }
+        }
+    }
+
     void themeRowExplainsItselfWhenTheDesktopIgnoresIt()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());

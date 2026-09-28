@@ -519,7 +519,12 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) NSInteger lockedRecordCount;
 @property (nonatomic, copy) SpeecherRecord *blankRecord;
 @property (nonatomic, copy) NSString *addLabel;
+@property (nonatomic, copy) NSString *addDialogTitle;
+@property (nonatomic, copy) NSString *deleteLabel;
+@property (nonatomic, copy) NSString *emptyTitle;
+@property (nonatomic, copy) NSString *emptyHelp;
 @property (nonatomic, copy) NSString *importLabel;
+@property (nonatomic, copy) NSString *importFailureTitle;
 @property (nonatomic, copy) NSArray<NSString *> *importFileExtensions;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *actions;
 @property (nonatomic) NSInteger minimumHeight;
@@ -1157,7 +1162,12 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.lockedRecordCount = collection.lockedRecordCount ? collection.lockedRecordCount() : 0;
     model.blankRecord = bridgedRecord(collection.blankRecord);
     model.addLabel = collection.addLabel.toNSString();
+    model.addDialogTitle = collection.addDialogTitle.toNSString();
+    model.deleteLabel = collection.deleteLabel.toNSString();
+    model.emptyTitle = collection.emptyTitle.toNSString();
+    model.emptyHelp = collection.emptyHelp.toNSString();
     model.importLabel = collection.supportsImport.actionLabel.toNSString();
+    model.importFailureTitle = collection.supportsImport.failureTitle.toNSString();
     model.importFileExtensions = collection.supportsImport.parse
         ? fileExtensions(collection.supportsImport.fileFilter)
         : @[];

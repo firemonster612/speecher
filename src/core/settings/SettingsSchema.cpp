@@ -1306,6 +1306,7 @@ SettingsRow customTonesRow()
     tones.blankRecord = {{kChoiceNameColumn, QString()}, {kToneInstructionColumn, QString()}};
     tones.lockedRecordCount = [count = int(builtIns.size())] { return count; };
     tones.addLabel = QStringLiteral("Add tone");
+    tones.addDialogTitle = QStringLiteral("New tone");
     tones.minimumHeight = 220;
 
     SettingsRow row = collectionRow(
@@ -1374,6 +1375,7 @@ SettingsRow customCleanupLevelsRow()
                           {kLevelInstructionsColumn, QString()}};
     levels.lockedRecordCount = [count = int(builtIns.size())] { return count; };
     levels.addLabel = QStringLiteral("Add cleanup level");
+    levels.addDialogTitle = QStringLiteral("New cleanup level");
     levels.minimumHeight = 220;
 
     SettingsRow row = collectionRow(
@@ -1742,6 +1744,7 @@ SettingsSection applicationRecognitionSection()
     rules.blankRecord = {{kSourceColumn, QStringLiteral("Custom")}};
     rules.lockedRecordCount = [] { return int(builtInAppRecognitionRules().size()); };
     rules.addLabel = QStringLiteral("Add application");
+    rules.addDialogTitle = QStringLiteral("New application match");
     rules.minimumHeight = 320;
 
     SettingsRow row = collectionRow(
@@ -1815,6 +1818,9 @@ SettingsRow applicationPasteRuleRow()
         return validatePasteRules(applicationPasteRules(records));
     };
     descriptor.addLabel = QStringLiteral("Add rule");
+    descriptor.addDialogTitle = QStringLiteral("New paste rule");
+    descriptor.emptyTitle = QStringLiteral("No app-specific paste rules");
+    descriptor.emptyHelp = QStringLiteral("Add one to paste differently into a single application.");
     descriptor.minimumHeight = 150;
 
     SettingsRow row = collectionRow(QStringLiteral("applicationPasteRules"),
@@ -2077,6 +2083,9 @@ SettingsPage vocabularyPage()
         return badges;
     };
     terms.addLabel = QStringLiteral("Add");
+    terms.addDialogTitle = QStringLiteral("New term");
+    terms.emptyTitle = QStringLiteral("No vocabulary terms");
+    terms.emptyHelp = QStringLiteral("Add names and words the speech service should spell your way.");
     terms.supportsImport = {
         QStringLiteral("Import CSV…"),
         QStringLiteral("CSV files (*.csv);;All files (*)"),
@@ -2270,6 +2279,9 @@ SettingsPage bindingsPage()
     };
     replacements.blankRecord = {{kPhraseColumn, QString()}, {kReplacementColumn, QString()}};
     replacements.addLabel = QStringLiteral("Add replacement");
+    replacements.addDialogTitle = QStringLiteral("New replacement");
+    replacements.emptyTitle = QStringLiteral("No replacements or snippets");
+    replacements.emptyHelp = QStringLiteral("Add a spoken phrase and the exact text to put in its place.");
     replacements.supportsImport = {
         QStringLiteral("Import snippets JSON…"),
         QStringLiteral("JSON files (*.json);;All files (*)"),

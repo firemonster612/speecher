@@ -36,8 +36,14 @@ struct CollectionSnapshot {
     QVariantMap blankRecord;
     // Empty on a collection nothing may be added to by hand.
     QString addLabel;
+    QString addDialogTitle;
+    QString deleteLabel;
+    // What an empty editor says; empty on a collection that always has records.
+    QString emptyTitle;
+    QString emptyHelp;
     // Empty unless the collection can also be filled from a file.
     QString importLabel;
+    QString importFailureTitle;
     QStringList importFileExtensions;
     QList<RowOption> actions;
     int minimumHeight = 0;

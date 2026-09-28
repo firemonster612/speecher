@@ -413,16 +413,18 @@ struct WritingProfileRows: View {
             VStack(alignment: .leading) {
                 LabeledContent(record["profile"] as? String ?? "") {
                     HStack {
+                        // Each picker says which column it is, as the Qt
+                        // and Windows grids title theirs.
                         ForEach(choices, id: \.columnId) { column in
-                            Picker("", selection: choice(index, column.columnId)) {
+                            Picker(column.title, selection: choice(index, column.columnId)) {
                                 ForEach(column.options, id: \.rowOptionId) { option in
                                     Text(option.label).tag(option.rowOptionId)
                                 }
                             }
-                            .labelsHidden()
+                            .fixedSize()
                         }
                         if isCustom(index) {
-                            Button("Delete") { delete(index) }
+                            Button(row.collection?.deleteLabel ?? "") { delete(index) }
                         }
                     }
                 }

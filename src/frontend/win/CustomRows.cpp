@@ -233,7 +233,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         const bool custom = !isBuiltInWritingProfile(records.at(index).value(kProfileIdKey).toString());
         if (custom) {
             Button remove;
-            remove.Content(box_value(L"Delete"));
+            remove.Content(box_value(hs(row.collection->deleteLabel)));
             remove.VerticalAlignment(VerticalAlignment::Bottom);
             remove.Click([rowId = row.id, records, index, &host](const auto &, const auto &) {
                 deleteWritingProfile(rowId, records, index, host);

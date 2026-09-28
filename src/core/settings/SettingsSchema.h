@@ -91,9 +91,9 @@ struct CollectionDescriptor {
     // The title of the dialog or sheet that fills in a new record, where a
     // front end adds through one.
     QString addDialogTitle;
-    // The command that deletes the selected records. There is no confirmation:
-    // every editor can undo a delete.
-    QString deleteLabel = QStringLiteral("Delete selected");
+    // The command that deletes records, the selection's or one row's. There is
+    // no confirmation: every editor can undo a delete.
+    QString deleteLabel = QStringLiteral("Delete");
     // What the editor says while it holds no records, in the collection's own
     // terms. Empty on a collection that always has records (built-ins).
     QString emptyTitle;

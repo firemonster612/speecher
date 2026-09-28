@@ -65,8 +65,16 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) SpeecherRecord *blankRecord;
 // Empty on a collection nothing may be added to by hand.
 @property (nonatomic, readonly, copy) NSString *addLabel;
+@property (nonatomic, readonly, copy) NSString *addDialogTitle;
+// Deletes the selection with no confirmation; Undo delete puts it back.
+@property (nonatomic, readonly, copy) NSString *deleteLabel;
+// What an empty editor says; empty on a collection that always has records.
+@property (nonatomic, readonly, copy) NSString *emptyTitle;
+@property (nonatomic, readonly, copy) NSString *emptyHelp;
 // Empty unless the collection can also be filled from a file.
 @property (nonatomic, readonly, copy) NSString *importLabel;
+// What a refused import is titled.
+@property (nonatomic, readonly, copy) NSString *importFailureTitle;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *importFileExtensions;
 // Commands beyond add and delete, which the editor implements itself.
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *actions;
