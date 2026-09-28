@@ -22,6 +22,7 @@
 #include "providers/ProviderProbe.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
+#include "providers/TranscriptRefinementPrompt.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/TranscribePresentation.h"
 #include "ui/Theme.h"
@@ -507,6 +508,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) SpeecherColumnKind kind;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *options;
 @property (nonatomic) BOOL stretch;
+@property (nonatomic) BOOL multiline;
 @end
 
 @implementation CollectionColumnModel
@@ -547,6 +549,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *disabledActionLabel;
 @property (nonatomic, strong, nullable) CollectionModel *collection;
 @property (nonatomic) BOOL secret;
+@property (nonatomic) BOOL multiline;
 @end
 
 @implementation SettingsRowModel
@@ -1058,6 +1061,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         model.kind = bridgedColumnKind(column.kind);
         model.options = column.options ? [self bridgedOptions:column.options()] : @[];
         model.stretch = column.stretch;
+        model.multiline = column.multiline;
         [columns addObject:model];
     }
     CollectionModel *model = [[CollectionModel alloc] init];
@@ -1095,6 +1099,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.disabledAction = row.disabledAction.toNSString();
     model.disabledActionLabel = row.disabledActionLabel.toNSString();
     model.secret = row.secret;
+    model.multiline = row.multiline;
     if (const CollectionDescriptor *collection = [self collectionForRow:row]) {
         model.collection = [self collectionModel:*collection];
         model.value = bridgedRecords(collection->records(_state->draft));
@@ -2597,6 +2602,11 @@ static std::optional<QString> optionalString(NSString *value)
         _state->controller->settings()->snapshot().refinement);
 }
 
+
+- (NSString *)builtInSystemPrompt
+{
+    return speecher::builtInDictationSystemPrompt().toNSString();
+}
 
 - (NSArray<RowOptionModel *> *)cleanupStrengths
 {

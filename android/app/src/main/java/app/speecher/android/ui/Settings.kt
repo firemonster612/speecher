@@ -50,6 +50,7 @@ import app.speecher.protocol.MAX_REFINEMENT_TERMS
 import app.speecher.protocol.Tone
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.builtInDictationSystemPrompt
 import app.speecher.protocol.claudeVoiceKeyterms
 import app.speecher.protocol.modelSupportsFastMode
 
@@ -223,6 +224,13 @@ fun Settings(
                     colors = rowColors,
                 )
             }
+            InstructionsField(
+                "Additional instructions",
+                "Added to every refinement, before each profile's own instructions.",
+                settings.additionalInstructions,
+            ) {
+                onChange(settings.copy(additionalInstructions = it))
+            }
         }
         ListItem(
             headlineContent = { Text("Extra transcription pass") },
@@ -260,15 +268,59 @@ fun Settings(
                 ListItem(
                     headlineContent = { Text(label) },
                     supportingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Dropdown(cleanupLabels, behavior.cleanupStrength) {
-                                update(behavior.copy(cleanupStrength = it))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Dropdown(cleanupLabels, behavior.cleanupStrength) {
+                                    update(behavior.copy(cleanupStrength = it))
+                                }
+                                Dropdown(toneLabels, behavior.tone) {
+                                    update(behavior.copy(tone = it))
+                                }
                             }
-                            Dropdown(toneLabels, behavior.tone) { update(behavior.copy(tone = it)) }
+                            OutlinedTextField(
+                                behavior.instructions,
+                                { update(behavior.copy(instructions = it)) },
+                                Modifier.fillMaxWidth(),
+                                label = { Text("Instructions") },
+                                minLines = 2,
+                            )
                         }
                     },
                     colors = rowColors,
                 )
+            }
+
+            Section("Custom system prompt")
+            ListItem(
+                headlineContent = { Text("Custom system prompt") },
+                supportingContent = {
+                    Text(
+                        "Replaces the built-in dictation rules with the prompt below. Built-in " +
+                            "cleanup levels and tones no longer apply while it is on; a " +
+                            "profile's tone is still passed to the model."
+                    )
+                },
+                trailingContent = {
+                    Switch(
+                        settings.customSystemPromptEnabled,
+                        { onChange(settings.copy(customSystemPromptEnabled = it)) },
+                    )
+                },
+                colors = rowColors,
+            )
+            OutlinedTextField(
+                settings.customSystemPrompt.ifEmpty { builtInDictationSystemPrompt },
+                { onChange(settings.copy(customSystemPrompt = it)) },
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                label = { Text("Prompt") },
+                minLines = 4,
+                maxLines = 10,
+            )
+            TextButton(
+                { onChange(settings.copy(customSystemPrompt = builtInDictationSystemPrompt)) },
+                Modifier.padding(horizontal = 8.dp),
+            ) {
+                Text("Reset to built-in")
             }
         }
 
@@ -434,6 +486,25 @@ private fun EffortPicker(provider: Provider, selected: String, onSelect: (String
                 Text(effort.replaceFirstChar(Char::uppercase))
             }
         }
+    }
+}
+
+/** Several lines of instructions for the refiner, under a title and what they are for. */
+@Composable
+private fun InstructionsField(
+    title: String,
+    description: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(title, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            description,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(value, onValueChange, Modifier.fillMaxWidth(), minLines = 3)
     }
 }
 

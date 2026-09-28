@@ -44,13 +44,22 @@ struct RowView: View {
         case .number:
             LabeledContent { NumberField(row: row, model: model) } label: { label }
         case .text:
-            LabeledContent {
-                if row.secret {
-                    SecureTextRowField(row: row, model: model)
-                } else {
+            if row.multiline {
+                // A paragraph does not fit beside its label, so the field
+                // takes the row's width under it.
+                VStack(alignment: .leading) {
+                    label
                     TextRowField(row: row, model: model)
                 }
-            } label: { label }
+            } else {
+                LabeledContent {
+                    if row.secret {
+                        SecureTextRowField(row: row, model: model)
+                    } else {
+                        TextRowField(row: row, model: model)
+                    }
+                } label: { label }
+            }
         case .info:
             LabeledContent { Text(Self.text(row.value)) } label: { label }
         case .action:
@@ -233,7 +242,10 @@ struct TextRowField: View {
 
     var body: some View {
         if !row.suggests {
-            TextField("", text: $text)
+            // A multi-line field grows downward and shows four lines before
+            // it scrolls.
+            TextField("", text: $text, axis: row.multiline ? .vertical : .horizontal)
+                .lineLimit(row.multiline ? 4 : 1, reservesSpace: row.multiline)
                 .labelsHidden()
                 .focused($editing)
                 .onSubmit { commit() }
@@ -372,9 +384,10 @@ struct CredentialField: View {
     }
 }
 
-/// The cleanup strength and optional tone of each writing profile. The profiles
-/// are fixed, so this is a run of ordinary settings rows rather than an editable
-/// table — one row per profile, each with its pop-up buttons.
+/// The cleanup strength, optional tone and instructions of each writing
+/// profile. The profiles are fixed, so this is a run of ordinary settings rows
+/// rather than an editable table — one row per profile, each with its pop-up
+/// buttons and its instructions under them.
 struct WritingProfileRows: View {
     let row: SettingsRowModel
     @ObservedObject var model: AppModel
@@ -385,17 +398,32 @@ struct WritingProfileRows: View {
         row.collection?.columns.filter { $0.kind == .choice } ?? []
     }
 
+    private var texts: [CollectionColumnModel] {
+        row.collection?.columns.filter { $0.kind == .text } ?? []
+    }
+
     var body: some View {
         ForEach(Array(records.enumerated()), id: \.offset) { index, record in
-            LabeledContent(record["profile"] as? String ?? "") {
-                HStack {
-                    ForEach(choices, id: \.columnId) { column in
-                        Picker("", selection: choice(index, column.columnId)) {
-                            ForEach(column.options, id: \.rowOptionId) { option in
-                                Text(option.label).tag(option.rowOptionId)
+            VStack(alignment: .leading) {
+                LabeledContent(record["profile"] as? String ?? "") {
+                    HStack {
+                        ForEach(choices, id: \.columnId) { column in
+                            Picker("", selection: choice(index, column.columnId)) {
+                                ForEach(column.options, id: \.rowOptionId) { option in
+                                    Text(option.label).tag(option.rowOptionId)
+                                }
                             }
+                            .labelsHidden()
                         }
-                        .labelsHidden()
+                    }
+                }
+                ForEach(texts, id: \.columnId) { column in
+                    LabeledContent(column.title) {
+                        CellField(text: RecordField.string(record[column.columnId]),
+                                  multiline: column.multiline) { edited in
+                            let field = choice(index, column.columnId)
+                            if edited != field.wrappedValue { field.wrappedValue = edited }
+                        }
                     }
                 }
             }

@@ -10,6 +10,7 @@
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/ShortcutRecorder.h"
 #include "providers/LocalModelStore.h"
+#include "providers/TranscriptRefinementPrompt.h"
 #include "frontend/win/TranscribePane.h"
 
 #include <QEventLoop>
@@ -526,6 +527,9 @@ struct SettingsWindow::Native {
             showWhatsNew();
         } else if (id == QStringLiteral("speechLocalModelDownload")) {
             host.showPage(QStringLiteral("localModels"));
+        } else if (id == QStringLiteral("resetCustomSystemPrompt")) {
+            setValueAndCommit(host, QStringLiteral("customSystemPrompt"),
+                              builtInDictationSystemPrompt());
         }
         // Every edit is already committed, so the draft is what is stored.
         controller->localSetup()->runSettingsAction(id, model.draft());

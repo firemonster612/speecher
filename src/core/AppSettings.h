@@ -271,6 +271,11 @@ struct RefinementSettings {
     QString tone = QStringLiteral("none");
     bool useTargetContext = true;
     bool includeScreenshotContext = false;
+    // Added to every refinement prompt.
+    QString additionalInstructions;
+    // Empty stands for the built-in prompt.
+    bool customSystemPromptEnabled = false;
+    QString customSystemPrompt;
 };
 
 struct OutputSettings {

@@ -1275,6 +1275,48 @@ SettingsPage refinementPage(const SchemaContext &context)
     };
     gateOnRefinementProvider(profileBehavior);
 
+    SettingsRow additionalInstructions = textRow(
+        QStringLiteral("additionalInstructions"),
+        QStringLiteral("Additional instructions"),
+        QStringLiteral("Added to every refinement, before each profile's own instructions."),
+        [](const AppSettings &settings) { return settings.refinement.additionalInstructions; },
+        [](AppSettings &settings, const QString &value) {
+            settings.refinement.additionalInstructions = value;
+        });
+    additionalInstructions.multiline = true;
+    gateOnRefinementProvider(additionalInstructions);
+
+    const QString kCustomPromptGroup = QStringLiteral("customSystemPrompt");
+    SettingsRow customPromptEnabled = toggleRow(
+        QStringLiteral("customSystemPromptEnabled"),
+        QStringLiteral("Custom system prompt"),
+        QStringLiteral("Replaces the built-in dictation rules with the prompt below. Built-in "
+                       "cleanup levels and tones no longer apply while it is on; a profile's "
+                       "tone is still passed to the model."),
+        [](const AppSettings &settings) { return settings.refinement.customSystemPromptEnabled; },
+        [](AppSettings &settings, bool value) { settings.refinement.customSystemPromptEnabled = value; });
+    SettingsRow customPrompt = textRow(
+        QStringLiteral("customSystemPrompt"),
+        QStringLiteral("Prompt"),
+        QStringLiteral("Selection editing and local models keep their own prompts."),
+        [builtIn = context.builtInSystemPrompt](const AppSettings &settings) {
+            const QString &stored = settings.refinement.customSystemPrompt;
+            return stored.isEmpty() ? builtIn : stored;
+        },
+        [](AppSettings &settings, const QString &value) {
+            settings.refinement.customSystemPrompt = value;
+        });
+    customPrompt.multiline = true;
+    SettingsRow resetCustomPrompt = actionRow(
+        QStringLiteral("resetCustomSystemPrompt"),
+        QStringLiteral("Built-in prompt"),
+        QStringLiteral("Replace the prompt with the built-in one, at Medium cleanup with no tone."),
+        QStringLiteral("Reset to built-in"));
+    for (SettingsRow *row : {&customPromptEnabled, &customPrompt, &resetCustomPrompt}) {
+        row->groupId = kCustomPromptGroup;
+        gateOnRefinementProvider(*row);
+    }
+
     const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
     return {
         QStringLiteral("refinement"),
@@ -1299,6 +1341,10 @@ SettingsPage refinementPage(const SchemaContext &context)
                  std::move(screenshots),
              }},
             {QStringLiteral("Profile behavior"), QString(), {std::move(profileBehavior)}},
+            {QStringLiteral("Additional instructions"), QString(), {std::move(additionalInstructions)}},
+            {QStringLiteral("Custom system prompt"),
+             QString(),
+             {std::move(customPromptEnabled), std::move(customPrompt), std::move(resetCustomPrompt)}},
         },
     };
 }
@@ -1989,6 +2035,7 @@ SettingsPage bindingsPage()
          {},
          true},
     };
+    replacements.columns.last().multiline = true;
     replacements.records = [](const AppSettings &settings) {
         return bindingRecords(settings.bindings);
     };
@@ -2577,7 +2624,9 @@ const QList<PaneSpec> &paneSpecs()
          {{"refinement", "Refinement"},
           {"providers", "OpenAI"},
           {"providers", "Anthropic"},
-          {"refinement", "Profile behavior"}}},
+          {"refinement", "Profile behavior"},
+          {"refinement", "Additional instructions"},
+          {"refinement", "Custom system prompt"}}},
         {"localModels", "Local models", "localModels", PaneLayout::Sections,
          {{"localModels", "Speech models"},
           {"localModels", "Behavior"},
@@ -2838,13 +2887,16 @@ CollectionDescriptor writingProfileGrid()
     const QString kProfileIdKey = QStringLiteral("profileId");
     const QString kCleanupColumn = QStringLiteral("cleanup");
     const QString kToneColumn = QStringLiteral("tone");
+    const QString kInstructionsColumn = QStringLiteral("instructions");
     CollectionDescriptor grid;
     grid.identityColumn = kProfileIdKey;
     grid.columns = {
         {kProfileColumn, QStringLiteral("Profile"), ColumnKind::ReadOnly},
         {kCleanupColumn, QStringLiteral("Cleanup"), ColumnKind::Choice, cleanupStrengths},
-        {kToneColumn, QStringLiteral("Tone"), ColumnKind::Choice, writingTones, true},
+        {kToneColumn, QStringLiteral("Tone"), ColumnKind::Choice, writingTones},
+        {kInstructionsColumn, QStringLiteral("Instructions"), ColumnKind::Text, {}, true},
     };
+    grid.columns.last().multiline = true;
     // The profiles are the ones that exist, so the stored list only says what
     // each of them was set to.
     grid.records = [=](const AppSettings &settings) {
@@ -2855,7 +2907,8 @@ CollectionDescriptor writingProfileGrid()
             records.append({{kProfileColumn, writingProfileLabel(fallback.profile)},
                             {kProfileIdKey, writingProfileName(fallback.profile)},
                             {kCleanupColumn, chosen.cleanupStrength},
-                            {kToneColumn, chosen.tone}});
+                            {kToneColumn, chosen.tone},
+                            {kInstructionsColumn, chosen.instructions}});
         }
         return records;
     };
@@ -2864,7 +2917,8 @@ CollectionDescriptor writingProfileGrid()
         for (const QVariantMap &record : records) {
             profiles.append({writingProfileFromName(record.value(kProfileIdKey).toString()),
                              record.value(kCleanupColumn).toString(),
-                             record.value(kToneColumn).toString()});
+                             record.value(kToneColumn).toString(),
+                             record.value(kInstructionsColumn).toString()});
         }
         settings.refinement.writingProfiles = profiles;
     };

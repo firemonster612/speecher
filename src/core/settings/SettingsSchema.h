@@ -52,6 +52,8 @@ struct CollectionColumn {
     // Shown instead when what to say depends on the record, such as the
     // confidence behind a learned correction.
     std::function<QString(const QVariantMap &)> recordTooltip;
+    // Text columns only: the value may hold several lines, such as a snippet.
+    bool multiline = false;
 };
 
 // Records a collection can be filled from a file with. Core owns the parse; the
@@ -159,6 +161,8 @@ struct SettingsRow {
     std::function<QList<RowOption>(const AppSettings &)> suggestions;
     // Text rows only: a key or password, shown masked.
     bool secret = false;
+    // Text rows only: the value may hold several lines.
+    bool multiline = false;
     std::function<bool(const AppSettings &, const Capabilities &)> enabled;
     // A row that is only worth showing sometimes, such as a caution about the
     // model currently chosen. Absent means always.
@@ -344,6 +348,9 @@ struct SchemaContext {
     std::function<LiveFacts()> liveFacts;
     // Endpoint verdicts must match the draft currently on screen.
     std::function<LiveFacts(const AppSettings &)> liveFactsForDraft;
+    // builtInDictationSystemPrompt(), which the custom system prompt editor
+    // shows while nothing is stored. The prompt lives with the providers.
+    QString builtInSystemPrompt;
 };
 
 QList<RowOption> cleanupStrengths();

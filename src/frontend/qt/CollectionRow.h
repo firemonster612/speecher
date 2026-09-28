@@ -4,6 +4,8 @@
 
 #include <optional>
 
+class QTableWidget;
+
 namespace speecher {
 
 // The editor every Collection row renders as: a table built from the described
@@ -12,6 +14,10 @@ namespace speecher {
 SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
                                   QWidget *parent,
                                   std::function<void()> notifyChanged);
+
+// Edits the column's cells in a multi-line editor, for a column whose values
+// may hold several lines.
+void useMultilineEditor(QTableWidget *table, int column);
 
 // Asks for a file, parses it the way the descriptor says, and merges what it
 // holds into the records already there. Returns nothing when the reader

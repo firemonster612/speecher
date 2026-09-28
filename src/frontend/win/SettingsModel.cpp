@@ -71,6 +71,7 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
         lastSeenVersion,
         [&localSetup] { return localSetup.liveFacts(); },
         [&localSetup](const AppSettings &draft) { return localSetup.liveFacts(draft); },
+        builtInDictationSystemPrompt(),
     };
 }
 
@@ -235,6 +236,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.suggestions = row.suggestions ? row.suggestions(m_draft) : QList<RowOption>();
     snapshot.suggests = bool(row.suggestions);
     snapshot.secret = row.secret;
+    snapshot.multiline = row.multiline;
     snapshot.enabled = !row.enabled || row.enabled(m_draft, m_capabilities);
     snapshot.tooltip = row.tooltip;
     snapshot.disabledHelp = row.disabledHelp;
@@ -248,7 +250,8 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
                                   column.title,
                                   column.kind,
                                   column.options ? column.options() : QList<RowOption>(),
-                                  column.stretch});
+                                  column.stretch,
+                                  column.multiline});
         }
         table.lockedRecordCount = collection->lockedRecordCount ? collection->lockedRecordCount() : 0;
         table.blankRecord = collection->blankRecord;

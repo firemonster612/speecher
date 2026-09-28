@@ -147,17 +147,21 @@ UIElement credentialField(PaneHost &host)
     return panel;
 }
 
-// One row per writing profile, each with its cleanup and tone pickers — the
-// mac WritingProfileRows over the same grid descriptor.
+// One row per writing profile, each with its cleanup and tone pickers and its
+// instructions under them — the mac WritingProfileRows over the same grid
+// descriptor.
 UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
 {
     StackPanel rows;
     const QList<QVariantMap> records = row.value.value<QList<QVariantMap>>();
     QList<CollectionColumnSnapshot> choices;
+    QList<CollectionColumnSnapshot> texts;
     if (row.collection) {
         for (const CollectionColumnSnapshot &column : row.collection->columns) {
             if (column.kind == ColumnKind::Choice) {
                 choices.append(column);
+            } else if (column.kind == ColumnKind::Text) {
+                texts.append(column);
             }
         }
     }
@@ -207,10 +211,33 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 pickers.Children().Append(combo);
             }
         }
+        StackPanel controls;
+        controls.Spacing(8);
+        controls.Children().Append(pickers);
+        for (const CollectionColumnSnapshot &column : texts) {
+            TextBox box;
+            box.PlaceholderText(hs(column.title));
+            box.Text(hs(records.at(index).value(column.id).toString()));
+            if (column.multiline) {
+                makeMultiline(box);
+            }
+            box.LostFocus([rowId = row.id, records, index, columnId = column.id, &host](
+                              const IInspectable &sender, const auto &) {
+                const QString text = qs(sender.as<TextBox>().Text());
+                if (text == records.at(index).value(columnId).toString()) {
+                    return;
+                }
+                QList<QVariantMap> edited = records;
+                edited[index].insert(columnId, text);
+                host.model->save(edited, rowId, records);
+                host.refresh();
+            });
+            controls.Children().Append(box);
+        }
         RowSnapshot profileRow;
         profileRow.id = row.id + QLatin1Char('.') + records.at(index).value(kProfileIdKey).toString();
         profileRow.label = records.at(index).value(kProfileColumn).toString();
-        rows.Children().Append(rowGrid(profileRow, pickers, host, index > 0));
+        rows.Children().Append(rowGrid(profileRow, controls, host, index > 0));
     }
     return rows;
 }

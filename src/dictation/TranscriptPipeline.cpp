@@ -83,6 +83,16 @@ QList<BindingRule> activeBindings(const AppSettings &settings, const Target &tar
 
 } // namespace
 
+void TranscriptPipeline::fillUserInstructions(RefinementContext &context,
+                                              const RefinementSettings &refinement,
+                                              const WritingProfileSettings &profile)
+{
+    context.additionalInstructions = refinement.additionalInstructions;
+    context.profileInstructions = profile.instructions;
+    context.customSystemPrompt =
+        refinement.customSystemPromptEnabled ? refinement.customSystemPrompt : QString();
+}
+
 RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSettings &settings,
                                                                    const Target &target)
 {
@@ -131,6 +141,9 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
         settings.appRecognitionRules,
         writingProfileFromName(result.refinementSettings.defaultWritingProfile));
     result.refinementContext.tone = result.refinementSettings.tone;
+    fillUserInstructions(result.refinementContext, result.refinementSettings,
+                         writingProfileSettingsFor(result.refinementSettings.writingProfiles,
+                                                   result.refinementContext.writingProfile));
     result.refinementContext.includeNearbyText = result.refinementSettings.useTargetContext && !target.secure;
     result.refinementContext.editSelection = result.editsSelection;
     if (!result.refinementSettings.useTargetContext) {

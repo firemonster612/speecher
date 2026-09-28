@@ -473,11 +473,14 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.refinement.includeScreenshotContext = true;
         settings.refinement.writingProfiles = {
             {WritingProfile::Work, QStringLiteral("balanced"), QStringLiteral("formal")},
-            {WritingProfile::Email, QStringLiteral("strong_polish"), QStringLiteral("excited")},
+            {WritingProfile::Email, QStringLiteral("strong_polish"), QStringLiteral("excited"),
+             QStringLiteral("Sign off with Best.")},
             {WritingProfile::Personal, QStringLiteral("light_cleanup"), QStringLiteral("casual")},
             {WritingProfile::AiCoding, QStringLiteral("balanced"), QStringLiteral("none")},
             {WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none")},
         };
+        settings.refinement.additionalInstructions = QStringLiteral("Spell it Speecher.");
+        settings.refinement.customSystemPrompt = QStringLiteral("Clean up my dictation.");
 
         Target target;
         target.applicationId = QStringLiteral("org.mozilla.Thunderbird");
@@ -503,6 +506,11 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(pipeline.refinementContext.target.selectedText, target.selectedText);
         QCOMPARE(pipeline.refinementContext.writingProfile, WritingProfile::Email);
         QCOMPARE(pipeline.refinementContext.tone, QStringLiteral("excited"));
+        // The resolved profile's instructions ride with the global ones; a
+        // custom prompt that is switched off stays out.
+        QCOMPARE(pipeline.refinementContext.additionalInstructions, QStringLiteral("Spell it Speecher."));
+        QCOMPARE(pipeline.refinementContext.profileInstructions, QStringLiteral("Sign off with Best."));
+        QCOMPARE(pipeline.refinementContext.customSystemPrompt, QString());
 
         TranscriptPipelineResult screenshotPipeline = pipeline;
         TranscriptPipeline::includeScreenshotContext(screenshotPipeline,

@@ -610,6 +610,7 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
             writingProfileFromName(object.value(QStringLiteral("profile")).toString()),
             cleanupStrength(object.value(QStringLiteral("cleanupStrength")).toString()),
             writingTone(object.value(QStringLiteral("tone")).toString()),
+            object.value(QStringLiteral("instructions")).toString(),
         });
     }
     bool hasAiCoding = false;
@@ -642,6 +643,7 @@ void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSetting
             {QStringLiteral("profile"), writingProfileName(fallback.profile)},
             {QStringLiteral("cleanupStrength"), cleanupStrength(settings.cleanupStrength)},
             {QStringLiteral("tone"), writingTone(settings.tone)},
+            {QStringLiteral("instructions"), settings.instructions},
         });
     }
     m_settings.setValue(SettingsKeys::WritingProfiles,
@@ -703,6 +705,36 @@ bool SettingsCodecs::includeScreenshotContext() const
 void SettingsCodecs::setIncludeScreenshotContext(bool value)
 {
     m_settings.setValue(SettingsKeys::IncludeScreenshotContext, value);
+}
+
+QString SettingsCodecs::additionalInstructions() const
+{
+    return value(SettingsKeys::AdditionalInstructions, QString()).toString();
+}
+
+void SettingsCodecs::setAdditionalInstructions(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::AdditionalInstructions, value);
+}
+
+bool SettingsCodecs::customSystemPromptEnabled() const
+{
+    return value(SettingsKeys::CustomSystemPromptEnabled, false).toBool();
+}
+
+void SettingsCodecs::setCustomSystemPromptEnabled(bool value)
+{
+    m_settings.setValue(SettingsKeys::CustomSystemPromptEnabled, value);
+}
+
+QString SettingsCodecs::customSystemPrompt() const
+{
+    return value(SettingsKeys::CustomSystemPrompt, QString()).toString();
+}
+
+void SettingsCodecs::setCustomSystemPrompt(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::CustomSystemPrompt, value);
 }
 
 QString SettingsCodecs::openAiModel() const
@@ -1223,6 +1255,9 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.writingProfileOverrides = writingProfileOverrides();
     settings.refinement.useTargetContext = useTargetContext();
     settings.refinement.includeScreenshotContext = includeScreenshotContext();
+    settings.refinement.additionalInstructions = additionalInstructions();
+    settings.refinement.customSystemPromptEnabled = customSystemPromptEnabled();
+    settings.refinement.customSystemPrompt = customSystemPrompt();
 
     settings.output.method = outputMethod();
     settings.output.format = outputFormat();

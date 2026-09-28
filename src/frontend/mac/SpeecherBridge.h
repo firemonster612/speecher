@@ -51,6 +51,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *options;
 // The column that takes the leftover width; the others size to content.
 @property (nonatomic, readonly) BOOL stretch;
+// Text columns only: the value may hold several lines.
+@property (nonatomic, readonly) BOOL multiline;
 @end
 
 // A table of records with typed columns. Everything about it that does not
@@ -103,6 +105,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
 // Text rows only: a key or password, shown masked.
 @property (nonatomic, readonly) BOOL secret;
+// Text rows only: the value may hold several lines.
+@property (nonatomic, readonly) BOOL multiline;
 @end
 
 @interface SettingsSectionModel : NSObject
@@ -823,6 +827,10 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // Transcribing audio files: the Transcribe pane's seams into the core's
 // FileTranscriptionSession. One batch runs at a time, and it and dictation
 // exclude each other.
+
+// The built-in dictation prompt at Medium cleanup with no tone, which the
+// custom system prompt resets to.
+@property (nonatomic, readonly, copy) NSString *builtInSystemPrompt;
 
 // The same lists the Qt Transcribe page offers. Refinement's "None" is the
 // pane's own first choice and is not in refinementProviders.

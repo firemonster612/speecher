@@ -11,8 +11,10 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QStyledItemDelegate>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -23,6 +25,28 @@
 namespace speecher {
 
 namespace {
+
+// Edits a cell in a QPlainTextEdit, where Return starts a new line rather
+// than committing the edit.
+class MultilineDelegate final : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &, const QModelIndex &) const override
+    {
+        return new QPlainTextEdit(parent);
+    }
+
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override
+    {
+        static_cast<QPlainTextEdit *>(editor)->setPlainText(index.data(Qt::EditRole).toString());
+    }
+
+    void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const override
+    {
+        model->setData(index, static_cast<QPlainTextEdit *>(editor)->toPlainText(), Qt::EditRole);
+    }
+};
 
 QTableWidgetItem *readOnlyItem(const QString &text)
 {
@@ -130,6 +154,11 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
             column,
             m_collection.columns.at(column).stretch ? QHeaderView::Stretch
                                                     : QHeaderView::ResizeToContents);
+    }
+    for (int column = 0; column < m_collection.columns.size(); ++column) {
+        if (m_collection.columns.at(column).multiline) {
+            useMultilineEditor(m_table, column);
+        }
     }
     m_table->verticalHeader()->hide();
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -429,6 +458,11 @@ std::optional<QList<QVariantMap>> importedRecords(QWidget *parent,
         }
     }
     return merged;
+}
+
+void useMultilineEditor(QTableWidget *table, int column)
+{
+    table->setItemDelegateForColumn(column, new MultilineDelegate(table));
 }
 
 SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,

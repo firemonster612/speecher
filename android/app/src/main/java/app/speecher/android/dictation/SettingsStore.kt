@@ -47,8 +47,12 @@ class SettingsStore(private val context: Context) {
                             default.cleanupStrength,
                         ),
                         enumOf(preferences.getString("${profile.name}Tone", null), default.tone),
+                        preferences.getString("${profile.name}Instructions", "")!!,
                     )
                 },
+            additionalInstructions = preferences.getString("additionalInstructions", "")!!,
+            customSystemPromptEnabled = preferences.getBoolean("customSystemPromptEnabled", false),
+            customSystemPrompt = preferences.getString("customSystemPrompt", "")!!,
             buttonLayout =
                 enumOf(preferences.getString("buttonLayout", null), ButtonLayout.RefinedPrimary),
             panelSize = enumOf(preferences.getString("panelSize", null), PanelSize.Full),
@@ -80,7 +84,11 @@ class SettingsStore(private val context: Context) {
             settings.writingProfiles.forEach { (profile, choice) ->
                 putString("${profile.name}Cleanup", choice.cleanupStrength.name)
                 putString("${profile.name}Tone", choice.tone.name)
+                putString("${profile.name}Instructions", choice.instructions)
             }
+            putString("additionalInstructions", settings.additionalInstructions)
+            putBoolean("customSystemPromptEnabled", settings.customSystemPromptEnabled)
+            putString("customSystemPrompt", settings.customSystemPrompt)
             putString("buttonLayout", settings.buttonLayout.name)
             putString("panelSize", settings.panelSize.name)
         }
