@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
@@ -79,7 +80,7 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
             return;
         }
         if (id == QStringLiteral("checkForUpdates")) {
-            controller->updates()->checkForUpdates(controller->settings()->updateChannel());
+            controller->updateBanner()->runCheckRow(controller->settings()->updateChannel());
             return;
         }
         // Every edit on macOS commits at once, so the settings are what the

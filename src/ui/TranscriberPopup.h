@@ -1,6 +1,7 @@
 #pragma once
 
 #include "frontend/qt/QtPopupSurface.h"
+#include "dictation/PopupPresentation.h"
 
 #include <QLabel>
 #include <QWidget>
@@ -17,6 +18,8 @@ class QVBoxLayout;
 
 namespace speecher {
 
+struct UpdateBannerModel;
+struct WhatsNewBannerModel;
 class PopupPositioner;
 class WaveformWidget;
 
@@ -37,14 +40,13 @@ public slots:
     void setFrozen(bool frozen);
     void showOAuthRefreshIndicator();
     void showListeningIndicator();
-    void showMessage(const QString &message);
+    void showMessage(const QString &message, PopupOutcome outcome);
     void showErrorMessage(const QString &message);
     void showPopup(quint64 generation);
     // A banner is a capsule holding a plain message and, when there is
     // something to do, an explicitly labelled button ("Install and restart").
-    // An empty message hides the banner; an empty action hides the button.
-    void setUpdateBanner(const QString &message, const QString &action, bool actionEnabled);
-    void setWhatsNewBanner(const QString &message, bool visible);
+    void setUpdateBanner(const UpdateBannerModel &banner);
+    void setWhatsNewBanner(const WhatsNewBannerModel &banner, bool visible);
 
 signals:
     void errorDismissed();
@@ -66,12 +68,14 @@ private:
     void applyTheme();
     void applyPreviewText(const QString &preview);
     void applyPillGeometry();
+    void repositionIfVisible();
     void restoreStandardLayout();
 
     QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;
     QVBoxLayout *m_pillLayout = nullptr;
     QLabel *m_preview = nullptr;
+    QLabel *m_errorIcon = nullptr;
     QPushButton *m_errorDismiss = nullptr;
     QProgressBar *m_errorDismissProgress = nullptr;
     QPropertyAnimation *m_errorDismissAnimation = nullptr;

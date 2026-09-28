@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
+#include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #include "core/InsightsLog.h"
 #include "core/InsightsSummary.h"
@@ -11,6 +12,7 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
+#include "dictation/PopupPresentation.h"
 #include "frontend/mac/MacCustomRows.h"
 // The schema context: what this machine can offer the descriptors. Shared with
 // the Qt front end rather than reassembled, because the device and provider
@@ -526,6 +528,92 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @end
 
 @implementation CollectionModel
+@end
+
+@interface SpeecherUpdateBanner ()
+@property (nonatomic) BOOL visible;
+@property (nonatomic) BOOL showInPopup;
+@property (nonatomic) SpeecherBannerTone tone;
+@property (nonatomic, copy) NSString *text;
+@property (nonatomic) NSInteger progress;
+@property (nonatomic, copy) NSString *action;
+@property (nonatomic) BOOL actionEnabled;
+@property (nonatomic, copy) NSString *later;
+@property (nonatomic, copy) NSString *dismiss;
++ (SpeecherUpdateBanner *)bannerWithModel:(const speecher::UpdateBannerModel &)model;
+@end
+
+@implementation SpeecherUpdateBanner
+
++ (SpeecherUpdateBanner *)bannerWithModel:(const speecher::UpdateBannerModel &)model
+{
+    SpeecherUpdateBanner *banner = [[SpeecherUpdateBanner alloc] init];
+    banner.visible = model.visible;
+    banner.showInPopup = model.showInPopup;
+    banner.tone = SpeecherBannerTone(model.tone);
+    banner.text = model.text.toNSString();
+    banner.progress = model.progress;
+    banner.action = model.action.toNSString();
+    banner.actionEnabled = model.actionEnabled;
+    banner.later = model.later.toNSString();
+    banner.dismiss = model.dismiss.toNSString();
+    return banner;
+}
+
++ (SpeecherUpdateBanner *)previewForState:(SpeecherUpdatePreviewState)state
+{
+    using State = speecher::UpdateController::State;
+    speecher::UpdateBannerFacts facts;
+    facts.version = QStringLiteral("0.2.0");
+    facts.percent = 42;
+    facts.bannerVisible = true;
+    facts.error = QStringLiteral("The download stopped before it finished.");
+    switch (state) {
+    case SpeecherUpdatePreviewStateAvailable: facts.state = State::UpdateAvailable; break;
+    case SpeecherUpdatePreviewStateDownloading: facts.state = State::Downloading; break;
+    case SpeecherUpdatePreviewStateReadyToRestart:
+        facts.state = State::ReadyToRestart;
+        facts.error.clear();
+        break;
+    case SpeecherUpdatePreviewStateError: facts.state = State::Error; break;
+    case SpeecherUpdatePreviewStateManualInstall:
+        facts.state = State::Error;
+        facts.manualInstallRequired = true;
+        facts.error = QStringLiteral("Download the new version from the release page.");
+        break;
+    case SpeecherUpdatePreviewStateCheckFailed:
+        facts.state = State::CheckFailed;
+        facts.error = QStringLiteral("Could not check for updates.");
+        break;
+    }
+    return [self bannerWithModel:speecher::updateBannerModel(facts)];
+}
+
+@end
+
+@interface SpeecherWhatsNewBanner ()
+@property (nonatomic, copy) NSString *text;
+@property (nonatomic, copy) NSString *action;
+@property (nonatomic, copy) NSString *dismiss;
++ (SpeecherWhatsNewBanner *)bannerWithModel:(const speecher::WhatsNewBannerModel &)model;
+@end
+
+@implementation SpeecherWhatsNewBanner
+
++ (SpeecherWhatsNewBanner *)bannerWithModel:(const speecher::WhatsNewBannerModel &)model
+{
+    SpeecherWhatsNewBanner *banner = [[SpeecherWhatsNewBanner alloc] init];
+    banner.text = model.text.toNSString();
+    banner.action = model.action.toNSString();
+    banner.dismiss = model.dismiss.toNSString();
+    return banner;
+}
+
++ (SpeecherWhatsNewBanner *)previewForVersion:(NSString *)version
+{
+    return [self bannerWithModel:speecher::whatsNewBanner(QString::fromNSString(version))];
+}
+
 @end
 
 @interface SettingsRowModel ()
@@ -1085,7 +1173,9 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.label = row.label.toNSString();
     model.help = (row.helpValue ? row.helpValue(_state->draft) : row.help).toNSString();
     model.kind = bridgedKind(row.kind);
-    model.actionLabel = row.actionLabel.toNSString();
+    model.actionLabel = (row.actionLabelValue ? row.actionLabelValue(_state->draft)
+                                              : row.actionLabel)
+                            .toNSString();
     model.minimum = row.range.minimum;
     model.maximum = row.range.maximum;
     model.step = row.range.step;
@@ -1373,9 +1463,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     context.liveFactsForDraft = [setup = controller->localSetup()](const AppSettings &draft) {
         return setup->liveFacts(draft);
     };
+    speecher::SettingsSchema schema = speecher::buildSettingsSchema(context);
+    speecher::bindCheckForUpdatesRow(schema, controller->updateBanner());
     _settingsSchema = [[SettingsSchemaModel alloc]
         initWithStore:controller->settings()
-               schema:speecher::buildSettingsSchema(context)
+               schema:schema
          capabilities:capabilities];
     __weak SpeecherBridge *weakSelf = self;
     BridgeState *state = _state;
@@ -1452,8 +1544,8 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                              bridge.whatsNewChanged();
                          }
                      });
-    QObject::connect(controller->updates(),
-                     &speecher::UpdateController::changed,
+    QObject::connect(controller->updateBanner(),
+                     &speecher::UpdateBanner::changed,
                      &_state->lifetime,
                      [weakSelf] {
                          SpeecherBridge *bridge = weakSelf;
@@ -1633,15 +1725,14 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                              bridge.popupStatusChanged(status.toNSString());
                          }
                      });
-    // A completed delivery says so on the same line the status uses, which is
-    // what the popup showed before this front end existed.
     QObject::connect(session,
                      &DictationSession::popupMessageRequested,
                      &_state->lifetime,
-                     [weakSelf](const QString &message) {
+                     [weakSelf](const QString &message, speecher::PopupOutcome outcome) {
                          SpeecherBridge *bridge = weakSelf;
-                         if (bridge.popupStatusChanged) {
-                             bridge.popupStatusChanged(message.toNSString());
+                         if (bridge.popupMessageRequested) {
+                             bridge.popupMessageRequested(message.toNSString(),
+                                                          SpeecherPopupOutcome(outcome));
                          }
                      });
     QObject::connect(session,
@@ -1928,35 +2019,15 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     _state->controller->clearPendingWhatsNew();
 }
 
-- (SpeecherUpdateState)updateState
+- (SpeecherUpdateBanner *)updateBanner
 {
-    switch (_state->controller->updates()->state()) {
-    case speecher::UpdateController::State::Idle:
-        return SpeecherUpdateStateIdle;
-    case speecher::UpdateController::State::Checking:
-        return SpeecherUpdateStateChecking;
-    case speecher::UpdateController::State::CheckFailed:
-        return SpeecherUpdateStateCheckFailed;
-    case speecher::UpdateController::State::UpToDate:
-        return SpeecherUpdateStateUpToDate;
-    case speecher::UpdateController::State::UpdateAvailable:
-        return SpeecherUpdateStateUpdateAvailable;
-    case speecher::UpdateController::State::Downloading:
-        return SpeecherUpdateStateDownloading;
-    case speecher::UpdateController::State::ReadyToRestart:
-        return SpeecherUpdateStateReadyToRestart;
-    case speecher::UpdateController::State::RestartPending:
-        return SpeecherUpdateStateRestartPending;
-    case speecher::UpdateController::State::Restarting:
-        return SpeecherUpdateStateRestarting;
-    case speecher::UpdateController::State::Error:
-        return SpeecherUpdateStateError;
-    }
+    return [SpeecherUpdateBanner bannerWithModel:_state->controller->updateBanner()->model()];
 }
 
-- (NSString *)updateVersion
+- (SpeecherWhatsNewBanner *)whatsNewBanner
 {
-    return _state->controller->updates()->availableVersionDisplay().toNSString();
+    return [SpeecherWhatsNewBanner
+        bannerWithModel:speecher::whatsNewBanner(_state->controller->updates()->currentVersion())];
 }
 
 - (NSString *)installedVersion
@@ -1964,39 +2035,38 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return _state->controller->updates()->currentVersion().toNSString();
 }
 
-- (NSInteger)updatePercent
+- (void)runUpdateAction
 {
-    return _state->controller->updates()->downloadPercent();
+    _state->controller->updateBanner()->runAction();
 }
 
-- (NSString *)updateError
+- (void)deferUpdate
 {
-    return _state->controller->updates()->errorMessage().toNSString();
-}
-
-- (BOOL)updateBannerVisible
-{
-    return _state->controller->updates()->bannerVisible();
-}
-
-- (BOOL)updateStableReplacement
-{
-    return _state->controller->updates()->stableReplacementAvailable();
-}
-
-- (void)installUpdateAndRestart
-{
-    _state->controller->updates()->installAndRestart();
-}
-
-- (void)updateNow
-{
-    _state->controller->updates()->updateNow();
+    _state->controller->updateBanner()->later();
 }
 
 - (void)dismissUpdate
 {
-    _state->controller->updates()->dismissAvailableVersion();
+    _state->controller->updateBanner()->dismiss();
+}
+
++ (CGFloat)popupErrorWrapWidth
+{
+    return speecher::kPopupErrorWrapWidth;
+}
+
++ (NSTimeInterval)popupErrorDismissSeconds
+{
+    return speecher::kPopupErrorDismissMs / 1000.0;
+}
+
++ (NSString *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font
+{
+    NSDictionary *attributes = @{NSFontAttributeName: font};
+    return speecher::trimPreviewToFit(QString::fromNSString(preview), [&](const QString &text) {
+               return [text.toNSString() sizeWithAttributes:attributes].width <= width;
+           })
+        .toNSString();
 }
 
 - (BOOL)accessibilitySupported

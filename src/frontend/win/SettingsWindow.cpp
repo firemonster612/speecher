@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #include "core/InsightsLog.h"
 #include "core/SettingsStore.h"
@@ -112,10 +113,16 @@ struct SettingsWindow::Native {
         };
         model.capabilitiesChanged = [this] { queueRebuild(); };
         model.anthropicCredentialsChanged = [this] { queueRebuild(); };
-        QObject::connect(controller->updates(),
-                         &UpdateController::changed,
+        // The Check for updates row follows the banner's state too.
+        QObject::connect(controller->updateBanner(),
+                         &UpdateBanner::changed,
                          &lifetime,
-                         [this] { refreshBanner(); });
+                         [this] {
+                             refreshBanner();
+                             if (currentPane == QStringLiteral("general")) {
+                                 queueRebuild();
+                             }
+                         });
         QObject::connect(controller,
                          &ApplicationController::whatsNewChanged,
                          &lifetime,
@@ -622,114 +629,65 @@ struct SettingsWindow::Native {
         }
     }
 
-    // AppWindow::refreshUpdateBanner, drawn as an InfoBar: available /
-    // downloading with progress / restart / restarting / error, plus the
-    // What's New offer when nothing else is showing.
+    // The update banner as core words it, drawn as an InfoBar: the primary
+    // action and Later as its action buttons, download progress as its
+    // content, and Dismiss as its close button. The What's New offer takes
+    // its place when nothing else is showing.
     void refreshBanner()
     {
         if (!banner) {
             return;
         }
-        UpdateController *updates = controller->updates();
-        const QString availableVersion = updates->availableVersion();
-        if ((!availableVersion.isEmpty() && bannerVersion != availableVersion)
-            || bannerInstalledVersion != updates->currentVersion()) {
-            bannerDeferred = false;
-            bannerVersion = availableVersion;
-            bannerInstalledVersion = updates->currentVersion();
-        }
         banner.Content(nullptr);
-        bannerCloseAction = {};
-
-        const auto action = [this](const QString &caption, std::function<void()> run) {
-            Button button;
-            button.Content(box_value(hs(caption)));
-            button.Click([run = std::move(run)](const auto &, const auto &) { run(); });
-            banner.ActionButton(button);
-        };
         banner.ActionButton(nullptr);
+        bannerCloseAction = {};
+        const auto button = [](const QString &caption, bool enabled, std::function<void()> run) {
+            Button control;
+            control.Content(box_value(hs(caption)));
+            control.IsEnabled(enabled);
+            control.Click([run = std::move(run)](const auto &, const auto &) { run(); });
+            return control;
+        };
 
-        if (!updates->bannerVisible() && !controller->pendingWhatsNewVersion().isEmpty()) {
+        const UpdateBannerModel update = controller->updateBanner()->model();
+        if (!update.visible && !controller->pendingWhatsNewVersion().isEmpty()) {
+            const WhatsNewBannerModel whatsNew =
+                whatsNewBanner(controller->updates()->currentVersion());
             banner.Severity(InfoBarSeverity::Success);
-            banner.Message(hs(QStringLiteral("Speecher %1 is installed")
-                                  .arg(updates->currentVersion().section(QLatin1Char('-'), 0, 0))));
-            action(QStringLiteral("See what's new"), [this] { showWhatsNew(); });
+            banner.Message(hs(whatsNew.text));
+            banner.ActionButton(button(whatsNew.action, true, [this] { showWhatsNew(); }));
             banner.IsClosable(true);
             bannerCloseAction = [this] { controller->clearPendingWhatsNew(); };
             banner.IsOpen(true);
             return;
         }
-        // "Later" hides states where restart is not yet underway. Once
-        // restarting has begun, keep its status visible to explain the exit.
-        if (bannerDeferred
-            && (updates->state() == UpdateController::State::ReadyToRestart
-                || updates->state() == UpdateController::State::RestartPending)) {
+        if (!update.visible) {
             banner.IsOpen(false);
             return;
         }
-        if (!updates->bannerVisible()) {
-            banner.IsOpen(false);
-            return;
-        }
-        banner.Severity(updates->state() == UpdateController::State::Error
-                            ? InfoBarSeverity::Error
+        banner.Severity(update.tone == UpdateBannerModel::Tone::Error ? InfoBarSeverity::Error
+                        : update.tone == UpdateBannerModel::Tone::Positive
+                            ? InfoBarSeverity::Success
                             : InfoBarSeverity::Informational);
-        banner.IsClosable(false);
-        switch (updates->state()) {
-        case UpdateController::State::UpdateAvailable:
-            banner.Message(hs(
-                updates->stableReplacementAvailable()
-                    ? QStringLiteral("Switch to Stable Release %1 (replaces this Nightly Build)")
-                          .arg(updates->availableVersionDisplay())
-                    : QStringLiteral("Speecher %1 is available")
-                          .arg(updates->availableVersionDisplay())));
-            action(QStringLiteral("Install and restart"),
-                   [updates] { updates->installAndRestart(); });
-            banner.IsClosable(true);
-            bannerCloseAction = [updates] { updates->dismissAvailableVersion(); };
-            break;
-        case UpdateController::State::Downloading: {
-            banner.Message(hs(QStringLiteral("Downloading Speecher %1")
-                                  .arg(updates->availableVersionDisplay())));
+        banner.Message(hs(update.text));
+        UpdateBanner *model = controller->updateBanner();
+        if (!update.action.isEmpty()) {
+            banner.ActionButton(
+                button(update.action, update.actionEnabled, [model] { model->runAction(); }));
+        }
+        // The InfoBar has one action button, so Later and the download's
+        // progress go in its content row beneath the message.
+        if (update.progress >= 0) {
             ProgressBar progress;
             progress.Minimum(0);
             progress.Maximum(100);
-            progress.Value(updates->downloadPercent());
+            progress.Value(update.progress);
             banner.Content(progress);
-            break;
+        } else if (!update.later.isEmpty()) {
+            banner.Content(button(update.later, true, [model] { model->later(); }));
         }
-        case UpdateController::State::ReadyToRestart:
-            banner.Message(hs(updates->errorMessage().isEmpty()
-                                  ? QStringLiteral("Restart to finish updating")
-                                  : updates->errorMessage()));
-            action(QStringLiteral("Restart now"), [updates] { updates->updateNow(); });
-            // The close button is "Later" here: hide until the next version.
-            banner.IsClosable(true);
-            bannerCloseAction = [this] {
-                bannerDeferred = true;
-                refreshBanner();
-            };
-            break;
-        case UpdateController::State::RestartPending:
-            banner.Message(L"Restarting after this dictation…");
-            break;
-        case UpdateController::State::Restarting:
-            banner.Message(L"Restarting…");
-            break;
-        case UpdateController::State::Error:
-            banner.Message(hs(updates->errorMessage()));
-            // The Qt banner routes every caption through updateNow(), which
-            // retries or opens the release page as the state demands.
-            action(updates->manualInstallRequired() ? QStringLiteral("Open release page")
-                                                    : QStringLiteral("Try again"),
-                   [updates] { updates->updateNow(); });
-            banner.IsClosable(true);
-            bannerCloseAction = [updates] { updates->dismissAvailableVersion(); };
-            break;
-        default:
-            banner.IsOpen(false);
-            return;
-        }
+        banner.IsClosable(!update.dismiss.isEmpty());
+        bannerCloseAction = [model] { model->dismiss(); };
         banner.IsOpen(true);
     }
 
@@ -831,10 +789,6 @@ struct SettingsWindow::Native {
     bool rebuildQueued = false;
     bool liveRebuildPending = false;
 
-    // Update banner state, as AppWindow keeps it.
-    QString bannerVersion;
-    QString bannerInstalledVersion;
-    bool bannerDeferred = false;
     std::function<void()> bannerCloseAction;
 };
 

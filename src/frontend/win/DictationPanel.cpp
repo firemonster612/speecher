@@ -1,9 +1,11 @@
 #include "frontend/win/DictationPanel.h"
 
 #include "app/ApplicationController.h"
+#include "app/UpdateBanner.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
+#include "dictation/PopupPresentation.h"
 #include "frontend/win/SettingsPage.h"
 #include "ui/WaveformModel.h"
 
@@ -31,7 +33,6 @@
 #include <QImage>
 #include <QElapsedTimer>
 #include <QTimer>
-#include <QTextBoundaryFinder>
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +64,10 @@ constexpr int maximumPreviewWidth = 488;
 constexpr int screenEdgeMargin = 80;
 constexpr int bottomMargin = 28;
 constexpr int bannerGap = 12;
+// A problem's padding, warning glyph, Dismiss button and the gaps between.
+constexpr int problemChromeWidth = 150;
+// The countdown bar under a problem and its margin.
+constexpr int problemBarHeight = 16;
 constexpr auto windowClassName = L"SpeecherDictationPanel";
 
 // Same dot geometry as the Linux waveform; the travelling crest and level
@@ -88,10 +93,23 @@ bool isUniform(const QImage &image)
     return true;
 }
 
+// Segoe Fluent Icons for each receipt: sent into the Target, left on the
+// clipboard, or delivered raw because refinement failed.
+QString outcomeGlyph(PopupOutcome outcome)
+{
+    switch (outcome) {
+    case PopupOutcome::Inserted: return QString::fromUtf16(u"\uE724");
+    case PopupOutcome::Copied: return QString::fromUtf16(u"\uF0E3");
+    case PopupOutcome::Fallback: return QString::fromUtf16(u"\uE946");
+    case PopupOutcome::Error: return QString::fromUtf16(u"\uE7BA");
+    }
+    return QString::fromUtf16(u"\uE946");
+}
+
 QString phaseGlyph(const QString &status, bool problem)
 {
     if (problem) {
-        return QString::fromUtf16(u"\uE7BA");
+        return outcomeGlyph(PopupOutcome::Error);
     }
     const QString phase = status.toLower();
     if (phase.isEmpty() || phase == QStringLiteral("preparing")
@@ -112,44 +130,6 @@ QString phaseGlyph(const QString &status, bool problem)
 
 } // namespace
 
-win::UpdateChipState win::updateChipState(UpdateController::State state, const QString &version,
-                                          int percent, const QString &error, bool repeatedFailure,
-                                          bool manualInstall, DictationState sessionState)
-{
-    const bool canAct = sessionState == DictationState::Idle
-        || sessionState == DictationState::Error;
-    using State = UpdateController::State;
-    switch (state) {
-    case State::UpdateAvailable:
-        // The caller hands the display form: a stable version number, or a
-        // nightly's build and commit, which is what changes between nightlies.
-        return {QStringLiteral("Speecher %1 available").arg(version),
-                QStringLiteral("Install and restart"), true, true};
-    case State::Downloading:
-        return {QStringLiteral("Downloading %1%").arg(percent), {}, true, false};
-    case State::ReadyToRestart:
-        return {error.isEmpty() ? QStringLiteral("Update ready") : error,
-                QStringLiteral("Restart now"), true, true};
-    case State::RestartPending:
-        return {QStringLiteral("Restarting after this dictation…"), {}, true, false};
-    case State::Restarting:
-        return {QStringLiteral("Restarting…"), {}, true, false};
-    case State::Error:
-        return {error,
-                manualInstall ? QStringLiteral("Open release page")
-                              : QStringLiteral("Try again"),
-                true, canAct};
-    case State::CheckFailed:
-        if (repeatedFailure) {
-            return {QStringLiteral("Update check failed"), QStringLiteral("Try again"),
-                    true, canAct};
-        }
-        return {};
-    default:
-        return {};
-    }
-}
-
 struct DictationPanel::Native : QObject {
     enum class Phase { Live, Transcribing, Refining };
 
@@ -161,10 +141,9 @@ struct DictationPanel::Native : QObject {
         barTimer.setInterval(waveform::frameIntervalMs);
         barClock.start();
         connect(&barTimer, &QTimer::timeout, this, &Native::animateBars);
-        // The same five seconds the Qt popup counts down; the Dismiss button
-        // remains the early way out.
+        // The countdown every platform shows; Dismiss stays the early way out.
         problemAutoDismiss.setSingleShot(true);
-        problemAutoDismiss.setInterval(5000);
+        problemAutoDismiss.setInterval(kPopupErrorDismissMs);
         connect(&problemAutoDismiss, &QTimer::timeout, this, &Native::dismissProblem);
         whatsNewAutoHide.setSingleShot(true);
         whatsNewAutoHide.setInterval(6000);
@@ -172,7 +151,7 @@ struct DictationPanel::Native : QObject {
             whatsNewHidden = true;
             refresh();
         });
-        connect(controller->updates(), &UpdateController::changed, this, &Native::refresh);
+        connect(controller->updateBanner(), &UpdateBanner::changed, this, &Native::refreshBanner);
         connect(controller, &ApplicationController::whatsNewChanged, this, [this] {
             whatsNewHidden = false;
             if (window && IsWindowVisible(window)) {
@@ -223,8 +202,9 @@ struct DictationPanel::Native : QObject {
             setStatus(QStringLiteral("Listening"));
         });
         connect(session, &DictationSession::popupMessageRequested, this,
-                [this](const QString &message) {
+                [this](const QString &message, PopupOutcome value) {
                     status = message;
+                    outcome = value;
                     completed = true;
                     refresh();
                 });
@@ -300,12 +280,7 @@ struct DictationPanel::Native : QObject {
             LR"(<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" />)")
             .as<Border>();
         chrome.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
-        outline = Microsoft::UI::Xaml::Markup::XamlReader::Load(
-            LR"(<Path xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Fill="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}" Stroke="{ThemeResource ControlStrongStrokeColorDefaultBrush}" StrokeThickness="1"/>)")
-            .as<Microsoft::UI::Xaml::Shapes::Path>();
-        outline.Margin({0.5, 0.5, 0.5, 0.5});
-        outline.HorizontalAlignment(HorizontalAlignment::Left);
-        outline.VerticalAlignment(VerticalAlignment::Top);
+        outline = capsuleShape();
         content = StackPanel();
         content.VerticalAlignment(VerticalAlignment::Center);
         row = StackPanel();
@@ -366,6 +341,17 @@ struct DictationPanel::Native : QObject {
         row.Children().Append(dismiss);
 
         content.Children().Append(row);
+        // The problem's countdown, draining over the time it has left.
+        countdown = ProgressBar();
+        countdown.Minimum(0);
+        countdown.Maximum(kPopupErrorDismissMs);
+        countdown.Margin({24, 0, 24, 12});
+        countdown.Visibility(Visibility::Collapsed);
+        content.Children().Append(countdown);
+        countdownTick.setInterval(50);
+        connect(&countdownTick, &QTimer::timeout, this, [this] {
+            countdown.Value(problemAutoDismiss.remainingTime());
+        });
         Grid layers;
         layers.Children().Append(outline);
         layers.Children().Append(content);
@@ -389,24 +375,22 @@ struct DictationPanel::Native : QObject {
         resize(panelWidth);
     }
 
-    // The notices live in their own rounded acrylic surface floating above
-    // the pill, never inside the pill's slab: each one is a plain message
-    // with an explicitly labelled accent button beside it, so the action
-    // reads as a button rather than asking the user to guess that colored
-    // text is clickable.
+    // The notices float above the pill in a transparent window of their
+    // own, never inside the pill's slab. Each is its own capsule, drawn as the
+    // pill is, holding a plain message and an explicitly labelled accent
+    // button, so the action reads as a button rather than as colored text.
     void ensureBanner()
     {
         if (banner) {
             return;
         }
         banner = CreateWindowExW(
-            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP
+                | WS_EX_LAYERED,
             windowClassName, L"Speecher notices", WS_POPUP,
             0, 0, panelWidth, panelHeight, nullptr, nullptr,
             GetModuleHandleW(nullptr), nullptr);
-        const DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
-        DwmSetWindowAttribute(banner, DWMWA_WINDOW_CORNER_PREFERENCE,
-                              &corner, sizeof(corner));
+        SetLayeredWindowAttributes(banner, 0, 255, LWA_ALPHA);
 
         bannerSource = DesktopWindowXamlSource();
         bannerSource.Initialize(Microsoft::UI::GetWindowIdFromWindow(banner));
@@ -414,32 +398,36 @@ struct DictationPanel::Native : QObject {
         const auto accentStyle = Application::Current().Resources()
                                      .Lookup(box_value(hstring(L"AccentButtonStyle")))
                                      .as<Microsoft::UI::Xaml::Style>();
-        const auto makeRow = [&accentStyle](TextBlock &message, Button &action) {
-            StackPanel row;
+        const auto makeRow = [&accentStyle](Grid &capsule, Microsoft::UI::Xaml::Shapes::Path &shape,
+                                            StackPanel &row, TextBlock &message, Button &action) {
+            row = StackPanel();
             row.Orientation(Orientation::Horizontal);
-            row.HorizontalAlignment(HorizontalAlignment::Center);
             row.Spacing(10);
+            row.Padding({16, 5, 5, 5});
             message = TextBlock();
             message.VerticalAlignment(VerticalAlignment::Center);
-            message.TextWrapping(TextWrapping::Wrap);
             row.Children().Append(message);
             action = Button();
             action.Style(accentStyle);
-            action.CornerRadius({8, 8, 8, 8});
-            action.Padding({14, 6, 14, 6});
+            action.CornerRadius({14, 14, 14, 14});
+            action.Padding({14, 4, 14, 4});
             row.Children().Append(action);
-            return row;
+            shape = capsuleShape();
+            capsule = Grid();
+            capsule.HorizontalAlignment(HorizontalAlignment::Center);
+            capsule.Children().Append(shape);
+            capsule.Children().Append(row);
+            return capsule;
         };
 
         bannerRoot = StackPanel();
-        bannerRoot.Spacing(8);
-        bannerRoot.Padding({16, 10, 16, 10});
-        whatsNewRow = makeRow(whatsNewText, whatsNewAction);
-        whatsNewAction.Content(box_value(L"See what's new"));
+        bannerRoot.Spacing(bannerGap);
+        bannerRoot.Children().Append(
+            makeRow(whatsNewCapsule, whatsNewShape, whatsNewRow, whatsNewText, whatsNewAction));
         whatsNewAction.Click([this](const auto &, const auto &) {
             emit panel->whatsNewRequested();
         });
-        Button whatsNewDismiss;
+        whatsNewDismiss = Button();
         whatsNewDismiss.Width(28);
         whatsNewDismiss.Height(28);
         whatsNewDismiss.Padding({0, 0, 0, 0});
@@ -448,32 +436,25 @@ struct DictationPanel::Native : QObject {
         closeIcon.Glyph(L"");
         closeIcon.FontSize(10);
         whatsNewDismiss.Content(closeIcon);
-        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(
-            whatsNewDismiss, L"Dismiss what's new");
         whatsNewDismiss.Click([this](const auto &, const auto &) {
             controller->clearPendingWhatsNew();
         });
         whatsNewRow.Children().Append(whatsNewDismiss);
-        bannerRoot.Children().Append(whatsNewRow);
-        updateRow = makeRow(updateText, updateAction);
+        bannerRoot.Children().Append(
+            makeRow(updateCapsule, updateShape, updateRow, updateText, updateAction));
         updateAction.Click([this](const auto &, const auto &) {
-            controller->updates()->installAndRestart();
+            controller->updateBanner()->runAction();
         });
-        bannerRoot.Children().Append(updateRow);
         bannerSource.Content(bannerRoot);
-        bannerSource.SystemBackdrop(DesktopAcrylicBackdrop());
     }
 
     void refreshBanner()
     {
-        auto *updates = controller->updates();
-        const auto notice = win::updateChipState(
-            updates->state(), updates->availableVersionDisplay(), updates->downloadPercent(),
-            updates->errorMessage(), updates->repeatedAutomaticCheckFailure(),
-            updates->manualInstallRequired(), controller->session()->state());
+        UpdateBannerModel update = controller->updateBanner()->model();
+        update.visible = update.visible && update.showInPopup;
         const bool showWhatsNew = !whatsNewHidden
             && !controller->pendingWhatsNewVersion().isEmpty();
-        if (!window || !IsWindowVisible(window) || (!notice.visible && !showWhatsNew)) {
+        if (!window || !IsWindowVisible(window) || (!update.visible && !showWhatsNew)) {
             if (banner) {
                 ShowWindow(banner, SW_HIDE);
             }
@@ -481,29 +462,41 @@ struct DictationPanel::Native : QObject {
         }
         ensureBanner();
         bannerRoot.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
-        updateText.Text(hstring(notice.text.toStdWString()));
-        updateAction.Content(box_value(hstring(notice.action.toStdWString())));
-        updateAction.Visibility(notice.action.isEmpty() ? Visibility::Collapsed
+        updateText.Text(win::hs(update.text));
+        updateAction.Content(box_value(win::hs(update.action)));
+        updateAction.Visibility(update.action.isEmpty() ? Visibility::Collapsed
                                                         : Visibility::Visible);
-        updateAction.IsEnabled(notice.enabled);
-        updateRow.Visibility(notice.visible ? Visibility::Visible : Visibility::Collapsed);
-        whatsNewText.Text(hstring(
-            QStringLiteral("Speecher %1 installed")
-                .arg(updates->currentVersion().section(QLatin1Char('-'), 0, 0))
-                .toStdWString()));
-        whatsNewRow.Visibility(showWhatsNew ? Visibility::Visible : Visibility::Collapsed);
+        updateAction.IsEnabled(update.actionEnabled);
+        updateCapsule.Visibility(update.visible ? Visibility::Visible : Visibility::Collapsed);
+        const WhatsNewBannerModel whatsNew = whatsNewBanner(controller->updates()->currentVersion());
+        whatsNewText.Text(win::hs(whatsNew.text));
+        whatsNewAction.Content(box_value(win::hs(whatsNew.action)));
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(whatsNewDismiss,
+                                                                        win::hs(whatsNew.dismiss));
+        whatsNewCapsule.Visibility(showWhatsNew ? Visibility::Visible : Visibility::Collapsed);
         positionBanner();
         ShowWindow(banner, SW_SHOWNOACTIVATE);
     }
 
-    // Centered above the pill with a small gap, sized to the measured rows.
+    // Centered above the pill with a small gap, sized to the measured rows,
+    // each capsule's outline sized to its own row.
     void positionBanner()
     {
         MONITORINFO monitor{sizeof(monitor)};
         GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor);
         const float maximumWidth = float(
             (monitor.rcWork.right - monitor.rcWork.left) / scale() - screenEdgeMargin);
-        bannerRoot.Measure({maximumWidth, std::numeric_limits<float>::infinity()});
+        constexpr float unbounded = std::numeric_limits<float>::infinity();
+        for (auto [row, shape] : {std::pair{whatsNewRow, whatsNewShape},
+                                  std::pair{updateRow, updateShape}}) {
+            row.Measure({maximumWidth, unbounded});
+            const double rowWidth = std::ceil(row.DesiredSize().Width);
+            const double rowHeight = std::ceil(row.DesiredSize().Height);
+            shape.Data(capsuleGeometry(rowWidth - 1, rowHeight - 1));
+            shape.Width(rowWidth);
+            shape.Height(rowHeight);
+        }
+        bannerRoot.Measure({maximumWidth, unbounded});
         const int bannerWidth = px(int(std::ceil(bannerRoot.DesiredSize().Width)));
         const int bannerHeight = px(int(std::ceil(bannerRoot.DesiredSize().Height)));
         RECT pill{};
@@ -517,9 +510,10 @@ struct DictationPanel::Native : QObject {
 
     void show(quint64 generation)
     {
-        // A dictation starting inside a problem's five seconds must not be
-        // torn down when that problem's timer fires.
+        // A dictation starting inside a problem's countdown must not be torn
+        // down when that problem's timer fires.
         problemAutoDismiss.stop();
+        countdownTick.stop();
         problem.clear();
         // The previous dictation's words are spent; the session's clearing
         // preview can be dropped by the frozen guard, so clear here too.
@@ -557,6 +551,9 @@ struct DictationPanel::Native : QObject {
         ensureWindow();
         applyTheme();
         whatsNewHidden = false;
+        problemAutoDismiss.start();
+        countdown.Value(kPopupErrorDismissMs);
+        countdownTick.start();
         refresh();
         reposition();
         ShowWindow(window, SW_SHOWNOACTIVATE);
@@ -564,13 +561,13 @@ struct DictationPanel::Native : QObject {
         if (!controller->pendingWhatsNewVersion().isEmpty()) {
             whatsNewAutoHide.start();
         }
-        problemAutoDismiss.start();
     }
 
     void hide()
     {
         whatsNewAutoHide.stop();
         problemAutoDismiss.stop();
+        countdownTick.stop();
         barTimer.stop();
         setShimmer(false);
         if (banner) {
@@ -727,9 +724,11 @@ struct DictationPanel::Native : QObject {
         // A finished delivery: the outcome message is the whole story, so the
         // spent preview words go and the icon and message centre in the pill.
         const bool finished = completed && !hasProblem;
-        glyph.Glyph(hstring((refining && !hasProblem
-                                 ? QString::fromUtf16(u"\uE8A9")
-                                 : phaseGlyph(status, hasProblem))
+        // A receipt outranks the refining flag, which can still be set when
+        // the delivery lands.
+        glyph.Glyph(hstring((finished                   ? outcomeGlyph(outcome)
+                             : refining && !hasProblem ? QString::fromUtf16(u"\uE8A9")
+                                                       : phaseGlyph(status, hasProblem))
                                 .toStdWString()));
         const bool renewing = status == QStringLiteral("Renewing sign-in…");
         const bool waiting = !hasProblem && !finished && (phase != Phase::Live || renewing);
@@ -743,12 +742,15 @@ struct DictationPanel::Native : QObject {
         GetCursorPos(&pointer);
         MONITORINFO monitor{sizeof(monitor)};
         GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
-        const int minimumWidth = hasProblem ? 420 : panelWidth;
-        const int maximumWidth = std::max(minimumWidth,
-            int((monitor.rcWork.right - monitor.rcWork.left) / scale()) - screenEdgeMargin);
-        int wantedWidth = hasProblem || finished
-            ? std::clamp(measuredTextWidth(shown) + (hasProblem ? 150 : 68),
-                         minimumWidth, maximumWidth)
+        const int screenWidth =
+            int((monitor.rcWork.right - monitor.rcWork.left) / scale()) - screenEdgeMargin;
+        // A problem wraps at the width every platform shares and grows taller.
+        const int maximumWidth = hasProblem
+            ? std::min(kPopupErrorWrapWidth + problemChromeWidth, screenWidth)
+            : std::max(panelWidth, screenWidth);
+        int wantedWidth = hasProblem ? std::clamp(measuredTextWidth(shown) + problemChromeWidth,
+                                                  panelWidth, maximumWidth)
+            : finished ? std::clamp(measuredTextWidth(shown) + 68, panelWidth, maximumWidth)
             : waiting ? std::max(panelWidth, measuredTextWidth(shown) + 32) : panelWidth;
         if (showPreview) {
             const int transcriptMaximum = std::min(maximumPreviewWidth, maximumWidth);
@@ -767,7 +769,10 @@ struct DictationPanel::Native : QObject {
         content.Padding({0, 0, 0, showPreview ? double(previewBottomPadding) : 0.0});
         text.Text(hstring(shown.toStdWString()));
         text.Visibility(listening ? Visibility::Collapsed : Visibility::Visible);
-        text.Width(hasProblem ? wantedWidth - 150 : finished ? wantedWidth - 68 : wantedWidth);
+        text.Width(hasProblem ? wantedWidth - problemChromeWidth
+                   : finished ? wantedWidth - 68 : wantedWidth);
+        text.TextWrapping(hasProblem ? TextWrapping::Wrap : TextWrapping::NoWrap);
+        text.MaxLines(hasProblem ? 0 : 1);
         text.TextAlignment(TextAlignment::Center);
         row.HorizontalAlignment(HorizontalAlignment::Center);
         glyph.Visibility(hasProblem || finished ? Visibility::Visible : Visibility::Collapsed);
@@ -780,14 +785,24 @@ struct DictationPanel::Native : QObject {
             barTimer.stop();
         }
         dismiss.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
+        countdown.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
         // Measure the native font so both the contour and strip clear its ink.
         probe.Text(L"Ag");
         probe.Measure({std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()});
         const int lineHeight = int(std::ceil(probe.DesiredSize().Height));
-        const int stripHeight = showPreview ? waiting ? lineHeight + 6 : compactStripHeight : panelHeight;
+        int problemHeight = 0;
+        if (hasProblem) {
+            text.Measure({float(wantedWidth - problemChromeWidth),
+                          std::numeric_limits<float>::infinity()});
+            problemHeight = std::max(panelHeight - problemBarHeight,
+                                     int(std::ceil(text.DesiredSize().Height)) + 2 * previewTopPadding);
+        }
+        const int stripHeight = hasProblem ? problemHeight
+            : showPreview ? waiting ? lineHeight + 6 : compactStripHeight : panelHeight;
         row.Height(stripHeight);
         bars.Height(stripHeight);
-        const int wantedHeight = showPreview
+        const int wantedHeight = hasProblem ? problemHeight + problemBarHeight
+            : showPreview
             ? previewTopPadding + lineHeight + previewStripSpacing + stripHeight + previewBottomPadding
             : panelHeight;
         // Keep the native host stable while XAML resizes the visible capsule.
@@ -830,27 +845,54 @@ struct DictationPanel::Native : QObject {
 
     QString fitPreview(const QString &value, int maximumWidth)
     {
-        if (measuredTextWidth(value) <= maximumWidth) {
-            return value;
-        }
-        std::vector<qsizetype> boundaries;
-        QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme, value);
-        for (qsizetype position = finder.toNextBoundary(); position >= 0;
-             position = finder.toNextBoundary()) {
-            boundaries.push_back(position);
-        }
-        const QString ellipsis = QString::fromUtf16(u"\u2026");
-        size_t first = 0;
-        size_t last = boundaries.size() - 1;
-        while (first < last) {
-            const size_t middle = first + (last - first) / 2;
-            if (measuredTextWidth(ellipsis + value.mid(boundaries[middle])) <= maximumWidth) {
-                last = middle;
-            } else {
-                first = middle + 1;
-            }
-        }
-        return ellipsis + value.mid(boundaries[first]);
+        return trimPreviewToFit(value, [this, maximumWidth](const QString &candidate) {
+            return measuredTextWidth(candidate) <= maximumWidth;
+        });
+    }
+
+    // The pill's own surface: the theme's acrylic fill and strong stroke,
+    // which the banner capsules share.
+    static Microsoft::UI::Xaml::Shapes::Path capsuleShape()
+    {
+        auto shape = Microsoft::UI::Xaml::Markup::XamlReader::Load(
+            LR"(<Path xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Fill="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}" Stroke="{ThemeResource ControlStrongStrokeColorDefaultBrush}" StrokeThickness="1"/>)")
+            .as<Microsoft::UI::Xaml::Shapes::Path>();
+        shape.Margin({0.5, 0.5, 0.5, 0.5});
+        shape.HorizontalAlignment(HorizontalAlignment::Left);
+        shape.VerticalAlignment(VerticalAlignment::Top);
+        return shape;
+    }
+
+    // A rounded rectangle whose corners are a capsule's at the pill's height.
+    static PathGeometry capsuleGeometry(double width, double height)
+    {
+        const double radius = std::min(24.0, height / 2.0);
+        PathFigure figure;
+        figure.IsClosed(true);
+        const auto line = [&](double x, double y) {
+            LineSegment segment;
+            segment.Point({float(x), float(y)});
+            figure.Segments().Append(segment);
+        };
+        const auto arc = [&](double x, double y) {
+            ArcSegment segment;
+            segment.Point({float(x), float(y)});
+            segment.Size({float(radius), float(radius)});
+            segment.SweepDirection(SweepDirection::Clockwise);
+            figure.Segments().Append(segment);
+        };
+        figure.StartPoint({float(radius), 0});
+        line(width - radius, 0);
+        arc(width, radius);
+        line(width, height - radius);
+        arc(width - radius, height);
+        line(radius, height);
+        arc(0, height - radius);
+        line(0, radius);
+        arc(radius, 0);
+        PathGeometry geometry;
+        geometry.Figures().Append(figure);
+        return geometry;
     }
 
     // Same circular end caps and concave joins as the accepted Qt preview.
@@ -886,31 +928,22 @@ struct DictationPanel::Native : QObject {
             figure.Segments().Append(segment);
         };
         if (shoulder <= 0 || lobeHeight <= 0 || fillet < 4) {
-            radius = std::min(24.0, height / 2.0);
-            figure.StartPoint({float(radius), 0});
-            line(width - radius, 0);
-            arc(width, radius, radius, SweepDirection::Clockwise);
-            line(width, height - radius);
-            arc(width - radius, height, radius, SweepDirection::Clockwise);
-            line(radius, height);
-            arc(0, height - radius, radius, SweepDirection::Clockwise);
-            line(0, radius);
-            arc(radius, 0, radius, SweepDirection::Clockwise);
-        } else {
-            figure.StartPoint({float(cap), 0});
-            line(width - cap, 0);
-            arc(width - cap, shoulder, cap, SweepDirection::Clockwise);
-            line(right + fillet, shoulder);
-            arc(right, shoulder + fillet, fillet, SweepDirection::Counterclockwise);
-            line(right, height - radius);
-            arc(right - radius, height, radius, SweepDirection::Clockwise);
-            line(left + radius, height);
-            arc(left, height - radius, radius, SweepDirection::Clockwise);
-            line(left, shoulder + fillet);
-            arc(left - fillet, shoulder, fillet, SweepDirection::Counterclockwise);
-            line(cap, shoulder);
-            arc(cap, 0, cap, SweepDirection::Clockwise);
+            outline.Data(capsuleGeometry(width, height));
+            return;
         }
+        figure.StartPoint({float(cap), 0});
+        line(width - cap, 0);
+        arc(width - cap, shoulder, cap, SweepDirection::Clockwise);
+        line(right + fillet, shoulder);
+        arc(right, shoulder + fillet, fillet, SweepDirection::Counterclockwise);
+        line(right, height - radius);
+        arc(right - radius, height, radius, SweepDirection::Clockwise);
+        line(left + radius, height);
+        arc(left, height - radius, radius, SweepDirection::Clockwise);
+        line(left, shoulder + fillet);
+        arc(left - fillet, shoulder, fillet, SweepDirection::Counterclockwise);
+        line(cap, shoulder);
+        arc(cap, 0, cap, SweepDirection::Clockwise);
         PathGeometry geometry;
         geometry.Figures().Append(figure);
         outline.Data(geometry);
@@ -980,12 +1013,17 @@ struct DictationPanel::Native : QObject {
     Microsoft::UI::Xaml::Shapes::Path outline{nullptr};
     StackPanel content{nullptr};
     StackPanel bannerRoot{nullptr};
+    Grid updateCapsule{nullptr};
+    Microsoft::UI::Xaml::Shapes::Path updateShape{nullptr};
     StackPanel updateRow{nullptr};
     TextBlock updateText{nullptr};
     Button updateAction{nullptr};
+    Grid whatsNewCapsule{nullptr};
+    Microsoft::UI::Xaml::Shapes::Path whatsNewShape{nullptr};
     StackPanel whatsNewRow{nullptr};
     TextBlock whatsNewText{nullptr};
     Button whatsNewAction{nullptr};
+    Button whatsNewDismiss{nullptr};
     QTimer whatsNewAutoHide;
     bool whatsNewHidden = false;
     FontIcon glyph{nullptr};
@@ -999,6 +1037,8 @@ struct DictationPanel::Native : QObject {
     waveform::LevelModel level;
     float barPhase = 0.0f;
     QTimer problemAutoDismiss;
+    QTimer countdownTick;
+    ProgressBar countdown{nullptr};
     Button dismiss{nullptr};
     QString status;
     QString preview;
@@ -1016,6 +1056,7 @@ struct DictationPanel::Native : QObject {
     bool shimmering = false;
     bool frozen = false;
     bool completed = false;
+    PopupOutcome outcome = PopupOutcome::Inserted;
     bool refining = false;
     bool loaded = false;
 };

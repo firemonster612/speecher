@@ -266,6 +266,32 @@ private slots:
         bridge.popupListeningIndicatorRequested();
         settle();
         QCOMPARE(panel.frame.size.width, initial.size.width);
+
+        // Receipts carry their outcome's symbol; a problem wraps at the shared
+        // width and grows taller, with its countdown beneath.
+        QVERIFY(bridge.popupMessageRequested);
+        bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted);
+        settle();
+        QVERIFY(capture("receipt-inserted"));
+        bridge.popupMessageRequested(@"Copied", SpeecherPopupOutcomeCopied);
+        settle();
+        QVERIFY(capture("receipt-copied"));
+        bridge.popupErrorRequested(@"Microphone unavailable");
+        settle();
+        const CGFloat shortError = panel.frame.size.height;
+        QVERIFY(capture("error-short"));
+        bridge.popupErrorRequested(@"The transcription service rejected the request: the API key "
+                                   @"is invalid or has expired. Check the key on the Accounts "
+                                   @"page, then try again.");
+        settle();
+        QVERIFY(panel.frame.size.height > shortError);
+        QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
+        QVERIFY(capture("error-long"));
+        bridge.popupErrorRequested(@"Could not reach https://example.com/"
+                                   @"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+        settle();
+        QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
+        QVERIFY(capture("error-unbroken"));
     }
 
     // Skip, all nine pages, and Finish are driven through the native AX tree
@@ -730,7 +756,7 @@ private slots:
         QCOMPARE(controller.settings()->updatesRestoreState(), QStringLiteral("settings"));
     }
 
-    // A CI-only capture: with SPEECHER_UPDATE_PREVIEW_DIR set, render the five
+    // A CI-only capture: with SPEECHER_UPDATE_PREVIEW_DIR set, render the
     // update UI states to PNGs the workflow uploads. Skipped in a normal run,
     // so it neither slows the suite nor needs a display of its own.
     void renderUpdatePreviewsWhenRequested()
@@ -739,9 +765,18 @@ private slots:
         if (directory.isEmpty()) {
             QSKIP("SPEECHER_UPDATE_PREVIEW_DIR unset; preview capture is CI-only");
         }
+        NSMutableArray<SpeecherUpdateBanner *> *banners = [NSMutableArray array];
+        for (SpeecherUpdatePreviewState state :
+             {SpeecherUpdatePreviewStateAvailable, SpeecherUpdatePreviewStateDownloading,
+              SpeecherUpdatePreviewStateReadyToRestart, SpeecherUpdatePreviewStateError,
+              SpeecherUpdatePreviewStateManualInstall, SpeecherUpdatePreviewStateCheckFailed}) {
+            [banners addObject:[SpeecherUpdateBanner previewForState:state]];
+        }
         NSArray<NSString *> *written =
-            [SpeecherUpdatePreview renderToDirectory:directory.toNSString()];
-        QCOMPARE(written.count, NSUInteger(5));
+            [SpeecherUpdatePreview renderToDirectory:directory.toNSString()
+                                             banners:banners
+                                            whatsNew:[SpeecherWhatsNewBanner previewForVersion:@"0.2.0"]];
+        QCOMPARE(written.count, NSUInteger(banners.count + 3));
         for (NSString *name in written) {
             const QString path = directory + QStringLiteral("/") + QString::fromNSString(name);
             QVERIFY2(QFile::exists(path), qPrintable(path));

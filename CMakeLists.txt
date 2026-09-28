@@ -261,6 +261,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/Vocabulary.cpp
   src/core/WordPreview.cpp
   src/dictation/DictationTypes.cpp
+  src/dictation/PopupPresentation.cpp
 )
 
 set(SPEECHER_DOMAIN_HEADERS
@@ -292,6 +293,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/Vocabulary.h
   src/core/WordPreview.h
   src/dictation/DictationTypes.h
+  src/dictation/PopupPresentation.h
 )
 
 set(SPEECHER_WORKFLOW_SOURCES
@@ -511,6 +513,7 @@ set(SPEECHER_APP_SOURCES
   src/app/PlatformSelection.cpp
   src/app/ProviderSetup.cpp
   src/app/SingleInstanceIpc.cpp
+  src/app/UpdateBanner.cpp
   src/transcribe/FileTranscriptionSession.cpp
   src/transcribe/TranscribePresentation.cpp
 )
@@ -527,6 +530,7 @@ set(SPEECHER_APP_HEADERS
   src/app/PlatformComposition.h
   src/app/ProviderSetup.h
   src/app/SingleInstanceIpc.h
+  src/app/UpdateBanner.h
   src/app/UpdateController.h
   src/transcribe/FileTranscriptionSession.h
   src/transcribe/TranscribePresentation.h
@@ -1355,6 +1359,15 @@ if(LayerShellQt_FOUND)
       return 0;
     }
   " SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN)
+  check_cxx_source_compiles("
+    #include <LayerShellQt/Window>
+    int main()
+    {
+      LayerShellQt::Window *window = nullptr;
+      window->setWantsToBeOnActiveScreen(true);
+      return 0;
+    }
+  " SPEECHER_LAYER_SHELL_HAS_ACTIVE_SCREEN)
   cmake_pop_check_state()
 
   if(SPEECHER_LAYER_SHELL_HAS_ACTIVATE_ON_SHOW)
@@ -1365,6 +1378,9 @@ if(LayerShellQt_FOUND)
   endif()
   if(SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN)
     target_compile_definitions(speecher_platform PUBLIC SPEECHER_LAYER_SHELL_HAS_WINDOW_SCREEN=1)
+  endif()
+  if(SPEECHER_LAYER_SHELL_HAS_ACTIVE_SCREEN)
+    target_compile_definitions(speecher_platform PUBLIC SPEECHER_LAYER_SHELL_HAS_ACTIVE_SCREEN=1)
   endif()
 endif()
 

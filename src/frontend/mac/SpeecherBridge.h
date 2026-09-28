@@ -1,5 +1,6 @@
 #pragma once
 
+#import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 
 // The whole of Speecher's C++ core as Swift sees it. Swift never includes a C++
@@ -212,18 +213,56 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
                        record:(SpeecherRecord *)record;
 @end
 
-// The update flow as the banners see it. Mirrors speecher::UpdateController::State.
-typedef NS_ENUM(NSInteger, SpeecherUpdateState) {
-    SpeecherUpdateStateIdle,
-    SpeecherUpdateStateChecking,
-    SpeecherUpdateStateCheckFailed,
-    SpeecherUpdateStateUpToDate,
-    SpeecherUpdateStateUpdateAvailable,
-    SpeecherUpdateStateDownloading,
-    SpeecherUpdateStateReadyToRestart,
-    SpeecherUpdateStateRestartPending,
-    SpeecherUpdateStateRestarting,
-    SpeecherUpdateStateError,
+// speecher::UpdateBannerModel: what every update banner shows. Empty captions
+// mean the button is not offered.
+typedef NS_ENUM(NSInteger, SpeecherBannerTone) {
+    SpeecherBannerToneInformation,
+    SpeecherBannerTonePositive,
+    SpeecherBannerToneError,
+};
+
+@interface SpeecherUpdateBanner : NSObject
+@property (nonatomic, readonly) BOOL visible;
+@property (nonatomic, readonly) BOOL showInPopup;
+@property (nonatomic, readonly) SpeecherBannerTone tone;
+@property (nonatomic, readonly, copy) NSString *text;
+// 0 to 100 while downloading, otherwise -1.
+@property (nonatomic, readonly) NSInteger progress;
+@property (nonatomic, readonly, copy) NSString *action;
+@property (nonatomic, readonly) BOOL actionEnabled;
+@property (nonatomic, readonly, copy) NSString *later;
+@property (nonatomic, readonly, copy) NSString *dismiss;
+@end
+
+// The update states the preview renderer captures, seeded with sample facts
+// and worded by core.
+typedef NS_ENUM(NSInteger, SpeecherUpdatePreviewState) {
+    SpeecherUpdatePreviewStateAvailable,
+    SpeecherUpdatePreviewStateDownloading,
+    SpeecherUpdatePreviewStateReadyToRestart,
+    SpeecherUpdatePreviewStateError,
+    SpeecherUpdatePreviewStateManualInstall,
+    SpeecherUpdatePreviewStateCheckFailed,
+};
+
+@interface SpeecherUpdateBanner (Preview)
++ (SpeecherUpdateBanner *)previewForState:(SpeecherUpdatePreviewState)state;
+@end
+
+// speecher::WhatsNewBannerModel.
+@interface SpeecherWhatsNewBanner : NSObject
+@property (nonatomic, readonly, copy) NSString *text;
+@property (nonatomic, readonly, copy) NSString *action;
+@property (nonatomic, readonly, copy) NSString *dismiss;
++ (SpeecherWhatsNewBanner *)previewForVersion:(NSString *)version;
+@end
+
+// speecher::PopupOutcome: how a dictation ended, which picks the receipt's symbol.
+typedef NS_ENUM(NSInteger, SpeecherPopupOutcome) {
+    SpeecherPopupOutcomeInserted,
+    SpeecherPopupOutcomeCopied,
+    SpeecherPopupOutcomeFallback,
+    SpeecherPopupOutcomeError,
 };
 
 // One provider the setup assistant lists, as the registry descriptor names it.
@@ -566,26 +605,17 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, copy, nullable) void (^whatsNewChanged)(void);
 - (void)clearPendingWhatsNew;
 
-// The update flow, which the settings banner and the panel's update chip draw.
-@property (nonatomic, readonly) SpeecherUpdateState updateState;
-// The version an update offers. Empty while none does.
-@property (nonatomic, readonly, copy) NSString *updateVersion;
-// The running version, whose bare number the what's-new offers show.
-@property (nonatomic, readonly, copy) NSString *installedVersion;
-@property (nonatomic, readonly) NSInteger updatePercent;
-@property (nonatomic, readonly, copy) NSString *updateError;
-@property (nonatomic, readonly) BOOL updateBannerVisible;
-// The offered stable release replaces a running nightly build.
-@property (nonatomic, readonly) BOOL updateStableReplacement;
+// The update banner, the same for the settings window and the panel's chip,
+// re-read whole on every updateChanged.
+@property (nonatomic, readonly, strong) SpeecherUpdateBanner *updateBanner;
+@property (nonatomic, readonly, strong) SpeecherWhatsNewBanner *whatsNewBanner;
 @property (nonatomic, copy, nullable) void (^updateChanged)(void);
-// One click through the whole tail of the flow: download if needed, install,
-// then restart. A restart requested mid-dictation waits for the session to end.
-- (void)installUpdateAndRestart;
-// The current state's single step: download an offered update, restart a ready
-// one, or retry a failed check.
-- (void)updateNow;
-// Hides the offered version until a newer one appears; clears an error banner.
+// The banner's buttons (speecher::UpdateBanner).
+- (void)runUpdateAction;
+- (void)deferUpdate;
 - (void)dismissUpdate;
+// The running version, which the settings show.
+@property (nonatomic, readonly, copy) NSString *installedVersion;
 - (void)toggle;
 - (void)startListening;
 - (void)stopListening;
@@ -603,6 +633,15 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, copy, nullable) void (^popupOAuthRefreshRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupListeningIndicatorRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupErrorRequested)(NSString *message);
+// A delivery's receipt, with the outcome that picks its symbol.
+@property (nonatomic, copy, nullable) void (^popupMessageRequested)(NSString *message,
+                                                                   SpeecherPopupOutcome outcome);
+// speecher::kPopupErrorWrapWidth and kPopupErrorDismissMs.
+@property (class, nonatomic, readonly) CGFloat popupErrorWrapWidth;
+@property (class, nonatomic, readonly) NSTimeInterval popupErrorDismissSeconds;
+// speecher::trimPreviewToFit against the panel's own font and width.
++ (NSString *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font
+    NS_SWIFT_NAME(trimPreview(_:toWidth:font:));
 // The panel is on screen, so the session need not wait out its fallback timer
 // before opening the microphone.
 - (void)notePopupPresented:(uint64_t)generation NS_SWIFT_NAME(notePopupPresented(generation:));

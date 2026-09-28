@@ -631,9 +631,14 @@ void SchemaSettingsPage::refreshRows()
         if (row.refresh) {
             row.refresh(draft);
         }
-        if (row.descriptor.kind == RowKind::Action && row.descriptor.value) {
+        // The row is the button, so its title is the caption a click earns;
+        // without one, a value naming what the row is about stands in.
+        if (row.descriptor.kind == RowKind::Action
+            && (row.descriptor.actionLabelValue || row.descriptor.value)) {
             if (auto *button = qobject_cast<QPushButton *>(row.control)) {
-                settings::setButtonRowCaption(button, row.descriptor.value(draft).toString());
+                settings::setButtonRowCaption(button, row.descriptor.actionLabelValue
+                                                          ? row.descriptor.actionLabelValue(draft)
+                                                          : row.descriptor.value(draft).toString());
             }
         }
         if (row.descriptor.helpValue && row.description) {

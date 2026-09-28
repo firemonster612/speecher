@@ -135,6 +135,9 @@ struct SettingsRow {
     RowKind kind = RowKind::Info;
     // The caption of an Action row's control, which is not its label.
     QString actionLabel;
+    // Replaces actionLabel when the click does different things in different
+    // states, so the caption always says what it will do.
+    std::function<QString(const AppSettings &)> actionLabelValue;
     NumberRange range;
     // Room to reserve for a Choice row's value, in characters, so a list that
     // arrives late does not resize the row under the reader. Zero sizes the

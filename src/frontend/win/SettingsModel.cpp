@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
+#include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
@@ -150,6 +151,7 @@ SettingsModel::SettingsModel(ApplicationController *controller)
     , m_capabilities{controller->accessibilitySupported() && controller->accessibilityEnabled(),
                      controller->updates()->supportsAutomaticDownloads()}
 {
+    bindCheckForUpdatesRow(m_schema, controller->updateBanner());
     m_capabilities.launchAtLoginAccepted = controller->launchAtLoginAccepted();
     const QStringList credentialPaths{m_store->claudeCredentialsPath(), codexCredentialsPath()};
     refreshCredentialWatch(&m_credentialWatcher, credentialPaths);
@@ -230,7 +232,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.label = row.label;
     snapshot.help = row.helpValue ? row.helpValue(m_draft) : row.help;
     snapshot.kind = row.kind;
-    snapshot.actionLabel = row.actionLabel;
+    snapshot.actionLabel = row.actionLabelValue ? row.actionLabelValue(m_draft) : row.actionLabel;
     snapshot.range = row.range;
     snapshot.contentWidthHint = row.contentWidthHint;
     snapshot.options = optionsForRow(row);

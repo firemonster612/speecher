@@ -7,6 +7,7 @@
 #include <QPainter>
 #include <QPalette>
 #include <QShowEvent>
+#include <QStyle>
 
 #include <algorithm>
 #include <cmath>
@@ -84,8 +85,18 @@ void WaveformWidget::applyGeometry()
         : std::max(pillHeight, fontMetrics().height() + 10);
     const int width = m_message.isEmpty()
         ? pillWidth
-        : std::max(pillWidth, fontMetrics().horizontalAdvance(m_message) + 32);
+        : std::max(pillWidth, contentWidth() + 32);
     setFixedSize(width, height);
+}
+
+int WaveformWidget::iconSize() const
+{
+    return style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
+}
+
+int WaveformWidget::iconSpacing() const
+{
+    return style()->pixelMetric(QStyle::PM_LayoutHorizontalSpacing, nullptr, this);
 }
 
 void WaveformWidget::setCompact(bool compact)
@@ -133,6 +144,9 @@ void WaveformWidget::setMode(Mode mode)
     if (mode != Mode::Message && mode != Mode::Status) {
         m_message.clear();
     }
+    if (mode != Mode::Message) {
+        m_icon = QIcon();
+    }
     // Frozen holds the bars where they were; every other mode change starts a
     // fresh capture.
     if (mode != Mode::Frozen) {
@@ -145,15 +159,17 @@ void WaveformWidget::setMode(Mode mode)
 void WaveformWidget::setStatusText(const QString &text)
 {
     m_message = text.simplified();
+    m_icon = QIcon();
     m_mode = m_message.isEmpty() ? Mode::Waveform : Mode::Status;
     m_level.restart(m_clock.elapsed());
     applyGeometry();
     update();
 }
 
-void WaveformWidget::setMessage(const QString &message)
+void WaveformWidget::setMessage(const QString &message, const QIcon &icon)
 {
     m_message = message.simplified();
+    m_icon = m_message.isEmpty() ? QIcon() : icon;
     m_mode = m_message.isEmpty() ? Mode::Waveform : Mode::Message;
     m_level.restart(m_clock.elapsed());
     applyGeometry();
@@ -163,7 +179,8 @@ void WaveformWidget::setMessage(const QString &message)
 int WaveformWidget::contentWidth() const
 {
     if (m_mode == Mode::Message || m_mode == Mode::Status) {
-        return fontMetrics().horizontalAdvance(m_message);
+        const int text = fontMetrics().horizontalAdvance(m_message);
+        return m_icon.isNull() ? text : iconSize() + iconSpacing() + text;
     }
     return int(std::ceil(barCount * barWidth + (barCount - 1) * barGap));
 }
@@ -266,7 +283,17 @@ void WaveformWidget::paintMessage(QPainter &painter, const QColor &bar)
     font.setWeight(QFont::Normal);
     painter.setFont(font);
     painter.setPen(bar);
-    painter.drawText(rect().adjusted(12, 0, -12, 0), Qt::AlignCenter, m_message);
+    if (m_icon.isNull()) {
+        painter.drawText(rect().adjusted(12, 0, -12, 0), Qt::AlignCenter, m_message);
+        return;
+    }
+    // Icon and text centred together as one line.
+    const int icon = iconSize();
+    const int left = (width() - contentWidth()) / 2;
+    m_icon.paint(&painter, QRect(left, (height() - icon) / 2, icon, icon));
+    const int textLeft = left + icon + iconSpacing();
+    painter.drawText(QRect(textLeft, 0, width() - textLeft, height()),
+                     Qt::AlignLeft | Qt::AlignVCenter, m_message);
 }
 
 } // namespace speecher

@@ -356,6 +356,7 @@ private slots:
 
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(), QStringLiteral("Input sent"));
+        QCOMPARE(message.first().at(1).value<PopupOutcome>(), PopupOutcome::Inserted);
         QCOMPARE(status.last().first().toString(), QStringLiteral("Input sent"));
         QCOMPARE(state.last().first().toString(), QStringLiteral("delivering"));
         QCOMPARE(int(session.state()), int(DictationState::Delivering));
@@ -373,6 +374,16 @@ private slots:
         QCOMPARE(hidden.count(), 1);
         QCOMPARE(state.last().first().toString(), QStringLiteral("idle"));
         QCOMPARE(int(session.state()), int(DictationState::Idle));
+
+        // A clipboard-only receipt reports itself as copied, not sent.
+        delivery->result = {true, DeliveryReceipt::Copied, false, QStringLiteral("Copied")};
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("copied dictation"));
+        message.clear();
+        session.stopListening();
+        QCOMPARE(message.count(), 1);
+        QCOMPARE(message.first().at(1).value<PopupOutcome>(), PopupOutcome::Copied);
     }
 
     void dictationSessionToggleAndPushToTalkCommandsAreIdempotent()
@@ -1114,7 +1125,7 @@ private slots:
         QCOMPARE(rawTranscript->text(), QStringLiteral("Polished words"));
 
         popup.setRefining(false);
-        popup.showMessage(QStringLiteral("Input sent"));
+        popup.showMessage(QStringLiteral("Input sent"), PopupOutcome::Inserted);
         QVERIFY(!previewPill->isHidden());
         QVERIFY(rawTranscript->isHidden());
         QVERIFY(!waveform->isHidden());

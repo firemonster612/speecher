@@ -4,6 +4,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/ManifestUpdater.h"
+#include "app/UpdateBanner.h"
 #ifdef Q_OS_LINUX
 #include "app/AppImageUpdater.h"
 #endif
@@ -25,6 +26,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QToolButton>
 
 #include <cstring>
 #ifdef Q_OS_LINUX
@@ -1016,6 +1018,9 @@ private slots:
         auto *action = window.findChild<QPushButton *>(QStringLiteral("updateAction"));
         QVERIFY(action);
         QCOMPARE(action->text(), QStringLiteral("Open release page"));
+        auto *dismiss = window.findChild<QToolButton *>(QStringLiteral("dismissUpdate"));
+        QVERIFY(dismiss && !dismiss->isHidden());
+        QCOMPARE(dismiss->toolTip(), QStringLiteral("Dismiss"));
 
         ManifestUpdaterTestAccess::setManualInstallRequired(*updater, false);
         ManifestUpdaterTestAccess::setAvailableVersion(
@@ -1030,6 +1035,39 @@ private slots:
                  updater->stableReplacementAvailable()
                      ? QStringLiteral("Switch to Stable Release 0.1.1 (replaces this Nightly Build)")
                      : QStringLiteral("Speecher 0.1.1 is available"));
+#endif
+    }
+
+    void laterHidesTheRestartBannerUntilAnotherVersion()
+    {
+#ifndef Q_OS_MACOS
+        ApplicationController controller(true);
+        auto *updater = dynamic_cast<ManifestUpdater *>(controller.updates());
+        QVERIFY(updater);
+        AppWindow window(&controller);
+        auto *banner = window.findChild<QFrame *>(QStringLiteral("updateBanner"));
+        auto *action = window.findChild<QPushButton *>(QStringLiteral("updateAction"));
+        QVERIFY(banner && action);
+
+        ManifestUpdaterTestAccess::setAvailableVersion(*updater, QStringLiteral("0.3.0"));
+        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
+        QPushButton *later = nullptr;
+        for (QPushButton *button : banner->findChildren<QPushButton *>()) {
+            if (button->text() == QStringLiteral("Later")) {
+                later = button;
+            }
+        }
+        QVERIFY(!banner->isHidden());
+        QCOMPARE(action->text(), QStringLiteral("Restart now"));
+        QVERIFY(later && !later->isHidden());
+        later->click();
+        QVERIFY(banner->isHidden());
+        QVERIFY(!controller.updateBanner()->model().visible);
+
+        // A newer offer brings the banner back.
+        ManifestUpdaterTestAccess::setAvailableVersion(*updater, QStringLiteral("0.3.1"));
+        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
+        QVERIFY(!banner->isHidden());
 #endif
     }
 
@@ -1091,7 +1129,7 @@ private slots:
                                             UpdateController::State::CheckFailed,
                                             QStringLiteral("Could not check for updates"));
         QVERIFY(!banner->isHidden());
-        QCOMPARE(message->text(), QStringLiteral("Update check failed"));
+        QCOMPARE(message->text(), QStringLiteral("Could not check for updates"));
         ManifestUpdaterTestAccess::setState(*controllerUpdater,
                                             UpdateController::State::Error,
                                             QStringLiteral("install failed"));
@@ -1109,7 +1147,7 @@ private slots:
         ManifestUpdaterTestAccess::setState(*controllerUpdater,
                                             UpdateController::State::UpdateAvailable);
         QCOMPARE(message->text(),
-                 QStringLiteral("Speecher nightly build 481 (gabc1234) available"));
+                 QStringLiteral("Speecher nightly build 481 (gabc1234) is available"));
         const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
         if (!grabDir.isEmpty()) {
             TranscriberPopup *popup = QtFrontEndTestAccess::popup(frontEnd);

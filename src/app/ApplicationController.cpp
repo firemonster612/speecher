@@ -4,6 +4,7 @@
 #include "app/LocalSetup.h"
 #include "app/ProviderSetup.h"
 #include "app/ShortcutSuspendingDelivery.h"
+#include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #ifdef Q_OS_MACOS
 #include "app/MacSparkleUpdater.h"
@@ -179,6 +180,7 @@ ApplicationController::ApplicationController(bool popupOnly,
 #else
     m_updates = new AppImageUpdater(m_settings, m_session, this);
 #endif
+    m_updateBanner = new UpdateBanner(m_updates, m_session, this);
 
     // A seed log stands in for real history in screenshots and demos, so it
     // is never written; a pinned today makes those screenshots repeatable.
@@ -375,6 +377,11 @@ SettingsStore *ApplicationController::settings() const
 UpdateController *ApplicationController::updates() const
 {
     return m_updates;
+}
+
+UpdateBanner *ApplicationController::updateBanner() const
+{
+    return m_updateBanner;
 }
 
 QString ApplicationController::pendingWhatsNewVersion() const
@@ -939,6 +946,8 @@ void ApplicationController::handleIpcCommand(const QString &command,
 // points at them. Tear the dependents down first.
 ApplicationController::~ApplicationController()
 {
+    delete m_updateBanner;
+    m_updateBanner = nullptr;
     delete m_updates;
     m_updates = nullptr;
     delete m_fileTranscription;

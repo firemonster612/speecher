@@ -23,23 +23,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var transcript: String
     @Published private(set) var accessibilityEnabled: Bool
     @Published private(set) var whatsNewPending: Bool
-    /// The update flow as the bridge reports it, re-read whole on every change.
-    struct UpdateStatus {
-        var state = SpeecherUpdateState.idle
-        var version = ""
-        var percent = 0
-        var error = ""
-        var bannerVisible = false
-        var stableReplacement = false
-    }
-
-    @Published private(set) var update = UpdateStatus()
+    /// The update banner as core words it, re-read whole on every change.
+    @Published private(set) var update: SpeecherUpdateBanner
     /// What LocalSetup knows about running models on this computer, re-read
     /// whole on every change it announces.
     @Published private(set) var local: LocalSetupState
-    /// "Later" on the restart banner: hides it until a different version or a
-    /// restart makes it worth showing again, exactly as the Linux banner does.
-    @Published var updateBannerDeferred = false
     /// Why the accessibility grant could not be asked for, when it could not.
     @Published var accessibilityProblem = ""
     /// The app settings key, which lives in the keyring rather than in the
@@ -133,6 +121,7 @@ final class AppModel: ObservableObject {
         shortcut = bridge.shortcutDisplay
         accessibilityEnabled = bridge.accessibilityEnabled
         whatsNewPending = bridge.whatsNewPending
+        update = bridge.updateBanner
         anthropicCredentialStatus = bridge.anthropicCredentialStatus
         insights = bridge.insightsSummary(range: .last30Days)
         insightsEnabled = bridge.insightsEnabled
@@ -187,7 +176,6 @@ final class AppModel: ObservableObject {
                 pages = self.bridge.settingsSchema.pages
             }
         }
-        refreshUpdate()
         refreshTranscriptDetail()
     }
 
@@ -239,41 +227,16 @@ final class AppModel: ObservableObject {
     }
 
     private func refreshUpdate() {
-        let fresh = UpdateStatus(state: bridge.updateState,
-                                 version: bridge.updateVersion,
-                                 percent: bridge.updatePercent,
-                                 error: bridge.updateError,
-                                 bannerVisible: bridge.updateBannerVisible,
-                                 stableReplacement: bridge.updateStableReplacement)
-        // A new offer outranks an earlier "Later".
-        if !fresh.version.isEmpty, fresh.version != update.version {
-            updateBannerDeferred = false
-        }
-        update = fresh
+        update = bridge.updateBanner
+        // The Check for updates row's caption and help follow the update too.
+        pages = bridge.settingsSchema.pages
     }
 
-    var installedVersion: String { bridge.installedVersion }
+    var whatsNewBanner: SpeecherWhatsNewBanner { bridge.whatsNewBanner }
 
-    /// The bare number of the running version, which the what's-new offers show.
-    var installedVersionNumber: String {
-        String(bridge.installedVersion.split(separator: "-").first ?? "")
-    }
-
-    func installUpdateAndRestart() { bridge.installUpdateAndRestart() }
-    func updateNow() { bridge.updateNow() }
+    func runUpdateAction() { bridge.runUpdateAction() }
+    func deferUpdate() { bridge.deferUpdate() }
     func dismissUpdate() { bridge.dismissUpdate() }
-
-    /// Whether the settings window shows the update banner. "Later" hides the
-    /// states where the restart is not yet under way; once restarting has
-    /// begun, the status stays visible to explain the exit.
-    var updateBannerShown: Bool {
-        guard update.bannerVisible else { return false }
-        if updateBannerDeferred,
-           update.state == .readyToRestart || update.state == .restartPending {
-            return false
-        }
-        return true
-    }
 
     /// The work the first frame must not wait for: enumerating audio devices,
     /// listing CLI Proxy API accounts, and reading the keyring.

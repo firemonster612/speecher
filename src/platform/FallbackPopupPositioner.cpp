@@ -2,6 +2,7 @@
 
 #include "platform/PopupSurface.h"
 
+#include <QCursor>
 #include <QGuiApplication>
 #include <QRect>
 #include <QScreen>
@@ -15,7 +16,15 @@ constexpr int bottomMarginPx = 28;
 
 void FallbackPopupPositioner::positionBottomCenter(PopupSurface &surface)
 {
-    positionBottomCenterOn(surface, QGuiApplication::primaryScreen());
+    positionBottomCenterOn(surface, pointerScreen());
+}
+
+const QScreen *FallbackPopupPositioner::pointerScreen()
+{
+    // The popup belongs on the display the user is working on, which with
+    // several displays is often not the primary one.
+    const QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+    return screen ? screen : QGuiApplication::primaryScreen();
 }
 
 void FallbackPopupPositioner::positionBottomCenterOn(PopupSurface &surface, const QScreen *screen)

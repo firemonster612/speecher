@@ -99,9 +99,6 @@ private:
     QPushButton *m_updateAction = nullptr;
     QPushButton *m_updateLater = nullptr;
     QToolButton *m_updateDismiss = nullptr;
-    bool m_updateBannerDeferred = false;
-    QString m_updateBannerVersion;
-    QString m_updateBannerInstalledVersion;
     bool m_showingWhatsNewBanner = false;
     bool m_pageLoadScheduled = false;
     bool m_afterShowLoadScheduled = false;

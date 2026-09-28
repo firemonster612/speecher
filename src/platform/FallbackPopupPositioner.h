@@ -17,6 +17,8 @@ public:
     void positionBottomCenter(PopupSurface &surface) override;
 
 protected:
+    // The screen under the pointer, or the primary screen when none is.
+    static const QScreen *pointerScreen();
     // Subclasses that pick a different screen still get the same placement.
     void positionBottomCenterOn(PopupSurface &surface, const QScreen *screen);
 };

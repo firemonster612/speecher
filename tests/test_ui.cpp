@@ -9,6 +9,8 @@
 #include "ui/InsightsCharts.h"
 #include "core/SecretStore.h"
 #include "app/LocalSetup.h"
+#include "app/UpdateBanner.h"
+#include "dictation/PopupPresentation.h"
 #include "providers/LocalModelStore.h"
 #include "providers/EndpointSpeechTranscriber.h"
 #include <QTemporaryDir>
@@ -45,6 +47,7 @@
 #include <QSpinBox>
 #include <QStyleHints>
 #include <QTableWidget>
+#include <QTextBoundaryFinder>
 #include <QVBoxLayout>
 
 using namespace speecher::test;
@@ -240,7 +243,7 @@ private slots:
 
         popup.setStatus(QStringLiteral("Stopping"));
         verifyContained();
-        popup.showMessage(QStringLiteral("Input sent"));
+        popup.showMessage(QStringLiteral("Input sent"), PopupOutcome::Inserted);
         verifyContained();
         popup.showOAuthRefreshIndicator();
         verifyContained();
@@ -282,7 +285,9 @@ private slots:
         QVERIFY(preview);
         const QFontMetrics metrics(preview->font());
         const int textWidth = metrics.horizontalAdvance(QStringLiteral("Microphone unavailable"));
-        QCOMPARE(preview->width(), textWidth);
+        QVERIFY(preview->width() >= textWidth && preview->width() <= textWidth + 1);
+        // One line, not a word broken onto a second.
+        QCOMPARE(preview->heightForWidth(preview->width()), preview->heightForWidth(10000));
     }
 
     void popupRepositionsAfterShowingALongError()
@@ -427,8 +432,23 @@ private slots:
         QVERIFY(pill && dismiss);
         popup.adjustSize();
         // The chip must sit inside the painted capsule, not across its stroke.
-        QVERIFY(pill->sizeHint().width() >= 520 + dismiss->sizeHint().width());
+        auto *icon = popup.findChild<QLabel *>(QStringLiteral("errorIcon"));
+        QVERIFY(icon && !icon->isHidden());
+        QVERIFY(pill->sizeHint().width()
+                >= kPopupErrorWrapWidth + icon->sizeHint().width() + dismiss->sizeHint().width());
         QVERIFY(popup.width() >= pill->sizeHint().width());
+        QVERIFY(popup.sizeHint().width() >= pill->sizeHint().width());
+    }
+
+    void popupErrorBreaksAnUnbrokenRunAtTheSharedWidth()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        popup.showErrorMessage(QStringLiteral("Could not reach ")
+                               + QStringLiteral("https://example.com/") + QString(200, QLatin1Char('x')));
+        auto *preview = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        QVERIFY(preview);
+        QVERIFY(preview->width() <= kPopupErrorWrapWidth);
+        QVERIFY(preview->heightForWidth(preview->width()) > preview->fontMetrics().lineSpacing() * 2);
     }
 
     void popupUsesTheApplicationFontAndNoStylesheet()
@@ -443,6 +463,209 @@ private slots:
         QCOMPARE(preview->font().family(), QApplication::font().family());
         QCOMPARE(preview->font().pointSizeF(), QApplication::font().pointSizeF());
         QCOMPARE(preview->foregroundRole(), QPalette::Text);
+    }
+
+    void updateBannerSaysWhatEachStateOffers()
+    {
+        using State = UpdateController::State;
+        const auto banner = [](State state, auto &&adjust) {
+            UpdateBannerFacts facts;
+            facts.state = state;
+            facts.version = QStringLiteral("0.2.0");
+            facts.percent = 42;
+            facts.bannerVisible = true;
+            adjust(facts);
+            return updateBannerModel(facts);
+        };
+        const auto plain = [](UpdateBannerFacts &) {};
+
+        const UpdateBannerModel available = banner(State::UpdateAvailable, plain);
+        QCOMPARE(available.text, QStringLiteral("Speecher 0.2.0 is available"));
+        QCOMPARE(available.action, QStringLiteral("Install and restart"));
+        QCOMPARE(available.dismiss, QStringLiteral("Dismiss"));
+        QVERIFY(available.later.isEmpty() && available.showInPopup);
+        // Installing mid-dictation is safe: the restart waits.
+        QVERIFY(banner(State::UpdateAvailable, [](auto &f) { f.dictating = true; }).actionEnabled);
+        QCOMPARE(banner(State::UpdateAvailable, [](auto &f) { f.stableReplacement = true; }).text,
+                 QStringLiteral("Switch to Stable Release 0.2.0 (replaces this Nightly Build)"));
+        QCOMPARE(banner(State::UpdateAvailable, [](auto &f) { f.automaticDownloads = false; }).action,
+                 QStringLiteral("Open release page"));
+
+        const UpdateBannerModel downloading = banner(State::Downloading, plain);
+        QCOMPARE(downloading.text, QStringLiteral("Downloading Speecher 0.2.0 (42%)"));
+        QCOMPARE(downloading.progress, 42);
+        QVERIFY(downloading.action.isEmpty() && downloading.dismiss.isEmpty());
+
+        const UpdateBannerModel ready = banner(State::ReadyToRestart, plain);
+        QCOMPARE(ready.text, QStringLiteral("Restart to finish updating"));
+        QCOMPARE(ready.action, QStringLiteral("Restart now"));
+        QCOMPARE(ready.later, QStringLiteral("Later"));
+        // Mid-dictation the restart waits for the session, and says so.
+        QCOMPARE(banner(State::ReadyToRestart, [](auto &f) { f.dictating = true; }).action,
+                 QStringLiteral("Restart after this dictation"));
+        QVERIFY(!banner(State::ReadyToRestart, [](auto &f) { f.deferred = true; }).visible);
+        QVERIFY(!banner(State::RestartPending, [](auto &f) { f.deferred = true; }).visible);
+        // Once restarting, the banner explains the exit even after Later.
+        QVERIFY(banner(State::Restarting, [](auto &f) { f.deferred = true; }).visible);
+
+        const UpdateBannerModel error = banner(State::Error, [](auto &f) {
+            f.error = QStringLiteral("Download failed");
+        });
+        QCOMPARE(error.tone, UpdateBannerModel::Tone::Error);
+        QCOMPARE(error.text, QStringLiteral("Download failed"));
+        QCOMPARE(error.action, QStringLiteral("Try again"));
+        QCOMPARE(error.dismiss, QStringLiteral("Dismiss"));
+        QCOMPARE(banner(State::Error, [](auto &f) { f.manualInstallRequired = true; }).action,
+                 QStringLiteral("Open release page"));
+        // A retry or a browser window would take focus from the Target.
+        QVERIFY(!banner(State::Error, [](auto &f) { f.dictating = true; }).actionEnabled);
+
+        // An automatic check's failure shows once it keeps failing.
+        const auto failedCheck = [&](bool repeated) {
+            return banner(State::CheckFailed, [repeated](auto &f) {
+                f.bannerVisible = false;
+                f.repeatedCheckFailure = repeated;
+            });
+        };
+        QVERIFY(!failedCheck(false).visible);
+        QCOMPARE(failedCheck(true).text, QStringLiteral("Update check failed"));
+        QCOMPARE(failedCheck(true).action, QStringLiteral("Try again"));
+
+        // A manual check's progress and result stay in the settings window.
+        QCOMPARE(banner(State::Checking, plain).text, QStringLiteral("Checking for updates…"));
+        QVERIFY(!banner(State::Checking, plain).showInPopup);
+        QCOMPARE(banner(State::UpToDate, plain).text, QStringLiteral("Speecher is up to date"));
+        QVERIFY(!banner(State::UpToDate, plain).showInPopup);
+        QVERIFY(!banner(State::UpdateAvailable, [](auto &f) { f.bannerVisible = false; }).visible);
+    }
+
+    void checkForUpdatesRowCaptionSaysWhatAClickDoes()
+    {
+        using State = UpdateController::State;
+        const auto row = [](State state, bool manualInstall = false) {
+            UpdateBannerFacts facts;
+            facts.state = state;
+            facts.version = QStringLiteral("0.2.0");
+            facts.manualInstallRequired = manualInstall;
+            return updateCheckRow(facts, UpdateChannel::Stable);
+        };
+        QCOMPARE(row(State::Idle).caption, QStringLiteral("Check now"));
+        QCOMPARE(row(State::Idle).help,
+                 QStringLiteral("Check the Stable Release feed for a newer build."));
+        QCOMPARE(row(State::Checking).caption, QStringLiteral("Checking…"));
+        QVERIFY(!row(State::Checking).enabled);
+        QCOMPARE(row(State::UpToDate).caption, QStringLiteral("Check again"));
+        QCOMPARE(row(State::UpdateAvailable).caption, QStringLiteral("Update now"));
+        QCOMPARE(row(State::Downloading).caption, QStringLiteral("Downloading…"));
+        QVERIFY(!row(State::Downloading).enabled);
+        QCOMPARE(row(State::ReadyToRestart).caption, QStringLiteral("Restart now"));
+        UpdateBannerFacts dictatingReady;
+        dictatingReady.state = State::ReadyToRestart;
+        dictatingReady.dictating = true;
+        QCOMPARE(updateCheckRow(dictatingReady, UpdateChannel::Stable).caption,
+                 QStringLiteral("Restart after this dictation"));
+        QVERIFY(row(State::ReadyToRestart).enabled);
+        QCOMPARE(row(State::CheckFailed).caption, QStringLiteral("Try again"));
+        QCOMPARE(row(State::Error, true).caption, QStringLiteral("Open release page"));
+    }
+
+    void whatsNewBannerNamesTheBareVersion()
+    {
+        const WhatsNewBannerModel banner =
+            whatsNewBanner(QStringLiteral("0.2.1-nightly.20260921+gabc1234"));
+        QCOMPARE(banner.text, QStringLiteral("Speecher 0.2.1 is installed"));
+        QCOMPARE(banner.action, QStringLiteral("See what's new"));
+    }
+
+    void previewTrimsAtWordBoundaries()
+    {
+        const auto fitsIn = [](int characters) {
+            return [characters](const QString &text) { return text.size() <= characters; };
+        };
+        QCOMPARE(trimPreviewToFit(QStringLiteral("  short   preview "), fitsIn(40)),
+                 QStringLiteral("short preview"));
+        QCOMPARE(trimPreviewToFit(QStringLiteral("the hiring plan and then the budget"), fitsIn(21)),
+                 QStringLiteral("… and then the budget"));
+        // One word wider than the line keeps its end, cut on a grapheme.
+        const QString trimmed = trimPreviewToFit(
+            QStringLiteral("x ") + QString::fromUtf8("👩‍💻").repeated(8), fitsIn(12));
+        QVERIFY(trimmed.startsWith(QStringLiteral("…")));
+        QVERIFY(trimmed.endsWith(QString::fromUtf8("👩‍💻")));
+        QVERIFY(trimmed.size() <= 12);
+    }
+
+    void previewTrimsCjkAtWordBoundaries()
+    {
+        // No spaces: the Unicode word boundaries decide where the cut falls.
+        const QString text = QString::fromUtf8("今日は良い天気ですね明日も晴れるでしょう");
+        const QString trimmed = trimPreviewToFit(text, [](const QString &candidate) {
+            return candidate.size() <= 10;
+        });
+        QVERIFY(trimmed.startsWith(QStringLiteral("…")));
+        QVERIFY(trimmed.endsWith(QString::fromUtf8("でしょう")));
+        QVERIFY(trimmed.size() <= 10);
+        // What is kept starts at one of the text's word boundaries.
+        const QString kept = trimmed.mid(1).trimmed();
+        QTextBoundaryFinder words(QTextBoundaryFinder::Word, text);
+        words.setPosition(text.size() - kept.size());
+        QVERIFY(words.isAtBoundary());
+    }
+
+    // Screenshot seam for UI evidence: the popup in each state it presents.
+    void popupEvidenceGrabs()
+    {
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (grabDir.isEmpty()) {
+            QSKIP("SPEECHER_TEST_GRAB_DIR is not set");
+        }
+        TranscriberPopup popup(new SizingPopupPositioner);
+        const auto grab = [&](const char *name) {
+            // The size the platform positioner gives the window, once the
+            // window system has applied it.
+            popup.resize(popup.sizeHint());
+            QTest::qWait(50);
+            QVERIFY(popup.grab().save(grabDir + QStringLiteral("/linux-%1.png").arg(QLatin1String(name))));
+        };
+        popup.showPopup(1);
+        popup.showListeningIndicator();
+        grab("listening");
+        popup.setPreview(QStringLiteral("so the hiring plan for next quarter should come before "
+                                        "the budget review and then we can talk about the offsite"));
+        grab("long-preview");
+        popup.showMessage(QStringLiteral("Input sent"), PopupOutcome::Inserted);
+        grab("receipt-inserted");
+        popup.showMessage(QStringLiteral("Copied"), PopupOutcome::Copied);
+        grab("receipt-copied");
+        popup.showErrorMessage(QStringLiteral("Microphone unavailable"));
+        grab("error-short");
+        popup.showErrorMessage(QStringLiteral(
+            "The transcription service rejected the request: the API key is invalid or has "
+            "expired. Check the key on the Accounts page, then try again."));
+        grab("error-long");
+        popup.showErrorMessage(QStringLiteral("Could not reach https://example.com/")
+                               + QString(160, QLatin1Char('x')));
+        grab("error-unbroken");
+
+        popup.showPopup(2);
+        popup.showListeningIndicator();
+        UpdateBannerFacts facts;
+        facts.version = QStringLiteral("0.3.0");
+        facts.bannerVisible = true;
+        facts.percent = 42;
+        const QList<std::pair<UpdateController::State, const char *>> states{
+            {UpdateController::State::UpdateAvailable, "banner-available"},
+            {UpdateController::State::Downloading, "banner-downloading"},
+            {UpdateController::State::ReadyToRestart, "banner-ready"},
+            {UpdateController::State::Error, "banner-error"},
+        };
+        facts.error = QStringLiteral("The download stopped before it finished.");
+        for (const auto &[state, name] : states) {
+            facts.state = state;
+            popup.setUpdateBanner(updateBannerModel(facts));
+            grab(name);
+        }
+        popup.setWhatsNewBanner(whatsNewBanner(QStringLiteral("0.3.0")), true);
+        grab("banner-both");
     }
 
     void wordPreview()

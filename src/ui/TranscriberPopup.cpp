@@ -1,5 +1,6 @@
 #include "ui/TranscriberPopup.h"
 
+#include "app/UpdateBanner.h"
 #include "platform/FallbackPopupPositioner.h"
 #include "ui/WaveformWidget.h"
 
@@ -14,6 +15,7 @@
 #include <QPaintEvent>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QStyle>
 #include <QPropertyAnimation>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -40,7 +42,7 @@ constexpr int kErrorBarInset = 9;
 // not a different widget with bulging semicircular ends.
 constexpr qreal kPillCornerRadius = 24.0;
 
-// One line of live transcript. Narrower than the 520px error wrap on purpose:
+// One line of live transcript. Narrower than the error wrap on purpose:
 // while speaking, the capsule should stay a compact pill rather than a
 // screen-wide banner, and the tail-trimming keeps the newest words visible
 // whatever the width.
@@ -314,6 +316,14 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     auto *previewRow = new QHBoxLayout;
     previewRow->setContentsMargins(0, 0, 0, 0);
     previewRow->setSpacing(10);
+    // An error's warning sign, before its text as on the other platforms.
+    m_errorIcon = new QLabel(m_previewPill);
+    m_errorIcon->setObjectName(QStringLiteral("errorIcon"));
+    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
+    m_errorIcon->setPixmap(QIcon::fromTheme(QStringLiteral("dialog-warning"))
+                               .pixmap(iconSize, iconSize));
+    m_errorIcon->hide();
+    previewRow->addWidget(m_errorIcon, 0, Qt::AlignVCenter);
     previewRow->addWidget(m_preview, 1);
     // An error's explicit way out, beside the auto-dismiss countdown, matching
     // the Dismiss buttons on the mac and Windows panels.
@@ -343,7 +353,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
         m_errorDismissProgress,
         QByteArrayLiteral("value"),
         this);
-    m_errorDismissAnimation->setDuration(5000);
+    m_errorDismissAnimation->setDuration(kPopupErrorDismissMs);
     m_errorDismissAnimation->setStartValue(m_errorDismissProgress->maximum());
     m_errorDismissAnimation->setEndValue(m_errorDismissProgress->minimum());
     m_errorDismissAnimation->setEasingCurve(QEasingCurve::Linear);
@@ -375,12 +385,9 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_whatsNewText->setObjectName(QStringLiteral("whatsNewText"));
     m_whatsNewAction = new ChipButton(m_whatsNewRow);
     m_whatsNewAction->setObjectName(QStringLiteral("whatsNewAction"));
-    m_whatsNewAction->setText(QStringLiteral("See what's new"));
     m_whatsNewDismiss = new ChipButton(m_whatsNewRow);
     m_whatsNewDismiss->setObjectName(QStringLiteral("whatsNewDismiss"));
     m_whatsNewDismiss->setText(QStringLiteral("✕"));
-    m_whatsNewDismiss->setToolTip(QStringLiteral("Dismiss"));
-    m_whatsNewDismiss->setAccessibleName(QStringLiteral("Dismiss what's new"));
     m_whatsNewRow->layout()->addWidget(m_whatsNewAction);
     m_whatsNewRow->layout()->addWidget(m_whatsNewDismiss);
     connect(m_whatsNewAction, &QPushButton::clicked, this, &TranscriberPopup::whatsNewRequested);
@@ -421,7 +428,10 @@ QSize TranscriberPopup::sizeHint() const
                                              : banner->sizeHint().height() + spacing;
     };
     const int pillHeight = m_pillLayout ? m_previewPill->height() : m_waveform->height();
-    return QSize(620, pillHeight + 4 + bannerHeight(m_updateBanner) + bannerHeight(m_whatsNewRow));
+    // Room for the widest a capsule gets, so an error's icon, wrapped text and
+    // Dismiss chip are never clipped by the window.
+    const int width = std::max(620, m_layout->sizeHint().width());
+    return QSize(width, pillHeight + 4 + bannerHeight(m_updateBanner) + bannerHeight(m_whatsNewRow));
 }
 
 void TranscriberPopup::setStatus(const QString &status)
@@ -459,30 +469,15 @@ void TranscriberPopup::setRefinementPreview(const QString &preview)
 
 void TranscriberPopup::applyPreviewText(const QString &preview)
 {
-    QString visible = preview.simplified();
+    const QFontMetrics metrics(m_preview->font());
+    const int maxTextWidth = kMaxPreviewWidth;
+    const QString visible = trimPreviewToFit(preview, [&](const QString &candidate) {
+        return metrics.horizontalAdvance(candidate) <= maxTextWidth;
+    });
     if (visible.isEmpty()) {
         // Keep the waveform capsule when there are no words to preview.
         hidePreview();
         return;
-    }
-    const QFontMetrics metrics(m_preview->font());
-    const int maxTextWidth = kMaxPreviewWidth;
-    if (metrics.horizontalAdvance(visible) > maxTextWidth) {
-        // A live transcript overflows from the front: the words just spoken
-        // stay visible, and the ellipsis says something came before them,
-        // as on the mac and Windows panels.
-        const QString ellipsis = QStringLiteral("… ");
-        const int room = maxTextWidth - metrics.horizontalAdvance(ellipsis);
-        while (metrics.horizontalAdvance(visible) > room) {
-            const int firstSpace = visible.indexOf(QLatin1Char(' '));
-            if (firstSpace < 0) {
-                break;
-            }
-            visible = visible.mid(firstSpace + 1).trimmed();
-        }
-        visible = metrics.horizontalAdvance(visible) > room
-            ? metrics.elidedText(visible, Qt::ElideLeft, maxTextWidth)
-            : ellipsis + visible;
     }
     m_preview->setText(visible);
     m_preview->setVisible(true);
@@ -493,6 +488,11 @@ void TranscriberPopup::applyPreviewText(const QString &preview)
     // The capsule grows upward and shrinks back as words come and go; on
     // fallback positioning the window would otherwise keep its top edge and
     // push the taller capsule past the screen's bottom margin.
+    repositionIfVisible();
+}
+
+void TranscriberPopup::repositionIfVisible()
+{
     if (isVisible()) {
         m_positioner->positionBottomCenter(m_surface);
     }
@@ -577,13 +577,53 @@ void TranscriberPopup::showListeningIndicator()
     adjustSize();
 }
 
-void TranscriberPopup::showMessage(const QString &message)
+// A run with no break point, such as a long URL, gets zero-width spaces
+// wherever it would pass the wrap width, so QLabel's word wrap can break it
+// instead of the capsule growing past the width every platform shares.
+static QString breakableRuns(const QString &text, const QFontMetrics &metrics, int width)
+{
+    QString result;
+    for (const QString &word : text.split(QLatin1Char(' '))) {
+        if (!result.isEmpty()) {
+            result += QLatin1Char(' ');
+        }
+        QString line;
+        for (const QChar c : word) {
+            if (metrics.horizontalAdvance(line + c) > width) {
+                result += line + QChar(0x200B);
+                line.clear();
+            }
+            line += c;
+        }
+        result += line;
+    }
+    return result;
+}
+
+// The theme icon for each receipt: the document went out, or it sits on the
+// clipboard. A fallback delivered text, but not the text asked for.
+static QIcon outcomeIcon(PopupOutcome outcome)
+{
+    switch (outcome) {
+    case PopupOutcome::Inserted:
+        return QIcon::fromTheme(QStringLiteral("document-send"));
+    case PopupOutcome::Copied:
+        return QIcon::fromTheme(QStringLiteral("edit-copy"));
+    case PopupOutcome::Fallback:
+        return QIcon::fromTheme(QStringLiteral("dialog-information"));
+    case PopupOutcome::Error:
+        return QIcon::fromTheme(QStringLiteral("dialog-warning"));
+    }
+    return {};
+}
+
+void TranscriberPopup::showMessage(const QString &message, PopupOutcome outcome)
 {
     m_phase = Phase::Live;
     // The receipt replaces the waveform and any last preview words.
     restoreStandardLayout();
     hidePreview();
-    m_waveform->setMessage(message);
+    m_waveform->setMessage(message, outcomeIcon(outcome));
     m_previewPill->adjustSize();
     adjustSize();
 }
@@ -593,16 +633,23 @@ void TranscriberPopup::showErrorMessage(const QString &message)
     m_phase = Phase::Live;
     m_errorDismissAnimation->stop();
     m_waveform->hide();
-    const QString text = message.simplified();
     const QFontMetrics metrics(m_preview->font());
-    constexpr int maxTextWidth = 520;
+    constexpr int maxTextWidth = kPopupErrorWrapWidth;
+    const QString text = breakableRuns(message.simplified(), metrics, maxTextWidth);
     // The capsule hugs a short error instead of stretching to the full wrap
-    // width around one small centred line.
-    const int textWidth = qBound(1, metrics.horizontalAdvance(text), maxTextWidth);
+    // width around one small centred line. The wrapped layout's own width,
+    // since a rounded advance can be a fraction short and break the line.
+    constexpr int wrapFlags = Qt::TextWordWrap;
+    const int textWidth = qBound(1,
+                                 metrics.boundingRect(QRect(0, 0, maxTextWidth, 1000),
+                                                      wrapFlags, text)
+                                     .width(),
+                                 maxTextWidth);
     m_preview->setText(text);
     m_preview->setWordWrap(true);
     m_preview->setFixedWidth(textWidth);
     m_preview->setVisible(true);
+    m_errorIcon->setVisible(true);
     m_errorDismiss->setVisible(true);
     m_previewPill->setVisible(true);
     // previewRow is centred in what is left after the bar and its air, so the
@@ -614,7 +661,7 @@ void TranscriberPopup::showErrorMessage(const QString &message)
 
     const int textHeight = metrics.boundingRect(
                                       QRect(0, 0, textWidth, 1000),
-                                      Qt::AlignCenter | Qt::TextWordWrap,
+                                      Qt::AlignCenter | wrapFlags,
                                       text)
                                .height();
     // 24 keeps the label's 12px above and below the text; 3 is the countdown
@@ -647,10 +694,13 @@ void TranscriberPopup::showPopup(quint64 generation)
     }
 }
 
-void TranscriberPopup::setWhatsNewBanner(const QString &message, bool visible)
+void TranscriberPopup::setWhatsNewBanner(const WhatsNewBannerModel &banner, bool visible)
 {
     const bool visibilityChanged = m_whatsNewRow->isHidden() == visible;
-    m_whatsNewText->setText(message);
+    m_whatsNewText->setText(banner.text);
+    m_whatsNewAction->setText(banner.action);
+    m_whatsNewDismiss->setToolTip(banner.dismiss);
+    m_whatsNewDismiss->setAccessibleName(banner.dismiss);
     m_whatsNewRow->setVisible(visible);
     if (visible && isVisible()) {
         m_whatsNewAutoHide->start();
@@ -666,26 +716,21 @@ void TranscriberPopup::setWhatsNewBanner(const QString &message, bool visible)
     }
 }
 
-void TranscriberPopup::setUpdateBanner(const QString &message,
-                                       const QString &action,
-                                       bool actionEnabled)
+void TranscriberPopup::setUpdateBanner(const UpdateBannerModel &banner)
 {
-    const bool visible = !message.isEmpty();
-    const bool visibilityChanged = m_updateBanner->isHidden() == visible;
-    const bool textChanged = m_updateBannerText->text() != message
-        || m_updateBannerAction->text() != action;
-    m_updateBannerText->setText(message);
-    m_updateBannerAction->setText(action);
-    m_updateBannerAction->setVisible(!action.isEmpty());
-    m_updateBannerAction->setEnabled(actionEnabled);
-    m_updateBanner->setVisible(visible);
+    const bool visibilityChanged = m_updateBanner->isHidden() == banner.visible;
+    const bool textChanged = m_updateBannerText->text() != banner.text
+        || m_updateBannerAction->text() != banner.action;
+    m_updateBannerText->setText(banner.text);
+    m_updateBannerAction->setText(banner.action);
+    m_updateBannerAction->setVisible(!banner.action.isEmpty());
+    m_updateBannerAction->setEnabled(banner.actionEnabled);
+    m_updateBanner->setVisible(banner.visible);
     if (!visibilityChanged && !textChanged) {
         return;
     }
     adjustSize();
-    if (isVisible()) {
-        m_positioner->positionBottomCenter(m_surface);
-    }
+    repositionIfVisible();
 }
 
 void TranscriberPopup::changeEvent(QEvent *event)
@@ -739,6 +784,7 @@ void TranscriberPopup::restoreStandardLayout()
     m_errorDismissAnimation->stop();
     m_errorDismissProgress->hide();
     m_errorDismiss->hide();
+    m_errorIcon->hide();
     m_waveform->show();
     m_preview->setWordWrap(false);
     m_preview->setMinimumWidth(0);
