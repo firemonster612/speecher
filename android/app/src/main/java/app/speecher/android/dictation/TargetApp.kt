@@ -132,7 +132,12 @@ fun refinementContext(
                 settings.defaultWritingProfile,
                 settings.writingProfiles,
             )
-            .copy(controlRole = target?.role.orEmpty())
+            .copy(
+                controlRole = target?.role.orEmpty(),
+                additionalInstructions = settings.additionalInstructions,
+                customSystemPrompt =
+                    if (settings.customSystemPromptEnabled) settings.customSystemPrompt else "",
+            )
     if (!includeText || context.style == CleanupStrength.None) return context
     return context.copy(
         nearbyText = surroundingText(CONTEXT_CHARACTERS) ?: NearbyText(),

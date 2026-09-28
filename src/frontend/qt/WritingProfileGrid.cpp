@@ -1,5 +1,6 @@
 #include "frontend/qt/WritingProfileGrid.h"
 
+#include "frontend/qt/CollectionRow.h"
 #include "ui/settings/SettingsPageSupport.h"
 #include "core/settings/SettingsSchema.h"
 
@@ -21,13 +22,15 @@ QList<WritingProfileSettings> gridSettings(const QTableWidget *grid)
         const QTableWidgetItem *profile = grid->item(row, 0);
         const auto *strength = qobject_cast<QComboBox *>(grid->cellWidget(row, 1));
         const auto *tone = qobject_cast<QComboBox *>(grid->cellWidget(row, 2));
-        if (!profile || !strength || !tone) {
+        const QTableWidgetItem *instructions = grid->item(row, 3);
+        if (!profile || !strength || !tone || !instructions) {
             continue;
         }
         settings.append({
             writingProfileFromName(profile->data(Qt::UserRole).toString()),
             strength->currentData().toString(),
             tone->currentData().toString(),
+            instructions->text(),
         });
     }
     return settings;
@@ -58,6 +61,7 @@ void setGridSettings(QTableWidget *grid,
         grid->setItem(row, 0, profile);
         grid->setCellWidget(row, 1, strength);
         grid->setCellWidget(row, 2, tone);
+        grid->setItem(row, 3, new QTableWidgetItem(profileSettings.instructions));
     }
 }
 
@@ -67,19 +71,24 @@ SchemaCustomRow makeWritingProfileGrid(QWidget *parent, std::function<void()> no
 {
     auto *grid = new QTableWidget(parent);
     grid->setObjectName(QStringLiteral("vocabInput"));
-    grid->setColumnCount(3);
+    grid->setColumnCount(4);
     grid->setHorizontalHeaderLabels({
         QStringLiteral("Profile"),
         QStringLiteral("Cleanup"),
         QStringLiteral("Tone"),
+        QStringLiteral("Instructions"),
     });
     grid->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    grid->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    grid->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    grid->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    grid->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    grid->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+    useMultilineEditor(grid, 3);
     grid->verticalHeader()->hide();
     grid->setSelectionMode(QAbstractItemView::NoSelection);
     grid->setMinimumHeight(207);
     grid->setMaximumHeight(207);
+
+    QObject::connect(grid, &QTableWidget::itemChanged, grid, notifyChanged);
 
     return {
         grid,

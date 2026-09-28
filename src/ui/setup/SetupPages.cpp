@@ -2541,12 +2541,15 @@ WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWid
 
 void WritingProfilesSetupPage::saveProfiles()
 {
+    // Instructions have no field here; they keep what Settings gave them.
+    const QList<WritingProfileSettings> saved = m_settings.writingProfileSettings();
     QList<WritingProfileSettings> profiles;
     for (const ProfileControls &controls : m_profiles) {
         profiles.append({
             controls.profile,
             controls.cleanup->currentData().toString(),
             controls.tone->currentData().toString(),
+            writingProfileSettingsFor(saved, controls.profile).instructions,
         });
     }
     m_settings.setWritingProfileSettings(profiles);

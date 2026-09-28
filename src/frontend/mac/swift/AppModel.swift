@@ -354,6 +354,10 @@ final class AppModel: ObservableObject {
             confirmingClearInsights = true
             return
         }
+        if rowId == "resetCustomSystemPrompt" {
+            setValue(bridge.builtInSystemPrompt, for: "customSystemPrompt")
+            return
+        }
         // Every schema action, enableAccessibility included, goes to the
         // front end's one dispatcher (MacFrontEnd.mm).
         guard Self.testsTypedText.contains(rowId) else {

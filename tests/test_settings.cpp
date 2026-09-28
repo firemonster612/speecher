@@ -544,6 +544,35 @@ private slots:
         QCOMPARE(settings.anthropicCliproxyAccount(), QStringLiteral("claude-user@example.com.json"));
     }
 
+    // Files from before instructions existed load with none, and the new
+    // fields survive a save and a reload.
+    void refinementInstructionsRoundTrip()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(QStringLiteral("refinement/writingProfiles"),
+                                QByteArray(R"([{"profile":"email","cleanupStrength":"balanced","tone":"casual"}])"));
+        AppSettings draft = settings.snapshot();
+        QCOMPARE(writingProfileSettingsFor(draft.refinement.writingProfiles, WritingProfile::Email).instructions,
+                 QString());
+        QCOMPARE(draft.refinement.additionalInstructions, QString());
+        QCOMPARE(draft.refinement.customSystemPromptEnabled, false);
+        QCOMPARE(draft.refinement.customSystemPrompt, QString());
+
+        draft.refinement.writingProfiles[1].instructions = QStringLiteral("Sign off with Best,\nEnzo");
+        draft.refinement.additionalInstructions = QStringLiteral("Spell it Speecher.");
+        draft.refinement.customSystemPromptEnabled = true;
+        draft.refinement.customSystemPrompt = QStringLiteral("Clean up my dictation.");
+        settings.applySnapshot(draft);
+
+        const AppSettings loaded = SettingsStore().snapshot();
+        QCOMPARE(writingProfileSettingsFor(loaded.refinement.writingProfiles, WritingProfile::Email).instructions,
+                 QStringLiteral("Sign off with Best,\nEnzo"));
+        QCOMPARE(loaded.refinement.additionalInstructions, QStringLiteral("Spell it Speecher."));
+        QCOMPARE(loaded.refinement.customSystemPromptEnabled, true);
+        QCOMPARE(loaded.refinement.customSystemPrompt, QStringLiteral("Clean up my dictation."));
+    }
+
     void snapshotApplyNeverPinsADetectedCliProxyDirectory()
     {
         SettingsStore settings;

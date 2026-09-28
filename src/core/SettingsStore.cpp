@@ -184,6 +184,9 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setWritingProfileOverrides(draft.refinement.writingProfileOverrides);
     setUseTargetContext(draft.refinement.useTargetContext);
     setIncludeScreenshotContext(draft.refinement.includeScreenshotContext);
+    setAdditionalInstructions(draft.refinement.additionalInstructions);
+    setCustomSystemPromptEnabled(draft.refinement.customSystemPromptEnabled);
+    setCustomSystemPrompt(draft.refinement.customSystemPrompt);
     setOpenAiModel(draft.refinement.openAiModel);
     setOpenAiEffort(draft.refinement.openAiEffort);
     setOpenAiFastMode(draft.refinement.openAiFastMode);

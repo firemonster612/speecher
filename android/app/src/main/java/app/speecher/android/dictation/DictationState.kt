@@ -209,6 +209,11 @@ data class SpeecherSettings(
     val defaultWritingProfile: WritingProfile = WritingProfile.Other,
     val writingProfiles: Map<WritingProfile, WritingProfileSettings> =
         WritingProfile.entries.associateWith { WritingProfileSettings() },
+    /** Added to every refinement prompt, before the profile's own instructions. */
+    val additionalInstructions: String = "",
+    /** Replaces the built-in dictation rules while on; empty stands for the built-in prompt. */
+    val customSystemPromptEnabled: Boolean = false,
+    val customSystemPrompt: String = "",
     val buttonLayout: ButtonLayout = ButtonLayout.RefinedPrimary,
     /** The size the panel opens at. */
     val panelSize: PanelSize = PanelSize.Full,

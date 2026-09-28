@@ -1056,6 +1056,46 @@ private slots:
                                 "clipboard."));
     }
 
+    // Instructions and the custom prompt are cards of their own at the end
+    // of Refinement, gated like its other rows; the prompt shows the built-in
+    // one until something is stored.
+    void refinementPageCarriesInstructionsAndTheCustomPrompt()
+    {
+        SchemaContext context = fakeContext();
+        context.builtInSystemPrompt = QStringLiteral("Built-in rules.");
+        const SettingsSchema schema = buildSettingsSchema(context);
+        QStringList groups;
+        for (const SettingsPaneGroup &group : schema.pane(QStringLiteral("refinement"))->groups) {
+            groups.append(group.title + QLatin1Char(':') + group.rows.join(QLatin1Char(',')));
+        }
+        QCOMPARE(groups.mid(groups.size() - 3),
+                 (QStringList{QStringLiteral("Profile behavior:writingProfileBehavior"),
+                              QStringLiteral("Additional instructions:additionalInstructions"),
+                              QStringLiteral("Custom system prompt:customSystemPromptEnabled,"
+                                             "customSystemPrompt,resetCustomSystemPrompt")}));
+        const SettingsRow &instructions = *schema.row(QStringLiteral("additionalInstructions"));
+        const SettingsRow &prompt = *schema.row(QStringLiteral("customSystemPrompt"));
+        QVERIFY(instructions.multiline);
+        QVERIFY(prompt.multiline);
+        const QStringList gridColumns = [&schema] {
+            QStringList ids;
+            for (const CollectionColumn &column : schema.row(QStringLiteral("writingProfileBehavior"))->collection.columns) {
+                ids.append(column.id + (column.multiline ? QStringLiteral("*") : QString()));
+            }
+            return ids;
+        }();
+        QCOMPARE(gridColumns, (QStringList{QStringLiteral("profile"), QStringLiteral("cleanup"),
+                                           QStringLiteral("tone"), QStringLiteral("instructions*")}));
+
+        AppSettings settings;
+        QCOMPARE(prompt.value(settings).toString(), QStringLiteral("Built-in rules."));
+        prompt.apply(settings, QStringLiteral("Mine."));
+        QCOMPARE(prompt.value(settings).toString(), QStringLiteral("Mine."));
+        settings.refinement.providerId = QStringLiteral("none");
+        QVERIFY(!instructions.enabled(settings, {}));
+        QVERIFY(!prompt.enabled(settings, {}));
+    }
+
     // A row no pane shows is a setting nobody can reach, and a row two panes
     // show is two places to look; either way the platforms drift apart.
     void everySchemaRowIsOnExactlyOnePane()

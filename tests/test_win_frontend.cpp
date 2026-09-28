@@ -174,6 +174,27 @@ private slots:
         if (scalarCommit) QCOMPARE(store->previewWords(), 12);
     }
 
+    // The snippet column holds several lines, which the editor learns from
+    // the column's flag rather than from the row's id.
+    void snippetColumnIsMultiline()
+    {
+        win::SettingsModel model(controller.get());
+        QStringList multiline;
+        for (const SettingsPaneGroup &group : model.schema().pane(QStringLiteral("vocabulary"))->groups) {
+            for (const auto &row : model.section(group).rows) {
+                if (row.id != QStringLiteral("bindingRules")) {
+                    continue;
+                }
+                for (const auto &column : row.collection->columns) {
+                    if (column.multiline) {
+                        multiline.append(column.id);
+                    }
+                }
+            }
+        }
+        QCOMPARE(multiline, QStringList{QStringLiteral("replacement")});
+    }
+
     // LocalSetup writes settings behind an open window (deleting the model in
     // use moves dictation to another); the draft takes that in without losing
     // an edit of its own.

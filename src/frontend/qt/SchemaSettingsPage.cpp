@@ -4,6 +4,7 @@
 #include "frontend/qt/CollectionRow.h"
 #include "frontend/qt/WritingProfileGrid.h"
 #include "providers/ProviderRegistry.h"
+#include "providers/TranscriptRefinementPrompt.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
@@ -14,6 +15,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMediaDevices>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSizePolicy>
@@ -121,6 +123,9 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
 #endif
         QStringLiteral(SPEECHER_VERSION),
         lastSeenVersion,
+        {},
+        {},
+        builtInDictationSystemPrompt(),
     };
 }
 
@@ -452,6 +457,20 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
         return spin;
     }
     case RowKind::Text: {
+        if (descriptor.multiline) {
+            auto *edit = new QPlainTextEdit(card);
+            connect(edit, &QPlainTextEdit::textChanged, this, announce);
+            row.value = [edit] { return edit->toPlainText(); };
+            // Every edit reloads the page, and setPlainText would move the
+            // cursor out from under the person typing.
+            row.setValue = [edit](const QVariant &value) {
+                if (!edit->hasFocus() && edit->toPlainText() != value.toString()) {
+                    const QSignalBlocker blocker(edit);
+                    edit->setPlainText(value.toString());
+                }
+            };
+            return edit;
+        }
         if (!descriptor.suggestions) {
             auto *edit = new QLineEdit(card);
             if (descriptor.secret) {

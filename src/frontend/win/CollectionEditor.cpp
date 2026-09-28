@@ -296,6 +296,9 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
         // momentarily duplicates another one has to survive being typed.
         TextBox box;
         box.Text(hs(value.toString()));
+        if (column.multiline) {
+            makeMultiline(box);
+        }
         const auto commit = [weak = weak_from_this(), columnId = column.id, recordIndex](
                                 const TextBox &box) {
             auto self = weak.lock();
@@ -311,8 +314,9 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
         box.LostFocus([commit](const IInspectable &sender, const auto &) {
             commit(sender.as<TextBox>());
         });
-        box.KeyDown([commit](const IInspectable &sender, const Input::KeyRoutedEventArgs &args) {
-            if (args.Key() == Windows::System::VirtualKey::Enter) {
+        box.KeyDown([commit, multiline = column.multiline](const IInspectable &sender,
+                                                           const Input::KeyRoutedEventArgs &args) {
+            if (!multiline && args.Key() == Windows::System::VirtualKey::Enter) {
                 commit(sender.as<TextBox>());
             }
         });
@@ -451,12 +455,8 @@ void CollectionEditor::openAddDialog()
             TextBox box;
             box.Header(box_value(hs(column.title)));
             box.Text(hs(blank.toString()));
-            // Snippets hold several lines; a single-line field would fold them.
-            if (m_rowId == QStringLiteral("bindingRules")
-                && column.id == QStringLiteral("replacement")) {
-                box.AcceptsReturn(true);
-                box.Height(96);
-                box.TextWrapping(TextWrapping::Wrap);
+            if (column.multiline) {
+                makeMultiline(box);
             }
             readers.append({column.id, [box] { return QVariant(qs(box.Text())); }});
             fields.Children().Append(box);

@@ -428,7 +428,8 @@ struct RecordField: View {
             }
             .labelsHidden()
         default:
-            CellField(text: text, commitsImmediately: commitsImmediately) { value = $0 }
+            CellField(text: text, multiline: column.multiline,
+                      commitsImmediately: commitsImmediately) { value = $0 }
         }
     }
 
@@ -461,13 +462,15 @@ struct RecordField: View {
 /// duplicates another one has to survive long enough to be finished.
 struct CellField: View {
     let text: String
+    /// A snippet's lines: the field grows downward to show them.
+    var multiline = false
     var commitsImmediately = false
     let commit: (String) -> Void
     @State private var edited = ""
     @FocusState private var editing: Bool
 
     var body: some View {
-        TextField("", text: $edited)
+        TextField("", text: $edited, axis: multiline ? .vertical : .horizontal)
             .labelsHidden()
             .focused($editing)
             .onSubmit { commit(edited) }

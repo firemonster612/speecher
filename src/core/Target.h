@@ -47,6 +47,8 @@ struct WritingProfileSettings {
     WritingProfile profile = WritingProfile::Other;
     QString cleanupStrength = QStringLiteral("balanced");
     QString tone = QStringLiteral("none");
+    // Added to the refinement prompt for this profile, after the global ones.
+    QString instructions;
 
     bool operator==(const WritingProfileSettings &other) const = default;
 };
@@ -120,6 +122,12 @@ struct RefinementContext {
     Target target;
     WritingProfile writingProfile = WritingProfile::Other;
     QString tone = QStringLiteral("none");
+    // The user's own instructions, from settings: every refinement's, then
+    // the writing profile's.
+    QString additionalInstructions;
+    QString profileInstructions;
+    // Replaces the built-in dictation rules when not blank.
+    QString customSystemPrompt;
     bool includeNearbyText = true;
     bool editSelection = false;
     QByteArray screenshotData;

@@ -38,10 +38,14 @@ enum class Tone(val id: String) {
     GenZ("gen_z"),
 }
 
-/** How one writing profile refines. Every profile defaults to balanced with no tone override. */
+/**
+ * How one writing profile refines. Every profile defaults to balanced with no tone override. The
+ * [instructions] follow the global ones in the prompt.
+ */
 data class WritingProfileSettings(
     val cleanupStrength: CleanupStrength = CleanupStrength.Balanced,
     val tone: Tone = Tone.None,
+    val instructions: String = "",
 )
 
 /**
@@ -77,6 +81,11 @@ data class RefinementContext(
     val screenText: String = "",
     /** A base64 JPEG of the screen, attached as an image for a vision model. */
     val screenshotJpeg: String? = null,
+    /** The user's instructions from settings: every refinement's, then the profile's. */
+    val additionalInstructions: String = "",
+    val profileInstructions: String = "",
+    /** Replaces the built-in dictation rules when not blank. */
+    val customSystemPrompt: String = "",
 )
 
 private class RecognitionRule(
@@ -207,5 +216,6 @@ fun resolveRefinementContext(
         applicationId,
         applicationName,
         nearbyText,
+        profileInstructions = settings.instructions,
     )
 }

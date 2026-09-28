@@ -31,6 +31,11 @@ public:
     static TranscriptPipelineResult prepare(const QString &rawTranscript,
                                             const AppSettings &settings,
                                             const Target &target);
+    // The user's instructions and custom system prompt for a refinement run
+    // with this profile.
+    static void fillUserInstructions(RefinementContext &context,
+                                     const RefinementSettings &refinement,
+                                     const WritingProfileSettings &profile);
     static void includeScreenshotContext(TranscriptPipelineResult &pipeline,
                                          bool supportsScreenshotContext,
                                          const QByteArray &screenshotData,
