@@ -1,7 +1,6 @@
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/ShortcutRecorder.h"
 
-#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
 #include "frontend/win/LocalModelBrowser.h"
@@ -34,31 +33,17 @@ const QString kCliProxyAuthMode = QStringLiteral("cliproxy");
 const QString kProfileColumn = QStringLiteral("profile");
 const QString kProfileIdKey = QStringLiteral("profileId");
 
-QList<RowOption> outputMethods()
-{
-    // No ydotool entry: the virtual keyboard is Linux's, and a method Windows
-    // cannot offer has no business being offered here.
-    QList<RowOption> methods;
-    for (const QString &method : {QString::fromLatin1(OutputMethod::Automatic),
-                                  QString::fromLatin1(OutputMethod::DirectInsert),
-                                  QString::fromLatin1(OutputMethod::WinPaste),
-                                  QString::fromLatin1(OutputMethod::QtClipboard)}) {
-        methods.append({method, OutputMethod::label(method)});
-    }
-    return methods;
-}
-
 TextBlock secondaryText(const QString &text, const PaneHost &host)
 {
     return secondaryTextBlock(text, L"SettingsCardDescriptionStyle", host);
 }
 
-// Free text with a commit on Enter or blur, shared by the two CLI Proxy rows.
-TextBox commitTextBox(const RowSnapshot &row, PaneHost &host, const wchar_t *placeholder)
+// Free text with a commit on Enter or blur, for the CLI Proxy rows.
+TextBox commitTextBox(const RowSnapshot &row, PaneHost &host)
 {
     TextBox box;
     box.MinWidth(240);
-    box.PlaceholderText(placeholder);
+    box.PlaceholderText(hs(row.placeholder));
     box.Text(hs(row.value.toString()));
     const auto commit = [rowId = row.id, stored = row.value.toString(), &host](const TextBox &box) {
         const QString text = qs(box.Text());
@@ -77,11 +62,11 @@ TextBox commitTextBox(const RowSnapshot &row, PaneHost &host, const wchar_t *pla
     return box;
 }
 
-PasswordBox commitPasswordBox(const RowSnapshot &row, PaneHost &host, const wchar_t *placeholder)
+PasswordBox commitPasswordBox(const RowSnapshot &row, PaneHost &host)
 {
     PasswordBox box;
     box.MinWidth(240);
-    box.PlaceholderText(placeholder);
+    box.PlaceholderText(hs(row.placeholder));
     box.Password(hs(row.value.toString()));
     const auto commit = [rowId = row.id, stored = row.value.toString(), &host](
                             const PasswordBox &box) {
@@ -363,9 +348,6 @@ QList<RowOption> customRowOptions(const QString &rowId,
                                   const AppSettings &draft,
                                   const SettingsStore &store)
 {
-    if (rowId == QStringLiteral("outputMethod")) {
-        return outputMethods();
-    }
     if (rowId == QStringLiteral("openAiCliproxyAccount")) {
         return cliproxyAccountOptions(ProviderSignIn::cliproxyAccountType(QStringLiteral("openai")),
                                       draft.refinement.openAiCliproxyAccount,
@@ -432,19 +414,16 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
         }
         return panel;
     }
-    if (row.id == QStringLiteral("cliproxyBaseUrl")) {
-        return commitTextBox(row, host, L"Leave empty to use the account files on this computer");
-    }
-    if (row.id == QStringLiteral("cliproxyApiKey")) {
-        return commitPasswordBox(row, host, L"A key the server accepts");
-    }
     // The fallback the mac renderer uses: a picker when the row supplied
     // choices, a text field when it holds text, nothing otherwise.
     if (!row.options.isEmpty()) {
         return choiceComboBox(row, host);
     }
+    if (row.secret) {
+        return commitPasswordBox(row, host);
+    }
     if (row.value.typeId() == QMetaType::QString) {
-        return commitTextBox(row, host, L"");
+        return commitTextBox(row, host);
     }
     return nullptr;
 }

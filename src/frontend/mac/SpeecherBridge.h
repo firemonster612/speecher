@@ -106,6 +106,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
 // Text rows only: a key or password, shown masked.
 @property (nonatomic, readonly) BOOL secret;
+// Text rows only: shown in the empty field.
+@property (nonatomic, readonly, copy) NSString *placeholder;
 // Text rows only: the value may hold several lines.
 @property (nonatomic, readonly) BOOL multiline;
 @end
@@ -567,6 +569,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL hardwareKnown;
 // Where the word error rates come from, for a tooltip on them.
 @property (nonatomic, readonly, copy) NSString *wordErrorRateSources;
+// The detail's fact names, in LocalModelFactLabels order: best for, download,
+// speed here, word error rate, text shows, language, license.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *factLabels;
 // The catalog, in the order it lists the models.
 @property (nonatomic, readonly, copy) NSArray<LocalModelInfo *> *models;
 // The Local Model dictation will use: the chosen one, else the suggestion.
@@ -651,6 +656,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // A delivery's receipt, with the outcome that picks its symbol.
 @property (nonatomic, copy, nullable) void (^popupMessageRequested)(NSString *message,
                                                                    SpeecherPopupOutcome outcome);
+// speecher::checkingCredentialsStatus() and accessibilityGrantActionLabel().
+@property (class, nonatomic, readonly, copy) NSString *checkingCredentialsStatus;
+@property (class, nonatomic, readonly, copy) NSString *accessibilityGrantActionLabel;
 // speecher::kPopupErrorWrapWidth and kPopupErrorDismissMs.
 @property (class, nonatomic, readonly) CGFloat popupErrorWrapWidth;
 @property (class, nonatomic, readonly) NSTimeInterval popupErrorDismissSeconds;

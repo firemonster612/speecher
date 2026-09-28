@@ -76,7 +76,7 @@ SchemaCustomRowFactory OutputCustomRows::factory()
                   QWidget *parent,
                   std::function<void()> notifyChanged) {
         if (descriptor.id == QStringLiteral("outputMethod")) {
-            return makeMethodRow(parent, std::move(notifyChanged));
+            return makeMethodRow(descriptor.options(AppSettings{}), parent, std::move(notifyChanged));
         }
         if (descriptor.id == QStringLiteral("virtualKeyboard")) {
             return makeVirtualKeyboardRow(parent, std::move(notifyChanged));
@@ -85,26 +85,15 @@ SchemaCustomRowFactory OutputCustomRows::factory()
     };
 }
 
-SchemaCustomRow OutputCustomRows::makeMethodRow(QWidget *parent, std::function<void()> notifyChanged)
+SchemaCustomRow OutputCustomRows::makeMethodRow(const QList<RowOption> &methods,
+                                                QWidget *parent,
+                                                std::function<void()> notifyChanged)
 {
     m_method = new QComboBox(parent);
     m_notifyChanged = notifyChanged;
-    const auto addMethod = [this](const char *method) {
-        m_method->addItem(OutputMethod::label(QString::fromLatin1(method)),
-                          QString::fromLatin1(method));
-    };
-    addMethod(OutputMethod::Automatic);
-    addMethod(OutputMethod::DirectInsert);
-#ifdef Q_OS_MACOS
-    addMethod(OutputMethod::MacPaste);
-#elif defined(Q_OS_WIN)
-    addMethod(OutputMethod::WinPaste);
-#else
-    addMethod(OutputMethod::Ydotool);
-    addMethod(OutputMethod::WlCopy);
-#endif
-    addMethod(OutputMethod::QtClipboard);
-    m_method->setToolTip(QStringLiteral("How Speecher delivers final text."));
+    for (const RowOption &method : methods) {
+        m_method->addItem(method.label, method.id);
+    }
     m_method->view()->setMouseTracking(true);
 
     QObject::connect(m_method, &QComboBox::currentIndexChanged, m_method, [this, notifyChanged] {
@@ -222,9 +211,7 @@ void OutputCustomRows::refresh()
     m_method->setToolTip(
         unavailableSelection
             ? QStringLiteral("The virtual keyboard is not set up yet, so text is copied to the clipboard instead.")
-            : enabled
-                ? QStringLiteral("Automatic pastes with the virtual keyboard and falls back to the clipboard.")
-                : QStringLiteral("Automatic copies to the clipboard. Set up the virtual keyboard below to paste as well."));
+            : QString());
     if (m_status) {
         setWrappedText(m_status, status.label + QStringLiteral(". ") + status.detail);
     }
@@ -358,17 +345,7 @@ void OutputCustomRows::removeSetup()
 #else
 // ydotool is Linux-only, and so is the Advanced section that hosts its cluster:
 // the schema leaves the section out, so only the method row exists here.
-void OutputCustomRows::refresh()
-{
-    if (m_method) {
-        m_method->setToolTip(
-#ifdef Q_OS_MACOS
-            QStringLiteral("Automatic pastes with Cmd+V, then falls back to the clipboard."));
-#else
-            QStringLiteral("Automatic copies to the clipboard; this build has no virtual keyboard to paste with."));
-#endif
-    }
-}
+void OutputCustomRows::refresh() {}
 
 void OutputCustomRows::updateButtons() {}
 

@@ -42,17 +42,25 @@ QString label(const QString &method)
     if (value == QString::fromLatin1(Ydotool)) {
         return QStringLiteral("Paste with the virtual keyboard");
     }
+    // Each platform's name for the feature, as the paste rules name it.
     if (value == QString::fromLatin1(DirectInsert)) {
+#ifdef Q_OS_MACOS
+        return QStringLiteral("Insert into the text field (Accessibility)");
+#elif defined(Q_OS_WIN)
+        return QStringLiteral("Insert into the text field (UI Automation)");
+#else
         return QStringLiteral("Insert into the text field (desktop accessibility)");
+#endif
     }
     if (value == QString::fromLatin1(WlCopy)) {
         return QStringLiteral("Copy to the clipboard only");
     }
+    // The paste rules' own words, "Standard paste (Ctrl+V)".
     if (value == QString::fromLatin1(MacPaste)) {
-        return QStringLiteral("Paste with the keyboard");
+        return QStringLiteral("Standard paste (Cmd+V)");
     }
     if (value == QString::fromLatin1(WinPaste)) {
-        return QStringLiteral("Keyboard paste (Ctrl+V)");
+        return QStringLiteral("Standard paste (Ctrl+V)");
     }
     if (value == QString::fromLatin1(QtClipboard)) {
         return QStringLiteral("Copy to the clipboard only (plain text)");

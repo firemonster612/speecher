@@ -60,6 +60,7 @@ struct RowSnapshot {
     bool suggests = false;
     // Text rows only: shown masked.
     bool secret = false;
+    QString placeholder;
     // Text rows only: the value may hold several lines.
     bool multiline = false;
     bool enabled = true;

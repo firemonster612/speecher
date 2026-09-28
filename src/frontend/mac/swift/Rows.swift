@@ -244,7 +244,7 @@ struct TextRowField: View {
         if !row.suggests {
             // A multi-line field grows downward and shows four lines before
             // it scrolls.
-            TextField("", text: $text, axis: row.multiline ? .vertical : .horizontal)
+            TextField("", text: $text, prompt: Text(row.placeholder), axis: row.multiline ? .vertical : .horizontal)
                 .lineLimit(row.multiline ? 4 : 1, reservesSpace: row.multiline)
                 .labelsHidden()
                 .focused($editing)
@@ -276,7 +276,7 @@ struct SecureTextRowField: View {
     @FocusState private var editing: Bool
 
     var body: some View {
-        SecureField("", text: $text)
+        SecureField("", text: $text, prompt: Text(row.placeholder))
             .labelsHidden()
             .focused($editing)
             .onSubmit { commit() }

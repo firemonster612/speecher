@@ -518,12 +518,12 @@ private slots:
 
     void outputMethodsIncludeWindowsPaste()
     {
-        const QList<RowOption> methods = win::customRowOptions(
-            QStringLiteral("outputMethod"), controller->settings()->snapshot(),
-            *controller->settings());
-        for (const RowOption &method : methods) {
+        const win::SettingsModel model(controller.get());
+        const SettingsRow *row = model.schema().row(QStringLiteral("outputMethod"));
+        QVERIFY(row);
+        for (const RowOption &method : row->options(controller->settings()->snapshot())) {
             if (method.id == QString::fromLatin1(OutputMethod::WinPaste)) {
-                QCOMPARE(method.label, QStringLiteral("Keyboard paste (Ctrl+V)"));
+                QCOMPARE(method.label, QStringLiteral("Standard paste (Ctrl+V)"));
                 return;
             }
         }

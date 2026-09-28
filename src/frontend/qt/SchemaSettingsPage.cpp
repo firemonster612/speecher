@@ -345,11 +345,9 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
     }
 
     if (descriptor.kind == RowKind::Action) {
-        // FormButtonDelegate: the row itself is the button.
-        QPushButton *button = settings::makeButtonRow(
-            descriptor.actionLabel.isEmpty() ? descriptor.label : descriptor.actionLabel,
-            descriptor.help,
-            host);
+        // The label names what the row is about and the button says what a
+        // click does, as on macOS and Windows.
+        auto *button = new QPushButton(descriptor.actionLabel, host);
         button->setObjectName(descriptor.id);
         if (!descriptor.tooltip.isEmpty()) {
             button->setToolTip(descriptor.tooltip);
@@ -357,10 +355,16 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         connect(button, &QPushButton::clicked, this, [this, id = descriptor.id] {
             emit actionTriggered(id);
         });
-        settings::addCardRow(form, button, host);
-        row.frame = button;
+        QFrame *frame = settings::makeRow(descriptor.label,
+                                          descriptor.help,
+                                          button,
+                                          host,
+                                          nullptr,
+                                          bool(descriptor.helpValue));
+        settings::addRow(form, frame, host, false);
+        row.frame = frame;
         row.control = button;
-        row.description = button->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
         m_rows.append(row);
         if (!descriptor.expensive) {
             applyRow(m_rows.last(), AppSettings{});
@@ -521,7 +525,8 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
 void SchemaSettingsPage::applyRow(const Row &row, const AppSettings &settings)
 {
     const auto &choices = row.descriptor.options ? row.descriptor.options : row.descriptor.suggestions;
-    if (choices) {
+    // A Custom row fills its own widget, which need not be a combo box.
+    if (choices && row.descriptor.kind != RowKind::Custom) {
         setOptions(qobject_cast<QComboBox *>(row.control), choices(settings));
     }
     // First, so a row whose choices come from the settings offers them
@@ -631,14 +636,15 @@ void SchemaSettingsPage::refreshRows()
         if (row.refresh) {
             row.refresh(draft);
         }
-        // The row is the button, so its title is the caption a click earns;
-        // without one, a value naming what the row is about stands in.
-        if (row.descriptor.kind == RowKind::Action
-            && (row.descriptor.actionLabelValue || row.descriptor.value)) {
-            if (auto *button = qobject_cast<QPushButton *>(row.control)) {
-                settings::setButtonRowCaption(button, row.descriptor.actionLabelValue
-                                                          ? row.descriptor.actionLabelValue(draft)
-                                                          : row.descriptor.value(draft).toString());
+        // The caption follows what a click will do, and a value names what
+        // the row is about (the Local Runner found) in place of its label.
+        if (row.descriptor.kind == RowKind::Action) {
+            if (row.descriptor.actionLabelValue) {
+                qobject_cast<QPushButton *>(row.control)->setText(row.descriptor.actionLabelValue(draft));
+            }
+            if (row.descriptor.value) {
+                row.frame->findChild<QLabel *>(QStringLiteral("rowTitle"))
+                    ->setText(row.descriptor.value(draft).toString());
             }
         }
         if (row.descriptor.helpValue && row.description) {

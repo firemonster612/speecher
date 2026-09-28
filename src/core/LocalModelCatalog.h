@@ -100,6 +100,16 @@ QString downloadSizeText(qint64 bytes);
 QString speechSecondsText(double seconds);
 // Where the two word error rates come from, for a tooltip on them.
 QString wordErrorRateSources();
+// The fact names beside a model in the Local models page's detail.
+struct LocalModelFactLabels {
+    QString bestFor = QStringLiteral("Best for");
+    QString download = QStringLiteral("Download");
+    QString speedHere = QStringLiteral("Speed here");
+    QString wordErrorRate = QStringLiteral("Word error rate");
+    QString textShows = QStringLiteral("Text shows");
+    QString language = QStringLiteral("Language");
+    QString license = QStringLiteral("License");
+};
 // How long 10 s of speech takes here: the Speed Test's measurement when there
 // is one, else the catalog's estimate for this kind of machine.
 QString localModelSpeedLine(const LocalModel &model,
