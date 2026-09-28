@@ -462,17 +462,17 @@ struct DictationPanel::Native : QObject {
         }
         ensureBanner();
         bannerRoot.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
-        updateText.Text(hs(update.text));
-        updateAction.Content(box_value(hs(update.action)));
+        updateText.Text(win::hs(update.text));
+        updateAction.Content(box_value(win::hs(update.action)));
         updateAction.Visibility(update.action.isEmpty() ? Visibility::Collapsed
                                                         : Visibility::Visible);
         updateAction.IsEnabled(update.actionEnabled);
         updateCapsule.Visibility(update.visible ? Visibility::Visible : Visibility::Collapsed);
         const WhatsNewBannerModel whatsNew = whatsNewBanner(controller->updates()->currentVersion());
-        whatsNewText.Text(hs(whatsNew.text));
-        whatsNewAction.Content(box_value(hs(whatsNew.action)));
+        whatsNewText.Text(win::hs(whatsNew.text));
+        whatsNewAction.Content(box_value(win::hs(whatsNew.action)));
         Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(whatsNewDismiss,
-                                                                        hs(whatsNew.dismiss));
+                                                                        win::hs(whatsNew.dismiss));
         whatsNewCapsule.Visibility(showWhatsNew ? Visibility::Visible : Visibility::Collapsed);
         positionBanner();
         ShowWindow(banner, SW_SHOWNOACTIVATE);
