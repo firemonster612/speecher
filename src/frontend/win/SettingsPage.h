@@ -88,16 +88,11 @@ struct PaneHost {
     int apiKeyEdits = 0;
     bool apiKeyLoaded = false;
     QString credentialProblem;
-    // Global Shortcut recorder state, on Dictation.
+    // What the Global Shortcut dialog left for the Dictation row to say.
     QString shortcutProblem;
     // The single-key typing cost, shown inline after a save; not an error.
     QString shortcutNotice;
     bool shortcutRecording = false;
-    // While recording: the scancode (with the extended byte) of the one
-    // modifier currently held, which its release will commit as a single key.
-    // 0 when no modifier is pending; -1 once a second key joined it — a
-    // modifier-only chord is not a valid combination and must not commit.
-    int shortcutPendingModifier = 0;
     // Home's pickers: the stats period, and the Activity measure as an index
     // into Dictations / Words / Minutes of audio.
     InsightsRange homeRange = InsightsRange::Last30Days;

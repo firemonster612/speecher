@@ -64,8 +64,8 @@ struct RootView: View {
                 }
                 .scenePadding([.top, .horizontal])
                 PaneView(pane: pane, model: model)
-                    // A fresh view per pane, so one pane's chosen view (Apps,
-                    // Vocabulary) does not carry over to the next.
+                    // A fresh view per pane, so state one pane keeps, such as
+                    // Vocabulary's chosen view, does not carry over to the next.
                     .id(pane.id)
             }
         }
@@ -246,6 +246,7 @@ final class SpeecherSettingsWindow {
     private let model: AppModel
     private let window: NSWindow
     private var titleObserver: AnyCancellable?
+    private var closeObserver: NSObjectProtocol?
 
     init(model: AppModel) {
         self.model = model
@@ -292,6 +293,12 @@ final class SpeecherSettingsWindow {
         window.title = panes.first { $0.id == model.pane }?.title ?? "Settings"
         titleObserver = model.$pane.sink { [weak window] pane in
             window?.title = panes.first { $0.id == pane }?.title ?? "Settings"
+        }
+        // A recording must not outlive the window it was started in.
+        closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak model] _ in
+            MainActor.assumeIsolated { model?.stopShortcutRecording() }
         }
     }
 

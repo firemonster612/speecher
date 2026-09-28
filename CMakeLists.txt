@@ -664,7 +664,7 @@ set(SPEECHER_FRONTEND_MAC_SWIFT_SOURCES
   src/frontend/mac/swift/Rows.swift
   src/frontend/mac/swift/SettingsWindow.swift
   src/frontend/mac/swift/SetupAssistant.swift
-  src/frontend/mac/swift/ShortcutPane.swift
+  src/frontend/mac/swift/ShortcutRecorderRow.swift
   src/frontend/mac/swift/SpeecherMacUI.swift
   src/frontend/mac/swift/TranscribePane.swift
   src/frontend/mac/swift/UpdatePreview.swift

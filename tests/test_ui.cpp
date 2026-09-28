@@ -63,11 +63,15 @@ std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
     return std::make_unique<SchemaSettingsPage>(schema.page(id).sections, nullptr, std::move(customRows));
 }
 
-QStringList sectionLabels(const QWidget &page)
+QStringList sectionLabels(const QWidget &page, const QWidget *except = nullptr)
 {
-    // Section titles are the headers above each card, in top-to-bottom order.
+    // Section titles are the headers above each card, in top-to-bottom order;
+    // headings inside except (a custom block's own) are not the page's.
     QList<QPair<int, QString>> titles;
     for (QLabel *label : page.findChildren<QLabel *>(QStringLiteral("sectionLabel"))) {
+        if (except && except->isAncestorOf(label)) {
+            continue;
+        }
         titles.append({label->mapTo(&page, QPoint()).y(), label->text()});
     }
     std::sort(titles.begin(), titles.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
@@ -646,11 +650,13 @@ private slots:
                 continue;
             }
             QVERIFY2(pages.page(pane.id), qPrintable(pane.id));
-            // Release notes are What's New's first group and carry no heading;
-            // the Linux shortcut editor on Dictation brings its own "Dictation
-            // key" heading.
-            if (pane.id != QStringLiteral("whatsNew") && pane.id != QStringLiteral("dictation")) {
-                QCOMPARE(sectionLabels(*pages.page(pane.id)), titles);
+            // Release notes are What's New's first group and carry no heading.
+            // The Linux shortcut editor on Dictation brings its own "Dictation
+            // key" heading, which is the recorder's and not a section of the page.
+            if (pane.id != QStringLiteral("whatsNew")) {
+                const QWidget *recorder =
+                    pages.page(pane.id)->findChild<QWidget *>(QStringLiteral("shortcutCapture"));
+                QCOMPARE(sectionLabels(*pages.page(pane.id), recorder), titles);
             }
             // Every row has a control named for it, except the custom blocks
             // whose widgets carry names of their own.
@@ -1825,8 +1831,6 @@ private slots:
         }
     }
 
-#ifdef Q_OS_LINUX
-    // The Global Shortcut row this test aligns against exists only on Linux.
     void fullWidthSettingsRowsShareOneLeftEdge()
     {
         ProviderRegistry providers;
@@ -1868,7 +1872,6 @@ private slots:
         QVERIFY(rowTitle);
         QCOMPARE(body->mapTo(page.get(), QPoint()).x(), rowTitle->mapTo(page.get(), QPoint()).x());
     }
-#endif
 
     void settingsRowsGrowForWrappedDescriptions()
     {

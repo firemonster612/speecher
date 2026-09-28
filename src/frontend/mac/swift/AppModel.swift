@@ -62,7 +62,14 @@ final class AppModel: ObservableObject {
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
     /// The pane the sidebar is on. A window opened from closed starts on Home.
-    @Published var pane = "home"
+    @Published var pane = "home" {
+        didSet { if pane != oldValue { activeShortcutRecorder?.stop() } }
+    }
+    /// The recorder whose recording is in progress, if any. Stopped directly
+    /// when the pane changes or the settings window closes, rather than
+    /// through a view, which SwiftUI may already have taken away.
+    private weak var activeShortcutRecorder: ShortcutRecorder?
+
     /// Home's numbers for the chosen period, re-read whole when the log, the
     /// Insights setting or the period changes.
     @Published private(set) var insights: SpeecherInsightsModel
@@ -428,12 +435,18 @@ final class AppModel: ObservableObject {
         accessibilityProblem = bridge.enableAccessibility() ?? ""
     }
 
-    func beginShortcutRecording() {
+    func beginShortcutRecording(by recorder: ShortcutRecorder) {
+        activeShortcutRecorder = recorder
         bridge.beginShortcutRecording()
     }
 
     func endShortcutRecording() {
         shortcutProblem = bridge.endShortcutRecording() ?? ""
+    }
+
+    /// Ends the recording in progress, if any, and restores the hotkey.
+    func stopShortcutRecording() {
+        activeShortcutRecorder?.stop()
     }
 
     func bindShortcut(characters: String, modifierFlags: NSEvent.ModifierFlags) {

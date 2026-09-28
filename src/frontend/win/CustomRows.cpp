@@ -307,7 +307,7 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
         return releaseNotes(row);
     }
     if (row.id == QStringLiteral("globalShortcut")) {
-        return ShortcutRecorder::element(host);
+        return ShortcutRecorder::element(row, host);
     }
     if (row.id == QStringLiteral("localModelBrowser")) {
         if (!host.localModels) {

@@ -118,7 +118,7 @@ final class ShortcutRecorder: ObservableObject {
 
     private func begin(suspending model: AppModel) {
         stop()
-        model.beginShortcutRecording()
+        model.beginShortcutRecording(by: self)
         restoreShortcut = { model.endShortcutRecording() }
         recording = true
     }
@@ -155,28 +155,32 @@ struct ShortcutRecorderRow: View {
     @State private var captureProblem = ""
 
     var body: some View {
-        Group {
-        LabeledContent {
-            Button(caption) {
-                captureProblem = ""
-                recorder.record(suspending: model, combination: { characters, flags in
-                    model.bindShortcut(characters: characters, modifierFlags: flags)
-                }, singleKey: { keyCode in
-                    if model.bindSingleKey(macKeyCode: keyCode) { return true }
-                    captureProblem = "That key cannot be a dictation key."
-                    return false
-                })
+        VStack(alignment: .leading) {
+            LabeledContent {
+                Button(caption) {
+                    captureProblem = ""
+                    recorder.record(suspending: model, combination: { characters, flags in
+                        model.bindShortcut(characters: characters, modifierFlags: flags)
+                    }, singleKey: { keyCode in
+                        if model.bindSingleKey(macKeyCode: keyCode) { return true }
+                        captureProblem = "That key cannot be a dictation key."
+                        return false
+                    })
+                }
+                .disabled(!model.shortcutSupported)
+            } label: {
+                Text("Dictation shortcut")
+                Text(footnote)
             }
-            .disabled(!model.shortcutSupported)
-        } label: {
-            Text("Dictation shortcut")
-            Text(footnote)
+            if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
+                Button("Grant Accessibility Access") { model.requestAccessibility() }
+            }
         }
-        if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
-            Button("Grant Accessibility Access") { model.requestAccessibility() }
-        }
-        }
-        .onDisappear { recorder.stop() }
+        // No onDisappear: a Form lays its rows out lazily and takes one away
+        // when it scrolls off, which would end a recording still in progress.
+        // The model stops the recorder when one really has to end (pane
+        // change, window close); a recorder that is itself destroyed restores
+        // in deinit.
     }
 
     private var caption: String {
