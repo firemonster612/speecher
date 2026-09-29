@@ -36,10 +36,13 @@ fun refineTranscript(
      * straight to standard speed.
      */
     fastMode: AtomicBoolean? = null,
+    /** ChatGPT only: fast mode asks for the ultrafast tier, on a model that has one. */
+    ultrafast: Boolean = false,
     /** Receives the refined text so far each time the stream adds to it. */
     onText: (String) -> Unit = {},
 ): String {
     var streamed = false
+    val ultrafastTier = ultrafast && modelSupportsUltrafast(model)
     fun refine(sent: RefinementContext, fast: Boolean) =
         refineOnce(
             http,
@@ -51,6 +54,7 @@ fun refineTranscript(
             effort,
             sent,
             fast,
+            ultrafastTier,
             endpointBase,
         ) {
             streamed = true
@@ -97,6 +101,10 @@ fun refineTranscript(
 fun modelSupportsFastMode(model: String): Boolean =
     model.lowercase().let { it.contains("opus-5") || it.contains("opus-4-8") }
 
+/** Ultrafast serves only GPT-6 Astra so far. GPT-6.1 Sol is due to join it. */
+fun modelSupportsUltrafast(model: String): Boolean =
+    model.trim().lowercase().startsWith("gpt-6-astra")
+
 /** A refinement request the provider answered with a non-2xx [status]. */
 class RefinementHttpError(val status: Int) :
     IllegalStateException("Refinement failed with HTTP $status")
@@ -120,6 +128,7 @@ private fun refineOnce(
     effort: String,
     context: RefinementContext,
     fast: Boolean,
+    ultrafast: Boolean,
     endpointBase: String,
     onText: (String) -> Unit,
 ): String {
@@ -154,7 +163,14 @@ private fun refineOnce(
             .toMap(),
         HttpBody(
             "application/json",
-            chatGptBody(rawTranscript, vocabulary, model, effort, context, fast)
+            chatGptBody(
+                    rawTranscript,
+                    vocabulary,
+                    model,
+                    effort,
+                    context,
+                    if (!fast) null else if (ultrafast) "ultrafast" else "priority",
+                )
                 .toString()
                 .toByteArray(Charsets.UTF_8),
         ),
@@ -274,15 +290,19 @@ private fun chatGptBody(
     model: String,
     effort: String,
     context: RefinementContext,
-    fast: Boolean,
+    serviceTier: String?,
 ) = buildJsonObject {
     put("model", JsonPrimitive(model))
-    put("reasoning", buildJsonObject { put("effort", JsonPrimitive(effort)) })
+    // GPT-6.1 Sol refuses "none"; low is the least effort it takes, as on the desktop.
+    val sentEffort =
+        if (effort == "none" && model.trim().lowercase().startsWith("gpt-6.1-sol")) "low"
+        else effort
+    put("reasoning", buildJsonObject { put("effort", JsonPrimitive(sentEffort)) })
     put("instructions", JsonPrimitive(dictationSystemPrompt(context)))
     put("stream", JsonPrimitive(true))
     put("store", JsonPrimitive(false))
     // chatgpt.com rejects "fast" ("Unsupported service_tier: fast"); "priority" is its fast tier.
-    if (fast) put("service_tier", JsonPrimitive("priority"))
+    if (serviceTier != null) put("service_tier", JsonPrimitive(serviceTier))
     put(
         "input",
         buildJsonArray {

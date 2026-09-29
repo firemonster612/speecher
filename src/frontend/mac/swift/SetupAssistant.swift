@@ -1827,11 +1827,11 @@ private struct RefinementStep: View {
     ]
 
     var body: some View {
-        // Only the selected provider's fast-mode row: the settings window
+        // Only the selected provider's speed row: the settings window
         // separates these onto per-provider panes, so the schema does not gate
         // them on the chosen provider itself.
         let provider = flow.refinementProviderId
-        let fastModeIds = (provider == "openai" ? ["openAiFastMode"] : [])
+        let fastModeIds = (provider == "openai" ? ["openAiSpeed"] : [])
             + (provider == "anthropic" ? ["anthropicFastMode"] : [])
         Form {
             ForEach(sections, id: \.title) { group in

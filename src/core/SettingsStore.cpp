@@ -48,9 +48,9 @@ bool migrateSettingsIdentity(QSettings &newSettings, QSettings &oldSettings, QSt
 
 void migrateRefinementModels(QSettings &settings)
 {
-    constexpr int currentMigrationVersion = 1;
-    if (settings.value(SettingsKeys::RefinementModelMigrationVersion).toInt()
-        >= currentMigrationVersion) {
+    constexpr int currentMigrationVersion = 2;
+    const int version = settings.value(SettingsKeys::RefinementModelMigrationVersion).toInt();
+    if (version >= currentMigrationVersion) {
         return;
     }
     const auto replace = [&settings](const QString &key, const QString &from, const QString &to) {
@@ -58,9 +58,15 @@ void migrateRefinementModels(QSettings &settings)
             settings.setValue(key, to);
         }
     };
-    replace(SettingsKeys::OpenAiModel, QStringLiteral("gpt-5.6-luna"), QStringLiteral("gpt-6-luna"));
+    if (version < 1) {
+        replace(SettingsKeys::OpenAiModel, QStringLiteral("gpt-5.6-luna"), QStringLiteral("gpt-6-luna"));
+        replace(SettingsKeys::AnthropicModel, QStringLiteral("claude-sonnet-5"),
+                QStringLiteral("claude-opus-5-5"));
+    }
+    // Someone who picked Sonnet 5 after the first migration keeps Sonnet, on
+    // the model that replaced it in the picker.
     replace(SettingsKeys::AnthropicModel, QStringLiteral("claude-sonnet-5"),
-            QStringLiteral("claude-opus-5-5"));
+            QStringLiteral("claude-sonnet-5-5"));
     settings.setValue(SettingsKeys::RefinementModelMigrationVersion, currentMigrationVersion);
 }
 
@@ -193,7 +199,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setCustomSystemPrompt(draft.refinement.customSystemPrompt);
     setOpenAiModel(draft.refinement.openAiModel);
     setOpenAiEffort(draft.refinement.openAiEffort);
-    setOpenAiFastMode(draft.refinement.openAiFastMode);
+    setOpenAiSpeed(draft.refinement.openAiSpeed);
     setOpenAiAuthMode(draft.refinement.openAiAuthMode);
     setOpenAiCliproxyAccount(draft.refinement.openAiCliproxyAccount);
     setAnthropicModel(draft.refinement.anthropicModel);

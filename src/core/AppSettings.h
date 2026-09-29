@@ -224,6 +224,21 @@ struct RefinementEndpointSettings {
     bool operator==(const RefinementEndpointSettings &other) const = default;
 };
 
+// Ultrafast serves only GPT-6 Astra so far. GPT-6.1 Sol is due to join it.
+inline bool openAiModelSupportsUltrafast(const QString &model)
+{
+    return model.trimmed().toCaseFolded().startsWith(QStringLiteral("gpt-6-astra"));
+}
+
+// The OpenAI speed a refinement with this model runs at: Ultrafast asks for
+// Fast on a model that has no Ultrafast tier.
+inline QString effectiveOpenAiSpeed(const QString &speed, const QString &model)
+{
+    return speed == QStringLiteral("ultrafast") && !openAiModelSupportsUltrafast(model)
+        ? QStringLiteral("fast")
+        : speed;
+}
+
 // Refinement through a Local Runner on this computer.
 struct LocalRunnerSettings {
     // "ollama", "lmstudio" or "llama-server"; empty until configured.
@@ -247,7 +262,8 @@ struct RefinementSettings {
     QString openAiModel = QStringLiteral("gpt-6-luna");
     QString openAiAuthMode = QStringLiteral("auto");
     QString openAiEffort = QStringLiteral("none");
-    bool openAiFastMode = true;
+    // "standard", "fast" or "ultrafast"; see effectiveOpenAiSpeed.
+    QString openAiSpeed = QStringLiteral("fast");
     QString openAiCliproxyAccount;
     QString anthropicModel = QStringLiteral("claude-opus-5-5");
     QString anthropicAuthMode = QStringLiteral("oauth");

@@ -1806,6 +1806,8 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     , m_stats(new ProviderStatsBlock(this))
     , m_warning(new WrappingLabel(this))
     , m_fastMode(new QCheckBox(QStringLiteral("Fast mode"), this))
+    , m_openAiSpeedRow(new QWidget(this))
+    , m_openAiSpeed(new QComboBox(m_openAiSpeedRow))
     , m_fastModeHint(new QLabel(this))
 {
     QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("refinement"))->intro);
@@ -1868,8 +1870,17 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     }
     layout->addWidget(m_stats);
     m_fastMode->setObjectName(QStringLiteral("refinementFastMode"));
+    m_openAiSpeed->setObjectName(QStringLiteral("refinementOpenAiSpeed"));
+    auto *speedLayout = new QHBoxLayout(m_openAiSpeedRow);
+    speedLayout->setContentsMargins(0, 0, 0, 0);
+    auto *speedLabel = new QLabel(QStringLiteral("Speed"), m_openAiSpeedRow);
+    speedLabel->setBuddy(m_openAiSpeed);
+    speedLayout->addWidget(speedLabel);
+    speedLayout->addWidget(m_openAiSpeed);
+    speedLayout->addStretch();
     m_fastModeHint->setWordWrap(true);
     layout->addWidget(m_fastMode);
+    layout->addWidget(m_openAiSpeedRow);
     layout->addWidget(m_fastModeHint);
     layout->addStretch();
 
@@ -1890,12 +1901,10 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
         skipCleanup(skip);
     });
     connect(m_fastMode, &QCheckBox::toggled, this, [this](bool checked) {
-        const QString provider = selectedProviderId();
-        if (provider == QStringLiteral("openai")) {
-            m_settings.setOpenAiFastMode(checked);
-        } else if (provider == QStringLiteral("anthropic")) {
-            m_settings.setAnthropicFastMode(checked);
-        }
+        m_settings.setAnthropicFastMode(checked);
+    });
+    connect(m_openAiSpeed, &QComboBox::currentIndexChanged, this, [this] {
+        m_settings.setOpenAiSpeed(m_openAiSpeed->currentData().toString());
     });
     selectProvider(selectedProviderId());
 }
@@ -2417,15 +2426,27 @@ void RefinementSetupPage::updateFastModeControl()
     const QString provider = selectedProviderId();
     const bool openAi = provider == QStringLiteral("openai");
     const bool anthropic = provider == QStringLiteral("anthropic");
-    m_fastMode->setVisible(openAi || anthropic);
+    m_fastMode->setVisible(anthropic);
+    m_openAiSpeedRow->setVisible(openAi);
     m_fastModeHint->setVisible(openAi || anthropic);
-    if (!openAi && !anthropic) {
-        return;
+    if (openAi) {
+        m_fastModeHint->setText(openAiSpeedHelp());
+        m_openAiSpeed->setToolTip(fastModeTooltip(provider));
+        const QString model = m_settings.openAiModel();
+        const QSignalBlocker blocker(m_openAiSpeed);
+        m_openAiSpeed->clear();
+        for (const RowOption &option : openAiSpeedOptions(model)) {
+            m_openAiSpeed->addItem(option.label, option.id);
+            settings::setComboItemEnabled(m_openAiSpeed, m_openAiSpeed->count() - 1, option.enabled,
+                                          option.enabled ? QString() : option.help);
+        }
+        settings::selectData(m_openAiSpeed, m_settings.openAiSpeed());
+    } else if (anthropic) {
+        m_fastModeHint->setText(fastModeHelp(provider));
+        m_fastMode->setToolTip(fastModeTooltip(provider));
+        const QSignalBlocker blocker(m_fastMode);
+        m_fastMode->setChecked(m_settings.anthropicFastMode());
     }
-    m_fastModeHint->setText(fastModeHelp(provider));
-    m_fastMode->setToolTip(fastModeTooltip(provider));
-    const QSignalBlocker blocker(m_fastMode);
-    m_fastMode->setChecked(openAi ? m_settings.openAiFastMode() : m_settings.anthropicFastMode());
 }
 
 WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWidget *parent)

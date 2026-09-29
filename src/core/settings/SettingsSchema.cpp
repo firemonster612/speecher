@@ -2340,10 +2340,8 @@ struct ProviderAccount {
     QString effortTooltip;
     QList<RowOption> efforts;
     QString RefinementSettings::*effort;
-    QString fastModeRowId;
-    QString fastModeHelp;
-    QString fastModeTooltip;
-    bool RefinementSettings::*fastMode;
+    // Fast mode for Anthropic; Standard, Fast or Ultrafast for OpenAI.
+    SettingsRow speed;
     // Where the credentials come from is a question for a keyring rather than a
     // value in AppSettings, so every front end answers it its own way.
     QList<SettingsRow> authRows;
@@ -2380,9 +2378,10 @@ QList<ProviderAccount> providerAccounts()
     openAi.modelWidthHint = 16;
     openAi.models = namedModels({
         QStringLiteral("gpt-6-luna"),
+        QStringLiteral("gpt-6.1-sol"),
+        QStringLiteral("gpt-6-astra"),
         QStringLiteral("gpt-5.6-luna"),
         QStringLiteral("gpt-5.6-terra"),
-        QStringLiteral("gpt-5.6-sol"),
         QStringLiteral("gpt-5.5"),
         QStringLiteral("gpt-5.4-nano"),
         QStringLiteral("gpt-5.4-mini"),
@@ -2391,8 +2390,8 @@ QList<ProviderAccount> providerAccounts()
     openAi.model = &RefinementSettings::openAiModel;
     openAi.effortRowId = QStringLiteral("openAiEffort");
     openAi.effortLabel = QStringLiteral("OpenAI effort");
-    // OpenAiRefiner sends the chosen effort verbatim, so an unsupported value
-    // comes back as a request error rather than being adjusted for us.
+    // OpenAiRefiner sends the chosen effort verbatim, apart from None on
+    // GPT-6.1 Sol, so an unsupported value comes back as a request error.
     openAi.effortHelp = QStringLiteral("Reasoning effort used for refinement. Supported values "
                                        "vary by model, and one this model does not support may be "
                                        "rejected by the model.");
@@ -2406,10 +2405,14 @@ QList<ProviderAccount> providerAccounts()
         {QStringLiteral("xhigh"), QStringLiteral("Extra high")},
     };
     openAi.effort = &RefinementSettings::openAiEffort;
-    openAi.fastModeRowId = QStringLiteral("openAiFastMode");
-    openAi.fastModeHelp = fastModeHelp(QStringLiteral("openai"));
-    openAi.fastModeTooltip = fastModeTooltip(QStringLiteral("openai"));
-    openAi.fastMode = &RefinementSettings::openAiFastMode;
+    openAi.speed = choiceRow(
+        QStringLiteral("openAiSpeed"),
+        QStringLiteral("Speed"),
+        openAiSpeedHelp(),
+        [](const AppSettings &settings) { return openAiSpeedOptions(settings.refinement.openAiModel); },
+        [](const AppSettings &settings) { return settings.refinement.openAiSpeed; },
+        [](AppSettings &settings, const QString &value) { settings.refinement.openAiSpeed = value; });
+    openAi.speed.tooltip = fastModeTooltip(QStringLiteral("openai"));
     openAi.authRows = {
         customRow(QStringLiteral("openAiAuthMode"),
                   QStringLiteral("Sign-in"),
@@ -2451,7 +2454,7 @@ QList<ProviderAccount> providerAccounts()
     anthropic.models = {
         {QStringLiteral("claude-opus-5-5"), QStringLiteral("Claude Opus 5.5")},
         {QStringLiteral("claude-opus-5"), QStringLiteral("Claude Opus 5")},
-        {QStringLiteral("claude-sonnet-5"), QStringLiteral("Claude Sonnet 5")},
+        {QStringLiteral("claude-sonnet-5-5"), QStringLiteral("Claude Sonnet 5.5")},
         {QStringLiteral("claude-haiku-4-5"), QStringLiteral("Claude Haiku 4.5")},
     };
     anthropic.model = &RefinementSettings::anthropicModel;
@@ -2475,10 +2478,13 @@ QList<ProviderAccount> providerAccounts()
         {QStringLiteral("max"), QStringLiteral("Max")},
     };
     anthropic.effort = &RefinementSettings::anthropicEffort;
-    anthropic.fastModeRowId = QStringLiteral("anthropicFastMode");
-    anthropic.fastModeHelp = fastModeHelp(QStringLiteral("anthropic"));
-    anthropic.fastModeTooltip = fastModeTooltip(QStringLiteral("anthropic"));
-    anthropic.fastMode = &RefinementSettings::anthropicFastMode;
+    anthropic.speed = toggleRow(
+        QStringLiteral("anthropicFastMode"),
+        QStringLiteral("Fast mode"),
+        fastModeHelp(QStringLiteral("anthropic")),
+        [](const AppSettings &settings) { return settings.refinement.anthropicFastMode; },
+        [](AppSettings &settings, bool value) { settings.refinement.anthropicFastMode = value; });
+    anthropic.speed.tooltip = fastModeTooltip(QStringLiteral("anthropic"));
     anthropic.authRows = {
         customRow(QStringLiteral("anthropicAuthMode"),
                   QStringLiteral("Sign-in"),
@@ -2609,15 +2615,7 @@ QList<SettingsSection> providerSections(const ProviderAccount &account)
             settings.refinement.*field = value;
         }));
     rows.last().tooltip = account.effortTooltip;
-    rows.append(toggleRow(
-        account.fastModeRowId,
-        QStringLiteral("Fast mode"),
-        account.fastModeHelp,
-        [field = account.fastMode](const AppSettings &settings) { return settings.refinement.*field; },
-        [field = account.fastMode](AppSettings &settings, bool value) {
-            settings.refinement.*field = value;
-        }));
-    rows.last().tooltip = account.fastModeTooltip;
+    rows.append(account.speed);
     return {{account.modelSectionTitle, QString(), rows},
             {account.sectionTitle, account.note, account.authRows}};
 }
@@ -2650,10 +2648,29 @@ QString fastModeHelp(const QString &refinementProviderId)
         : QStringLiteral("Faster refinement will use usage credits.");
 }
 
+QString openAiSpeedHelp()
+{
+    return QStringLiteral("Fast answers sooner for slightly more usage. Ultrafast is much faster "
+                          "but uses a lot more usage, and needs a plan with Ultrafast access.");
+}
+
+QList<RowOption> openAiSpeedOptions(const QString &model)
+{
+    const bool ultrafast = openAiModelSupportsUltrafast(model);
+    return {
+        {QStringLiteral("standard"), QStringLiteral("Standard")},
+        {QStringLiteral("fast"), QStringLiteral("Fast")},
+        {QStringLiteral("ultrafast"), QStringLiteral("Ultrafast"),
+         ultrafast ? QString()
+                   : QStringLiteral("Needs GPT-6 Astra. GPT-6.1 Sol support is coming later."),
+         ultrafast},
+    };
+}
+
 QString fastModeTooltip(const QString &refinementProviderId)
 {
     return refinementProviderId == QStringLiteral("openai")
-        ? QStringLiteral("Falls back to standard processing when a fast request fails.")
+        ? QStringLiteral("Falls back to standard processing when a fast or ultrafast request fails.")
         : QStringLiteral("Only Opus models support fast mode; other models refine at "
                          "standard speed.");
 }

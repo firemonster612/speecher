@@ -77,7 +77,7 @@ public:
     using SettingsCodecs::openAiAuthMode;
     using SettingsCodecs::openAiCliproxyAccount;
     using SettingsCodecs::openAiEffort;
-    using SettingsCodecs::openAiFastMode;
+    using SettingsCodecs::openAiSpeed;
     using SettingsCodecs::openAiModel;
     using SettingsCodecs::outputFormat;
     using SettingsCodecs::outputMethod;
@@ -109,7 +109,7 @@ public:
     using SettingsCodecs::setOpenAiAuthMode;
     using SettingsCodecs::setOpenAiCliproxyAccount;
     using SettingsCodecs::setOpenAiEffort;
-    using SettingsCodecs::setOpenAiFastMode;
+    using SettingsCodecs::setOpenAiSpeed;
     using SettingsCodecs::setOpenAiModel;
     using SettingsCodecs::setOutputFormat;
     using SettingsCodecs::setOutputMethod;

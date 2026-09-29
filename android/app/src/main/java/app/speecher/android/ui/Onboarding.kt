@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
+import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
@@ -113,9 +114,10 @@ fun Onboarding(
         OptionalSwitch(
             "Fast mode",
             FAST_MODE_DESCRIPTION,
-            settings.chatGptFastMode && settings.claudeFastMode,
+            settings.fastMode(Provider.ChatGpt) && settings.claudeFastMode,
         ) {
-            onChangeSettings(settings.copy(chatGptFastMode = it, claudeFastMode = it))
+            val speed = if (it) OpenAiSpeed.Fast else OpenAiSpeed.Standard
+            onChangeSettings(settings.copy(chatGptSpeed = speed, claudeFastMode = it))
         }
         Section("Optional context")
         OptionalSwitch(

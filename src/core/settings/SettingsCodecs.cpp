@@ -880,14 +880,26 @@ void SettingsCodecs::setOpenAiEffort(const QString &value)
     m_settings.setValue(SettingsKeys::OpenAiEffort, QStringLiteral("none"));
 }
 
-bool SettingsCodecs::openAiFastMode() const
+namespace {
+bool isOpenAiSpeed(const QString &speed)
 {
-    return value(SettingsKeys::OpenAiFastMode, true).toBool();
+    return speed == QStringLiteral("standard") || speed == QStringLiteral("fast")
+        || speed == QStringLiteral("ultrafast");
+}
+} // namespace
+
+QString SettingsCodecs::openAiSpeed() const
+{
+    const QString legacy = value(SettingsKeys::OpenAiFastMode, true).toBool()
+        ? QStringLiteral("fast")
+        : QStringLiteral("standard");
+    const QString speed = value(SettingsKeys::OpenAiSpeed, legacy).toString();
+    return isOpenAiSpeed(speed) ? speed : legacy;
 }
 
-void SettingsCodecs::setOpenAiFastMode(bool value)
+void SettingsCodecs::setOpenAiSpeed(const QString &value)
 {
-    m_settings.setValue(SettingsKeys::OpenAiFastMode, value);
+    m_settings.setValue(SettingsKeys::OpenAiSpeed, isOpenAiSpeed(value) ? value : QStringLiteral("fast"));
 }
 
 QString SettingsCodecs::anthropicModel() const
@@ -1317,7 +1329,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.refinement.openAiModel = openAiModel();
     settings.refinement.openAiAuthMode = openAiAuthMode();
     settings.refinement.openAiEffort = openAiEffort();
-    settings.refinement.openAiFastMode = openAiFastMode();
+    settings.refinement.openAiSpeed = openAiSpeed();
     settings.refinement.openAiCliproxyAccount = openAiCliproxyAccount();
     settings.refinement.anthropicModel = anthropicModel();
     settings.refinement.anthropicAuthMode = anthropicAuthMode();

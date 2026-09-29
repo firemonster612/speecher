@@ -150,7 +150,7 @@ void ChatCompletionsRefiner::post(bool withReasoningFields)
     m_streamedOutput = false;
     m_stream.start([build = m_buildRequest, withReasoningFields](bool) {
         return build(withReasoningFields);
-    }, false);
+    }, QString());
 }
 
 void ChatCompletionsRefiner::cancel()

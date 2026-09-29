@@ -35,8 +35,10 @@ fun main() {
     println("transcribe: HTTP 2xx, text=\"$text\"")
 
     // Each model the Settings picker offers, and each effort on the default model (gpt-6-luna).
+    // GPT-6.1 Sol has no "none" effort, so the newer models run at low.
     val choices =
-        listOf("gpt-6-luna", "gpt-6-sol", "gpt-5.6-luna").map { it to "none" } +
+        listOf("gpt-6-luna", "gpt-5.6-luna").map { it to "none" } +
+            listOf("gpt-6.1-sol", "gpt-6-astra").map { it to "low" } +
             listOf("low", "medium", "high").map { "gpt-6-luna" to it }
     val failures = choices.count { (model, effort) ->
         val result = runCatching {

@@ -79,7 +79,7 @@ private slots:
         connect(&claude, &AnthropicApiRefiner::delta, this, waitForFailure);
         const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
         if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
-        else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", false, "balanced", {});
+        else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
         QTRY_VERIFY(server.hasPendingConnections());
         QTcpSocket *socket = server.nextPendingConnection();
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
@@ -118,7 +118,7 @@ private slots:
         QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
         const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
         if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
-        else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", false, "balanced", {});
+        else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
         QTRY_VERIFY(server.hasPendingConnections());
         QTcpSocket *socket = server.nextPendingConnection();
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
@@ -157,7 +157,7 @@ private slots:
         const auto start = [&] {
             const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
             if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-opus-5", "low", true, "balanced", {});
-            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, "acct-id", "gpt-test", "low", true, "balanced", {});
+            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, "acct-id", "gpt-test", "low", "fast", "balanced", {});
         };
         start();
         for (int attempt = 0; attempt < 3; ++attempt) {
@@ -210,7 +210,7 @@ private slots:
         const auto start = [&] {
             const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
             if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
-            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", false, "balanced", {});
+            else openAi.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
         };
         const auto cancel = [&] {
             if (anthropic) claude.cancel();
@@ -269,7 +269,7 @@ private slots:
         RefinementContext context;
         context.editSelection = true;
         if (anthropic) claude.refine("edit", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", context);
-        else openAi.refine("edit", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", false, "balanced", context);
+        else openAi.refine("edit", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", context);
         QTRY_VERIFY(server.hasPendingConnections());
         QTcpSocket *socket = server.nextPendingConnection();
         QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
@@ -554,7 +554,7 @@ private slots:
                        QStringLiteral("acct-id"),
                        QStringLiteral("gpt-test"),
                        QStringLiteral("high"),
-                       false,
+                       QStringLiteral("standard"),
                        QStringLiteral("balanced"),
                        context);
 
@@ -668,7 +668,7 @@ private slots:
                        {},
                        QStringLiteral("gpt-test"),
                        QStringLiteral("low"),
-                       false,
+                       QStringLiteral("standard"),
                        QStringLiteral("balanced"),
                        {});
 
@@ -859,7 +859,7 @@ private slots:
         });
         openAi.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"), {}, {},
                       QStringLiteral("http://127.0.0.1:%1/v1").arg(openAiServer.serverPort()),
-                      {}, QStringLiteral("gpt-test"), QStringLiteral("low"), false,
+                      {}, QStringLiteral("gpt-test"), QStringLiteral("low"), QStringLiteral("standard"),
                       QStringLiteral("balanced"), {});
         QTRY_VERIFY_WITH_TIMEOUT(openAiServer.hasPendingConnections(), 1000);
         QTcpSocket *openAiSocket = openAiServer.nextPendingConnection();
@@ -933,7 +933,7 @@ private slots:
         QSignalSpy openAiFailed(&openAi, &OpenAiRefiner::failed);
         openAi.refine(QStringLiteral("test"), {}, {}, QStringLiteral("token"), {}, {},
                       QStringLiteral("http://127.0.0.1:%1/v1").arg(openAiServer.serverPort()),
-                      {}, QStringLiteral("gpt-test"), QStringLiteral("low"), false,
+                      {}, QStringLiteral("gpt-test"), QStringLiteral("low"), QStringLiteral("standard"),
                       QStringLiteral("balanced"), {});
         QTRY_VERIFY_WITH_TIMEOUT(openAiServer.hasPendingConnections(), 1000);
         QTcpSocket *openAiSocket = openAiServer.nextPendingConnection();
@@ -1037,15 +1037,31 @@ private slots:
         socket->disconnectFromHost();
     }
 
-    void openAiFastModeAsksForPriorityWithoutAnAccountId()
+    void openAiSpeedAsksForItsTierWithoutAnAccountId_data()
+    {
+        QTest::addColumn<QString>("speed");
+        QTest::addColumn<QString>("model");
+        QTest::addColumn<QString>("tier");
+        // GPT-6.1 Sol refuses no effort, so it is sent at low.
+        QTest::addColumn<QString>("effort");
+        QTest::newRow("fast") << "fast" << "gpt-test" << "priority" << "none";
+        QTest::newRow("ultrafast on Astra") << "ultrafast" << "gpt-6-astra" << "ultrafast" << "none";
+        QTest::newRow("ultrafast elsewhere") << "ultrafast" << "gpt-6.1-sol" << "priority" << "low";
+    }
+
+    void openAiSpeedAsksForItsTierWithoutAnAccountId()
     {
         // A CLI Proxy API server has no ChatGPT account id but maps fast mode itself.
+        QFETCH(QString, speed);
+        QFETCH(QString, model);
+        QFETCH(QString, tier);
+        QFETCH(QString, effort);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         OpenAiRefiner refiner;
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       QString(), QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QString(), model, QStringLiteral("none"), speed,
                        QStringLiteral("balanced"), {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
@@ -1055,7 +1071,9 @@ private slots:
         const int headerEnd = request.indexOf("\r\n\r\n");
         QVERIFY2(headerEnd >= 0, request.constData());
         const QJsonObject body = QJsonDocument::fromJson(request.mid(headerEnd + 4)).object();
-        QCOMPARE(body.value(QStringLiteral("service_tier")).toString(), QStringLiteral("priority"));
+        QCOMPARE(body.value(QStringLiteral("service_tier")).toString(), tier);
+        QCOMPARE(body.value(QStringLiteral("reasoning")).toObject().value(QStringLiteral("effort")).toString(),
+                 effort);
         refiner.cancel();
     }
 
@@ -1066,7 +1084,7 @@ private slots:
         QVERIFY(!isPublicOpenAiApi(QUrl(QStringLiteral("http://100.87.14.125:8317/v1"))));
     }
 
-    void openAiRefinerRetriesAtStandardSpeedWhenFastModeFails()
+    void openAiRefinerRetriesAtStandardSpeedAndLatchesOnlyTheRefusedTier()
     {
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
@@ -1077,7 +1095,7 @@ private slots:
 
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("acct-id"), QStringLiteral("gpt-6-astra"), QStringLiteral("low"), QStringLiteral("ultrafast"),
                        QStringLiteral("balanced"), {});
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
@@ -1087,7 +1105,7 @@ private slots:
         const int fastHeaderEnd = fastRequest.indexOf("\r\n\r\n");
         QVERIFY2(fastHeaderEnd >= 0, fastRequest.constData());
         const QJsonObject fastBody = QJsonDocument::fromJson(fastRequest.mid(fastHeaderEnd + 4)).object();
-        QCOMPARE(fastBody.value(QStringLiteral("service_tier")).toString(), QStringLiteral("priority"));
+        QCOMPARE(fastBody.value(QStringLiteral("service_tier")).toString(), QStringLiteral("ultrafast"));
 
         const QByteArray error = QByteArrayLiteral(R"({"error":{"message":"fast mode unavailable"}})");
         fastSocket->write(QByteArrayLiteral("HTTP/1.1 400 Bad Request\r\n"
@@ -1123,6 +1141,20 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 1000);
         QCOMPARE(completed.at(0).at(0).toString(), QStringLiteral("standard-ok"));
         QCOMPARE(failed.size(), 0);
+
+        // Ultrafast was refused, not Fast, so Fast is still asked for.
+        refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
+                       QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
+                       QStringLiteral("acct-id"), QStringLiteral("gpt-6-astra"), QStringLiteral("low"),
+                       QStringLiteral("fast"), QStringLiteral("balanced"), {});
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        QTcpSocket *fastAgainSocket = server.nextPendingConnection();
+        QVERIFY(fastAgainSocket);
+        const QByteArray fastAgain = readHttpRequest(fastAgainSocket, 1000);
+        const QJsonObject fastAgainBody =
+            QJsonDocument::fromJson(fastAgain.mid(fastAgain.indexOf("\r\n\r\n") + 4)).object();
+        QCOMPARE(fastAgainBody.value(QStringLiteral("service_tier")).toString(), QStringLiteral("priority"));
+        refiner.cancel();
     }
 
     void openAiFastFallbackSharesAbsoluteDeadline()
@@ -1136,7 +1168,7 @@ private slots:
         elapsed.start();
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), QStringLiteral("fast"),
                        QStringLiteral("balanced"), {});
 
         for (int attempt = 0; attempt < 2; ++attempt) {
@@ -1268,7 +1300,7 @@ private slots:
 
         refiner.refine(QStringLiteral("hello"), {}, {}, QStringLiteral("token"), {}, {},
                        QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort()),
-                       QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), true,
+                       QStringLiteral("acct-id"), QStringLiteral("gpt-test"), QStringLiteral("low"), QStringLiteral("fast"),
                        QStringLiteral("balanced"), {});
 
         const QByteArray error = QByteArrayLiteral(R"({"error":{"message":"nope"}})");

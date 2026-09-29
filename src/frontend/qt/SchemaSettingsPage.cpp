@@ -44,16 +44,19 @@ bool offersExactly(const QComboBox *combo, const QList<RowOption> &options)
 // same choices alone: the caller selects the value straight after.
 void setOptions(QComboBox *combo, const QList<RowOption> &options)
 {
-    if (offersExactly(combo, options)) {
-        return;
-    }
-    const QSignalBlocker blocker(combo);
-    combo->clear();
-    for (const RowOption &option : options) {
-        combo->addItem(option.label, option.id);
-        if (!option.enabled) {
-            settings::setComboItemEnabled(combo, combo->count() - 1, false, option.help);
+    if (!offersExactly(combo, options)) {
+        const QSignalBlocker blocker(combo);
+        combo->clear();
+        for (const RowOption &option : options) {
+            combo->addItem(option.label, option.id);
         }
+    }
+    // Which choices are open can change while the choices stay the same, as
+    // Ultrafast does with the OpenAI model.
+    for (int index = 0; index < options.size(); ++index) {
+        const RowOption &option = options.at(index);
+        settings::setComboItemEnabled(combo, index, option.enabled,
+                                      option.enabled ? QString() : option.help);
     }
 }
 
