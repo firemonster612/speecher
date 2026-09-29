@@ -60,3 +60,9 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   notes. A test passing is not evidence that a page looks right.
 - **Keep the page set stable.** Adding, removing or moving a page is a product
   decision the user makes, not a side effect of a layout change.
+- **Presentation lives in core.** Front ends map core values to native widgets
+  and never write their own wording; see
+  `docs/adr/0007-presentation-lives-in-core.md`. Two ctests enforce it:
+  `speecher_ui_wording_lint` (house wording in core strings) and
+  `speecher_ui_wording_front_ends` (no front-end copies of core strings). Fix
+  a failure at the source; `tests/ui_wording_allowlist.txt` only shrinks.

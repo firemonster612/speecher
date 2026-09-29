@@ -821,6 +821,7 @@ SettingsPage generalPage(const SchemaContext &context)
         // Holding needs the shortcut backend to report the key going up, and
         // some do not: a desktop-registered combination and a manual desktop
         // shortcut both only ever say "pressed".
+        // ui-lint: allow avoid-term (the shortcut backend, not a Local Runner)
         QStringLiteral("What pressing the Global Shortcut does. Holding needs a shortcut "
                        "backend that reports key release; where it does not, Push to talk "
                        "and Hybrid behave as Toggle."),
@@ -1478,6 +1479,7 @@ SettingsPage refinementPage(const SchemaContext &context)
     const QString kCustomPromptGroup = QStringLiteral("customSystemPrompt");
     SettingsRow customPromptEnabled = toggleRow(
         QStringLiteral("customSystemPromptEnabled"),
+        // ui-lint: allow avoid-term (the setting that replaces the system prompt)
         QStringLiteral("Custom system prompt"),
         QStringLiteral("Replaces the built-in dictation rules with the prompt below. Built-in "
                        "cleanup levels and tones no longer apply while it is on; a profile's "
@@ -1533,6 +1535,7 @@ SettingsPage refinementPage(const SchemaContext &context)
             {QStringLiteral("Tones"), QString(), {customTonesRow()}},
             {QStringLiteral("Cleanup levels"), QString(), {customCleanupLevelsRow()}},
             {QStringLiteral("Additional instructions"), QString(), {std::move(additionalInstructions)}},
+            // ui-lint: allow avoid-term (the setting that replaces the system prompt)
             {QStringLiteral("Custom system prompt"),
              QString(),
              {std::move(customPromptEnabled), std::move(customPrompt), std::move(resetCustomPrompt)}},
@@ -2706,6 +2709,7 @@ QList<RowOption> localAccelerationOptions(const QList<LocalGpu> &gpus, const Loc
                      [&chosen](const RowOption &option) { return option.id == chosen.backend; })) {
         options.append({chosen.backend,
                         QStringLiteral("%1 (not available)").arg(localBackendName(chosen.backend)),
+                        // ui-lint: allow avoid-term (an acceleration backend, not a Local Runner)
                         QStringLiteral("This computer has no graphics card this backend reaches."), false});
     }
     return options;

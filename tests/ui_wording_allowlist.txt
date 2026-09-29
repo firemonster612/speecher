@@ -1,0 +1,75 @@
+# Known wording drift that tests/ui_wording.py allows, one finding per line:
+#   <rule> <path> <text>
+# The comment above a group says what clears it. When a pull request fixes a
+# string, delete its entry; the check prints "stale" for entries that no
+# longer occur. New wording is fixed at the source, not added here.
+
+
+
+# Known drift no open pull request clears yet: a follow-up reads these from core.
+core-string src/frontend/mac/swift/MenuBarExtra.swift Speecher is listening
+core-string src/frontend/mac/swift/SetupAssistant.swift API key
+core-string src/frontend/mac/swift/SetupAssistant.swift Account directory
+core-string src/frontend/mac/swift/SetupAssistant.swift Anthropic-compatible (Messages)
+core-string src/frontend/mac/swift/SetupAssistant.swift CLI Proxy API
+core-string src/frontend/mac/swift/SetupAssistant.swift CLI Proxy API account
+core-string src/frontend/mac/swift/SetupAssistant.swift Looking for Ollama, LM Studio and llama-server…
+core-string src/frontend/mac/swift/SetupAssistant.swift OpenAI-compatible (Chat Completions)
+core-string src/frontend/mac/swift/SetupAssistant.swift Profile behavior
+core-string src/frontend/mac/swift/SetupAssistant.swift Server URL
+core-string src/frontend/mac/swift/SetupAssistant.swift Start Speecher at login
+core-string src/frontend/qt/WritingProfileGrid.cpp New profile
+core-string src/frontend/win/HomePage.cpp %1 min
+core-string src/frontend/win/HomePage.cpp %1 of audio
+core-string src/frontend/win/HomePage.cpp MMM d, yyyy
+core-string src/frontend/win/LocalModelBrowser.cpp Speech models
+core-string src/frontend/win/SetupWindow.cpp A cleanup model the runner has downloaded.
+core-string src/frontend/win/SetupWindow.cpp API key
+core-string src/frontend/win/SetupWindow.cpp Account directory
+core-string src/frontend/win/SetupWindow.cpp Anthropic-compatible (Messages)
+core-string src/frontend/win/SetupWindow.cpp CLI Proxy API
+core-string src/frontend/win/SetupWindow.cpp CLI Proxy API account
+core-string src/frontend/win/SetupWindow.cpp Check again
+core-string src/frontend/win/SetupWindow.cpp Fast mode
+core-string src/frontend/win/SetupWindow.cpp HTML and plain text
+core-string src/frontend/win/SetupWindow.cpp Looking for Ollama, LM Studio and llama-server…
+core-string src/frontend/win/SetupWindow.cpp OpenAI-compatible (Chat Completions)
+core-string src/frontend/win/SetupWindow.cpp Plain text
+core-string src/frontend/win/SetupWindow.cpp Server URL
+core-string src/frontend/win/SetupWindow.cpp Speech models
+core-string src/frontend/win/SetupWindow.cpp Start Speecher at login
+core-string src/frontend/win/SetupWindow.cpp System default
+core-string src/ui/AppWindow.cpp Quit Speecher
+core-string src/ui/HomePage.cpp MMM d, yyyy
+core-string src/ui/InsightsCharts.cpp %1 min
+core-string src/ui/InsightsCharts.cpp %1 of audio
+core-string src/ui/SetupAssistant.cpp Global Shortcut
+core-string src/ui/settings/SettingsPageSet.cpp Quit Speecher
+core-string src/ui/settings/SettingsPageSet.cpp Remove Speecher
+core-string src/ui/setup/SetupPages.cpp A cleanup model the runner has downloaded.
+core-string src/ui/setup/SetupPages.cpp API key
+core-string src/ui/setup/SetupPages.cpp Account directory
+core-string src/ui/setup/SetupPages.cpp Anthropic-compatible (Messages)
+core-string src/ui/setup/SetupPages.cpp CLI Proxy API
+core-string src/ui/setup/SetupPages.cpp CLI Proxy API account
+core-string src/ui/setup/SetupPages.cpp Check again
+core-string src/ui/setup/SetupPages.cpp Fast mode
+core-string src/ui/setup/SetupPages.cpp HTML and plain text
+core-string src/ui/setup/SetupPages.cpp Looking for Ollama, LM Studio and llama-server…
+core-string src/ui/setup/SetupPages.cpp OpenAI-compatible (Chat Completions)
+core-string src/ui/setup/SetupPages.cpp Plain text
+core-string src/ui/setup/SetupPages.cpp Server URL
+
+# Added by #163 (setup steps): SetupSteps now owns these, but the front ends
+# still hard-code them. A follow-up reads them from core.
+core-string src/frontend/mac/SpeecherBridge.mm No transcription service is available.
+core-string src/frontend/mac/swift/MenuBarExtra.swift Input level
+core-string src/frontend/mac/swift/SetupAssistant.swift No transcription service is available.
+core-string src/frontend/mac/swift/SetupAssistant.swift Speecher Setup Assistant
+core-string src/frontend/mac/swift/SetupAssistant.swift System default
+core-string src/frontend/qt/TrayStatusPanel.cpp Input level
+core-string src/frontend/win/DictationPanel.cpp Input level
+core-string src/frontend/win/SetupWindow.cpp No transcription service is available.
+core-string src/ui/setup/LinuxGlobalShortcutSetupPage.cpp No shortcut is set, so there is no way to start dictating.
+core-string src/ui/setup/SetupPages.cpp No transcription service is available.
+core-string src/ui/setup/SetupPages.cpp Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Ctrl+V. Nothing extra needs to be installed.
