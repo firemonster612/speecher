@@ -444,6 +444,14 @@ private slots:
             qunsetenv("SPEECHER_INSIGHTS_SEED");
             qunsetenv("SPEECHER_INSIGHTS_TODAY");
         });
+        // Home's column is capped at a multiple of the font height, and the
+        // tile lines scale with the font too, so whether four across ever fits
+        // depends on the platform's font. A 7 px one lets it fit everywhere.
+        const QFont originalFont = QApplication::font();
+        QFont smallFont = originalFont;
+        smallFont.setPixelSize(7);
+        QApplication::setFont(smallFont);
+        const auto restoreFont = qScopeGuard([originalFont] { QApplication::setFont(originalFont); });
         ApplicationController controller(true);
         controller.settings()->setInsightsEnabled(true);
         HomePage page(&controller);
@@ -462,14 +470,6 @@ private slots:
             const auto *grid = page.findChild<QWidget *>(QStringLiteral("insightTiles"));
             return qobject_cast<QGridLayout *>(grid->layout())->itemAtPosition(0, 3) != nullptr;
         };
-        // Home's column is capped, so how wide it gets, and whether four
-        // across ever fits, depends on the font; the tiles' own width decides.
-        page.setFont([] {
-            QFont font = QApplication::font();
-            font.setPointSizeF(font.pointSizeF() / 2);
-            return font;
-        }());
-        page.refresh();
         bool sawFour = false;
         bool sawTwo = false;
         for (int width = 300; width <= 1400; width += 20) {
