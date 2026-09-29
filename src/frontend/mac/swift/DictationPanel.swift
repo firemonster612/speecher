@@ -723,6 +723,7 @@ final class SpeecherDictationPanel {
     /// The update chip, as core words it for every platform's popup.
     private func refreshUpdateBanner(_ update: SpeecherUpdateBanner) {
         guard !e2eBanners else {
+            // ui-lint: allow core-string (the e2e fixture stands in for core's model)
             setUpdateBanner("Speecher nightly build 481 (gabc1234) is available", action: "Install and restart")
             return
         }

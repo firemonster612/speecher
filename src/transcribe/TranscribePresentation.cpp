@@ -381,7 +381,7 @@ QString batchSummary(const QList<TranscribeFileResult> &results,
     }
     QStringList parts;
     if (cancelled) {
-        parts << QStringLiteral("Cancelled — %1 of %2 files transcribed").arg(transcribed).arg(batchSize);
+        parts << QStringLiteral("Canceled — %1 of %2 files transcribed").arg(transcribed).arg(batchSize);
     } else if (results.size() > 1) {
         parts << QStringLiteral("%1 transcripts").arg(transcribed);
     }
