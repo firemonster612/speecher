@@ -2122,7 +2122,7 @@ private struct ShortcutStep: View {
                     Image(systemName: "keyboard")
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
-                    Text("Dictation key")
+                    Text(model.row("globalShortcut")?.label ?? "")
                     Spacer(minLength: 12)
                     Text(model.shortcut)
                         .fontWeight(.semibold)

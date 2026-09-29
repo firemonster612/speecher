@@ -2606,12 +2606,13 @@ struct SetupWindow::Native {
                 shortcutPendingModifier = 0;
             }
         });
-        // The mockup's "Dictation key" card: the key itself on the right of a
-        // single row, with whatever the recorder has to say under it.
+        // The key itself on the right of a single row, named as the Settings
+        // window names it, with whatever the recorder has to say under it.
         StackPanel keyCard = card(panel, QString());
         keyCard.Children().Append(
             cardRow(glyphMark(L'\uE765'),
-                    rowText(textBlock(QStringLiteral("Dictation key"), false)), recorder));
+                    rowText(textBlock(setupSchemaRow(QStringLiteral("globalShortcut")).label, false)),
+                    recorder));
         keyCard.Children().Append(shortcutStatus);
 
         // The shortcut and its behaviour are set together; the combo shares

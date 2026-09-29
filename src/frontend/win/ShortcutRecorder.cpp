@@ -395,9 +395,10 @@ StackPanel ShortcutRecorder::element(const RowSnapshot &row, PaneHost &host)
     control.Children().Append(current);
     control.Children().Append(set);
 
+    // No title: the section header right above already reads Global Shortcut,
+    // the row's label.
     RowSnapshot recorderRow;
     recorderRow.id = QStringLiteral("shortcutRecorder");
-    recorderRow.label = QStringLiteral("Dictation key");
     recorderRow.help = row.help;
     column.Children().Append(rowGrid(recorderRow, control, host, false));
     showNote();
