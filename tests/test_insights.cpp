@@ -549,13 +549,17 @@ private slots:
         const QLocale previous;
         QLocale::setDefault(QLocale(QLocale::German));
         const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
-        for (int day = 1; day <= 7; ++day) {
-            QCOMPARE(weekdayLetter(day).size(), 1);
-        }
         QCOMPARE(heatmapRowLabels().at(0), QLocale().dayName(Qt::Monday, QLocale::ShortFormat));
         QVERIFY(heatmapRowLabels().at(1).isEmpty());
         QCOMPARE(learnedCorrectionsCaption(1), QStringLiteral("Correction learned"));
         QCOMPARE(learnedCorrectionsCaption(2), QStringLiteral("Corrections learned"));
+
+        // Vietnamese narrow names are two letters, "T2" for Monday; Hindi's
+        // Monday is one letter with a vowel sign, two code units.
+        QLocale::setDefault(QLocale(QLocale::Vietnamese));
+        QCOMPARE(weekdayLetter(Qt::Monday), QStringLiteral("T"));
+        QLocale::setDefault(QLocale(QLocale::Hindi));
+        QCOMPARE(weekdayLetter(Qt::Monday), QString::fromUtf8("सो"));
     }
 
     void jsonCarriesThePeriodStreakAndActiveDays()

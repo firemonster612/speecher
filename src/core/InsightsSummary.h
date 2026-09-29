@@ -199,8 +199,8 @@ inline constexpr int kInsightTileMinimumWidth = 240;
 QString wordCountText(int words);
 QString dictationCountText(int dictations);
 QString dayCountText(int days);
-// One letter for a weekday (Monday is 1), whatever the locale's narrow
-// names are.
+// A weekday's first letter as one grapheme (Monday is 1), whatever the
+// locale's narrow names are.
 QString weekdayLetter(int dayOfWeek);
 // The heatmap's row labels, Monday first: the locale's short names for
 // Monday, Wednesday and Friday, and empty for the other rows.
