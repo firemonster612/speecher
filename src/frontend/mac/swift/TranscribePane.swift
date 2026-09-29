@@ -636,7 +636,7 @@ struct TranscribePane: View {
                 output
                 if !model.startError.isEmpty {
                     Section {
-                        Label(model.startError, systemImage: "xmark.octagon.fill")
+                        Label(model.startError, systemImage: "exclamationmark.octagon.fill")
                             .foregroundStyle(.red)
                     }
                 }
@@ -788,7 +788,7 @@ struct TranscribePane: View {
                     Text(model.summary)
                         .foregroundStyle(.secondary)
                     if !model.exportProblem.isEmpty {
-                        Label(model.exportProblem, systemImage: "xmark.octagon.fill")
+                        Label(model.exportProblem, systemImage: "exclamationmark.octagon.fill")
                             .foregroundStyle(.red)
                     }
                 } header: {
