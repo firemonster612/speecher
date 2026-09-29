@@ -593,20 +593,13 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
         title->addWidget(titleLabel, 1);
         content->addLayout(title);
         content->addWidget(bigNumber({{text.value, text.unit}}, cardHost));
-        // Four across only when the title row and every line fit unwrapped.
-        const QMargins padding = content->contentsMargins();
-        int widest = title->sizeHint().width();
+        QList<QLabel *> lines;
         for (int index = 0; index < text.lines.size(); ++index) {
             QLabel *line = mutedLabel(text.lines.at(index), cardHost);
             if (index == 0) line->setToolTip(text.firstLineTip);
             content->addWidget(line);
-            // A wrapping label's hint is its width with nothing wrapped.
-            line->setWordWrap(false);
-            widest = std::max(widest, line->sizeHint().width());
-            line->setWordWrap(true);
+            lines.append(line);
         }
-        m_tileMinimumWidth =
-            std::max(m_tileMinimumWidth, widest + padding.left() + padding.right());
         if (text.showsWeek) {
             auto *week = new InsightsHeatmap(InsightsHeatmap::Shape::Week, cardHost);
             week->setObjectName(QStringLiteral("streakWeek"));
@@ -615,6 +608,12 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
             content->addWidget(week);
         }
         content->addStretch();
+        // Four across only when every row fits with no line wrapped: the
+        // card's minimum width while its lines cannot wrap.
+        for (QLabel *line : std::as_const(lines)) line->setWordWrap(false);
+        content->invalidate();
+        m_tileMinimumWidth = std::max(m_tileMinimumWidth, card->minimumSizeHint().width());
+        for (QLabel *line : std::as_const(lines)) line->setWordWrap(true);
         m_tiles.append(card);
     }
     return host;
@@ -941,9 +940,6 @@ void HomePage::applyWidth()
     }
     for (int column = 0; column < 4; ++column) {
         m_tileGrid->setColumnStretch(column, column < columns ? 1 : 0);
-        // A wide tile such as the streak's would otherwise take its size
-        // hint from its neighbours and wrap their lines.
-        m_tileGrid->setColumnMinimumWidth(column, columns == 4 ? m_tileMinimumWidth : 0);
     }
     for (int index = 0; index < m_tiles.size(); ++index) {
         m_tileGrid->addWidget(m_tiles.at(index), index / columns, index % columns);
