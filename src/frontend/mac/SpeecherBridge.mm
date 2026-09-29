@@ -2097,11 +2097,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::kCopiedFeedbackMs / 1000.0;
 }
 
-+ (CGFloat)insightTileMinimumWidth
-{
-    return speecher::kInsightTileMinimumWidth;
-}
-
 - (NSString *)failureNote
 {
     return speecher::dictationFailureNote(_state->controller->stateName(),

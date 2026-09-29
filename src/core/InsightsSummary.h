@@ -190,10 +190,6 @@ struct InsightTileText {
 };
 // Words, streak, dictations, audio: the order every Home shows them in.
 QList<InsightTileText> insightTiles(const InsightsSummary &summary, const QDate &today);
-// The narrowest a tile gets, in logical pixels, before the four go two by
-// two: wide enough for the usual longest line ("About half of the Gettysburg
-// Address", "▲ 29% vs previous 30 days") unwrapped at the default size.
-inline constexpr int kInsightTileMinimumWidth = 240;
 
 // "1 word", "12 words", and so on, the number localised.
 QString wordCountText(int words);

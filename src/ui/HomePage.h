@@ -87,6 +87,9 @@ private:
     // What applyWidth rearranges when the column is narrow.
     QGridLayout *m_tileGrid = nullptr;
     QList<QWidget *> m_tiles;
+    // The widest tile line unwrapped, with the tile's padding: four go across
+    // only when each gets this much.
+    int m_tileMinimumWidth = 0;
     QList<QBoxLayout *> m_pairs;
     HeatMeasure m_measure = HeatMeasure::Dictations;
     // The day the insights shown were summarized up to.

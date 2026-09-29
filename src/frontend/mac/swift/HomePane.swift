@@ -144,9 +144,9 @@ struct HomePane: View {
     // MARK: Stat tiles
 
     /// The four tiles as one grid on the section's own background: four
-    /// across when each gets the core's minimum tile width, two by two when
-    /// they do not. Two by two keeps the narrower floor it always had, so
-    /// Home does not widen the settings window's minimum.
+    /// across when every tile's lines fit unwrapped, two by two when they do
+    /// not. Two by two keeps the narrower floor it always had and lets lines
+    /// wrap, so Home does not widen the settings window's minimum.
     private var tiles: some View {
         Section {
             ViewThatFits(in: .horizontal) {
@@ -213,8 +213,7 @@ struct HomePane: View {
     }
 
     private func tileGrid(perRow: Int) -> some View {
-        let minimumWidth = perRow == 4 ? SpeecherBridge.insightTileMinimumWidth : 150
-        let tiles = insights.tiles.map { tile($0, minimumWidth: minimumWidth) }
+        let tiles = insights.tiles.map { tile($0, wraps: perRow != 4) }
         return Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 16) {
             ForEach(Array(stride(from: 0, to: tiles.count, by: perRow)), id: \.self) { start in
                 GridRow {
@@ -225,9 +224,10 @@ struct HomePane: View {
     }
 
     /// A tile: its name, the figure, and the lines under it, leading-aligned
-    /// in one plain stack. The lines may wrap but never shrink below their
-    /// own width, so none is clipped at its leading edge.
-    private func tile(_ text: SpeecherInsightTileModel, minimumWidth: CGFloat) -> AnyView {
+    /// in one plain stack. Unless it wraps, each line keeps its ideal width,
+    /// which is what ViewThatFits then measures; wrapped lines never shrink
+    /// below their own width, so none is clipped at its leading edge.
+    private func tile(_ text: SpeecherInsightTileModel, wraps: Bool) -> AnyView {
         AnyView(
             VStack(alignment: .leading, spacing: 4) {
                 Label(text.title, systemImage: Self.symbol(forIconId: text.iconId))
@@ -243,9 +243,9 @@ struct HomePane: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: !wraps, vertical: true)
             }
-            .frame(minWidth: minimumWidth, maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: wraps ? 150 : nil, maxWidth: .infinity, alignment: .leading)
         )
     }
 

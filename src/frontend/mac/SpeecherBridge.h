@@ -708,8 +708,6 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // What a copy button says for a moment after copying, and for how long.
 @property (nonatomic, readonly, copy) NSString *copiedCaption;
 @property (class, nonatomic, readonly) NSTimeInterval copiedFeedbackSeconds;
-// speecher::kInsightTileMinimumWidth: below it the four tiles go two by two.
-@property (class, nonatomic, readonly) CGFloat insightTileMinimumWidth;
 // Why the last session failed, until the next one starts, except in the error
 // state, whose status already says it (speecher::dictationFailureNote).
 // Re-read on every statusChanged.

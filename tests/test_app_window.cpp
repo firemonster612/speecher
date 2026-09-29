@@ -435,6 +435,50 @@ private slots:
         QVERIFY(page.findChildren<QFrame *>(QStringLiteral("insightTile")).isEmpty());
     }
 
+    void homeTilesGoFourAcrossOnlyWhenNoLineWraps()
+    {
+        qputenv("SPEECHER_INSIGHTS_SEED",
+                QFINDTESTDATA("../docs/insights-mockup/seed-active.jsonl").toLocal8Bit());
+        qputenv("SPEECHER_INSIGHTS_TODAY", "2026-09-26");
+        const auto restore = qScopeGuard([] {
+            qunsetenv("SPEECHER_INSIGHTS_SEED");
+            qunsetenv("SPEECHER_INSIGHTS_TODAY");
+        });
+        ApplicationController controller(true);
+        controller.settings()->setInsightsEnabled(true);
+        HomePage page(&controller);
+        page.show();
+        const auto wrapped = [&page] {
+            for (const QFrame *tile : page.findChildren<QFrame *>(QStringLiteral("insightTile"))) {
+                for (const QLabel *line : tile->findChildren<QLabel *>()) {
+                    if (line->wordWrap() && line->height() > line->fontMetrics().height() * 3 / 2) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+        const auto fourAcross = [&page] {
+            const auto *grid = page.findChild<QWidget *>(QStringLiteral("insightTiles"));
+            return qobject_cast<QGridLayout *>(grid->layout())->itemAtPosition(0, 3) != nullptr;
+        };
+        bool sawFour = false;
+        bool sawTwo = false;
+        for (int width = 700; width <= 1400; width += 20) {
+            page.resize(width, 800);
+            QCoreApplication::processEvents();
+            QCoreApplication::processEvents();
+            if (fourAcross()) {
+                sawFour = true;
+                QVERIFY2(!wrapped(), qPrintable(QStringLiteral("a line wraps four across at %1").arg(width)));
+            } else {
+                sawTwo = true;
+            }
+        }
+        QVERIFY(sawFour);
+        QVERIFY(sawTwo);
+    }
+
     void controllerKeepsTheRecordOfTheLastTranscript()
     {
         QTemporaryDir dir;

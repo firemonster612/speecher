@@ -36,6 +36,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -194,12 +196,24 @@ ComboBox indexPicker(std::initializer_list<const wchar_t *> labels,
     return combo;
 }
 
-// As many equal columns as fit at minWidth each and divide the cards evenly,
-// so four tiles go 4, 2 or 1 across and a pair stacks when narrow.
+// As many equal columns as fit and divide the cards evenly, so four tiles go
+// 4, 2 or 1 across and a pair stacks when narrow. A column fits when it is at
+// least minWidth and as wide as every card's text laid out unwrapped, with the
+// column spacing between them.
 void layoutColumns(const Grid &grid, double width, double minWidth)
 {
     const uint32_t count = grid.Children().Size();
-    uint32_t columns = std::clamp(static_cast<uint32_t>(width / minWidth), 1u, count);
+    double columnWidth = minWidth;
+    for (const UIElement &card : grid.Children()) {
+        card.Measure({std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()});
+        columnWidth = std::max(columnWidth, double(card.DesiredSize().Width));
+    }
+    // Measuring unconstrained left each card's desired size at its widest;
+    // the grid measures them again at the column width.
+    grid.InvalidateMeasure();
+    const double spacing = grid.ColumnSpacing();
+    uint32_t columns = static_cast<uint32_t>(
+        std::clamp(std::floor((width + spacing) / (columnWidth + spacing)), 1.0, double(count)));
     while (count % columns) {
         --columns;
     }
@@ -496,7 +510,7 @@ UIElement statTiles(const InsightsSummary &summary, const QDate &today, const Pa
         }
         tiles.push_back(cardContainer(tile));
     }
-    return adaptiveRow(tiles, kInsightTileMinimumWidth);
+    return adaptiveRow(tiles, 0);
 }
 
 // A chart mark's tip, shown the moment the pointer arrives rather than after

@@ -43,7 +43,7 @@ namespace {
 
 // Below this column width the two-up cards stack. The column is capped like
 // the settings cards, so a 1040 px window keeps both rows side by side and a
-// 720 px one stacks them. The tiles go by kInsightTileMinimumWidth instead.
+// 720 px one stacks them. The tiles go by the width of their own lines.
 constexpr int kTwoUpMinimumWidth = 560;
 // The lighter tint for every progress bar but the leading one. Breeze draws a
 // progress fill darker than its palette colour, so the charts' 42 % mix would
@@ -507,6 +507,7 @@ void HomePage::refresh()
     m_insights = nullptr;
     m_tileGrid = nullptr;
     m_tiles.clear();
+    m_tileMinimumWidth = 0;
     m_pairs.clear();
 
     const bool enabled = m_controller->settings()->insightsEnabled();
@@ -590,10 +591,15 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
         title->addWidget(mutedLabel(text.title, cardHost, false), 1);
         content->addLayout(title);
         content->addWidget(bigNumber({{text.value, text.unit}}, cardHost));
+        const QMargins padding = content->contentsMargins();
         for (int index = 0; index < text.lines.size(); ++index) {
             QLabel *line = mutedLabel(text.lines.at(index), cardHost);
             if (index == 0) line->setToolTip(text.firstLineTip);
             content->addWidget(line);
+            // Four across only when every tile's lines fit without wrapping.
+            m_tileMinimumWidth = std::max(m_tileMinimumWidth,
+                                          line->fontMetrics().horizontalAdvance(line->text())
+                                              + padding.left() + padding.right());
         }
         if (text.showsWeek) {
             auto *week = new InsightsHeatmap(InsightsHeatmap::Shape::Week, cardHost);
@@ -918,7 +924,7 @@ void HomePage::applyWidth()
                                                      : QBoxLayout::LeftToRight);
     }
     if (!m_tileGrid) return;
-    const int fourAcross = 4 * kInsightTileMinimumWidth + 3 * m_tileGrid->horizontalSpacing();
+    const int fourAcross = 4 * m_tileMinimumWidth + 3 * m_tileGrid->horizontalSpacing();
     const int columns = width < fourAcross ? 2 : 4;
     if (m_tileGrid->count() == m_tiles.size() && m_tileGrid->columnCount() == columns
         && m_tileGrid->itemAtPosition(0, columns - 1)) {
