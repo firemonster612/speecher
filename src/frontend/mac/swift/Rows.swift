@@ -475,11 +475,11 @@ struct WritingProfileRows: View {
                 _ = model.save(records: records + [blank], previous: records, for: row.rowId)
             }
         }
-        .confirmationDialog("Delete profile",
+        .confirmationDialog(model.bridge.settingsSchema.writingProfileDeletionTitle,
                             isPresented: Binding(get: { deleting != nil },
                                                  set: { if !$0 { deleting = nil } }),
                             titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
+            Button(row.collection?.deleteLabel ?? "", role: .destructive) {
                 if let index = deleting { remove(index) }
             }
         } message: {

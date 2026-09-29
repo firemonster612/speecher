@@ -173,18 +173,23 @@ SchemaCustomRow makeWritingProfileGrid(const CollectionDescriptor &descriptor,
         grid->setCurrentCell(row, 0);
         grid->editItem(grid->item(row, 0));
     });
-    QObject::connect(remove, &QPushButton::clicked, grid, [grid, draft, notifyChanged] {
+    QObject::connect(remove, &QPushButton::clicked, grid, [grid, draft, notifyChanged,
+                                                           deleteLabel = descriptor.deleteLabel] {
         const int row = currentCustomRow(grid);
         if (row < 0) {
             return;
         }
         const QString notice =
             writingProfileDeletionNotice(*draft, grid->item(row, 0)->data(Qt::UserRole).toString());
-        if (!notice.isEmpty()
-            && QMessageBox::question(grid, QStringLiteral("Delete profile"), notice,
-                                     QMessageBox::Cancel | QMessageBox::Ok, QMessageBox::Cancel)
-                   != QMessageBox::Ok) {
-            return;
+        if (!notice.isEmpty()) {
+            QMessageBox confirm(QMessageBox::Question, writingProfileDeletionTitle(), notice,
+                                QMessageBox::Cancel, grid);
+            QPushButton *confirmDelete = confirm.addButton(deleteLabel, QMessageBox::DestructiveRole);
+            confirm.setDefaultButton(QMessageBox::Cancel);
+            confirm.exec();
+            if (confirm.clickedButton() != confirmDelete) {
+                return;
+            }
         }
         {
             const QSignalBlocker blocker(grid);

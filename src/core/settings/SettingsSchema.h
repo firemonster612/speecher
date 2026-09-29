@@ -390,6 +390,9 @@ QList<WritingProfileSettings> withCustomProfileIds(QList<WritingProfileSettings>
 // how many application rules lose it, and whether the fallback profile becomes
 // Other. Empty when nothing points at it.
 QString writingProfileDeletionNotice(const AppSettings &settings, const QString &profileId);
+// The title of the confirmation that notice goes in; its confirming button is
+// the grid's deleteLabel.
+QString writingProfileDeletionTitle();
 CollectionDescriptor writingProfileGrid();
 QList<RowOption> authModeOptions(const QString &rowId);
 

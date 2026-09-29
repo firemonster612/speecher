@@ -138,7 +138,7 @@ UIElement credentialField(PaneHost &host)
 // Deletes the custom profile at `index`, first saying what that changes when
 // a rule or the fallback points at it.
 void deleteWritingProfile(const QString &rowId, const QList<QVariantMap> &records, qsizetype index,
-                          PaneHost &host)
+                          const QString &deleteLabel, PaneHost &host)
 {
     const auto remove = [rowId, records, index, &host] {
         QList<QVariantMap> edited = records;
@@ -154,9 +154,9 @@ void deleteWritingProfile(const QString &rowId, const QList<QVariantMap> &record
     }
     ContentDialog dialog;
     dialog.XamlRoot(host.xamlRoot());
-    dialog.Title(box_value(L"Delete profile"));
+    dialog.Title(box_value(hs(writingProfileDeletionTitle())));
     dialog.Content(box_value(hs(notice)));
-    dialog.PrimaryButtonText(L"Delete");
+    dialog.PrimaryButtonText(hs(deleteLabel));
     dialog.CloseButtonText(L"Cancel");
     dialog.DefaultButton(ContentDialogButton::Close);
     dialog.Closed([remove, weak = std::weak_ptr<bool>(host.alive)](const ContentDialog &,
@@ -238,8 +238,9 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
             Button remove;
             remove.Content(box_value(hs(row.collection->deleteLabel)));
             remove.VerticalAlignment(VerticalAlignment::Bottom);
-            remove.Click([rowId = row.id, records, index, &host](const auto &, const auto &) {
-                deleteWritingProfile(rowId, records, index, host);
+            remove.Click([rowId = row.id, records, index, deleteLabel = row.collection->deleteLabel,
+                          &host](const auto &, const auto &) {
+                deleteWritingProfile(rowId, records, index, deleteLabel, host);
             });
             pickers.Children().Append(remove);
         }

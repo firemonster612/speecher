@@ -207,6 +207,8 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // empty when nothing points at it.
 - (NSString *)writingProfileDeletionNotice:(NSString *)profileId
     NS_SWIFT_NAME(writingProfileDeletionNotice(_:));
+// The title of the confirmation that notice goes in.
+@property (nonatomic, readonly, copy) NSString *writingProfileDeletionTitle;
 // Save against the records this editor last submitted, not a later model refresh.
 - (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
                     previousRecords:(NSArray<SpeecherRecord *> *)previous

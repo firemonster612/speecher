@@ -1430,6 +1430,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         .toNSString();
 }
 
+- (NSString *)writingProfileDeletionTitle
+{
+    return speecher::writingProfileDeletionTitle().toNSString();
+}
+
 - (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
                     previousRecords:(NSArray<SpeecherRecord *> *)previous
                            forRowId:(NSString *)rowId

@@ -3227,6 +3227,11 @@ QString writingProfileDeletionNotice(const AppSettings &settings, const QString 
     return notice.join(QLatin1Char(' '));
 }
 
+QString writingProfileDeletionTitle()
+{
+    return QStringLiteral("Delete profile");
+}
+
 CollectionDescriptor writingProfileGrid()
 {
     const QString kProfileIdKey = QStringLiteral("profileId");

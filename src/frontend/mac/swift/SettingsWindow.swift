@@ -31,7 +31,7 @@ struct RootView: View {
         .toolbar(removing: .title)
         .confirmationDialog("Delete all insights history?",
                             isPresented: $model.confirmingClearInsights) {
-            Button("Delete History", role: .destructive) { model.clearInsights() }
+            Button("Delete history", role: .destructive) { model.clearInsights() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Your stats, streaks and records are erased from this computer. This can't be undone.")
