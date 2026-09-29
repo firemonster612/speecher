@@ -42,6 +42,9 @@ BRACED_LITERAL = re.compile(r'(?<=[{,])\s*("(?:[^"\\\n]|\\.)*")(?=\s*[,}])')
 # Comments, plus the string and character literals that can contain "//" or "/*".
 TOKEN = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'', re.DOTALL)
 PIECE = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+# \uXXXX (and Swift's \u{X…}), \xXX, then any other one-character escape.
+ESCAPE = re.compile(r"\\(?:u\{?([0-9A-Fa-f]{4,6})\}?|x([0-9A-Fa-f]{2})|(.))")
+SIMPLE_ESCAPES = {"n": "\n", "t": "\t"}
 MARKER = re.compile(r"ui-lint: allow ([\w-]+)")
 
 BRITISH_SPELLING = re.compile(
@@ -63,6 +66,12 @@ PROPER_NAMES = [
     # Apple and Windows apps, panes and API names.
     "Finder", "Explorer", "Terminal", "System Settings", "Accessibility", "UI Automation",
     "Chat Completions",
+]
+UNESCAPE_EXAMPLES = [
+    (r"Export all…", "Export all…"),
+    (r"Transcribe \u{2014} Speecher", "Transcribe — Speecher"),
+    (r"caf\xe9", "café"),
+    (r"say \"hi\"\\n", 'say "hi"\\n'),
 ]
 # (text, rule, whether the rule flags it), checked on every lint run.
 RULE_EXAMPLES = [
@@ -94,7 +103,13 @@ def source_files(patterns):
 
 
 def unescape(text):
-    return text.replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
+    """A C++, Swift or allowlist literal's text: "\\u2026" and "…" compare equal."""
+    def decode(match):
+        code = match.group(1) or match.group(2)
+        if code:
+            return chr(int(code, 16))
+        return SIMPLE_ESCAPES.get(match.group(3), match.group(3))
+    return ESCAPE.sub(decode, text)
 
 
 def comment_offsets(source):
@@ -199,6 +214,11 @@ def lint():
 
 
 def front_ends():
+    # (literal as written, its text): core escapes what a front end may type raw.
+    for written, text in UNESCAPE_EXAMPLES:
+        if unescape(written) != text:
+            yield ("tests/ui_wording.py", 0, "core-string", written,
+                   f"unescape() should give {text!r}, not {unescape(written)!r}")
     owned = {text for _, _, text, marked in core_strings()
              if len(text.split()) > 1 and "core-string" not in marked}
     for directory in FRONT_END_SOURCES:
