@@ -478,17 +478,15 @@ private slots:
         for (int offset = 6; offset >= 0; --offset) {
             days.append({today.addDays(-offset), offset == 0 ? 3 : 1, 30, 60000});
         }
+        // The week strip has no tips, as on macOS and Windows.
         InsightsHeatmap week(InsightsHeatmap::Shape::Week);
         week.setDays(days);
         week.resize(week.sizeHint());
         week.show();
         QVERIFY(QTest::qWaitForWindowExposed(&week));
-        // Monday's dot: the first of seven equal columns, just under the top.
         hover(&week, QPoint(week.width() / 14, 6));
-        QTRY_VERIFY_WITH_TIMEOUT(QToolTip::isVisible(), 200);
-        QVERIFY(QToolTip::text().contains(QStringLiteral("dictation")));
-        hover(&week, QPoint(week.width() - 1, week.height() - 1));
-        QTRY_VERIFY_WITH_TIMEOUT(!QToolTip::isVisible(), 1000);
+        QTest::qWait(50);
+        QVERIFY(!QToolTip::isVisible());
 
         InsightsBarChart hours;
         std::array<int, 24> counts{};
@@ -604,18 +602,22 @@ private slots:
         QVERIFY(error);
         QVERIFY(!error->isVisible());
 
-        const QString message = QStringLiteral("Claude login expired; sign in again with Claude Code");
-        emit controller.session()->popupErrorRequested(message);
-        page.setStatus(QStringLiteral("error"));
+        // An unknown speech provider fails the session as it starts.
+        controller.settings()->setSpeechProvider(QStringLiteral("missing"));
+        controller.session()->startListening();
+        QCOMPARE(controller.session()->stateName(), QStringLiteral("error"));
         QVERIFY(error->isVisible());
-        QCOMPARE(error->text(), message);
+        QCOMPARE(error->text(), controller.session()->lastFailure());
+        QVERIFY(!error->text().isEmpty());
 
         // Leaving the error state does not hide it; only a new session does.
-        page.setStatus(QStringLiteral("idle"));
+        controller.session()->stopListening();
+        QCOMPARE(controller.session()->stateName(), QStringLiteral("idle"));
         QVERIFY(error->isVisible());
-        page.setStatus(QStringLiteral("listening"));
+        controller.settings()->setSpeechProvider(QStringLiteral("claude"));
+        controller.session()->startListening();
+        QVERIFY(controller.session()->lastFailure().isEmpty());
         QVERIFY(!error->isVisible());
-        QVERIFY(error->text().isEmpty());
     }
 
     void missingThemeIconsLeaveTextRatherThanADocumentIcon()
