@@ -54,6 +54,15 @@ QString audioText(qint64 audioMs)
                         : QStringLiteral("%1 h").arg(minutes / 60);
 }
 
+int rowLabelWidth(const QFontMetrics &metrics)
+{
+    int widest = 0;
+    for (const QString &label : heatmapRowLabels()) {
+        widest = std::max(widest, metrics.horizontalAdvance(label));
+    }
+    return widest;
+}
+
 QString dayText(const QDate &date)
 {
     return QLocale().toString(date, QStringLiteral("ddd, MMM d, yyyy"));
@@ -129,7 +138,7 @@ InsightsHeatmap::Geometry InsightsHeatmap::layOutYear(int width) const
 {
     Geometry geometry;
     const QFontMetrics metrics(font());
-    const int labelWidth = metrics.horizontalAdvance(QStringLiteral("Wed")) + settings::relatedSpacing();
+    const int labelWidth = rowLabelWidth(metrics) + settings::relatedSpacing();
     const int labelHeight = metrics.height() + settings::tightSpacing();
     int weeks = kWeeks;
     int cell = std::min(kMaxCell, (width - labelWidth) / weeks - kCellGap);
@@ -161,11 +170,11 @@ InsightsHeatmap::Geometry InsightsHeatmap::layOutYear(int width) const
                                    QStringLiteral("<b>%1</b><br>%2").arg(describe(day), dayText(date))});
         }
     }
-    const QStringList rows{QStringLiteral("Mon"), QStringLiteral("Wed"), QStringLiteral("Fri")};
-    for (int index = 0; index < rows.size(); ++index) {
-        const int row = index * 2;
+    const std::array<QString, 7> rows = heatmapRowLabels();
+    for (int row = 0; row < 7; ++row) {
+        if (rows.at(row).isEmpty()) continue;
         geometry.labels.append({QPointF(0, labelHeight + row * pitch + (cell + metrics.ascent() - metrics.descent()) / 2.0),
-                                rows.at(index)});
+                                rows.at(row)});
     }
     return geometry;
 }
@@ -179,23 +188,20 @@ InsightsHeatmap::Geometry InsightsHeatmap::layOutWeek() const
     geometry.size = QSize(7 * pitch, kDot + 2 * ring + settings::tightSpacing() / 2 + metrics.height());
     const QDate today = m_days.isEmpty() ? QDate() : m_days.last().date;
     const int todayIndex = today.isValid() ? today.dayOfWeek() - 1 : -1;
-    const QLocale locale;
     for (int index = 0; index < 7; ++index) {
         const qreal centre = index * pitch + pitch / 2.0;
-        const QString letter = locale.dayName(index + 1, QLocale::NarrowFormat);
+        const QString letter = weekdayLetter(index + 1);
         geometry.labels.append({QPointF(centre - metrics.horizontalAdvance(letter) / 2.0,
                                         geometry.size.height() - metrics.descent()),
                                 letter});
         // Days still to come this week get a letter and no dot.
         if (index > todayIndex) continue;
         const HeatmapDay &day = m_days.at(m_days.size() - 1 - (todayIndex - index));
+        // No tip: the week strip has none on macOS and Windows either.
         geometry.cells.append({QRectF(centre - kDot / 2.0, ring, kDot, kDot),
                                day.dictations ? 4 : 0,
                                index == todayIndex,
-                               QStringLiteral("%1<br>%2").arg(
-                                   dayText(day.date),
-                                   day.dictations ? plural(day.dictations, QStringLiteral("dictation"), QStringLiteral("dictations"))
-                                                  : QStringLiteral("No dictation"))});
+                               {}});
     }
     return geometry;
 }
@@ -214,7 +220,7 @@ InsightsHeatmap::Geometry InsightsHeatmap::layOutLegend() const
 QSize InsightsHeatmap::sizeHint() const
 {
     // The year's natural size is every week at the largest cell.
-    return layOut(QFontMetrics(font()).horizontalAdvance(QStringLiteral("Wed"))
+    return layOut(rowLabelWidth(QFontMetrics(font()))
                   + settings::relatedSpacing() + kWeeks * (kMaxCell + kCellGap))
         .size;
 }
@@ -374,11 +380,9 @@ int InsightsBarChart::hourAt(const QPointF &position) const
 
 void InsightsBarChart::showHour(int hour, const QPoint &globalPosition)
 {
+    const ChartTip tip = hourTip(hour, m_counts[hour]);
     QToolTip::showText(globalPosition,
-                       QStringLiteral("<b>%1 to %2</b><br>%3")
-                           .arg(hourLabel(hour), hourLabel((hour + 1) % 24),
-                                plural(m_counts[hour], QStringLiteral("dictation"),
-                                       QStringLiteral("dictations"))),
+                       QStringLiteral("<b>%1</b><br>%2").arg(tip.title.toHtmlEscaped(), tip.detail),
                        this, slot(hour).adjusted(0, 0, kBarGap, 0).toAlignedRect());
 }
 

@@ -44,24 +44,23 @@ QString insightsPeriodName(InsightsRange range)
 
 QString insightsShareText(const InsightsSummary &summary, InsightsRange range)
 {
+    // The tiles' order: words, streak, then dictations and audio.
     QStringList lines{QStringLiteral("My Speecher stats, %1").arg(insightsPeriodName(range))};
-    lines << QStringLiteral("%1 in %2 (%3 of audio)")
-                 .arg(plural(summary.words, QStringLiteral("word")),
-                      plural(summary.dictations, QStringLiteral("dictation")),
-                      audioTotalText(summary.audioMs));
+    lines << QStringLiteral("%1 dictated").arg(plural(summary.words, QStringLiteral("word")));
     if (summary.words > 0) {
         lines << summary.bookComparison;
     }
+    if (summary.currentStreak > 0 && summary.currentStreak >= summary.bestStreak) {
+        lines << QStringLiteral("%1-day streak, my longest yet").arg(number(summary.currentStreak));
+    } else if (summary.currentStreak > 0) {
+        lines << QStringLiteral("%1-day streak (best: %2)")
+                     .arg(number(summary.currentStreak), plural(summary.bestStreak, QStringLiteral("day")));
+    }
+    lines << QStringLiteral("%1, %2 of audio transcribed")
+                 .arg(plural(summary.dictations, QStringLiteral("dictation")), audioTotalText(summary.audioMs));
     if (summary.wordsPerMinute > 0) {
         lines << QStringLiteral("%1 words per minute, %2× faster than typing")
                      .arg(number(summary.wordsPerMinute), speedup(summary));
-    }
-    if (summary.currentStreak > 0 && summary.currentStreak >= summary.bestStreak) {
-        lines << QStringLiteral("%1-day streak, my longest yet").arg(summary.currentStreak);
-    } else if (summary.currentStreak > 0) {
-        lines << QStringLiteral("%1-day streak (best: %2)")
-                     .arg(summary.currentStreak)
-                     .arg(plural(summary.bestStreak, QStringLiteral("day")));
     }
     QStringList apps;
     for (const AppShare &app : summary.apps) {
@@ -130,6 +129,44 @@ QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, con
         {QStringLiteral("days"), days},
     };
     return QJsonDocument(root).toJson(QJsonDocument::Indented);
+}
+
+QString insightsJsonFileName(const QDate &today)
+{
+    return QStringLiteral("speecher-stats-%1.json").arg(isoDate(today));
+}
+
+InsightsShareLabels insightsShareLabels()
+{
+    return {
+        QStringLiteral("Share"),
+        QStringLiteral("Copy image with stats"),
+        QStringLiteral("Copy as text"),
+        QStringLiteral("Save as JSON…"),
+        QStringLiteral("Copied"),
+        QStringLiteral("Saved"),
+        QStringLiteral("Couldn't save"),
+        QStringLiteral("Save stats"),
+        QStringLiteral("JSON files"),
+    };
+}
+
+QString insightsImageTitle()
+{
+    return QStringLiteral("My Speecher stats");
+}
+
+QString insightsImagePeriod(InsightsRange range)
+{
+    QString period = insightsPeriodName(range);
+    period[0] = period.at(0).toUpper();
+    return period;
+}
+
+QString insightsImagePaceLine(const InsightsSummary &summary)
+{
+    if (summary.wordsPerMinute <= 0) return {};
+    return QStringLiteral("%1 · %2 words per minute").arg(summary.bookComparison, number(summary.wordsPerMinute));
 }
 
 } // namespace speecher

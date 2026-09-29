@@ -5,6 +5,7 @@
 #include "app/PlatformComposition.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
+#include "core/InsightsExport.h"
 #include "core/InsightsLog.h"
 #include "core/InsightsSummary.h"
 #include "core/SecretStore.h"
@@ -853,6 +854,19 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @implementation SpeecherInsightsAppModel
 @end
 
+@interface SpeecherInsightTileModel ()
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *iconId;
+@property (nonatomic, copy) NSString *value;
+@property (nonatomic, copy) NSString *unit;
+@property (nonatomic, copy) NSArray<NSString *> *lines;
+@property (nonatomic, copy) NSString *firstLineTip;
+@property (nonatomic) BOOL showsWeek;
+@end
+
+@implementation SpeecherInsightTileModel
+@end
+
 @interface SpeecherInsightsModel ()
 @property (nonatomic) NSInteger recordCount;
 @property (nonatomic) NSInteger words;
@@ -872,6 +886,15 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSArray<NSNumber *> *weekActivity;
 @property (nonatomic) NSInteger todayIndex;
 @property (nonatomic, copy) NSArray<NSString *> *weekLetters;
+@property (nonatomic, copy) NSArray<SpeecherInsightTileModel *> *tiles;
+@property (nonatomic, copy) NSArray<NSString *> *heatmapRowLabels;
+@property (nonatomic, copy) NSString *activeDaysLastYearText;
+@property (nonatomic, copy) NSArray<NSString *> *hourTips;
+@property (nonatomic, copy) NSString *personaText;
+@property (nonatomic, copy) NSString *peakText;
+@property (nonatomic, copy) NSString *shareText;
+@property (nonatomic, copy) NSData *json;
+@property (nonatomic, copy) NSString *jsonFileName;
 @property (nonatomic, copy) NSArray<SpeecherInsightsDayModel *> *heatmap;
 @property (nonatomic, copy) NSArray<NSString *> *weekMonthLabels;
 @property (nonatomic, copy) NSArray<NSNumber *> *heatStrengths;
@@ -967,10 +990,34 @@ NSArray<NSString *> *bridgedWeekMonthLabels(const QList<speecher::HeatmapDay> &d
 }
 
 SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
+                                       speecher::InsightsRange range,
                                        qsizetype recordCount,
                                        const QDate &today)
 {
     SpeecherInsightsModel *model = [[SpeecherInsightsModel alloc] init];
+    NSMutableArray<SpeecherInsightTileModel *> *tiles = [NSMutableArray array];
+    for (const speecher::InsightTileText &text : speecher::insightTiles(summary, today)) {
+        SpeecherInsightTileModel *tile = [[SpeecherInsightTileModel alloc] init];
+        tile.title = text.title.toNSString();
+        tile.iconId = text.iconId.toNSString();
+        tile.value = text.value.toNSString();
+        tile.unit = text.unit.toNSString();
+        tile.lines = bridgedStrings(text.lines);
+        tile.firstLineTip = text.firstLineTip.toNSString();
+        tile.showsWeek = text.showsWeek;
+        [tiles addObject:tile];
+    }
+    model.tiles = tiles;
+    const std::array<QString, 7> rows = speecher::heatmapRowLabels();
+    model.heatmapRowLabels = bridgedStrings(QStringList(rows.begin(), rows.end()));
+    model.activeDaysLastYearText =
+        speecher::activeDaysLastYearText(summary.activeDaysLastYear).toNSString();
+    model.personaText = speecher::personaText(summary).toNSString();
+    model.peakText = speecher::peakText(summary).toNSString();
+    model.shareText = speecher::insightsShareText(summary, range).toNSString();
+    const QByteArray json = speecher::insightsJson(summary, range, today);
+    model.json = [NSData dataWithBytes:json.constData() length:NSUInteger(json.size())];
+    model.jsonFileName = speecher::insightsJsonFileName(today).toNSString();
     model.recordCount = recordCount;
     model.words = summary.words;
     model.dictations = summary.dictations;
@@ -992,7 +1039,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     NSMutableArray<NSString *> *letters = [NSMutableArray array];
     for (int day = 0; day < 7; ++day) {
         [week addObject:@(summary.weekActivity[day])];
-        [letters addObject:QLocale().dayName(day + 1, QLocale::NarrowFormat).toNSString()];
+        [letters addObject:speecher::weekdayLetter(day + 1).toNSString()];
     }
     model.weekActivity = week;
     model.todayIndex = summary.todayIndex;
@@ -1009,12 +1056,16 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
     NSMutableArray<NSNumber *> *hours = [NSMutableArray array];
     NSMutableArray<NSString *> *hourLabels = [NSMutableArray array];
+    NSMutableArray<NSString *> *hourTips = [NSMutableArray array];
     for (int hour = 0; hour < 24; ++hour) {
         [hours addObject:@(summary.hourCounts[hour])];
         [hourLabels addObject:speecher::hourLabel(hour).toNSString()];
+        const speecher::ChartTip tip = speecher::hourTip(hour, summary.hourCounts[hour]);
+        [hourTips addObject:(tip.title + u'\n' + tip.detail).toNSString()];
     }
     model.hourCounts = hours;
     model.hourLabels = hourLabels;
+    model.hourTips = hourTips;
     model.peakHour = summary.peakHour;
     model.busiestWeekday =
         QLocale().dayName(summary.busiestWeekday, QLocale::LongFormat).toNSString();
@@ -1862,6 +1913,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     const QDate today = _state->controller->insightsToday();
     return bridgedInsights(speecher::summarize(records, coreInsightsRange(range), today,
                                                _state->controller->settings()->writingProfileSettings()),
+                           coreInsightsRange(range),
                            records.size(),
                            today);
 }
@@ -2021,6 +2073,49 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (NSString *)copyTranscriptCaption
 {
     return speecher::copyTranscriptCaption().toNSString();
+}
+
+- (NSString *)copiedCaption
+{
+    return speecher::copiedCaption().toNSString();
+}
+
++ (NSTimeInterval)copiedFeedbackSeconds
+{
+    return speecher::kCopiedFeedbackMs / 1000.0;
+}
+
++ (CGFloat)insightTileMinimumWidth
+{
+    return speecher::kInsightTileMinimumWidth;
+}
+
+- (NSString *)lastFailure
+{
+    return _state->controller->session()->lastFailure().toNSString();
+}
+
+- (NSDictionary<NSString *, NSString *> *)homeLabels
+{
+    const speecher::InsightsShareLabels share = speecher::insightsShareLabels();
+    return @{
+        @"share": share.share.toNSString(),
+        @"copyText": share.copyText.toNSString(),
+        @"saveJson": share.saveJson.toNSString(),
+        @"copied": share.copied.toNSString(),
+        @"saved": share.saved.toNSString(),
+        @"saveFailed": share.saveFailed.toNSString(),
+        @"saveTitle": share.saveTitle.toNSString(),
+        @"correctionsTitle": speecher::learnedCorrectionsTitle().toNSString(),
+        @"reviewCorrections": speecher::reviewLearnedCorrectionsCaption().toNSString(),
+        @"legendLess": speecher::heatLegendLessText().toNSString(),
+        @"legendMore": speecher::heatLegendMoreText().toNSString(),
+    };
+}
+
+- (NSString *)learnedCorrectionsCaption:(NSInteger)count
+{
+    return speecher::learnedCorrectionsCaption(int(count)).toNSString();
 }
 
 - (NSString *)noTranscriptYetText

@@ -18,6 +18,7 @@
 #include <QFrame>
 #include <QGridLayout>
 #include <QGuiApplication>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QImage>
@@ -40,9 +41,9 @@ namespace speecher {
 
 namespace {
 
-// Below this column width the two-up cards stack and the tiles go two by two.
-// The column is capped like the settings cards, so a 1040 px window keeps
-// both rows side by side and a 720 px one stacks them.
+// Below this column width the two-up cards stack. The column is capped like
+// the settings cards, so a 1040 px window keeps both rows side by side and a
+// 720 px one stacks them. The tiles go by kInsightTileMinimumWidth instead.
 constexpr int kTwoUpMinimumWidth = 560;
 // The lighter tint for every progress bar but the leading one. Breeze draws a
 // progress fill darker than its palette colour, so the charts' 42 % mix would
@@ -54,11 +55,6 @@ QString number(int value)
     return QLocale().toString(value);
 }
 
-QString plural(int count, const QString &one, const QString &many)
-{
-    return QStringLiteral("%1 %2").arg(number(count), count == 1 ? one : many);
-}
-
 QString capitalized(QString text)
 {
     if (!text.isEmpty()) text[0] = text.at(0).toUpper();
@@ -68,6 +64,23 @@ QString capitalized(QString text)
 QIcon themedIcon(const QString &name, const QString &fallback = QString())
 {
     return QIcon::fromTheme(name, QIcon::fromTheme(fallback));
+}
+
+// A stat tile's icon (insightTileIconId). Breeze has no flame, so the streak
+// falls back to its Hotspot flame, then to the trophy.
+QIcon tileIcon(const QString &iconId)
+{
+    static const QHash<QString, QStringList> names{
+        {QStringLiteral("text"), {QStringLiteral("format-justify-left")}},
+        {QStringLiteral("flame"),
+         {QStringLiteral("flame"), QStringLiteral("hotspot-symbolic"), QStringLiteral("games-highscores")}},
+        {QStringLiteral("microphone"), {QStringLiteral("audio-input-microphone")}},
+        {QStringLiteral("waveform"), {QStringLiteral("waveform")}},
+    };
+    for (const QString &name : names.value(iconId)) {
+        if (QIcon::hasThemeIcon(name)) return QIcon::fromTheme(name);
+    }
+    return {};
 }
 
 QLabel *mutedLabel(const QString &text, QWidget *parent, bool small = true)
@@ -218,6 +231,18 @@ QString twoLines(const QString &text, const QFont &font, int width)
 }
 
 
+// "12 days with dictation in the last year", then Less, the levels and More.
+void addHeatLegend(QVBoxLayout *content, const InsightsSummary &summary, QWidget *host)
+{
+    auto *foot = new QHBoxLayout;
+    foot->setSpacing(settings::relatedSpacing());
+    foot->addWidget(mutedLabel(activeDaysLastYearText(summary.activeDaysLastYear), host), 1);
+    foot->addWidget(mutedLabel(heatLegendLessText(), host));
+    foot->addWidget(new InsightsHeatmap(InsightsHeatmap::Shape::Legend, host));
+    foot->addWidget(mutedLabel(heatLegendMoreText(), host));
+    content->addLayout(foot);
+}
+
 // The picture "Copy image with stats" puts on the clipboard: the period's four
 // numbers over the year's heatmap, drawn by the same widgets as Home at twice
 // the scale so it stays sharp wherever it is pasted.
@@ -234,38 +259,28 @@ QImage statsImage(const InsightsSummary &summary, InsightsRange range, HeatMeasu
     QWidget *host = content->parentWidget();
 
     auto *title = new QHBoxLayout;
-    title->addWidget(boldLabel(QStringLiteral("My Speecher stats"), host), 1);
-    QLabel *period = mutedLabel(capitalized(insightsPeriodName(range)), host, false);
+    title->addWidget(boldLabel(insightsImageTitle(), host), 1);
+    QLabel *period = mutedLabel(insightsImagePeriod(range), host, false);
     period->setWordWrap(false);
     title->addWidget(period);
     content->addLayout(title);
 
     auto *numbers = new QHBoxLayout;
     numbers->setSpacing(settings::largeSpacing() * 2);
-    const QString audio = audioTotalText(summary.audioMs);
-    const auto stat = [host, numbers](const QString &label, QWidget *value) {
+    // The tiles' figures, in their order and under their titles.
+    for (const InsightTileText &tile : insightTiles(summary, QDate())) {
         auto *column = new QVBoxLayout;
         column->setSpacing(0);
-        QLabel *caption = mutedLabel(label, host, false);
+        QLabel *caption = mutedLabel(tile.title, host, false);
         caption->setWordWrap(false);
         column->addWidget(caption);
-        value->setParent(host);
-        column->addWidget(value);
+        column->addWidget(bigNumber({{tile.value, tile.unit}}, host));
         numbers->addLayout(column);
-    };
-    stat(QStringLiteral("Words dictated"), bigNumber({{number(summary.words), {}}}, nullptr));
-    stat(QStringLiteral("Dictations"), bigNumber({{number(summary.dictations), {}}}, nullptr));
-    stat(QStringLiteral("Audio"), bigNumber({{audio.section(u' ', 0, -2), audio.section(u' ', -1)}}, nullptr));
-    stat(QStringLiteral("Streak"),
-         bigNumber({{number(summary.currentStreak),
-                     summary.currentStreak == 1 ? QStringLiteral("day") : QStringLiteral("days")}},
-                   nullptr));
+    }
     numbers->addStretch();
     content->addLayout(numbers);
-    if (summary.wordsPerMinute > 0) {
-        content->addWidget(mutedLabel(QStringLiteral("%1 · %2 words per minute")
-                                          .arg(summary.bookComparison, number(summary.wordsPerMinute)),
-                                      host, false));
+    if (const QString pace = insightsImagePaceLine(summary); !pace.isEmpty()) {
+        content->addWidget(mutedLabel(pace, host, false));
     }
 
     content->addSpacing(settings::relatedSpacing());
@@ -276,15 +291,7 @@ QImage statsImage(const InsightsSummary &summary, InsightsRange range, HeatMeasu
     content->addWidget(heatmap);
     auto *foot = new QHBoxLayout;
     foot->setSpacing(settings::relatedSpacing());
-    foot->addWidget(mutedLabel(QStringLiteral("%1 with dictation in the last year")
-                                   .arg(plural(summary.activeDaysLastYear, QStringLiteral("day"),
-                                               QStringLiteral("days"))),
-                               host),
-                    1);
-    foot->addWidget(mutedLabel(QStringLiteral("Less"), host));
-    foot->addWidget(new InsightsHeatmap(InsightsHeatmap::Shape::Legend, host));
-    foot->addWidget(mutedLabel(QStringLiteral("More"), host));
-    content->addLayout(foot);
+    addHeatLegend(content, summary, host);
 
     root.adjustSize();
     constexpr qreal scale = 2;
@@ -374,11 +381,6 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
             &HomePage::refreshLastTranscript);
     connect(controller, &ApplicationController::lastRecordChanged, this,
             &HomePage::refreshLastTranscript);
-    connect(controller->session(), &DictationSession::popupErrorRequested, this,
-            [this](const QString &message) {
-                m_errorText->setText(message.simplified());
-                m_errorText->setVisible(!message.simplified().isEmpty());
-            });
     connect(controller, &ApplicationController::globalShortcutChanged, this,
             &HomePage::updateShortcutHint);
     connect(controller, &ApplicationController::globalShortcutSupportChanged, this,
@@ -436,7 +438,7 @@ QFrame *HomePage::buildDictationCard(QWidget *parent)
     m_hint->setObjectName(QStringLiteral("dictationHint"));
     text->addWidget(m_hint);
     // The popup shows a failure for five seconds and cannot take focus, so the
-    // reason also stays here until the next session starts.
+    // reason also stays here until the next session starts (lastFailure).
     m_errorText = new QLabel(host);
     m_errorText->setObjectName(QStringLiteral("dictationError"));
     m_errorText->setWordWrap(true);
@@ -478,7 +480,7 @@ QFrame *HomePage::buildDictationCard(QWidget *parent)
     m_copyTranscript->setToolButtonStyle(copyIcon.isNull() ? Qt::ToolButtonTextOnly
                                                            : Qt::ToolButtonIconOnly);
     m_copyTranscript->setAutoRaise(true);
-    m_copyTranscript->setToolTip(QStringLiteral("Copy transcript"));
+    m_copyTranscript->setToolTip(copyTranscriptCaption());
     last->addWidget(m_copyTranscript, 0, Qt::AlignTop);
     connect(m_copyTranscript, &QToolButton::clicked, this, [this, copyIcon] {
         const QString transcript = m_controller->session()->lastTranscript();
@@ -486,8 +488,8 @@ QFrame *HomePage::buildDictationCard(QWidget *parent)
         QGuiApplication::clipboard()->setText(transcript);
         m_copyTranscript->setIcon(themedIcon(QStringLiteral("checkmark"),
                                              QStringLiteral("dialog-ok-apply")));
-        m_copyTranscript->setText(QStringLiteral("Copied"));
-        QTimer::singleShot(1500, m_copyTranscript, [this, copyIcon] {
+        m_copyTranscript->setText(copiedCaption());
+        QTimer::singleShot(kCopiedFeedbackMs, m_copyTranscript, [this, copyIcon] {
             m_copyTranscript->setIcon(copyIcon);
             m_copyTranscript->setText(QStringLiteral("Copy"));
         });
@@ -570,8 +572,7 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
     m_tileGrid->setContentsMargins(0, 0, 0, 0);
     m_tileGrid->setSpacing(settings::relatedSpacing());
 
-    const auto tile = [this, host](const QString &iconName, const QString &label,
-                                   QWidget *value, const QStringList &lines, const QString &tip) {
+    for (const InsightTileText &text : insightTiles(summary, m_controller->insightsToday())) {
         QVBoxLayout *content = nullptr;
         QFrame *card = makeCard(host, &content);
         card->setObjectName(QStringLiteral("insightTile"));
@@ -579,60 +580,31 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
         QWidget *cardHost = content->parentWidget();
         auto *title = new QHBoxLayout;
         title->setSpacing(settings::tightSpacing());
-        const QIcon icon = QIcon::fromTheme(iconName);
+        const QIcon icon = tileIcon(text.iconId);
         if (!icon.isNull()) {
             auto *iconLabel = new QLabel(cardHost);
             const int extent = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
             iconLabel->setPixmap(icon.pixmap(extent, extent));
             title->addWidget(iconLabel);
         }
-        title->addWidget(mutedLabel(label, cardHost, false), 1);
+        title->addWidget(mutedLabel(text.title, cardHost, false), 1);
         content->addLayout(title);
-        value->setParent(cardHost);
-        content->addWidget(value);
-        for (int index = 0; index < lines.size(); ++index) {
-            if (lines.at(index).isEmpty()) continue;
-            QLabel *line = mutedLabel(lines.at(index), cardHost);
-            if (index == 0) line->setToolTip(tip);
+        content->addWidget(bigNumber({{text.value, text.unit}}, cardHost));
+        for (int index = 0; index < text.lines.size(); ++index) {
+            QLabel *line = mutedLabel(text.lines.at(index), cardHost);
+            if (index == 0) line->setToolTip(text.firstLineTip);
             content->addWidget(line);
+        }
+        if (text.showsWeek) {
+            auto *week = new InsightsHeatmap(InsightsHeatmap::Shape::Week, cardHost);
+            week->setObjectName(QStringLiteral("streakWeek"));
+            week->setDays(summary.heatmap);
+            content->addSpacing(settings::tightSpacing());
+            content->addWidget(week);
         }
         content->addStretch();
         m_tiles.append(card);
-        return content;
-    };
-
-    const QString period = summary.deltaPeriodLabel;
-    tile(QStringLiteral("format-justify-left"), QStringLiteral("Words dictated"),
-         bigNumber({{number(summary.words), {}}}, nullptr),
-         {summary.bookComparison, deltaText(summary.wordsDelta, period)},
-         summary.bookComparisonTip);
-
-    QVBoxLayout *streak = tile(
-        QStringLiteral("games-highscores"), QStringLiteral("Streak"),
-        bigNumber({{number(summary.currentStreak),
-                    summary.currentStreak == 1 ? QStringLiteral("day") : QStringLiteral("days")}},
-                  nullptr),
-        {streakText(summary, m_controller->insightsToday())}, {});
-    auto *week = new InsightsHeatmap(InsightsHeatmap::Shape::Week, streak->parentWidget());
-    week->setObjectName(QStringLiteral("streakWeek"));
-    week->setDays(summary.heatmap);
-    streak->insertSpacing(streak->count() - 1, settings::tightSpacing());
-    streak->insertWidget(streak->count() - 1, week);
-
-    tile(QStringLiteral("audio-input-microphone"), QStringLiteral("Dictations"),
-         bigNumber({{number(summary.dictations), {}}}, nullptr),
-         {summary.activeDays
-              ? QStringLiteral("%1 a day when you dictate")
-                    .arg(QLocale().toString(summary.dictationsPerActiveDay, 'f', 1))
-              : QStringLiteral("Nothing yet"),
-          deltaText(summary.dictationsDelta, period)},
-         {});
-
-    // "4.0 hours": the figure large, its unit small.
-    const QString audio = audioTotalText(summary.audioMs);
-    tile(QStringLiteral("waveform"), QStringLiteral("Audio transcribed"),
-         bigNumber({{audio.section(u' ', 0, -2), audio.section(u' ', -1)}}, nullptr),
-         {averageDictationText(summary)}, {});
+    }
     return host;
 }
 
@@ -664,17 +636,7 @@ QFrame *HomePage::buildActivityCard(const InsightsSummary &summary, QWidget *par
         heatmap->setMeasure(m_measure);
     });
 
-    auto *foot = new QHBoxLayout;
-    foot->setSpacing(settings::relatedSpacing());
-    foot->addWidget(mutedLabel(QStringLiteral("%1 with dictation in the last year")
-                                   .arg(plural(summary.activeDaysLastYear, QStringLiteral("day"),
-                                               QStringLiteral("days"))),
-                               host),
-                    1);
-    foot->addWidget(mutedLabel(QStringLiteral("Less"), host));
-    foot->addWidget(new InsightsHeatmap(InsightsHeatmap::Shape::Legend, host));
-    foot->addWidget(mutedLabel(QStringLiteral("More"), host));
-    content->addLayout(foot);
+    addHeatLegend(content, summary, host);
     return card;
 }
 
@@ -691,13 +653,8 @@ QFrame *HomePage::buildHoursCard(const InsightsSummary &summary, QWidget *parent
         content->addStretch();
         return card;
     }
-    content->addWidget(boldLabel(summary.persona + u'.', host));
-    content->addWidget(mutedLabel(QStringLiteral("You dictate most around %1, and %2s are your "
-                                                 "busiest day.")
-                                      .arg(hourLabel(summary.peakHour),
-                                           QLocale().dayName(summary.busiestWeekday,
-                                                             QLocale::LongFormat)),
-                                  host, false));
+    content->addWidget(boldLabel(personaText(summary), host));
+    content->addWidget(mutedLabel(peakText(summary), host, false));
     content->addStretch();
     auto *chart = new InsightsBarChart(host);
     chart->setObjectName(QStringLiteral("hoursChart"));
@@ -777,9 +734,10 @@ QFrame *HomePage::buildAppsCard(const InsightsSummary &summary, QWidget *parent)
         nameLayout->addStretch();
         addBarRow(grid, name, makeBar(app.words, most, index == 0, host),
                   QStringLiteral("%1%").arg(app.percent),
-                  QStringLiteral("<b>%1</b><br>%2")
-                      .arg(app.name.toHtmlEscaped(),
-                           plural(app.words, QStringLiteral("word"), QStringLiteral("words"))));
+                  [&app] {
+                      const ChartTip tip = appTip(app);
+                      return QStringLiteral("<b>%1</b><br>%2").arg(tip.title.toHtmlEscaped(), tip.detail);
+                  }());
     }
     content->addStretch();
     return card;
@@ -788,21 +746,19 @@ QFrame *HomePage::buildAppsCard(const InsightsSummary &summary, QWidget *parent)
 QFrame *HomePage::buildCorrectionsCard(QWidget *parent)
 {
     QVBoxLayout *content = nullptr;
-    QFrame *card = makeTitledCard(QStringLiteral("Corrections"), parent, &content);
+    QFrame *card = makeTitledCard(learnedCorrectionsTitle(), parent, &content);
     card->setObjectName(QStringLiteral("correctionsCard"));
     QWidget *host = content->parentWidget();
     const int learned = m_controller->settings()->learnedCorrections().size();
     auto *stat = new QVBoxLayout;
     stat->setSpacing(0);
     stat->addWidget(bigNumber({{number(learned), {}}}, host));
-    stat->addWidget(mutedLabel(learned == 1 ? QStringLiteral("Correction learned")
-                                            : QStringLiteral("Corrections learned"),
-                               host));
+    stat->addWidget(mutedLabel(learnedCorrectionsCaption(learned), host));
     content->addLayout(stat);
     content->addWidget(mutedLabel(
         QStringLiteral("Speecher learned these from edits you made after dictating."), host, false));
     content->addStretch();
-    auto *open = new QPushButton(QStringLiteral("Review Corrections…"), host);
+    auto *open = new QPushButton(reviewLearnedCorrectionsCaption(), host);
     open->setObjectName(QStringLiteral("reviewCorrections"));
     connect(open, &QPushButton::clicked, this,
             [this] { emit pageRequested(QStringLiteral("vocabulary:corrections")); });
@@ -834,29 +790,27 @@ QFrame *HomePage::buildRecordsCard(const InsightsSummary &summary, QWidget *pare
             milestoneText(summary), progress);
     } else {
         add(QStringLiteral("Every milestone passed"), milestoneText(summary),
-            text(plural(summary.allTimeWords, QStringLiteral("word"), QStringLiteral("words"))));
+            text(wordCountText(summary.allTimeWords)));
     }
     add(QStringLiteral("Longest streak"),
         summary.bestStreakEndsToday
             ? QStringLiteral("That's the one you're on")
             : QStringLiteral("Ended %1").arg(relativeDay(summary.bestStreakEnd, today)),
-        text(plural(summary.bestStreak, QStringLiteral("day"), QStringLiteral("days"))));
+        text(dayCountText(summary.bestStreak)));
     add(QStringLiteral("Longest dictation"),
         QStringLiteral("%1 words into %2, %3")
             .arg(number(summary.longest.words), summary.longest.appName,
                  relativeDay(summary.longest.date, today)),
         text(clockText(summary.longest.audioMs)));
     add(QStringLiteral("Busiest day"), capitalized(relativeDay(summary.busiestDay.date, today)),
-        text(plural(summary.busiestDay.dictations, QStringLiteral("dictation"),
-                    QStringLiteral("dictations"))));
+        text(dictationCountText(summary.busiestDay.dictations)));
     add(QStringLiteral("Wordiest day"), capitalized(relativeDay(summary.wordiestDay.date, today)),
-        text(plural(summary.wordiestDay.words, QStringLiteral("word"), QStringLiteral("words"))));
+        text(wordCountText(summary.wordiestDay.words)));
     const int daysAgo = summary.firstDictation.daysTo(today);
     add(QStringLiteral("First dictation"),
         QLocale().toString(summary.firstDictation, QStringLiteral("MMM d, yyyy")),
         text(daysAgo == 0 ? QStringLiteral("Today")
-                          : QStringLiteral("%1 ago").arg(plural(daysAgo, QStringLiteral("day"),
-                                                                QStringLiteral("days")))));
+                          : QStringLiteral("%1 ago").arg(dayCountText(daysAgo))));
     return card;
 }
 
@@ -864,18 +818,19 @@ QToolButton *HomePage::buildShareButton(QWidget *parent)
 {
     auto *button = new QToolButton(parent);
     button->setObjectName(QStringLiteral("shareInsights"));
+    const InsightsShareLabels labels = insightsShareLabels();
     const QIcon shareIcon = themedIcon(QStringLiteral("document-share"), QStringLiteral("emblem-shared"));
     button->setIcon(shareIcon);
-    button->setText(QStringLiteral("Share"));
+    button->setText(labels.share);
     button->setToolButtonStyle(shareIcon.isNull() ? Qt::ToolButtonTextOnly : Qt::ToolButtonTextBesideIcon);
     button->setAutoRaise(true);
     button->setPopupMode(QToolButton::InstantPopup);
     // The button's text says what the last choice did, then goes back.
-    const auto report = [button](const QString &text, const QString &tip = QString()) {
+    const auto report = [button, labels](const QString &text, const QString &tip = QString()) {
         button->setText(text);
         button->setToolTip(tip);
-        QTimer::singleShot(tip.isEmpty() ? 1500 : 5000, button, [button] {
-            button->setText(QStringLiteral("Share"));
+        QTimer::singleShot(tip.isEmpty() ? kCopiedFeedbackMs : 5000, button, [button, labels] {
+            button->setText(labels.share);
             button->setToolTip(QString());
         });
     };
@@ -884,34 +839,32 @@ QToolButton *HomePage::buildShareButton(QWidget *parent)
                          m_controller->settings()->writingProfileSettings());
     };
     auto *menu = new QMenu(button);
-    connect(menu->addAction(themedIcon(QStringLiteral("image-x-generic")),
-                            QStringLiteral("Copy image with stats")),
-            &QAction::triggered, this, [this, current, report] {
+    connect(menu->addAction(themedIcon(QStringLiteral("image-x-generic")), labels.copyImage),
+            &QAction::triggered, this, [this, current, report, labels] {
                 QGuiApplication::clipboard()->setImage(statsImage(current(), currentRange(), m_measure));
-                report(QStringLiteral("Copied"));
+                report(labels.copied);
             });
-    connect(menu->addAction(themedIcon(QStringLiteral("edit-copy")), QStringLiteral("Copy as text")),
-            &QAction::triggered, this, [this, current, report] {
+    connect(menu->addAction(themedIcon(QStringLiteral("edit-copy")), labels.copyText),
+            &QAction::triggered, this, [this, current, report, labels] {
                 QGuiApplication::clipboard()->setText(insightsShareText(current(), currentRange()));
-                report(QStringLiteral("Copied"));
+                report(labels.copied);
             });
     menu->addSeparator();
-    connect(menu->addAction(themedIcon(QStringLiteral("document-save-as")), QStringLiteral("Save as JSON…")),
-            &QAction::triggered, this, [this, current, report] {
+    connect(menu->addAction(themedIcon(QStringLiteral("document-save-as")), labels.saveJson),
+            &QAction::triggered, this, [this, current, report, labels] {
                 const QString suggested =
                     QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-                        .filePath(QStringLiteral("speecher-stats-%1.json")
-                                      .arg(m_summarizedDay.toString(Qt::ISODate)));
+                        .filePath(insightsJsonFileName(m_summarizedDay));
                 const QString path = QFileDialog::getSaveFileName(
-                    this, QStringLiteral("Save stats"), suggested, QStringLiteral("JSON files (*.json)"));
+                    this, labels.saveTitle, suggested, QStringLiteral("%1 (*.json)").arg(labels.jsonFilter));
                 if (path.isEmpty()) return;
                 QSaveFile file(path);
                 if (file.open(QIODevice::WriteOnly)
                     && file.write(insightsJson(current(), currentRange(), m_summarizedDay)) >= 0
                     && file.commit()) {
-                    report(QStringLiteral("Saved"));
+                    report(labels.saved);
                 } else {
-                    report(QStringLiteral("Couldn't save"), file.errorString());
+                    report(labels.saveFailed, file.errorString());
                 }
             });
     button->setMenu(menu);
@@ -965,7 +918,8 @@ void HomePage::applyWidth()
                                                      : QBoxLayout::LeftToRight);
     }
     if (!m_tileGrid) return;
-    const int columns = width < kTwoUpMinimumWidth ? 2 : 4;
+    const int fourAcross = 4 * kInsightTileMinimumWidth + 3 * m_tileGrid->horizontalSpacing();
+    const int columns = width < fourAcross ? 2 : 4;
     if (m_tileGrid->count() == m_tiles.size() && m_tileGrid->columnCount() == columns
         && m_tileGrid->itemAtPosition(0, columns - 1)) {
         return;
@@ -989,7 +943,7 @@ void HomePage::refreshLastTranscript()
     m_lastText->setProperty("fullText", transcript);
     m_lastText->setText(twoLines(transcript, m_lastText->font(), std::max(1, m_lastText->width())));
     m_lastText->setToolTip(transcript);
-    QString meta = plural(countWords(transcript), QStringLiteral("word"), QStringLiteral("words"));
+    QString meta = wordCountText(countWords(transcript));
     if (const std::optional<DictationRecord> &record = m_controller->lastRecord()) {
         meta += QStringLiteral(", %1, %2").arg(
             record->appName, relativeDay(record->finishedAt.date(), m_controller->insightsToday()));
@@ -1052,11 +1006,9 @@ void HomePage::applyState(const QString &stateName)
                                            ? QStringLiteral("media-playback-stop")
                                            : QStringLiteral("media-record")));
     m_waveform->setVisible(active);
-    if (active && !m_sessionActive) {
-        m_errorText->clear();
-        m_errorText->hide();
-    }
-    m_sessionActive = active;
+    const QString failure = m_controller->session()->lastFailure();
+    m_errorText->setText(failure);
+    m_errorText->setVisible(!failure.isEmpty());
     if (!active) {
         m_waveform->setLevel(0.0f);
     }
