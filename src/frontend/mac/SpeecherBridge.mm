@@ -981,15 +981,6 @@ NSArray<NSString *> *bridgedWeekMonthLabels(const QList<speecher::HeatmapDay> &d
     return bridged;
 }
 
-NSArray<NSString *> *bridgedStrings(const QStringList &strings)
-{
-    NSMutableArray<NSString *> *bridged = [NSMutableArray array];
-    for (const QString &string : strings) {
-        [bridged addObject:string.toNSString()];
-    }
-    return bridged;
-}
-
 SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                                        speecher::InsightsRange range,
                                        qsizetype recordCount,
