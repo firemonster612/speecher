@@ -44,6 +44,9 @@ public:
     DictationState state() const;
     QString stateName() const;
     QString lastMessage() const;
+    // Why the last session failed, kept after it goes back to idle so Home
+    // can still say it; empty once the next session starts.
+    QString lastFailure() const;
     QString lastTranscript() const;
     SessionResponse response(bool ok = true, const QString &message = {}) const;
     void toggleWithFormat(OutputFormat format);
@@ -134,6 +137,7 @@ private:
     QVector<QMetaObject::Connection> m_refinerConnections;
     DictationState m_state = DictationState::Idle;
     QString m_lastMessage;
+    QString m_lastFailure;
     QString m_speechWarning;
     QString m_lastTranscript;
     TranscriptPipelineResult m_transcriptPipeline;
