@@ -65,8 +65,16 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) SpeecherRecord *blankRecord;
 // Empty on a collection nothing may be added to by hand.
 @property (nonatomic, readonly, copy) NSString *addLabel;
+@property (nonatomic, readonly, copy) NSString *addDialogTitle;
+// Deletes the selection with no confirmation; Undo delete puts it back.
+@property (nonatomic, readonly, copy) NSString *deleteLabel;
+// What an empty editor says; empty on a collection that always has records.
+@property (nonatomic, readonly, copy) NSString *emptyTitle;
+@property (nonatomic, readonly, copy) NSString *emptyHelp;
 // Empty unless the collection can also be filled from a file.
 @property (nonatomic, readonly, copy) NSString *importLabel;
+// What a refused import is titled.
+@property (nonatomic, readonly, copy) NSString *importFailureTitle;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *importFileExtensions;
 // Commands beyond add and delete, which the editor implements itself.
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *actions;
@@ -102,10 +110,14 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // row dispatch understands — and its button caption. Empty when none.
 @property (nonatomic, readonly, copy) NSString *disabledAction;
 @property (nonatomic, readonly, copy) NSString *disabledActionLabel;
+// Rows naming the same group share one gate, so one note explains it.
+@property (nonatomic, readonly, copy) NSString *groupId;
 // Set on a Collection row, and on the one Custom row that is a table.
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
 // Text rows only: a key or password, shown masked.
 @property (nonatomic, readonly) BOOL secret;
+// Text rows only: shown in the empty field.
+@property (nonatomic, readonly, copy) NSString *placeholder;
 // Text rows only: the value may hold several lines.
 @property (nonatomic, readonly) BOOL multiline;
 @end
@@ -567,6 +579,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL hardwareKnown;
 // Where the word error rates come from, for a tooltip on them.
 @property (nonatomic, readonly, copy) NSString *wordErrorRateSources;
+// The detail's fact names, in LocalModelFactLabels order: best for, download,
+// speed here, word error rate, text shows, language, license.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *factLabels;
 // The catalog, in the order it lists the models.
 @property (nonatomic, readonly, copy) NSArray<LocalModelInfo *> *models;
 // The Local Model dictation will use: the chosen one, else the suggestion.
@@ -651,6 +666,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // A delivery's receipt, with the outcome that picks its symbol.
 @property (nonatomic, copy, nullable) void (^popupMessageRequested)(NSString *message,
                                                                    SpeecherPopupOutcome outcome);
+// speecher::checkingCredentialsStatus() and accessibilityGrantActionLabel().
+@property (class, nonatomic, readonly, copy) NSString *checkingCredentialsStatus;
+@property (class, nonatomic, readonly, copy) NSString *accessibilityGrantActionLabel;
 // speecher::kPopupErrorWrapWidth and kPopupErrorDismissMs.
 @property (class, nonatomic, readonly) CGFloat popupErrorWrapWidth;
 @property (class, nonatomic, readonly) NSTimeInterval popupErrorDismissSeconds;

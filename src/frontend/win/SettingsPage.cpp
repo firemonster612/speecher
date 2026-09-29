@@ -14,6 +14,7 @@
 #undef GetCurrentTime
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.Globalization.NumberFormatting.h>
 #include <winrt/Windows.System.h>
 #include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
@@ -210,6 +211,11 @@ UIElement numberField(const RowSnapshot &row, PaneHost &host)
 {
     NumberBox box;
     box.SpinButtonPlacementMode(NumberBoxSpinButtonPlacementMode::Compact);
+    // A setting is a count, not an amount: 5000 ms, never "5,000".
+    winrt::Windows::Globalization::NumberFormatting::DecimalFormatter formatter;
+    formatter.IsGrouped(false);
+    formatter.FractionDigits(0);
+    box.NumberFormatter(formatter);
     box.Minimum(std::min(row.range.minimum, row.range.maximum));
     box.Maximum(std::max(row.range.minimum, row.range.maximum));
     box.SmallChange(row.range.step);
@@ -230,9 +236,11 @@ UIElement numberField(const RowSnapshot &row, PaneHost &host)
     if (row.range.suffix.isEmpty()) {
         return box;
     }
+    // The suffix says whether it is spaced from the number, as the schema
+    // writes it: " ms" is, "%" is not ("5%").
     StackPanel panel;
     panel.Orientation(Orientation::Horizontal);
-    panel.Spacing(8);
+    panel.Spacing(row.range.suffix.startsWith(QLatin1Char(' ')) ? 8 : 2);
     panel.Children().Append(box);
     TextBlock suffix = secondaryTextBlock(row.range.suffix.trimmed(), L"SettingsInfoTextStyle", host);
     suffix.VerticalAlignment(VerticalAlignment::Center);
@@ -392,11 +400,25 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
             continue;
         }
         StackPanel rows;
+        // Rows of a group share one gate, so one note above them explains it,
+        // as on Linux and macOS: a row with no title or control, and the
+        // group's rows keep their own help.
+        const bool gatedGroup = !first.groupId.isEmpty() && !first.enabled;
+        if (gatedGroup) {
+            RowSnapshot note;
+            note.enabled = false;
+            note.disabledHelp = first.disabledHelp;
+            note.disabledAction = first.disabledAction;
+            note.disabledActionLabel = first.disabledActionLabel;
+            rows.Children().Append(rowGrid(note, nullptr, host, false));
+        }
         for (qsizetype index = 0; index < unit.size(); ++index) {
-            rows.Children().Append(rowGrid(unit.at(index),
-                                           rowControl(unit.at(index), host),
-                                           host,
-                                           index > 0));
+            RowSnapshot row = unit.at(index);
+            if (gatedGroup) {
+                row.disabledHelp = row.help;
+                row.disabledAction.clear();
+            }
+            rows.Children().Append(rowGrid(row, rowControl(row, host), host, gatedGroup || index > 0));
         }
         cards.Children().Append(cardContainer(rows));
     }

@@ -1,7 +1,6 @@
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/ShortcutRecorder.h"
 
-#include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
 #include "frontend/win/LocalModelBrowser.h"
@@ -10,6 +9,8 @@
 #include "providers/ClaudeCredentials.h"
 #include "providers/ProviderSignIn.h"
 
+#include <QRegularExpression>
+
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
 #include <winrt/Windows.Foundation.h>
@@ -17,6 +18,7 @@
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Text.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Microsoft.UI.Xaml.Documents.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #pragma pop_macro("GetCurrentTime")
@@ -34,31 +36,17 @@ const QString kCliProxyAuthMode = QStringLiteral("cliproxy");
 const QString kProfileColumn = QStringLiteral("profile");
 const QString kProfileIdKey = QStringLiteral("profileId");
 
-QList<RowOption> outputMethods()
-{
-    // No ydotool entry: the virtual keyboard is Linux's, and a method Windows
-    // cannot offer has no business being offered here.
-    QList<RowOption> methods;
-    for (const QString &method : {QString::fromLatin1(OutputMethod::Automatic),
-                                  QString::fromLatin1(OutputMethod::DirectInsert),
-                                  QString::fromLatin1(OutputMethod::WinPaste),
-                                  QString::fromLatin1(OutputMethod::QtClipboard)}) {
-        methods.append({method, OutputMethod::label(method)});
-    }
-    return methods;
-}
-
 TextBlock secondaryText(const QString &text, const PaneHost &host)
 {
     return secondaryTextBlock(text, L"SettingsCardDescriptionStyle", host);
 }
 
-// Free text with a commit on Enter or blur, shared by the two CLI Proxy rows.
-TextBox commitTextBox(const RowSnapshot &row, PaneHost &host, const wchar_t *placeholder)
+// Free text with a commit on Enter or blur, for the CLI Proxy rows.
+TextBox commitTextBox(const RowSnapshot &row, PaneHost &host)
 {
     TextBox box;
     box.MinWidth(240);
-    box.PlaceholderText(placeholder);
+    box.PlaceholderText(hs(row.placeholder));
     box.Text(hs(row.value.toString()));
     const auto commit = [rowId = row.id, stored = row.value.toString(), &host](const TextBox &box) {
         const QString text = qs(box.Text());
@@ -77,11 +65,11 @@ TextBox commitTextBox(const RowSnapshot &row, PaneHost &host, const wchar_t *pla
     return box;
 }
 
-PasswordBox commitPasswordBox(const RowSnapshot &row, PaneHost &host, const wchar_t *placeholder)
+PasswordBox commitPasswordBox(const RowSnapshot &row, PaneHost &host)
 {
     PasswordBox box;
     box.MinWidth(240);
-    box.PlaceholderText(placeholder);
+    box.PlaceholderText(hs(row.placeholder));
     box.Password(hs(row.value.toString()));
     const auto commit = [rowId = row.id, stored = row.value.toString(), &host](
                             const PasswordBox &box) {
@@ -248,7 +236,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         const bool custom = !isBuiltInWritingProfile(records.at(index).value(kProfileIdKey).toString());
         if (custom) {
             Button remove;
-            remove.Content(box_value(L"Delete"));
+            remove.Content(box_value(hs(row.collection->deleteLabel)));
             remove.VerticalAlignment(VerticalAlignment::Bottom);
             remove.Click([rowId = row.id, records, index, &host](const auto &, const auto &) {
                 deleteWritingProfile(rowId, records, index, host);
@@ -347,11 +335,35 @@ UIElement releaseNotes(const RowSnapshot &row)
                 lines.append(line);
             }
         }
-        TextBlock text = styledTextBlock(lines.join(QLatin1Char('\n')), L"SettingsCardBodyStyle");
+        // Inline [text](url) links become Hyperlinks; the rest is plain runs.
+        static const QRegularExpression link(QStringLiteral("\\[([^\\]]+)\\]\\(([^)\\s]+)\\)"));
+        const QString source = lines.join(QLatin1Char('\n'));
+        Documents::Paragraph paragraph;
+        const auto appendRun = [&paragraph](const QString &text) {
+            Documents::Run run;
+            run.Text(hs(text));
+            paragraph.Inlines().Append(run);
+        };
+        qsizetype consumed = 0;
+        for (const QRegularExpressionMatch &match : link.globalMatch(source)) {
+            appendRun(source.mid(consumed, match.capturedStart() - consumed));
+            Documents::Run label;
+            label.Text(hs(match.captured(1)));
+            Documents::Hyperlink hyperlink;
+            hyperlink.NavigateUri(Uri(hs(match.captured(2))));
+            hyperlink.Inlines().Append(label);
+            paragraph.Inlines().Append(hyperlink);
+            consumed = match.capturedEnd();
+        }
+        appendRun(source.mid(consumed));
+        // Body text by default, as SettingsCardBodyStyle's TextBlocks are.
+        RichTextBlock text;
+        text.TextWrapping(TextWrapping::Wrap);
         text.IsTextSelectionEnabled(true);
         if (heading) {
             text.FontWeight(winrt::Windows::UI::Text::FontWeights::Bold());
         }
+        text.Blocks().Append(paragraph);
         notes.Children().Append(text);
     }
     return notes;
@@ -363,9 +375,6 @@ QList<RowOption> customRowOptions(const QString &rowId,
                                   const AppSettings &draft,
                                   const SettingsStore &store)
 {
-    if (rowId == QStringLiteral("outputMethod")) {
-        return outputMethods();
-    }
     if (rowId == QStringLiteral("openAiCliproxyAccount")) {
         return cliproxyAccountOptions(ProviderSignIn::cliproxyAccountType(QStringLiteral("openai")),
                                       draft.refinement.openAiCliproxyAccount,
@@ -432,19 +441,16 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
         }
         return panel;
     }
-    if (row.id == QStringLiteral("cliproxyBaseUrl")) {
-        return commitTextBox(row, host, L"Leave empty to use the account files on this computer");
-    }
-    if (row.id == QStringLiteral("cliproxyApiKey")) {
-        return commitPasswordBox(row, host, L"A key the server accepts");
-    }
     // The fallback the mac renderer uses: a picker when the row supplied
     // choices, a text field when it holds text, nothing otherwise.
     if (!row.options.isEmpty()) {
         return choiceComboBox(row, host);
     }
+    if (row.secret) {
+        return commitPasswordBox(row, host);
+    }
     if (row.value.typeId() == QMetaType::QString) {
-        return commitTextBox(row, host, L"");
+        return commitTextBox(row, host);
     }
     return nullptr;
 }

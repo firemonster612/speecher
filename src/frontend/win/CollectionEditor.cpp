@@ -162,7 +162,7 @@ void CollectionEditor::build()
         toolbar.Children().Append(button);
     }
     m_deleteButton = Button();
-    m_deleteButton.Content(box_value(L"Delete selected"));
+    m_deleteButton.Content(box_value(hs(m_collection.deleteLabel)));
     m_deleteButton.Click([weak = weak_from_this()](const auto &, const auto &) {
         if (auto self = weak.lock()) {
             self->removeSelected();
@@ -201,13 +201,20 @@ void CollectionEditor::build()
         }
     });
     content.Children().Append(m_list);
+    if (!m_collection.emptyTitle.isEmpty()) {
+        m_empty = secondaryTextBlock(m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp,
+                                     L"SettingsCardDescriptionStyle",
+                                     m_host);
+        m_empty.HorizontalAlignment(HorizontalAlignment::Center);
+        m_empty.TextAlignment(TextAlignment::Center);
+        content.Children().Append(m_empty);
+    }
 
     m_problems = InfoBar();
     m_problems.Severity(InfoBarSeverity::Error);
     m_problems.IsClosable(false);
-    m_problems.Message(hs(m_lastProblems.join(QLatin1Char('\n'))));
-    m_problems.IsOpen(!m_lastProblems.isEmpty());
     content.Children().Append(m_problems);
+    showProblems(m_lastProblems, m_lastProblemsTitle);
 
     m_card = cardContainer(content);
     rebuildRows();
@@ -361,6 +368,9 @@ QList<int> CollectionEditor::selectedIndexes() const
 
 void CollectionEditor::updateToolbar()
 {
+    if (m_empty) {
+        m_empty.Visibility(m_records.isEmpty() ? Visibility::Visible : Visibility::Collapsed);
+    }
     bool removable = false;
     for (int index : selectedIndexes()) {
         removable = removable || !m_records.at(index).locked;
@@ -403,9 +413,11 @@ void CollectionEditor::save()
     }
 }
 
-void CollectionEditor::showProblems(const QStringList &problems)
+void CollectionEditor::showProblems(const QStringList &problems, const QString &title)
 {
     m_lastProblems = problems;
+    m_lastProblemsTitle = title;
+    m_problems.Title(hs(title));
     m_problems.Message(hs(problems.join(QLatin1Char('\n'))));
     m_problems.IsOpen(!problems.isEmpty());
 }
@@ -414,7 +426,7 @@ void CollectionEditor::openAddDialog()
 {
     ContentDialog dialog;
     dialog.XamlRoot(m_host.xamlRoot());
-    dialog.Title(box_value(hs(m_collection.addLabel)));
+    dialog.Title(box_value(hs(m_collection.addDialogTitle)));
     dialog.PrimaryButtonText(L"Add");
     dialog.CloseButtonText(L"Cancel");
     dialog.DefaultButton(ContentDialogButton::Primary);
@@ -528,7 +540,8 @@ winrt::fire_and_forget CollectionEditor::importFromFile()
         }
         QFile source(qs(file.Path()));
         if (!source.open(QIODevice::ReadOnly)) {
-            self->showProblems({QStringLiteral("Could not read %1.").arg(qs(file.Name()))});
+            self->showProblems({QStringLiteral("Could not read %1.").arg(qs(file.Name()))},
+                               self->m_collection.importFailureTitle);
             co_return;
         }
         const SettingsModel::ImportResult result =
@@ -536,7 +549,7 @@ winrt::fire_and_forget CollectionEditor::importFromFile()
                                                     self->editableRecords(),
                                                     self->m_rowId);
         if (!result.records) {
-            self->showProblems({result.problem});
+            self->showProblems({result.problem}, self->m_collection.importFailureTitle);
             co_return;
         }
         QList<Record> merged;
@@ -554,7 +567,8 @@ winrt::fire_and_forget CollectionEditor::importFromFile()
     } catch (const winrt::hresult_error &error) {
         if (auto self = weak.lock()) {
             self->showProblems({QStringLiteral("Could not import %1: %2")
-                                    .arg(self->m_rowLabel, qs(error.message()))});
+                                    .arg(self->m_rowLabel, qs(error.message()))},
+                               self->m_collection.importFailureTitle);
         }
     }
 }

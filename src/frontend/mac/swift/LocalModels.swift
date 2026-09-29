@@ -95,7 +95,7 @@ private struct LocalModelDetail: View {
                         }
                         .foregroundStyle(.secondary)
                         Text(fact.value).fixedSize(horizontal: false, vertical: true)
-                            .help(fact.name == "Word error rate" ? model.local.wordErrorRateSources : "")
+                            .help(fact.name == model.local.factLabels[3] ? model.local.wordErrorRateSources : "")
                     }
                 }
             }
@@ -116,14 +116,15 @@ private struct LocalModelDetail: View {
     }
 
     private var facts: [(name: String, value: String)] {
-        [("Best for", entry.bestFor),
-         ("Download", "\(entry.sizeText) · \(entry.fitLabel)"),
-         ("Speed here", entry.speedDetail),
-         ("Word error rate", "\(LocalModelText.wer(entry.librispeechWer)) clear speech\n"
-            + "\(LocalModelText.wer(entry.fleursWer)) everyday speech"),
-         ("Text shows", entry.streams ? "As you speak" : "After you stop"),
-         ("Language", "English"),
-         ("Licence", entry.licence)]
+        let values = [entry.bestFor,
+                      "\(entry.sizeText) · \(entry.fitLabel)",
+                      entry.speedDetail,
+                      "\(LocalModelText.wer(entry.librispeechWer)) clear speech\n"
+                          + "\(LocalModelText.wer(entry.fleursWer)) everyday speech",
+                      entry.streams ? "As you speak" : "After you stop",
+                      "English",
+                      entry.licence]
+        return Array(zip(model.local.factLabels, values)).map { (name: $0.0, value: $0.1) }
     }
 
     @ViewBuilder private var actions: some View {
@@ -136,13 +137,13 @@ private struct LocalModelDetail: View {
                 if entry.inUse {
                     Text("In use").foregroundStyle(.secondary)
                 } else {
-                    Button("Use This Model", action: use)
+                    Button("Use this model", action: use)
                 }
-                Button("Test Speed") { model.bridge.testLocalModelSpeed(entry.modelId) }
+                Button("Test speed") { model.bridge.testLocalModelSpeed(entry.modelId) }
                     .disabled(entry.speedTestRunning)
                 Button("Delete") { model.bridge.deleteLocalModel(entry.modelId) }
             } else {
-                Button(entry.tooLarge ? "Too Large for This Computer" : "Download \(entry.sizeText)") {
+                Button(entry.tooLarge ? "Too large for this computer" : "Download \(entry.sizeText)") {
                     model.bridge.downloadLocalModel(entry.modelId)
                 }
                 .disabled(entry.tooLarge)

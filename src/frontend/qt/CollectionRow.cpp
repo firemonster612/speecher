@@ -102,6 +102,7 @@ private:
     QTableWidget *m_table;
     QPushButton *m_add = nullptr;
     QPushButton *m_delete;
+    QLabel *m_empty = nullptr;
     QHash<QString, QPushButton *> m_actions;
     int m_lockedCount;
     // What Delete took, newest last, so undo can put it back.
@@ -124,7 +125,7 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     : QWidget(parent)
     , m_collection(descriptor.collection)
     , m_table(new QTableWidget(this))
-    , m_delete(new QPushButton(QStringLiteral("Delete selected"), this))
+    , m_delete(new QPushButton(m_collection.deleteLabel, this))
     , m_lockedCount(m_collection.lockedRecordCount ? m_collection.lockedRecordCount() : 0)
     , m_notifyChanged(std::move(notifyChanged))
 {
@@ -168,6 +169,19 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     // vocabulary one row at a time is the slowest way to use this editor.
     m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_table->setMinimumHeight(m_collection.minimumHeight);
+    if (!m_collection.emptyTitle.isEmpty()) {
+        // What an empty table says, centred in it, as a list view's
+        // placeholder would be.
+        m_empty = new QLabel(m_table->viewport());
+        m_empty->setObjectName(QStringLiteral("collectionEmpty"));
+        m_empty->setTextFormat(Qt::PlainText);
+        m_empty->setText(m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp);
+        m_empty->setAlignment(Qt::AlignCenter);
+        m_empty->setWordWrap(true);
+        m_empty->setForegroundRole(QPalette::PlaceholderText);
+        auto *emptyLayout = new QVBoxLayout(m_table->viewport());
+        emptyLayout->addWidget(m_empty);
+    }
     if (m_collection.badges) {
         for (int column = 0; column < m_collection.columns.size(); ++column) {
             if (m_collection.columns.at(column).stretch) {
@@ -419,6 +433,9 @@ QList<int> CollectionEditor::selectedEditableRows() const
 
 void CollectionEditor::updateButtons()
 {
+    if (m_empty) {
+        m_empty->setVisible(m_table->rowCount() == 0);
+    }
     m_delete->setEnabled(!selectedEditableRows().isEmpty());
     if (QPushButton *undoDelete = m_actions.value(QStringLiteral("undoDelete"))) {
         undoDelete->setEnabled(!m_deleted.isEmpty());

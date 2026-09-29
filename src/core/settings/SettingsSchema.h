@@ -88,6 +88,16 @@ struct CollectionDescriptor {
     std::function<QStringList(const QList<QVariantMap> &)> validate;
     // Empty on a collection nothing may be added to by hand.
     QString addLabel;
+    // The title of the dialog or sheet that fills in a new record, where a
+    // front end adds through one.
+    QString addDialogTitle;
+    // The command that deletes records, the selection's or one row's. There is
+    // no confirmation: every editor can undo a delete.
+    QString deleteLabel = QStringLiteral("Delete");
+    // What the editor says while it holds no records, in the collection's own
+    // terms. Empty on a collection that always has records (built-ins).
+    QString emptyTitle;
+    QString emptyHelp;
     // Set when the collection can also be filled from a file.
     CollectionImport supportsImport;
     // Commands beyond add and delete. The schema names them so a second front
@@ -165,6 +175,8 @@ struct SettingsRow {
     std::function<QList<RowOption>(const AppSettings &)> suggestions;
     // Text rows only: a key or password, shown masked.
     bool secret = false;
+    // Text rows, and Custom rows that take text: shown in the empty field.
+    QString placeholder;
     // Text rows only: the value may hold several lines.
     bool multiline = false;
     std::function<bool(const AppSettings &, const Capabilities &)> enabled;
@@ -417,6 +429,13 @@ QString fastModeTooltip(const QString &refinementProviderId);
 
 // Where a key the settings surface takes is kept, as a row's help says it.
 QString keyStorageHelp();
+
+// The caption of the control that asks for the accessibility grant, wherever
+// a settings page offers it: gated rows and the shortcut recorder.
+QString accessibilityGrantActionLabel();
+
+// What a credential status says while it is being resolved.
+QString checkingCredentialsStatus();
 
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device

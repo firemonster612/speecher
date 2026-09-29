@@ -1199,9 +1199,6 @@ private slots:
 
     void updateRowCaptionFollowsTheUpdateState()
     {
-        // The caption fix hangs on setButtonRowCaption finding the child
-        // label by the "rowTitle" object name; a rename would turn it back
-        // into a silent no-op with nothing failing.
         ApplicationController controller(true);
         QWidget parent;
         SettingsPageSet pages(&controller, &parent);
@@ -1210,9 +1207,15 @@ private slots:
         auto *check = pages.page(QStringLiteral("general"))->findChild<QPushButton *>(
             QStringLiteral("checkForUpdates"));
         QVERIFY(check);
-        auto *title = check->findChild<QLabel *>(QStringLiteral("rowTitle"));
-        QVERIFY(title);
-        QCOMPARE(title->text(), QStringLiteral("Check now"));
+        // The row keeps its label; the button says what a click does.
+        auto *row = check->parentWidget();
+        while (row && !row->findChild<QLabel *>(QStringLiteral("rowTitle"))) {
+            row = row->parentWidget();
+        }
+        QVERIFY(row);
+        QCOMPARE(row->findChild<QLabel *>(QStringLiteral("rowTitle"))->text(),
+                 QStringLiteral("Check for updates"));
+        QCOMPARE(check->text(), QStringLiteral("Check now"));
 
         // The manifest updaters enter Checking synchronously, so the caption
         // can be asserted before the network reply lands. Sparkle hands the
@@ -1220,7 +1223,7 @@ private slots:
         // offscreen tests, so macOS pins only the initial caption lookup.
 #ifndef Q_OS_MACOS
         controller.updates()->checkForUpdates(controller.settings()->updateChannel());
-        QCOMPARE(title->text(), QStringLiteral("Checking…"));
+        QCOMPARE(check->text(), QStringLiteral("Checking…"));
         QVERIFY(!check->isEnabled());
 #endif
     }

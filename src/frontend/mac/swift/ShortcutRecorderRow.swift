@@ -173,7 +173,7 @@ struct ShortcutRecorderRow: View {
                 Text(footnote)
             }
             if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
-                Button("Grant Accessibility Access") { model.requestAccessibility() }
+                Button(SpeecherBridge.accessibilityGrantActionLabel) { model.requestAccessibility() }
             }
         }
         // No onDisappear: a Form lays its rows out lazily and takes one away

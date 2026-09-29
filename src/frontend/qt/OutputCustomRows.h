@@ -25,7 +25,9 @@ public:
     void refresh();
 
 private:
-    SchemaCustomRow makeMethodRow(QWidget *parent, std::function<void()> notifyChanged);
+    SchemaCustomRow makeMethodRow(const QList<RowOption> &methods,
+                                  QWidget *parent,
+                                  std::function<void()> notifyChanged);
     SchemaCustomRow makeVirtualKeyboardRow(QWidget *parent, std::function<void()> notifyChanged);
     void updateButtons();
     void setUpOrEnable();

@@ -197,21 +197,22 @@ StackPanel LocalModelBrowser::makeDetail()
         facts.Children().Append(value);
         return value;
     };
-    m_bestFor = addFact(QStringLiteral("Best for"));
-    m_size = addFact(QStringLiteral("Download"));
-    m_speed = addFact(QStringLiteral("Speed here"));
-    m_wer = addFact(QStringLiteral("Word error rate"));
+    const LocalModelFactLabels names;
+    m_bestFor = addFact(names.bestFor);
+    m_size = addFact(names.download);
+    m_speed = addFact(names.speedHere);
+    m_wer = addFact(names.wordErrorRate);
     ToolTipService::SetToolTip(m_wer, box_value(hs(wordErrorRateSources())));
-    m_textShows = addFact(QStringLiteral("Text shows"));
-    addFact(QStringLiteral("Language")).Text(L"English");
-    m_licence = addFact(QStringLiteral("Licence"));
+    m_textShows = addFact(names.textShows);
+    addFact(names.language).Text(L"English");
+    m_licence = addFact(names.license);
     detail.Children().Append(facts);
 
     m_prosCons = styledTextBlock(QString(), L"SettingsCardDescriptionStyle");
     detail.Children().Append(m_prosCons);
 
     m_problem = InfoBar();
-    m_problem.Severity(InfoBarSeverity::Error);
+    m_problem.Severity(InfoBarSeverity::Warning);
     m_problem.IsClosable(false);
     m_problem.Margin({0, 8, 0, 0});
     detail.Children().Append(m_problem);

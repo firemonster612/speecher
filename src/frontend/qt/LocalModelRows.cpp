@@ -2,6 +2,7 @@
 
 #include "app/LocalSetup.h"
 #include "providers/LocalModelStore.h"
+#include "ui/InlineMessage.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QFormLayout>
@@ -76,7 +77,9 @@ public:
         m_prosCons = factLabel(this);
         m_prosCons->setFont(settings::smallFont(m_prosCons->font()));
         layout->addWidget(m_prosCons);
-        m_problem = factLabel(this);
+        m_problem = new InlineMessage(this);
+        m_problem->setType(InlineMessage::Type::Warning);
+        m_problem->setCloseButtonVisible(false);
         m_problem->setObjectName(QStringLiteral("localModelProblem"));
         layout->addWidget(m_problem);
         layout->addWidget(settings::makeSeparator(this));
@@ -140,14 +143,15 @@ private:
             facts->addRow(key, value);
             return value;
         };
-        m_bestFor = addFact(QStringLiteral("Best for"));
+        const LocalModelFactLabels names;
+        m_bestFor = addFact(names.bestFor);
         m_bestFor->setObjectName(QStringLiteral("localModelBestFor"));
-        m_size = addFact(QStringLiteral("Download"));
-        m_speed = addFact(QStringLiteral("Speed here"));
-        m_wer = addFact(QStringLiteral("Word error rate"));
-        m_textShows = addFact(QStringLiteral("Text shows"));
-        m_language = addFact(QStringLiteral("Language"));
-        m_licence = addFact(QStringLiteral("Licence"));
+        m_size = addFact(names.download);
+        m_speed = addFact(names.speedHere);
+        m_wer = addFact(names.wordErrorRate);
+        m_textShows = addFact(names.textShows);
+        m_language = addFact(names.language);
+        m_licence = addFact(names.license);
         m_wer->setToolTip(wordErrorRateSources());
         layout->addLayout(facts);
         return detail;
@@ -305,7 +309,7 @@ private:
     QLabel *m_language = nullptr;
     QLabel *m_licence = nullptr;
     QLabel *m_prosCons = nullptr;
-    QLabel *m_problem = nullptr;
+    InlineMessage *m_problem = nullptr;
     QLabel *m_state = nullptr;
     QProgressBar *m_progress = nullptr;
     QPushButton *m_download = nullptr;

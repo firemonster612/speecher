@@ -116,18 +116,21 @@ int currentCustomRow(const QTableWidget *grid)
 
 } // namespace
 
-SchemaCustomRow makeWritingProfileGrid(QWidget *parent, std::function<void()> notifyChanged)
+SchemaCustomRow makeWritingProfileGrid(const CollectionDescriptor &descriptor,
+                                       QWidget *parent,
+                                       std::function<void()> notifyChanged)
 {
     auto *block = new QWidget(parent);
     auto *grid = new QTableWidget(block);
     grid->setObjectName(QStringLiteral("vocabInput"));
-    grid->setColumnCount(4);
-    grid->setHorizontalHeaderLabels({
-        QStringLiteral("Profile"),
-        QStringLiteral("Cleanup"),
-        QStringLiteral("Tone"),
-        QStringLiteral("Instructions"),
-    });
+    // The cells below are laid out in this order: profile, cleanup, tone,
+    // instructions.
+    QStringList titles;
+    for (const CollectionColumn &column : descriptor.columns) {
+        titles.append(column.title);
+    }
+    grid->setColumnCount(int(titles.size()));
+    grid->setHorizontalHeaderLabels(titles);
     grid->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     grid->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     grid->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
@@ -136,10 +139,10 @@ SchemaCustomRow makeWritingProfileGrid(QWidget *parent, std::function<void()> no
     grid->verticalHeader()->hide();
     grid->setSelectionMode(QAbstractItemView::NoSelection);
 
-    auto *remove = new QPushButton(QStringLiteral("Delete"), block);
+    auto *remove = new QPushButton(descriptor.deleteLabel, block);
     remove->setObjectName(QStringLiteral("deleteWritingProfile"));
     remove->setEnabled(false);
-    auto *add = new QPushButton(QStringLiteral("Add profile"), block);
+    auto *add = new QPushButton(descriptor.addLabel, block);
     add->setObjectName(QStringLiteral("addWritingProfile"));
     auto *buttons = new QHBoxLayout;
     buttons->addStretch();

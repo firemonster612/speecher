@@ -219,10 +219,10 @@ QList<RowOption> SettingsModel::optionsForRow(const SettingsRow &row) const
     if (row.expensive && !m_expensiveReady) {
         return {};
     }
-    if (row.kind == RowKind::Custom) {
-        return customRowOptions(row.id, m_draft, *m_store);
+    if (row.options) {
+        return row.options(m_draft);
     }
-    return row.options ? row.options(m_draft) : QList<RowOption>();
+    return row.kind == RowKind::Custom ? customRowOptions(row.id, m_draft, *m_store) : QList<RowOption>();
 }
 
 RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
@@ -239,6 +239,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.suggestions = row.suggestions ? row.suggestions(m_draft) : QList<RowOption>();
     snapshot.suggests = bool(row.suggestions);
     snapshot.secret = row.secret;
+    snapshot.placeholder = row.placeholder;
     snapshot.multiline = row.multiline;
     snapshot.enabled = !row.enabled || row.enabled(m_draft, m_capabilities);
     snapshot.tooltip = row.tooltip;
@@ -259,8 +260,13 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
         table.lockedRecordCount = collection->lockedRecordCount ? collection->lockedRecordCount() : 0;
         table.blankRecord = collection->blankRecord;
         table.addLabel = collection->addLabel;
+        table.addDialogTitle = collection->addDialogTitle;
+        table.deleteLabel = collection->deleteLabel;
+        table.emptyTitle = collection->emptyTitle;
+        table.emptyHelp = collection->emptyHelp;
         table.importLabel = collection->supportsImport.parse ? collection->supportsImport.actionLabel
                                                              : QString();
+        table.importFailureTitle = collection->supportsImport.failureTitle;
         table.importFileExtensions = collection->supportsImport.parse
             ? fileExtensions(collection->supportsImport.fileFilter)
             : QStringList();
@@ -458,7 +464,7 @@ QString SettingsModel::credentialStatus() const
     // the keyring, which the window defers until readApiKey()'s dispatcher
     // turn. Until then, render a loading value instead of blocking the paint.
     if (!m_credentialReady) {
-        return QStringLiteral("Checking credentials…");
+        return checkingCredentialsStatus();
     }
     // The remote CLI Proxy fields decide which credential the status
     // describes; passing them matches the Qt call site (ProviderCustomRows).

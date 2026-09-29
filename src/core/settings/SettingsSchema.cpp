@@ -5,6 +5,7 @@
 
 #include "core/EndpointUrl.h"
 #include "core/LocalModelCatalog.h"
+#include "core/OutputMethod.h"
 
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
@@ -158,13 +159,11 @@ void gateOnTargetAccessibility(SettingsRow &row, const QString &help)
         return capabilities.targetAccessibility;
     };
     row.disabledHelp = help;
+    // Nothing in the app can make UI Automation available, so Windows offers
+    // no action beside the note.
+#ifndef Q_OS_WIN
     row.disabledAction = kEnableAccessibilityAction;
-#ifdef Q_OS_MACOS
-    row.disabledActionLabel = QStringLiteral("Open Accessibility settings");
-#elif defined(Q_OS_WIN)
-    row.disabledActionLabel = QStringLiteral("UI Automation unavailable");
-#else
-    row.disabledActionLabel = QStringLiteral("Enable desktop accessibility");
+    row.disabledActionLabel = accessibilityGrantActionLabel();
 #endif
 }
 
@@ -353,6 +352,7 @@ SettingsRow collectionRow(QString id, QString label, QString help, CollectionDes
     row.label = std::move(label);
     row.help = std::move(help);
     row.kind = RowKind::Collection;
+    collection.actions.append({QStringLiteral("undoDelete"), QStringLiteral("Undo delete")});
     row.value = [collection](const AppSettings &settings) {
         return QVariant::fromValue(collection.records(settings));
     };
@@ -785,7 +785,7 @@ SettingsPage generalPage(const SchemaContext &context)
         return capabilities.colorSchemeOverride;
     };
     theme.disabledHelp = QStringLiteral(
-        "This desktop chooses the colour scheme itself, so Speecher follows it.");
+        "This desktop chooses the color scheme itself, so Speecher follows it.");
 
     QList<SettingsRow> systemRows;
     QList<SettingsRow> shortcutRows;
@@ -966,9 +966,7 @@ SettingsPage generalPage(const SchemaContext &context)
             {QStringLiteral("Appearance & behavior"),
              QString(),
              {
-#ifndef Q_OS_LINUX
                  std::move(theme),
-#endif
                  toggleRow(QStringLiteral("pauseMedia"),
                            QStringLiteral("Pause media"),
                            QStringLiteral("Pause playing media while dictating"),
@@ -1308,6 +1306,7 @@ SettingsRow customTonesRow()
     tones.blankRecord = {{kChoiceNameColumn, QString()}, {kToneInstructionColumn, QString()}};
     tones.lockedRecordCount = [count = int(builtIns.size())] { return count; };
     tones.addLabel = QStringLiteral("Add tone");
+    tones.addDialogTitle = QStringLiteral("New tone");
     tones.minimumHeight = 220;
 
     SettingsRow row = collectionRow(
@@ -1376,6 +1375,7 @@ SettingsRow customCleanupLevelsRow()
                           {kLevelInstructionsColumn, QString()}};
     levels.lockedRecordCount = [count = int(builtIns.size())] { return count; };
     levels.addLabel = QStringLiteral("Add cleanup level");
+    levels.addDialogTitle = QStringLiteral("New cleanup level");
     levels.minimumHeight = 220;
 
     SettingsRow row = collectionRow(
@@ -1551,8 +1551,7 @@ SettingsPage localModelsPage(const SchemaContext &context)
     // one switches transcription to it.
     SettingsRow browser = customRow(QStringLiteral("localModelBrowser"),
                                     QStringLiteral("Speech models"),
-                                    QStringLiteral("Models run on this computer, with no account "
-                                                   "and no network once downloaded."));
+                                    QString());
     browser.value = [](const AppSettings &settings) {
         return QVariant(settings.speech.providerId == QStringLiteral("local")
                             ? settings.speech.local.modelId
@@ -1660,7 +1659,10 @@ SettingsPage localModelsPage(const SchemaContext &context)
     return {
         QStringLiteral("localModels"),
         {
-            {QStringLiteral("Speech models"), QString(), {std::move(browser)}},
+            {QStringLiteral("Speech models"),
+             QStringLiteral("Models run on this computer, with no account and no network once "
+                            "downloaded."),
+             {std::move(browser)}},
             {QStringLiteral("Behavior"),
              QString(),
              {std::move(idleUnload), std::move(acceleration), std::move(graphicsCard), std::move(folder)}},
@@ -1742,6 +1744,7 @@ SettingsSection applicationRecognitionSection()
     rules.blankRecord = {{kSourceColumn, QStringLiteral("Custom")}};
     rules.lockedRecordCount = [] { return int(builtInAppRecognitionRules().size()); };
     rules.addLabel = QStringLiteral("Add application");
+    rules.addDialogTitle = QStringLiteral("New application match");
     rules.minimumHeight = 320;
 
     SettingsRow row = collectionRow(
@@ -1815,6 +1818,9 @@ SettingsRow applicationPasteRuleRow()
         return validatePasteRules(applicationPasteRules(records));
     };
     descriptor.addLabel = QStringLiteral("Add rule");
+    descriptor.addDialogTitle = QStringLiteral("New paste rule");
+    descriptor.emptyTitle = QStringLiteral("No app-specific paste rules");
+    descriptor.emptyHelp = QStringLiteral("Add one to paste differently into a single application.");
     descriptor.minimumHeight = 150;
 
     SettingsRow row = collectionRow(QStringLiteral("applicationPasteRules"),
@@ -1852,11 +1858,48 @@ SettingsRow categoryPasteRuleRow(AppCategory category)
         });
 }
 
+// The Method choices this platform can deliver with. Linux's virtual keyboard
+// entry is among them; the Qt front end marks it unavailable until it is set up.
+QList<RowOption> outputMethodOptions()
+{
+    QList<RowOption> options;
+    for (const char *method : {OutputMethod::Automatic,
+                               OutputMethod::DirectInsert,
+#ifdef Q_OS_MACOS
+                               OutputMethod::MacPaste,
+#elif defined(Q_OS_WIN)
+                               OutputMethod::WinPaste,
+#else
+                               OutputMethod::Ydotool,
+                               OutputMethod::WlCopy,
+#endif
+                               OutputMethod::QtClipboard}) {
+        const QString id = QString::fromLatin1(method);
+        options.append({id, OutputMethod::label(id)});
+    }
+    return options;
+}
+
+// What Automatic does, which differs per platform.
+QString automaticOutputMethodHelp()
+{
+#ifdef Q_OS_MACOS
+    return QStringLiteral("Automatic pastes with Cmd+V, then falls back to the clipboard.");
+#elif defined(Q_OS_WIN)
+    return QStringLiteral("Automatic pastes with Ctrl+V, then falls back to the clipboard.");
+#else
+    return QStringLiteral("Automatic pastes with the virtual keyboard once it is set up, and "
+                          "otherwise copies to the clipboard.");
+#endif
+}
+
 SettingsPage outputPage(const SchemaContext &context)
 {
     SettingsRow method = customRow(QStringLiteral("outputMethod"),
                                    QStringLiteral("Method"),
-                                   QStringLiteral("How Speecher delivers final text."));
+                                   QStringLiteral("How Speecher delivers final text. ")
+                                       + automaticOutputMethodHelp());
+    method.options = fixedOptions(outputMethodOptions());
     method.value = [](const AppSettings &settings) { return QVariant(settings.output.method); };
     method.apply = [](AppSettings &settings, const QVariant &value) {
         settings.output.method = value.toString();
@@ -2040,8 +2083,11 @@ SettingsPage vocabularyPage()
         return badges;
     };
     terms.addLabel = QStringLiteral("Add");
+    terms.addDialogTitle = QStringLiteral("New term");
+    terms.emptyTitle = QStringLiteral("No vocabulary terms");
+    terms.emptyHelp = QStringLiteral("Add names and words the speech service should spell your way.");
     terms.supportsImport = {
-        QStringLiteral("Import CSV"),
+        QStringLiteral("Import CSV…"),
         QStringLiteral("CSV files (*.csv);;All files (*)"),
         QStringLiteral("Vocabulary not imported"),
         [](const QByteArray &csv, QString *error) {
@@ -2168,8 +2214,10 @@ SettingsPage correctionsPage()
     // Corrections arrive from watching an edit, so there is nothing to add here.
     corrections.actions = {
         {QStringLiteral("undoLatestLearn"), QStringLiteral("Undo latest learn")},
-        {QStringLiteral("undoDelete"), QStringLiteral("Undo delete")},
     };
+    corrections.emptyTitle = QStringLiteral("No learned corrections yet");
+    corrections.emptyHelp = QStringLiteral("When you fix a dictated word the same way more than "
+                                           "once, the correction appears here.");
     corrections.minimumHeight = 320;
 
     return {
@@ -2231,8 +2279,11 @@ SettingsPage bindingsPage()
     };
     replacements.blankRecord = {{kPhraseColumn, QString()}, {kReplacementColumn, QString()}};
     replacements.addLabel = QStringLiteral("Add replacement");
+    replacements.addDialogTitle = QStringLiteral("New replacement");
+    replacements.emptyTitle = QStringLiteral("No replacements or snippets");
+    replacements.emptyHelp = QStringLiteral("Add a spoken phrase and the exact text to put in its place.");
     replacements.supportsImport = {
-        QStringLiteral("Import snippets JSON"),
+        QStringLiteral("Import snippets JSON…"),
         QStringLiteral("JSON files (*.json);;All files (*)"),
         QStringLiteral("Snippets not imported"),
         [](const QByteArray &json, QString *error) {
@@ -2423,7 +2474,9 @@ QList<ProviderAccount> providerAccounts()
     anthropic.authRows = {
         customRow(QStringLiteral("anthropicAuthMode"),
                   QStringLiteral("Sign-in"),
-                  QStringLiteral("How Speecher signs in to Anthropic for dictation and text cleanup.")),
+                  QStringLiteral("How Speecher signs in to Anthropic for dictation and text cleanup. "
+                                 "Claude Code sign-in reuses the login from the claude command; "
+                                 "CLI Proxy API uses an account CLI Proxy API saved.")),
         customRow(QStringLiteral("anthropicCliproxyAccount"),
                   QStringLiteral("Account"),
                   QStringLiteral("The CLI Proxy API account to use.")),
@@ -2462,8 +2515,8 @@ SettingsSection cliproxyServerSection()
     SettingsRow oauthDir = customRow(
         QStringLiteral("cliproxyOauthDir"),
         QStringLiteral("Account directory"),
-        QStringLiteral("Directory holding CLI Proxy API's saved account files. Leave empty to "
-                       "detect it automatically."));
+        QStringLiteral("Directory holding CLI Proxy API's saved account files."));
+    oauthDir.placeholder = QStringLiteral("Leave empty to detect it automatically");
     oauthDir.sinceVersion = QStringLiteral("0.2.0");
     oauthDir.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyOauthDirConfigured);
@@ -2476,8 +2529,8 @@ SettingsSection cliproxyServerSection()
     SettingsRow baseUrl = customRow(
         QStringLiteral("cliproxyBaseUrl"),
         QStringLiteral("Server URL"),
-        QStringLiteral("Send text cleanup through this CLI Proxy API server. Leave empty to use "
-                       "the account files on this computer."));
+        QStringLiteral("Send text cleanup through this CLI Proxy API server."));
+    baseUrl.placeholder = QStringLiteral("Leave empty to use the account files on this computer");
     baseUrl.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyBaseUrl);
     };
@@ -2491,7 +2544,7 @@ SettingsSection cliproxyServerSection()
         QStringLiteral("Server API key"),
         QStringLiteral("One of the keys the server accepts. Needed when a server URL is set. ")
             + keyStorageHelp());
-    apiKey.tooltip = keyStorageHelp();
+    apiKey.placeholder = QStringLiteral("A key the server accepts");
     apiKey.secret = true;
     apiKey.value = [](const AppSettings &settings) {
         return QVariant(settings.refinement.cliproxyApiKey);
@@ -2600,6 +2653,20 @@ QString fastModeTooltip(const QString &refinementProviderId)
 QString keyStorageHelp()
 {
     return QStringLiteral("Stored in the system keychain when there is one.");
+}
+
+QString accessibilityGrantActionLabel()
+{
+#ifdef Q_OS_MACOS
+    return QStringLiteral("Open Accessibility settings");
+#else
+    return QStringLiteral("Enable desktop accessibility");
+#endif
+}
+
+QString checkingCredentialsStatus()
+{
+    return QStringLiteral("Checking credentials…");
 }
 
 QString restoreClipboardDescription()

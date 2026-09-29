@@ -519,7 +519,12 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) NSInteger lockedRecordCount;
 @property (nonatomic, copy) SpeecherRecord *blankRecord;
 @property (nonatomic, copy) NSString *addLabel;
+@property (nonatomic, copy) NSString *addDialogTitle;
+@property (nonatomic, copy) NSString *deleteLabel;
+@property (nonatomic, copy) NSString *emptyTitle;
+@property (nonatomic, copy) NSString *emptyHelp;
 @property (nonatomic, copy) NSString *importLabel;
+@property (nonatomic, copy) NSString *importFailureTitle;
 @property (nonatomic, copy) NSArray<NSString *> *importFileExtensions;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *actions;
 @property (nonatomic) NSInteger minimumHeight;
@@ -633,8 +638,10 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *disabledHelp;
 @property (nonatomic, copy) NSString *disabledAction;
 @property (nonatomic, copy) NSString *disabledActionLabel;
+@property (nonatomic, copy) NSString *groupId;
 @property (nonatomic, strong, nullable) CollectionModel *collection;
 @property (nonatomic) BOOL secret;
+@property (nonatomic, copy) NSString *placeholder;
 @property (nonatomic) BOOL multiline;
 @end
 
@@ -781,6 +788,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *hardwareLine;
 @property (nonatomic) BOOL hardwareKnown;
 @property (nonatomic, copy) NSString *wordErrorRateSources;
+@property (nonatomic, copy) NSArray<NSString *> *factLabels;
 @property (nonatomic, copy) NSArray<LocalModelInfo *> *models;
 @property (nonatomic, copy) NSString *speechModelChoice;
 @property (nonatomic, strong) LocalRunnerChoice *runnerChoice;
@@ -1129,12 +1137,12 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     if (row.expensive && !_state->expensiveReady) {
         return @[];
     }
-    if (row.kind == RowKind::Custom) {
-        return [self bridgedOptions:speecher::mac::customRowOptions(row.id,
-                                                                    _state->draft,
-                                                                    *_state->store)];
+    if (row.options) {
+        return [self bridgedOptions:row.options(_state->draft)];
     }
-    return row.options ? [self bridgedOptions:row.options(_state->draft)] : @[];
+    return row.kind == RowKind::Custom
+        ? [self bridgedOptions:speecher::mac::customRowOptions(row.id, _state->draft, *_state->store)]
+        : @[];
 }
 
 - (CollectionModel *)collectionModel:(const CollectionDescriptor &)collection
@@ -1155,7 +1163,12 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.lockedRecordCount = collection.lockedRecordCount ? collection.lockedRecordCount() : 0;
     model.blankRecord = bridgedRecord(collection.blankRecord);
     model.addLabel = collection.addLabel.toNSString();
+    model.addDialogTitle = collection.addDialogTitle.toNSString();
+    model.deleteLabel = collection.deleteLabel.toNSString();
+    model.emptyTitle = collection.emptyTitle.toNSString();
+    model.emptyHelp = collection.emptyHelp.toNSString();
     model.importLabel = collection.supportsImport.actionLabel.toNSString();
+    model.importFailureTitle = collection.supportsImport.failureTitle.toNSString();
     model.importFileExtensions = collection.supportsImport.parse
         ? fileExtensions(collection.supportsImport.fileFilter)
         : @[];
@@ -1186,7 +1199,9 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.disabledHelp = row.disabledHelp.toNSString();
     model.disabledAction = row.disabledAction.toNSString();
     model.disabledActionLabel = row.disabledActionLabel.toNSString();
+    model.groupId = row.groupId.toNSString();
     model.secret = row.secret;
+    model.placeholder = row.placeholder.toNSString();
     model.multiline = row.multiline;
     if (const CollectionDescriptor *collection = [self collectionForRow:row]) {
         model.collection = [self collectionModel:*collection];
@@ -2074,6 +2089,16 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     _state->controller->updateBanner()->dismiss();
 }
 
++ (NSString *)checkingCredentialsStatus
+{
+    return speecher::checkingCredentialsStatus().toNSString();
+}
+
++ (NSString *)accessibilityGrantActionLabel
+{
+    return speecher::accessibilityGrantActionLabel().toNSString();
+}
+
 + (CGFloat)popupErrorWrapWidth
 {
     return speecher::kPopupErrorWrapWidth;
@@ -2595,6 +2620,11 @@ static LocalRunnerChoice *bridgedRunnerChoice(const speecher::RunnerChoice &reso
     LocalSetupState *state = [[LocalSetupState alloc] init];
     state.hardwareLine = setup.hardwareLine().toNSString();
     state.wordErrorRateSources = speecher::wordErrorRateSources().toNSString();
+    const LocalModelFactLabels names;
+    state.factLabels = @[names.bestFor.toNSString(), names.download.toNSString(),
+                         names.speedHere.toNSString(), names.wordErrorRate.toNSString(),
+                         names.textShows.toNSString(), names.language.toNSString(),
+                         names.license.toNSString()];
     state.hardwareKnown = setup.hardwareKnown();
     NSMutableArray<LocalModelInfo *> *models = [NSMutableArray array];
     for (const LocalModel &model : localModelCatalog()) {

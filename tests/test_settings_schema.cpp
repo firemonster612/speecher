@@ -687,11 +687,31 @@ private slots:
         }
     }
 
+    void everyDeletableCollectionCanUndoADelete()
+    {
+        // No editor asks before it deletes, so each one must be able to put a
+        // record back, and must say what an empty table means.
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        for (const SettingsPage &page : schema.pages) {
+            for (const SettingsSection &section : page.sections) {
+                for (const SettingsRow &row : section.rows) {
+                    if (row.kind != RowKind::Collection) {
+                        continue;
+                    }
+                    const QList<RowOption> &actions = row.collection.actions;
+                    QVERIFY2(std::any_of(actions.cbegin(), actions.cend(),
+                                         [](const RowOption &action) { return action.id == QStringLiteral("undoDelete"); }),
+                             qPrintable(row.id));
+                    const bool alwaysHasRecords = row.collection.lockedRecordCount
+                        && row.collection.lockedRecordCount() > 0;
+                    QVERIFY2(alwaysHasRecords || !row.collection.emptyTitle.isEmpty(), qPrintable(row.id));
+                }
+            }
+        }
+    }
+
     void themeRowExplainsItselfWhenTheDesktopIgnoresIt()
     {
-#ifdef Q_OS_LINUX
-        QSKIP("The Theme row is not offered on Linux; the desktop decides the theme.");
-#endif
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         const SettingsRow &row = rowById(schema.page(QStringLiteral("general")),
                                          QStringLiteral("themeControl"));

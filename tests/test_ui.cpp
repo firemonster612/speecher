@@ -803,8 +803,9 @@ private slots:
         const QString gateWords = QStringLiteral("Accessibility permission");
         const QString gateAction = QStringLiteral("Open Accessibility settings");
 #elif defined(Q_OS_WIN)
+        // Nothing in the app can make UI Automation available, so no action.
         const QString gateWords = QStringLiteral("UI Automation");
-        const QString gateAction = QStringLiteral("UI Automation unavailable");
+        const QString gateAction;
 #else
         const QString gateWords = QStringLiteral("desktop accessibility");
         const QString gateAction = QStringLiteral("Enable desktop accessibility");
@@ -822,16 +823,17 @@ private slots:
             QWidget *note = accessibilityNote(page);
             QVERIFY(note);
             auto *action = note->findChild<QPushButton *>(QStringLiteral("gateAction"));
-            QVERIFY(action);
-            QCOMPARE(action->text(), gateAction);
+            QCOMPARE(action ? action->text() : QString(), gateAction);
         }
         // One note per gated group: the category paste rules, the app paste
         // rules and the app recognition rules.
         QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 3);
+#ifndef Q_OS_WIN
         QSignalSpy triggered(&output, &SchemaSettingsPage::actionTriggered);
         output.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
         QCOMPARE(triggered.count(), 1);
         QCOMPARE(triggered.first().first().toString(), QStringLiteral("enableAccessibility"));
+#endif
 
         output.setCapabilities({true});
         refinement.setCapabilities({true});

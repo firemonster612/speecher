@@ -40,7 +40,7 @@ final class AppModel: ObservableObject {
     @Published var credentialProblem = ""
     // Resolving the OpenAI status can enter the keyring, so it is read on
     // loadApiKey()'s deferred turn, never from a SwiftUI body.
-    @Published private(set) var credentialStatus = "Checking credentials…"
+    @Published private(set) var credentialStatus = SpeecherBridge.checkingCredentialsStatus
     @Published private(set) var anthropicCredentialStatus: String
     // Bumped when the settings draft is reloaded (window reopen, setup), so
     // retained collection editors can reload from the fresh snapshot.

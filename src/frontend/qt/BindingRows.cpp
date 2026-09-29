@@ -107,9 +107,20 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
     auto *addButton = new QPushButton(m_collection.addLabel, control);
     addButton->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
     auto *importButton = new QPushButton(m_collection.supportsImport.actionLabel, control);
+    // collectionRow() gives every deletable collection its Undo delete.
+    m_undoDelete = new QPushButton(m_collection.actions.first().label, control);
+    m_undoDelete->setObjectName(QStringLiteral("undoDeleteBindingRules"));
+    m_undoDelete->setEnabled(false);
+    m_empty = new QLabel(m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp,
+                         m_list->viewport());
+    m_empty->setAlignment(Qt::AlignCenter);
+    m_empty->setWordWrap(true);
+    m_empty->setForegroundRole(QPalette::PlaceholderText);
+    (new QVBoxLayout(m_list->viewport()))->addWidget(m_empty);
     auto *buttons = new QHBoxLayout;
-    buttons->addStretch();
     buttons->addWidget(importButton);
+    buttons->addStretch();
+    buttons->addWidget(m_undoDelete);
     buttons->addWidget(addButton);
     layout->addWidget(title);
     layout->addWidget(description);
@@ -130,16 +141,39 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
     QObject::connect(m_list, &QListWidget::itemDoubleClicked, control, [this](QListWidgetItem *item) {
         editRecord(item->data(Qt::UserRole).toInt());
     });
+    QObject::connect(m_undoDelete, &QPushButton::clicked, control, [this] {
+        if (m_deleted.isEmpty()) {
+            return;
+        }
+        m_records.append(m_deleted.takeLast());
+        refreshList();
+        m_notifyChanged();
+    });
 
     return {
         control,
         [this] { return QVariant::fromValue(m_records); },
         [this](const QVariant &value) {
-            m_records = value.value<QList<QVariantMap>>();
+            const QList<QVariantMap> records = value.value<QList<QVariantMap>>();
+            // A reload with other records committed whatever Delete took.
+            if (records != m_records) {
+                m_deleted.clear();
+            }
+            m_records = records;
             refreshList();
         },
         true,
     };
+}
+
+void BindingRows::deleteRecord(int row)
+{
+    if (row < 0 || row >= m_records.size()) {
+        return;
+    }
+    m_deleted.append(m_records.takeAt(row));
+    refreshList();
+    m_notifyChanged();
 }
 
 void BindingRows::refreshList()
@@ -184,7 +218,7 @@ void BindingRows::refreshList()
         edit->setMinimumWidth(edit->fontMetrics().horizontalAdvance(edit->text()) + 32);
         edit->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
 
-        auto *remove = new QPushButton(QStringLiteral("Remove"), rowWidget);
+        auto *remove = new QPushButton(m_collection.deleteLabel, rowWidget);
         remove->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
         remove->setMinimumWidth(remove->fontMetrics().horizontalAdvance(remove->text()) + 32);
         remove->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
@@ -198,15 +232,10 @@ void BindingRows::refreshList()
         m_list->setItemWidget(item, rowWidget);
 
         QObject::connect(edit, &QPushButton::clicked, rowWidget, [this, row] { editRecord(row); });
-        QObject::connect(remove, &QPushButton::clicked, rowWidget, [this, row] {
-            if (row < 0 || row >= m_records.size()) {
-                return;
-            }
-            m_records.removeAt(row);
-            refreshList();
-            m_notifyChanged();
-        });
+        QObject::connect(remove, &QPushButton::clicked, rowWidget, [this, row] { deleteRecord(row); });
     }
+    m_empty->setVisible(m_records.isEmpty());
+    m_undoDelete->setEnabled(!m_deleted.isEmpty());
 
     emit preserveScrollRequested(false);
 }
@@ -216,8 +245,7 @@ void BindingRows::editRecord(int row)
     const bool editing = row >= 0 && row < m_records.size();
 
     QDialog dialog(m_list);
-    dialog.setWindowTitle(editing ? QStringLiteral("Edit replacement")
-                                  : QStringLiteral("Add replacement"));
+    dialog.setWindowTitle(editing ? QStringLiteral("Edit replacement") : m_collection.addDialogTitle);
     auto *layout = new QVBoxLayout(&dialog);
     layout->setContentsMargins(18, 18, 18, 14);
     layout->setSpacing(8);
@@ -242,7 +270,7 @@ void BindingRows::editRecord(int row)
     saveButton->setIcon(QIcon::fromTheme(QStringLiteral("document-save")));
     QPushButton *deleteButton = nullptr;
     if (editing) {
-        deleteButton = buttons->addButton(QStringLiteral("Delete"), QDialogButtonBox::DestructiveRole);
+        deleteButton = buttons->addButton(m_collection.deleteLabel, QDialogButtonBox::DestructiveRole);
         deleteButton->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
     }
 
@@ -277,9 +305,7 @@ void BindingRows::editRecord(int row)
     });
     if (deleteButton) {
         QObject::connect(deleteButton, &QPushButton::clicked, &dialog, [&] {
-            m_records.removeAt(row);
-            refreshList();
-            m_notifyChanged();
+            deleteRecord(row);
             dialog.accept();
         });
     }
