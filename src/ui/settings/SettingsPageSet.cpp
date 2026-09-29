@@ -402,7 +402,7 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         confirm.setText(QStringLiteral("Delete all insights history?"));
         confirm.setInformativeText(QStringLiteral("Your stats, streaks and records are erased from "
                                                   "this computer. This can't be undone."));
-        QPushButton *remove = confirm.addButton(QStringLiteral("Delete History"),
+        QPushButton *remove = confirm.addButton(QStringLiteral("Delete history"),
                                                 QMessageBox::DestructiveRole);
         confirm.addButton(QMessageBox::Cancel);
         confirm.setDefaultButton(QMessageBox::Cancel);
