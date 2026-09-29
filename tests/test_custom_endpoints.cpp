@@ -13,6 +13,8 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 
+#include <optional>
+
 using namespace speecher::test;
 
 namespace {
@@ -874,9 +876,12 @@ private slots:
         settings.raw().sync();
         qputenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT", "1");
         qputenv("SPEECHER_TEST_KEYRING_READ_DELAY_MS", "250");
+        // A read on the GUI thread fails with its own reason instead of timing out.
+        qputenv("SPEECHER_TEST_KEYRING_REFUSE_GUI_THREAD", "1");
         const auto restore = qScopeGuard([] {
             qunsetenv("SPEECHER_TEST_KEYRING_READ_TIMEOUT");
             qunsetenv("SPEECHER_TEST_KEYRING_READ_DELAY_MS");
+            qunsetenv("SPEECHER_TEST_KEYRING_REFUSE_GUI_THREAD");
         });
         FakeAudioInput audio;
         FakeMediaController media;
@@ -887,19 +892,20 @@ private slots:
         registry.registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Endpoint")},
             [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
         DictationSession session(&settings, &audio, &media, &delivery, &registry);
-        QElapsedTimer elapsed;
-        elapsed.start();
         session.startListening();
-        QVERIFY2(elapsed.elapsed() < 100, "Dictation start waited for the keyring on the GUI thread");
         QVERIFY(settings.secrets()->lastError().isEmpty());
-        int heartbeats = 0;
-        QTimer heartbeat;
-        connect(&heartbeat, &QTimer::timeout, this, [&] { ++heartbeats; });
-        heartbeat.start(10);
         if (unavailable) {
+            // The GUI thread goes on handling events while the worker reads:
+            // a call queued now runs before the read's answer arrives.
+            QCOMPARE(session.state(), DictationState::Starting);
+            std::optional<DictationState> stateWhileReading;
+            QMetaObject::invokeMethod(this, [&] { stateWhileReading = session.state(); },
+                                      Qt::QueuedConnection);
             QTRY_COMPARE_WITH_TIMEOUT(session.state(), DictationState::Error, 2000);
-            QVERIFY(heartbeats >= 5);
+            QCOMPARE(stateWhileReading, std::optional(DictationState::Starting));
             QVERIFY2(session.lastMessage().contains(QStringLiteral("keyring unavailable")),
+                     qPrintable(session.lastMessage()));
+            QVERIFY2(session.lastMessage().contains(QStringLiteral("timed out")),
                      qPrintable(session.lastMessage()));
             QVERIFY(!session.lastMessage().contains(QStringLiteral("not set")));
             QVERIFY(!audio.started);
