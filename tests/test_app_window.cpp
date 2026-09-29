@@ -462,9 +462,17 @@ private slots:
             const auto *grid = page.findChild<QWidget *>(QStringLiteral("insightTiles"));
             return qobject_cast<QGridLayout *>(grid->layout())->itemAtPosition(0, 3) != nullptr;
         };
+        // Home's column is capped, so how wide it gets, and whether four
+        // across ever fits, depends on the font; the tiles' own width decides.
+        page.setFont([] {
+            QFont font = QApplication::font();
+            font.setPointSizeF(font.pointSizeF() / 2);
+            return font;
+        }());
+        page.refresh();
         bool sawFour = false;
         bool sawTwo = false;
-        for (int width = 700; width <= 1400; width += 20) {
+        for (int width = 300; width <= 1400; width += 20) {
             page.resize(width, 800);
             QCoreApplication::processEvents();
             QCoreApplication::processEvents();
