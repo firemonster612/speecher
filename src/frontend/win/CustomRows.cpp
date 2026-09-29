@@ -11,6 +11,8 @@
 
 #include <QRegularExpression>
 
+#include <optional>
+
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
 #include <winrt/Windows.Foundation.h>
@@ -348,13 +350,24 @@ UIElement releaseNotes(const RowSnapshot &row)
         qsizetype consumed = 0;
         for (const QRegularExpressionMatch &match : link.globalMatch(source)) {
             appendRun(source.mid(consumed, match.capturedStart() - consumed));
+            consumed = match.capturedEnd();
+            // Uri throws on a relative or malformed target; such a link reads
+            // as its text.
+            std::optional<Uri> target;
+            try {
+                target.emplace(hs(match.captured(2)));
+            } catch (const winrt::hresult_error &) {
+            }
+            if (!target) {
+                appendRun(match.captured(1));
+                continue;
+            }
             Documents::Run label;
             label.Text(hs(match.captured(1)));
             Documents::Hyperlink hyperlink;
-            hyperlink.NavigateUri(Uri(hs(match.captured(2))));
+            hyperlink.NavigateUri(*target);
             hyperlink.Inlines().Append(label);
             paragraph.Inlines().Append(hyperlink);
-            consumed = match.capturedEnd();
         }
         appendRun(source.mid(consumed));
         // Body text by default, as SettingsCardBodyStyle's TextBlocks are.
