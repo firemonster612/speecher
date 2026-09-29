@@ -50,6 +50,67 @@ QString transcribeStepLabel(TranscribeStep step);
 // The line under the step indicator; empty for a step that needs none.
 QString transcribeStepHint(TranscribeStep step);
 
+// The fixed wording of the Transcribe surfaces: the window title, section
+// titles, row labels and their help, button captions and dialog titles.
+enum class TranscribeText {
+    WindowTitle,
+    AudioFilesSection,
+    TranscriptionSection,
+    RefinementSection,
+    OutputSection,
+    FilesDialogTitle,
+    RemoveFile,
+    Service,
+    Vocabulary,
+    VocabularyHelp,
+    Refiner,
+    RefinerHelp,
+    NoRefiner,
+    RefinerModel,
+    Cleanup,
+    CleanupHelp,
+    WritingProfile,
+    WritingProfileHelp,
+    Tone,
+    ToneHelp,
+    SaveTranscripts,
+    Folder,
+    ChangeFolder,
+    FolderDialogTitle,
+    Cancel,
+    PartialName,
+    PartialPlaceholder,
+    Refined,
+    Raw,
+    CopyAll,
+    Copy,
+    Copied,
+    ExportAll,
+    Export,
+    ExportAllDialogTitle,
+    ExportDialogTitle,
+    TextFiles,
+    Saved,
+    Retry,
+    Retrying,
+    TranscribeMore,
+};
+QString transcribeText(TranscribeText text);
+
+// The button that opens the file chooser, before any file is listed and after.
+QString chooseFilesCaption(bool anyListed);
+// "Transcribe", or "Transcribe 3 files".
+QString startCaption(int fileCount);
+// The results section's title, singular for one transcript.
+QString resultsTitle(int resultCount);
+// A Save transcripts choice, and the help under the row while it is chosen.
+QString destinationLabel(TranscriptDestination destination);
+QString destinationHint(TranscriptDestination destination);
+// "Could not save <path>: <reason>", for a transcript that failed to write.
+QString transcriptSaveError(const QString &path, const QString &reason);
+// "42%" for 0.42.
+QString percentLabel(qreal progress);
+
 // Under the file chooser while no files are listed: what may be dropped or
 // chosen, every extension from transcribableExtensions().
 QString mediaFilesHint();

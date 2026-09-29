@@ -32,9 +32,6 @@ using namespace winrt;
 using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
 
-// Non-ASCII text is written as \u escapes: MSVC reads a source without a BOM
-// in the system code page.
-constexpr const wchar_t *kTitle = L"Transcribe \u2014 Speecher";
 // Device-independent pixels.
 constexpr int kWidth = 560;
 constexpr int kHeight = 680;
@@ -92,7 +89,7 @@ struct TranscribeWindow::Native {
         window = Window();
         window.SystemBackdrop(winrt::Microsoft::UI::Xaml::Media::MicaBackdrop());
         window.ExtendsContentIntoTitleBar(true);
-        window.Title(kTitle);
+        window.Title(hs(transcribeText(TranscribeText::WindowTitle)));
 
         root = Grid();
         RowDefinition titleRow;
@@ -107,7 +104,7 @@ struct TranscribeWindow::Native {
         root.ActualThemeChanged([this](const auto &, const auto &) { queueRebuild(); });
 
         TitleBar titleBar;
-        titleBar.Title(kTitle);
+        titleBar.Title(hs(transcribeText(TranscribeText::WindowTitle)));
         titleBar.IsBackButtonVisible(false);
         setWindowIcon(window, titleBar);
         root.Children().Append(titleBar);

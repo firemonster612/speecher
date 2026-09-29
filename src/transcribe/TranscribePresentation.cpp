@@ -110,6 +110,140 @@ QString transcribeStepHint(TranscribeStep step)
                                              : QString();
 }
 
+QString transcribeText(TranscribeText text)
+{
+    switch (text) {
+    case TranscribeText::WindowTitle:
+        return QStringLiteral("Transcribe — Speecher");
+    case TranscribeText::AudioFilesSection:
+        return QStringLiteral("Audio files");
+    case TranscribeText::TranscriptionSection:
+        return QStringLiteral("Transcription");
+    case TranscribeText::RefinementSection:
+        return QStringLiteral("Refinement");
+    case TranscribeText::OutputSection:
+        return QStringLiteral("Output");
+    case TranscribeText::FilesDialogTitle:
+        return QStringLiteral("Choose audio files");
+    case TranscribeText::RemoveFile:
+        return QStringLiteral("Remove");
+    case TranscribeText::Service:
+        return QStringLiteral("Service");
+    case TranscribeText::Vocabulary:
+        return QStringLiteral("Apply vocabulary");
+    case TranscribeText::VocabularyHelp:
+        return QStringLiteral("Use your custom vocabulary and corrections on the result");
+    case TranscribeText::Refiner:
+        return QStringLiteral("Provider");
+    case TranscribeText::RefinerHelp:
+        return QStringLiteral("Clean up the raw transcripts with a language model");
+    case TranscribeText::NoRefiner:
+        return QStringLiteral("None");
+    case TranscribeText::RefinerModel:
+        return QStringLiteral("Model");
+    case TranscribeText::Cleanup:
+        return QStringLiteral("Cleanup");
+    case TranscribeText::CleanupHelp:
+        return QStringLiteral("How much the model may rewrite");
+    case TranscribeText::WritingProfile:
+        return QStringLiteral("Writing Profile");
+    case TranscribeText::WritingProfileHelp:
+        return QStringLiteral("Sets cleanup and tone; you can still adjust them here");
+    case TranscribeText::Tone:
+        return QStringLiteral("Tone");
+    case TranscribeText::ToneHelp:
+        return QStringLiteral("Optional override on top of the profile");
+    case TranscribeText::SaveTranscripts:
+        return QStringLiteral("Save transcripts");
+    case TranscribeText::Folder:
+        return QStringLiteral("Folder");
+    case TranscribeText::ChangeFolder:
+        return QStringLiteral("Change…");
+    case TranscribeText::FolderDialogTitle:
+        return QStringLiteral("Save transcripts in");
+    case TranscribeText::Cancel:
+        return QStringLiteral("Cancel");
+    case TranscribeText::PartialName:
+        return QStringLiteral("Transcript so far");
+    case TranscribeText::PartialPlaceholder:
+        return QStringLiteral("The transcript appears here as it is heard.");
+    case TranscribeText::Refined:
+        return QStringLiteral("Refined");
+    case TranscribeText::Raw:
+        return QStringLiteral("Raw");
+    case TranscribeText::CopyAll:
+        return QStringLiteral("Copy all");
+    case TranscribeText::Copy:
+        return QStringLiteral("Copy");
+    case TranscribeText::Copied:
+        return QStringLiteral("Copied");
+    case TranscribeText::ExportAll:
+        return QStringLiteral("Export all…");
+    case TranscribeText::Export:
+        return QStringLiteral("Export…");
+    case TranscribeText::ExportAllDialogTitle:
+        return QStringLiteral("Export transcripts to");
+    case TranscribeText::ExportDialogTitle:
+        return QStringLiteral("Export transcript");
+    case TranscribeText::TextFiles:
+        return QStringLiteral("Text files");
+    case TranscribeText::Saved:
+        return QStringLiteral("Saved");
+    case TranscribeText::Retry:
+        return QStringLiteral("Retry");
+    case TranscribeText::Retrying:
+        return QStringLiteral("Retrying…");
+    case TranscribeText::TranscribeMore:
+        return QStringLiteral("Transcribe more files");
+    }
+    return {};
+}
+
+QString chooseFilesCaption(bool anyListed)
+{
+    return anyListed ? QStringLiteral("Add more files…") : QStringLiteral("Choose audio files…");
+}
+
+QString startCaption(int fileCount)
+{
+    return fileCount > 1 ? QStringLiteral("Transcribe %1 files").arg(fileCount) : QStringLiteral("Transcribe");
+}
+
+QString resultsTitle(int resultCount)
+{
+    return resultCount > 1 ? QStringLiteral("Transcripts") : QStringLiteral("Transcript");
+}
+
+QString destinationLabel(TranscriptDestination destination)
+{
+    switch (destination) {
+    case TranscriptDestination::BesideInput:
+        return QStringLiteral("Next to each audio file");
+    case TranscriptDestination::Folder:
+        return QStringLiteral("One folder…");
+    case TranscriptDestination::None:
+        return QStringLiteral("Just show them here");
+    }
+    return {};
+}
+
+QString destinationHint(TranscriptDestination destination)
+{
+    return destination == TranscriptDestination::None
+        ? QStringLiteral("Copy or export from the results afterwards")
+        : QStringLiteral("Each transcript is saved as ⟨name⟩-transcribed.txt");
+}
+
+QString transcriptSaveError(const QString &path, const QString &reason)
+{
+    return QStringLiteral("Could not save %1: %2").arg(QDir::toNativeSeparators(path), reason);
+}
+
+QString percentLabel(qreal progress)
+{
+    return QStringLiteral("%1%").arg(int(progress * 100));
+}
+
 QString mediaFilesHint()
 {
     return QStringLiteral("Drop audio and video files here or choose them") + kSeparator

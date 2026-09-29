@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <QEventLoop>
 #include <QTimer>
 
 #include <utility>
@@ -172,6 +173,14 @@ bool WinFrontEnd::captureMainWindow(const QString &path)
 {
     // The one grab page that is its own window rather than a settings pane.
     const QString page = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower().section(QLatin1Char(':'), 0, 0);
+    // As on Qt and macOS, SPEECHER_GRAB_CLICK=transcribeStart starts the
+    // listed files and SPEECHER_GRAB_WAIT_MS lets the batch run first.
+    if (qEnvironmentVariable("SPEECHER_GRAB_CLICK") == QStringLiteral("transcribeStart")) {
+        m_native->transcribe->startBatch();
+        QEventLoop wait;
+        QTimer::singleShot(qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS"), &wait, &QEventLoop::quit);
+        wait.exec();
+    }
     if (page == QStringLiteral("transcribe-window")) {
         return m_native->transcribeWindowInstance()->capture(path);
     }

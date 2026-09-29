@@ -345,6 +345,51 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeStep) {
     SpeecherTranscribeStepExport,
 };
 
+// Mirrors speecher::TranscribeText.
+typedef NS_ENUM(NSInteger, SpeecherTranscribeText) {
+    SpeecherTranscribeTextWindowTitle,
+    SpeecherTranscribeTextAudioFilesSection,
+    SpeecherTranscribeTextTranscriptionSection,
+    SpeecherTranscribeTextRefinementSection,
+    SpeecherTranscribeTextOutputSection,
+    SpeecherTranscribeTextFilesDialogTitle,
+    SpeecherTranscribeTextRemoveFile,
+    SpeecherTranscribeTextService,
+    SpeecherTranscribeTextVocabulary,
+    SpeecherTranscribeTextVocabularyHelp,
+    SpeecherTranscribeTextRefiner,
+    SpeecherTranscribeTextRefinerHelp,
+    SpeecherTranscribeTextNoRefiner,
+    SpeecherTranscribeTextRefinerModel,
+    SpeecherTranscribeTextCleanup,
+    SpeecherTranscribeTextCleanupHelp,
+    SpeecherTranscribeTextWritingProfile,
+    SpeecherTranscribeTextWritingProfileHelp,
+    SpeecherTranscribeTextTone,
+    SpeecherTranscribeTextToneHelp,
+    SpeecherTranscribeTextSaveTranscripts,
+    SpeecherTranscribeTextFolder,
+    SpeecherTranscribeTextChangeFolder,
+    SpeecherTranscribeTextFolderDialogTitle,
+    SpeecherTranscribeTextCancel,
+    SpeecherTranscribeTextPartialName,
+    SpeecherTranscribeTextPartialPlaceholder,
+    SpeecherTranscribeTextRefined,
+    SpeecherTranscribeTextRaw,
+    SpeecherTranscribeTextCopyAll,
+    SpeecherTranscribeTextCopy,
+    SpeecherTranscribeTextCopied,
+    SpeecherTranscribeTextExportAll,
+    SpeecherTranscribeTextExport,
+    SpeecherTranscribeTextExportAllDialogTitle,
+    SpeecherTranscribeTextExportDialogTitle,
+    SpeecherTranscribeTextTextFiles,
+    SpeecherTranscribeTextSaved,
+    SpeecherTranscribeTextRetry,
+    SpeecherTranscribeTextRetrying,
+    SpeecherTranscribeTextTranscribeMore,
+};
+
 // Mirrors speecher::TranscribeQueueState.
 typedef NS_ENUM(NSInteger, SpeecherTranscribeQueueState) {
     SpeecherTranscribeQueueStateWaiting,
@@ -945,6 +990,15 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (NSString *)transcribeStepLabel:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepLabel(_:));
 // The line under the step indicator; empty for a step that needs none.
 - (NSString *)transcribeStepHint:(SpeecherTranscribeStep)step NS_SWIFT_NAME(stepHint(_:));
+- (NSString *)transcribeText:(SpeecherTranscribeText)text NS_SWIFT_NAME(text(_:));
+- (NSString *)chooseFilesCaption:(BOOL)anyListed NS_SWIFT_NAME(chooseFilesCaption(anyListed:));
+- (NSString *)transcribeStartCaption:(NSInteger)fileCount NS_SWIFT_NAME(startCaption(fileCount:));
+- (NSString *)transcribeResultsTitle:(NSInteger)resultCount NS_SWIFT_NAME(resultsTitle(count:));
+- (NSString *)destinationLabel:(SpeecherTranscriptDestination)destination NS_SWIFT_NAME(destinationLabel(_:));
+- (NSString *)destinationHint:(SpeecherTranscriptDestination)destination NS_SWIFT_NAME(destinationHint(_:));
+- (NSString *)transcriptSaveErrorForPath:(NSString *)path reason:(NSString *)reason
+    NS_SWIFT_NAME(transcriptSaveError(path:reason:));
+- (NSString *)percentLabel:(double)progress NS_SWIFT_NAME(percentLabel(_:));
 // The settings page a row is on, from core (speecher::paneTitleForRow).
 - (NSString *)paneTitleForRowId:(NSString *)rowId NS_SWIFT_NAME(paneTitle(forRowId:));
 // Where to change the refinement model the Configure step shows.

@@ -86,6 +86,8 @@ void populateCliproxyAccounts(QComboBox *combo,
                               const QString &type,
                               const QString &selected);
 QColor positiveTextColor(const QPalette &palette);
+// The colour scheme's NegativeText, or plain text without a scheme.
+QColor negativeTextColor(const QPalette &palette);
 QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 // The bold a section title is set in, on pages and in the sidebar's headers.
 QFont sectionTitleFont(const QFont &font);

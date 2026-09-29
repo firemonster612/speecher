@@ -2,7 +2,6 @@
 
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/TranscribePresentation.h"
-#include "ui/WaveformModel.h"
 
 #include <QElapsedTimer>
 #include <QHash>
@@ -19,7 +18,6 @@
 #undef GetCurrentTime
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
-#include <winrt/Microsoft.UI.Xaml.Shapes.h>
 #pragma pop_macro("GetCurrentTime")
 
 namespace speecher {
@@ -52,6 +50,8 @@ public:
     // The pane left host's window, or the window closed: stop updating
     // elements nobody sees there.
     void forget(const PaneHost &host);
+    // Starts the listed files with the setup's choices, as Transcribe does.
+    void startBatch();
 
 private:
     // One window's tree: the processing stage's elements, updated in place
@@ -63,14 +63,14 @@ private:
         winrt::Microsoft::UI::Xaml::Controls::TextBlock percentText{nullptr};
         winrt::Microsoft::UI::Xaml::Controls::TextBlock headerText{nullptr};
         winrt::Microsoft::UI::Xaml::Controls::StackPanel queue{nullptr};
-        std::vector<winrt::Microsoft::UI::Xaml::Shapes::Rectangle> bars;
+        winrt::Microsoft::UI::Xaml::Controls::TextBlock partialText{nullptr};
+        winrt::Microsoft::UI::Xaml::Controls::ScrollViewer partialScroll{nullptr};
     };
 
     void rebuild();
     void seedOptions();
     void applyWritingProfile();
     TranscribeOptions options() const;
-    void startBatch();
     void retry(int index);
     void backToSetup();
     void appendSetup(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column, PaneHost &host);
@@ -81,7 +81,8 @@ private:
     winrt::Microsoft::UI::Xaml::Controls::Button copyButton(const QString &label, const QString &text);
     void showProgress();
     void setPhase(TranscribePhase phase);
-    void animateBars();
+    void setPartialText(const QString &text);
+    void showPartialText(const View &view);
     void afterLanding(std::function<void()> event);
     void land();
 
@@ -130,16 +131,13 @@ private:
     // While a finished file shows at 100%, the session's later events wait here.
     bool m_landing = false;
     QList<std::function<void()>> m_afterLanding;
-    QVector<float> m_peaks;
+    // What the provider has heard of the current file so far.
+    QString m_partialText;
     bool m_showRaw = false;
     QSet<int> m_expanded;
     QString m_resultsProblem;
 
-    QTimer m_barTimer;
-    QElapsedTimer m_barClock;
-    qint64 m_lastFrame = 0;
-    float m_barPhase = 0;
-    waveform::LevelModel m_level;
+    QTimer m_progressTimer;
 };
 
 } // namespace win

@@ -6,6 +6,7 @@
 #include "dictation/StartupPreparationRunner.h"
 #include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
+#include "transcribe/TranscribePresentation.h"
 
 #include <QAudioDecoder>
 #include <QDebug>
@@ -115,12 +116,12 @@ QString saveTranscript(const QString &audioPath, const QString &folder, const QS
             continue;
         }
         if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
-            *error = QStringLiteral("Could not save %1: %2").arg(file.fileName(), file.errorString());
+            *error = transcriptSaveError(file.fileName(), file.errorString());
             return {};
         }
         const QByteArray bytes = text.toUtf8() + '\n';
         if (file.write(bytes) != bytes.size() || !file.flush()) {
-            *error = QStringLiteral("Could not save %1: %2").arg(file.fileName(), file.errorString());
+            *error = transcriptSaveError(file.fileName(), file.errorString());
             file.remove();
             return {};
         }

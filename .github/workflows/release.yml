@@ -323,6 +323,8 @@ jobs:
           say -o audio/voice-memo.aiff "Reminder for tomorrow. Pick up the dry cleaning before noon and call the dentist."
           afconvert -f WAVE -d LEI16@16000 audio/meeting-notes.aiff audio/meeting-notes.wav
           afconvert -f WAVE -d LEI16@16000 audio/voice-memo.aiff audio/voice-memo.wav
+          # Opened files wait for setup until it is done.
+          defaults write com.io-github-firemonster612.speecher app.setupCompleted -bool true
           DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" DYLD_LIBRARY_PATH="$QT_ROOT_DIR/lib" \
             SPEECHER_GRAB_PAGE=transcribe ./build/speecher.app/Contents/MacOS/speecher \
             audio/meeting-notes.wav audio/voice-memo.wav --grab shots/mac-transcribe-setup.png
@@ -331,6 +333,13 @@ jobs:
             SPEECHER_GRAB_PAGE=transcribe-window ./build/speecher.app/Contents/MacOS/speecher \
             audio/meeting-notes.wav audio/voice-memo.wav --grab shots/mac-transcribe-window.png
           test -s shots/mac-transcribe-window.png
+          # A header with no audio fails to decode, so the batch ends on
+          # results with a failed file and no provider needed.
+          head -c 16 audio/voice-memo.wav > audio/broken.wav
+          DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" DYLD_LIBRARY_PATH="$QT_ROOT_DIR/lib" \
+            SPEECHER_GRAB_PAGE=transcribe SPEECHER_GRAB_CLICK=transcribeStart SPEECHER_GRAB_WAIT_MS=4000 \
+            ./build/speecher.app/Contents/MacOS/speecher audio/broken.wav --grab shots/mac-transcribe-results.png
+          test -s shots/mac-transcribe-results.png
 
       - name: Upload macOS Transcribe screenshots
         if: github.event_name == 'pull_request'
@@ -471,6 +480,56 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
+
+      # As the macOS job does: the Transcribe pane and window with two files
+      # listed. speecher.exe is a GUI binary, which PowerShell does not wait
+      # for; Start-Process -Wait does.
+      - name: Capture Transcribe pane screenshots
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path shots, audio | Out-Null
+          # One second of 16 kHz mono silence.
+          $header = [byte[]](0x52,0x49,0x46,0x46,0x24,0x7D,0,0,0x57,0x41,0x56,0x45,0x66,0x6D,0x74,0x20,
+                             16,0,0,0,1,0,1,0,0x80,0x3E,0,0,0,0x7D,0,0,2,0,16,0,0x64,0x61,0x74,0x61,0,0x7D,0,0)
+          foreach ($name in "meeting-notes", "voice-memo") {
+            [IO.File]::WriteAllBytes((Join-Path $PWD "audio/$name.wav"), [byte[]]($header + [byte[]]::new(32000)))
+          }
+          # Opened files wait for setup until it is done. Qt's native Windows
+          # settings live under this registry key.
+          $key = "HKCU:\Software\io.github.firemonster612\speecher\app"
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name setupCompleted -Value "true" -PropertyType String -Force | Out-Null
+          $exe = (Resolve-Path build/speecher.exe).Path
+          $audio = (Resolve-Path audio/meeting-notes.wav).Path, (Resolve-Path audio/voice-memo.wav).Path
+          # A header with no audio fails to decode, so the batch ends on
+          # results with a failed file and no provider needed.
+          [IO.File]::WriteAllBytes((Join-Path $PWD "audio/broken.wav"), [byte[]]$header[0..15])
+          $grabs = @(
+            @{ Name = "win-transcribe-setup"; Page = "transcribe"; Files = $audio; Click = "" },
+            @{ Name = "win-transcribe-window"; Page = "transcribe-window"; Files = $audio; Click = "" },
+            @{ Name = "win-transcribe-results"; Page = "transcribe"; Click = "transcribeStart"
+               Files = @((Resolve-Path audio/broken.wav).Path) }
+          )
+          foreach ($grab in $grabs) {
+            $env:SPEECHER_GRAB_PAGE = $grab.Page
+            $env:SPEECHER_GRAB_CLICK = $grab.Click
+            $env:SPEECHER_GRAB_WAIT_MS = if ($grab.Click) { "4000" } else { "" }
+            $out = Join-Path (Resolve-Path shots).Path "$($grab.Name).png"
+            $arguments = @($grab.Files | ForEach-Object { "`"$_`"" }) + "--grab", "`"$out`""
+            $process = Start-Process $exe -ArgumentList $arguments -Wait -PassThru
+            if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+              throw "speecher --grab for $($grab.Name) exited with code $($process.ExitCode)"
+            }
+          }
+
+      - name: Upload Windows Transcribe screenshots
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: win-shots
+          retention-days: 3
+          path: shots/
 
       - name: Package installer
         shell: pwsh
