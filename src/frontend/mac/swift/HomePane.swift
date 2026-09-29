@@ -54,7 +54,7 @@ struct HomePane: View {
     private var form: some View {
         Form {
             if model.accessibilitySupported && !model.accessibilityEnabled {
-                accessibilityNotice
+                Section { AccessibilityNotice(model: model) }
             }
             dictationCard
             if !model.insightsEnabled {
@@ -84,22 +84,6 @@ struct HomePane: View {
     }
 
     // MARK: Dictation
-
-    /// The menu bar panel's notice, at the top of Home.
-    private var accessibilityNotice: some View {
-        Section {
-            LabeledContent {
-                Button("Open Privacy & Security…") { model.requestAccessibility() }
-            } label: {
-                Label("Without Accessibility, dictation only reaches the clipboard.",
-                      systemImage: "exclamationmark.triangle")
-                    .fixedSize(horizontal: false, vertical: true)
-                if !model.accessibilityProblem.isEmpty {
-                    Text(model.accessibilityProblem)
-                }
-            }
-        }
-    }
 
     @ViewBuilder private var dictationCard: some View {
         Section {
@@ -402,7 +386,7 @@ struct HomePane: View {
                 barGrid {
                     ForEach(Array(insights.apps.enumerated()), id: \.offset) { index, app in
                         bar(app.name, detail: app.profileLabel, value: app.words, total: most,
-                            emphasised: index == 0, caption: "\(app.percent)%")
+                            emphasised: index == 0, caption: app.percent.formatted(.percent))
                     }
                 }
             }
@@ -655,14 +639,14 @@ private func capitalised(_ text: String) -> String {
 /// "45 min", "2 h 5 min".
 private func minutes(_ total: Int) -> String {
     let hours = total / 60, rest = total % 60
-    if hours == 0 { return "\(total) min" }
-    return rest == 0 ? "\(hours) h" : "\(hours) h \(rest) min"
+    if hours == 0 { return "\(total.formatted()) min" }
+    return rest == 0 ? "\(hours.formatted()) h" : "\(hours.formatted()) h \(rest.formatted()) min"
 }
 
 /// "40s", "12 min", "1 h 5 min".
 private func duration(_ milliseconds: Int) -> String {
     let seconds = Double(milliseconds) / 1000
-    if seconds < 60 { return "\(Int(seconds.rounded()))s" }
+    if seconds < 60 { return "\(Int(seconds.rounded()).formatted())s" }
     return minutes(Int((seconds / 60).rounded()))
 }
 
