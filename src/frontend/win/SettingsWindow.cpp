@@ -698,6 +698,13 @@ struct SettingsWindow::Native {
         if (!window) {
             return false;
         }
+        // SPEECHER_GRAB_SIZE=WxH sizes the client area in DIPs, as on Qt and macOS.
+        const QStringList size = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(QLatin1Char('x'));
+        if (size.size() == 2) {
+            const double scale = GetDpiForWindow(windowHandle()) / 96.0;
+            window.AppWindow().ResizeClient(
+                {int(size.at(0).toInt() * scale), int(size.at(1).toInt() * scale)});
+        }
         const QString request = qEnvironmentVariable("SPEECHER_GRAB_PAGE");
         if (!request.isEmpty()) {
             showPage(request);

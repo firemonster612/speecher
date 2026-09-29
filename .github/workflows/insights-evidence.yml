@@ -29,6 +29,8 @@ concurrency:
 
 env:
   PAGES: home general dictation refinement vocabulary output accounts transcribe
+  # Every platform grabs $PAGES at this window content size, WxH in logical pixels.
+  PAGES_SIZE: 900x640
 
 jobs:
   linux:
@@ -74,7 +76,7 @@ jobs:
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace \
-            --env PAGES --env SPEECHER_INSIGHTS_TODAY=2026-09-26 \
+            --env PAGES --env SPEECHER_GRAB_SIZE=${{ env.PAGES_SIZE }} --env SPEECHER_INSIGHTS_TODAY=2026-09-26 \
             speecher-appimage:forky \
             bash -lc 'git config --global --add safe.directory "*" \
               && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=OFF -DSPEECHER_WITH_KDE=ON \
@@ -219,8 +221,7 @@ jobs:
           failed=0
           export DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib"
           export SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-active.jsonl"
-          # The size the Linux and Windows grabs open at.
-          export SPEECHER_GRAB_SIZE=900x640
+          export SPEECHER_GRAB_SIZE="$PAGES_SIZE"
           for page in $PAGES; do
             SPEECHER_GRAB_PAGE="$page" QT_LOGGING_RULES="*.debug=false" \
               build/speecher.app/Contents/MacOS/speecher \
@@ -414,6 +415,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path pages | Out-Null
           $env:SPEECHER_INSIGHTS_SEED = (Resolve-Path docs/insights-mockup/seed-active.jsonl).Path
           $env:SPEECHER_GRAB_SCROLL = ""
+          $env:SPEECHER_GRAB_SIZE = $env:PAGES_SIZE
           $exe = (Resolve-Path build/speecher.exe).Path
           foreach ($page in $env:PAGES -split ' ') {
             $env:SPEECHER_GRAB_PAGE = $page
