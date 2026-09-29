@@ -41,8 +41,9 @@ private:
     QLabel *m_empty = nullptr;
     QPushButton *m_undoDelete = nullptr;
     QList<QVariantMap> m_records;
-    // What Delete took, newest last, so Undo delete can put it back.
-    QList<QVariantMap> m_deleted;
+    // What Delete took and where it stood, newest last, so Undo delete can
+    // put it back in its place.
+    QList<QPair<qsizetype, QVariantMap>> m_deleted;
     std::function<void()> m_notifyChanged;
 };
 

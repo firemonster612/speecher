@@ -105,8 +105,9 @@ private:
     QLabel *m_empty = nullptr;
     QHash<QString, QPushButton *> m_actions;
     int m_lockedCount;
-    // What Delete took, newest last, so undo can put it back.
-    QList<QVariantMap> m_deleted;
+    // What Delete took and its index among the editable records, newest last,
+    // so undo can put it back in its place.
+    QList<QPair<qsizetype, QVariantMap>> m_deleted;
     std::function<void()> m_notifyChanged;
 };
 
@@ -250,7 +251,7 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
         std::sort(rows.begin(), rows.end(), std::greater<int>());
         const QList<QVariantMap> current = records();
         for (const int row : rows) {
-            m_deleted.append(current.at(row - m_lockedCount));
+            m_deleted.append({row - m_lockedCount, current.at(row - m_lockedCount)});
             m_table->removeRow(row);
         }
         updateButtons();
@@ -266,12 +267,13 @@ void CollectionEditor::runAction(const QString &actionId)
         if (m_deleted.isEmpty()) {
             return;
         }
-        current.prepend(m_deleted.takeLast());
+        const auto [index, record] = m_deleted.takeLast();
+        current.insert(std::min(index, current.size()), record);
     } else if (actionId == QStringLiteral("undoLatestLearn")) {
         if (current.isEmpty()) {
             return;
         }
-        m_deleted.append(current.takeFirst());
+        m_deleted.append({0, current.takeFirst()});
     } else {
         qFatal("the Qt collection editor has no command %s", qPrintable(actionId));
     }

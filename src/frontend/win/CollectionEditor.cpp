@@ -588,7 +588,7 @@ void CollectionEditor::removeSelected()
         if (m_records.at(index).locked) {
             continue;
         }
-        m_deleted.append(m_records.takeAt(index));
+        m_deleted.append({index, m_records.takeAt(index)});
         removed = true;
     }
     if (!removed) {
@@ -604,18 +604,12 @@ void CollectionEditor::runAction(const QString &actionId)
         if (m_deleted.isEmpty()) {
             return;
         }
-        qsizetype insertAt = m_records.size();
-        for (qsizetype index = 0; index < m_records.size(); ++index) {
-            if (!m_records.at(index).locked) {
-                insertAt = index;
-                break;
-            }
-        }
-        m_records.insert(insertAt, m_deleted.takeLast());
+        const auto [index, record] = m_deleted.takeLast();
+        m_records.insert(std::min(index, m_records.size()), record);
     } else if (actionId == kUndoLatestLearn) {
         for (qsizetype index = 0; index < m_records.size(); ++index) {
             if (!m_records.at(index).locked) {
-                m_deleted.append(m_records.takeAt(index));
+                m_deleted.append({index, m_records.takeAt(index)});
                 break;
             }
         }

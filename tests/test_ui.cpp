@@ -1027,7 +1027,8 @@ private slots:
         QVERIFY(table && remove && undo);
         QVERIFY(!undo->isEnabled());
 
-        table->setCurrentCell(0, 0);
+        // The second row, so an undo that put it back first would reorder them.
+        table->setCurrentCell(1, 0);
         remove->click();
         QCOMPARE(table->rowCount(), 1);
         QVERIFY(undo->isEnabled());
