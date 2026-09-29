@@ -116,7 +116,7 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
 // Text rows only: a key or password, shown masked.
 @property (nonatomic, readonly) BOOL secret;
-// Text rows only: shown in the empty field.
+// Text rows, and Custom rows that take text: shown in the empty field.
 @property (nonatomic, readonly, copy) NSString *placeholder;
 // Text rows only: the value may hold several lines.
 @property (nonatomic, readonly) BOOL multiline;
