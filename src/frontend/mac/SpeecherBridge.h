@@ -651,6 +651,18 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL local;
 @end
 
+// The Local Model detail's fact names, one property per LocalModelFactLabels
+// field, so the Swift side pairs each with its value by name.
+@interface LocalModelFactNames : NSObject
+@property (nonatomic, readonly, copy) NSString *bestFor;
+@property (nonatomic, readonly, copy) NSString *download;
+@property (nonatomic, readonly, copy) NSString *speedHere;
+@property (nonatomic, readonly, copy) NSString *wordErrorRate;
+@property (nonatomic, readonly, copy) NSString *textShows;
+@property (nonatomic, readonly, copy) NSString *language;
+@property (nonatomic, readonly, copy) NSString *license;
+@end
+
 // Everything LocalSetup knows, read in one go on every change it announces.
 @interface LocalSetupState : NSObject
 // "Apple M4 Max, 14 threads · Apple M4 Max, Metal · 36 GB memory", or
@@ -659,9 +671,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL hardwareKnown;
 // Where the word error rates come from, for a tooltip on them.
 @property (nonatomic, readonly, copy) NSString *wordErrorRateSources;
-// The detail's fact names, in LocalModelFactLabels order: best for, download,
-// speed here, word error rate, text shows, language, license.
-@property (nonatomic, readonly, copy) NSArray<NSString *> *factLabels;
+@property (nonatomic, readonly, strong) LocalModelFactNames *factLabels;
 // The catalog, in the order it lists the models.
 @property (nonatomic, readonly, copy) NSArray<LocalModelInfo *> *models;
 // The Local Model dictation will use: the chosen one, else the suggestion.

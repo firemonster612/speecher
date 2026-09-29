@@ -95,7 +95,7 @@ private struct LocalModelDetail: View {
                         }
                         .foregroundStyle(.secondary)
                         Text(fact.value).fixedSize(horizontal: false, vertical: true)
-                            .help(fact.name == model.local.factLabels[3] ? model.local.wordErrorRateSources : "")
+                            .help(fact.name == model.local.factLabels.wordErrorRate ? model.local.wordErrorRateSources : "")
                     }
                 }
             }
@@ -116,15 +116,15 @@ private struct LocalModelDetail: View {
     }
 
     private var facts: [(name: String, value: String)] {
-        let values = [entry.bestFor,
-                      "\(entry.sizeText) · \(entry.fitLabel)",
-                      entry.speedDetail,
-                      "\(LocalModelText.wer(entry.librispeechWer)) clear speech\n"
-                          + "\(LocalModelText.wer(entry.fleursWer)) everyday speech",
-                      entry.streams ? "As you speak" : "After you stop",
-                      "English",
-                      entry.licence]
-        return Array(zip(model.local.factLabels, values)).map { (name: $0.0, value: $0.1) }
+        let names = model.local.factLabels
+        return [(names.bestFor, entry.bestFor),
+                (names.download, "\(entry.sizeText) · \(entry.fitLabel)"),
+                (names.speedHere, entry.speedDetail),
+                (names.wordErrorRate, "\(LocalModelText.wer(entry.librispeechWer)) clear speech\n"
+                    + "\(LocalModelText.wer(entry.fleursWer)) everyday speech"),
+                (names.textShows, entry.streams ? "As you speak" : "After you stop"),
+                (names.language, "English"),
+                (names.license, entry.licence)]
     }
 
     @ViewBuilder private var actions: some View {

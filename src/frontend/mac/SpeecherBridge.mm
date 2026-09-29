@@ -796,11 +796,24 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 }
 @end
 
+@interface LocalModelFactNames ()
+@property (nonatomic, copy) NSString *bestFor;
+@property (nonatomic, copy) NSString *download;
+@property (nonatomic, copy) NSString *speedHere;
+@property (nonatomic, copy) NSString *wordErrorRate;
+@property (nonatomic, copy) NSString *textShows;
+@property (nonatomic, copy) NSString *language;
+@property (nonatomic, copy) NSString *license;
+@end
+
+@implementation LocalModelFactNames
+@end
+
 @interface LocalSetupState ()
 @property (nonatomic, copy) NSString *hardwareLine;
 @property (nonatomic) BOOL hardwareKnown;
 @property (nonatomic, copy) NSString *wordErrorRateSources;
-@property (nonatomic, copy) NSArray<NSString *> *factLabels;
+@property (nonatomic, strong) LocalModelFactNames *factLabels;
 @property (nonatomic, copy) NSArray<LocalModelInfo *> *models;
 @property (nonatomic, copy) NSString *speechModelChoice;
 @property (nonatomic, strong) LocalRunnerChoice *runnerChoice;
@@ -2805,10 +2818,15 @@ static LocalRunnerChoice *bridgedRunnerChoice(const speecher::RunnerChoice &reso
     state.hardwareLine = setup.hardwareLine().toNSString();
     state.wordErrorRateSources = speecher::wordErrorRateSources().toNSString();
     const LocalModelFactLabels names;
-    state.factLabels = @[names.bestFor.toNSString(), names.download.toNSString(),
-                         names.speedHere.toNSString(), names.wordErrorRate.toNSString(),
-                         names.textShows.toNSString(), names.language.toNSString(),
-                         names.license.toNSString()];
+    LocalModelFactNames *factNames = [LocalModelFactNames new];
+    factNames.bestFor = names.bestFor.toNSString();
+    factNames.download = names.download.toNSString();
+    factNames.speedHere = names.speedHere.toNSString();
+    factNames.wordErrorRate = names.wordErrorRate.toNSString();
+    factNames.textShows = names.textShows.toNSString();
+    factNames.language = names.language.toNSString();
+    factNames.license = names.license.toNSString();
+    state.factLabels = factNames;
     state.hardwareKnown = setup.hardwareKnown();
     NSMutableArray<LocalModelInfo *> *models = [NSMutableArray array];
     for (const LocalModel &model : localModelCatalog()) {
