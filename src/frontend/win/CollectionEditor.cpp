@@ -200,15 +200,21 @@ void CollectionEditor::build()
             self->updateToolbar();
         }
     });
-    content.Children().Append(m_list);
+    // The empty state sits in the list's own cell, centred over the blank
+    // list rather than under it.
+    Grid listArea;
+    listArea.Children().Append(m_list);
     if (!m_collection.emptyTitle.isEmpty()) {
         m_empty = secondaryTextBlock(m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp,
                                      L"SettingsCardDescriptionStyle",
                                      m_host);
         m_empty.HorizontalAlignment(HorizontalAlignment::Center);
+        m_empty.VerticalAlignment(VerticalAlignment::Center);
         m_empty.TextAlignment(TextAlignment::Center);
-        content.Children().Append(m_empty);
+        m_empty.IsHitTestVisible(false);
+        listArea.Children().Append(m_empty);
     }
+    content.Children().Append(listArea);
 
     m_problems = InfoBar();
     m_problems.Severity(InfoBarSeverity::Error);
