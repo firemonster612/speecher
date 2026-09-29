@@ -398,6 +398,7 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeText) {
     SpeecherTranscribeTextRetry,
     SpeecherTranscribeTextRetrying,
     SpeecherTranscribeTextTranscribeMore,
+    SpeecherTranscribeTextProgressName,
 };
 
 // Mirrors speecher::TranscribeQueueState.
@@ -1088,6 +1089,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (NSString *)transcriptSaveErrorForPath:(NSString *)path reason:(NSString *)reason
     NS_SWIFT_NAME(transcriptSaveError(path:reason:));
 - (NSString *)percentLabel:(double)progress NS_SWIFT_NAME(percentLabel(_:));
+- (NSString *)percentSpoken:(double)progress NS_SWIFT_NAME(percentSpoken(_:));
 // The settings page a row is on, from core (speecher::paneTitleForRow).
 - (NSString *)paneTitleForRowId:(NSString *)rowId NS_SWIFT_NAME(paneTitle(forRowId:));
 // Where to change the refinement model the Configure step shows.

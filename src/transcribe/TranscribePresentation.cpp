@@ -196,6 +196,8 @@ QString transcribeText(TranscribeText text)
         return QStringLiteral("Retrying\u2026");
     case TranscribeText::TranscribeMore:
         return QStringLiteral("Transcribe more files");
+    case TranscribeText::ProgressName:
+        return QStringLiteral("Transcription progress");
     }
     return {};
 }
@@ -243,6 +245,11 @@ QString transcriptSaveError(const QString &path, const QString &reason)
 QString percentLabel(qreal progress)
 {
     return QStringLiteral("%1%").arg(int(progress * 100));
+}
+
+QString percentSpoken(qreal progress)
+{
+    return QStringLiteral("%1 percent").arg(int(progress * 100));
 }
 
 QString mediaFilesHint()
