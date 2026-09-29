@@ -1,8 +1,9 @@
 # Known wording drift that tests/ui_wording.py allows, one finding per line:
 #   <rule> <path> <text>
 # The comment above a group says what clears it. When a pull request fixes a
-# string, delete its entry; the check prints "stale" for entries that no
-# longer occur. New wording is fixed at the source, not added here.
+# string, delete its entry in the same pull request: an entry that no longer
+# occurs is "stale" and fails the check. New wording is fixed at the source,
+# not added here.
 
 
 
@@ -38,7 +39,6 @@ core-string src/frontend/win/SetupWindow.cpp Plain text
 core-string src/frontend/win/SetupWindow.cpp Server URL
 core-string src/frontend/win/SetupWindow.cpp Speech models
 core-string src/frontend/win/SetupWindow.cpp Start Speecher at login
-core-string src/frontend/win/SetupWindow.cpp System default
 core-string src/ui/AppWindow.cpp Quit Speecher
 core-string src/ui/HomePage.cpp MMM d, yyyy
 core-string src/ui/InsightsCharts.cpp %1 min
@@ -59,17 +59,3 @@ core-string src/ui/setup/SetupPages.cpp Looking for Ollama, LM Studio and llama-
 core-string src/ui/setup/SetupPages.cpp OpenAI-compatible (Chat Completions)
 core-string src/ui/setup/SetupPages.cpp Plain text
 core-string src/ui/setup/SetupPages.cpp Server URL
-
-# Added by #163 (setup steps): SetupSteps now owns these, but the front ends
-# still hard-code them. A follow-up reads them from core.
-core-string src/frontend/mac/SpeecherBridge.mm No transcription service is available.
-core-string src/frontend/mac/swift/MenuBarExtra.swift Input level
-core-string src/frontend/mac/swift/SetupAssistant.swift No transcription service is available.
-core-string src/frontend/mac/swift/SetupAssistant.swift Speecher Setup Assistant
-core-string src/frontend/mac/swift/SetupAssistant.swift System default
-core-string src/frontend/qt/TrayStatusPanel.cpp Input level
-core-string src/frontend/win/DictationPanel.cpp Input level
-core-string src/frontend/win/SetupWindow.cpp No transcription service is available.
-core-string src/ui/setup/LinuxGlobalShortcutSetupPage.cpp No shortcut is set, so there is no way to start dictating.
-core-string src/ui/setup/SetupPages.cpp No transcription service is available.
-core-string src/ui/setup/SetupPages.cpp Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Ctrl+V. Nothing extra needs to be installed.

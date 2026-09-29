@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QLocale>
 #include <QMap>
+#include <QTextBoundaryFinder>
 
 #include <algorithm>
 #include <climits>
@@ -600,10 +601,13 @@ QString dayCountText(int days)
 
 QString weekdayLetter(int dayOfWeek)
 {
-    // Some locales' narrow names are two letters ("Mo"), and Windows gives
-    // its own abbreviations; the week strip has room for one.
+    // Some locales' narrow names are two letters ("T2" in Vietnamese), and
+    // Windows gives its own abbreviations; the week strip has room for one.
+    // One grapheme, not one code unit, keeps a vowel sign ("सो" in Hindi).
     const QString name = QLocale().dayName(dayOfWeek, QLocale::NarrowFormat);
-    return name.left(name.at(0).isHighSurrogate() ? 2 : 1);
+    QTextBoundaryFinder graphemes(QTextBoundaryFinder::Grapheme, name);
+    const qsizetype end = graphemes.toNextBoundary();
+    return end > 0 ? name.left(end) : name;
 }
 
 std::array<QString, 7> heatmapRowLabels()

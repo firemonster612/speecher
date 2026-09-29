@@ -36,7 +36,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace speecher::win {
@@ -110,15 +113,18 @@ ChartBrushes chartBrushes(const PaneHost &host)
 }
 
 // A stat tile's icon (insightTileIconId). Segoe Fluent Icons has no flame, so
-// the streak draws the Fluent UI System Icons fire (MIT, 16 px regular) as a
-// PathIcon in the caption's colour.
+// the streak draws the Fluent UI System Icons fire (MIT, 16 px regular; see
+// THIRD_PARTY_NOTICES.md) as a PathIcon in the caption's colour. The markup is
+// parsed once into a template; each tile still needs its own PathIcon, since
+// WinUI cannot share one Geometry between elements. The template is never
+// released, so no XAML object outlives the XAML runtime at exit.
 IconElement tileIcon(const QString &iconId)
 {
     if (iconId == QStringLiteral("flame")) {
-        static const hstring xaml = hstring(
-            LR"(<PathIcon xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" )"
-            LR"(Width="14" Height="14" Data="M8.1693 2.38161C8.44573 2.23863 8.72358 2.14217 8.9619 2.08199C8.98634 2.62292 9.15356 3.15614 9.38199 3.66553C9.70561 4.38719 10.1816 5.12315 10.6464 5.83569C10.6643 5.86313 10.6822 5.89054 10.7001 5.91792C11.1552 6.61534 11.5996 7.2963 11.9378 7.97958C12.2886 8.68856 12.5033 9.35877 12.5033 10C12.5033 11.1529 12.1583 12.1473 11.5113 12.8484C10.8703 13.5429 9.8868 14 8.50329 14C7.1062 14 6.13547 13.5958 5.457 12.9749C4.77036 12.3465 4.33504 11.4518 4.09918 10.3914C3.87699 9.39256 4.07292 8.49755 4.33365 7.84072C4.37607 7.73386 4.41999 7.63386 4.46377 7.54138L4.58929 7.79243C4.96992 8.55369 5.89562 8.86226 6.65688 8.48162C7.50305 8.05854 7.73716 7.02244 7.379 6.24601C7.00679 5.43912 6.71732 4.43545 6.97643 3.65811C7.17116 3.07394 7.63405 2.65846 8.1693 2.38161ZM4.11047 6.18914L4.1095 6.19037L4.10776 6.19258L4.1028 6.19894L4.08722 6.21936C4.07442 6.23635 4.0569 6.26009 4.0355 6.29026C3.99272 6.35055 3.93423 6.43679 3.8667 6.54649C3.73191 6.76546 3.5595 7.08054 3.40419 7.47178C3.09431 8.25245 2.84474 9.35744 3.12303 10.6086C3.38765 11.7982 3.89782 12.9035 4.78186 13.7126C5.67406 14.5292 6.89918 15 8.50329 15C10.121 15 11.3874 14.4571 12.2462 13.5266C13.0988 12.6027 13.5033 11.3471 13.5033 10C13.5033 9.14123 13.2178 8.31144 12.834 7.53604C12.4687 6.7979 11.9947 6.07168 11.5491 5.38919C11.5273 5.35579 11.5056 5.32249 11.484 5.2893C11.011 4.56435 10.5804 3.89406 10.2944 3.25635C10.0086 2.61894 9.89674 2.07627 9.99238 1.59806C10.0218 1.45117 9.98373 1.29885 9.88876 1.18301C9.79379 1.06716 9.65189 1 9.50209 1C9.08013 1 8.3769 1.14838 7.70988 1.49339C7.0368 1.84154 6.33303 2.42606 6.02775 3.34189C5.63764 4.51222 6.08674 5.83198 6.47095 6.66488C6.64198 7.03564 6.49348 7.44529 6.20967 7.5872C5.94238 7.72084 5.61736 7.6125 5.48372 7.34521L4.94931 6.27639C4.87293 6.12365 4.72388 6.02044 4.55403 6.0027C4.38417 5.98497 4.21676 6.05547 4.11047 6.18914Z"/>)");
-        return winrt::Microsoft::UI::Xaml::Markup::XamlReader::Load(xaml).as<IconElement>();
+        static const auto *fire = new std::optional(winrt::Microsoft::UI::Xaml::Markup::XamlReader::Load(
+            LR"(<DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">)"
+            LR"(<PathIcon Width="14" Height="14" Data="M8.1693 2.38161C8.44573 2.23863 8.72358 2.14217 8.9619 2.08199C8.98634 2.62292 9.15356 3.15614 9.38199 3.66553C9.70561 4.38719 10.1816 5.12315 10.6464 5.83569C10.6643 5.86313 10.6822 5.89054 10.7001 5.91792C11.1552 6.61534 11.5996 7.2963 11.9378 7.97958C12.2886 8.68856 12.5033 9.35877 12.5033 10C12.5033 11.1529 12.1583 12.1473 11.5113 12.8484C10.8703 13.5429 9.8868 14 8.50329 14C7.1062 14 6.13547 13.5958 5.457 12.9749C4.77036 12.3465 4.33504 11.4518 4.09918 10.3914C3.87699 9.39256 4.07292 8.49755 4.33365 7.84072C4.37607 7.73386 4.41999 7.63386 4.46377 7.54138L4.58929 7.79243C4.96992 8.55369 5.89562 8.86226 6.65688 8.48162C7.50305 8.05854 7.73716 7.02244 7.379 6.24601C7.00679 5.43912 6.71732 4.43545 6.97643 3.65811C7.17116 3.07394 7.63405 2.65846 8.1693 2.38161ZM4.11047 6.18914L4.1095 6.19037L4.10776 6.19258L4.1028 6.19894L4.08722 6.21936C4.07442 6.23635 4.0569 6.26009 4.0355 6.29026C3.99272 6.35055 3.93423 6.43679 3.8667 6.54649C3.73191 6.76546 3.5595 7.08054 3.40419 7.47178C3.09431 8.25245 2.84474 9.35744 3.12303 10.6086C3.38765 11.7982 3.89782 12.9035 4.78186 13.7126C5.67406 14.5292 6.89918 15 8.50329 15C10.121 15 11.3874 14.4571 12.2462 13.5266C13.0988 12.6027 13.5033 11.3471 13.5033 10C13.5033 9.14123 13.2178 8.31144 12.834 7.53604C12.4687 6.7979 11.9947 6.07168 11.5491 5.38919C11.5273 5.35579 11.5056 5.32249 11.484 5.2893C11.011 4.56435 10.5804 3.89406 10.2944 3.25635C10.0086 2.61894 9.89674 2.07627 9.99238 1.59806C10.0218 1.45117 9.98373 1.29885 9.88876 1.18301C9.79379 1.06716 9.65189 1 9.50209 1C9.08013 1 8.3769 1.14838 7.70988 1.49339C7.0368 1.84154 6.33303 2.42606 6.02775 3.34189C5.63764 4.51222 6.08674 5.83198 6.47095 6.66488C6.64198 7.03564 6.49348 7.44529 6.20967 7.5872C5.94238 7.72084 5.61736 7.6125 5.48372 7.34521L4.94931 6.27639C4.87293 6.12365 4.72388 6.02044 4.55403 6.0027C4.38417 5.98497 4.21676 6.05547 4.11047 6.18914Z"/></DataTemplate>)").as<DataTemplate>());
+        return fire->value().LoadContent().as<IconElement>();
     }
     static const QHash<QString, wchar_t> glyphs{
         {QStringLiteral("text"), L'\uE8E4'},       // AlignLeft
@@ -191,12 +197,24 @@ ComboBox indexPicker(std::initializer_list<const wchar_t *> labels,
     return combo;
 }
 
-// As many equal columns as fit at minWidth each and divide the cards evenly,
-// so four tiles go 4, 2 or 1 across and a pair stacks when narrow.
+// As many equal columns as fit and divide the cards evenly, so four tiles go
+// 4, 2 or 1 across and a pair stacks when narrow. A column fits when it is at
+// least minWidth and as wide as every card's text laid out unwrapped, with the
+// column spacing between them.
 void layoutColumns(const Grid &grid, double width, double minWidth)
 {
     const uint32_t count = grid.Children().Size();
-    uint32_t columns = std::clamp(static_cast<uint32_t>(width / minWidth), 1u, count);
+    double columnWidth = minWidth;
+    for (const UIElement &card : grid.Children()) {
+        card.Measure({std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()});
+        columnWidth = std::max(columnWidth, double(card.DesiredSize().Width));
+    }
+    // Measuring unconstrained left each card's desired size at its widest;
+    // the grid measures them again at the column width.
+    grid.InvalidateMeasure();
+    const double spacing = grid.ColumnSpacing();
+    uint32_t columns = static_cast<uint32_t>(
+        std::clamp(std::floor((width + spacing) / (columnWidth + spacing)), 1.0, double(count)));
     while (count % columns) {
         --columns;
     }
@@ -332,7 +350,8 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
         host));
     // The popup shows a failure for five seconds and cannot take focus, so the
     // reason also stays here until the next session starts.
-    const QString failure = controller->session()->lastFailure();
+    const QString failure =
+        dictationFailureNote(controller->stateName(), controller->session()->lastFailure());
     if (!failure.isEmpty()) {
         TextBlock reason = styledTextBlock(failure, L"SettingsCardBodyStyle");
         reason.IsTextSelectionEnabled(true);
@@ -492,7 +511,7 @@ UIElement statTiles(const InsightsSummary &summary, const QDate &today, const Pa
         }
         tiles.push_back(cardContainer(tile));
     }
-    return adaptiveRow(tiles, kInsightTileMinimumWidth);
+    return adaptiveRow(tiles, 0);
 }
 
 // A chart mark's tip, shown the moment the pointer arrives rather than after

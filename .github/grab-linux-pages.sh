@@ -6,6 +6,9 @@ set -euo pipefail
 : "${PAGES:?set PAGES to the page ids to grab}"
 exe="${1:-build/speecher}"
 export QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=kde XDG_CURRENT_DESKTOP=KDE
+# The macOS and Windows runners' locale, so numbers are grouped and weekdays
+# are letters; the C locale the build image sets has neither.
+export LANG=en_US.UTF-8
 XDG_CONFIG_HOME="$(mktemp -d)" XDG_DATA_HOME="$(mktemp -d)" logs="$(mktemp -d)"
 export XDG_CONFIG_HOME XDG_DATA_HOME
 export SPEECHER_INSIGHTS_SEED="$PWD/docs/insights-mockup/seed-active.jsonl"

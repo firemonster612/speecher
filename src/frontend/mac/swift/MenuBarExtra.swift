@@ -35,7 +35,7 @@ struct MenuBarPanel: View {
             .disabled(!model.toggleEnabled)
             if model.accessibilitySupported && !model.accessibilityEnabled {
                 Divider()
-                accessibilityNotice
+                AccessibilityNotice(model: model)
             }
             Divider()
             if model.transcript.isEmpty {
@@ -61,12 +61,18 @@ struct MenuBarPanel: View {
         // would otherwise make the panel as wide as whatever was dictated.
         .frame(maxWidth: 300, alignment: .leading)
     }
+}
 
-    /// Where a permission the app is missing belongs: beside the button that
-    /// would be affected by it, rather than in a settings pane nobody has open
-    /// or an alert nobody asked for. macOS grants are permanent once given, so
-    /// "off" is the only state worth saying anything about.
-    @ViewBuilder private var accessibilityNotice: some View {
+/// Where a permission the app is missing belongs: beside the button that
+/// would be affected by it, on Home and in the menu bar panel, rather than in
+/// a settings pane nobody has open or an alert nobody asked for. macOS grants
+/// are permanent once given, so "off" is the only state worth saying anything
+/// about. The container lays the parts out: a stack in the panel, form rows
+/// on Home.
+struct AccessibilityNotice: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
         Label("Without Accessibility, dictation only reaches the clipboard.",
               systemImage: "exclamationmark.triangle")
             // A sentence in a Label truncates to one line unless it is told it

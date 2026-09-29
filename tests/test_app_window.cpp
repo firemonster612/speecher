@@ -435,6 +435,81 @@ private slots:
         QVERIFY(page.findChildren<QFrame *>(QStringLiteral("insightTile")).isEmpty());
     }
 
+    void homeTilesGoFourAcrossOnlyWhenNoLineWraps_data()
+    {
+        // 0 keeps the platform's font; at 7 px the tiles' title rows and
+        // lines differ most in width, so a tile squeezed by its neighbours
+        // would wrap.
+        QTest::addColumn<int>("pixelSize");
+        QTest::newRow("platform font") << 0;
+        QTest::newRow("7 px") << 7;
+    }
+
+    void homeTilesGoFourAcrossOnlyWhenNoLineWraps()
+    {
+        QFETCH(int, pixelSize);
+        qputenv("SPEECHER_INSIGHTS_SEED",
+                QFINDTESTDATA("../docs/insights-mockup/seed-active.jsonl").toLocal8Bit());
+        qputenv("SPEECHER_INSIGHTS_TODAY", "2026-09-26");
+        const auto restore = qScopeGuard([] {
+            qunsetenv("SPEECHER_INSIGHTS_SEED");
+            qunsetenv("SPEECHER_INSIGHTS_TODAY");
+        });
+        const QFont originalFont = QApplication::font();
+        if (pixelSize > 0) {
+            QFont font = originalFont;
+            font.setPixelSize(pixelSize);
+            QApplication::setFont(font);
+        }
+        const auto restoreFont = qScopeGuard([originalFont] { QApplication::setFont(originalFont); });
+        ApplicationController controller(true);
+        controller.settings()->setInsightsEnabled(true);
+        HomePage page(&controller);
+        // The page caps Home's column at a width that, with some platforms'
+        // fonts, never fits four tiles. Lift the cap so the column follows
+        // the page and both layouts come up on every platform.
+        delete page.findChild<QObject *>(QStringLiteral("pageWidthGovernor"));
+        page.findChild<QScrollArea *>()->widget()->setMaximumWidth(QWIDGETSIZE_MAX);
+        page.show();
+        const auto wrapped = [&page] {
+            for (const QFrame *tile : page.findChildren<QFrame *>(QStringLiteral("insightTile"))) {
+                for (const QLabel *line : tile->findChildren<QLabel *>()) {
+                    if (line->wordWrap() && line->height() > line->fontMetrics().height() * 3 / 2) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+        const auto fourAcross = [&page] {
+            const auto *grid = page.findChild<QWidget *>(QStringLiteral("insightTiles"));
+            return qobject_cast<QGridLayout *>(grid->layout())->itemAtPosition(0, 3) != nullptr;
+        };
+        const auto layOut = [&page](int width) {
+            page.resize(width, 800);
+            QCoreApplication::processEvents();
+            QCoreApplication::processEvents();
+        };
+        // The coarse pass finds where four across starts; a line that wraps
+        // does so just past that point, so the pixels around it are all tried.
+        int firstFour = 0;
+        for (int width = 300; width <= 2400 && !firstFour; width += 20) {
+            layOut(width);
+            if (fourAcross()) firstFour = width;
+        }
+        QVERIFY2(firstFour > 300, "the tiles should start two by two and go four across");
+        // A tile that cannot shrink widens the page instead of wrapping, so
+        // the column staying inside the page is part of fitting.
+        auto *column = page.findChild<QScrollArea *>()->widget();
+        for (int width = firstFour - 20; width <= firstFour + 20; ++width) {
+            layOut(width);
+            if (!fourAcross()) continue;
+            QVERIFY2(!wrapped(), qPrintable(QStringLiteral("a line wraps four across at %1").arg(width)));
+            QVERIFY2(column->width() <= page.width(),
+                     qPrintable(QStringLiteral("four across overflows the page at %1").arg(width)));
+        }
+    }
+
     void controllerKeepsTheRecordOfTheLastTranscript()
     {
         QTemporaryDir dir;
@@ -606,14 +681,18 @@ private slots:
         controller.settings()->setSpeechProvider(QStringLiteral("missing"));
         controller.session()->startListening();
         QCOMPARE(controller.session()->stateName(), QStringLiteral("error"));
-        QVERIFY(error->isVisible());
-        QCOMPARE(error->text(), controller.session()->lastFailure());
-        QVERIFY(!error->text().isEmpty());
+        QVERIFY(!controller.session()->lastFailure().isEmpty());
+        // The status line says it, so the note under it waits.
+        auto *status = page.findChild<QLabel *>(QStringLiteral("dictationStatus"));
+        QVERIFY(status);
+        QCOMPARE(status->text().simplified(), controller.session()->lastFailure());
+        QVERIFY(!error->isVisible());
 
-        // Leaving the error state does not hide it; only a new session does.
+        // Leaving the error state shows it; only a new session hides it again.
         controller.session()->stopListening();
         QCOMPARE(controller.session()->stateName(), QStringLiteral("idle"));
         QVERIFY(error->isVisible());
+        QCOMPARE(error->text(), controller.session()->lastFailure());
         controller.settings()->setSpeechProvider(QStringLiteral("claude"));
         controller.session()->startListening();
         QVERIFY(controller.session()->lastFailure().isEmpty());

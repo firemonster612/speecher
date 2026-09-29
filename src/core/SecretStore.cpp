@@ -347,6 +347,12 @@ QString SecretStore::keyringSecret(Secret secret) const
     if (QStandardPaths::isTestModeEnabled()) {
         const int delay = qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_READ_DELAY_MS");
         if (delay > 0) QThread::msleep(delay);
+        // Tests that dictation reads the keyring on a worker, not the GUI thread.
+        if (qEnvironmentVariableIntValue("SPEECHER_TEST_KEYRING_REFUSE_GUI_THREAD") == 1
+            && QThread::isMainThread()) {
+            m_lastError = QStringLiteral("Desktop keyring read on the GUI thread");
+            return {};
+        }
     }
     if (keyringReadsTimeOut()) {
         m_lastError = QStringLiteral("Desktop keyring request timed out");

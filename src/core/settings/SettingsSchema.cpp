@@ -613,6 +613,7 @@ QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const Ap
                   QStringLiteral("The API the server speaks."),
                   fixedOptions({
                       {QStringLiteral("openai"), QStringLiteral("OpenAI-compatible (Chat Completions)")},
+                      // ui-lint: allow title-case: Messages is the name of Anthropic's API.
                       {QStringLiteral("anthropic"), QStringLiteral("Anthropic-compatible (Messages)")},
                   }),
                   [](const AppSettings &settings) { return resolvedRefinementEndpoint(settings.refinement).format; },
@@ -1023,6 +1024,7 @@ SettingsPage generalPage(const SchemaContext &context)
                              ? QStringLiteral("Unknown")
                              : context.currentVersion),
                  actionRow(kWhatsNewAction,
+                           // ui-lint: allow title-case: names the What's New Page.
                            QStringLiteral("What's New"),
                            QStringLiteral("Release notes for this version, and the settings it added."),
                            QStringLiteral("Open")),
@@ -2875,6 +2877,7 @@ const QList<PaneSpec> &paneSpecs()
           {"general", "System"},
           {"general", "Setup"},
           {"general", "Updates"}}},
+        // ui-lint: allow title-case: names the What's New Page.
         {"whatsNew", "What's New", "whatsNew", PaneLayout::Sections,
          {{"whatsNew", ""}, {"whatsNew", "Try the new settings"}}},
         {"dictation", "Dictation", "microphone", PaneLayout::Sections,
@@ -2891,6 +2894,7 @@ const QList<PaneSpec> &paneSpecs()
           {"refinement", "Tones"},
           {"refinement", "Cleanup levels"},
           {"refinement", "Additional instructions"},
+          // ui-lint: allow avoid-term (the setting that replaces the system prompt)
           {"refinement", "Custom system prompt"}}},
         {"localModels", "Local models", "localModels", PaneLayout::Sections,
          {{"localModels", "Speech models"},

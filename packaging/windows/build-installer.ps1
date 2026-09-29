@@ -51,6 +51,7 @@ if (-not (Test-Path $Transcribe)) {
 Copy-Item $Transcribe $AppDir
 Get-ChildItem $BuildDir -Filter "ggml*.dll" | Copy-Item -Destination $AppDir
 Copy-Item (Join-Path $BuildDir "transcribe.cpp-licenses.md") $AppDir
+Copy-Item (Join-Path $RootDir "THIRD_PARTY_NOTICES.md") $AppDir
 
 $WinDeployQt = (Get-Command windeployqt.exe).Source
 & $WinDeployQt --release --no-translations --no-compiler-runtime (Join-Path $AppDir "speecher.exe")

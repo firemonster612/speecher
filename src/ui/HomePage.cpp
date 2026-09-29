@@ -43,7 +43,7 @@ namespace {
 
 // Below this column width the two-up cards stack. The column is capped like
 // the settings cards, so a 1040 px window keeps both rows side by side and a
-// 720 px one stacks them. The tiles go by kInsightTileMinimumWidth instead.
+// 720 px one stacks them. The tiles go by the width of their own lines.
 constexpr int kTwoUpMinimumWidth = 560;
 // The lighter tint for every progress bar but the leading one. Breeze draws a
 // progress fill darker than its palette colour, so the charts' 42 % mix would
@@ -507,6 +507,7 @@ void HomePage::refresh()
     m_insights = nullptr;
     m_tileGrid = nullptr;
     m_tiles.clear();
+    m_tileMinimumWidth = 0;
     m_pairs.clear();
 
     const bool enabled = m_controller->settings()->insightsEnabled();
@@ -587,13 +588,17 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
             iconLabel->setPixmap(icon.pixmap(extent, extent));
             title->addWidget(iconLabel);
         }
-        title->addWidget(mutedLabel(text.title, cardHost, false), 1);
+        QLabel *titleLabel = mutedLabel(text.title, cardHost, false);
+        titleLabel->setWordWrap(false);
+        title->addWidget(titleLabel, 1);
         content->addLayout(title);
         content->addWidget(bigNumber({{text.value, text.unit}}, cardHost));
+        QList<QLabel *> lines;
         for (int index = 0; index < text.lines.size(); ++index) {
             QLabel *line = mutedLabel(text.lines.at(index), cardHost);
             if (index == 0) line->setToolTip(text.firstLineTip);
             content->addWidget(line);
+            lines.append(line);
         }
         if (text.showsWeek) {
             auto *week = new InsightsHeatmap(InsightsHeatmap::Shape::Week, cardHost);
@@ -603,6 +608,12 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
             content->addWidget(week);
         }
         content->addStretch();
+        // Four across only when every row fits with no line wrapped: the
+        // card's minimum width while its lines cannot wrap.
+        for (QLabel *line : std::as_const(lines)) line->setWordWrap(false);
+        content->invalidate();
+        m_tileMinimumWidth = std::max(m_tileMinimumWidth, card->minimumSizeHint().width());
+        for (QLabel *line : std::as_const(lines)) line->setWordWrap(true);
         m_tiles.append(card);
     }
     return host;
@@ -918,7 +929,7 @@ void HomePage::applyWidth()
                                                      : QBoxLayout::LeftToRight);
     }
     if (!m_tileGrid) return;
-    const int fourAcross = 4 * kInsightTileMinimumWidth + 3 * m_tileGrid->horizontalSpacing();
+    const int fourAcross = 4 * m_tileMinimumWidth + 3 * m_tileGrid->horizontalSpacing();
     const int columns = width < fourAcross ? 2 : 4;
     if (m_tileGrid->count() == m_tiles.size() && m_tileGrid->columnCount() == columns
         && m_tileGrid->itemAtPosition(0, columns - 1)) {
@@ -1006,7 +1017,7 @@ void HomePage::applyState(const QString &stateName)
                                            ? QStringLiteral("media-playback-stop")
                                            : QStringLiteral("media-record")));
     m_waveform->setVisible(active);
-    const QString failure = m_controller->session()->lastFailure();
+    const QString failure = dictationFailureNote(stateName, m_controller->session()->lastFailure());
     m_errorText->setText(failure);
     m_errorText->setVisible(!failure.isEmpty());
     if (!active) {

@@ -33,6 +33,9 @@ DictationToggleAction dictationToggleAction(const QString &stateName);
 // an error's reason, or while delivering the receipt ("Input sent"); the
 // other states ignore it.
 QString dictationStatusLabel(const QString &stateName, const QString &message = {});
+// The last failure (DictationSession::lastFailure) as Home shows it under the
+// status line: empty in the error state, whose status line already says it.
+QString dictationFailureNote(const QString &stateName, const QString &lastFailure);
 
 // Whether a tray shows the listening icon, tooltip and level meter for a
 // session state name: the states where the microphone is open or about to be.

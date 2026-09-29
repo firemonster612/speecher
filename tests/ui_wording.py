@@ -5,8 +5,9 @@
   ui_wording.py front-ends  No front end hard-codes a string core already owns.
 
 A heuristic, not a C++ parser: it reads QStringLiteral/QLatin1String/tr
-literals with a regex and treats one as user-visible when it contains a space
-or starts with a capital letter. The front-end check flags any string literal
+literals with a regex, plus the bare literals in the STRING_TABLES functions,
+and treats one as user-visible when it contains a space or starts with a
+capital letter. The front-end check flags any string literal
 (Qt, Swift, C++/WinRT L"…") equal to a core string of two or more words.
 
 `// ui-lint: allow <rule>` on the literal's line, or the line above, allows one
@@ -33,30 +34,54 @@ FRONT_END_SUFFIXES = {".cpp", ".h", ".mm", ".swift", ".xaml"}
 
 CORE_LITERAL = re.compile(r'\b(?:QStringLiteral|QLatin1String|tr)\(\s*((?:"(?:[^"\\\n]|\\.)*"\s*)+)\)')
 ANY_LITERAL = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+# Core functions that word the UI in a plain const char* table, and the bare
+# literals that are elements of a brace initialiser inside them.
+STRING_TABLES = ["paneSpecs"]
+TABLE_BODY = re.compile(r"\b(?:" + "|".join(STRING_TABLES) + r")\(\)\s*\{.*?\n\}", re.DOTALL)
+BRACED_LITERAL = re.compile(r'(?<=[{,])\s*("(?:[^"\\\n]|\\.)*")(?=\s*[,}])')
+# Comments, plus the string and character literals that can contain "//" or "/*".
+TOKEN = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'', re.DOTALL)
 PIECE = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+# \uXXXX (and Swift's \u{X…}), \xXX, then any other one-character escape.
+ESCAPE = re.compile(r"\\(?:u\{?([0-9A-Fa-f]{4,6})\}?|x([0-9A-Fa-f]{2})|(.))")
+SIMPLE_ESCAPES = {"n": "\n", "t": "\t"}
 MARKER = re.compile(r"ui-lint: allow ([\w-]+)")
 
-US_SPELLING = re.compile(
+BRITISH_SPELLING = re.compile(
     r"\b(\w*(?:behaviour|colour|favour|honour|labour|neighbour)\w*"
     r"|licence[sd]?|defence|centre[sd]?|grey\w*|catalogue[sd]?|whilst|amongst"
     r"|\w*(?:organis|recognis|customis|initialis|normalis|optimis|prioritis|summaris|synchronis"
     r"|authoris|minimis|maximis|finalis|utilis|apologis|personalis|realis|visualis)(?:e|es|ed|ing|ation)"
-    r"|analys(?:e|es|ed|ing)|cancell(?:ed|ing)|label+ed|labell\w+|travell\w+|modell\w+)\b",
+    r"|analys(?:e|ed|ing)|cancell(?:ed|ing)|labell(?:ed|ing)|travell\w+|modell\w+)\b",
     re.IGNORECASE,
 )
 
 # Names that keep their capitals besides the CONTEXT.md glossary terms.
 PROPER_NAMES = [
-    "Speecher", "Claude", "Claude Voice", "ChatGPT", "Codex", "OpenAI", "Anthropic", "Gemini",
+    "Speecher", "Speecher Setup Assistant", "Claude", "Claude Voice", "Claude Code", "Opus",
+    "Sonnet", "Haiku", "ChatGPT", "Codex", "OpenAI", "Anthropic", "Gemini", "CLI Proxy API",
     "KDE", "Plasma", "KWin", "GNOME", "Wayland", "X11", "Linux", "Windows", "macOS", "Mac",
     "Apple", "Microsoft", "Sparkle", "AppImage", "GitHub", "Ollama", "LM Studio", "llama-server",
-    "Whisper", "Parakeet", "Moonshine", "Vulkan", "CUDA", "Metal", "Stable", "Nightly", "Home",
-    "General", "Accounts", "Dictation", "Local models", "Transcribe", "Refinement", "Vocabulary",
-    "Output", "Finder", "Explorer", "Settings", "System Settings", "Accessibility", "Terminal",
-    "Work", "Email", "Personal", "AI coding", "Other", "None", "Light", "Medium", "High",
-    "Low", "Standard", "What's New", "Speecher Setup Assistant", "CLI Proxy API", "Claude Code", "Opus", "Sonnet", "Haiku",
-    # Windows and vendor API names.
-    "UI Automation", "Chat Completions", "Messages",
+    "Whisper", "Parakeet", "Moonshine", "Vulkan", "CUDA", "Metal",
+    # Apple and Windows apps, panes and API names.
+    "Finder", "Explorer", "Terminal", "System Settings", "Accessibility", "UI Automation",
+    "Chat Completions",
+]
+UNESCAPE_EXAMPLES = [
+    (r"Export all…", "Export all…"),
+    (r"Transcribe \u{2014} Speecher", "Transcribe — Speecher"),
+    (r"caf\xe9", "café"),
+    (r"say \"hi\"\\n", 'say "hi"\\n'),
+]
+# (text, rule, whether the rule flags it), checked on every lint run.
+RULE_EXAMPLES = [
+    ("Start Dictation", "title-case", True),
+    ("Open Settings…", "title-case", True),
+    ("Open System Settings", "title-case", False),
+    ("Labeled", "british-spelling", False),
+    ("Labelled", "british-spelling", True),
+    ("Analyses", "british-spelling", False),
+    ("Analysed", "british-spelling", True),
 ]
 KEY_NAMES = ["Ctrl", "Control", "Shift", "Alt", "Option", "Cmd", "Command", "Meta", "Super",
              "Fn", "Esc", "Escape", "Enter", "Return", "Tab", "Space", "Backspace", "Delete"]
@@ -78,27 +103,50 @@ def source_files(patterns):
 
 
 def unescape(text):
-    return text.replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
+    """A C++, Swift or allowlist literal's text: "\\u2026" and "…" compare equal."""
+    def decode(match):
+        code = match.group(1) or match.group(2)
+        if code:
+            return chr(int(code, 16))
+        return SIMPLE_ESCAPES.get(match.group(3), match.group(3))
+    return ESCAPE.sub(decode, text)
+
+
+def comment_offsets(source):
+    """The offset of every character inside a // or /* */ comment."""
+    offsets = set()
+    for token in TOKEN.finditer(source):
+        if token.group().startswith("/"):
+            offsets.update(range(token.start(), token.end()))
+    return offsets
 
 
 def literals(path, pattern):
     """Matches of pattern outside comments, as (match, line, rules allowed by a marker)."""
     source = path.read_text(encoding="utf-8")
     lines = source.splitlines()
+    comments = comment_offsets(source)
     for match in pattern.finditer(source):
-        line = source.count("\n", 0, match.start()) + 1
-        before = source[source.rfind("\n", 0, match.start()) + 1:match.start()]
-        if re.search(r"(^|\s)//", before) or before.lstrip().startswith(("*", "/*")):
+        if match.start(1) in comments:
             continue
+        line = source.count("\n", 0, match.start()) + 1
         marked = {rule for text in lines[max(0, line - 2):line] for rule in MARKER.findall(text)}
         yield match, line, marked
+
+
+def table_literals(path):
+    """Bare literals in the STRING_TABLES functions, like literals()."""
+    tables = [body.span() for body in TABLE_BODY.finditer(path.read_text(encoding="utf-8"))]
+    for found in literals(path, BRACED_LITERAL):
+        if any(start <= found[0].start() < end for start, end in tables):
+            yield found
 
 
 def core_strings():
     """Every user-visible core literal as (path, line, text, rules allowed by a marker)."""
     found = []
     for path in source_files(CORE_SOURCES):
-        for match, line, marked in literals(path, CORE_LITERAL):
+        for match, line, marked in [*literals(path, CORE_LITERAL), *table_literals(path)]:
             text = unescape("".join(PIECE.findall(match.group(1))))
             if not re.search(r"[A-Za-z]", text) or not (" " in text or text[:1].isupper()):
                 continue
@@ -129,8 +177,8 @@ def violations(text, avoid, exempt):
     # "..." inside a token, as in a compare range "a...b", is not an ellipsis.
     if re.search(r"\.\.\.(?!\S)|(?<!\S)\.\.\.", text):
         found.append(("ellipsis", 'use "…" (U+2026), not "..."'))
-    for spelling in US_SPELLING.findall(text):
-        found.append(("us-spelling", f'"{spelling}" is not US spelling'))
+    for spelling in BRITISH_SPELLING.findall(text):
+        found.append(("british-spelling", f'"{spelling}" is British spelling; use US spelling'))
     if any(is_title_case(part, exempt) for part in text.split(";;")):
         found.append(("title-case", "captions are sentence case"))
     for term in avoid.findall(text):
@@ -155,6 +203,10 @@ def lint():
     terms, avoid_terms = read_context()
     exempt = phrase_pattern(terms + PROPER_NAMES + KEY_NAMES)
     avoid = re.compile(phrase_pattern(avoid_terms).pattern, re.IGNORECASE)
+    for text, rule, expected in RULE_EXAMPLES:
+        if (rule in {found for found, _ in violations(text, avoid, exempt)}) != expected:
+            yield ("tests/ui_wording.py", 0, rule, text,
+                   f"the rule should {'flag' if expected else 'pass'} this example")
     for path, line, text, marked in core_strings():
         for rule, reason in violations(text, avoid, exempt):
             if rule not in marked:
@@ -162,6 +214,11 @@ def lint():
 
 
 def front_ends():
+    # (literal as written, its text): core escapes what a front end may type raw.
+    for written, text in UNESCAPE_EXAMPLES:
+        if unescape(written) != text:
+            yield ("tests/ui_wording.py", 0, "core-string", written,
+                   f"unescape() should give {text!r}, not {unescape(written)!r}")
     owned = {text for _, _, text, marked in core_strings()
              if len(text.split()) > 1 and "core-string" not in marked}
     for directory in FRONT_END_SOURCES:
@@ -188,9 +245,9 @@ def report(findings, rules):
         else:
             failures += 1
             print(f"FAIL     {path}:{line}: {rule}: {reason}: {text!r}")
-    # A warning, not a failure: the pull request that fixes the wording can
-    # land before or after the one that deletes its entry.
+    # A failure, so a string that was fixed can't come back unnoticed.
     for rule, path, text in sorted(allowlist.keys() - used):
+        failures += 1
         print(f"stale    {path}: {rule}: {text!r} no longer occurs; delete it from the allowlist")
     return failures
 
@@ -198,7 +255,7 @@ def report(findings, rules):
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     checks = {
-        "lint": (lint, {"ellipsis", "us-spelling", "title-case", "avoid-term"}),
+        "lint": (lint, {"ellipsis", "british-spelling", "title-case", "avoid-term"}),
         "front-ends": (front_ends, {"core-string"}),
     }
     if len(sys.argv) != 2 or sys.argv[1] not in checks:

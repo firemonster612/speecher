@@ -895,18 +895,10 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) NSInteger recordCount;
 @property (nonatomic) NSInteger words;
 @property (nonatomic) NSInteger dictations;
-@property (nonatomic) double dictationsPerActiveDay;
-@property (nonatomic, copy) NSString *wordsDeltaText;
-@property (nonatomic, copy) NSString *dictationsDeltaText;
-@property (nonatomic, copy) NSString *bookComparison;
-@property (nonatomic, copy) NSString *bookComparisonTip;
-@property (nonatomic, copy) NSString *audioTotalText;
-@property (nonatomic, copy) NSString *averageDictationText;
 @property (nonatomic) NSInteger currentStreak;
 @property (nonatomic) NSInteger bestStreak;
 @property (nonatomic, copy) NSString *bestStreakEnd;
 @property (nonatomic) BOOL bestStreakEndsToday;
-@property (nonatomic, copy) NSString *streakText;
 @property (nonatomic, copy) NSArray<NSNumber *> *weekActivity;
 @property (nonatomic) NSInteger todayIndex;
 @property (nonatomic, copy) NSArray<NSString *> *weekLetters;
@@ -926,8 +918,6 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSArray<NSNumber *> *hourCounts;
 @property (nonatomic, copy) NSArray<NSString *> *hourLabels;
 @property (nonatomic) NSInteger peakHour;
-@property (nonatomic, copy) NSString *busiestWeekday;
-@property (nonatomic, copy) NSString *persona;
 @property (nonatomic) BOOL hasHourData;
 @property (nonatomic) NSInteger wordsPerMinute;
 @property (nonatomic) NSInteger typingWordsPerMinute;
@@ -1045,20 +1035,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.recordCount = recordCount;
     model.words = summary.words;
     model.dictations = summary.dictations;
-    model.dictationsPerActiveDay = summary.dictationsPerActiveDay;
-    model.wordsDeltaText = speecher::deltaText(summary.wordsDelta, summary.deltaPeriodLabel).toNSString();
-    model.dictationsDeltaText =
-        speecher::deltaText(summary.dictationsDelta, summary.deltaPeriodLabel).toNSString();
-    model.bookComparison = summary.bookComparison.toNSString();
-    model.bookComparisonTip = summary.bookComparisonTip.toNSString();
-    model.audioTotalText = speecher::audioTotalText(summary.audioMs).toNSString();
-    model.averageDictationText = speecher::averageDictationText(summary).toNSString();
 
     model.currentStreak = summary.currentStreak;
     model.bestStreak = summary.bestStreak;
     model.bestStreakEnd = bridgedRelativeDay(summary.bestStreakEnd, today);
     model.bestStreakEndsToday = summary.bestStreakEndsToday;
-    model.streakText = speecher::streakText(summary, today).toNSString();
     NSMutableArray<NSNumber *> *week = [NSMutableArray array];
     NSMutableArray<NSString *> *letters = [NSMutableArray array];
     for (int day = 0; day < 7; ++day) {
@@ -1091,9 +1072,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.hourLabels = hourLabels;
     model.hourTips = hourTips;
     model.peakHour = summary.peakHour;
-    model.busiestWeekday =
-        QLocale().dayName(summary.busiestWeekday, QLocale::LongFormat).toNSString();
-    model.persona = summary.persona.toNSString();
     model.hasHourData = summary.hasHourData;
 
     model.wordsPerMinute = summary.wordsPerMinute;
@@ -2119,14 +2097,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::kCopiedFeedbackMs / 1000.0;
 }
 
-+ (CGFloat)insightTileMinimumWidth
+- (NSString *)failureNote
 {
-    return speecher::kInsightTileMinimumWidth;
-}
-
-- (NSString *)lastFailure
-{
-    return _state->controller->session()->lastFailure().toNSString();
+    return speecher::dictationFailureNote(_state->controller->stateName(),
+                                          _state->controller->session()->lastFailure())
+        .toNSString();
 }
 
 - (NSDictionary<NSString *, NSString *> *)homeLabels

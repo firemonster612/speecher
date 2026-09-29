@@ -465,23 +465,12 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 // The period.
 @property (nonatomic, readonly) NSInteger words;
 @property (nonatomic, readonly) NSInteger dictations;
-@property (nonatomic, readonly) double dictationsPerActiveDay;
-// "▲ 29% vs previous 30 days"; empty without a previous period to compare.
-@property (nonatomic, readonly, copy) NSString *wordsDeltaText;
-@property (nonatomic, readonly, copy) NSString *dictationsDeltaText;
-@property (nonatomic, readonly, copy) NSString *bookComparison;
-@property (nonatomic, readonly, copy) NSString *bookComparisonTip;
-// "4.0 hours", and "Average dictation 1:07" (or "Nothing yet").
-@property (nonatomic, readonly, copy) NSString *audioTotalText;
-@property (nonatomic, readonly, copy) NSString *averageDictationText;
 
 // Streak.
 @property (nonatomic, readonly) NSInteger currentStreak;
 @property (nonatomic, readonly) NSInteger bestStreak;
 @property (nonatomic, readonly, copy) NSString *bestStreakEnd;
 @property (nonatomic, readonly) BOOL bestStreakEndsToday;
-// The line under the streak; empty with no history.
-@property (nonatomic, readonly, copy) NSString *streakText;
 // Seven BOOLs, Monday first, and today's slot among them.
 @property (nonatomic, readonly, copy) NSArray<NSNumber *> *weekActivity;
 @property (nonatomic, readonly) NSInteger todayIndex;
@@ -516,9 +505,6 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly, copy) NSArray<NSNumber *> *hourCounts;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *hourLabels;
 @property (nonatomic, readonly) NSInteger peakHour;
-// The weekday's name, such as "Tuesday".
-@property (nonatomic, readonly, copy) NSString *busiestWeekday;
-@property (nonatomic, readonly, copy) NSString *persona;
 @property (nonatomic, readonly) BOOL hasHourData;
 
 @property (nonatomic, readonly) NSInteger wordsPerMinute;
@@ -722,11 +708,10 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // What a copy button says for a moment after copying, and for how long.
 @property (nonatomic, readonly, copy) NSString *copiedCaption;
 @property (class, nonatomic, readonly) NSTimeInterval copiedFeedbackSeconds;
-// speecher::kInsightTileMinimumWidth: below it the four tiles go two by two.
-@property (class, nonatomic, readonly) CGFloat insightTileMinimumWidth;
-// Why the last session failed, until the next one starts
-// (DictationSession::lastFailure). Re-read on every statusChanged.
-@property (nonatomic, readonly, copy) NSString *lastFailure;
+// Why the last session failed, until the next one starts, except in the error
+// state, whose status already says it (speecher::dictationFailureNote).
+// Re-read on every statusChanged.
+@property (nonatomic, readonly, copy) NSString *failureNote;
 // Home's fixed wording (speecher::InsightsShareLabels and the learned
 // corrections card), keyed "share", "copyText", "saveJson", "copied",
 // "saved", "saveFailed", "saveTitle", "correctionsTitle",

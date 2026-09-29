@@ -54,7 +54,7 @@ struct HomePane: View {
     private var form: some View {
         Form {
             if model.accessibilitySupported && !model.accessibilityEnabled {
-                accessibilityNotice
+                Section { AccessibilityNotice(model: model) }
             }
             dictationCard
             if !model.insightsEnabled {
@@ -85,22 +85,6 @@ struct HomePane: View {
 
     // MARK: Dictation
 
-    /// The menu bar panel's notice, at the top of Home.
-    private var accessibilityNotice: some View {
-        Section {
-            LabeledContent {
-                Button("Open Privacy & Security…") { model.requestAccessibility() }
-            } label: {
-                Label("Without Accessibility, dictation only reaches the clipboard.",
-                      systemImage: "exclamationmark.triangle")
-                    .fixedSize(horizontal: false, vertical: true)
-                if !model.accessibilityProblem.isEmpty {
-                    Text(model.accessibilityProblem)
-                }
-            }
-        }
-    }
-
     @ViewBuilder private var dictationCard: some View {
         Section {
             LabeledContent {
@@ -118,8 +102,8 @@ struct HomePane: View {
             }
             // The popup shows a failure for five seconds, so the reason also
             // stays here until the next session starts.
-            if !model.lastFailure.isEmpty {
-                Text(model.lastFailure)
+            if !model.failureNote.isEmpty {
+                Text(model.failureNote)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -160,9 +144,9 @@ struct HomePane: View {
     // MARK: Stat tiles
 
     /// The four tiles as one grid on the section's own background: four
-    /// across when each gets the core's minimum tile width, two by two when
-    /// they do not. Two by two keeps the narrower floor it always had, so
-    /// Home does not widen the settings window's minimum.
+    /// across when every tile's lines fit unwrapped, two by two when they do
+    /// not. Two by two keeps the narrower floor it always had and lets lines
+    /// wrap, so Home does not widen the settings window's minimum.
     private var tiles: some View {
         Section {
             ViewThatFits(in: .horizontal) {
@@ -229,8 +213,7 @@ struct HomePane: View {
     }
 
     private func tileGrid(perRow: Int) -> some View {
-        let minimumWidth = perRow == 4 ? SpeecherBridge.insightTileMinimumWidth : 150
-        let tiles = insights.tiles.map { tile($0, minimumWidth: minimumWidth) }
+        let tiles = insights.tiles.map { tile($0, wraps: perRow != 4) }
         return Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 16) {
             ForEach(Array(stride(from: 0, to: tiles.count, by: perRow)), id: \.self) { start in
                 GridRow {
@@ -241,9 +224,10 @@ struct HomePane: View {
     }
 
     /// A tile: its name, the figure, and the lines under it, leading-aligned
-    /// in one plain stack. The lines may wrap but never shrink below their
-    /// own width, so none is clipped at its leading edge.
-    private func tile(_ text: SpeecherInsightTileModel, minimumWidth: CGFloat) -> AnyView {
+    /// in one plain stack. Unless it wraps, each line keeps its ideal width,
+    /// which is what ViewThatFits then measures; wrapped lines never shrink
+    /// below their own width, so none is clipped at its leading edge.
+    private func tile(_ text: SpeecherInsightTileModel, wraps: Bool) -> AnyView {
         AnyView(
             VStack(alignment: .leading, spacing: 4) {
                 Label(text.title, systemImage: Self.symbol(forIconId: text.iconId))
@@ -259,9 +243,9 @@ struct HomePane: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize(horizontal: !wraps, vertical: true)
             }
-            .frame(minWidth: minimumWidth, maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: wraps ? 150 : nil, maxWidth: .infinity, alignment: .leading)
         )
     }
 
@@ -402,7 +386,7 @@ struct HomePane: View {
                 barGrid {
                     ForEach(Array(insights.apps.enumerated()), id: \.offset) { index, app in
                         bar(app.name, detail: app.profileLabel, value: app.words, total: most,
-                            emphasised: index == 0, caption: "\(app.percent)%")
+                            emphasised: index == 0, caption: app.percent.formatted(.percent))
                     }
                 }
             }
@@ -655,14 +639,14 @@ private func capitalised(_ text: String) -> String {
 /// "45 min", "2 h 5 min".
 private func minutes(_ total: Int) -> String {
     let hours = total / 60, rest = total % 60
-    if hours == 0 { return "\(total) min" }
-    return rest == 0 ? "\(hours) h" : "\(hours) h \(rest) min"
+    if hours == 0 { return "\(total.formatted()) min" }
+    return rest == 0 ? "\(hours.formatted()) h" : "\(hours.formatted()) h \(rest.formatted()) min"
 }
 
 /// "40s", "12 min", "1 h 5 min".
 private func duration(_ milliseconds: Int) -> String {
     let seconds = Double(milliseconds) / 1000
-    if seconds < 60 { return "\(Int(seconds.rounded()))s" }
+    if seconds < 60 { return "\(Int(seconds.rounded()).formatted())s" }
     return minutes(Int((seconds / 60).rounded()))
 }
 
