@@ -139,11 +139,16 @@ struct PaneView: View {
         if !card.rows.isEmpty {
             Section {
                 ForEach(Array(card.rows.enumerated()), id: \.element.rowId) { index, row in
-                    // Rows of a group share one gate, so only the first
-                    // explains it, as on Linux and Windows.
-                    let continuesGroup = index > 0 && !row.groupId.isEmpty
-                        && card.rows[index - 1].groupId == row.groupId
-                    RowView(row: row, model: model, gateNote: !continuesGroup)
+                    // Rows of a group share one gate, so one note above the
+                    // group explains it and every row keeps its own help, as
+                    // on Linux and Windows.
+                    let grouped = !row.groupId.isEmpty
+                    let startsGroup = grouped
+                        && (index == 0 || card.rows[index - 1].groupId != row.groupId)
+                    if startsGroup, !row.enabled {
+                        VStack(alignment: .leading) { GateNote(row: row, model: model) }
+                    }
+                    RowView(row: row, model: model, gateNote: !grouped)
                 }
             } header: {
                 if titled { Text(card.title) }

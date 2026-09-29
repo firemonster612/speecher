@@ -7,8 +7,8 @@ import SwiftUI
 struct RowView: View {
     let row: SettingsRowModel
     @ObservedObject var model: AppModel
-    /// False on a row whose group's first row already explains the gate; it
-    /// keeps its own description instead.
+    /// False on a grouped row, whose group's GateNote above it explains the
+    /// gate; it keeps its own description instead.
     var gateNote = true
 
     var body: some View {
@@ -27,12 +27,7 @@ struct RowView: View {
                 control
                     .disabled(true)
                     .help(row.disabledHelp)
-                if !row.disabledHelp.isEmpty {
-                    Text(row.disabledHelp)
-                }
-                if !row.disabledAction.isEmpty {
-                    Button(row.disabledActionLabel) { model.trigger(row.disabledAction) }
-                }
+                GateNote(row: row, model: model)
             }
         }
     }
@@ -191,6 +186,22 @@ struct RowView: View {
             interpretedSyntax: .inlineOnlyPreservingWhitespace)
         return (try? AttributedString(markdown: text, options: options))
             ?? AttributedString(text)
+    }
+}
+
+/// Why a row is disabled and, where there is one, the action that lifts the
+/// gate. Beside a lone row's control, or as its own form row above a group.
+struct GateNote: View {
+    let row: SettingsRowModel
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        if !row.disabledHelp.isEmpty {
+            Text(row.disabledHelp)
+        }
+        if !row.disabledAction.isEmpty {
+            Button(row.disabledActionLabel) { model.trigger(row.disabledAction) }
+        }
     }
 }
 
