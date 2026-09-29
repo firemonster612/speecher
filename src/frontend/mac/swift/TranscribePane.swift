@@ -192,7 +192,7 @@ final class TranscriptionModel: ObservableObject {
         get { options.destination }
         set {
             if newValue == .folder, options.folder.isEmpty {
-                guard let folder = Self.chooseFolder(title: "Save transcripts in", from: "") else {
+                guard let folder = Self.chooseFolder(title: text(.folderDialogTitle), from: "") else {
                     objectWillChange.send()
                     return
                 }
@@ -209,7 +209,16 @@ final class TranscriptionModel: ObservableObject {
     var refinementModel: String { bridge.refinementModel(provider: options.refiner) }
     var refinementModelHint: String { bridge.transcribeRefinementModelHint }
 
-    var startCaption: String { files.count > 1 ? "Transcribe \(files.count) files" : "Transcribe" }
+    /// The pane's fixed wording, from core.
+    func text(_ text: SpeecherTranscribeText) -> String { bridge.text(text) }
+    var startCaption: String { bridge.startCaption(fileCount: files.count) }
+    var chooseFilesCaption: String { bridge.chooseFilesCaption(anyListed: !files.isEmpty) }
+    var resultsTitle: String { bridge.resultsTitle(count: results.count) }
+    func destinationLabel(_ destination: SpeecherTranscriptDestination) -> String {
+        bridge.destinationLabel(destination)
+    }
+    var destinationHint: String { bridge.destinationHint(options.destination) }
+    func percent(_ progress: Double) -> String { bridge.percentLabel(progress) }
 
     func detail(for file: AudioFile) -> String {
         bridge.audioFileDetail(bytes: file.bytes, durationMs: durations[file.path] ?? -1)
@@ -236,7 +245,7 @@ final class TranscriptionModel: ObservableObject {
 
     func chooseFiles() {
         let panel = NSOpenPanel()
-        panel.title = "Choose audio files"
+        panel.title = text(.filesDialogTitle)
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = mediaTypes
@@ -245,7 +254,7 @@ final class TranscriptionModel: ObservableObject {
     }
 
     func changeFolder() {
-        if let folder = Self.chooseFolder(title: "Save transcripts in", from: options.folder) {
+        if let folder = Self.chooseFolder(title: text(.folderDialogTitle), from: options.folder) {
             options.folder = folder
         }
     }
@@ -479,7 +488,7 @@ final class TranscriptionModel: ObservableObject {
     func export(_ result: SpeecherTranscriptResult) {
         let audio = URL(fileURLWithPath: result.path)
         let panel = NSSavePanel()
-        panel.title = "Export transcript"
+        panel.title = text(.exportDialogTitle)
         panel.allowedContentTypes = [.plainText]
         panel.directoryURL = audio.deletingLastPathComponent()
         panel.nameFieldStringValue = audio.deletingPathExtension().lastPathComponent + "-transcribed.txt"
@@ -488,14 +497,14 @@ final class TranscriptionModel: ObservableObject {
             try (shownText(result) + "\n").write(to: url, atomically: true, encoding: .utf8)
             exportProblem = ""
         } catch {
-            exportProblem = "Could not save \(url.path): \(error.localizedDescription)"
+            exportProblem = bridge.transcriptSaveError(path: url.path, reason: error.localizedDescription)
         }
     }
 
     /// Every finished transcript into one folder, numbered rather than
     /// overwriting what is there.
     func exportAll() {
-        guard let folder = Self.chooseFolder(title: "Export transcripts to", from: "") else { return }
+        guard let folder = Self.chooseFolder(title: text(.exportAllDialogTitle), from: "") else { return }
         exportProblem = results.filter { !$0.failed }
             .compactMap { bridge.saveTranscript(shownText($0), forAudioFile: $0.path, inFolder: folder) }
             .joined(separator: "\n")
@@ -547,7 +556,7 @@ struct TranscribePane: View {
     // MARK: Steps
 
     /// "1 Configure · 2 Transcribe · 3 Export": the step the pane is on in
-    /// bold, the ones behind it checked, the ones ahead dimmed.
+    /// bold, the ones behind it checked and dimmed, the ones ahead dimmed.
     private var steps: some View {
         VStack(spacing: 4) {
             HStack(spacing: 6) {
@@ -592,41 +601,42 @@ struct TranscribePane: View {
                                 Image(systemName: "minus.circle")
                             }
                             .buttonStyle(.borderless)
-                            .help("Remove")
+                            .help(model.text(.removeFile))
                         } label: {
                             Text(fileName(file.path))
                             Text(model.detail(for: file))
                         }
                     }
-                    Button(model.files.isEmpty ? "Choose audio files…" : "Add more files…") {
+                    Button(model.chooseFilesCaption) {
                         model.chooseFiles()
                     }
                 } header: {
-                    Text("Audio files")
+                    Text(model.text(.audioFilesSection))
                 } footer: {
                     if model.files.isEmpty {
                         Text(model.mediaFilesHint)
                     }
                 }
-                Section("Transcription") {
+                Section(model.text(.transcriptionSection)) {
                     Picker(selection: $model.options.speech) {
                         ForEach(model.speechProviders, id: \.providerId) { provider in
                             Text(provider.label).tag(provider.providerId)
                         }
                     } label: {
-                        Text("Model")
+                        Text(model.text(.service))
                         if !model.speechSummary.isEmpty { Text(model.speechSummary) }
                     }
                     Toggle(isOn: $model.options.vocabulary) {
-                        Text("Apply vocabulary")
-                        Text("Use your custom vocabulary and corrections on the result")
+                        Text(model.text(.vocabulary))
+                        Text(model.text(.vocabularyHelp))
                     }
                 }
                 refinement
                 output
                 if !model.startError.isEmpty {
                     Section {
-                        Label(model.startError, systemImage: "exclamationmark.triangle.fill")
+                        Label(model.startError, systemImage: "xmark.octagon.fill")
+                            .foregroundStyle(.red)
                     }
                 }
             }
@@ -644,43 +654,43 @@ struct TranscribePane: View {
     }
 
     @ViewBuilder private var refinement: some View {
-        Section("Refinement") {
+        Section(model.text(.refinementSection)) {
             Picker(selection: $model.options.refiner) {
-                Text("None").tag("none")
+                Text(model.text(.noRefiner)).tag("none")
                 ForEach(model.refinementProviders, id: \.providerId) { provider in
                     Text(provider.label).tag(provider.providerId)
                 }
             } label: {
-                Text("Provider")
-                Text("Clean up the raw transcripts with a language model")
+                Text(model.text(.refiner))
+                Text(model.text(.refinerHelp))
             }
             Group {
                 if !model.refinementModel.isEmpty {
                     LabeledContent {
                         Text(model.refinementModel)
                     } label: {
-                        Text("Model")
+                        Text(model.text(.refinerModel))
                         Text(model.refinementModelHint)
                     }
                 }
                 Picker(selection: $model.options.cleanup) {
                     options(model.cleanupStrengths)
                 } label: {
-                    Text("Cleanup")
-                    Text("How much the model may rewrite")
+                    Text(model.text(.cleanup))
+                    Text(model.text(.cleanupHelp))
                 }
                 .pickerStyle(.segmented)
                 Picker(selection: $model.profile) {
                     options(model.profiles)
                 } label: {
-                    Text("Writing profile")
-                    Text("Sets cleanup and tone; you can still adjust them here")
+                    Text(model.text(.writingProfile))
+                    Text(model.text(.writingProfileHelp))
                 }
                 Picker(selection: $model.options.tone) {
                     options(model.tones)
                 } label: {
-                    Text("Tone")
-                    Text("Optional override on top of the profile")
+                    Text(model.text(.tone))
+                    Text(model.text(.toneHelp))
                 }
             }
             .disabled(model.options.refiner == "none")
@@ -688,22 +698,20 @@ struct TranscribePane: View {
     }
 
     @ViewBuilder private var output: some View {
-        Section("Output") {
+        Section(model.text(.outputSection)) {
             Picker(selection: $model.destination) {
-                Text("Next to each audio file").tag(SpeecherTranscriptDestination.besideInput)
-                Text("One folder…").tag(SpeecherTranscriptDestination.folder)
-                Text("Just show them here").tag(SpeecherTranscriptDestination.nowhere)
+                ForEach([SpeecherTranscriptDestination.besideInput, .folder, .nowhere], id: \.self) { destination in
+                    Text(model.destinationLabel(destination)).tag(destination)
+                }
             } label: {
-                Text("Save transcripts")
-                Text(model.options.destination == .nowhere
-                     ? "Copy or export from the results afterwards"
-                     : "Each transcript is saved as ⟨name⟩-transcribed.txt")
+                Text(model.text(.saveTranscripts))
+                Text(model.destinationHint)
             }
             if model.options.destination == .folder {
                 LabeledContent {
-                    Button("Change…") { model.changeFolder() }
+                    Button(model.text(.changeFolder)) { model.changeFolder() }
                 } label: {
-                    Text("Folder")
+                    Text(model.text(.folder))
                     Text((model.options.folder as NSString).abbreviatingWithTildeInPath)
                 }
             }
@@ -722,12 +730,13 @@ struct TranscribePane: View {
         VStack(spacing: 0) {
             Form {
                 Section {
-                    TranscribeLoom(peaks: model.peaks, playhead: model.playhead(at:), text: model.partial)
+                    TranscribeLoom(peaks: model.peaks, playhead: model.playhead(at:), text: model.partial,
+                                   placeholder: model.text(.partialPlaceholder))
                         // A fresh loom, and so a fresh look, for every file.
                         .id(model.current)
                     TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
                         LabeledContent(model.phaseLabel) {
-                            Text(percent(model.overallFileProgress(at: timeline.date)))
+                            Text(model.percent(model.overallFileProgress(at: timeline.date)))
                         }
                     }
                     if model.batch.count > 1 {
@@ -747,7 +756,7 @@ struct TranscribePane: View {
             }
             .formStyle(.grouped)
             actionBar {
-                Button("Cancel") { model.cancel() }
+                Button(model.text(.cancel)) { model.cancel() }
                     .keyboardShortcut(.cancelAction)
             }
         }
@@ -762,24 +771,25 @@ struct TranscribePane: View {
                     HStack {
                         if model.refinedAvailable {
                             Picker("Version", selection: $model.showRefined) {
-                                Text("Refined").tag(true)
-                                Text("Raw").tag(false)
+                                Text(model.text(.refined)).tag(true)
+                                Text(model.text(.raw)).tag(false)
                             }
                             .pickerStyle(.segmented)
                             .labelsHidden()
                             .fixedSize()
                         }
                         Spacer()
-                        Button(model.copied == "all" ? "Copied" : "Copy all") { model.copyAll() }
-                        Button("Export all…") { model.exportAll() }
+                        Button(model.text(model.copied == "all" ? .copied : .copyAll)) { model.copyAll() }
+                        Button(model.text(.exportAll)) { model.exportAll() }
                     }
                     Text(model.summary)
                         .foregroundStyle(.secondary)
                     if !model.exportProblem.isEmpty {
-                        Label(model.exportProblem, systemImage: "exclamationmark.triangle.fill")
+                        Label(model.exportProblem, systemImage: "xmark.octagon.fill")
+                            .foregroundStyle(.red)
                     }
                 } header: {
-                    Text(model.results.count > 1 ? "Transcripts" : "Transcript")
+                    Text(model.resultsTitle)
                 }
                 Section {
                     ForEach(Array(model.results.enumerated()), id: \.element.path) { index, item in
@@ -789,7 +799,7 @@ struct TranscribePane: View {
             }
             .formStyle(.grouped)
             actionBar {
-                Button("Transcribe more files") { model.transcribeMore() }
+                Button(model.text(.transcribeMore)) { model.transcribeMore() }
             }
         }
     }
@@ -803,16 +813,16 @@ struct TranscribePane: View {
             LabeledContent {
                 HStack {
                     if !result.savedPath.isEmpty {
-                        Text("Saved")
+                        Text(model.text(.saved))
                             .foregroundStyle(.green)
                             .help(result.savedPath)
                     }
                     if result.failed {
-                        Button(model.retrying == index ? "Retrying…" : "Retry") { model.retry(index) }
+                        Button(model.text(model.retrying == index ? .retrying : .retry)) { model.retry(index) }
                             .disabled(model.retrying != nil)
                     } else {
-                        Button(model.copied == result.path ? "Copied" : "Copy") { model.copy(result) }
-                        Button("Export…") { model.export(result) }
+                        Button(model.text(model.copied == result.path ? .copied : .copy)) { model.copy(result) }
+                        Button(model.text(.export)) { model.export(result) }
                     }
                 }
             } label: {
@@ -827,10 +837,6 @@ struct TranscribePane: View {
                 }
             }
         }
-    }
-
-    private func percent(_ progress: Double) -> String {
-        "\(Int((progress * 100).rounded(.down)))%"
     }
 
     private func actionBar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -852,6 +858,8 @@ struct TranscribeLoom: View {
     /// session's events while the file waits on its provider.
     let playhead: @MainActor (Date) -> Double
     let text: String
+    /// Shown dimmed until the provider has heard something.
+    let placeholder: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Drawn once per loom, which is once per file.
     @State private var breath = (period: Double.random(in: 2.2...4.4),
@@ -869,7 +877,7 @@ struct TranscribeLoom: View {
                 }
             }
             .frame(height: 96)
-            Text(text.isEmpty ? "The transcript appears here as it is heard." : text)
+            Text(text.isEmpty ? placeholder : text)
                 .foregroundStyle(text.isEmpty ? HierarchicalShapeStyle.secondary : .primary)
                 .lineLimit(4, reservesSpace: true)
                 .truncationMode(.head)
@@ -935,7 +943,7 @@ final class SpeecherTranscribeWindow {
                           defer: false)
         // Kept and reopened, as the settings window is.
         window.isReleasedWhenClosed = false
-        window.title = "Transcribe — Speecher"
+        window.title = model.text(.windowTitle)
         let hosting = NSHostingController(rootView: TranscribePane(model: model))
         // The window keeps its size as the pane moves between stages.
         hosting.sizingOptions = []

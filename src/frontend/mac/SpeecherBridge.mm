@@ -2815,6 +2815,48 @@ static std::optional<QString> optionalString(NSString *value)
     return speecher::transcribeStepHint(static_cast<speecher::TranscribeStep>(step)).toNSString();
 }
 
+- (NSString *)transcribeText:(SpeecherTranscribeText)text
+{
+    static_assert(int(SpeecherTranscribeTextTranscribeMore) == int(speecher::TranscribeText::TranscribeMore),
+                  "SpeecherTranscribeText mirrors speecher::TranscribeText");
+    return speecher::transcribeText(static_cast<speecher::TranscribeText>(text)).toNSString();
+}
+
+- (NSString *)chooseFilesCaption:(BOOL)anyListed
+{
+    return speecher::chooseFilesCaption(anyListed).toNSString();
+}
+
+- (NSString *)transcribeStartCaption:(NSInteger)fileCount
+{
+    return speecher::startCaption(int(fileCount)).toNSString();
+}
+
+- (NSString *)transcribeResultsTitle:(NSInteger)resultCount
+{
+    return speecher::resultsTitle(int(resultCount)).toNSString();
+}
+
+- (NSString *)destinationLabel:(SpeecherTranscriptDestination)destination
+{
+    return speecher::destinationLabel(static_cast<speecher::TranscriptDestination>(destination)).toNSString();
+}
+
+- (NSString *)destinationHint:(SpeecherTranscriptDestination)destination
+{
+    return speecher::destinationHint(static_cast<speecher::TranscriptDestination>(destination)).toNSString();
+}
+
+- (NSString *)transcriptSaveErrorForPath:(NSString *)path reason:(NSString *)reason
+{
+    return speecher::transcriptSaveError(QString::fromNSString(path), QString::fromNSString(reason)).toNSString();
+}
+
+- (NSString *)percentLabel:(double)progress
+{
+    return speecher::percentLabel(progress).toNSString();
+}
+
 - (NSString *)paneTitleForRowId:(NSString *)rowId
 {
     return speecher::paneTitleForRow(QString::fromNSString(rowId)).toNSString();
