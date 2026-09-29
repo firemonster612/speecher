@@ -1,8 +1,9 @@
 # Known wording drift that tests/ui_wording.py allows, one finding per line:
 #   <rule> <path> <text>
 # The comment above a group says what clears it. When a pull request fixes a
-# string, delete its entry; the check prints "stale" for entries that no
-# longer occur. New wording is fixed at the source, not added here.
+# string, delete its entry in the same pull request: an entry that no longer
+# occurs is "stale" and fails the check. New wording is fixed at the source,
+# not added here.
 
 
 

@@ -58,7 +58,9 @@ follows; CONTEXT.md terms, never their Avoid terms.
 
 ## Enforcement
 
-Two ctests, both in `tests/ui_wording.py`, run with every build:
+Two ctests, both in `tests/ui_wording.py`, run with every build that has
+`SPEECHER_BUILD_TESTS` on, which then requires Python 3. The Release
+workflow's Linux, macOS and Windows jobs build with it on and run ctest:
 
 - `speecher_ui_wording_lint` reads the user-visible literals in the core
   presentation modules and fails on "...", British spellings, Title Case
@@ -71,7 +73,7 @@ Two ctests, both in `tests/ui_wording.py`, run with every build:
 Both are regex heuristics, not parsers. A real exception carries
 `// ui-lint: allow <rule>` on its line or the line above, with the reason.
 `tests/ui_wording_allowlist.txt` lists known drift with what clears it; the
-list only shrinks.
+list only shrinks, and an entry that no longer occurs fails the check.
 
 The `insights-evidence` workflow grabs the same page ids on Linux, macOS and
 Windows for any pull request touching `src/ui`, `src/frontend` or

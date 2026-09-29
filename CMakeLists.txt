@@ -1616,13 +1616,11 @@ if(SPEECHER_BUILD_TESTS)
   endforeach()
 
   # Wording drift checks (docs/adr/0007-presentation-lives-in-core.md).
-  find_package(Python3 COMPONENTS Interpreter)
-  if(Python3_Interpreter_FOUND)
-    add_test(NAME speecher_ui_wording_lint
-      COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui_wording.py lint)
-    add_test(NAME speecher_ui_wording_front_ends
-      COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui_wording.py front-ends)
-  endif()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME speecher_ui_wording_lint
+    COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui_wording.py lint)
+  add_test(NAME speecher_ui_wording_front_ends
+    COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/tests/ui_wording.py front-ends)
 
   if(ATSPI_FOUND AND UNIX AND NOT APPLE)
     qt_add_executable(speecher_atspi_peer_test tests/atspi_peer_test.cpp)
