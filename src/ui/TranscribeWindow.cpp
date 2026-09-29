@@ -13,7 +13,7 @@ TranscribeWindow::TranscribeWindow(ApplicationController *controller, QWidget *p
     , m_page(new TranscribePage(controller, this))
 {
     setObjectName(QStringLiteral("transcribeWindow"));
-    setWindowTitle(QStringLiteral("Transcribe — Speecher"));
+    setWindowTitle(transcribeText(TranscribeText::WindowTitle));
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(m_page);

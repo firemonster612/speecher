@@ -629,6 +629,16 @@ QColor positiveTextColor(const QPalette &palette)
 #endif
 }
 
+QColor negativeTextColor(const QPalette &palette)
+{
+#ifdef SPEECHER_WITH_KCOLORSCHEME
+    const KColorScheme colors(palette.currentColorGroup(), KColorScheme::View);
+    return colors.foreground(KColorScheme::NegativeText).color();
+#else
+    return palette.color(QPalette::WindowText);
+#endif
+}
+
 QFont sectionTitleFont(const QFont &font)
 {
     QFont bold(font);
