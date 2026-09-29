@@ -160,7 +160,9 @@ struct HomePane: View {
     // MARK: Stat tiles
 
     /// The four tiles as one grid on the section's own background: four
-    /// across when they fit, two by two when they do not.
+    /// across when each gets the core's minimum tile width, two by two when
+    /// they do not. Two by two keeps the narrower floor it always had, so
+    /// Home does not widen the settings window's minimum.
     private var tiles: some View {
         Section {
             ViewThatFits(in: .horizontal) {
@@ -227,7 +229,8 @@ struct HomePane: View {
     }
 
     private func tileGrid(perRow: Int) -> some View {
-        let tiles = insights.tiles.map(tile)
+        let minimumWidth = perRow == 4 ? SpeecherBridge.insightTileMinimumWidth : 150
+        let tiles = insights.tiles.map { tile($0, minimumWidth: minimumWidth) }
         return Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 16) {
             ForEach(Array(stride(from: 0, to: tiles.count, by: perRow)), id: \.self) { start in
                 GridRow {
@@ -240,7 +243,7 @@ struct HomePane: View {
     /// A tile: its name, the figure, and the lines under it, leading-aligned
     /// in one plain stack. The lines may wrap but never shrink below their
     /// own width, so none is clipped at its leading edge.
-    private func tile(_ text: SpeecherInsightTileModel) -> AnyView {
+    private func tile(_ text: SpeecherInsightTileModel, minimumWidth: CGFloat) -> AnyView {
         AnyView(
             VStack(alignment: .leading, spacing: 4) {
                 Label(text.title, systemImage: Self.symbol(forIconId: text.iconId))
@@ -258,7 +261,7 @@ struct HomePane: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(minWidth: SpeecherBridge.insightTileMinimumWidth, maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: minimumWidth, maxWidth: .infinity, alignment: .leading)
         )
     }
 
