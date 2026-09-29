@@ -127,6 +127,41 @@ class TranscriptRefinerTest {
     }
 
     @Test
+    fun `ChatGPT ultrafast asks for the ultrafast tier only on GPT-6 Astra, and Sol never at none`() {
+        MockWebServer().use { server ->
+            val ok =
+                "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
+            server.enqueue(MockResponse.Builder().body(ok).build())
+            server.enqueue(MockResponse.Builder().body(ok).build())
+            server.start()
+            for (model in listOf("gpt-6-astra", "gpt-6.1-sol")) {
+                refineTranscript(
+                    OkHttpClient(),
+                    OAuthProvider.ChatGpt,
+                    tokens,
+                    "helo",
+                    emptyList(),
+                    model,
+                    "none",
+                    RefinementContext(),
+                    server.url("/codex").toString(),
+                    AtomicBoolean(true),
+                    ultrafast = true,
+                )
+            }
+            assertEquals(
+                listOf("ultrafast" to "none", "priority" to "low"),
+                List(2) {
+                    val body =
+                        Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
+                    body["service_tier"]?.jsonPrimitive?.content to
+                        body["reasoning"]!!.jsonObject["effort"]?.jsonPrimitive?.content
+                },
+            )
+        }
+    }
+
+    @Test
     fun `Claude fast mode is sent only for Opus models`() {
         MockWebServer().use { server ->
             val ok =
@@ -134,7 +169,7 @@ class TranscriptRefinerTest {
             server.enqueue(MockResponse.Builder().body(ok).build())
             server.enqueue(MockResponse.Builder().body(ok).build())
             server.start()
-            for (model in listOf("claude-opus-5", "claude-sonnet-5")) {
+            for (model in listOf("claude-opus-5", "claude-sonnet-5-5")) {
                 refineTranscript(
                     OkHttpClient(),
                     OAuthProvider.Claude,
@@ -297,7 +332,7 @@ class TranscriptRefinerTest {
                     RefinementContext(),
                     server.url("/codex").toString(),
                     fast,
-                    shown::add,
+                    onText = shown::add,
                 )
             }
             assertEquals(

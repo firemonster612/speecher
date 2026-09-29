@@ -116,7 +116,7 @@ val Provider.defaultRefinement: RefinementChoice
     get() =
         when (this) {
             Provider.ChatGpt -> RefinementChoice("gpt-6-luna", "none")
-            Provider.Claude -> RefinementChoice("claude-sonnet-5", "low")
+            Provider.Claude -> RefinementChoice("claude-sonnet-5-5", "low")
         }
 
 /** The refinement models Settings offers, as API id to label; the default comes first. */
@@ -126,11 +126,15 @@ val Provider.refinementModels: Map<String, String>
             Provider.ChatGpt ->
                 mapOf(
                     "gpt-6-luna" to "GPT-6 Luna",
-                    "gpt-6-sol" to "GPT-6 Sol",
+                    "gpt-6.1-sol" to "GPT-6.1 Sol",
+                    "gpt-6-astra" to "GPT-6 Astra",
                     "gpt-5.6-luna" to "GPT-5.6 Luna",
                 )
             Provider.Claude ->
-                mapOf("claude-sonnet-5" to "Claude Sonnet 5", "claude-opus-5" to "Claude Opus 5")
+                mapOf(
+                    "claude-sonnet-5-5" to "Claude Sonnet 5.5",
+                    "claude-opus-5" to "Claude Opus 5",
+                )
         }
 
 /**
@@ -143,6 +147,14 @@ val Provider.refinementEfforts: List<String>
             Provider.ChatGpt -> listOf("none", "low", "medium", "high")
             Provider.Claude -> listOf("low", "medium", "high")
         }
+
+/** How fast ChatGPT refines; the faster tiers use more of the plan's usage. */
+enum class OpenAiSpeed(val label: String) {
+    Standard("Standard"),
+    Fast("Fast"),
+    /** Only for models [app.speecher.protocol.modelSupportsUltrafast] names; Fast on the rest. */
+    Ultrafast("Ultrafast"),
+}
 
 enum class InsertAction {
     Insert,
@@ -188,9 +200,9 @@ data class SpeecherSettings(
     val chatGptRefinement: RefinementChoice = Provider.ChatGpt.defaultRefinement,
     val claudeRefinement: RefinementChoice = Provider.Claude.defaultRefinement,
     /**
-     * Ask each provider for its faster, slightly costlier tier; on by default, as on the desktop.
+     * Ask each provider for its faster, slightly costlier tier; Fast by default, as on the desktop.
      */
-    val chatGptFastMode: Boolean = true,
+    val chatGptSpeed: OpenAiSpeed = OpenAiSpeed.Fast,
     val claudeFastMode: Boolean = true,
     val vocabulary: List<String> = emptyList(),
     /** Place the chip on the keyboard's mic key; off uses the custom position below. */
@@ -242,11 +254,7 @@ data class SpeecherSettings(
         else copy(chatGptRefinement = choice)
 
     fun fastMode(provider: Provider): Boolean =
-        if (provider == Provider.Claude) claudeFastMode else chatGptFastMode
-
-    fun withFastMode(provider: Provider, enabled: Boolean): SpeecherSettings =
-        if (provider == Provider.Claude) copy(claudeFastMode = enabled)
-        else copy(chatGptFastMode = enabled)
+        if (provider == Provider.Claude) claudeFastMode else chatGptSpeed != OpenAiSpeed.Standard
 
     /**
      * With these tones and levels in place of the old ones. A profile that used one of those

@@ -32,12 +32,13 @@ StreamingRefinement::StreamingRefinement(QString provider, DecodeEvent decodeEve
     connect(&m_deadlineTimer, &QTimer::timeout, this, [timeout] { timeout(Retry::Never); });
 }
 
-void StreamingRefinement::start(BuildRequest buildRequest, bool fastMode)
+void StreamingRefinement::start(BuildRequest buildRequest, const QString &fastTier)
 {
     cancel();
     m_operationDeadline = QDeadlineTimer(m_deadlineMs);
     m_latchOnSuccess = false;
-    const bool fast = fastMode && !m_fastModeUnavailable;
+    m_fastTier = fastTier;
+    const bool fast = !fastTier.isEmpty() && !m_unavailableFastTiers.contains(fastTier);
     if (fast) {
         m_standardFallback = [buildRequest] { return buildRequest(false); };
     }
@@ -164,9 +165,9 @@ void StreamingRefinement::complete()
     m_standardFallback = nullptr;
     if (m_latchOnSuccess) {
         m_latchOnSuccess = false;
-        m_fastModeUnavailable = true;
+        m_unavailableFastTiers.insert(m_fastTier);
         qInfo().noquote() << m_provider.toLower()
-                         << "fast mode rejected but standard succeeded; staying at standard speed until restart";
+                         << m_fastTier << "tier rejected but standard succeeded; skipping that tier until restart";
     }
     const QString result = m_accumulated;
     const quint64 generation = m_generation;

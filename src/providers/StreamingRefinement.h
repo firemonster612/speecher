@@ -4,6 +4,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QObject>
+#include <QSet>
 #include <QTimer>
 
 #include <functional>
@@ -32,7 +33,10 @@ public:
 
     StreamingRefinement(QString provider, DecodeEvent decodeEvent, DecodeError decodeError,
                         int inactivityMs, int deadlineMs, QObject *parent = nullptr);
-    void start(BuildRequest buildRequest, bool fastMode);
+    // fastTier names the faster tier asked for, such as "priority" or
+    // "ultrafast", or is empty for standard speed. A tier the provider refused
+    // this session is skipped; the other tiers are still asked for.
+    void start(BuildRequest buildRequest, const QString &fastTier);
     void cancel();
 
 signals:
@@ -65,7 +69,8 @@ private:
     quint64 m_generation = 0;
     bool m_parsing = false;
     bool m_latchOnSuccess = false;
-    bool m_fastModeUnavailable = false;
+    QString m_fastTier;
+    QSet<QString> m_unavailableFastTiers;
 };
 
 } // namespace speecher

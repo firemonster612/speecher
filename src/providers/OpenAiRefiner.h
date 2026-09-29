@@ -32,7 +32,8 @@ public:
                 const QString &accountId,
                 const QString &model,
                 const QString &effort,
-                bool fastMode,
+                // "standard", "fast" or "ultrafast", as RefinementSettings::openAiSpeed.
+                const QString &speed,
                 const QString &refinementStyle,
                 const RefinementContext &context);
     void cancel();

@@ -59,7 +59,9 @@ inline const QString CustomCleanupLevels = QStringLiteral("refinement/customClea
 inline const QString OpenAiModel = QStringLiteral("openai/model");
 inline const QString OpenAiAuthMode = QStringLiteral("openai/auth/mode");
 inline const QString OpenAiEffort = QStringLiteral("openai/effort");
+// Replaced by OpenAiSpeed; read only when that is unset.
 inline const QString OpenAiFastMode = QStringLiteral("openai/fastMode");
+inline const QString OpenAiSpeed = QStringLiteral("openai/speed");
 inline const QString OpenAiApiKey = QStringLiteral("openai/apiKey");
 inline const QString OpenAiCliproxyAccount = QStringLiteral("openai/cliproxyAccount");
 inline const QString AnthropicModel = QStringLiteral("anthropic/model");

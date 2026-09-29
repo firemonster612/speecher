@@ -770,7 +770,7 @@ private slots:
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
         const SettingsPage &page = schema.page(QStringLiteral("providers"));
-        // Each provider is a refinement section (model, effort, fast mode) and
+        // Each provider is a refinement section (model, effort, speed) and
         // an account section (sign-in), then the shared CLI Proxy API server.
         QCOMPARE(page.sections.size(), 5);
         for (int index : {0, 2}) {
@@ -785,9 +785,6 @@ private slots:
             QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
                 return row.kind == RowKind::Choice;
             }));
-            QVERIFY(std::any_of(section.rows.begin(), section.rows.end(), [](const SettingsRow &row) {
-                return row.kind == RowKind::Toggle;
-            }));
         }
 
         AppSettings settings;
@@ -796,12 +793,17 @@ private slots:
         QCOMPARE(settings.refinement.openAiModel, QStringLiteral("gpt-5.4"));
         QCOMPARE(settings.refinement.anthropicEffort, QStringLiteral("max"));
 
-        QCOMPARE(rowById(page, QStringLiteral("openAiFastMode")).value(settings).toBool(), true);
+        const SettingsRow &speed = rowById(page, QStringLiteral("openAiSpeed"));
+        QCOMPARE(speed.value(settings).toString(), QStringLiteral("fast"));
         QCOMPARE(rowById(page, QStringLiteral("anthropicFastMode")).value(settings).toBool(), true);
-        rowById(page, QStringLiteral("openAiFastMode")).apply(settings, false);
+        speed.apply(settings, QStringLiteral("ultrafast"));
         rowById(page, QStringLiteral("anthropicFastMode")).apply(settings, false);
-        QCOMPARE(settings.refinement.openAiFastMode, false);
+        QCOMPARE(settings.refinement.openAiSpeed, QStringLiteral("ultrafast"));
         QCOMPARE(settings.refinement.anthropicFastMode, false);
+        // Ultrafast is only open on GPT-6 Astra.
+        QVERIFY(!speed.options(settings).last().enabled);
+        settings.refinement.openAiModel = QStringLiteral("gpt-6-astra");
+        QVERIFY(speed.options(settings).last().enabled);
 
         const SettingsSection &server = page.sections.last();
         QCOMPARE(server.title, QStringLiteral("CLI Proxy API"));

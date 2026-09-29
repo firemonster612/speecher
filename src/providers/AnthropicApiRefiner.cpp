@@ -230,7 +230,7 @@ void AnthropicApiRefiner::refine(const QString &rawTranscript,
         body.insert(QStringLiteral("messages"),
                     userMessages(rawTranscript, vocabulary, bindingVocabulary, context));
         return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
-    }, fastMode && modelSupportsFastMode(model));
+    }, fastMode && modelSupportsFastMode(model) ? QStringLiteral("fast") : QString());
 }
 
 void AnthropicApiRefiner::refineWithApiKey(const QString &rawTranscript,
@@ -257,7 +257,7 @@ void AnthropicApiRefiner::refineWithApiKey(const QString &rawTranscript,
             {QStringLiteral("messages"), userMessages(rawTranscript, vocabulary, bindingVocabulary, context)},
         };
         return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
-    }, false);
+    }, QString());
 }
 
 void AnthropicApiRefiner::cancel()

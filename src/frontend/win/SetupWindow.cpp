@@ -1997,17 +1997,41 @@ struct SetupWindow::Native {
         panel.Children().Append(stats);
         CheckBox fast = wrappingCheckBox(QStringLiteral("Fast mode"));
         panel.Children().Append(fast);
+        // OpenAI's Standard, Fast or Ultrafast, in place of the Fast mode box.
+        ComboBox speed;
+        speed.MinWidth(240);
+        ToolTipService::SetToolTip(speed, box_value(win::hs(fastModeTooltip(QStringLiteral("openai")))));
+        StackPanel speedRow = settingRow(QStringLiteral("Speed"), speed);
+        speedRow.Children().Append(secondaryTextBlock(openAiSpeedHelp()));
+        panel.Children().Append(speedRow);
 
-        refinementRefresh = [this, options, skip, fast, stats, warning] {
+        refinementRefresh = [this, options, skip, fast, speed, speedRow, stats, warning] {
             const QString id = controller->settings()->refinementProvider();
             const bool ownModel = id == kLocal || id == kEndpoint;
             skip.IsChecked(id == kNone);
             showProviderStats(stats, controller->providerRegistry()->refinementProviders(),
                               ownModel ? QString() : id);
-            fast.Visibility(id == QStringLiteral("openai") || id == QStringLiteral("anthropic")
-                                ? Visibility::Visible : Visibility::Collapsed);
+            fast.Visibility(id == QStringLiteral("anthropic") ? Visibility::Visible : Visibility::Collapsed);
+            speedRow.Visibility(id == QStringLiteral("openai") ? Visibility::Visible : Visibility::Collapsed);
             if (id == QStringLiteral("openai")) {
-                fast.IsChecked(controller->settings()->openAiFastMode());
+                const QString model = controller->settings()->openAiModel();
+                const QString current = controller->settings()->openAiSpeed();
+                speed.Items().Clear();
+                int selected = -1;
+                for (const RowOption &option : openAiSpeedOptions(model)) {
+                    ComboBoxItem item;
+                    item.Content(box_value(win::hs(option.label)));
+                    item.Tag(box_value(win::hs(option.id)));
+                    item.IsEnabled(option.enabled);
+                    if (!option.help.isEmpty()) {
+                        ToolTipService::SetToolTip(item, box_value(win::hs(option.help)));
+                    }
+                    if (option.id == current) {
+                        selected = int(speed.Items().Size());
+                    }
+                    speed.Items().Append(item);
+                }
+                speed.SelectedIndex(selected);
             } else if (id == QStringLiteral("anthropic")) {
                 fast.IsChecked(controller->settings()->anthropicFastMode());
             }
@@ -2053,12 +2077,18 @@ struct SetupWindow::Native {
             }
         });
         fast.Click([this, fast](const auto &, const auto &) {
-            const bool checked = fast.IsChecked().Value();
-            const QString id = controller->settings()->refinementProvider();
-            if (id == QStringLiteral("openai")) {
-                controller->settings()->setOpenAiFastMode(checked);
-            } else if (id == QStringLiteral("anthropic")) {
-                controller->settings()->setAnthropicFastMode(checked);
+            controller->settings()->setAnthropicFastMode(fast.IsChecked().Value());
+        });
+        // Refilling the list selects the stored speed again, which WinUI can
+        // report late; comparing with the stored speed keeps that from saving.
+        speed.SelectionChanged([this, speed](const auto &, const auto &) {
+            const auto item = speed.SelectedItem();
+            if (!item) {
+                return;
+            }
+            const QString chosen = win::qs(unbox_value<hstring>(item.as<ComboBoxItem>().Tag()));
+            if (chosen != controller->settings()->openAiSpeed()) {
+                controller->settings()->setOpenAiSpeed(chosen);
             }
         });
         LocalSetup *local = controller->localSetup();

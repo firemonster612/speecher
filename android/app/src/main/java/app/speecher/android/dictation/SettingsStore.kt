@@ -31,7 +31,13 @@ class SettingsStore(private val context: Context) {
                 transcribePassEnabled = preferences.getBoolean("transcribePass", true),
                 chatGptRefinement = loadRefinement(Provider.ChatGpt),
                 claudeRefinement = loadRefinement(Provider.Claude),
-                chatGptFastMode = preferences.getBoolean("openAiFastMode", true),
+                // Before Speed there was only the fast-mode switch.
+                chatGptSpeed =
+                    enumOf(
+                        preferences.getString("openAiSpeed", null),
+                        if (preferences.getBoolean("openAiFastMode", true)) OpenAiSpeed.Fast
+                        else OpenAiSpeed.Standard,
+                    ),
                 claudeFastMode = preferences.getBoolean("anthropicFastMode", true),
                 vocabulary =
                     JSONArray(preferences.getString("vocabulary", "[]")).let { items ->
@@ -120,7 +126,7 @@ class SettingsStore(private val context: Context) {
                 putString("${provider.name}RefinementModel", choice.model)
                 putString("${provider.name}RefinementEffort", choice.effort)
             }
-            putBoolean("openAiFastMode", settings.chatGptFastMode)
+            putString("openAiSpeed", settings.chatGptSpeed.name)
             putBoolean("anthropicFastMode", settings.claudeFastMode)
             putString("vocabulary", JSONArray(settings.vocabulary).toString())
             putBoolean("chipDockOnMic", settings.chipDockOnMic)
@@ -211,14 +217,18 @@ class SettingsStore(private val context: Context) {
 
     private fun loadRefinement(provider: Provider): RefinementChoice {
         val default = provider.defaultRefinement
+        val model = preferences.getString("${provider.name}RefinementModel", default.model)!!
         return RefinementChoice(
-            preferences.getString("${provider.name}RefinementModel", default.model)!!,
+            // A stored choice follows its model's replacement in the picker.
+            replacedModels[model] ?: model,
             preferences.getString("${provider.name}RefinementEffort", default.effort)!!,
         )
     }
 
     private companion object {
         const val NO_OFFSET = Int.MIN_VALUE
+        val replacedModels =
+            mapOf("claude-sonnet-5" to "claude-sonnet-5-5", "gpt-6-sol" to "gpt-6.1-sol")
     }
 }
 

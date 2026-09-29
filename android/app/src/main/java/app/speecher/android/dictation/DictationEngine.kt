@@ -11,6 +11,7 @@ import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CodexDictationClient
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
+import app.speecher.protocol.modelSupportsUltrafast
 import app.speecher.protocol.preferredTranscript
 import app.speecher.protocol.refineTranscript
 import app.speecher.protocol.transcribeSpeech
@@ -32,6 +33,9 @@ val sharedExecutor = Executors.newCachedThreadPool()
  * once a fast request fails and the standard-speed retry succeeds, as the desktop does.
  */
 private val fastModeAvailable = Provider.entries.associateWith { AtomicBoolean(true) }
+
+/** The same for ChatGPT's ultrafast tier, so its refusal leaves Fast alone. */
+private val ultrafastAvailable = AtomicBoolean(true)
 
 /** [transcribe] is the batch speech-to-text endpoint, for the providers that have one. */
 private data class Endpoints(
@@ -521,6 +525,10 @@ fun createDictationEngine(
                     }
                 }
             val choice = settings.refinement(selected)
+            val ultrafast =
+                selected == Provider.ChatGpt &&
+                    settings.chatGptSpeed == OpenAiSpeed.Ultrafast &&
+                    modelSupportsUltrafast(choice.model)
             // A profile set to no cleanup inserts the transcript as heard, as the desktop does.
             if (context.style == CleanupStrength.None) raw
             else
@@ -534,7 +542,9 @@ fun createDictationEngine(
                     choice.effort,
                     context,
                     endpoints.getValue(selected).refinement,
-                    fastModeAvailable.getValue(selected).takeIf { settings.fastMode(selected) },
+                    (if (ultrafast) ultrafastAvailable else fastModeAvailable.getValue(selected))
+                        .takeIf { settings.fastMode(selected) },
+                    ultrafast,
                     onRefined,
                 )
         },

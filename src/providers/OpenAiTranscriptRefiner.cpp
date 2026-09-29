@@ -122,7 +122,7 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
                       m_auth.accountId,
                       settings.openAiModel,
                       settings.openAiEffort,
-                      settings.openAiFastMode,
+                      settings.openAiSpeed,
                       settings.style,
                       context);
 }

@@ -118,6 +118,13 @@ private slots:
         QCOMPARE(settings.value(QStringLiteral("anthropic/model")).toString(),
                  QStringLiteral("claude-opus-5"));
 
+        // Sonnet 5 chosen after the first migration moves to Sonnet 5.5, once.
+        settings.setValue(QStringLiteral("migration/refinementModelVersion"), 1);
+        settings.setValue(QStringLiteral("anthropic/model"), QStringLiteral("claude-sonnet-5"));
+        migrateRefinementModels(settings);
+        QCOMPARE(settings.value(QStringLiteral("anthropic/model")).toString(),
+                 QStringLiteral("claude-sonnet-5-5"));
+
         settings.setValue(QStringLiteral("anthropic/model"), QStringLiteral("claude-sonnet-5"));
         migrateRefinementModels(settings);
         QCOMPARE(settings.value(QStringLiteral("anthropic/model")).toString(),
@@ -253,7 +260,7 @@ private slots:
         QCOMPARE(settings.openAiModel(), QStringLiteral("gpt-6-luna"));
         QCOMPARE(settings.openAiAuthMode(), QStringLiteral("auto"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
-        QCOMPARE(settings.openAiFastMode(), true);
+        QCOMPARE(settings.openAiSpeed(), QStringLiteral("fast"));
         QCOMPARE(settings.anthropicModel(), QStringLiteral("claude-opus-5-5"));
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
@@ -361,10 +368,13 @@ private slots:
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
         settings.setOpenAiEffort(QStringLiteral("unsupported"));
         QCOMPARE(settings.openAiEffort(), QStringLiteral("none"));
-        settings.setOpenAiFastMode(false);
-        QCOMPARE(settings.openAiFastMode(), false);
-        settings.setOpenAiFastMode(true);
-        QCOMPARE(settings.openAiFastMode(), true);
+        // Fast mode turned off before Speed existed reads as Standard.
+        settings.raw().setValue(QStringLiteral("openai/fastMode"), false);
+        QCOMPARE(settings.openAiSpeed(), QStringLiteral("standard"));
+        settings.setOpenAiSpeed(QStringLiteral("ultrafast"));
+        QCOMPARE(settings.openAiSpeed(), QStringLiteral("ultrafast"));
+        settings.setOpenAiSpeed(QStringLiteral("unsupported"));
+        QCOMPARE(settings.openAiSpeed(), QStringLiteral("fast"));
 
         settings.setRefinementProvider(QStringLiteral("anthropic"));
         QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
@@ -940,7 +950,7 @@ private slots:
         settings.setIncludeScreenshotContext(true);
         settings.setOpenAiAuthMode(QStringLiteral("env"));
         settings.setOpenAiEffort(QStringLiteral("high"));
-        settings.setOpenAiFastMode(false);
+        settings.setOpenAiSpeed(QStringLiteral("standard"));
         settings.setAnthropicModel(QStringLiteral("claude-opus-5"));
         settings.setAnthropicAuthMode(QStringLiteral("oauth"));
         settings.setAnthropicEffort(QStringLiteral("xhigh"));
@@ -996,7 +1006,7 @@ private slots:
         QCOMPARE(snapshot.refinement.includeScreenshotContext, true);
         QCOMPARE(snapshot.refinement.openAiAuthMode, QStringLiteral("env"));
         QCOMPARE(snapshot.refinement.openAiEffort, QStringLiteral("high"));
-        QCOMPARE(snapshot.refinement.openAiFastMode, false);
+        QCOMPARE(snapshot.refinement.openAiSpeed, QStringLiteral("standard"));
         QCOMPARE(snapshot.refinement.anthropicModel, QStringLiteral("claude-opus-5"));
         QCOMPARE(snapshot.refinement.anthropicAuthMode, QStringLiteral("oauth"));
         QCOMPARE(snapshot.refinement.anthropicEffort, QStringLiteral("xhigh"));

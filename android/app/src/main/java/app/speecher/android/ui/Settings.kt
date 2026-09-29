@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
+import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.label
@@ -62,6 +63,7 @@ import app.speecher.protocol.claudeVoiceKeyterms
 import app.speecher.protocol.cleanupLevelId
 import app.speecher.protocol.customChoiceId
 import app.speecher.protocol.modelSupportsFastMode
+import app.speecher.protocol.modelSupportsUltrafast
 import app.speecher.protocol.toneId
 import app.speecher.protocol.withCleanupLevel
 import app.speecher.protocol.withTone
@@ -69,6 +71,11 @@ import app.speecher.protocol.withTone
 internal const val FAST_MODE_DESCRIPTION =
     "Makes refinement faster. Uses a little more of your usage, but the difference is tiny."
 private const val FAST_MODE_OPUS_ONLY = "Only works with Opus models."
+private const val SPEED_DESCRIPTION =
+    "Fast answers sooner for slightly more usage. Ultrafast is much faster but uses a lot more " +
+        "usage, and needs a plan with Ultrafast access."
+private const val ULTRAFAST_ASTRA_ONLY =
+    "Ultrafast needs GPT-6 Astra. GPT-6.1 Sol support is coming later."
 
 // Labels from the desktop's Target.cpp, in its order.
 private val profileLabels =
@@ -187,20 +194,37 @@ fun Settings(
             EffortPicker(provider, choice.effort) {
                 onChange(settings.withRefinement(provider, choice.copy(effort = it)))
             }
-            val unsupported = provider == Provider.Claude && !modelSupportsFastMode(choice.model)
-            ListItem(
-                headlineContent = { Text("Fast mode") },
-                supportingContent = {
-                    Text(if (unsupported) FAST_MODE_OPUS_ONLY else FAST_MODE_DESCRIPTION)
-                },
-                trailingContent = {
-                    Switch(
-                        settings.fastMode(provider),
-                        { onChange(settings.withFastMode(provider, it)) },
-                    )
-                },
-                colors = rowColors,
-            )
+            if (provider == Provider.ChatGpt) {
+                val ultrafast = modelSupportsUltrafast(choice.model)
+                ListItem(
+                    headlineContent = { Text("Speed") },
+                    supportingContent = {
+                        Text(
+                            if (ultrafast) SPEED_DESCRIPTION
+                            else "$SPEED_DESCRIPTION $ULTRAFAST_ASTRA_ONLY"
+                        )
+                    },
+                    colors = rowColors,
+                )
+                SpeedPicker(settings.chatGptSpeed, ultrafast) {
+                    onChange(settings.copy(chatGptSpeed = it))
+                }
+            } else {
+                val unsupported = !modelSupportsFastMode(choice.model)
+                ListItem(
+                    headlineContent = { Text("Fast mode") },
+                    supportingContent = {
+                        Text(if (unsupported) FAST_MODE_OPUS_ONLY else FAST_MODE_DESCRIPTION)
+                    },
+                    trailingContent = {
+                        Switch(
+                            settings.claudeFastMode,
+                            { onChange(settings.copy(claudeFastMode = it)) },
+                        )
+                    },
+                    colors = rowColors,
+                )
+            }
             ListItem(
                 headlineContent = { Text("Fallback profile") },
                 supportingContent = {
@@ -254,7 +278,7 @@ fun Settings(
                         Text(
                             "Sends a screenshot of the app you're dictating into, without the " +
                                 "status bar or keyboard, to your refinement provider. Needs a " +
-                                "vision-capable refinement model, such as Claude Sonnet 5."
+                                "vision-capable refinement model, such as Claude Sonnet 5.5."
                         )
                     },
                     trailingContent = {
@@ -676,6 +700,34 @@ private fun EffortPicker(provider: Provider, selected: String, onSelect: (String
                 shape = SegmentedButtonDefaults.itemShape(index, efforts.size),
             ) {
                 Text(effort.replaceFirstChar(Char::uppercase))
+            }
+        }
+    }
+}
+
+/**
+ * Standard, Fast and Ultrafast; a model without Ultrafast shows it disabled, and refines at Fast.
+ */
+@Composable
+private fun SpeedPicker(
+    selected: OpenAiSpeed,
+    ultrafast: Boolean,
+    onSelect: (OpenAiSpeed) -> Unit,
+) {
+    val speeds = OpenAiSpeed.entries
+    SingleChoiceSegmentedButtonRow(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).semantics {
+            contentDescription = "Speed"
+        }
+    ) {
+        speeds.forEachIndexed { index, speed ->
+            SegmentedButton(
+                selected = speed == selected,
+                onClick = { onSelect(speed) },
+                enabled = speed != OpenAiSpeed.Ultrafast || ultrafast,
+                shape = SegmentedButtonDefaults.itemShape(index, speeds.size),
+            ) {
+                Text(speed.label)
             }
         }
     }

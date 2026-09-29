@@ -1,6 +1,7 @@
 #include "providers/OpenAiRefiner.h"
 #include "providers/EndpointRequest.h"
 
+#include "core/AppSettings.h"
 #include "providers/TranscriptRefinementPrompt.h"
 
 #include <QJsonArray>
@@ -76,16 +77,29 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
                            const QString &accountId,
                            const QString &model,
                            const QString &effort,
-                           bool fastMode,
+                           const QString &speed,
                            const QString &refinementStyle,
                            const RefinementContext &context)
 {
-    // Fast mode is the ChatGPT backend's priority tier, reached directly with a
-    // ChatGPT account or through a CLI Proxy API server (which maps "fast" to
-    // "priority" itself). The public API bills "priority" at a higher per-token
-    // rate, so API-key requests to api.openai.com never ask for it.
+    // Fast mode is the ChatGPT backend's priority tier, and Ultrafast its
+    // ultrafast tier, reached directly with a ChatGPT account or through a CLI
+    // Proxy API server (which maps "fast" to "priority" itself). The public API
+    // bills both at a higher per-token rate, so API-key requests to
+    // api.openai.com never ask for either.
     const QUrl base(endpointBase.isEmpty() ? QStringLiteral("https://api.openai.com/v1") : endpointBase);
     const bool publicApi = isPublicOpenAiApi(base);
+    // GPT-6.1 Sol refuses "none"; low is the least effort it takes.
+    const QString requestedEffort = effort.isEmpty() ? QStringLiteral("none") : effort;
+    const QString sentEffort =
+        requestedEffort == QStringLiteral("none")
+                && model.trimmed().toCaseFolded().startsWith(QStringLiteral("gpt-6.1-sol"))
+            ? QStringLiteral("low")
+            : requestedEffort;
+    const QString effectiveSpeed = effectiveOpenAiSpeed(speed, model);
+    // chatgpt.com rejects "fast" (HTTP 400 "Unsupported service_tier: fast"); "priority" is accepted.
+    const QString serviceTier = effectiveSpeed == QStringLiteral("ultrafast") ? QStringLiteral("ultrafast")
+        : effectiveSpeed == QStringLiteral("fast")                            ? QStringLiteral("priority")
+                                                                              : QString();
     m_stream.start([=](bool fast) -> StreamingRefinement::Request {
         QUrl endpoint = base;
         endpoint.setPath(endpoint.path().replace(QRegularExpression(QStringLiteral("/$")), QString()) + QStringLiteral("/responses"));
@@ -105,13 +119,12 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
 
         QJsonObject body;
         body.insert(QStringLiteral("model"), model);
-        body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), effort.isEmpty() ? QStringLiteral("none") : effort}});
+        body.insert(QStringLiteral("reasoning"), QJsonObject{{QStringLiteral("effort"), sentEffort}});
         body.insert(QStringLiteral("instructions"), refinementSystemPrompt(refinementStyle, context));
         body.insert(QStringLiteral("stream"), true);
         body.insert(QStringLiteral("store"), false);
         if (fast) {
-            // chatgpt.com rejects "fast" (HTTP 400 "Unsupported service_tier: fast"); "priority" is accepted.
-            body.insert(QStringLiteral("service_tier"), QStringLiteral("priority"));
+            body.insert(QStringLiteral("service_tier"), serviceTier);
         }
         QJsonObject user;
         user.insert(QStringLiteral("role"), QStringLiteral("user"));
@@ -124,7 +137,7 @@ void OpenAiRefiner::refine(const QString &rawTranscript,
         }
         body.insert(QStringLiteral("input"), QJsonArray{user});
         return {request, QJsonDocument(body).toJson(QJsonDocument::Compact)};
-    }, fastMode && !publicApi);
+    }, publicApi ? QString() : serviceTier);
 }
 
 void OpenAiRefiner::cancel()

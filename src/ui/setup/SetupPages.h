@@ -457,6 +457,9 @@ private:
     ProviderStatsBlock *m_stats;
     QLabel *m_warning;
     QCheckBox *m_fastMode;
+    // OpenAI's Standard, Fast or Ultrafast, in place of the Fast mode box.
+    QWidget *m_openAiSpeedRow;
+    QComboBox *m_openAiSpeed;
     QLabel *m_fastModeHint;
     quint64 m_checkGeneration = 0;
     int m_pendingProbes = 0;
