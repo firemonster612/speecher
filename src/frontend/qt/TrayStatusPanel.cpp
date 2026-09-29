@@ -113,7 +113,7 @@ TrayStatusPanel::TrayStatusPanel(ApplicationController *controller, QWidget *par
     m_level->setObjectName(QStringLiteral("trayPanelLevel"));
     m_level->setRange(0, 100);
     m_level->setTextVisible(false);
-    m_level->setAccessibleName(QStringLiteral("Input level"));
+    m_level->setAccessibleName(inputLevelLabel());
     layout->addWidget(m_level);
 
     m_toggle = panelButton(QString(), this);

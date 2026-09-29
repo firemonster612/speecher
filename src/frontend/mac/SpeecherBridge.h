@@ -703,6 +703,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // The captions the menu bar panel shares with the Linux and Windows trays.
 @property (nonatomic, readonly, copy) NSString *traySettingsCaption;
 @property (nonatomic, readonly, copy) NSString *trayQuitCaption;
+// A level meter's accessible name, in the menu bar panel and setup.
+@property (nonatomic, readonly, copy) NSString *inputLevelLabel;
 @property (nonatomic, readonly, copy) NSString *copyTranscriptCaption;
 // What a copy button says for a moment after copying, and for how long.
 @property (nonatomic, readonly, copy) NSString *copiedCaption;
@@ -853,9 +855,11 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 
 // The steps, and the wording every assistant shares (app/SetupSteps.h).
 @property (nonatomic, readonly, copy) NSArray<SpeecherSetupStep *> *setupSteps;
+@property (nonatomic, readonly, copy) NSString *setupWindowTitle;
 @property (nonatomic, readonly, copy) NSString *setupWelcomeDetail;
+// The microphone choice's system-default entry.
+@property (nonatomic, readonly, copy) NSString *audioDeviceDefaultLabel;
 @property (nonatomic, readonly, copy) NSString *setupSilentMicrophoneHint;
-@property (nonatomic, readonly, copy) NSString *setupInputLevelLabel;
 @property (nonatomic, readonly, copy) NSString *setupProfilesNote;
 @property (nonatomic, readonly, copy) NSString *setupBlockedHeading;
 @property (nonatomic, readonly, copy) NSString *setupBlockedFooter;

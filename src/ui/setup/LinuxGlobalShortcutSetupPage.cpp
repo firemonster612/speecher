@@ -551,7 +551,7 @@ QString LinuxGlobalShortcutSetupPage::blockedReason() const
     if (!m_controller.globalShortcutSupportKnown()) {
         return QStringLiteral("Speecher is still checking what your desktop supports.");
     }
-    return QStringLiteral("No shortcut is set, so there is no way to start dictating.");
+    return findSetupStep(QStringLiteral("shortcut"))->blocked;
 }
 
 void LinuxGlobalShortcutSetupPage::showCaptureFeedback(const QString &text)

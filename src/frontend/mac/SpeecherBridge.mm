@@ -2081,6 +2081,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::trayQuitCaption().toNSString();
 }
 
+- (NSString *)inputLevelLabel
+{
+    return speecher::inputLevelLabel().toNSString();
+}
+
 - (NSString *)copyTranscriptCaption
 {
     return speecher::copyTranscriptCaption().toNSString();
@@ -2311,7 +2316,7 @@ static void probeSpeechProvider(BridgeState *state,
     speecher::ProviderRegistry *registry = state->controller->providerRegistry();
     speecher::SpeechTranscriber *provider = registry->speechProvider(descriptor.id);
     if (!provider) {
-        answer(false, QStringLiteral("No transcription service is available."));
+        answer(false, speecher::setupTranscriptionBlocked(false, QString()));
         return;
     }
     std::optional<speecher::SpeechPrepareJob> job = provider->createPrepareJob(speech);
@@ -2445,9 +2450,10 @@ static void probeSpeechProvider(BridgeState *state,
     return steps;
 }
 
+- (NSString *)setupWindowTitle { return speecher::setupWindowTitle().toNSString(); }
 - (NSString *)setupWelcomeDetail { return speecher::setupWelcomeDetail().toNSString(); }
+- (NSString *)audioDeviceDefaultLabel { return speecher::audioDeviceDefaultLabel().toNSString(); }
 - (NSString *)setupSilentMicrophoneHint { return speecher::setupSilentMicrophoneHint().toNSString(); }
-- (NSString *)setupInputLevelLabel { return speecher::setupInputLevelLabel().toNSString(); }
 - (NSString *)setupProfilesNote { return speecher::setupProfilesNote().toNSString(); }
 - (NSString *)setupBlockedHeading { return speecher::setupBlockedHeading().toNSString(); }
 - (NSString *)setupBlockedFooter { return speecher::setupBlockedFooter().toNSString(); }

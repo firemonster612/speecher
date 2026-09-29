@@ -442,6 +442,8 @@ QString checkingCredentialsStatus();
 // that has gone away. Shared with the setup assistant's own device list.
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices,
                                     const QString &selectedDeviceId);
+// The system-default entry's label.
+QString audioDeviceDefaultLabel();
 
 // The Local models page's Acceleration choice: Automatic, the CPU, then each
 // GPU backend that reaches a card here, with a disabled placeholder for a

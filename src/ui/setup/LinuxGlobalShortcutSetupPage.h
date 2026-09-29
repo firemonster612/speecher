@@ -98,7 +98,9 @@ public:
 
     // The setup assistant holds Next until the install has run and, where the
     // desktop can register one, a Global Shortcut is set. Manual-command
-    // desktops cannot be verified, so the install is their whole step.
+    // desktops cannot be verified, so the install is their whole step; holding
+    // Finish there would leave setup impossible to finish, and the page
+    // already shows the command to bind by hand.
     bool stepComplete() const;
 
     QString blockedReason() const override;

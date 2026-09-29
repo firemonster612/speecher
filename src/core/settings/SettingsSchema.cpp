@@ -2747,6 +2747,11 @@ QList<RowOption> localGraphicsCardOptions(const QList<LocalGpu> &gpus, const Loc
     return options;
 }
 
+QString audioDeviceDefaultLabel()
+{
+    return QStringLiteral("System default");
+}
+
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QString &selectedDeviceId)
 {
     const RowOption missing{selectedDeviceId,
@@ -2764,7 +2769,7 @@ QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QStri
         return options;
     }
 
-    QList<RowOption> options{{QString(), QStringLiteral("System default")}};
+    QList<RowOption> options{{QString(), audioDeviceDefaultLabel()}};
     bool selectedFound = selectedDeviceId.isEmpty();
     for (const RowOption &device : devices) {
         options.append(device);

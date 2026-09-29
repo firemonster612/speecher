@@ -45,7 +45,6 @@ QString setupMicrophoneBlocked(SetupMicrophoneProblem problem);
 // Shown under the level meter once it has heard nothing for this long.
 inline constexpr int kSetupSilentMicrophoneMs = 5000;
 QString setupSilentMicrophoneHint();
-QString setupInputLevelLabel();
 
 // A settings row as the Settings window labels it, so a setup control named
 // after one reads the same in both places.

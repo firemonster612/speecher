@@ -92,6 +92,11 @@ QString noTranscriptYetText()
     return QStringLiteral("Nothing dictated yet.");
 }
 
+QString inputLevelLabel()
+{
+    return QStringLiteral("Input level");
+}
+
 QString dictationStateLabel(DictationState state, const QString &message)
 {
     if (state == DictationState::Error) {

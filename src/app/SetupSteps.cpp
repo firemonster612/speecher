@@ -152,11 +152,6 @@ QString setupSilentMicrophoneHint()
     return QStringLiteral("No input yet — check that the microphone isn't muted, or pick another device.");
 }
 
-QString setupInputLevelLabel()
-{
-    return QStringLiteral("Input level");
-}
-
 const SettingsRow &setupSchemaRow(const QString &rowId)
 {
     // Labels do not depend on the context beyond what it enables, so one
