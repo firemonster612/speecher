@@ -44,6 +44,7 @@ namespace Pickers = winrt::Windows::Storage::Pickers;
 
 // Segoe Fluent Icons.
 constexpr wchar_t kGlyphRemove = L'\uE711';
+constexpr wchar_t kGlyphOpenFile = L'\uE8E5';
 constexpr wchar_t kGlyphDone = L'\uE73E';
 constexpr wchar_t kGlyphFailed = L'\uE783';
 constexpr wchar_t kGlyphCurrent = L'\uE768';
@@ -458,10 +459,17 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
     };
 
     // Audio files: a browse row, then one row per file with its size.
+    // The browse row is titled by what a click does, as on Linux and macOS;
+    // the button beside it carries the same name.
     StackPanel files;
-    Button browse = textButton(chooseFilesCaption(!m_files.isEmpty()));
+    const QString chooseCaption = chooseFilesCaption(!m_files.isEmpty());
+    Button browse;
+    browse.Content(glyph(kGlyphOpenFile));
+    ToolTipService::SetToolTip(browse, box_value(hs(chooseCaption)));
+    Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(browse, hs(chooseCaption));
     browse.Click([this, &host](const auto &, const auto &) { chooseFiles(host); });
-    files.Children().Append(row({}, m_files.isEmpty() ? mediaFilesHint() : QString(), browse, false));
+    files.Children().Append(
+        row(chooseCaption, m_files.isEmpty() ? mediaFilesHint() : QString(), browse, false));
     for (const QString &path : std::as_const(m_files)) {
         const QFileInfo info(path);
         Button remove;
