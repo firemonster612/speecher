@@ -25,8 +25,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var level: Float = 0
     /// The last thing Speecher heard, which the menu bar panel offers to copy.
     @Published private(set) var transcript: String
-    /// Why the last session failed, until the next one starts.
-    @Published private(set) var lastFailure: String
+    /// Why the last session failed, until the next one starts; empty while the
+    /// status itself says it.
+    @Published private(set) var failureNote: String
     /// The transcript was just copied, so the button says so for a moment.
     @Published private(set) var transcriptCopied = false
     @Published private(set) var accessibilityEnabled: Bool
@@ -112,7 +113,7 @@ final class AppModel: ObservableObject {
         toggleLabel = bridge.toggleLabel
         toggleEnabled = bridge.toggleEnabled
         transcript = bridge.lastTranscript
-        lastFailure = bridge.lastFailure
+        failureNote = bridge.failureNote
         local = bridge.localSetupState
         shortcut = bridge.shortcutDisplay
         accessibilityEnabled = bridge.accessibilityEnabled
@@ -124,7 +125,7 @@ final class AppModel: ObservableObject {
         bridge.statusChanged = { [weak self] status in
             guard let self else { return }
             self.status = status
-            lastFailure = self.bridge.lastFailure
+            failureNote = self.bridge.failureNote
             listening = self.bridge.listening
             toggleLabel = self.bridge.toggleLabel
             toggleEnabled = self.bridge.toggleEnabled

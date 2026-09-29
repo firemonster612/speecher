@@ -606,14 +606,18 @@ private slots:
         controller.settings()->setSpeechProvider(QStringLiteral("missing"));
         controller.session()->startListening();
         QCOMPARE(controller.session()->stateName(), QStringLiteral("error"));
-        QVERIFY(error->isVisible());
-        QCOMPARE(error->text(), controller.session()->lastFailure());
-        QVERIFY(!error->text().isEmpty());
+        QVERIFY(!controller.session()->lastFailure().isEmpty());
+        // The status line says it, so the note under it waits.
+        auto *status = page.findChild<QLabel *>(QStringLiteral("dictationStatus"));
+        QVERIFY(status);
+        QCOMPARE(status->text().simplified(), controller.session()->lastFailure());
+        QVERIFY(!error->isVisible());
 
-        // Leaving the error state does not hide it; only a new session does.
+        // Leaving the error state shows it; only a new session hides it again.
         controller.session()->stopListening();
         QCOMPARE(controller.session()->stateName(), QStringLiteral("idle"));
         QVERIFY(error->isVisible());
+        QCOMPARE(error->text(), controller.session()->lastFailure());
         controller.settings()->setSpeechProvider(QStringLiteral("claude"));
         controller.session()->startListening();
         QVERIFY(controller.session()->lastFailure().isEmpty());

@@ -2102,9 +2102,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::kInsightTileMinimumWidth;
 }
 
-- (NSString *)lastFailure
+- (NSString *)failureNote
 {
-    return _state->controller->session()->lastFailure().toNSString();
+    return speecher::dictationFailureNote(_state->controller->stateName(),
+                                          _state->controller->session()->lastFailure())
+        .toNSString();
 }
 
 - (NSDictionary<NSString *, NSString *> *)homeLabels

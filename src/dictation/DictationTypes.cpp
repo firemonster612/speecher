@@ -56,6 +56,11 @@ QString dictationStatusLabel(const QString &stateName, const QString &message)
     return QStringLiteral("Idle");
 }
 
+QString dictationFailureNote(const QString &stateName, const QString &lastFailure)
+{
+    return stateName.toLower() == QStringLiteral("error") ? QString() : lastFailure;
+}
+
 bool dictationListeningPresentation(const QString &stateName)
 {
     const QString lowered = stateName.toLower();

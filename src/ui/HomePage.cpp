@@ -1006,7 +1006,7 @@ void HomePage::applyState(const QString &stateName)
                                            ? QStringLiteral("media-playback-stop")
                                            : QStringLiteral("media-record")));
     m_waveform->setVisible(active);
-    const QString failure = m_controller->session()->lastFailure();
+    const QString failure = dictationFailureNote(stateName, m_controller->session()->lastFailure());
     m_errorText->setText(failure);
     m_errorText->setVisible(!failure.isEmpty());
     if (!active) {

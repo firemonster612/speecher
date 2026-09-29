@@ -102,8 +102,8 @@ struct HomePane: View {
             }
             // The popup shows a failure for five seconds, so the reason also
             // stays here until the next session starts.
-            if !model.lastFailure.isEmpty {
-                Text(model.lastFailure)
+            if !model.failureNote.isEmpty {
+                Text(model.failureNote)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
