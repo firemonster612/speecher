@@ -50,6 +50,8 @@ public:
     // The pane left host's window, or the window closed: stop updating
     // elements nobody sees there.
     void forget(const PaneHost &host);
+    // Starts the listed files with the setup's choices, as Transcribe does.
+    void startBatch();
 
 private:
     // One window's tree: the processing stage's elements, updated in place
@@ -69,7 +71,6 @@ private:
     void seedOptions();
     void applyWritingProfile();
     TranscribeOptions options() const;
-    void startBatch();
     void retry(int index);
     void backToSetup();
     void appendSetup(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column, PaneHost &host);

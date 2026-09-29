@@ -331,6 +331,13 @@ jobs:
             SPEECHER_GRAB_PAGE=transcribe-window ./build/speecher.app/Contents/MacOS/speecher \
             audio/meeting-notes.wav audio/voice-memo.wav --grab shots/mac-transcribe-window.png
           test -s shots/mac-transcribe-window.png
+          # A header with no audio fails to decode, so the batch ends on
+          # results with a failed file and no provider needed.
+          head -c 16 audio/voice-memo.wav > audio/broken.wav
+          DYLD_FRAMEWORK_PATH="$QT_ROOT_DIR/lib" DYLD_LIBRARY_PATH="$QT_ROOT_DIR/lib" \
+            SPEECHER_GRAB_PAGE=transcribe SPEECHER_GRAB_CLICK=transcribeStart SPEECHER_GRAB_WAIT_MS=4000 \
+            ./build/speecher.app/Contents/MacOS/speecher audio/broken.wav --grab shots/mac-transcribe-results.png
+          test -s shots/mac-transcribe-results.png
 
       - name: Upload macOS Transcribe screenshots
         if: github.event_name == 'pull_request'
@@ -492,14 +499,25 @@ jobs:
           New-Item -Path $key -Force | Out-Null
           New-ItemProperty -Path $key -Name setupCompleted -Value "true" -PropertyType String -Force | Out-Null
           $exe = (Resolve-Path build/speecher.exe).Path
-          $audio =(Resolve-Path audio/meeting-notes.wav).Path, (Resolve-Path audio/voice-memo.wav).Path
-          foreach ($page in "transcribe", "transcribe-window") {
-            $env:SPEECHER_GRAB_PAGE = $page
-            $out = Join-Path (Resolve-Path shots).Path "win-$page-setup.png"
-            $arguments = @($audio | ForEach-Object { "`"$_`"" }) + "--grab", "`"$out`""
+          $audio = (Resolve-Path audio/meeting-notes.wav).Path, (Resolve-Path audio/voice-memo.wav).Path
+          # A header with no audio fails to decode, so the batch ends on
+          # results with a failed file and no provider needed.
+          [IO.File]::WriteAllBytes((Join-Path $PWD "audio/broken.wav"), [byte[]]$header[0..15])
+          $grabs = @(
+            @{ Name = "win-transcribe-setup"; Page = "transcribe"; Files = $audio; Click = "" },
+            @{ Name = "win-transcribe-window"; Page = "transcribe-window"; Files = $audio; Click = "" },
+            @{ Name = "win-transcribe-results"; Page = "transcribe"; Click = "transcribeStart"
+               Files = @((Resolve-Path audio/broken.wav).Path) }
+          )
+          foreach ($grab in $grabs) {
+            $env:SPEECHER_GRAB_PAGE = $grab.Page
+            $env:SPEECHER_GRAB_CLICK = $grab.Click
+            $env:SPEECHER_GRAB_WAIT_MS = if ($grab.Click) { "4000" } else { "" }
+            $out = Join-Path (Resolve-Path shots).Path "$($grab.Name).png"
+            $arguments = @($grab.Files | ForEach-Object { "`"$_`"" }) + "--grab", "`"$out`""
             $process = Start-Process $exe -ArgumentList $arguments -Wait -PassThru
             if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
-              throw "speecher --grab for $page exited with code $($process.ExitCode)"
+              throw "speecher --grab for $($grab.Name) exited with code $($process.ExitCode)"
             }
           }
 
