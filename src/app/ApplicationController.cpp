@@ -538,6 +538,16 @@ QString ApplicationController::globalShortcutDisplay() const
 
 bool ApplicationController::setGlobalShortcut(const ShortcutBinding &shortcut, QString *error)
 {
+#ifdef SPEECHER_E2E_HOOKS
+    // E2E-build-only hook: a registration the desktop refuses, so the setup
+    // assistant's shortcut gate can be seen holding on any runner.
+    if (qEnvironmentVariableIntValue("SPEECHER_E2E_REFUSE_SHORTCUT") == 1) {
+        if (error) {
+            *error = QStringLiteral("Another application already owns %1").arg(shortcut.displayText());
+        }
+        return false;
+    }
+#endif
     return m_shortcutBinder->setShortcut(shortcut, error);
 }
 
@@ -988,6 +998,13 @@ void ApplicationController::completeSetup()
     QTimer::singleShot(0, this, [this] {
         showTranscribeFiles(std::exchange(m_pendingTranscribeFiles, {}));
     });
+}
+
+void ApplicationController::setupAssistantClosed()
+{
+    if (!m_popupOnly && !heldFilesOpening()) {
+        showMainWindow();
+    }
 }
 
 bool ApplicationController::ensureSetupCompleted()

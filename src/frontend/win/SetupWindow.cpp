@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
+#include "app/SetupSteps.h"
 #include "core/AppSettings.h"
 #include "core/EndpointSettings.h"
 #include "core/OutputFormat.h"
@@ -71,11 +72,19 @@ constexpr wchar_t kXmlns[] = LR"( xmlns="http://schemas.microsoft.com/winfx/2006
 
 constexpr int setupWidth = 760;
 constexpr int setupHeight = 560;
-constexpr int shortcutPage = 6;
-constexpr int readyPage = 8;
-// Welcome, Transcription and Microphone are the pages that carry a gate; every
-// page after them is ungated, so a gate sweep stops here.
-constexpr int lastGatedPage = 2;
+// Where each step sits in the walk, which is core's.
+int stepIndex(const QString &id)
+{
+    const QList<SetupStepInfo> steps = setupSteps();
+    for (int index = 0; index < steps.size(); ++index) {
+        if (steps.at(index).id == id) {
+            return index;
+        }
+    }
+    qFatal("the setup steps have no %s step", qPrintable(id));
+}
+const int shortcutPage = stepIndex(QStringLiteral("shortcut"));
+const int readyPage = stepIndex(QStringLiteral("ready"));
 // The width a provider row states for itself inside RadioButtons, which lays
 // an item out to its content rather than to the list.
 constexpr double choiceRowWidth = 560;
@@ -412,27 +421,6 @@ void showProviderStats(const StackPanel &panel, const QList<ProviderDescriptor> 
     panel.Visibility(panel.Children().Size() ? Visibility::Visible : Visibility::Collapsed);
 }
 
-QStringList welcomeCopy()
-{
-    return {QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the app you were using."),
-            QStringLiteral("This assistant checks everything dictation needs: your speech service, microphone, and how text reaches your apps.")};
-}
-
-// The Ready page has to describe the mode that was actually chosen: a
-// push-to-talk user told to "press it again to stop" is told a falsehood.
-QString readyInstruction(ShortcutActivationMode mode, const QString &display)
-{
-    switch (mode) {
-    case ShortcutActivationMode::PushToTalk:
-        return QStringLiteral("To dictate, hold %1 while you speak.").arg(display);
-    case ShortcutActivationMode::Hybrid:
-        return QStringLiteral("To dictate, tap %1 to toggle, or hold it to dictate until release.")
-            .arg(display);
-    case ShortcutActivationMode::Toggle:
-        break;
-    }
-    return QStringLiteral("To dictate, press %1 to start, press it again to stop.").arg(display);
-}
 
 // One choice on the Refinement step. The groups are separate cards, so the
 // choice is RadioButtons sharing a GroupName rather than one RadioButtons.
@@ -494,6 +482,7 @@ struct SetupWindow::Native {
     {
         microphone->stop();
         if (window) {
+            tearingDown = true;
             window.Close();
         }
     }
@@ -509,9 +498,13 @@ struct SetupWindow::Native {
         window.Closed([this](const auto &, const auto &) {
             clearPage();
             resumeShortcut();
+
             window = nullptr;
             content = nullptr;
             skip = back = next = nullptr;
+            if (!tearingDown) {
+                controller->setupAssistantClosed();
+            }
         });
 
         Grid root;
@@ -529,7 +522,7 @@ struct SetupWindow::Native {
         root.RowDefinitions().Append(barRow);
 
         TitleBar titleBar;
-        titleBar.Title(L"Speecher Setup");
+        titleBar.Title(win::hs(setupWindowTitle()));
         titleBar.IsBackButtonVisible(false);
         Grid::SetRow(titleBar, 0);
         root.Children().Append(titleBar);
@@ -569,7 +562,7 @@ struct SetupWindow::Native {
         next.Click([this](const auto &, const auto &) {
             if (singlePage) {
                 window.Close();
-            } else if (pageIndex == SetupWindow::pageTitles().size() - 1) {
+            } else if (pageIndex == readyPage) {
                 complete(false);
             } else {
                 showPage(pageIndex + 1);
@@ -590,7 +583,7 @@ struct SetupWindow::Native {
 
         HWND handle = nullptr;
         window.as<::IWindowNative>()->get_WindowHandle(&handle);
-        SetWindowTextW(handle, L"Speecher Setup");
+        SetWindowTextW(handle, setupWindowTitle().toStdWString().c_str());
         POINT pointer{};
         GetCursorPos(&pointer);
         MONITORINFO monitor{sizeof(monitor)};
@@ -619,6 +612,7 @@ struct SetupWindow::Native {
         }
         ensureWindow();
         singlePage = requested == SetupAssistantPage::GlobalShortcut;
+        registerShortcut();
         showPage(singlePage ? shortcutPage : 0);
         window.Activate();
         HWND handle = nullptr;
@@ -627,34 +621,38 @@ struct SetupWindow::Native {
         SetForegroundWindow(handle);
     }
 
-    // A page's prerequisite, as the wizard currently knows it. Every page past
-    // lastGatedPage asks nothing of the user that can fail.
+    // A page's prerequisite, as the wizard currently knows it. Only Welcome,
+    // Transcription, Microphone and the Global Shortcut ask for anything.
     bool gateSatisfied(int index) const
     {
-        switch (index) {
-        case 0:
-            // Welcome: running on this computer was chosen, or at least one
-            // provider sign-in is on this machine, or a usable CLI Proxy API
-            // account the Transcription step can opt into.
+        const QString id = setupSteps().at(index).id;
+        if (id == QStringLiteral("welcome")) {
+            // Running on this computer was chosen, or at least one provider
+            // sign-in is on this machine, or a usable CLI Proxy API account
+            // the Transcription step can opt into.
             return (localSpeech && welcomeChoice.local()) || anySignInFound();
-        case 1:
+        }
+        if (id == QStringLiteral("transcription")) {
             // A Local Model counts once its download has started: it keeps
             // going while setup continues.
             if (localSelected()) {
                 return localDownloadStarted();
             }
             return speechReady.value(controller->settings()->speechProvider(), false);
-        case 2:
-            return microphoneDetected;
-        default:
-            return true;
         }
+        if (id == QStringLiteral("microphone")) {
+            return microphoneDetected;
+        }
+        if (id == QStringLiteral("shortcut")) {
+            return shortcutRegistered;
+        }
+        return true;
     }
 
     // The first page whose gate is unmet, or -1 while every gate holds.
     int firstUnsatisfiedPage() const
     {
-        for (int index = 0; index <= lastGatedPage; ++index) {
+        for (int index = 0; index < readyPage; ++index) {
             if (!gateSatisfied(index)) {
                 return index;
             }
@@ -820,17 +818,16 @@ struct SetupWindow::Native {
             resumeShortcut();
         }
         content.Children().Clear();
-        switch (index) {
-        case 0: showWelcome(); break;
-        case 1: showTranscription(); break;
-        case 2: showMicrophone(); break;
-        case 3: showDelivery(); break;
-        case 4: showRefinement(); break;
-        case 5: showProfiles(); break;
-        case 6: showShortcut(); break;
-        case 7: showStartAtLogin(); break;
-        case 8: showReady(); break;
-        }
+        const QString id = setupSteps().at(index).id;
+        if (id == QStringLiteral("welcome")) showWelcome();
+        else if (id == QStringLiteral("transcription")) showTranscription();
+        else if (id == QStringLiteral("microphone")) showMicrophone();
+        else if (id == QStringLiteral("delivery")) showDelivery();
+        else if (id == QStringLiteral("refinement")) showRefinement();
+        else if (id == QStringLiteral("profiles")) showProfiles();
+        else if (id == QStringLiteral("shortcut")) showShortcut();
+        else if (id == QStringLiteral("login")) showStartAtLogin();
+        else showReady();
         back.Visibility(singlePage || index == 0 ? Visibility::Collapsed : Visibility::Visible);
         next.Content(box_value(singlePage ? L"Done"
                                           : (index == readyPage ? L"Finish" : L"Next")));
@@ -840,6 +837,12 @@ struct SetupWindow::Native {
     // The mockup's page frame: the title with "Step N of 9" grey on the right,
     // then the page's lead paragraph. The single-page shortcut recorder is not
     // a step in a walk, so it carries no counter.
+    StackPanel page(const QString &stepId)
+    {
+        const SetupStepInfo &step = *findSetupStep(stepId);
+        return page(step.title, step.intro);
+    }
+
     StackPanel page(const QString &title, const QString &body)
     {
         StackPanel column;
@@ -862,9 +865,7 @@ struct SetupWindow::Native {
         header.Children().Append(heading);
         if (!singlePage) {
             TextBlock step = secondaryTextBlock(
-                QStringLiteral("Step %1 of %2")
-                    .arg(pageIndex + 1)
-                    .arg(SetupWindow::pageTitles().size()));
+                setupStepCounter(pageIndex + 1, SetupWindow::pageTitles().size()));
             step.VerticalAlignment(VerticalAlignment::Bottom);
             Grid::SetColumn(step, 1);
             header.Children().Append(step);
@@ -940,11 +941,8 @@ struct SetupWindow::Native {
 
     void showWelcome()
     {
-        const QStringList copy = welcomeCopy();
-        StackPanel panel = page(
-            QStringLiteral("Welcome to Speecher"),
-            copy.at(0));
-        panel.Children().Append(textBlock(copy.at(1)));
+        StackPanel panel = page(QStringLiteral("welcome"));
+        panel.Children().Append(textBlock(setupWelcomeDetail()));
 
         // Two ways into dictation: a sign-in the person already has, or a
         // model on this computer. The sign-in rows below only matter for the
@@ -1449,9 +1447,7 @@ struct SetupWindow::Native {
 
     void showTranscription()
     {
-        StackPanel panel = page(
-            QStringLiteral("Transcription"),
-            QStringLiteral("Choose the service Speecher uses to turn speech into a raw transcript."));
+        StackPanel panel = page(QStringLiteral("transcription"));
         QList<QPair<QString, QString>> options;
         for (const ProviderDescriptor &provider : controller->providerRegistry()->speechProviders()) {
             // The Local card is only a choice where the assistant can set it
@@ -1498,9 +1494,10 @@ struct SetupWindow::Native {
                        [this] { return controller->settings()->speechProvider(); });
 
         // Codex only; describeSelected() below decides when it is on screen.
-        CheckBox accuracy = wrappingCheckBox(
-            QStringLiteral("Extra transcription accuracy (will increase transcription time)"));
-        accuracy.IsChecked(controller->settings()->codexFinalRetranscribe());
+        const SettingsRow &accuracyRow = setupSchemaRow(QStringLiteral("codexFinalRetranscribe"));
+        CheckBox accuracyBox = wrappingCheckBox(accuracyRow.help);
+        accuracyBox.IsChecked(controller->settings()->codexFinalRetranscribe());
+        StackPanel accuracy = settingRow(accuracyRow.label, accuracyBox);
         // Settled here too: the probes are async, so describeSelected() first
         // runs a beat later and the row would flash on for a non-Codex choice.
         accuracy.Visibility(controller->settings()->speechProvider() == QStringLiteral("codex")
@@ -1669,8 +1666,7 @@ struct SetupWindow::Native {
                 probeSpeechProvider(id, generation,
                                     [this, id, rowStatus, choices, options,
                                      describeSelected](const SpeechPrepareResult &result) {
-                    rowStatus.set(result.ok ? QStringLiteral("Ready")
-                                            : QStringLiteral("Not set up"),
+                    rowStatus.set(setupProviderVerdict(id, result.ok),
                                   result.ok ? StatusTone::Positive : StatusTone::Caution);
                     autoSelectSpeechProvider(choices, options);
                     describeSelected();
@@ -1679,8 +1675,8 @@ struct SetupWindow::Native {
             }
         };
         check.Click([runChecks](const auto &, const auto &) { runChecks(); });
-        accuracy.Click([this, accuracy](const auto &, const auto &) {
-            controller->settings()->setCodexFinalRetranscribe(accuracy.IsChecked().Value());
+        accuracyBox.Click([this, accuracyBox](const auto &, const auto &) {
+            controller->settings()->setCodexFinalRetranscribe(accuracyBox.IsChecked().Value());
         });
 
         // A sign-in change invalidates only the selected service's verdict, and
@@ -1701,8 +1697,7 @@ struct SetupWindow::Native {
             probeSpeechProvider(id, generation,
                                 [this, id, rowStatus, describeSelected](
                                     const SpeechPrepareResult &result) {
-                rowStatus.set(result.ok ? QStringLiteral("Ready")
-                                        : QStringLiteral("Not set up"),
+                rowStatus.set(setupProviderVerdict(id, result.ok),
                               result.ok ? StatusTone::Positive : StatusTone::Caution);
                 describeSelected();
                 refreshGates();
@@ -1788,9 +1783,7 @@ struct SetupWindow::Native {
 
     void showMicrophone()
     {
-        StackPanel panel = page(
-            QStringLiteral("Microphone"),
-            QStringLiteral("Choose the input Speecher should record. Speak normally; setup continues once the level moves."));
+        StackPanel panel = page(QStringLiteral("microphone"));
         const QList<AudioInputDeviceInfo> devices = controller->platform()->availableAudioInputDevices();
         QList<QPair<QString, QString>> options{{QString(), QStringLiteral("System default")}};
         for (const AudioInputDeviceInfo &device : devices) {
@@ -1809,7 +1802,7 @@ struct SetupWindow::Native {
         microphoneStatus = textBlock(QStringLiteral("Listening for microphone input…"));
         microphoneProblem = InfoBar();
         microphoneProblem.Title(L"Check microphone privacy");
-        microphoneProblem.Message(L"Allow desktop apps to use the microphone, then check again.");
+        microphoneProblem.Message(L"Allow desktop apps to use the microphone.");
         microphoneProblem.Severity(InfoBarSeverity::Warning);
         microphoneProblem.IsClosable(true);
         microphoneProblem.IsOpen(false);
@@ -1820,8 +1813,8 @@ struct SetupWindow::Native {
                           nullptr, nullptr, SW_SHOWNORMAL);
         });
         microphoneProblem.ActionButton(openSettings);
-        panel.Children().Append(settingRow(QStringLiteral("Input device"), device));
-        panel.Children().Append(settingRow(QStringLiteral("Live level"), microphoneLevel));
+        panel.Children().Append(settingRow(setupSchemaRow(QStringLiteral("audioDevice")).label, device));
+        panel.Children().Append(settingRow(setupInputLevelLabel(), microphoneLevel));
         panel.Children().Append(microphoneStatus);
         panel.Children().Append(microphoneProblem);
         content.Children().Append(panel);
@@ -1839,18 +1832,24 @@ struct SetupWindow::Native {
         // only this meter moving reopens it.
         microphoneDetected = false;
         refreshGates();
+        const quint64 generation = ++microphoneGeneration;
         QString error;
         if (!microphone->start(&error)) {
             microphoneStatus.Text(hstring(error.toStdWString()));
             microphoneProblem.IsOpen(true);
+            return;
         }
+        // The same nudge the other assistants give a meter that stays flat.
+        QTimer::singleShot(kSetupSilentMicrophoneMs, pageScope.get(), [this, generation] {
+            if (generation == microphoneGeneration && !microphoneDetected && microphoneStatus) {
+                microphoneStatus.Text(win::hs(setupSilentMicrophoneHint()));
+            }
+        });
     }
 
     void showDelivery()
     {
-        StackPanel panel = page(
-            QStringLiteral("Text delivery"),
-            QStringLiteral("Nothing to install. Speecher pastes with the Windows clipboard."));
+        StackPanel panel = page(QStringLiteral("delivery"));
         const QList<QPair<QString, QString>> formats{
             {QStringLiteral("plain"), QStringLiteral("Plain text")},
             {QStringLiteral("html"), QStringLiteral("HTML and plain text")}};
@@ -1859,7 +1858,8 @@ struct SetupWindow::Native {
             controller->settings()->setOutputFormat(
                 outputFormatFromString(formats.at(format.SelectedIndex()).first));
         });
-        CheckBox restore = wrappingCheckBox(restoreClipboardDescription());
+        const SettingsRow &restoreRow = setupSchemaRow(QStringLiteral("restoreClipboardAfterTyping"));
+        CheckBox restore = wrappingCheckBox(restoreRow.help);
         restore.IsChecked(controller->settings()->restoreClipboardAfterTyping());
         restore.Click([this, restore](const auto &, const auto &) {
             controller->settings()->setRestoreClipboardAfterTyping(restore.IsChecked().Value());
@@ -1868,11 +1868,12 @@ struct SetupWindow::Native {
         // the format row, then the clipboard sentence under the same stroke.
         StackPanel rows = rowList(card(panel, QString()));
         appendRow(rows, cardRow(glyphMark(L'\uE765'),
-                                rowText(textBlock(QStringLiteral("Clipboard format"), false)),
+                                rowText(textBlock(setupSchemaRow(QStringLiteral("outputFormat")).label, false)),
                                 format));
         rows.Children().Append(rowSeparator());
-        restore.Margin({0, 12, 0, 0});
-        rows.Children().Append(restore);
+        StackPanel restoreSetting = settingRow(restoreRow.label, restore);
+        restoreSetting.Margin({0, 12, 0, 0});
+        rows.Children().Append(restoreSetting);
         content.Children().Append(panel);
     }
 
@@ -1922,9 +1923,7 @@ struct SetupWindow::Native {
 
     void showRefinement()
     {
-        StackPanel panel = page(
-            QStringLiteral("Refinement"),
-            QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a provider, or skip cleanup."));
+        StackPanel panel = page(QStringLiteral("refinement"));
         const QList<ProviderDescriptor> registered = controller->providerRegistry()->refinementProviders();
         const QString saved = controller->settings()->refinementProvider();
         auto options = std::make_shared<std::vector<RefinementOption>>();
@@ -2081,7 +2080,7 @@ struct SetupWindow::Native {
                 // The own-model rows say what is on this computer, not a
                 // sign-in verdict; showRunner keeps them.
                 if (id != kLocal && id != kEndpoint) {
-                    status.set(ok ? QStringLiteral("Ready") : QStringLiteral("Not signed in"),
+                    status.set(setupProviderVerdict(id, ok),
                                ok ? StatusTone::Positive : StatusTone::Caution);
                 }
                 autoSelectRefinementProvider(*options);
@@ -2276,7 +2275,7 @@ struct SetupWindow::Native {
         endpointForm.format = combo({{QStringLiteral("openai"), QStringLiteral("OpenAI-compatible (Chat Completions)")},
                                      {QStringLiteral("anthropic"), QStringLiteral("Anthropic-compatible (Messages)")}},
                                     saved.format);
-        addRow(QStringLiteral("Format"), QString(), endpointForm.format);
+        addRow(setupSchemaRow(QStringLiteral("refinementEndpointFormat")).label, QString(), endpointForm.format);
         endpointForm.url = TextBox();
         endpointForm.url.MinWidth(280);
         endpointForm.url.PlaceholderText(L"http://localhost:8080/v1");
@@ -2407,9 +2406,7 @@ struct SetupWindow::Native {
 
     void showProfiles()
     {
-        StackPanel panel = page(
-            QStringLiteral("Writing profiles"),
-            QStringLiteral("Speecher picks a writing profile from the app you dictate into. Choose the fallback profile and how much cleanup and tone adjustment each one gets."));
+        StackPanel panel = page(QStringLiteral("profiles"));
         const auto pairs = [](const QList<RowOption> &options) {
             QList<QPair<QString, QString>> pairs;
             for (const RowOption &option : options) {
@@ -2424,7 +2421,7 @@ struct SetupWindow::Native {
         fallback.SelectionChanged([this, fallback, profiles](const auto &, const auto &) {
             controller->settings()->setDefaultWritingProfile(profiles.at(fallback.SelectedIndex()).first);
         });
-        panel.Children().Append(settingRow(QStringLiteral("Default profile"), fallback));
+        panel.Children().Append(settingRow(setupSchemaRow(QStringLiteral("defaultWritingProfile")).label, fallback));
 
         const QList<QPair<QString, QString>> cleanup =
             pairs(cleanupStrengths(controller->settings()->customCleanupLevels()));
@@ -2474,17 +2471,13 @@ struct SetupWindow::Native {
             row.Children().Append(toneChoice);
             panel.Children().Append(row);
         }
-        panel.Children().Append(secondaryTextBlock(QStringLiteral(
-            "The default profile is used when Speecher does not recognise the app you are "
-            "dictating into. Every profile can be changed later in Settings.")));
+        panel.Children().Append(secondaryTextBlock(setupProfilesNote()));
         content.Children().Append(panel);
     }
 
     void showShortcut()
     {
-        StackPanel panel = page(
-            QStringLiteral("Global Shortcut"),
-            QStringLiteral("Tap the shortcut to start dictation and tap it again to stop, or hold it and talk. Dictation ends when you let go."));
+        StackPanel panel = page(QStringLiteral("shortcut"));
         TextBox recorder;
         recorder.IsReadOnly(true);
         recorder.MinWidth(200);
@@ -2495,9 +2488,10 @@ struct SetupWindow::Native {
                                : current)
                 .displayText()
                 .toStdWString()));
-        shortcutStatus = textBlock(QStringLiteral(
-            "Press a key combination, or a single key such as Right Alt or F13. "
-            "The default is Ctrl+Alt+D."));
+        shortcutStatus = textBlock(shortcutProblem.isEmpty()
+                                       ? QStringLiteral("Press a key combination, or a single key such as "
+                                                        "Right Alt or F13. The default is Ctrl+Alt+D.")
+                                       : shortcutProblem);
         shortcutPendingModifier = 0;
 
         // The physical key, not the layout's meaning of it: the scancode plus
@@ -2524,6 +2518,7 @@ struct SetupWindow::Native {
                 return;
             }
             recorder.Text(hstring(binding.displayText().toStdWString()));
+            markShortcutRegistered();
             const QString warning = singleKeyTypingWarning(binding);
             shortcutStatus.Text(warning.isEmpty() ? hstring(L"Single key set.")
                                                   : hstring(warning.toStdWString()));
@@ -2585,6 +2580,7 @@ struct SetupWindow::Native {
             } else {
                 recorder.Text(hstring(sequence.toString(QKeySequence::NativeText).toStdWString()));
                 shortcutStatus.Text(L"Shortcut registered.");
+                markShortcutRegistered();
             }
         });
         recorder.KeyUp([this, commitSingleKey](const auto &,
@@ -2630,6 +2626,7 @@ struct SetupWindow::Native {
              QStringLiteral("Toggle — one press starts, the next press stops")},
             {shortcutActivationModeName(ShortcutActivationMode::Hybrid),
              QStringLiteral("Hybrid — a tap toggles; holding dictates until release")}};
+        const SettingsRow &modeRow = setupSchemaRow(QStringLiteral("activationMode"));
         ComboBox mode = combo(modes,
                               shortcutActivationModeName(
                                   controller->settings()->shortcutActivationMode()));
@@ -2637,15 +2634,13 @@ struct SetupWindow::Native {
             controller->settings()->setShortcutActivationMode(
                 shortcutActivationModeFromName(modes.at(mode.SelectedIndex()).first));
         });
-        panel.Children().Append(settingRow(QStringLiteral("Shortcut behaviour"), mode));
+        panel.Children().Append(settingRow(modeRow.label, mode));
         content.Children().Append(panel);
     }
 
     void showStartAtLogin()
     {
-        StackPanel panel = page(
-            QStringLiteral("Start at login"),
-            QStringLiteral("Dictation only works while Speecher is running."));
+        StackPanel panel = page(QStringLiteral("login"));
         CheckBox launch;
         launch.Content(box_value(L"Start Speecher at login"));
         launch.IsChecked(launchAtLogin);
@@ -2676,24 +2671,23 @@ struct SetupWindow::Native {
     // blocked checklist.
     QString gateReason(int index) const
     {
-        switch (index) {
-        case 0:
-            return localSpeech
-                ? QStringLiteral("No sign-in was found. Sign in, or choose to run on this computer.")
-                : QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found on this computer.");
-        case 1:
-            if (localSelected()) {
-                return QStringLiteral("Download a speech model to continue.");
-            }
-            return QStringLiteral("%1 is no longer signed in.")
-                .arg(providerLabel(controller->providerRegistry()->speechProviders(),
-                                   controller->settings()->speechProvider()));
-        case 2:
-            return QStringLiteral("No microphone input has been detected.");
-        default:
-            break;
+        const SetupStepInfo &step = setupSteps().at(index);
+        if (step.id == QStringLiteral("welcome")) {
+            return setupSignInMissing(localSpeech != nullptr);
         }
-        return QString();
+        if (step.id == QStringLiteral("transcription")) {
+            return setupTranscriptionBlocked(
+                localSelected(),
+                providerLabel(controller->providerRegistry()->speechProviders(),
+                              controller->settings()->speechProvider()));
+        }
+        if (step.id == QStringLiteral("microphone")) {
+            return setupMicrophoneBlocked(SetupMicrophoneProblem::Silent);
+        }
+        if (step.id == QStringLiteral("shortcut") && !shortcutProblem.isEmpty()) {
+            return shortcutProblem;
+        }
+        return step.blocked;
     }
 
     Grid readyRow(const FrameworkElement &mark, const QString &label, const QString &status,
@@ -2719,12 +2713,10 @@ struct SetupWindow::Native {
 
     void renderReadyBlocked()
     {
-        readyBody.Children().Append(textBlock(QStringLiteral(
-            "Speecher can't dictate yet. Finish the steps below, or go back and change your choices.")));
-        readyBody.Children().Append(
-            strongTextBlock(QStringLiteral("A few steps still need attention:")));
+        readyBody.Children().Append(textBlock(setupReadyIntro(true, false)));
+        readyBody.Children().Append(strongTextBlock(setupBlockedHeading()));
         StackPanel rows = rowList(card(readyBody, QString()));
-        for (int index = 0; index <= lastGatedPage; ++index) {
+        for (int index = 0; index < readyPage; ++index) {
             if (gateSatisfied(index)) {
                 continue;
             }
@@ -2736,8 +2728,7 @@ struct SetupWindow::Native {
             go.Click([this, index](const auto &, const auto &) { showPage(index); });
             appendRow(rows, cardRow(toneIcon(StatusTone::Caution), text, go));
         }
-        readyBody.Children().Append(secondaryTextBlock(QStringLiteral(
-            "Finish becomes available once every step above is resolved.")));
+        readyBody.Children().Append(secondaryTextBlock(setupBlockedFooter()));
     }
 
     // The Local Model the Transcription step chose while it is still
@@ -2756,10 +2747,9 @@ struct SetupWindow::Native {
         const QString downloading = downloadingModel();
         if (downloading.isEmpty()) {
             readyBody.Children().Append(
-                statusCell(QStringLiteral("Setup is complete."), StatusTone::Positive).root);
+                statusCell(setupReadyIntro(false, false), StatusTone::Positive).root);
         } else {
-            readyBody.Children().Append(
-                textBlock(QStringLiteral("Setup is complete except for the speech model download.")));
+            readyBody.Children().Append(textBlock(setupReadyIntro(false, true)));
             InfoBar notice;
             notice.Severity(InfoBarSeverity::Informational);
             notice.IsClosable(false);
@@ -2774,17 +2764,15 @@ struct SetupWindow::Native {
         const QString display = controller->globalShortcutDisplay();
         StackPanel how = card(readyBody, QStringLiteral("How to dictate"));
         how.Children().Append(textBlock(
-            display.isEmpty()
-                ? QStringLiteral("Set a dictation shortcut to start dictating from anywhere.")
-                : readyInstruction(controller->settings()->shortcutActivationMode(), display)));
+            setupActivationInstruction(controller->settings()->shortcutActivationMode(), display)));
         how.Children().Append(secondaryTextBlock(QStringLiteral(
             "Speecher stays in the notification area. Open its microphone icon for status, your latest transcript, and settings.")));
 
         StackPanel rows = rowList(card(readyBody, QString()));
         const QString speechId = controller->settings()->speechProvider();
         if (localSelected()) {
-            const QString label = QStringLiteral("Transcription — %1, on this computer")
-                                      .arg(localChoice().name);
+            const QString label = setupChecklistLine(
+                QStringLiteral("transcription"), QStringLiteral("%1, on this computer").arg(localChoice().name));
             if (downloading.isEmpty()) {
                 appendRow(rows, readyRow(glyphMark(kComputerGlyph), label, QStringLiteral("Ready"),
                                          StatusTone::Positive));
@@ -2814,24 +2802,27 @@ struct SetupWindow::Native {
                 showReadyDownload();
             }
         } else {
+            const QString label = providerLabel(controller->providerRegistry()->speechProviders(), speechId);
             appendRow(rows, readyRow(brandMark(speechId),
-                                     QStringLiteral("Transcription — %1%2")
-                                         .arg(providerLabel(
-                                                  controller->providerRegistry()->speechProviders(),
-                                                  speechId),
-                                              signIn.usingCliproxy(speechId)
-                                                  ? QStringLiteral(" (CLI Proxy API)")
-                                                  : QString()),
+                                     setupChecklistLine(QStringLiteral("transcription"),
+                                                        signIn.usingCliproxy(speechId)
+                                                            ? QStringLiteral("%1 (CLI Proxy API)").arg(label)
+                                                            : label),
                                      QStringLiteral("Ready"), StatusTone::Positive));
         }
+        appendRow(rows, readyRow(glyphMark(L'\uE720'),
+                                 setupChecklistLine(QStringLiteral("microphone"), microphoneLabel()),
+                                 QStringLiteral("Ready"), StatusTone::Positive));
+        appendRow(rows, readyRow(glyphMark(L'\uE765'),
+                                 setupChecklistLine(QStringLiteral("delivery"), QStringLiteral("Windows clipboard")),
+                                 QStringLiteral("Ready"), StatusTone::Positive));
 
         // Refinement is never gated, so this row reports what the refinement
         // page last saw rather than a readiness the Ready page insists on. A
         // provider the walk never reached has no verdict to report.
         const QString refinementId = controller->settings()->refinementProvider();
         QString refinementName = QStringLiteral("None");
-        QString refinementStatus = QStringLiteral("No cleanup");
-        StatusTone refinementTone = StatusTone::Neutral;
+        std::optional<bool> refinementIsReady;
         FrameworkElement refinementMark = glyphMark(L'\uE738');
         if (refinementId != kNone) {
             const AppSettings saved = controller->settings()->snapshot();
@@ -2848,32 +2839,17 @@ struct SetupWindow::Native {
             // which the refinement page's probe may have seen before it was.
             const bool ownModel = refinementId == kLocal || refinementId == kEndpoint;
             TranscriptRefiner *refiner = controller->providerRegistry()->refinementProvider(refinementId);
-            const std::optional<bool> ready = ownModel && refiner
+            refinementIsReady = ownModel && refiner
                 ? std::optional<bool>(refiner->prepare(saved.refinement).ok)
                 : refinementReady.contains(refinementId) ? std::optional<bool>(refinementReady.value(refinementId))
                                                          : std::nullopt;
-            if (!ready) {
-                refinementStatus = QStringLiteral("Not checked");
-            } else if (*ready) {
-                refinementStatus = QStringLiteral("Ready");
-                refinementTone = StatusTone::Positive;
-            } else {
-                refinementStatus = refinementId == kLocal || refinementId == kEndpoint
-                    ? QStringLiteral("Not set up")
-                    : QStringLiteral("Not signed in");
-                refinementTone = StatusTone::Caution;
-            }
         }
+        const StatusTone refinementTone = refinementId == kNone || !refinementIsReady ? StatusTone::Neutral
+                                          : *refinementIsReady                        ? StatusTone::Positive
+                                                                                      : StatusTone::Caution;
         appendRow(rows, readyRow(refinementMark,
-                                 QStringLiteral("Refinement — %1").arg(refinementName),
-                                 refinementStatus, refinementTone));
-
-        appendRow(rows, readyRow(glyphMark(L'\uE720'),
-                                 QStringLiteral("Microphone — %1").arg(microphoneLabel()),
-                                 QStringLiteral("Ready"), StatusTone::Positive));
-        appendRow(rows, readyRow(glyphMark(L'\uE765'),
-                                 QStringLiteral("Text delivery — Windows clipboard"),
-                                 QStringLiteral("Ready"), StatusTone::Positive));
+                                 setupChecklistLine(QStringLiteral("refinement"), refinementName),
+                                 setupRefinementStatus(refinementId, refinementIsReady), refinementTone));
     }
 
     void showReadyDownload()
@@ -2892,7 +2868,7 @@ struct SetupWindow::Native {
 
     void showReady()
     {
-        StackPanel panel = page(QStringLiteral("Ready to dictate"), QString());
+        StackPanel panel = page(QStringLiteral("ready"));
         readyBody = StackPanel();
         readyBody.Spacing(12);
         panel.Children().Append(readyBody);
@@ -2926,6 +2902,35 @@ struct SetupWindow::Native {
         }
     }
 
+    // Registers the saved shortcut, or the default on a first run, and says
+    // why when Windows refuses: another app owning the combination is the
+    // common case. The shortcut step's gate is this registration holding.
+    void registerShortcut()
+    {
+        const ShortcutBinding saved = controller->globalShortcut();
+        const ShortcutBinding effective = saved.isEmpty()
+            ? ShortcutBinding(WinGlobalShortcutBinder::defaultShortcut())
+            : saved;
+        QString error;
+        shortcutRegistered = controller->setGlobalShortcut(effective, &error);
+        // Only a conflict is answered by recording something else. A key
+        // Windows cannot register at all needs its own reason said out loud,
+        // or the user retypes the same chord forever.
+        shortcutProblem = shortcutRegistered ? QString()
+            : WinGlobalShortcutBinder::describesConflict(error) || error.isEmpty()
+            ? QStringLiteral("Another app is using %1. Record a different shortcut.")
+                  .arg(effective.displayText())
+            : error;
+        refreshGates();
+    }
+
+    void markShortcutRegistered()
+    {
+        shortcutRegistered = true;
+        shortcutProblem.clear();
+        refreshGates();
+    }
+
     void suspendShortcut()
     {
         if (shortcutSuspended) {
@@ -2945,6 +2950,9 @@ struct SetupWindow::Native {
         if (error.isEmpty()) {
             return;
         }
+        shortcutRegistered = false;
+        shortcutProblem = error;
+        refreshGates();
         if (shortcutStatus) {
             shortcutStatus.Text(hstring(QStringLiteral("Could not register the shortcut: %1")
                                             .arg(error).toStdWString()));
@@ -2966,35 +2974,18 @@ struct SetupWindow::Native {
                 return;
             }
         }
-        // Skipping applies the same two settings finishing would; a skipped
-        // setup that registers no shortcut leaves nothing to dictate with.
-        controller->settings()->setLaunchAtLogin(launchAtLogin);
-        // Always register, not only when nothing is saved: a combination
-        // another app already owns is stored happily and does nothing.
-        const ShortcutBinding saved = controller->globalShortcut();
-        const ShortcutBinding effective = saved.isEmpty()
-            ? ShortcutBinding(WinGlobalShortcutBinder::defaultShortcut())
-            : saved;
-        QString error;
-        if (!controller->setGlobalShortcut(effective, &error)) {
+        // Always register again, not only when nothing is saved: a
+        // combination another app took while the assistant was open is stored
+        // happily and does nothing. A setup without a working shortcut leaves
+        // nothing to dictate with, so skipping holds here too.
+        registerShortcut();
+        if (!shortcutRegistered) {
             showPage(shortcutPage);
-            // Only a conflict is answered by recording something else. A key
-            // Windows cannot register at all needs its own reason said out
-            // loud, or the user retypes the same chord forever.
-            const QString message =
-                WinGlobalShortcutBinder::describesConflict(error) || error.isEmpty()
-                    ? QStringLiteral("Another app is using %1. Record a different shortcut.")
-                          .arg(effective.displayText())
-                    : error;
-            shortcutStatus.Text(hstring(message.toStdWString()));
             return;
         }
+        controller->settings()->setLaunchAtLogin(launchAtLogin);
         controller->completeSetup();
         window.Close();
-        // Files held through setup open in a window of their own.
-        if (!controller->popupOnly() && !controller->heldFilesOpening()) {
-            controller->showMainWindow();
-        }
     }
 
     ApplicationController *controller;
@@ -3103,6 +3094,14 @@ struct SetupWindow::Native {
     // Latched by the level meter: the microphone gate asks whether this
     // device has ever been heard, and starting a meter clears it again.
     bool microphoneDetected = false;
+    // Retires a silent-meter hint when the meter restarts.
+    quint64 microphoneGeneration = 0;
+    // The shortcut step's gate: the binding registered with Windows, and why
+    // it did not when it did not.
+    bool shortcutRegistered = false;
+    QString shortcutProblem;
+    // Set while the front end closes the window on its way out.
+    bool tearingDown = false;
     int pageIndex = 0;
     bool launchAtLogin;
     bool singlePage = false;
@@ -3140,15 +3139,11 @@ bool SetupWindow::isVisible() const
 
 QStringList SetupWindow::pageTitles()
 {
-    return {QStringLiteral("Welcome to Speecher"),
-            QStringLiteral("Transcription"),
-            QStringLiteral("Microphone"),
-            QStringLiteral("Text delivery"),
-            QStringLiteral("Refinement"),
-            QStringLiteral("Writing profiles"),
-            QStringLiteral("Global Shortcut"),
-            QStringLiteral("Start at login"),
-            QStringLiteral("Ready to dictate")};
+    QStringList titles;
+    for (const SetupStepInfo &step : setupSteps()) {
+        titles.append(step.title);
+    }
+    return titles;
 }
 
 void SetupWindow::skipForTest()
@@ -3161,9 +3156,26 @@ QString SetupWindow::currentPageTitleForTest() const
     return pageTitles().at(m_native->pageIndex);
 }
 
+void SetupWindow::showPageForTest(const QString &stepId)
+{
+    m_native->showPage(stepIndex(stepId));
+}
+
+bool SetupWindow::finishEnabledForTest() const
+{
+    return m_native->next && m_native->next.IsEnabled();
+}
+
+bool SetupWindow::captureForTest(const QString &path)
+{
+    HWND handle = nullptr;
+    m_native->window.as<::IWindowNative>()->get_WindowHandle(&handle);
+    return win::printWindowTo(handle, path);
+}
+
 QStringList SetupWindow::welcomeCopyForTest()
 {
-    return welcomeCopy();
+    return {findSetupStep(QStringLiteral("welcome"))->intro, setupWelcomeDetail()};
 }
 
 } // namespace speecher

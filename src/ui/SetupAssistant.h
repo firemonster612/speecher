@@ -16,6 +16,8 @@
 class QAbstractButton;
 #ifdef SPEECHER_WITH_KASSISTANT
 class KPageWidgetItem;
+class KTitleWidget;
+class QLabel;
 #else
 class QWizardPage;
 #endif
@@ -58,6 +60,13 @@ private:
     bool earlierGatesComplete(QWidget *content) const;
     QWidget *firstIncompletePage() const;
     void showPage(QWidget *content);
+#ifdef SPEECHER_WITH_KASSISTANT
+    // The title row: the page's title, and "Step N of M" at its right.
+    void updateStepHeader(KPageWidgetItem *current);
+    KTitleWidget *m_headerTitle = nullptr;
+    QLabel *m_headerCounter = nullptr;
+    QList<KPageWidgetItem *> m_items;
+#endif
     void recheckCredentialsInBackground();
     // Hands the Ready page every step's verdict, so it can either list what is
     // left or confirm what was set up.

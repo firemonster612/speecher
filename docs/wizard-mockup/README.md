@@ -7,6 +7,28 @@ Open any page directly from disk (`file://`) — there is no build step, no
 framework, no network access. All nine pages share `wizard.css` and
 `wizard.js`.
 
+## The real step list
+
+The shipping assistants read their steps from `src/app/SetupSteps.cpp`, so
+titles, leads, blocked reasons and the Ready checklist are worded once for all
+three platforms. The order is:
+
+1. Welcome to Speecher
+2. Transcription
+3. Microphone
+4. Accessibility (Linux and macOS; Windows needs no grant, so it has no such step)
+5. Text delivery
+6. Refinement
+7. Writing profiles
+8. Global Shortcut
+9. Start at login (macOS and Windows; Linux has no login item to set)
+10. Ready to dictate, always last, with Finish
+
+The mockups predate Start at login and have no page for it. Every platform
+counts "Step N of M" on the title row. The Global Shortcut step is gated
+everywhere: Finish stays disabled until a shortcut is registered, and on Linux
+until the desktop has one (or has said it cannot register any).
+
 ## Reading a state
 
 Every page takes an optional `?state=` query parameter. With no parameter the
@@ -45,7 +67,7 @@ Example: `transcription.html?state=notready`
 | | | `norunner` | This computer chosen, no runner found: Get Ollama, Check again, raw-transcript warning |
 | | | `custom` | A server I run chosen: format, URL, key, model with Connect, connected status |
 | 7 | `profiles.html` | *(single state)* | Default-profile dropdown and the Cleanup/Tone grid |
-| 8 | `shortcut.html` | `captured` *(default)* | F13 set, Set shortcut button, full behaviour dropdown |
+| 8 | `shortcut.html` | `captured` *(default)* | F13 set, Set shortcut button, full behavior dropdown |
 | | | `manual` | Desktop cannot register a shortcut; copyable command; behaviour locked to Toggle with the hold-to-talk note |
 | 9 | `ready.html` | `complete` *(default)* | "Setup is complete.", the activation instruction, per-step Ready list; Finish enabled |
 | | | `downloading` | Complete except the speech model download: notice that a notification follows, progress and Cancel on the Transcription row; Finish enabled |
@@ -57,7 +79,7 @@ A speech Custom Endpoint is set up in Settings only, so the Transcription step
 does not offer it.
 
 Refinement (6) and Writing profiles (7) are never gated — Next is always
-enabled. Every other gated page states, on screen, why Next is unavailable;
+enabled. The Global Shortcut step (8) is gated. Every other gated page states, on screen, why Next is unavailable;
 `ready.html?state=blocked` never leaves Finish silently disabled.
 
 ## Screenshotting every state

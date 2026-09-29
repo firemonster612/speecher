@@ -43,10 +43,6 @@ struct SpeechPrepareResult;
 // elsewhere can match when it is shown as one.
 int setupPageMargin();
 
-// Puts "Step N of M" above a page's content, right-aligned. The wizard owns
-// the numbering, so it marks the pages once it knows how many there are.
-void setSetupStepCounter(QWidget *page, int step, int total);
-
 // A provider mark (ChatGPT or Claude) at the given point size, or an empty
 // pixmap for a provider with no mark of its own.
 QPixmap providerMark(const QString &providerId, int size, qreal devicePixelRatio);
@@ -60,6 +56,10 @@ struct SetupStepStatus {
     // The Local Model the choice runs on, so the Ready page can show its
     // download while it is still going.
     QString localModelId;
+    // What the completed row says; empty says Ready. Refinement is never
+    // gated, so its row can say Not signed in or No cleanup.
+    QString verdict;
+    bool verdictReady = true;
 };
 
 // A wizard step that can explain itself on the Ready page, so each step owns
@@ -75,6 +75,9 @@ public:
     virtual QString readySummary() const { return QString(); }
     // See SetupStepStatus::localModelId.
     virtual QString localModelId() const { return QString(); }
+    // See SetupStepStatus::verdict.
+    virtual QString readyVerdict() const { return QString(); }
+    virtual bool readyVerdictPositive() const { return true; }
 };
 
 // The label/value facts describing a provider, shown under the provider picker
@@ -247,6 +250,7 @@ private:
     QWidget *m_cliproxyAccountRow = nullptr;
     QWidget *m_cliproxyDirRow = nullptr;
     QCheckBox *m_accuracyPass;
+    QWidget *m_accuracyRow = nullptr;
     ProviderStatsBlock *m_stats;
     QLabel *m_hint;
     QLabel *m_status;
@@ -399,6 +403,8 @@ public:
                         QWidget *parent = nullptr);
 
     QString readySummary() const override;
+    QString readyVerdict() const override;
+    bool readyVerdictPositive() const override;
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -414,6 +420,7 @@ private:
     void updateFastModeControl();
     int selectedIndex() const;
     QString selectedProviderId() const;
+    std::optional<bool> providerReady() const;
     void skipCleanup(bool skip);
     QWidget *makeLocalRunnerDetail();
     QWidget *makeEndpointDetail();

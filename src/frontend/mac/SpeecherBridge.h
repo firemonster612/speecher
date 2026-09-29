@@ -277,6 +277,14 @@ typedef NS_ENUM(NSInteger, SpeecherPopupOutcome) {
     SpeecherPopupOutcomeError,
 };
 
+// One step of the setup assistant (speecher::SetupStepInfo).
+@interface SpeecherSetupStep : NSObject
+@property (nonatomic, readonly, copy) NSString *stepId;
+@property (nonatomic, readonly, copy) NSString *title;
+@property (nonatomic, readonly, copy) NSString *intro;
+@property (nonatomic, readonly, copy) NSString *blocked;
+@end
+
 // One provider the setup assistant lists, as the registry descriptor names it.
 // The assistant renders these strings rather than keeping copies of its own.
 @interface SpeecherProviderModel : NSObject
@@ -842,6 +850,30 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 
 // The setup assistant's seams into the core, which the Qt assistant reached
 // through C++ and the SwiftUI one reaches here.
+
+// The steps, and the wording every assistant shares (app/SetupSteps.h).
+@property (nonatomic, readonly, copy) NSArray<SpeecherSetupStep *> *setupSteps;
+@property (nonatomic, readonly, copy) NSString *setupWelcomeDetail;
+@property (nonatomic, readonly, copy) NSString *setupSilentMicrophoneHint;
+@property (nonatomic, readonly, copy) NSString *setupInputLevelLabel;
+@property (nonatomic, readonly, copy) NSString *setupProfilesNote;
+@property (nonatomic, readonly, copy) NSString *setupBlockedHeading;
+@property (nonatomic, readonly, copy) NSString *setupBlockedFooter;
+- (NSString *)setupStepCounter:(NSInteger)step of:(NSInteger)total NS_SWIFT_NAME(setupStepCounter(_:of:));
+- (NSString *)setupSignInMissing:(BOOL)localOffered NS_SWIFT_NAME(setupSignInMissing(localOffered:));
+- (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
+    NS_SWIFT_NAME(setupTranscriptionBlocked(localSelected:provider:));
+- (NSString *)setupMicrophoneBlocked:(BOOL)accessGranted NS_SWIFT_NAME(setupMicrophoneBlocked(accessGranted:));
+- (NSString *)setupReadyIntro:(BOOL)blocked downloading:(BOOL)downloading
+    NS_SWIFT_NAME(setupReadyIntro(blocked:downloading:));
+- (NSString *)setupActivationInstruction:(NSString *)shortcut NS_SWIFT_NAME(setupActivationInstruction(shortcut:));
+- (NSString *)setupProviderVerdict:(NSString *)providerId ready:(BOOL)ready
+    NS_SWIFT_NAME(setupProviderVerdict(_:ready:));
+// ready: nil while no probe has answered.
+- (NSString *)setupRefinementStatus:(NSString *)providerId ready:(nullable NSNumber *)ready
+    NS_SWIFT_NAME(setupRefinementStatus(_:ready:));
+- (NSString *)setupChecklistLine:(NSString *)stepId choice:(NSString *)choice
+    NS_SWIFT_NAME(setupChecklistLine(_:choice:));
 
 // Every provider the registry offers, in the order it offers them.
 @property (nonatomic, readonly, copy) NSArray<SpeecherProviderModel *> *speechProviders;

@@ -125,8 +125,8 @@ let pages = [
     ("welcome", "Welcome to Speecher"), ("transcription", "Transcription"),
     ("microphone", "Microphone"), ("accessibility", "Accessibility"),
     ("delivery", "Text delivery"), ("refinement", "Refinement"),
-    ("profiles", "Writing profiles"), ("shortcut", "Dictation shortcut"),
-    ("ready", "Ready to dictate"), ("login", "Start at login"),
+    ("profiles", "Writing profiles"), ("shortcut", "Global Shortcut"),
+    ("login", "Start at login"), ("ready", "Ready to dictate"),
 ]
 let reached = min(Int(CommandLine.arguments[2]) ?? pages.count, pages.count)
 for (index, page) in pages.prefix(reached).enumerated() {
@@ -220,8 +220,10 @@ else
   kill -0 "$APP_PID" 2>/dev/null || errors+=("the app quit while the gate held")
   assistant_ui "get name of window \"$ASSISTANT_WINDOW\"" >/dev/null 2>&1 \
     || errors+=("the assistant window closed while the gate held")
-  [[ -z "$(stored_shortcut)" ]] \
-    || errors+=("a shortcut was stored without finishing ('$(stored_shortcut)')")
+  # The assistant registers the shortcut as it opens, so the Global Shortcut
+  # step's gate reads a real registration; the default is stored by then.
+  [[ -n "$(stored_shortcut)" ]] \
+    || errors+=("opening the assistant registered no shortcut")
   check_page_captures 1 || errors+=("page rendering checks failed; see page-checks.out")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"

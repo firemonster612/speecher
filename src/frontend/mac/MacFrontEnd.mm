@@ -163,12 +163,9 @@ void MacFrontEnd::showSettingsWindow()
 // for is its Global Shortcut page, which macOS does not have.
 void MacFrontEnd::showSetupAssistant(SetupAssistantPage)
 {
-    MacFrontEnd *frontEnd = this;
+    ApplicationController *controller = m_controller;
     [m_native->ui showSetupAssistantWithCompletion:^{
-        // Files held through setup open in a window of their own.
-        if (!frontEnd->m_controller->popupOnly() && !frontEnd->m_controller->heldFilesOpening()) {
-            frontEnd->showMainWindow();
-        }
+        controller->setupAssistantClosed();
     }];
 }
 

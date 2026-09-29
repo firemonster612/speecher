@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/SetupSteps.h"
 #include "providers/ProviderRegistry.h"
 #include "core/SettingsStore.h"
 #include "ui/setup/SetupPages.h"
@@ -10,6 +11,7 @@
 #endif
 
 #include <QAbstractButton>
+#include <QLabel>
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
@@ -18,7 +20,11 @@
 #include <functional>
 
 #ifdef SPEECHER_WITH_KASSISTANT
+#include <KPageWidget>
 #include <KPageWidgetItem>
+#include <KTitleWidget>
+#include <QHBoxLayout>
+#include <QLabel>
 #else
 #include <QWizardPage>
 #endif
@@ -28,19 +34,10 @@ namespace {
 
 QStringList setupPageTitles()
 {
-    QStringList titles{
-        QStringLiteral("Welcome to Speecher"),
-        QStringLiteral("Transcription"),
-        QStringLiteral("Microphone"),
-        QStringLiteral("Desktop accessibility"),
-        QStringLiteral("Text delivery"),
-        QStringLiteral("Refinement"),
-        QStringLiteral("Writing profiles"),
-    };
-#ifdef Q_OS_LINUX
-    titles.append(QStringLiteral("Global Shortcut"));
-#endif
-    titles.append(QStringLiteral("Ready to dictate"));
+    QStringList titles;
+    for (const SetupStepInfo &step : setupSteps()) {
+        titles.append(step.title);
+    }
     return titles;
 }
 
@@ -106,7 +103,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     , m_controller(controller)
     , m_singlePage(pageIndex(page) >= 0)
 {
-    setWindowTitle(QStringLiteral("Speecher Setup Assistant"));
+    setWindowTitle(setupWindowTitle());
     // Tall enough for the largest page (Transcription with its Sign-in card)
     // without a scrollbar, which narrows the cards and clips their statuses.
     resize(720, 640);
@@ -119,7 +116,12 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         // The same control sits flush inside a settings card; as an assistant
         // page it takes the margin every other page has.
         const int margin = setupPageMargin();
-        m_globalShortcutPage->layout()->setContentsMargins(margin, margin, margin, margin);
+        auto *layout = qobject_cast<QVBoxLayout *>(m_globalShortcutPage->layout());
+        layout->setContentsMargins(margin, margin, margin, margin);
+        // The settings card needs no lead; the assistant step has one.
+        auto *intro = new QLabel(findSetupStep(QStringLiteral("shortcut"))->intro, m_globalShortcutPage);
+        intro->setWordWrap(true);
+        layout->insertWidget(0, intro);
     }
 #endif
     AccessibilitySetupPage *accessibility = nullptr;
@@ -210,6 +212,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     pageContents.append(m_globalShortcutPage);
 #endif
     pageContents.append(m_finishPage);
+    Q_ASSERT(pageContents.size() == setupSteps().size());
     if (!m_singlePage) {
         m_lastPage = pageContents.last();
     }
@@ -219,12 +222,28 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         QWidget *content = pageContents.at(index);
         if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
             KPageWidgetItem *item = addPage(scrollingPage(content, this), titles.at(index));
+            // The title row below draws the title, beside the counter.
+            item->setHeaderVisible(false);
+            m_items.append(item);
             if (m_gates.contains(content)) {
                 m_gateItems.insert(content, item);
             }
             m_steps.append({titles.at(index), content});
         }
     }
+    // The title row carries the counter, as the other two assistants do:
+    // KPageView takes a header widget in place of the title it draws.
+    auto *header = new QWidget(this);
+    auto *headerLayout = new QHBoxLayout(header);
+    m_headerTitle = new KTitleWidget(header);
+    headerLayout->addWidget(m_headerTitle, 1);
+    m_headerCounter = new QLabel(header);
+    m_headerCounter->setObjectName(QStringLiteral("setupStepCounter"));
+    m_headerCounter->setForegroundRole(QPalette::PlaceholderText);
+    m_headerCounter->setVisible(!m_singlePage);
+    headerLayout->addWidget(m_headerCounter, 0, Qt::AlignRight | Qt::AlignVCenter);
+    pageWidget()->setPageHeader(header);
+    updateStepHeader(m_items.value(0));
     if (!m_singlePage) {
         m_skipButton = new QPushButton(QStringLiteral("Skip setup"), this);
         addActionButton(m_skipButton);
@@ -235,6 +254,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
             this,
             [this](KPageWidgetItem *current, KPageWidgetItem *) {
                 QWidget *content = current ? pageContent(current->widget()) : nullptr;
+                updateStepHeader(current);
                 updateActivePage(content);
                 // setValid keeps a snapshot; a step completed outside this
                 // dialog (the Output settings row, say) must reopen Next when
@@ -300,13 +320,16 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
             }
         });
     }
+#ifndef SPEECHER_WITH_KASSISTANT
     // Each page says where it sits in the run, which the wizard is the only
     // thing that knows. A single-page run has no run to count.
     if (!m_singlePage) {
-        for (int index = 0; index < m_steps.size(); ++index) {
-            setSetupStepCounter(m_steps.at(index).content, index + 1, m_steps.size());
+        const QList<int> ids = pageIds();
+        for (int index = 0; index < ids.size(); ++index) {
+            QWizard::page(ids.at(index))->setSubTitle(setupStepCounter(index + 1, ids.size()));
         }
     }
+#endif
     applyGates();
 #ifdef Q_OS_LINUX
     if (m_singlePage) {
@@ -318,6 +341,17 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     updateActivePage(m_welcomePage);
 #endif
 }
+
+#ifdef SPEECHER_WITH_KASSISTANT
+void SetupAssistant::updateStepHeader(KPageWidgetItem *current)
+{
+    if (!current) {
+        return;
+    }
+    m_headerTitle->setText(current->name());
+    m_headerCounter->setText(setupStepCounter(m_items.indexOf(current) + 1, m_items.size()));
+}
+#endif
 
 QStringList SetupAssistant::pageTitles() const
 {
@@ -385,13 +419,14 @@ void SetupAssistant::updateFinishSteps()
         }
         const auto gate = m_gates.value(step.content);
         const bool ok = !gate || gate();
-        QString detail;
-        QString localModelId;
+        SetupStepStatus status{step.title, ok};
         if (const auto *reporter = dynamic_cast<const SetupStep *>(step.content)) {
-            detail = ok ? reporter->readySummary() : reporter->blockedReason();
-            localModelId = reporter->localModelId();
+            status.detail = ok ? reporter->readySummary() : reporter->blockedReason();
+            status.localModelId = reporter->localModelId();
+            status.verdict = reporter->readyVerdict();
+            status.verdictReady = reporter->readyVerdictPositive();
         }
-        steps.append({step.title, ok, detail, localModelId});
+        steps.append(status);
         m_finishStepPages.append(step.content);
     }
     m_finishPage->setSteps(steps);

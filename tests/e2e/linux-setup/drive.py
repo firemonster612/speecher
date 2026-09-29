@@ -201,7 +201,7 @@ def main() -> None:
     require("Microphone input detected.", 15)
     ok("the microphone gate opens once input is detected")
 
-    go_next("Desktop accessibility")
+    go_next("Accessibility")
     go_next("Text delivery")
     # On a host with a working or half-installed ydotool the gate can be
     # legitimately open already; the opt-out flow only exists while it holds.

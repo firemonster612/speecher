@@ -151,6 +151,9 @@ public:
     // Records that the setup assistant finished, then opens any files that
     // arrived while it was up.
     void completeSetup();
+    // The setup assistant closed, finished or not: the main window shows,
+    // unless files held through setup are about to open in their own.
+    void setupAssistantClosed();
     bool startIpc(QString *error = nullptr);
 
 public slots:

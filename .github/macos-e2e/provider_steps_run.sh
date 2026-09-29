@@ -9,7 +9,7 @@ TCC_SEED="$(dirname "$0")/tcc_seed.py"
 ASSISTANT_WINDOW='Speecher Setup Assistant'
 USER_TCC_DB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
 SYSTEM_TCC_DB='/Library/Application Support/com.apple.TCC/TCC.db'
-STEP_IDS=(welcome transcription microphone accessibility delivery refinement)
+STEP_IDS=(welcome transcription microphone accessibility delivery refinement profiles shortcut login ready)
 
 seed_setup_tcc() {
   python3 "$TCC_SEED" "$USER_TCC_DB" \
@@ -41,9 +41,11 @@ launch_setup() {
   mkdir -p "$CASE_DIR/pages"
   # These cases verify the provider steps' stats rendering; the wizard's gates
   # are covered by setup_run.sh and cannot be satisfied on a runner with no
-  # sign-ins, so the gate seam holds them open for the walk.
+  # sign-ins, so the gate seam holds them open for the walk. The shortcut gate
+  # stays live; REFUSE_SHORTCUT=1 makes every registration fail.
   SPEECHER_E2E_SETUP_CAPTURE_DIR="$CASE_DIR/pages" \
     SPEECHER_E2E_SKIP_SETUP_GATES=1 \
+    SPEECHER_E2E_REFUSE_SHORTCUT="${REFUSE_SHORTCUT:-0}" \
     DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" \
     "$APP_BIN" >"$CASE_DIR/process.out" 2>&1 &
   APP_PID=$!
@@ -308,6 +310,36 @@ else
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
     pass_case "Driving the picker updates the stats live, and None shows no stats block."
+  fi
+fi
+
+# P4: the shortcut gate holds even with every other gate open. The E2E hook
+# refuses every registration, as the system does for a combination another app
+# owns, whatever the runner's Accessibility grant. The Global Shortcut step
+# holds Continue and says why.
+fresh_reset
+case_begin P4
+if ! REFUSE_SHORTCUT=1 launch_setup || ! wait_for_assistant; then
+  fail_case "The setup assistant did not appear with registration refused."
+else
+  errors=()
+  walk_to_step 8 || errors+=("could not reach the Global Shortcut step")
+  if (( ${#errors[@]} == 0 )); then
+    sleep 1
+    cp "$CASE_DIR/pages/step-8-shortcut.png" "$CASE_DIR/shortcut-refused.png"
+    expect_text "$CASE_DIR/shortcut-refused.png" "Step 8 of 10" \
+      || errors+=("the shortcut step does not carry its counter on the title row")
+    expect_text "$CASE_DIR/shortcut-refused.png" "Could not register" \
+      || errors+=("the shortcut step does not say why the shortcut was refused")
+    click_button Continue || true
+    sleep 1
+    [[ -s "$CASE_DIR/pages/step-9-login.png" ]] \
+      && errors+=("Continue left the Global Shortcut step with no shortcut registered")
+  fi
+  if (( ${#errors[@]} )); then
+    fail_case "$(IFS='; '; echo "${errors[*]}")"
+  else
+    pass_case "A refused shortcut holds the Global Shortcut step and says why."
   fi
 fi
 

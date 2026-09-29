@@ -28,6 +28,9 @@ private:
     friend class WinFrontEndTests;
     void skipForTest();
     QString currentPageTitleForTest() const;
+    void showPageForTest(const QString &stepId);
+    bool finishEnabledForTest() const;
+    bool captureForTest(const QString &path);
     static QStringList welcomeCopyForTest();
     struct Native;
     std::unique_ptr<Native> m_native;
