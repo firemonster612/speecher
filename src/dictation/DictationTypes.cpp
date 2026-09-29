@@ -82,6 +82,11 @@ QString copyTranscriptCaption()
     return QStringLiteral("Copy transcript");
 }
 
+QString copiedCaption()
+{
+    return QStringLiteral("Copied");
+}
+
 QString noTranscriptYetText()
 {
     return QStringLiteral("Nothing dictated yet.");

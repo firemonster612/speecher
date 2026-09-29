@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 
 using namespace speecher;
@@ -519,11 +520,42 @@ private slots:
         const InsightsSummary summary = summarize(records, InsightsRange::Last7Days, kToday);
         QCOMPARE(insightsShareText(summary, InsightsRange::Last7Days),
                  QStringLiteral("My Speecher stats, last 7 days\n"
-                                "150 words in 2 dictations (2 min of audio)\n"
+                                "150 words dictated\n"
                                 "About half of the Gettysburg Address\n"
-                                "100 words per minute, 2.5× faster than typing\n"
                                 "2-day streak, my longest yet\n"
+                                "2 dictations, 2 min of audio transcribed\n"
+                                "100 words per minute, 2.5× faster than typing\n"
                                 "Top apps: Kate 100%"));
+    }
+
+    void tilesReadInOneOrderWithOneLetterWeekdays()
+    {
+        const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100, 60000),
+                                             recordOn(kToday, 50, 30000)};
+        const QList<InsightTileText> tiles =
+            insightTiles(summarize(records, InsightsRange::Last7Days, kToday), kToday);
+        QStringList titles;
+        for (const InsightTileText &tile : tiles) {
+            titles << tile.title;
+        }
+        QCOMPARE(titles, (QStringList{QStringLiteral("Words dictated"), QStringLiteral("Streak"),
+                                      QStringLiteral("Dictations"), QStringLiteral("Audio transcribed")}));
+        QCOMPARE(tiles.at(1).iconId, QStringLiteral("flame"));
+        QCOMPARE(tiles.at(1).value, QStringLiteral("2"));
+        QCOMPARE(tiles.at(1).unit, QStringLiteral("days"));
+        QVERIFY(tiles.at(1).showsWeek);
+        QCOMPARE(tiles.at(3).value + u' ' + tiles.at(3).unit, QStringLiteral("2 min"));
+
+        const QLocale previous;
+        QLocale::setDefault(QLocale(QLocale::German));
+        const auto restore = qScopeGuard([previous] { QLocale::setDefault(previous); });
+        for (int day = 1; day <= 7; ++day) {
+            QCOMPARE(weekdayLetter(day).size(), 1);
+        }
+        QCOMPARE(heatmapRowLabels().at(0), QLocale().dayName(Qt::Monday, QLocale::ShortFormat));
+        QVERIFY(heatmapRowLabels().at(1).isEmpty());
+        QCOMPARE(learnedCorrectionsCaption(1), QStringLiteral("Correction learned"));
+        QCOMPARE(learnedCorrectionsCaption(2), QStringLiteral("Corrections learned"));
     }
 
     void jsonCarriesThePeriodStreakAndActiveDays()

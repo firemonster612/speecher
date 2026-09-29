@@ -6,6 +6,7 @@
 #include <QList>
 #include <QMap>
 #include <QString>
+#include <QStringList>
 
 #include <array>
 #include <optional>
@@ -172,5 +173,58 @@ QString averageDictationText(const InsightsSummary &summary);
 QString clockText(qint64 ms);
 // "12 am", "10 am", "6 pm", with a no-break space.
 QString hourLabel(int hour);
+
+// One of the four stat tiles, as every Home and the shared image word it.
+struct InsightTileText {
+    QString title; // "Words dictated"
+    // Platform-neutral, "text", "flame", "microphone" or "waveform"; each
+    // front end maps it to an icon of its own.
+    QString iconId;
+    // The figure large and its unit small: "4" and "days", "4.0" and "hours".
+    QString value;
+    QString unit;
+    // The lines under the figure, empty ones left out, and a tip for the first.
+    QStringList lines;
+    QString firstLineTip;
+    bool showsWeek = false; // the streak's weekday strip goes under its lines
+};
+// Words, streak, dictations, audio: the order every Home shows them in.
+QList<InsightTileText> insightTiles(const InsightsSummary &summary, const QDate &today);
+// The narrowest a tile gets, in logical pixels, before the four go two by
+// two: wide enough for the usual longest line ("About half of the Gettysburg
+// Address", "▲ 29% vs previous 30 days") unwrapped at the default size.
+inline constexpr int kInsightTileMinimumWidth = 240;
+
+// "1 word", "12 words", and so on, the number localised.
+QString wordCountText(int words);
+QString dictationCountText(int dictations);
+QString dayCountText(int days);
+// One letter for a weekday (Monday is 1), whatever the locale's narrow
+// names are.
+QString weekdayLetter(int dayOfWeek);
+// The heatmap's row labels, Monday first: the locale's short names for
+// Monday, Wednesday and Friday, and empty for the other rows.
+std::array<QString, 7> heatmapRowLabels();
+// "12 days with dictation in the last year".
+QString activeDaysLastYearText(int days);
+// The words either side of the heatmap's legend.
+QString heatLegendLessText();
+QString heatLegendMoreText();
+// A chart mark's tip: a bold title over the count.
+struct ChartTip {
+    QString title;
+    QString detail;
+};
+// "10 am to 11 am" over "3 dictations"; "Mail" over "120 words".
+ChartTip hourTip(int hour, int dictations);
+ChartTip appTip(const AppShare &app);
+// "Morning talker." and the sentence after it, on the "When you talk" card.
+QString personaText(const InsightsSummary &summary);
+QString peakText(const InsightsSummary &summary);
+// The learned corrections card.
+QString learnedCorrectionsTitle();
+// "Correction learned" or "Corrections learned", under the count.
+QString learnedCorrectionsCaption(int count);
+QString reviewLearnedCorrectionsCaption();
 
 } // namespace speecher

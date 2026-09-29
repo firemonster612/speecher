@@ -18,5 +18,28 @@ QString insightsPeriodName(InsightsRange range);
 // the top apps.
 QString insightsShareText(const InsightsSummary &summary, InsightsRange range);
 QByteArray insightsJson(const InsightsSummary &summary, InsightsRange range, const QDate &today);
+// "speecher-stats-2026-09-26.json", the name a save dialog suggests.
+QString insightsJsonFileName(const QDate &today);
+
+// What the Share menu and its confirmations say.
+struct InsightsShareLabels {
+    QString share;       // "Share"
+    QString copyImage;   // "Copy image with stats"
+    QString copyText;    // "Copy as text"
+    QString saveJson;    // "Save as JSON…"
+    QString copied;      // "Copied"
+    QString saved;       // "Saved"
+    QString saveFailed;  // "Couldn't save"
+    QString saveTitle;   // the save dialog's title
+    QString jsonFilter;  // "JSON files"
+};
+InsightsShareLabels insightsShareLabels();
+
+// The shared image's heading and the line under its figures.
+QString insightsImageTitle();
+// "Last 30 days".
+QString insightsImagePeriod(InsightsRange range);
+// "About half of Hamlet · 142 words per minute"; empty with no audio.
+QString insightsImagePaceLine(const InsightsSummary &summary);
 
 } // namespace speecher

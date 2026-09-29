@@ -43,6 +43,9 @@ QString trayToolTip(bool listening);
 QString traySettingsCaption();
 QString trayQuitCaption();
 QString copyTranscriptCaption();
+// What a copy button says for a moment after it copied.
+QString copiedCaption();
+inline constexpr int kCopiedFeedbackMs = 1500;
 // Where a tray panel's last transcript goes before there is one.
 QString noTranscriptYetText();
 

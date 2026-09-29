@@ -425,7 +425,7 @@ private slots:
         QVERIFY(!QGuiApplication::clipboard()->image().isNull());
         share.at(1)->trigger();
         QVERIFY(QGuiApplication::clipboard()->text().startsWith(
-            QStringLiteral("My Speecher stats, last 30 days\n90 words in 1 dictation")));
+            QStringLiteral("My Speecher stats, last 30 days\n90 words dictated")));
 
         // Clearing the log leaves "No insights yet".
         controller.clearInsights();

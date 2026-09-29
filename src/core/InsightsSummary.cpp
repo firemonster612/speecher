@@ -553,4 +553,120 @@ QString hourLabel(int hour)
     return QStringLiteral("%1\u00a0%2").arg(hour % 12 == 0 ? 12 : hour % 12).arg(hour < 12 ? u"am" : u"pm");
 }
 
+QList<InsightTileText> insightTiles(const InsightsSummary &summary, const QDate &today)
+{
+    const auto lines = [](const QStringList &all) {
+        QStringList shown;
+        for (const QString &line : all) {
+            if (!line.isEmpty()) shown << line;
+        }
+        return shown;
+    };
+    const QString period = summary.deltaPeriodLabel;
+    // "4.0 hours": the figure large, its unit small.
+    const QString audio = audioTotalText(summary.audioMs);
+    const QString perDay = summary.activeDays
+        ? QStringLiteral("%1 a day when you dictate")
+              .arg(QLocale().toString(summary.dictationsPerActiveDay, 'f', 1))
+        : QStringLiteral("Nothing yet");
+    return {
+        {QStringLiteral("Words dictated"), QStringLiteral("text"), formatNumber(summary.words), {},
+         lines({summary.bookComparison, deltaText(summary.wordsDelta, period)}),
+         summary.bookComparison.isEmpty() ? QString() : summary.bookComparisonTip},
+        {QStringLiteral("Streak"), QStringLiteral("flame"), formatNumber(summary.currentStreak),
+         summary.currentStreak == 1 ? QStringLiteral("day") : QStringLiteral("days"),
+         lines({streakText(summary, today)}), {}, true},
+        {QStringLiteral("Dictations"), QStringLiteral("microphone"), formatNumber(summary.dictations), {},
+         lines({perDay, deltaText(summary.dictationsDelta, period)}), {}},
+        {QStringLiteral("Audio transcribed"), QStringLiteral("waveform"), audio.section(u' ', 0, -2),
+         audio.section(u' ', -1), {averageDictationText(summary)}, {}},
+    };
+}
+
+QString wordCountText(int words)
+{
+    return plural(words, QStringLiteral("word"));
+}
+
+QString dictationCountText(int dictations)
+{
+    return plural(dictations, QStringLiteral("dictation"));
+}
+
+QString dayCountText(int days)
+{
+    return plural(days, QStringLiteral("day"));
+}
+
+QString weekdayLetter(int dayOfWeek)
+{
+    // Some locales' narrow names are two letters ("Mo"), and Windows gives
+    // its own abbreviations; the week strip has room for one.
+    const QString name = QLocale().dayName(dayOfWeek, QLocale::NarrowFormat);
+    return name.left(name.at(0).isHighSurrogate() ? 2 : 1);
+}
+
+std::array<QString, 7> heatmapRowLabels()
+{
+    const QLocale locale;
+    std::array<QString, 7> labels;
+    for (const int day : {Qt::Monday, Qt::Wednesday, Qt::Friday}) {
+        labels[day - 1] = locale.dayName(day, QLocale::ShortFormat);
+    }
+    return labels;
+}
+
+QString activeDaysLastYearText(int days)
+{
+    return QStringLiteral("%1 with dictation in the last year").arg(dayCountText(days));
+}
+
+QString heatLegendLessText()
+{
+    return QStringLiteral("Less");
+}
+
+QString heatLegendMoreText()
+{
+    return QStringLiteral("More");
+}
+
+ChartTip hourTip(int hour, int dictations)
+{
+    return {QStringLiteral("%1 to %2").arg(hourLabel(hour), hourLabel((hour + 1) % 24)),
+            dictationCountText(dictations)};
+}
+
+ChartTip appTip(const AppShare &app)
+{
+    return {app.name, wordCountText(app.words)};
+}
+
+QString personaText(const InsightsSummary &summary)
+{
+    return summary.persona + u'.';
+}
+
+QString peakText(const InsightsSummary &summary)
+{
+    return QStringLiteral("You dictate most around %1, and %2s are your busiest day.")
+        .arg(hourLabel(summary.peakHour),
+             QLocale().dayName(summary.busiestWeekday, QLocale::LongFormat));
+}
+
+QString learnedCorrectionsTitle()
+{
+    return QStringLiteral("Learned corrections");
+}
+
+QString learnedCorrectionsCaption(int count)
+{
+    return count == 1 ? QStringLiteral("Correction learned") : QStringLiteral("Corrections learned");
+}
+
+QString reviewLearnedCorrectionsCaption()
+{
+    return QStringLiteral("Review learned corrections…");
+}
+
 } // namespace speecher
