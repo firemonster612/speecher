@@ -435,8 +435,19 @@ private slots:
         QVERIFY(page.findChildren<QFrame *>(QStringLiteral("insightTile")).isEmpty());
     }
 
+    void homeTilesGoFourAcrossOnlyWhenNoLineWraps_data()
+    {
+        // 0 keeps the platform's font; at 7 px the tiles' title rows and
+        // lines differ most in width, so a tile squeezed by its neighbours
+        // would wrap.
+        QTest::addColumn<int>("pixelSize");
+        QTest::newRow("platform font") << 0;
+        QTest::newRow("7 px") << 7;
+    }
+
     void homeTilesGoFourAcrossOnlyWhenNoLineWraps()
     {
+        QFETCH(int, pixelSize);
         qputenv("SPEECHER_INSIGHTS_SEED",
                 QFINDTESTDATA("../docs/insights-mockup/seed-active.jsonl").toLocal8Bit());
         qputenv("SPEECHER_INSIGHTS_TODAY", "2026-09-26");
@@ -444,17 +455,21 @@ private slots:
             qunsetenv("SPEECHER_INSIGHTS_SEED");
             qunsetenv("SPEECHER_INSIGHTS_TODAY");
         });
-        // Home's column is capped at a multiple of the font height, and the
-        // tile lines scale with the font too, so whether four across ever fits
-        // depends on the platform's font. A 7 px one lets it fit everywhere.
         const QFont originalFont = QApplication::font();
-        QFont smallFont = originalFont;
-        smallFont.setPixelSize(7);
-        QApplication::setFont(smallFont);
+        if (pixelSize > 0) {
+            QFont font = originalFont;
+            font.setPixelSize(pixelSize);
+            QApplication::setFont(font);
+        }
         const auto restoreFont = qScopeGuard([originalFont] { QApplication::setFont(originalFont); });
         ApplicationController controller(true);
         controller.settings()->setInsightsEnabled(true);
         HomePage page(&controller);
+        // The page caps Home's column at a width that, with some platforms'
+        // fonts, never fits four tiles. Lift the cap so the column follows
+        // the page and both layouts come up on every platform.
+        delete page.findChild<QObject *>(QStringLiteral("pageWidthGovernor"));
+        page.findChild<QScrollArea *>()->widget()->setMaximumWidth(QWIDGETSIZE_MAX);
         page.show();
         const auto wrapped = [&page] {
             for (const QFrame *tile : page.findChildren<QFrame *>(QStringLiteral("insightTile"))) {
@@ -470,21 +485,29 @@ private slots:
             const auto *grid = page.findChild<QWidget *>(QStringLiteral("insightTiles"));
             return qobject_cast<QGridLayout *>(grid->layout())->itemAtPosition(0, 3) != nullptr;
         };
-        bool sawFour = false;
-        bool sawTwo = false;
-        for (int width = 300; width <= 1400; width += 20) {
+        const auto layOut = [&page](int width) {
             page.resize(width, 800);
             QCoreApplication::processEvents();
             QCoreApplication::processEvents();
-            if (fourAcross()) {
-                sawFour = true;
-                QVERIFY2(!wrapped(), qPrintable(QStringLiteral("a line wraps four across at %1").arg(width)));
-            } else {
-                sawTwo = true;
-            }
+        };
+        // The coarse pass finds where four across starts; a line that wraps
+        // does so just past that point, so the pixels around it are all tried.
+        int firstFour = 0;
+        for (int width = 300; width <= 2400 && !firstFour; width += 20) {
+            layOut(width);
+            if (fourAcross()) firstFour = width;
         }
-        QVERIFY(sawFour);
-        QVERIFY(sawTwo);
+        QVERIFY2(firstFour > 300, "the tiles should start two by two and go four across");
+        // A tile that cannot shrink widens the page instead of wrapping, so
+        // the column staying inside the page is part of fitting.
+        auto *column = page.findChild<QScrollArea *>()->widget();
+        for (int width = firstFour - 20; width <= firstFour + 20; ++width) {
+            layOut(width);
+            if (!fourAcross()) continue;
+            QVERIFY2(!wrapped(), qPrintable(QStringLiteral("a line wraps four across at %1").arg(width)));
+            QVERIFY2(column->width() <= page.width(),
+                     qPrintable(QStringLiteral("four across overflows the page at %1").arg(width)));
+        }
     }
 
     void controllerKeepsTheRecordOfTheLastTranscript()
