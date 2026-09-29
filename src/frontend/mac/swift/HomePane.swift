@@ -1,5 +1,7 @@
+import AppKit
 import Charts
 import SwiftUI
+import UniformTypeIdentifiers
 
 // Home: the dictation card and, below it, what the insights log says about
 // the chosen period. Every number comes from the core's summary through the
@@ -25,6 +27,8 @@ private enum HeatMeasure: String, CaseIterable, Identifiable {
 struct HomePane: View {
     @ObservedObject var model: AppModel
     @State private var measure = HeatMeasure.dictations
+    /// What the Share button says for a moment after a choice, or nil.
+    @State private var shareReport: String?
 
     private var insights: SpeecherInsightsModel { model.insights }
 
@@ -49,6 +53,9 @@ struct HomePane: View {
 
     private var form: some View {
         Form {
+            if model.accessibilitySupported && !model.accessibilityEnabled {
+                accessibilityNotice
+            }
             dictationCard
             if !model.insightsEnabled {
                 notice(title: "Insights are off",
@@ -78,6 +85,22 @@ struct HomePane: View {
 
     // MARK: Dictation
 
+    /// The menu bar panel's notice, at the top of Home.
+    private var accessibilityNotice: some View {
+        Section {
+            LabeledContent {
+                Button("Open Privacy & Security…") { model.requestAccessibility() }
+            } label: {
+                Label("Without Accessibility, dictation only reaches the clipboard.",
+                      systemImage: "exclamationmark.triangle")
+                    .fixedSize(horizontal: false, vertical: true)
+                if !model.accessibilityProblem.isEmpty {
+                    Text(model.accessibilityProblem)
+                }
+            }
+        }
+    }
+
     @ViewBuilder private var dictationCard: some View {
         Section {
             LabeledContent {
@@ -93,11 +116,24 @@ struct HomePane: View {
                      ? "Set a Global Shortcut to dictate from anywhere."
                      : "Press \(model.shortcut) anywhere to dictate into the app you're using.")
             }
+            // The popup shows a failure for five seconds, so the reason also
+            // stays here until the next session starts.
+            if !model.lastFailure.isEmpty {
+                Text(model.lastFailure)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if !model.transcript.isEmpty {
                 LabeledContent {
-                    Button("Copy Transcript", systemImage: "doc.on.doc") { model.copyTranscript() }
+                    if model.transcriptCopied {
+                        Button(model.bridge.copiedCaption, systemImage: "checkmark") { model.copyTranscript() }
+                    } else {
+                        Button(model.bridge.copyTranscriptCaption, systemImage: "doc.on.doc") {
+                            model.copyTranscript()
+                        }
                         .labelStyle(.iconOnly)
-                        .help("Copy transcript")
+                        .help(model.bridge.copyTranscriptCaption)
+                    }
                 } label: {
                     Text(model.transcript).lineLimit(2)
                     Text(model.transcriptDetail)
@@ -144,12 +180,54 @@ struct HomePane: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .fixedSize()
+                shareMenu
+            }
+        }
+    }
+
+    /// Share: the stats as text on the clipboard, or saved as JSON. The
+    /// image the Linux Home also copies is left out here.
+    private var shareMenu: some View {
+        Menu(shareReport ?? model.homeLabel("share"), systemImage: "square.and.arrow.up") {
+            Button(model.homeLabel("copyText"), systemImage: "doc.on.doc") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(insights.shareText, forType: .string)
+                report(model.homeLabel("copied"))
+            }
+            Divider()
+            Button(model.homeLabel("saveJson"), systemImage: "square.and.arrow.down") { saveJson() }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func report(_ text: String) {
+        shareReport = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + SpeecherBridge.copiedFeedbackSeconds) {
+            shareReport = nil
+        }
+    }
+
+    private func saveJson() {
+        let panel = NSSavePanel()
+        panel.title = model.homeLabel("saveTitle")
+        panel.nameFieldStringValue = insights.jsonFileName
+        panel.allowedContentTypes = [.json]
+        panel.directoryURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        let json = insights.json
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                try json.write(to: url, options: .atomic)
+                report(model.homeLabel("saved"))
+            } catch {
+                report(model.homeLabel("saveFailed"))
             }
         }
     }
 
     private func tileGrid(perRow: Int) -> some View {
-        let tiles = [wordsTile, streakTile, dictationsTile, audioTile]
+        let tiles = insights.tiles.map(tile)
         return Grid(alignment: .topLeading, horizontalSpacing: 24, verticalSpacing: 16) {
             ForEach(Array(stride(from: 0, to: tiles.count, by: perRow)), id: \.self) { start in
                 GridRow {
@@ -159,59 +237,38 @@ struct HomePane: View {
         }
     }
 
-    private var wordsTile: AnyView {
-        tile("Words dictated", symbol: "text.alignleft", value: insights.words.formatted()) {
-            Text(insights.bookComparison).help(insights.bookComparisonTip)
-            line(insights.wordsDeltaText)
-        }
-    }
-
-    private var streakTile: AnyView {
-        tile("Streak", symbol: "flame", value: plural(insights.currentStreak, "day")) {
-            line(insights.streakText)
-            weekDots
-        }
-    }
-
-    private var dictationsTile: AnyView {
-        tile("Dictations", symbol: "mic", value: insights.dictations.formatted()) {
-            Text(insights.dictations == 0
-                 ? "Nothing yet"
-                 : "\(insights.dictationsPerActiveDay.formatted(.number.precision(.fractionLength(1)))) a day when you dictate")
-            line(insights.dictationsDeltaText)
-        }
-    }
-
-    private var audioTile: AnyView {
-        tile("Audio transcribed", symbol: "waveform", value: insights.audioTotalText) {
-            Text(insights.averageDictationText)
-        }
-    }
-
     /// A tile: its name, the figure, and the lines under it, leading-aligned
     /// in one plain stack. The lines may wrap but never shrink below their
     /// own width, so none is clipped at its leading edge.
-    private func tile<Detail: View>(_ title: String, symbol: String, value: String,
-                                    @ViewBuilder detail: () -> Detail) -> AnyView {
+    private func tile(_ text: SpeecherInsightTileModel) -> AnyView {
         AnyView(
             VStack(alignment: .leading, spacing: 4) {
-                Label(title, systemImage: symbol)
+                Label(text.title, systemImage: Self.symbol(forIconId: text.iconId))
                     .foregroundStyle(.secondary)
-                Text(value)
+                Text(text.unit.isEmpty ? text.value : "\(text.value) \(text.unit)")
                     .font(.title2.weight(.semibold))
                     .monospacedDigit()
-                VStack(alignment: .leading, spacing: 2) { detail() }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(text.lines.enumerated()), id: \.offset) { index, line in
+                        Text(line).help(index == 0 ? text.firstLineTip : "")
+                    }
+                    if text.showsWeek { weekDots }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(minWidth: 150, maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: SpeecherBridge.insightTileMinimumWidth, maxWidth: .infinity, alignment: .leading)
         )
     }
 
-    /// A tile line the core words, left out when it is empty.
-    @ViewBuilder private func line(_ text: String) -> some View {
-        if !text.isEmpty { Text(text) }
+    private static func symbol(forIconId iconId: String) -> String {
+        switch iconId {
+        case "text": return "text.alignleft"
+        case "flame": return "flame"
+        case "microphone": return "mic"
+        default: return "waveform"
+        }
     }
 
     /// This week, Monday first: a filled dot for a day with dictation, a ring
@@ -226,7 +283,7 @@ struct HomePane: View {
                     .frame(width: 16, height: 16)
                     .background {
                         if index <= insights.todayIndex {
-                            Circle().fill(heatColor(active ? 2 : 0, insights.heatStrengths))
+                            Circle().fill(heatColor(active ? 4 : 0, insights.heatStrengths))
                         }
                     }
                     .overlay {
@@ -243,6 +300,7 @@ struct HomePane: View {
     private var activity: some View {
         Section {
             ActivityHeatmap(days: insights.heatmap, monthLabels: insights.weekMonthLabels,
+                            rowLabels: insights.heatmapRowLabels,
                             strengths: insights.heatStrengths, measure: measure)
         } header: {
             HStack {
@@ -257,15 +315,15 @@ struct HomePane: View {
             }
         } footer: {
             HStack {
-                Text("\(plural(insights.activeDaysLastYear, "day")) with dictation in the last year")
+                Text(insights.activeDaysLastYearText)
                 Spacer()
-                Text("Less")
+                Text(model.homeLabel("legendLess"))
                 ForEach(0..<5) { level in
                     RoundedRectangle(cornerRadius: 2)
                         .fill(heatColor(level, insights.heatStrengths))
                         .frame(width: ActivityHeatmap.cell, height: ActivityHeatmap.cell)
                 }
-                Text("More")
+                Text(model.homeLabel("legendMore"))
             }
         }
     }
@@ -298,11 +356,9 @@ struct HomePane: View {
                 let counts = insights.hourCounts.map(\.intValue)
                 let labels = insights.hourLabels
                 let peak = insights.peakHour
-                let verdict = Text("\(insights.persona).").bold()
-                let detail = Text("You dictate most around \(labels[peak]), and \(insights.busiestWeekday)s are your busiest day.")
-                    .foregroundStyle(.secondary)
-                Text("\(verdict) \(detail)")
-                HourChart(counts: counts, labels: labels, peak: peak)
+                Text(insights.personaText).bold()
+                Text(insights.peakText).foregroundStyle(.secondary)
+                HourChart(counts: counts, labels: labels, tips: insights.hourTips, peak: peak)
             } else {
                 Text("After a few days of dictation this shows the hours you talk most.")
             }
@@ -316,12 +372,15 @@ struct HomePane: View {
             } else {
                 let wpm = insights.wordsPerMinute
                 let scale = max(wpm, 160)
-                LabeledContent("Your speaking pace", value: "\(wpm) wpm")
-                LabeledContent("Saved over typing", value: minutes(insights.minutesSavedVersusTyping))
+                HStack(alignment: .top, spacing: 32) {
+                    figure("\(wpm.formatted()) wpm", caption: "Your speaking pace")
+                    figure(minutes(insights.minutesSavedVersusTyping), caption: "Saved over typing")
+                }
                 let typing = insights.typingWordsPerMinute
                 barGrid {
-                    bar("You, speaking", value: wpm, total: scale, emphasised: true, caption: "\(wpm)")
-                    bar("Typical typing", value: typing, total: scale, emphasised: false, caption: "\(typing)")
+                    bar("You, speaking", value: wpm, total: scale, emphasised: true, caption: wpm.formatted())
+                    bar("Typical typing", value: typing, total: scale, emphasised: false,
+                        caption: typing.formatted())
                 }
                 Text(insights.speedupText)
                     .foregroundStyle(.secondary)
@@ -348,13 +407,25 @@ struct HomePane: View {
     }
 
     private var corrections: some View {
-        card("Corrections") {
-            Text("\(plural(model.learnedCorrectionCount, "correction")) learned")
-                .font(.title2.weight(.semibold))
-                .monospacedDigit()
+        card(model.homeLabel("correctionsTitle")) {
+            let learned = model.learnedCorrectionCount
+            figure(learned.formatted(), caption: model.bridge.learnedCorrectionsCaption(learned))
             Text("Speecher learned these from edits you made after dictating.")
                 .foregroundStyle(.secondary)
-            Button("Review Corrections…") { model.showPage("vocabulary:corrections") }
+            Button(model.homeLabel("reviewCorrections")) { model.showPage("vocabulary:corrections") }
+        }
+    }
+
+    /// A large figure over its caption, as the Linux and Windows Pace and
+    /// learned corrections cards show them.
+    private func figure(_ value: String, caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(value)
+                .font(.title2.weight(.semibold))
+                .monospacedDigit()
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -402,7 +473,7 @@ struct HomePane: View {
                        : "Ended \(insights.bestStreakEnd)",
                    value: plural(insights.bestStreak, "day"))
             record("Longest dictation",
-                   "\(insights.longestWords) words into \(insights.longestApp), \(insights.longestDay)",
+                   "\(insights.longestWords.formatted()) words into \(insights.longestApp), \(insights.longestDay)",
                    value: insights.longestDuration)
             record("Busiest day", capitalised(insights.busiestDay),
                    value: plural(insights.busiestDayDictations, "dictation"))
@@ -461,6 +532,8 @@ private struct ActivityHeatmap: View {
     let days: [SpeecherInsightsDayModel]
     /// One per week, from the core; the weeks shown take its tail.
     let monthLabels: [String]
+    /// Seven, Monday first, from the core; empty rows have no label.
+    let rowLabels: [String]
     let strengths: [NSNumber]
     let measure: HeatMeasure
     @State private var width: CGFloat = 0
@@ -469,7 +542,6 @@ private struct ActivityHeatmap: View {
     @State private var hovered: Date?
 
     static let cell: CGFloat = 11
-    private static let rowLabels = ["Mon", "", "Wed", "", "Fri", "", ""]
     private static let labelWidth: CGFloat = 28
     private let gap: CGFloat = 3
 
@@ -485,7 +557,7 @@ private struct ActivityHeatmap: View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: gap) {
                 label("")
-                ForEach(Array(Self.rowLabels.enumerated()), id: \.offset) { _, text in
+                ForEach(Array(rowLabels.enumerated()), id: \.offset) { _, text in
                     label(text).frame(height: Self.cell)
                 }
             }
@@ -610,6 +682,8 @@ private struct ProfileBadge: View {
 private struct HourChart: View {
     let counts: [Int]
     let labels: [String]
+    /// Each hour's tip from the core, its two lines as one.
+    let tips: [String]
     let peak: Int
     @State private var hovered: String?
 
@@ -621,8 +695,8 @@ private struct HourChart: View {
                 .foregroundStyle(Color.accentColor.opacity(index == peak || index == hour ? 1 : 0.42))
                 .annotation(position: .top, alignment: .center) {
                     if index == hour {
-                        let count = counts.indices.contains(index) ? counts[index] : 0
-                        Text("\(labels[index]) to \(labels[(index + 1) % 24]): \(count) \(count == 1 ? "dictation" : "dictations")")
+                        Text(tips.indices.contains(index)
+                             ? tips[index].replacingOccurrences(of: "\n", with: ": ") : "")
                             .font(.caption)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)

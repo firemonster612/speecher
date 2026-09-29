@@ -374,6 +374,18 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger percent;
 @end
 
+// One stat tile, as speecher::insightTiles words it.
+@interface SpeecherInsightTileModel : NSObject
+@property (nonatomic, readonly, copy) NSString *title;
+// "text", "flame", "microphone" or "waveform" (speecher::InsightTileText).
+@property (nonatomic, readonly, copy) NSString *iconId;
+@property (nonatomic, readonly, copy) NSString *value;
+@property (nonatomic, readonly, copy) NSString *unit;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *lines;
+@property (nonatomic, readonly, copy) NSString *firstLineTip;
+@property (nonatomic, readonly) BOOL showsWeek;
+@end
+
 // Everything Home shows for one period, as speecher::summarize computed it.
 // Days the page words relative to today ("yesterday", "Mar 1, 2026") arrive
 // already worded, and are empty where the summary has no such day. So do the
@@ -405,8 +417,23 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 // Seven BOOLs, Monday first, and today's slot among them.
 @property (nonatomic, readonly, copy) NSArray<NSNumber *> *weekActivity;
 @property (nonatomic, readonly) NSInteger todayIndex;
-// The locale's narrow weekday names, Monday first.
+// One letter per weekday, Monday first (speecher::weekdayLetter).
 @property (nonatomic, readonly, copy) NSArray<NSString *> *weekLetters;
+// Words, streak, dictations, audio.
+@property (nonatomic, readonly, copy) NSArray<SpeecherInsightTileModel *> *tiles;
+// The heatmap's seven row labels, Monday first, empty but for Mon, Wed, Fri.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *heatmapRowLabels;
+@property (nonatomic, readonly, copy) NSString *activeDaysLastYearText;
+// Each hour's tip, "10 am to 11 am" then "3 dictations" on the next line.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *hourTips;
+// "Morning talker." and the sentence after it.
+@property (nonatomic, readonly, copy) NSString *personaText;
+@property (nonatomic, readonly, copy) NSString *peakText;
+// What Share copies and saves (speecher::insightsShareText, insightsJson),
+// and the file name a save panel suggests.
+@property (nonatomic, readonly, copy) NSString *shareText;
+@property (nonatomic, readonly, copy) NSData *json;
+@property (nonatomic, readonly, copy) NSString *jsonFileName;
 
 // Every day of the last 53 Monday-first weeks up to today, oldest first.
 @property (nonatomic, readonly, copy) NSArray<SpeecherInsightsDayModel *> *heatmap;
@@ -609,6 +636,20 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSString *traySettingsCaption;
 @property (nonatomic, readonly, copy) NSString *trayQuitCaption;
 @property (nonatomic, readonly, copy) NSString *copyTranscriptCaption;
+// What a copy button says for a moment after copying, and for how long.
+@property (nonatomic, readonly, copy) NSString *copiedCaption;
+@property (class, nonatomic, readonly) NSTimeInterval copiedFeedbackSeconds;
+// speecher::kInsightTileMinimumWidth: below it the four tiles go two by two.
+@property (class, nonatomic, readonly) CGFloat insightTileMinimumWidth;
+// Why the last session failed, until the next one starts
+// (DictationSession::lastFailure). Re-read on every statusChanged.
+@property (nonatomic, readonly, copy) NSString *lastFailure;
+// Home's fixed wording (speecher::InsightsShareLabels and the learned
+// corrections card), keyed "share", "copyText", "saveJson", "copied",
+// "saved", "saveFailed", "saveTitle", "correctionsTitle",
+// "reviewCorrections", "legendLess", "legendMore".
+@property (nonatomic, readonly, copy) NSDictionary<NSString *, NSString *> *homeLabels;
+- (NSString *)learnedCorrectionsCaption:(NSInteger)count NS_SWIFT_NAME(learnedCorrectionsCaption(_:));
 @property (nonatomic, readonly, copy) NSString *noTranscriptYetText;
 - (void)quit;
 @property (nonatomic, copy, nullable) void (^audioLevelChanged)(float level);

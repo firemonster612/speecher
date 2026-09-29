@@ -25,6 +25,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var level: Float = 0
     /// The last thing Speecher heard, which the menu bar panel offers to copy.
     @Published private(set) var transcript: String
+    /// Why the last session failed, until the next one starts.
+    @Published private(set) var lastFailure: String
+    /// The transcript was just copied, so the button says so for a moment.
+    @Published private(set) var transcriptCopied = false
     @Published private(set) var accessibilityEnabled: Bool
     @Published private(set) var whatsNewPending: Bool
     /// The update banner as core words it, re-read whole on every change.
@@ -108,6 +112,7 @@ final class AppModel: ObservableObject {
         toggleLabel = bridge.toggleLabel
         toggleEnabled = bridge.toggleEnabled
         transcript = bridge.lastTranscript
+        lastFailure = bridge.lastFailure
         local = bridge.localSetupState
         shortcut = bridge.shortcutDisplay
         accessibilityEnabled = bridge.accessibilityEnabled
@@ -119,6 +124,7 @@ final class AppModel: ObservableObject {
         bridge.statusChanged = { [weak self] status in
             guard let self else { return }
             self.status = status
+            lastFailure = self.bridge.lastFailure
             listening = self.bridge.listening
             toggleLabel = self.bridge.toggleLabel
             toggleEnabled = self.bridge.toggleEnabled
@@ -184,7 +190,7 @@ final class AppModel: ObservableObject {
 
     private func refreshTranscriptDetail() {
         let words = bridge.lastTranscriptWords
-        transcriptDetail = (["\(words) \(words == 1 ? "word" : "words")",
+        transcriptDetail = (["\(words.formatted()) \(words == 1 ? "word" : "words")",
                              bridge.lastRecordApp, bridge.lastRecordDay])
             .filter { !$0.isEmpty }
             .joined(separator: ", ")
@@ -454,7 +460,14 @@ final class AppModel: ObservableObject {
     func copyTranscript() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(transcript, forType: .string)
+        transcriptCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + SpeecherBridge.copiedFeedbackSeconds) { [weak self] in
+            self?.transcriptCopied = false
+        }
     }
+
+    /// Home's fixed wording, from the core.
+    func homeLabel(_ key: String) -> String { bridge.homeLabels[key] ?? "" }
 
     /// The panes a sidebar search shows, from the core index every front end
     /// searches.
