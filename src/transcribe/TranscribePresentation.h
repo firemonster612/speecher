@@ -94,6 +94,8 @@ enum class TranscribeText {
     Retry,
     Retrying,
     TranscribeMore,
+    // The accessible name of the waveform progress meter.
+    ProgressName,
 };
 QString transcribeText(TranscribeText text);
 
@@ -110,6 +112,8 @@ QString destinationHint(TranscriptDestination destination);
 QString transcriptSaveError(const QString &path, const QString &reason);
 // "42%" for 0.42.
 QString percentLabel(qreal progress);
+// "42 percent" for 0.42: the progress meter's value, as a screen reader says it.
+QString percentSpoken(qreal progress);
 
 // Under the file chooser while no files are listed: what may be dropped or
 // chosen, every extension from transcribableExtensions().

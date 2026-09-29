@@ -7,6 +7,7 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
+#include "dictation/DictationTypes.h"
 #include "frontend/qt/LocalModelRows.h"
 #ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetup.h"
@@ -1200,7 +1201,7 @@ void SpeechProviderSetupPage::probeProvider(int index, quint64 generation)
     SpeechTranscriber *provider = m_providers.speechProvider(option.id);
     if (!provider) {
         finishProbe(index, generation,
-                    {false, QStringLiteral("No transcription service is available.")});
+                    {false, setupTranscriptionBlocked(false, QString())});
         return;
     }
 
@@ -1257,7 +1258,7 @@ void SpeechProviderSetupPage::showSelectedProvider()
     const int index = selectedIndex();
     if (index < 0) {
         setStatusColor(m_status, false);
-        m_status->setText(QStringLiteral("No transcription service is available."));
+        m_status->setText(setupTranscriptionBlocked(false, QString()));
         m_hint->hide();
         m_checkAgain->hide();
         setReady(false);
@@ -1336,7 +1337,7 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     auto *form = new QGridLayout;
     form->addWidget(new QLabel(setupSchemaRow(QStringLiteral("audioDevice")).label, this), 0, 0);
     form->addWidget(m_device, 0, 1);
-    form->addWidget(new QLabel(setupInputLevelLabel(), this), 1, 0);
+    form->addWidget(new QLabel(inputLevelLabel(), this), 1, 0);
     form->addWidget(m_level, 1, 1);
     layout->addLayout(form);
     layout->addWidget(m_status);
@@ -1612,13 +1613,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     , m_restoreClipboard(new QCheckBox(this))
     , m_format(new QComboBox(this))
 {
-    QVBoxLayout *layout = makePage(
-        this,
-#ifdef Q_OS_WIN
-        QStringLiteral("Speecher puts the finished text on your clipboard and pastes it into the frontmost app with Ctrl+V. Nothing extra needs to be installed."));
-#else
-        findSetupStep(QStringLiteral("delivery"))->intro);
-#endif
+    QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("delivery"))->intro);
     m_status->setWordWrap(true);
     m_progress->setRange(0, 0);
     m_progress->setVisible(false);

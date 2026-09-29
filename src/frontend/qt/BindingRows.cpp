@@ -2,6 +2,8 @@
 
 #include "frontend/qt/CollectionRow.h"
 
+#include <algorithm>
+
 #include <QAbstractItemView>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -108,7 +110,12 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
     addButton->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
     auto *importButton = new QPushButton(m_collection.supportsImport.actionLabel, control);
     // collectionRow() gives every deletable collection its Undo delete.
-    m_undoDelete = new QPushButton(m_collection.actions.first().label, control);
+    const auto undoAction = std::find_if(m_collection.actions.cbegin(), m_collection.actions.cend(),
+                                         [](const RowOption &action) {
+                                             return action.id == QStringLiteral("undoDelete");
+                                         });
+    Q_ASSERT(undoAction != m_collection.actions.cend());
+    m_undoDelete = new QPushButton(undoAction->label, control);
     m_undoDelete->setObjectName(QStringLiteral("undoDeleteBindingRules"));
     m_undoDelete->setEnabled(false);
     m_empty = new QLabel(m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp,
@@ -145,7 +152,8 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
         if (m_deleted.isEmpty()) {
             return;
         }
-        m_records.append(m_deleted.takeLast());
+        const auto [index, record] = m_deleted.takeLast();
+        m_records.insert(std::min(index, m_records.size()), record);
         refreshList();
         m_notifyChanged();
     });
@@ -171,7 +179,7 @@ void BindingRows::deleteRecord(int row)
     if (row < 0 || row >= m_records.size()) {
         return;
     }
-    m_deleted.append(m_records.takeAt(row));
+    m_deleted.append({row, m_records.takeAt(row)});
     refreshList();
     m_notifyChanged();
 }

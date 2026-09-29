@@ -11,13 +11,14 @@
 #include <algorithm>
 #include <cmath>
 
-// Non-ASCII text is written as \u escapes: this file is also compiled by
-// MSVC, which reads a source without a BOM in the system code page.
+// String literals write non-ASCII characters as \u escapes. MSVC reads a
+// source without a BOM in the system code page unless it is given /utf-8, and
+// escapes come out the same either way.
 
 namespace speecher {
 namespace {
 
-const QString kSeparator = QStringLiteral(" · ");
+const QString kSeparator = QStringLiteral(" \u00b7 ");
 
 int wordCount(const QString &text)
 {
@@ -38,13 +39,13 @@ QString transcribePhaseLabel(TranscribePhase phase)
 {
     switch (phase) {
     case TranscribePhase::Reading:
-        return QStringLiteral("Reading the audio…");
+        return QStringLiteral("Reading the audio\u2026");
     case TranscribePhase::Transcribing:
-        return QStringLiteral("Transcribing…");
+        return QStringLiteral("Transcribing\u2026");
     case TranscribePhase::Finishing:
-        return QStringLiteral("Finishing the transcript…");
+        return QStringLiteral("Finishing the transcript\u2026");
     case TranscribePhase::Refining:
-        return QStringLiteral("Refining…");
+        return QStringLiteral("Refining\u2026");
     }
     return {};
 }
@@ -114,7 +115,7 @@ QString transcribeText(TranscribeText text)
 {
     switch (text) {
     case TranscribeText::WindowTitle:
-        return QStringLiteral("Transcribe — Speecher");
+        return QStringLiteral("Transcribe \u2014 Speecher");
     case TranscribeText::AudioFilesSection:
         return QStringLiteral("Audio files");
     case TranscribeText::TranscriptionSection:
@@ -158,7 +159,7 @@ QString transcribeText(TranscribeText text)
     case TranscribeText::Folder:
         return QStringLiteral("Folder");
     case TranscribeText::ChangeFolder:
-        return QStringLiteral("Change…");
+        return QStringLiteral("Change\u2026");
     case TranscribeText::FolderDialogTitle:
         return QStringLiteral("Save transcripts in");
     case TranscribeText::Cancel:
@@ -178,9 +179,9 @@ QString transcribeText(TranscribeText text)
     case TranscribeText::Copied:
         return QStringLiteral("Copied");
     case TranscribeText::ExportAll:
-        return QStringLiteral("Export all…");
+        return QStringLiteral("Export all\u2026");
     case TranscribeText::Export:
-        return QStringLiteral("Export…");
+        return QStringLiteral("Export\u2026");
     case TranscribeText::ExportAllDialogTitle:
         return QStringLiteral("Export transcripts to");
     case TranscribeText::ExportDialogTitle:
@@ -192,16 +193,18 @@ QString transcribeText(TranscribeText text)
     case TranscribeText::Retry:
         return QStringLiteral("Retry");
     case TranscribeText::Retrying:
-        return QStringLiteral("Retrying…");
+        return QStringLiteral("Retrying\u2026");
     case TranscribeText::TranscribeMore:
         return QStringLiteral("Transcribe more files");
+    case TranscribeText::ProgressName:
+        return QStringLiteral("Transcription progress");
     }
     return {};
 }
 
 QString chooseFilesCaption(bool anyListed)
 {
-    return anyListed ? QStringLiteral("Add more files…") : QStringLiteral("Choose audio files…");
+    return anyListed ? QStringLiteral("Add more files\u2026") : QStringLiteral("Choose audio files\u2026");
 }
 
 QString startCaption(int fileCount)
@@ -220,7 +223,7 @@ QString destinationLabel(TranscriptDestination destination)
     case TranscriptDestination::BesideInput:
         return QStringLiteral("Next to each audio file");
     case TranscriptDestination::Folder:
-        return QStringLiteral("One folder…");
+        return QStringLiteral("One folder\u2026");
     case TranscriptDestination::None:
         return QStringLiteral("Just show them here");
     }
@@ -231,7 +234,7 @@ QString destinationHint(TranscriptDestination destination)
 {
     return destination == TranscriptDestination::None
         ? QStringLiteral("Copy or export from the results afterwards")
-        : QStringLiteral("Each transcript is saved as ⟨name⟩-transcribed.txt");
+        : QStringLiteral("Each transcript is saved as \u27e8name\u27e9-transcribed.txt");
 }
 
 QString transcriptSaveError(const QString &path, const QString &reason)
@@ -242,6 +245,11 @@ QString transcriptSaveError(const QString &path, const QString &reason)
 QString percentLabel(qreal progress)
 {
     return QStringLiteral("%1%").arg(int(progress * 100));
+}
+
+QString percentSpoken(qreal progress)
+{
+    return QStringLiteral("%1 percent").arg(int(progress * 100));
 }
 
 QString mediaFilesHint()
@@ -321,8 +329,8 @@ QString processingTitle(const QStringList &batch, int current)
     }
     const QString name = QFileInfo(batch.at(current)).fileName();
     return batch.size() > 1
-        ? QStringLiteral("Transcribing · %1 (%2 of %3)").arg(name).arg(current + 1).arg(batch.size())
-        : QStringLiteral("Transcribing · %1").arg(name);
+        ? QStringLiteral("Transcribing \u00b7 %1 (%2 of %3)").arg(name).arg(current + 1).arg(batch.size())
+        : QStringLiteral("Transcribing \u00b7 %1").arg(name);
 }
 
 TranscribeQueueState queueState(int index, int current, const QList<TranscribeFileResult> &finished)
@@ -381,7 +389,7 @@ QString batchSummary(const QList<TranscribeFileResult> &results,
     }
     QStringList parts;
     if (cancelled) {
-        parts << QStringLiteral("Canceled — %1 of %2 files transcribed").arg(transcribed).arg(batchSize);
+        parts << QStringLiteral("Canceled \u2014 %1 of %2 files transcribed").arg(transcribed).arg(batchSize);
     } else if (results.size() > 1) {
         parts << QStringLiteral("%1 transcripts").arg(transcribed);
     }

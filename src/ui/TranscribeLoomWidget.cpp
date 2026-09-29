@@ -1,5 +1,6 @@
 #include "ui/TranscribeLoomWidget.h"
 
+#include "transcribe/TranscribePresentation.h"
 #include "ui/WaveformModel.h"
 
 #include <QHideEvent>
@@ -42,7 +43,7 @@ qreal randomBetween(qreal low, qreal high)
 TranscribeLoomWidget::TranscribeLoomWidget(QWidget *parent)
     : QProgressBar(parent)
 {
-    setAccessibleName(QStringLiteral("Transcription progress"));
+    setAccessibleName(transcribeText(TranscribeText::ProgressName));
     setTextVisible(false);
     setRange(0, 100);
     setValue(0);

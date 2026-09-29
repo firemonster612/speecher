@@ -11,6 +11,7 @@
 #include "core/ShortcutBinding.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
+#include "dictation/DictationTypes.h"
 #include "frontend/win/LocalModelBrowser.h"
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/ShortcutRecorder.h"
@@ -719,7 +720,7 @@ struct SetupWindow::Native {
         };
         SpeechTranscriber *transcriber = controller->providerRegistry()->speechProvider(id);
         if (!transcriber) {
-            land({false, QStringLiteral("No transcription service is available.")});
+            land({false, setupTranscriptionBlocked(false, QString())});
             return;
         }
         const SpeechSettings settings = controller->settings()->snapshot().speech;
@@ -1591,8 +1592,7 @@ struct SetupWindow::Native {
                                        accuracy, updateSignInVisibility] {
             const int index = choices.SelectedIndex();
             if (index < 0 || index >= options.size()) {
-                status.set(QStringLiteral("No transcription service is available."),
-                           StatusTone::Caution);
+                status.set(setupTranscriptionBlocked(false, QString()), StatusTone::Caution);
                 return;
             }
             const QString id = options.at(index).first;
@@ -1785,7 +1785,7 @@ struct SetupWindow::Native {
     {
         StackPanel panel = page(QStringLiteral("microphone"));
         const QList<AudioInputDeviceInfo> devices = controller->platform()->availableAudioInputDevices();
-        QList<QPair<QString, QString>> options{{QString(), QStringLiteral("System default")}};
+        QList<QPair<QString, QString>> options{{QString(), audioDeviceDefaultLabel()}};
         for (const AudioInputDeviceInfo &device : devices) {
             options.append({device.id, device.label});
         }
@@ -1814,7 +1814,7 @@ struct SetupWindow::Native {
         });
         microphoneProblem.ActionButton(openSettings);
         panel.Children().Append(settingRow(setupSchemaRow(QStringLiteral("audioDevice")).label, device));
-        panel.Children().Append(settingRow(setupInputLevelLabel(), microphoneLevel));
+        panel.Children().Append(settingRow(inputLevelLabel(), microphoneLevel));
         panel.Children().Append(microphoneStatus);
         panel.Children().Append(microphoneProblem);
         content.Children().Append(panel);
@@ -2606,12 +2606,13 @@ struct SetupWindow::Native {
                 shortcutPendingModifier = 0;
             }
         });
-        // The mockup's "Dictation key" card: the key itself on the right of a
-        // single row, with whatever the recorder has to say under it.
+        // The key itself on the right of a single row, named as the Settings
+        // window names it, with whatever the recorder has to say under it.
         StackPanel keyCard = card(panel, QString());
         keyCard.Children().Append(
             cardRow(glyphMark(L'\uE765'),
-                    rowText(textBlock(QStringLiteral("Dictation key"), false)), recorder));
+                    rowText(textBlock(setupSchemaRow(QStringLiteral("globalShortcut")).label, false)),
+                    recorder));
         keyCard.Children().Append(shortcutStatus);
 
         // The shortcut and its behaviour are set together; the combo shares
@@ -2664,7 +2665,7 @@ struct SetupWindow::Native {
                 }
             }
         }
-        return QStringLiteral("System default");
+        return audioDeviceDefaultLabel();
     }
 
     // Why a gated page is still unfinished, in one line, for the Ready page's

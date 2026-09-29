@@ -253,7 +253,7 @@ void WinFrontEnd::actionTriggered(const QString &rowId)
             QStringLiteral("Delete all insights history?"),
             QStringLiteral("Your stats, streaks and records are erased from this computer. "
                            "This can't be undone."),
-            QStringLiteral("Delete History"),
+            QStringLiteral("Delete history"),
             [controller = m_controller, window = m_native->settingsWindow()] {
                 if (!controller->clearInsights()) {
                     window->inform(QStringLiteral("Speecher couldn't delete the insights history."));

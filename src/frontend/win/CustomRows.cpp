@@ -11,6 +11,8 @@
 
 #include <QRegularExpression>
 
+#include <optional>
+
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
 #include <winrt/Windows.Foundation.h>
@@ -138,7 +140,7 @@ UIElement credentialField(PaneHost &host)
 // Deletes the custom profile at `index`, first saying what that changes when
 // a rule or the fallback points at it.
 void deleteWritingProfile(const QString &rowId, const QList<QVariantMap> &records, qsizetype index,
-                          PaneHost &host)
+                          const QString &deleteLabel, PaneHost &host)
 {
     const auto remove = [rowId, records, index, &host] {
         QList<QVariantMap> edited = records;
@@ -154,9 +156,9 @@ void deleteWritingProfile(const QString &rowId, const QList<QVariantMap> &record
     }
     ContentDialog dialog;
     dialog.XamlRoot(host.xamlRoot());
-    dialog.Title(box_value(L"Delete profile"));
+    dialog.Title(box_value(hs(writingProfileDeletionTitle())));
     dialog.Content(box_value(hs(notice)));
-    dialog.PrimaryButtonText(L"Delete");
+    dialog.PrimaryButtonText(hs(deleteLabel));
     dialog.CloseButtonText(L"Cancel");
     dialog.DefaultButton(ContentDialogButton::Close);
     dialog.Closed([remove, weak = std::weak_ptr<bool>(host.alive)](const ContentDialog &,
@@ -238,8 +240,9 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
             Button remove;
             remove.Content(box_value(hs(row.collection->deleteLabel)));
             remove.VerticalAlignment(VerticalAlignment::Bottom);
-            remove.Click([rowId = row.id, records, index, &host](const auto &, const auto &) {
-                deleteWritingProfile(rowId, records, index, host);
+            remove.Click([rowId = row.id, records, index, deleteLabel = row.collection->deleteLabel,
+                          &host](const auto &, const auto &) {
+                deleteWritingProfile(rowId, records, index, deleteLabel, host);
             });
             pickers.Children().Append(remove);
         }
@@ -347,13 +350,24 @@ UIElement releaseNotes(const RowSnapshot &row)
         qsizetype consumed = 0;
         for (const QRegularExpressionMatch &match : link.globalMatch(source)) {
             appendRun(source.mid(consumed, match.capturedStart() - consumed));
+            consumed = match.capturedEnd();
+            // Uri throws on a relative or malformed target; such a link reads
+            // as its text.
+            std::optional<Uri> target;
+            try {
+                target.emplace(hs(match.captured(2)));
+            } catch (const winrt::hresult_error &) {
+            }
+            if (!target) {
+                appendRun(match.captured(1));
+                continue;
+            }
             Documents::Run label;
             label.Text(hs(match.captured(1)));
             Documents::Hyperlink hyperlink;
-            hyperlink.NavigateUri(Uri(hs(match.captured(2))));
+            hyperlink.NavigateUri(*target);
             hyperlink.Inlines().Append(label);
             paragraph.Inlines().Append(hyperlink);
-            consumed = match.capturedEnd();
         }
         appendRun(source.mid(consumed));
         // Body text by default, as SettingsCardBodyStyle's TextBlocks are.

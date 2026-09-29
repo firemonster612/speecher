@@ -305,13 +305,13 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     // typing key rather than a modal blocking it.
     m_captureControls = new QWidget(this);
     m_captureControls->setObjectName(QStringLiteral("shortcutCapture"));
-    // Header and card, so the key and the helper that watches it read as one
-    // named thing rather than as loose controls on the page.
+    // One card, so the key and the helper that watches it read as one thing
+    // rather than as loose controls on the page. It has no heading: the setup
+    // step's title and the Dictation section's header both already say
+    // Global Shortcut right above it.
     auto *captureOuter = new QVBoxLayout(m_captureControls);
     captureOuter->setContentsMargins(0, 0, 0, 0);
     captureOuter->setSpacing(0);
-    captureOuter->addWidget(settings::makeSectionLabel(QStringLiteral("Dictation key"),
-                                                       m_captureControls));
     QFrame *captureCard = settings::makeSettingsCard(m_captureControls);
     captureOuter->addWidget(captureCard);
     QFormLayout *captureRows = settings::cardFormLayout(captureCard);
@@ -551,7 +551,7 @@ QString LinuxGlobalShortcutSetupPage::blockedReason() const
     if (!m_controller.globalShortcutSupportKnown()) {
         return QStringLiteral("Speecher is still checking what your desktop supports.");
     }
-    return QStringLiteral("No shortcut is set, so there is no way to start dictating.");
+    return findSetupStep(QStringLiteral("shortcut"))->blocked;
 }
 
 void LinuxGlobalShortcutSetupPage::showCaptureFeedback(const QString &text)

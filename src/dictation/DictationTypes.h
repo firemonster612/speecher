@@ -48,6 +48,9 @@ QString copiedCaption();
 inline constexpr int kCopiedFeedbackMs = 1500;
 // Where a tray panel's last transcript goes before there is one.
 QString noTranscriptYetText();
+// The accessible name of a microphone level meter, in the tray panels and the
+// setup assistant's microphone step.
+QString inputLevelLabel();
 
 struct SessionResponse {
     bool ok = true;

@@ -24,7 +24,7 @@ struct MenuBarPanel: View {
                 // because the mic beside it already says what it measures.
                 Gauge(value: Double(min(max(model.level, 0), 1))) { EmptyView() }
                     .gaugeStyle(.linearCapacity)
-                    .accessibilityLabel("Input level")
+                    .accessibilityLabel(model.bridge.inputLevelLabel)
             }
             // Labelled and enabled by what toggle() would actually do: it
             // cancels a refinement, and does nothing during stopping/delivering.

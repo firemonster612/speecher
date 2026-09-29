@@ -317,7 +317,7 @@ struct DictationPanel::Native : QObject {
             bars.Children().Append(bar);
             barRects.push_back(bar);
         }
-        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(bars, L"Input level");
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(bars, win::hs(inputLevelLabel()));
         waveform = Border();
         waveform.Width(panelWidth);
         waveform.Child(bars);

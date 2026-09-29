@@ -169,7 +169,8 @@ struct ShortcutRecorderRow: View {
                 }
                 .disabled(!model.shortcutSupported)
             } label: {
-                Text("Dictation shortcut")
+                // No title: the section header right above already reads
+                // Global Shortcut, the row's label.
                 Text(footnote)
             }
             if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {

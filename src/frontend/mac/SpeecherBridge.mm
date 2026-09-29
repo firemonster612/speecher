@@ -796,11 +796,24 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 }
 @end
 
+@interface LocalModelFactNames ()
+@property (nonatomic, copy) NSString *bestFor;
+@property (nonatomic, copy) NSString *download;
+@property (nonatomic, copy) NSString *speedHere;
+@property (nonatomic, copy) NSString *wordErrorRate;
+@property (nonatomic, copy) NSString *textShows;
+@property (nonatomic, copy) NSString *language;
+@property (nonatomic, copy) NSString *license;
+@end
+
+@implementation LocalModelFactNames
+@end
+
 @interface LocalSetupState ()
 @property (nonatomic, copy) NSString *hardwareLine;
 @property (nonatomic) BOOL hardwareKnown;
 @property (nonatomic, copy) NSString *wordErrorRateSources;
-@property (nonatomic, copy) NSArray<NSString *> *factLabels;
+@property (nonatomic, strong) LocalModelFactNames *factLabels;
 @property (nonatomic, copy) NSArray<LocalModelInfo *> *models;
 @property (nonatomic, copy) NSString *speechModelChoice;
 @property (nonatomic, strong) LocalRunnerChoice *runnerChoice;
@@ -1415,6 +1428,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 {
     return speecher::writingProfileDeletionNotice(_state->draft, QString::fromNSString(profileId))
         .toNSString();
+}
+
+- (NSString *)writingProfileDeletionTitle
+{
+    return speecher::writingProfileDeletionTitle().toNSString();
 }
 
 - (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
@@ -2081,6 +2099,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::trayQuitCaption().toNSString();
 }
 
+- (NSString *)inputLevelLabel
+{
+    return speecher::inputLevelLabel().toNSString();
+}
+
 - (NSString *)copyTranscriptCaption
 {
     return speecher::copyTranscriptCaption().toNSString();
@@ -2311,7 +2334,7 @@ static void probeSpeechProvider(BridgeState *state,
     speecher::ProviderRegistry *registry = state->controller->providerRegistry();
     speecher::SpeechTranscriber *provider = registry->speechProvider(descriptor.id);
     if (!provider) {
-        answer(false, QStringLiteral("No transcription service is available."));
+        answer(false, speecher::setupTranscriptionBlocked(false, QString()));
         return;
     }
     std::optional<speecher::SpeechPrepareJob> job = provider->createPrepareJob(speech);
@@ -2445,9 +2468,10 @@ static void probeSpeechProvider(BridgeState *state,
     return steps;
 }
 
+- (NSString *)setupWindowTitle { return speecher::setupWindowTitle().toNSString(); }
 - (NSString *)setupWelcomeDetail { return speecher::setupWelcomeDetail().toNSString(); }
+- (NSString *)audioDeviceDefaultLabel { return speecher::audioDeviceDefaultLabel().toNSString(); }
 - (NSString *)setupSilentMicrophoneHint { return speecher::setupSilentMicrophoneHint().toNSString(); }
-- (NSString *)setupInputLevelLabel { return speecher::setupInputLevelLabel().toNSString(); }
 - (NSString *)setupProfilesNote { return speecher::setupProfilesNote().toNSString(); }
 - (NSString *)setupBlockedHeading { return speecher::setupBlockedHeading().toNSString(); }
 - (NSString *)setupBlockedFooter { return speecher::setupBlockedFooter().toNSString(); }
@@ -2799,10 +2823,15 @@ static LocalRunnerChoice *bridgedRunnerChoice(const speecher::RunnerChoice &reso
     state.hardwareLine = setup.hardwareLine().toNSString();
     state.wordErrorRateSources = speecher::wordErrorRateSources().toNSString();
     const LocalModelFactLabels names;
-    state.factLabels = @[names.bestFor.toNSString(), names.download.toNSString(),
-                         names.speedHere.toNSString(), names.wordErrorRate.toNSString(),
-                         names.textShows.toNSString(), names.language.toNSString(),
-                         names.license.toNSString()];
+    LocalModelFactNames *factNames = [LocalModelFactNames new];
+    factNames.bestFor = names.bestFor.toNSString();
+    factNames.download = names.download.toNSString();
+    factNames.speedHere = names.speedHere.toNSString();
+    factNames.wordErrorRate = names.wordErrorRate.toNSString();
+    factNames.textShows = names.textShows.toNSString();
+    factNames.language = names.language.toNSString();
+    factNames.license = names.license.toNSString();
+    state.factLabels = factNames;
     state.hardwareKnown = setup.hardwareKnown();
     NSMutableArray<LocalModelInfo *> *models = [NSMutableArray array];
     for (const LocalModel &model : localModelCatalog()) {
@@ -3025,8 +3054,49 @@ static std::optional<QString> optionalString(NSString *value)
 
 - (NSString *)transcribeText:(SpeecherTranscribeText)text
 {
-    static_assert(int(SpeecherTranscribeTextTranscribeMore) == int(speecher::TranscribeText::TranscribeMore),
-                  "SpeecherTranscribeText mirrors speecher::TranscribeText");
+    // SpeecherTranscribeText mirrors speecher::TranscribeText value for value.
+    static_assert(int(SpeecherTranscribeTextWindowTitle) == int(speecher::TranscribeText::WindowTitle));
+    static_assert(int(SpeecherTranscribeTextAudioFilesSection) == int(speecher::TranscribeText::AudioFilesSection));
+    static_assert(int(SpeecherTranscribeTextTranscriptionSection) == int(speecher::TranscribeText::TranscriptionSection));
+    static_assert(int(SpeecherTranscribeTextRefinementSection) == int(speecher::TranscribeText::RefinementSection));
+    static_assert(int(SpeecherTranscribeTextOutputSection) == int(speecher::TranscribeText::OutputSection));
+    static_assert(int(SpeecherTranscribeTextFilesDialogTitle) == int(speecher::TranscribeText::FilesDialogTitle));
+    static_assert(int(SpeecherTranscribeTextRemoveFile) == int(speecher::TranscribeText::RemoveFile));
+    static_assert(int(SpeecherTranscribeTextService) == int(speecher::TranscribeText::Service));
+    static_assert(int(SpeecherTranscribeTextVocabulary) == int(speecher::TranscribeText::Vocabulary));
+    static_assert(int(SpeecherTranscribeTextVocabularyHelp) == int(speecher::TranscribeText::VocabularyHelp));
+    static_assert(int(SpeecherTranscribeTextRefiner) == int(speecher::TranscribeText::Refiner));
+    static_assert(int(SpeecherTranscribeTextRefinerHelp) == int(speecher::TranscribeText::RefinerHelp));
+    static_assert(int(SpeecherTranscribeTextNoRefiner) == int(speecher::TranscribeText::NoRefiner));
+    static_assert(int(SpeecherTranscribeTextRefinerModel) == int(speecher::TranscribeText::RefinerModel));
+    static_assert(int(SpeecherTranscribeTextCleanup) == int(speecher::TranscribeText::Cleanup));
+    static_assert(int(SpeecherTranscribeTextCleanupHelp) == int(speecher::TranscribeText::CleanupHelp));
+    static_assert(int(SpeecherTranscribeTextWritingProfile) == int(speecher::TranscribeText::WritingProfile));
+    static_assert(int(SpeecherTranscribeTextWritingProfileHelp) == int(speecher::TranscribeText::WritingProfileHelp));
+    static_assert(int(SpeecherTranscribeTextTone) == int(speecher::TranscribeText::Tone));
+    static_assert(int(SpeecherTranscribeTextToneHelp) == int(speecher::TranscribeText::ToneHelp));
+    static_assert(int(SpeecherTranscribeTextSaveTranscripts) == int(speecher::TranscribeText::SaveTranscripts));
+    static_assert(int(SpeecherTranscribeTextFolder) == int(speecher::TranscribeText::Folder));
+    static_assert(int(SpeecherTranscribeTextChangeFolder) == int(speecher::TranscribeText::ChangeFolder));
+    static_assert(int(SpeecherTranscribeTextFolderDialogTitle) == int(speecher::TranscribeText::FolderDialogTitle));
+    static_assert(int(SpeecherTranscribeTextCancel) == int(speecher::TranscribeText::Cancel));
+    static_assert(int(SpeecherTranscribeTextPartialName) == int(speecher::TranscribeText::PartialName));
+    static_assert(int(SpeecherTranscribeTextPartialPlaceholder) == int(speecher::TranscribeText::PartialPlaceholder));
+    static_assert(int(SpeecherTranscribeTextRefined) == int(speecher::TranscribeText::Refined));
+    static_assert(int(SpeecherTranscribeTextRaw) == int(speecher::TranscribeText::Raw));
+    static_assert(int(SpeecherTranscribeTextCopyAll) == int(speecher::TranscribeText::CopyAll));
+    static_assert(int(SpeecherTranscribeTextCopy) == int(speecher::TranscribeText::Copy));
+    static_assert(int(SpeecherTranscribeTextCopied) == int(speecher::TranscribeText::Copied));
+    static_assert(int(SpeecherTranscribeTextExportAll) == int(speecher::TranscribeText::ExportAll));
+    static_assert(int(SpeecherTranscribeTextExport) == int(speecher::TranscribeText::Export));
+    static_assert(int(SpeecherTranscribeTextExportAllDialogTitle) == int(speecher::TranscribeText::ExportAllDialogTitle));
+    static_assert(int(SpeecherTranscribeTextExportDialogTitle) == int(speecher::TranscribeText::ExportDialogTitle));
+    static_assert(int(SpeecherTranscribeTextTextFiles) == int(speecher::TranscribeText::TextFiles));
+    static_assert(int(SpeecherTranscribeTextSaved) == int(speecher::TranscribeText::Saved));
+    static_assert(int(SpeecherTranscribeTextRetry) == int(speecher::TranscribeText::Retry));
+    static_assert(int(SpeecherTranscribeTextRetrying) == int(speecher::TranscribeText::Retrying));
+    static_assert(int(SpeecherTranscribeTextTranscribeMore) == int(speecher::TranscribeText::TranscribeMore));
+    static_assert(int(SpeecherTranscribeTextProgressName) == int(speecher::TranscribeText::ProgressName));
     return speecher::transcribeText(static_cast<speecher::TranscribeText>(text)).toNSString();
 }
 
@@ -3063,6 +3133,11 @@ static std::optional<QString> optionalString(NSString *value)
 - (NSString *)percentLabel:(double)progress
 {
     return speecher::percentLabel(progress).toNSString();
+}
+
+- (NSString *)percentSpoken:(double)progress
+{
+    return speecher::percentSpoken(progress).toNSString();
 }
 
 - (NSString *)paneTitleForRowId:(NSString *)rowId

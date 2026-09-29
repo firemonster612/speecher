@@ -465,6 +465,7 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
     case RowKind::Text: {
         if (descriptor.multiline) {
             auto *edit = new QPlainTextEdit(card);
+            edit->setPlaceholderText(descriptor.placeholder);
             connect(edit, &QPlainTextEdit::textChanged, this, announce);
             row.value = [edit] { return edit->toPlainText(); };
             // Every edit reloads the page, and setPlainText would move the
@@ -479,6 +480,7 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
         }
         if (!descriptor.suggestions) {
             auto *edit = new QLineEdit(card);
+            edit->setPlaceholderText(descriptor.placeholder);
             if (descriptor.secret) {
                 edit->setEchoMode(QLineEdit::Password);
             }
@@ -501,6 +503,7 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
         }
         combo->view()->setMouseTracking(true);
         combo->lineEdit()->setClearButtonEnabled(true);
+        combo->lineEdit()->setPlaceholderText(descriptor.placeholder);
         connect(combo, &QComboBox::currentTextChanged, this, announce);
         row.value = [combo] { return settings::editableComboValue(combo); };
         row.setValue = [combo](const QVariant &value) {

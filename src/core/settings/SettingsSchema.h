@@ -390,6 +390,9 @@ QList<WritingProfileSettings> withCustomProfileIds(QList<WritingProfileSettings>
 // how many application rules lose it, and whether the fallback profile becomes
 // Other. Empty when nothing points at it.
 QString writingProfileDeletionNotice(const AppSettings &settings, const QString &profileId);
+// The title of the confirmation that notice goes in; its confirming button is
+// the grid's deleteLabel.
+QString writingProfileDeletionTitle();
 CollectionDescriptor writingProfileGrid();
 QList<RowOption> authModeOptions(const QString &rowId);
 
@@ -442,6 +445,8 @@ QString checkingCredentialsStatus();
 // that has gone away. Shared with the setup assistant's own device list.
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices,
                                     const QString &selectedDeviceId);
+// The system-default entry's label.
+QString audioDeviceDefaultLabel();
 
 // The Local models page's Acceleration choice: Automatic, the CPU, then each
 // GPU backend that reaches a card here, with a disabled placeholder for a

@@ -219,6 +219,7 @@ final class TranscriptionModel: ObservableObject {
     }
     var destinationHint: String { bridge.destinationHint(options.destination) }
     func percent(_ progress: Double) -> String { bridge.percentLabel(progress) }
+    func percentSpoken(_ progress: Double) -> String { bridge.percentSpoken(progress) }
 
     func detail(for file: AudioFile) -> String {
         bridge.audioFileDetail(bytes: file.bytes, durationMs: durations[file.path] ?? -1)
@@ -635,7 +636,7 @@ struct TranscribePane: View {
                 output
                 if !model.startError.isEmpty {
                     Section {
-                        Label(model.startError, systemImage: "xmark.octagon.fill")
+                        Label(model.startError, systemImage: "exclamationmark.octagon.fill")
                             .foregroundStyle(.red)
                     }
                 }
@@ -731,7 +732,9 @@ struct TranscribePane: View {
             Form {
                 Section {
                     TranscribeLoom(peaks: model.peaks, playhead: model.playhead(at:), text: model.partial,
-                                   placeholder: model.text(.partialPlaceholder))
+                                   placeholder: model.text(.partialPlaceholder),
+                                   accessibleName: model.text(.progressName),
+                                   spokenValue: model.percentSpoken)
                         // A fresh loom, and so a fresh look, for every file.
                         .id(model.current)
                     TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
@@ -785,7 +788,7 @@ struct TranscribePane: View {
                     Text(model.summary)
                         .foregroundStyle(.secondary)
                     if !model.exportProblem.isEmpty {
-                        Label(model.exportProblem, systemImage: "xmark.octagon.fill")
+                        Label(model.exportProblem, systemImage: "exclamationmark.octagon.fill")
                             .foregroundStyle(.red)
                     }
                 } header: {
@@ -860,6 +863,9 @@ struct TranscribeLoom: View {
     let text: String
     /// Shown dimmed until the provider has heard something.
     let placeholder: String
+    /// The meter's accessible name, and its value as a screen reader says it.
+    let accessibleName: String
+    let spokenValue: (Double) -> String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Drawn once per loom, which is once per file.
     @State private var breath = (period: Double.random(in: 2.2...4.4),
@@ -884,8 +890,8 @@ struct TranscribeLoom: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Transcription progress")
-        .accessibilityValue("\(Int((playhead(Date()) * 100).rounded(.down))) percent")
+        .accessibilityLabel(accessibleName)
+        .accessibilityValue(spokenValue(playhead(Date())))
     }
 
     private func draw(in context: inout GraphicsContext, size: CGSize, progress: Double,

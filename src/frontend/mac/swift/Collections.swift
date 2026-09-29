@@ -34,8 +34,9 @@ final class CollectionEditor: ObservableObject {
     /// The record the add sheet is filling in.
     @Published var draft: [String: Any] = [:]
 
-    /// What Delete took, newest last, so undo can put it back.
-    private var deleted: [CollectionRecord] = []
+    /// What Delete took and where it stood, newest last, so undo can put it
+    /// back in its place.
+    private var deleted: [(index: Int, record: CollectionRecord)] = []
     private var seeded = false
     private var savedRecords: [[String: Any]] = []
 
@@ -103,10 +104,14 @@ final class CollectionEditor: ObservableObject {
     }
 
     func removeSelected() {
-        let doomed = records.filter { selection.contains($0.id) && !$0.locked }
+        // Last first, so each index still holds when undo walks them back.
+        let doomed = records.indices.reversed().filter {
+            selection.contains(records[$0].id) && !records[$0].locked
+        }
         guard !doomed.isEmpty else { return }
-        deleted += doomed
-        records.removeAll { record in doomed.contains { $0.id == record.id } }
+        for index in doomed {
+            deleted.append((index, records.remove(at: index)))
+        }
         selection = []
         save()
     }
@@ -114,10 +119,10 @@ final class CollectionEditor: ObservableObject {
     func run(_ actionId: String) {
         if actionId == "undoDelete" {
             guard let restored = deleted.popLast() else { return }
-            records.insert(restored, at: records.firstIndex { !$0.locked } ?? records.count)
+            records.insert(restored.record, at: min(restored.index, records.count))
         } else if actionId == "undoLatestLearn" {
             guard let index = records.firstIndex(where: { !$0.locked }) else { return }
-            deleted.append(records.remove(at: index))
+            deleted.append((index, records.remove(at: index)))
         }
         save()
     }

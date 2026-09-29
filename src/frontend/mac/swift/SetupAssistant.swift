@@ -312,9 +312,10 @@ final class SetupFlowModel: ObservableObject {
 
     /// What the audio device row currently names, for the ready checklist.
     private var microphoneDeviceLabel: String {
-        guard let row = model.row("audioDevice") else { return "System default" }
+        let fallback = model.bridge.audioDeviceDefaultLabel
+        guard let row = model.row("audioDevice") else { return fallback }
         let selected = RowView.text(row.value)
-        return row.options.first { $0.rowOptionId == selected }?.label ?? "System default"
+        return row.options.first { $0.rowOptionId == selected }?.label ?? fallback
     }
 
     /// The ready step's "Go to step", which has to put the step being left
@@ -402,7 +403,7 @@ final class SetupFlowModel: ObservableObject {
     /// service: the probe's own words when it refused, ours when it did not.
     var providerStatus: String {
         guard let provider = selectedSpeechProvider else {
-            return "No transcription service is available."
+            return model.bridge.setupTranscriptionBlocked(localSelected: false, provider: "")
         }
         guard provider.probed else { return "Checking…" }
         return provider.ready ? "\(provider.label) is ready." : provider.message
@@ -1717,7 +1718,7 @@ private struct MicrophoneStep: View {
                 if let row = model.row("audioDevice") {
                     RowView(row: row, model: model)
                 }
-                LabeledContent(model.bridge.setupInputLevelLabel) {
+                LabeledContent(model.bridge.inputLevelLabel) {
                     ProgressView(value: min(max(flow.meterLevel, 0), 1))
                         .frame(width: 220)
                 }
@@ -2122,7 +2123,7 @@ private struct ShortcutStep: View {
                     Image(systemName: "keyboard")
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
-                    Text("Dictation key")
+                    Text(model.row("globalShortcut")?.label ?? "")
                     Spacer(minLength: 12)
                     Text(model.shortcut)
                         .fontWeight(.semibold)
@@ -2302,7 +2303,7 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
                           backing: .buffered,
                           defer: false)
         window.isReleasedWhenClosed = false
-        window.title = "Speecher Setup Assistant"
+        window.title = model.bridge.setupWindowTitle
         let hosting = NSHostingController(
             rootView: SetupAssistantView(flow: flow, model: model))
         // The assistant owns its fixed size. SwiftUI's flexible content must

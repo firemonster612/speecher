@@ -119,6 +119,7 @@ PasswordBox secretField(const RowSnapshot &row, PaneHost &host)
 {
     PasswordBox box;
     box.MinWidth(contentMinWidth(row));
+    box.PlaceholderText(hs(row.placeholder));
     box.Password(hs(row.value.toString()));
     const auto commit = [rowId = row.id, stored = row.value.toString(), &host](
                             const PasswordBox &box) {
@@ -146,6 +147,7 @@ UIElement textField(const RowSnapshot &row, PaneHost &host)
     if (!row.suggests) {
         TextBox box;
         box.MinWidth(contentMinWidth(row));
+        box.PlaceholderText(hs(row.placeholder));
         box.Text(hs(row.value.toString()));
         if (row.multiline) {
             // Wide enough to read a paragraph beside the row's title.
@@ -174,6 +176,7 @@ UIElement textField(const RowSnapshot &row, PaneHost &host)
     // still takes any text a person types.
     AutoSuggestBox box;
     box.MinWidth(contentMinWidth(row));
+    box.PlaceholderText(hs(row.placeholder));
     box.Text(hs(row.value.toString()));
     QStringList suggestions;
     for (const RowOption &option : row.suggestions) {

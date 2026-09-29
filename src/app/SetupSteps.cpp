@@ -149,12 +149,7 @@ QString setupMicrophoneBlocked(SetupMicrophoneProblem problem)
 
 QString setupSilentMicrophoneHint()
 {
-    return QStringLiteral("No input yet — check that the microphone isn't muted, or pick another device.");
-}
-
-QString setupInputLevelLabel()
-{
-    return QStringLiteral("Input level");
+    return QStringLiteral("No input yet \u2014 check that the microphone isn't muted, or pick another device.");
 }
 
 const SettingsRow &setupSchemaRow(const QString &rowId)
@@ -209,7 +204,7 @@ QString setupRefinementStatus(const QString &providerId, std::optional<bool> rea
 QString setupChecklistLine(const QString &stepId, const QString &choice)
 {
     const SetupStepInfo *step = findSetupStep(stepId);
-    return QStringLiteral("%1 — %2").arg(step ? step->title : stepId, choice);
+    return QStringLiteral("%1 \u2014 %2").arg(step ? step->title : stepId, choice);
 }
 
 QString setupProfilesNote()

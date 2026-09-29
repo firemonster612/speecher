@@ -116,7 +116,7 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, strong, nullable) CollectionModel *collection;
 // Text rows only: a key or password, shown masked.
 @property (nonatomic, readonly) BOOL secret;
-// Text rows only: shown in the empty field.
+// Text rows, and Custom rows that take text: shown in the empty field.
 @property (nonatomic, readonly, copy) NSString *placeholder;
 // Text rows only: the value may hold several lines.
 @property (nonatomic, readonly) BOOL multiline;
@@ -207,6 +207,8 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // empty when nothing points at it.
 - (NSString *)writingProfileDeletionNotice:(NSString *)profileId
     NS_SWIFT_NAME(writingProfileDeletionNotice(_:));
+// The title of the confirmation that notice goes in.
+@property (nonatomic, readonly, copy) NSString *writingProfileDeletionTitle;
 // Save against the records this editor last submitted, not a later model refresh.
 - (NSArray<NSString *> *)saveRecords:(NSArray<SpeecherRecord *> *)records
                     previousRecords:(NSArray<SpeecherRecord *> *)previous
@@ -396,6 +398,7 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeText) {
     SpeecherTranscribeTextRetry,
     SpeecherTranscribeTextRetrying,
     SpeecherTranscribeTextTranscribeMore,
+    SpeecherTranscribeTextProgressName,
 };
 
 // Mirrors speecher::TranscribeQueueState.
@@ -651,6 +654,18 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL local;
 @end
 
+// The Local Model detail's fact names, one property per LocalModelFactLabels
+// field, so the Swift side pairs each with its value by name.
+@interface LocalModelFactNames : NSObject
+@property (nonatomic, readonly, copy) NSString *bestFor;
+@property (nonatomic, readonly, copy) NSString *download;
+@property (nonatomic, readonly, copy) NSString *speedHere;
+@property (nonatomic, readonly, copy) NSString *wordErrorRate;
+@property (nonatomic, readonly, copy) NSString *textShows;
+@property (nonatomic, readonly, copy) NSString *language;
+@property (nonatomic, readonly, copy) NSString *license;
+@end
+
 // Everything LocalSetup knows, read in one go on every change it announces.
 @interface LocalSetupState : NSObject
 // "Apple M4 Max, 14 threads · Apple M4 Max, Metal · 36 GB memory", or
@@ -659,9 +674,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL hardwareKnown;
 // Where the word error rates come from, for a tooltip on them.
 @property (nonatomic, readonly, copy) NSString *wordErrorRateSources;
-// The detail's fact names, in LocalModelFactLabels order: best for, download,
-// speed here, word error rate, text shows, language, license.
-@property (nonatomic, readonly, copy) NSArray<NSString *> *factLabels;
+@property (nonatomic, readonly, strong) LocalModelFactNames *factLabels;
 // The catalog, in the order it lists the models.
 @property (nonatomic, readonly, copy) NSArray<LocalModelInfo *> *models;
 // The Local Model dictation will use: the chosen one, else the suggestion.
@@ -703,6 +716,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // The captions the menu bar panel shares with the Linux and Windows trays.
 @property (nonatomic, readonly, copy) NSString *traySettingsCaption;
 @property (nonatomic, readonly, copy) NSString *trayQuitCaption;
+// A level meter's accessible name, in the menu bar panel and setup.
+@property (nonatomic, readonly, copy) NSString *inputLevelLabel;
 @property (nonatomic, readonly, copy) NSString *copyTranscriptCaption;
 // What a copy button says for a moment after copying, and for how long.
 @property (nonatomic, readonly, copy) NSString *copiedCaption;
@@ -853,9 +868,11 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 
 // The steps, and the wording every assistant shares (app/SetupSteps.h).
 @property (nonatomic, readonly, copy) NSArray<SpeecherSetupStep *> *setupSteps;
+@property (nonatomic, readonly, copy) NSString *setupWindowTitle;
 @property (nonatomic, readonly, copy) NSString *setupWelcomeDetail;
+// The microphone choice's system-default entry.
+@property (nonatomic, readonly, copy) NSString *audioDeviceDefaultLabel;
 @property (nonatomic, readonly, copy) NSString *setupSilentMicrophoneHint;
-@property (nonatomic, readonly, copy) NSString *setupInputLevelLabel;
 @property (nonatomic, readonly, copy) NSString *setupProfilesNote;
 @property (nonatomic, readonly, copy) NSString *setupBlockedHeading;
 @property (nonatomic, readonly, copy) NSString *setupBlockedFooter;
@@ -1072,6 +1089,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (NSString *)transcriptSaveErrorForPath:(NSString *)path reason:(NSString *)reason
     NS_SWIFT_NAME(transcriptSaveError(path:reason:));
 - (NSString *)percentLabel:(double)progress NS_SWIFT_NAME(percentLabel(_:));
+- (NSString *)percentSpoken:(double)progress NS_SWIFT_NAME(percentSpoken(_:));
 // The settings page a row is on, from core (speecher::paneTitleForRow).
 - (NSString *)paneTitleForRowId:(NSString *)rowId NS_SWIFT_NAME(paneTitle(forRowId:));
 // Where to change the refinement model the Configure step shows.

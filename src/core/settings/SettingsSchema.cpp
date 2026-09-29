@@ -1887,12 +1887,15 @@ QList<RowOption> outputMethodOptions()
 QString automaticOutputMethodHelp()
 {
 #ifdef Q_OS_MACOS
-    return QStringLiteral("Automatic pastes with Cmd+V, then falls back to the clipboard.");
+    return QStringLiteral("Automatic inserts the text into the text field directly, then pastes "
+                          "with Cmd+V, then falls back to the clipboard.");
 #elif defined(Q_OS_WIN)
-    return QStringLiteral("Automatic pastes with Ctrl+V, then falls back to the clipboard.");
+    return QStringLiteral("Automatic inserts the text into the text field directly, then pastes "
+                          "with Ctrl+V, then falls back to the clipboard.");
 #else
-    return QStringLiteral("Automatic pastes with the virtual keyboard once it is set up, and "
-                          "otherwise copies to the clipboard.");
+    return QStringLiteral("Automatic inserts the text into the text field directly, then pastes "
+                          "with the virtual keyboard once it is set up, then falls back to the "
+                          "clipboard.");
 #endif
 }
 
@@ -2479,7 +2482,7 @@ QList<ProviderAccount> providerAccounts()
                   QStringLiteral("Sign-in"),
                   QStringLiteral("How Speecher signs in to Anthropic for dictation and text cleanup. "
                                  "Claude Code sign-in reuses the login from the claude command; "
-                                 "CLI Proxy API uses an account CLI Proxy API saved.")),
+                                 "CLI Proxy API uses an account saved by CLI Proxy API.")),
         customRow(QStringLiteral("anthropicCliproxyAccount"),
                   QStringLiteral("Account"),
                   QStringLiteral("The CLI Proxy API account to use.")),
@@ -2744,6 +2747,11 @@ QList<RowOption> localGraphicsCardOptions(const QList<LocalGpu> &gpus, const Loc
     return options;
 }
 
+QString audioDeviceDefaultLabel()
+{
+    return QStringLiteral("System default");
+}
+
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QString &selectedDeviceId)
 {
     const RowOption missing{selectedDeviceId,
@@ -2761,7 +2769,7 @@ QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QStri
         return options;
     }
 
-    QList<RowOption> options{{QString(), QStringLiteral("System default")}};
+    QList<RowOption> options{{QString(), audioDeviceDefaultLabel()}};
     bool selectedFound = selectedDeviceId.isEmpty();
     for (const RowOption &device : devices) {
         options.append(device);
@@ -3217,6 +3225,11 @@ QString writingProfileDeletionNotice(const AppSettings &settings, const QString 
         notice << QStringLiteral("The fallback profile will become Other.");
     }
     return notice.join(QLatin1Char(' '));
+}
+
+QString writingProfileDeletionTitle()
+{
+    return QStringLiteral("Delete profile");
 }
 
 CollectionDescriptor writingProfileGrid()
