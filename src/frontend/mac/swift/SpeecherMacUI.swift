@@ -65,9 +65,8 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         self.model = model
         panel = SpeecherDictationPanel(model: model)
         super.init()
-        // "Settings…" opens General on every platform.
-        menuBar = SpeecherMenuBarExtra(model: model,
-                                      openSettings: { [weak self] in self?.openSettingsPage("general") })
+        // "Settings…" reopens the last pane, as ⌘, and a Dock click do.
+        menuBar = SpeecherMenuBarExtra(model: model, openSettings: { [weak self] in self?.showSettings() })
         panel.openWhatsNew = { [weak self] in
             self?.showSettings()
             self?.model.showWhatsNew()
@@ -135,8 +134,8 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         model.showPage("transcribe")
     }
 
-    /// Opens the settings window on a page id, as "Settings…", a notification
-    /// click or a link asks for it.
+    /// Opens the settings window on a page id, as a notification click or a
+    /// link asks for it.
     @MainActor
     @objc public func openSettingsPage(_ page: String) {
         showSettings()
