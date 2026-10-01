@@ -762,7 +762,7 @@ private slots:
 #if !defined(Q_OS_MACOS)
         // One user-facing name; the service name stays in the setup page's help.
         QVERIFY(!message->text().contains(QStringLiteral("AT-SPI")));
-        QCOMPARE(button->text(), QStringLiteral("Turn on accessibility"));
+        QCOMPARE(button->text(), QStringLiteral("Enable desktop accessibility"));
 #endif
         QSignalSpy requested(notice, &AccessibilityNotice::enableRequested);
         button->click();

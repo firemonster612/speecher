@@ -56,6 +56,8 @@ QString longestFittingTail(const QString &text, const QList<qsizetype> &starts,
 
 // About how long a reader needs per character, past the minimum.
 constexpr int kPopupErrorMsPerCharacter = 60;
+// A server's whole error body should not hold the popup for minutes.
+constexpr int kPopupErrorMaximumMs = 30000;
 
 } // namespace
 
@@ -71,7 +73,9 @@ QString renewingSignInText()
 
 int popupErrorDismissMs(const QString &message)
 {
-    return std::max<int>(kPopupErrorMinimumMs, int(message.simplified().size()) * kPopupErrorMsPerCharacter);
+    return std::clamp(int(message.simplified().size()) * kPopupErrorMsPerCharacter,
+                      kPopupErrorMinimumMs,
+                      kPopupErrorMaximumMs);
 }
 
 QString popupErrorActionLabel(const PopupErrorAction &action)

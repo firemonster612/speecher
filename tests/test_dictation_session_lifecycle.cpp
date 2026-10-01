@@ -55,6 +55,7 @@ private slots:
     {
         QCOMPARE(popupErrorDismissMs(QStringLiteral("Microphone unavailable")), 8000);
         QCOMPARE(popupErrorDismissMs(QString(200, u'a')), 12000);
+        QCOMPARE(popupErrorDismissMs(QString(2000, u'a')), 30000);
     }
 
     // The tray panels' transcript is the preview, then the delivered text, and

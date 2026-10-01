@@ -10,6 +10,8 @@
 #include "transcribe/TranscribePresentation.h"
 
 #include <QRegularExpression>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <algorithm>
 
 using namespace speecher;
@@ -351,6 +353,14 @@ private slots:
                                              "- Linux: the tray.\n\n## Fixed\n\n- Windows: a fix.");
         QCOMPARE(releaseNotesForPlatform(notes, QStringLiteral("macOS")),
                  QStringLiteral("## Added\n\n- A shared change that wraps onto a second line."));
+    }
+
+    void releaseNotesDropThisPlatformsPrefixAndKeepNestedBullets()
+    {
+        const QString notes = QStringLiteral("- Linux: the tray, with\n  two parts:\n  - a menu\n  - a panel\n"
+                                             "- Windows: a fix:\n  - its detail");
+        QCOMPARE(releaseNotesForPlatform(notes, QStringLiteral("Linux")),
+                 QStringLiteral("- The tray, with two parts:\n  - a menu\n  - a panel"));
     }
 
     void whatsNewPageSelectsLiveRowsInTheVersionRange()
@@ -975,6 +985,50 @@ private slots:
         QCOMPARE(settings.output.pasteRules.first().match, QStringLiteral("unknown"));
     }
 
+    // A front end shows each choice's value and saves what it shows, so a
+    // migrated rule survives a save only if its row offers that value.
+    void migratedPasteRulesSurviveSavingTheOutputPage()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        stored.setValue(QStringLiteral("output/method"), QStringLiteral("direct_insert"));
+        stored.setValue(QStringLiteral("output/pasteRules"),
+                        pasteRulesToJson({
+                            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
+                            {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
+                        }));
+        migrateOutputMethod(stored);
+        AppSettings loaded;
+        loaded.output.method = stored.value(QStringLiteral("output/method")).toString();
+        loaded.output.pasteRules =
+            pasteRulesFromJson(stored.value(QStringLiteral("output/pasteRules")).toByteArray());
+
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &output = schema.page(QStringLiteral("output"));
+        AppSettings saved = loaded;
+        rowById(output, QStringLiteral("outputFormat")).apply(saved, QStringLiteral("html"));
+        for (const SettingsSection &section : output.sections) {
+            for (const SettingsRow &row : section.rows) {
+                if (!row.options || !row.value || !row.apply) {
+                    continue;
+                }
+                const QString shown = row.value(loaded).toString();
+                const QList<RowOption> options = row.options(loaded);
+                QVERIFY2(std::any_of(options.cbegin(), options.cend(),
+                                     [&shown](const RowOption &option) { return option.id == shown; }),
+                         qPrintable(row.id + QStringLiteral(" does not offer ") + shown));
+                row.apply(saved, shown);
+            }
+        }
+        QCOMPARE(saved.output.method, QStringLiteral("automatic"));
+        QCOMPARE(saved.output.pasteRules,
+                 (QList<PasteRule>{
+                     {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::DirectInsert, true},
+                     {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
+                 }));
+    }
+
     void vocabularyIsNormalisedWhenItIsApplied()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
@@ -1170,14 +1224,12 @@ private slots:
         QVERIFY(!instructions.enabled(settings, {}));
         QVERIFY(!prompt.enabled(settings, {}));
 
-        // The prompt replaces cleanup levels, so they stop while it is on.
+        // A custom prompt still skips a profile at None and still adds a custom
+        // level's instructions, so both stay editable while it is on.
         settings.refinement.providerId = QStringLiteral("openai");
         settings.refinement.customSystemPromptEnabled = true;
-        QVERIFY(!schema.row(QStringLiteral("customCleanupLevels"))->enabled(settings, {}));
-        const CollectionColumn &cleanup =
-            schema.row(QStringLiteral("writingProfileBehavior"))->collection.columns.at(1);
-        QVERIFY(!cleanup.enabled(settings));
-        QCOMPARE(cleanup.disabledHelp, QStringLiteral("The custom system prompt replaces cleanup levels."));
+        QVERIFY(schema.row(QStringLiteral("customCleanupLevels"))->enabled(settings, {}));
+        QVERIFY(!schema.row(QStringLiteral("writingProfileBehavior"))->collection.columns.at(1).enabled);
     }
 
     void customChoiceIdsAreSlugsOfTheName()

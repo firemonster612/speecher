@@ -643,7 +643,7 @@ bool LocalSetup::runSettingsAction(const QString &rowId, const AppSettings &show
         checkSpeechEndpoint(shown.speech.endpoint);
     } else if (rowId == QStringLiteral("refinementEndpointTest")) {
         checkRefinementEndpoint(shown.refinement);
-    } else if (rowId == QStringLiteral("localRunnerDetect") || rowId == QStringLiteral("localModelsRunner")) {
+    } else if (rowId == QStringLiteral("localRunnerDetect")) {
         detectRunners();
     } else if (rowId == QStringLiteral("localModelFolder")) {
         QDir().mkpath(m_models.directory());

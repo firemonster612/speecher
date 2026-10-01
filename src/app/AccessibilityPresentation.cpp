@@ -6,13 +6,13 @@ namespace speecher {
 
 QString accessibilityActionCaption(bool enabled, bool persistent)
 {
+    if (!enabled) {
+        return accessibilityGrantActionLabel();
+    }
 #ifdef Q_OS_MACOS
     Q_UNUSED(persistent);
-    return enabled ? QString() : accessibilityGrantActionLabel();
+    return QString();
 #else
-    if (!enabled) {
-        return QStringLiteral("Turn on accessibility");
-    }
     return persistent ? QString() : QStringLiteral("Keep on after login");
 #endif
 }

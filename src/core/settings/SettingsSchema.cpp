@@ -72,7 +72,7 @@ QString inheritGlobalPasteRule()
 }
 
 // The paste chord differs per platform, and so does the copy that names it.
-QList<RowOption> pasteMethodOptions(bool includeDirectInsert, bool includeGlobalFallback)
+QList<RowOption> pasteMethodOptions(bool includeGlobalFallback)
 {
     QList<RowOption> options;
     if (includeGlobalFallback) {
@@ -83,26 +83,20 @@ QList<RowOption> pasteMethodOptions(bool includeDirectInsert, bool includeGlobal
     // (MacPasteDelivery::paste sends one chord), so there is no terminal
     // option; shownPasteMethod shows a stored one as Standard paste.
     options.append({pasteMethodName(PasteMethod::StandardPaste), QStringLiteral("Standard paste (Cmd+V)")});
-    if (includeDirectInsert) {
-        options.append({pasteMethodName(PasteMethod::DirectInsert),
-                        QStringLiteral("Direct insertion (Accessibility)")});
-    }
+    options.append({pasteMethodName(PasteMethod::DirectInsert),
+                    QStringLiteral("Direct insertion (Accessibility)")});
 #elif defined(Q_OS_WIN)
     options.append({pasteMethodName(PasteMethod::StandardPaste), QStringLiteral("Standard paste (Ctrl+V)")});
     options.append({pasteMethodName(PasteMethod::TerminalPaste),
                     QStringLiteral("Terminal paste (Ctrl+Shift+V)")});
-    if (includeDirectInsert) {
-        options.append({pasteMethodName(PasteMethod::DirectInsert),
-                        QStringLiteral("Direct insertion (UI Automation)")});
-    }
+    options.append({pasteMethodName(PasteMethod::DirectInsert),
+                    QStringLiteral("Direct insertion (UI Automation)")});
 #else
     options.append({pasteMethodName(PasteMethod::StandardPaste), QStringLiteral("Standard paste (Ctrl+V)")});
     options.append({pasteMethodName(PasteMethod::TerminalPaste),
                     QStringLiteral("Terminal paste (Ctrl+Shift+V)")});
-    if (includeDirectInsert) {
-        options.append({pasteMethodName(PasteMethod::DirectInsert),
-                        QStringLiteral("Direct insertion (desktop accessibility)")});
-    }
+    options.append({pasteMethodName(PasteMethod::DirectInsert),
+                    QStringLiteral("Direct insertion (desktop accessibility)")});
 #endif
     options.append({pasteMethodName(PasteMethod::ClipboardOnly), QStringLiteral("Clipboard only")});
     return options;
@@ -140,20 +134,6 @@ QString applicationPasteRuleHint()
     return QStringLiteral("Override paste behavior for an exact lowercase executable name, such as notepad.");
 #else
     return QStringLiteral("Override paste behavior for an exact application ID, such as org.kde.konsole.");
-#endif
-}
-
-// One sentence naming the platform's accessibility feature and what it unlocks.
-// macOS calls it the Accessibility permission; Linux desktops expose AT-SPI,
-// which the rest of the UI calls desktop accessibility.
-QString accessibilityGateHelp(const QString &purpose)
-{
-#ifdef Q_OS_MACOS
-    return QStringLiteral("Grant Accessibility permission to %1.").arg(purpose);
-#elif defined(Q_OS_WIN)
-    return QStringLiteral("UI Automation must be available to %1.").arg(purpose);
-#else
-    return QStringLiteral("Turn on desktop accessibility to %1.").arg(purpose);
 #endif
 }
 
@@ -1285,17 +1265,6 @@ bool offers(const QList<RowOption> &options, const QString &id)
                        [&id](const RowOption &option) { return option.id == id; });
 }
 
-bool customSystemPromptOff(const AppSettings &settings, const Capabilities &)
-{
-    return !settings.refinement.customSystemPromptEnabled;
-}
-
-QString customSystemPromptReplacesLevels()
-{
-    // ui-lint: allow avoid-term (the setting that replaces the system prompt)
-    return QStringLiteral("The custom system prompt replaces cleanup levels.");
-}
-
 // What a custom tone or level record holds besides its columns.
 const QString kChoiceIdKey = QStringLiteral("id");
 const QString kChoiceNameColumn = QStringLiteral("name");
@@ -1511,7 +1480,6 @@ SettingsRow customCleanupLevelsRow()
         std::move(levels));
     row.tooltip = QStringLiteral("Custom only keeps just the rules every level shares, such as keeping "
                                  "facts and returning only the text.");
-    addGate(row, customSystemPromptOff, customSystemPromptReplacesLevels());
     gateOnRefinementProvider(row);
     return row;
 }
@@ -1633,8 +1601,9 @@ SettingsPage writingProfilesPage(const SchemaContext &context)
         QStringLiteral("customSystemPromptEnabled"),
         // ui-lint: allow avoid-term (the setting that replaces the system prompt)
         QStringLiteral("Use a custom system prompt"),
-        QStringLiteral("Replaces the built-in rules and cleanup levels with your prompt. Each "
-                       "profile's tone and instructions are still added."),
+        QStringLiteral("Replaces the built-in rules with your prompt. Each profile's tone and "
+                       "instructions still apply, and so do the instructions of a Cleanup Level "
+                       "you added. A profile set to None is not refined."),
         [](const AppSettings &settings) { return settings.refinement.customSystemPromptEnabled; },
         [](AppSettings &settings, bool value) { settings.refinement.customSystemPromptEnabled = value; });
     gateOnRefinementProvider(customPromptEnabled);
@@ -1901,7 +1870,7 @@ SettingsRow applicationPasteRuleRow()
         {kMethodColumn,
          QStringLiteral("Paste method"),
          ColumnKind::Choice,
-         fixedOptions(pasteMethodOptions(true, false))},
+         fixedOptions(pasteMethodOptions(false))},
     };
     descriptor.records = [](const AppSettings &settings) {
         QList<QVariantMap> records;
@@ -1949,7 +1918,7 @@ SettingsRow categoryPasteRuleRow(AppCategory category)
         QStringLiteral("categoryPasteRule_") + match,
         pasteCategoryLabel(category),
         QString(),
-        fixedOptions(pasteMethodOptions(false, true)),
+        fixedOptions(pasteMethodOptions(true)),
         [match](const AppSettings &settings) {
             for (const PasteRule &rule : settings.output.pasteRules) {
                 if (rule.scope == PasteRuleScope::Category && rule.match == match) {
@@ -1995,13 +1964,16 @@ QList<RowOption> outputMethodOptions()
 // What Automatic does, which differs per platform.
 QString automaticOutputMethodHelp()
 {
+    const QString limits = QStringLiteral(" Default paste and the paste rules can limit it to inserting "
+                                          "or copying.");
 #ifdef Q_OS_MACOS
-    return QStringLiteral("Automatic inserts text directly where it can, then pastes with Cmd+V.");
+    return QStringLiteral("Automatic inserts text directly where it can, then pastes with Cmd+V.") + limits;
 #elif defined(Q_OS_WIN)
-    return QStringLiteral("Automatic inserts text directly where it can, then pastes with Ctrl+V.");
+    return QStringLiteral("Automatic inserts text directly where it can, then pastes with Ctrl+V.") + limits;
 #else
     return QStringLiteral("Automatic inserts text directly where it can, then pastes with the "
-                          "virtual keyboard.");
+                          "virtual keyboard once it is set up.")
+        + limits;
 #endif
 }
 
@@ -2029,7 +2001,7 @@ SettingsPage outputPage(const SchemaContext &context)
         QStringLiteral("globalPasteRule"),
         QStringLiteral("Default paste"),
         QStringLiteral("How Speecher pastes unless a paste rule says otherwise."),
-        fixedOptions(pasteMethodOptions(true, false)),
+        fixedOptions(pasteMethodOptions(false)),
         [](const AppSettings &settings) {
             for (const PasteRule &rule : settings.output.pasteRules) {
                 if (rule.scope == PasteRuleScope::Global) {
@@ -2069,12 +2041,6 @@ SettingsPage outputPage(const SchemaContext &context)
     // fall together with desktop accessibility.
     QList<SettingsRow> categoryRows;
     for (AppCategory category : managedPasteCategories()) {
-#ifdef Q_OS_MACOS
-        // Terminals take the same Cmd+V as every other app here.
-        if (category == AppCategory::Terminal) {
-            continue;
-        }
-#endif
         SettingsRow row = categoryPasteRuleRow(category);
         row.groupId = QStringLiteral("targetPasteControls");
         gateOnTargetAccessibility(row, targetAccessibilityHint());
@@ -2810,6 +2776,19 @@ QString keyStorageHelp()
     return QStringLiteral("Stored in the system keychain when there is one.");
 }
 
+// macOS calls it the Accessibility permission; Linux desktops expose AT-SPI,
+// which the rest of the UI calls desktop accessibility.
+QString accessibilityGateHelp(const QString &purpose)
+{
+#ifdef Q_OS_MACOS
+    return QStringLiteral("Grant Accessibility permission to %1.").arg(purpose);
+#elif defined(Q_OS_WIN)
+    return QStringLiteral("UI Automation must be available to %1.").arg(purpose);
+#else
+    return QStringLiteral("Turn on desktop accessibility to %1.").arg(purpose);
+#endif
+}
+
 QString accessibilityGrantActionLabel()
 {
 #ifdef Q_OS_MACOS
@@ -3455,9 +3434,6 @@ CollectionDescriptor writingProfileGrid()
         {kInstructionsColumn, QStringLiteral("Instructions"), ColumnKind::Text, {}, true},
     };
     grid.columns.last().multiline = true;
-    CollectionColumn &cleanup = grid.columns[1];
-    cleanup.enabled = [](const AppSettings &settings) { return customSystemPromptOff(settings, {}); };
-    cleanup.disabledHelp = customSystemPromptReplacesLevels();
     // The built-ins always exist, so the stored list only says what each of
     // them was set to; the custom profiles follow in stored order.
     grid.records = [=](const AppSettings &settings) {

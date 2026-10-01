@@ -1006,6 +1006,93 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(attempts, QList<QString>({QString::fromLatin1(OutputMethod::WlCopy)}));
     }
 
+    // A stored direct_insert, wl-copy or qt-clipboard method becomes Automatic
+    // with its rules migrated, and every target must get what it got before:
+    // an insertion attempt only where there was one, and never a paste, though
+    // Automatic could paste with the virtual keyboard. Insertion always fails
+    // here, since that is when Automatic goes on to paste.
+    void outputMethodMigrationKeepsEveryTargetDeliveringAsBefore()
+    {
+        using Scope = PasteRuleScope;
+        using Method = PasteMethod;
+        Target editor;
+        editor.applicationId = QStringLiteral("org.kde.kate");
+        editor.category = AppCategory::CodeEditor;
+        editor.accessible = true;
+        Target terminal = editor;
+        terminal.applicationId = QStringLiteral("org.kde.konsole");
+        terminal.category = AppCategory::Terminal;
+        Target password = editor;
+        password.secure = true;
+        const Target unknown;
+        const QList<PasteRule> pasteEverywhere{{Scope::Global, QString(), Method::StandardPaste, true}};
+        const QList<PasteRule> pasteInTerminals{
+            {Scope::Category, QStringLiteral("terminal"), Method::TerminalPaste, true},
+            {Scope::Global, QString(), Method::ClipboardOnly, true},
+        };
+        const QList<PasteRule> insertIntoKate{
+            {Scope::Application, QStringLiteral("org.kde.kate"), Method::DirectInsert, true},
+            {Scope::Global, QString(), Method::StandardPaste, true},
+        };
+        const struct {
+            const char *name;
+            const char *method;
+            QList<PasteRule> rules;
+            Target target;
+            bool inserts;
+        } cases[] = {
+            {"editor", "direct_insert", pasteEverywhere, editor, true},
+            {"terminal rule", "direct_insert", pasteInTerminals, terminal, true},
+            {"copy-only default", "direct_insert", pasteInTerminals, editor, false},
+            {"unknown target", "direct_insert", pasteEverywhere, unknown, false},
+            {"secure target", "direct_insert", pasteEverywhere, password, false},
+            {"editor", "wl-copy", pasteEverywhere, editor, false},
+            {"unknown target", "wl-copy", pasteEverywhere, unknown, false},
+            {"app rule inserts", "wl-copy", insertIntoKate, editor, true},
+            {"terminal rule", "qt-clipboard", pasteInTerminals, terminal, false},
+        };
+
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        for (const auto &row : cases) {
+            stored.setValue(QStringLiteral("output/method"), QString::fromLatin1(row.method));
+            stored.setValue(QStringLiteral("output/pasteRules"), pasteRulesToJson(row.rules));
+            migrateOutputMethod(stored);
+            OutputSettings before;
+            before.method = QString::fromLatin1(row.method);
+            before.pasteRules = row.rules;
+            OutputSettings after;
+            after.method = stored.value(QStringLiteral("output/method")).toString();
+            after.pasteRules =
+                pasteRulesFromJson(stored.value(QStringLiteral("output/pasteRules")).toByteArray());
+            QCOMPARE(after.method, QStringLiteral("automatic"));
+
+            for (OutputSettings settings : {before, after}) {
+                settings.ydotoolEnabled = true;
+                QList<QString> attempts;
+                QHash<QString, bool> results{{virtualKeyboardMethod(), true},
+                                             {QString::fromLatin1(OutputMethod::WlCopy), true},
+                                             {QString::fromLatin1(OutputMethod::QtClipboard), true}};
+                FakeTargetProvider provider;
+                // Only an accessible target can take inserted text.
+                provider.directInsertionAvailable = row.target.accessible;
+                TextDelivery delivery([&attempts, &results](const QString &method,
+                                                            const OutputSettings &,
+                                                            PasteMethod) {
+                    return std::make_unique<FakeBackend>(method, &attempts, &results);
+                }, &provider);
+
+                const DeliveryResult result = delivery.deliver(
+                    settings, makeDeliveryContent(QStringLiteral("hello"), OutputFormat::PlainText), row.target);
+                const QByteArray where = QByteArray(row.method) + ", " + row.name + ", as " + settings.method.toUtf8();
+                QVERIFY2(result.receipt == DeliveryReceipt::Copied, where.constData());
+                QVERIFY2((provider.insertCalls == 1) == row.inserts, where.constData());
+                QVERIFY2(!attempts.contains(virtualKeyboardMethod()), where.constData());
+            }
+        }
+    }
+
     void outputVerifiedYdotoolReportsVirtualKeyboardOutcome_data()
     {
         QTest::addColumn<bool>("restoreClipboard");
