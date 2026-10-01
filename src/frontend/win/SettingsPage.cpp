@@ -657,16 +657,19 @@ winrt::Microsoft::UI::Xaml::Media::Brush themeBrush(const wchar_t *key, const Pa
                                          : L"Dark";
     // The style dictionary is the merged dictionary that carries our theme
     // dictionaries; walk the merged list rather than assuming its position.
+    // XamlControlsResources can carry theme dictionaries of the same names
+    // without our keys (a grab died on that once the navigation pane went
+    // compact), so the key is checked in each: a XAML dictionary's Lookup
+    // throws on a missing key with an error TryLookup does not catch.
     for (const auto &merged : Application::Current().Resources().MergedDictionaries()) {
         const auto themes = merged.ThemeDictionaries();
         if (!themes.HasKey(box_value(themeKey))) {
             continue;
         }
         const auto dictionary = themes.Lookup(box_value(themeKey)).as<ResourceDictionary>();
-        if (const auto brush = dictionary.TryLookup(box_value(key))) {
-            return brush.as<winrt::Microsoft::UI::Xaml::Media::Brush>();
+        if (dictionary.HasKey(box_value(key))) {
+            return dictionary.Lookup(box_value(key)).as<winrt::Microsoft::UI::Xaml::Media::Brush>();
         }
-        break;
     }
     return nullptr;
 }
