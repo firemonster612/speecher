@@ -478,6 +478,15 @@ QString globalShortcutPrompt();
 // binder's default, named by its display text.
 QString globalShortcutChangeCaption();
 QString globalShortcutResetCaption(const QString &defaultShortcut);
+// What the Global Shortcut row shows in place of an empty binding.
+QString globalShortcutUnsetText();
+// Setup's shortcut step: record the first binding, record a single key where
+// the desktop registers no combinations, let the desktop pick one, and remove
+// the binding.
+QString globalShortcutSetCaption();
+QString globalShortcutSingleKeyCaption();
+QString globalShortcutChooseCaption();
+QString globalShortcutClearCaption();
 // What the Global Shortcut row says when the binder refused a binding without
 // saying why.
 QString globalShortcutBindFailedText();

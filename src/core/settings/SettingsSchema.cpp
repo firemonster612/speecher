@@ -2832,6 +2832,31 @@ QString globalShortcutResetCaption(const QString &defaultShortcut)
     return QStringLiteral("Reset to %1").arg(defaultShortcut);
 }
 
+QString globalShortcutUnsetText()
+{
+    return QStringLiteral("Not set");
+}
+
+QString globalShortcutSetCaption()
+{
+    return QStringLiteral("Set shortcut");
+}
+
+QString globalShortcutSingleKeyCaption()
+{
+    return QStringLiteral("Set single key");
+}
+
+QString globalShortcutChooseCaption()
+{
+    return QStringLiteral("Choose shortcut");
+}
+
+QString globalShortcutClearCaption()
+{
+    return QStringLiteral("Clear");
+}
+
 QString globalShortcutBindFailedText()
 {
     return QStringLiteral("That shortcut could not be bound.");

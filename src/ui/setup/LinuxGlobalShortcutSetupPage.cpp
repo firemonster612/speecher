@@ -93,7 +93,7 @@ QString captureLead(bool combinationsAvailable)
 } // namespace
 
 ShortcutCaptureButton::ShortcutCaptureButton(QWidget *parent)
-    : QPushButton(QStringLiteral("Set shortcut"), parent)
+    : QPushButton(globalShortcutSetCaption(), parent)
 {
     connect(this, &QPushButton::clicked, this, [this] { setArmed(!m_armed); });
 }
@@ -103,9 +103,9 @@ ShortcutCaptureButton::ShortcutCaptureButton(QWidget *parent)
 QString ShortcutCaptureButton::idleText() const
 {
     if (!m_combinationsAvailable) {
-        return QStringLiteral("Set single key");
+        return globalShortcutSingleKeyCaption();
     }
-    return m_display.isEmpty() ? QStringLiteral("Set shortcut") : globalShortcutChangeCaption();
+    return m_display.isEmpty() ? globalShortcutSetCaption() : globalShortcutChangeCaption();
 }
 
 void ShortcutCaptureButton::setShortcutDisplay(const QString &display)
@@ -323,7 +323,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     m_binding = new QLabel(trailing);
     m_binding->setObjectName(QStringLiteral("globalShortcutBinding"));
     buttons->addWidget(m_binding);
-    m_chooseShortcut = new QPushButton(QStringLiteral("Choose shortcut"), trailing);
+    m_chooseShortcut = new QPushButton(globalShortcutChooseCaption(), trailing);
     m_chooseShortcut->setObjectName(QStringLiteral("portalShortcut"));
     buttons->addWidget(m_chooseShortcut);
     m_setShortcut = new ShortcutCaptureButton(trailing);
@@ -334,7 +334,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
         trailing);
     m_resetShortcut->setObjectName(QStringLiteral("resetGlobalShortcut"));
     buttons->addWidget(m_resetShortcut);
-    m_clearShortcut = new QPushButton(QStringLiteral("Clear"), trailing);
+    m_clearShortcut = new QPushButton(globalShortcutClearCaption(), trailing);
     m_clearShortcut->setObjectName(QStringLiteral("clearGlobalShortcut"));
     buttons->addWidget(m_clearShortcut);
     m_captureControls = settings::makeRow(shortcutRow.label, shortcutRow.help, trailing, rowHost);
@@ -734,7 +734,7 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
                                            : m_controller.globalShortcut().displayText();
     // A manual desktop's own shortcut is out of Speecher's sight, so only
     // where the binding is Speecher's to know does an empty one read as such.
-    m_binding->setText(display.isEmpty() ? QStringLiteral("Not set") : display);
+    m_binding->setText(display.isEmpty() ? globalShortcutUnsetText() : display);
     m_binding->setForegroundRole(display.isEmpty() ? QPalette::PlaceholderText : QPalette::WindowText);
     m_binding->setVisible(!display.isEmpty() || supported);
     m_setShortcut->setShortcutDisplay(display);

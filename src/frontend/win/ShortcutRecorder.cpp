@@ -353,7 +353,7 @@ StackPanel ShortcutRecorder::element(const RowSnapshot &row, PaneHost &host)
     StackPanel control;
     control.Orientation(Orientation::Horizontal);
     control.Spacing(8);
-    TextBlock binding = secondaryTextBlock(current.isEmpty() ? QStringLiteral("None") : current,
+    TextBlock binding = secondaryTextBlock(current.isEmpty() ? globalShortcutUnsetText() : current,
                                            L"SettingsInfoTextStyle", host);
     binding.VerticalAlignment(VerticalAlignment::Center);
     binding.Margin({0, 0, 4, 0});
