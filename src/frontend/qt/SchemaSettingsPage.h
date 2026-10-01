@@ -73,6 +73,9 @@ public:
     bool hasChanges(const AppSettings &settings) const;
     void setCapabilities(const Capabilities &capabilities);
     void refresh();
+    // Scrolls the row into view and gives its control the focus, for a
+    // search that found it.
+    void revealRow(const QString &rowId);
 
 signals:
     void changed();

@@ -52,6 +52,7 @@
 #include <QSplitter>
 #include <QStandardPaths>
 #include <QStackedWidget>
+#include <QTabBar>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QVBoxLayout>
@@ -181,9 +182,9 @@ private slots:
         auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
         window.showPage(QStringLiteral("vocabulary:corrections"));
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Vocabulary"));
-        QTabWidget *tabs = nullptr;
-        for (QTabWidget *candidate : window.findChildren<QTabWidget *>()) {
-            if (candidate->isVisibleTo(&window) || candidate->tabText(0) == QStringLiteral("Terms")) {
+        QTabBar *tabs = nullptr;
+        for (QTabBar *candidate : window.findChildren<QTabBar *>()) {
+            if (candidate->tabText(0) == QStringLiteral("Terms")) {
                 tabs = candidate;
             }
         }
@@ -915,11 +916,23 @@ private slots:
             QVERIFY(!navigation->itemWidget(navigation->item(row)));
             QVERIFY(!navigation->item(row)->text().isEmpty());
         }
-        // Return opens the first hit.
+        // Return opens the first hit at the row that matched.
+        window.show();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
         search->setText(QStringLiteral("default paste"));
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Output"));
         QTest::keyClick(search, Qt::Key_Return);
         QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Output"));
+        auto *output = window.findChild<SchemaSettingsPage *>(QStringLiteral("output"));
+        QTRY_VERIFY(output->isAncestorOf(QApplication::focusWidget()));
+        // Ctrl+F comes back to the field.
+        QTest::keyClick(&window, Qt::Key_F, Qt::ControlModifier);
+        QTRY_COMPARE(QApplication::focusWidget(), search);
+        // Nothing found says so, as an entry nobody can pick.
+        search->setText(QStringLiteral("zzzz"));
+        QCOMPARE(navigation->count(), 1);
+        QCOMPARE(navigation->item(0)->text(), QStringLiteral("No settings match"));
+        QCOMPARE(navigation->item(0)->flags(), Qt::NoItemFlags);
         // What's New is not searchable, even for its own name: General
         // answers, for the row that opens it.
         search->setText(QStringLiteral("What's New"));

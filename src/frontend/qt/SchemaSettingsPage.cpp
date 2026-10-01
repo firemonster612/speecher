@@ -17,10 +17,12 @@
 #include <QLineEdit>
 #include <QMediaDevices>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QSpinBox>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace speecher {
@@ -591,6 +593,26 @@ void SchemaSettingsPage::setCapabilities(const Capabilities &capabilities)
 void SchemaSettingsPage::refresh()
 {
     refreshRows();
+}
+
+void SchemaSettingsPage::revealRow(const QString &rowId)
+{
+    for (const Row &row : std::as_const(m_rows)) {
+        if (row.descriptor.id != rowId) {
+            continue;
+        }
+        // A page just brought forward lays itself out on the next pass.
+        QTimer::singleShot(0, this, [this, frame = QPointer<QWidget>(row.frame),
+                                     control = QPointer<QWidget>(row.control)] {
+            if (frame) {
+                ensureWidgetVisible(frame);
+            }
+            if (control) {
+                control->setFocus(Qt::OtherFocusReason);
+            }
+        });
+        return;
+    }
 }
 
 // Everything a row can derive from the rest of the page: whether it is worth

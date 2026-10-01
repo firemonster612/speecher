@@ -645,9 +645,9 @@ void SettingsPageSet::applyCapabilities()
     }
 }
 
-QStringList SettingsPageSet::searchPanes(const QString &query) const
+QList<SearchMatch> SettingsPageSet::searchSettings(const QString &query) const
 {
-    return speecher::searchPanes(m_schema, query, m_draft, capabilities());
+    return speecher::searchSettings(m_schema, query, m_draft, capabilities());
 }
 
 } // namespace speecher

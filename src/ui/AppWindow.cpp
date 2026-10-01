@@ -41,7 +41,7 @@
 #include <QStyledItemDelegate>
 #include <QStandardPaths>
 #include <QStyle>
-#include <QTabWidget>
+#include <QTabBar>
 #include <QTextDocument>
 #include <QTimer>
 #include <QToolButton>
@@ -69,6 +69,48 @@ const QString kHomePane = QStringLiteral("home");
 // The id a sidebar row carries. Spacer rows between runs carry none.
 constexpr int kPaneRole = Qt::UserRole;
 
+// Keeps an Alternatives pane's tab bar over the card column of the view below
+// it, wherever that view's page centres its column.
+class TabBarColumn final : public QObject {
+public:
+    TabBarColumn(QWidget *bar, QStackedWidget *views)
+        : QObject(bar)
+        , m_bar(bar)
+        , m_views(views)
+    {
+        for (int index = 0; index < views->count(); ++index) {
+            qobject_cast<QScrollArea *>(views->widget(index))->widget()->installEventFilter(this);
+        }
+        connect(views, &QStackedWidget::currentChanged, this, &TabBarColumn::follow);
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Move || event->type() == QEvent::Resize) {
+            follow();
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    void follow()
+    {
+        // The stack empties as the window is torn down.
+        auto *page = qobject_cast<QScrollArea *>(m_views->currentWidget());
+        if (!page) {
+            return;
+        }
+        QWidget *column = page->widget();
+        const QMargins inner = column->layout()->contentsMargins();
+        const int left = column->mapTo(m_views, QPoint(inner.left(), 0)).x();
+        const int right = column->mapTo(m_views, QPoint(column->width() - inner.right(), 0)).x();
+        m_bar->layout()->setContentsMargins(left, 0, m_views->width() - right, 0);
+    }
+
+    QWidget *m_bar;
+    QStackedWidget *m_views;
+};
+
 QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
 {
     auto *scroll = new QScrollArea(parent);
@@ -93,8 +135,9 @@ QIcon paneIcon(const QString &iconId)
         {QStringLiteral("localModels"), {QStringLiteral("computer"), QStringLiteral("computer-laptop")}},
         {QStringLiteral("transcribe"), {QStringLiteral("view-media-lyrics"), QStringLiteral("document-import")}},
         {QStringLiteral("output"), {QStringLiteral("edit-paste"), QStringLiteral("edit-copy")}},
+        // Breeze's spelling icon underlines in green, so it is the last resort.
         {QStringLiteral("vocabulary"),
-         {QStringLiteral("tools-check-spelling"), QStringLiteral("accessories-dictionary")}},
+         {QStringLiteral("font"), QStringLiteral("tools-check-spelling")}},
         {QStringLiteral("accounts"), {QStringLiteral("user-identity"), QStringLiteral("im-user")}},
     };
     for (const QString &name : names.value(iconId)) {
@@ -206,7 +249,7 @@ void AppWindow::showPage(const QString &pageId)
         showWhatsNew();
         return;
     }
-    if (QTabWidget *tabs = m_viewTabs.value(page.pane)) {
+    if (QTabBar *tabs = m_viewTabs.value(page.pane)) {
         const auto *pane = m_pages->schema().pane(page.pane);
         for (int index = 0; index < pane->groups.size(); ++index) {
             if (pane->groups.at(index).view == page.view) {
@@ -215,6 +258,28 @@ void AppWindow::showPage(const QString &pageId)
         }
     }
     selectPane(page.pane);
+}
+
+void AppWindow::showSearchMatch(const SearchMatch &match)
+{
+    showPage(match.pane);
+    if (match.rows.isEmpty()) {
+        return;
+    }
+    const QString &rowId = match.rows.first();
+    QString pageId = match.pane;
+    const SettingsPane *pane = m_pages->schema().pane(match.pane);
+    if (pane->layout == PaneLayout::Alternatives) {
+        for (const SettingsPaneGroup &group : pane->groups) {
+            if (group.rows.contains(rowId)) {
+                pageId = match.pane + QLatin1Char(':') + group.view;
+                showPage(pageId);
+            }
+        }
+    }
+    if (SchemaSettingsPage *page = m_pages->page(pageId)) {
+        page->revealRow(rowId);
+    }
 }
 
 QString AppWindow::currentPane() const
@@ -438,19 +503,31 @@ void AppWindow::buildPages()
         } else if (pane.layout == PaneLayout::Transcribe) {
             widget = m_transcribe;
         } else if (pane.layout == PaneLayout::Alternatives) {
-            auto *tabs = new QTabWidget(this);
+            // The tab bar sits over the views' card column, not at the pane's
+            // edge, so it lines up with every other page's cards.
+            auto *content = new QWidget(this);
+            auto *layout = new QVBoxLayout(content);
+            layout->setContentsMargins(0, style()->pixelMetric(QStyle::PM_LayoutTopMargin), 0, 0);
+            layout->setSpacing(0);
+            auto *barHost = new QWidget(content);
+            auto *barLayout = new QHBoxLayout(barHost);
+            auto *tabs = new QTabBar(barHost);
             tabs->setDocumentMode(true);
+            tabs->setExpanding(false);
+            barLayout->addWidget(tabs);
+            barLayout->addStretch();
+            auto *views = new QStackedWidget(content);
             for (const SettingsPaneGroup &group : pane.groups) {
                 // A tab reads & as a mnemonic marker ("Replacements & snippets").
                 QString title = group.title;
-                tabs->addTab(m_pages->page(pane.id + QLatin1Char(':') + group.view),
-                             title.replace(QLatin1Char('&'), QStringLiteral("&&")));
+                tabs->addTab(title.replace(QLatin1Char('&'), QStringLiteral("&&")));
+                views->addWidget(m_pages->page(pane.id + QLatin1Char(':') + group.view));
             }
+            connect(tabs, &QTabBar::currentChanged, views, &QStackedWidget::setCurrentIndex);
+            new TabBarColumn(barHost, views);
             m_viewTabs.insert(pane.id, tabs);
-            auto *content = new QWidget(this);
-            auto *layout = new QVBoxLayout(content);
-            settings::applyPageMargins(layout);
-            layout->addWidget(tabs, 1);
+            layout->addWidget(barHost);
+            layout->addWidget(views, 1);
             widget = content;
         } else {
             widget = m_pages->page(pane.id);
@@ -486,7 +563,7 @@ void AppWindow::buildSidebarShell()
                                      settings::relatedSpacing());
     auto *search = new QLineEdit(searchContainer);
     search->setObjectName(QStringLiteral("appSearch"));
-    search->setPlaceholderText(QStringLiteral("Search…"));
+    search->setPlaceholderText(QStringLiteral("Search settings…"));
     search->setClearButtonEnabled(true);
     search->addAction(QIcon::fromTheme(
                           QStringLiteral("search"),
@@ -692,7 +769,19 @@ void AppWindow::buildSidebarShell()
     // the same as any other way of opening it.
     connect(m_navigation, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
         const QString pane = item ? item->data(kPaneRole).toString() : QString();
-        if (!pane.isEmpty() && pane != currentPane()) {
+        if (pane.isEmpty()) {
+            return;
+        }
+        // A search hit opens at the row that matched.
+        if (!m_query.isEmpty()) {
+            for (const SearchMatch &match : m_pages->searchSettings(m_query)) {
+                if (match.pane == pane) {
+                    showSearchMatch(match);
+                    return;
+                }
+            }
+        }
+        if (pane != currentPane()) {
             showPage(pane);
         }
     });
@@ -711,10 +800,15 @@ void AppWindow::buildSidebarShell()
         rebuildSidebar();
     });
     connect(search, &QLineEdit::returnPressed, this, [this] {
-        const QStringList hits = m_pages->searchPanes(m_query);
+        const QList<SearchMatch> hits = m_pages->searchSettings(m_query);
         if (!hits.isEmpty()) {
-            showPage(hits.first());
+            showSearchMatch(hits.first());
         }
+    });
+    auto *find = new QShortcut(QKeySequence::Find, this);
+    connect(find, &QShortcut::activated, search, [search] {
+        search->setFocus(Qt::ShortcutFocusReason);
+        search->selectAll();
     });
     rebuildSidebar();
     showPage(kHomePane);
@@ -849,8 +943,14 @@ void AppWindow::rebuildSidebar()
     };
     m_sidebarListsWhatsNew = sidebarListsWhatsNew();
     if (!m_query.isEmpty()) {
-        for (const QString &id : m_pages->searchPanes(m_query)) {
-            addPane(id);
+        const QList<SearchMatch> hits = m_pages->searchSettings(m_query);
+        for (const SearchMatch &hit : hits) {
+            addPane(hit.pane);
+        }
+        if (hits.isEmpty()) {
+            auto *none = new QListWidgetItem(noSettingsMatchText(), m_navigation);
+            none->setFlags(Qt::NoItemFlags);
+            none->setSizeHint(QSize(0, 32));
         }
         return;
     }

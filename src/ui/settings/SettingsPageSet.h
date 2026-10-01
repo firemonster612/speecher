@@ -46,7 +46,7 @@ public:
     // Transcribe) and for one this build does not have.
     SchemaSettingsPage *page(const QString &id) const;
     // The panes a sidebar search shows, with rows as the pages now show them.
-    QStringList searchPanes(const QString &query) const;
+    QList<SearchMatch> searchSettings(const QString &query) const;
 
     void load();
     void loadBeforeShow();
