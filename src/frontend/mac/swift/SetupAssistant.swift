@@ -1559,6 +1559,7 @@ private struct MicrophoneStep: View {
                 .foregroundStyle(.green)
         case .notDetermined:
             LabeledContent {
+                // ui-lint: allow core-string (macOS-only: asks macOS for access; Windows and Linux have no request)
                 Button("Allow microphone access") { flow.requestMicrophoneAccess() }
             } label: {
                 Text("macOS has not been asked yet. Speecher only records while you dictate.")
@@ -1587,6 +1588,7 @@ private struct AccessibilityStep: View {
                 if !model.accessibilityEnabled {
                     Button(SpeecherBridge.accessibilityGrantActionLabel) { flow.requestAccessibility() }
                     if flow.accessibilityAsked {
+                        // ui-lint: allow core-string (macOS-only: the Accessibility grant's manual fallback)
                         Button("Open Privacy & Security") {
                             if let url = SpeecherErrorAction(fix: .accessibilityPermission, pageId: "").systemSettingsURL {
                                 NSWorkspace.shared.open(url)
