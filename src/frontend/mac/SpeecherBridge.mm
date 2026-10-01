@@ -271,7 +271,10 @@ struct SchemaState {
     // front end has painted and asked for them.
     bool expensiveReady = false;
     // The microphones the system lists, which say whether there is one at all.
-    std::function<QList<RowOption>()> audioInputDevices;
+    // Listed again only by refreshAudioInputs, not per snapshot: a snapshot is
+    // taken after every edit. The device row reads the same cached list.
+    std::function<QList<RowOption>()> listAudioInputs;
+    std::shared_ptr<QList<RowOption>> audioInputs;
 };
 
 struct BridgeState {
@@ -1157,7 +1160,8 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (NSArray<RowOptionModel *> *)bridgedOptions:(const QList<RowOption> &)options;
 - (void)setTargetAccessibility:(BOOL)available;
 - (void)setLaunchAtLoginAccepted:(BOOL)accepted;
-- (void)setAudioInputDevices:(std::function<QList<RowOption>()>)devices;
+- (void)setAudioInputLister:(std::function<QList<RowOption>()>)lister
+                       cache:(std::shared_ptr<QList<RowOption>>)cache;
 // The settings as they stand, including edits not yet committed, which is what
 // the credential row has to read the chosen auth mode from.
 - (const AppSettings &)draft;
@@ -1310,11 +1314,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 - (NSArray<SettingsPageModel *> *)pages
 {
-    // Asked again on every read, as the device row's own choices are, so a
-    // microphone plugged in while the window is open lifts the gate.
-    if (_state->expensiveReady && _state->audioInputDevices) {
-        _state->capabilities.audioInput = !_state->audioInputDevices().isEmpty();
-    }
     NSMutableArray<SettingsPageModel *> *pages = [NSMutableArray array];
     for (const speecher::SettingsPage &page : _state->schema.pages) {
         NSMutableArray<SettingsSectionModel *> *sections = [NSMutableArray array];
@@ -1428,6 +1427,16 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (void)loadExpensiveRows
 {
     _state->expensiveReady = YES;
+    [self refreshAudioInputs];
+}
+
+- (void)refreshAudioInputs
+{
+    if (!_state->expensiveReady || !_state->listAudioInputs) {
+        return;
+    }
+    *_state->audioInputs = _state->listAudioInputs();
+    _state->capabilities.audioInput = !_state->audioInputs->isEmpty();
 }
 
 - (void)setTargetAccessibility:(BOOL)available
@@ -1440,9 +1449,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     _state->capabilities.launchAtLoginAccepted = accepted;
 }
 
-- (void)setAudioInputDevices:(std::function<QList<RowOption>()>)devices
+- (void)setAudioInputLister:(std::function<QList<RowOption>()>)lister
+                       cache:(std::shared_ptr<QList<RowOption>>)cache
 {
-    _state->audioInputDevices = std::move(devices);
+    _state->listAudioInputs = std::move(lister);
+    _state->audioInputs = std::move(cache);
 }
 
 - (NSArray<NSString *> *)problemsWith:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
@@ -1591,13 +1602,17 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     context.liveFactsForDraft = [setup = controller->localSetup()](const AppSettings &draft) {
         return setup->liveFacts(draft);
     };
+    // The device row offers the list the schema model last enumerated.
+    const auto listAudioInputs = context.audioInputDevices;
+    const auto audioInputs = std::make_shared<QList<RowOption>>();
+    context.audioInputDevices = [audioInputs] { return *audioInputs; };
     speecher::SettingsSchema schema = speecher::buildSettingsSchema(context);
     speecher::bindCheckForUpdatesRow(schema, controller->updateBanner());
     _settingsSchema = [[SettingsSchemaModel alloc]
         initWithStore:controller->settings()
                schema:schema
          capabilities:capabilities];
-    [_settingsSchema setAudioInputDevices:context.audioInputDevices];
+    [_settingsSchema setAudioInputLister:listAudioInputs cache:audioInputs];
     __weak SpeecherBridge *weakSelf = self;
     BridgeState *state = _state;
     const QString credentialsPath = controller->settings()->claudeCredentialsPath();

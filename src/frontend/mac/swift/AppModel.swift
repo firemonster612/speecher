@@ -106,6 +106,7 @@ final class AppModel: ObservableObject {
     /// Whether the slow rows have been asked for once, after which asking again
     /// costs nothing new.
     private var deferredLoaded = false
+    private var keyWindowObserver: NSObjectProtocol?
 
     var accessibilitySupported: Bool { bridge.accessibilitySupported }
     var shortcutSupported: Bool { bridge.shortcutSupported }
@@ -191,6 +192,14 @@ final class AppModel: ObservableObject {
             }
         }
         refreshTranscriptDetail()
+        // A snapshot reuses the last device list, so a microphone plugged in
+        // while Speecher was in the background is listed when one of its
+        // windows comes forward.
+        keyWindowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshAudioInputs() }
+        }
     }
 
     /// Re-reads Home's numbers. Home calls it when it appears, so a day that
@@ -294,6 +303,11 @@ final class AppModel: ObservableObject {
         // Only the keyring can stop to ask for an unlock, so it waits another
         // turn rather than holding up the other two.
         DispatchQueue.main.async { [weak self] in self?.loadApiKey() }
+    }
+
+    private func refreshAudioInputs() {
+        bridge.settingsSchema.refreshAudioInputs()
+        pages = bridge.settingsSchema.pages
     }
 
     func reloadSettingsDraft() {

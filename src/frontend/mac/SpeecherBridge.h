@@ -217,6 +217,9 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // Lets the rows whose choices are slow to gather — a device enumeration —
 // offer them from now on. Called once the window has painted.
 - (void)loadExpensiveRows;
+// Lists the microphones again, for the device row and its gate. Once loaded,
+// a snapshot reuses the last list rather than enumerating devices itself.
+- (void)refreshAudioInputs;
 // Empty when these records are consistent; otherwise one message per problem.
 - (NSArray<NSString *> *)problemsWith:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId;
 // What deleting the custom Writing Profile `profileId` changes in the draft,
