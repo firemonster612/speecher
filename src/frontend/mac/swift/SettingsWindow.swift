@@ -8,10 +8,13 @@ import SwiftUI
 struct RootView: View {
     @ObservedObject var model: AppModel
     @State private var query = ""
+    /// The hit picked in the current search. A search starts with none, so
+    /// picking the pane already open still reaches the row that matched.
+    @State private var searchPick: String?
 
     var body: some View {
         NavigationSplitView {
-            SidebarList(model: model, query: $query)
+            SidebarList(model: model, query: $query, searchPick: $searchPick)
                 // A settings sidebar's width on macOS. Left to itself the split
                 // view picks one narrow enough to clip a pane name; an ideal
                 // rather than a lock, because the row height and glyph size
@@ -25,7 +28,9 @@ struct RootView: View {
         .searchable(text: $query, placement: .sidebar, prompt: "Search")
         // Return opens the first hit at the row that matched.
         .onSubmit(of: .search) {
-            if let first = model.search(query).first { model.showPage(first.pane.id, row: first.row) }
+            guard let first = model.search(query).first else { return }
+            searchPick = first.pane.id
+            model.showPage(first.pane.id, row: first.row)
         }
         .toolbar(removing: .sidebarToggle)
         .toolbar(removing: .title)
@@ -177,9 +182,7 @@ struct WhatsNewStrip: View {
 struct SidebarList: View {
     @ObservedObject var model: AppModel
     @Binding var query: String
-    /// The hit picked in the current search. A search starts with none, so
-    /// picking the pane already open still reaches the row that matched.
-    @State private var searchPick: String?
+    @Binding var searchPick: String?
 
     var body: some View {
         // Every pick goes through showPage, so choosing What's New here is the
@@ -218,7 +221,16 @@ struct SidebarList: View {
             } else {
                 // A search shows its hits as one flat list, not under the groups
                 // they came from, and opens each at the row that matched.
-                ForEach(model.search(query)) { row($0.pane) }
+                ForEach(model.search(query)) { hit in
+                    row(hit.pane)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        // A click on the hit already picked changes no
+                        // selection, yet should still bring its row back.
+                        .simultaneousGesture(TapGesture().onEnded {
+                            model.showPage(hit.pane.id, row: hit.row)
+                        })
+                }
             }
         }
         .listStyle(.sidebar)
