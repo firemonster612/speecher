@@ -56,6 +56,10 @@ QtFrontEnd::QtFrontEnd(ApplicationController *controller, QObject *parent)
             &QtFrontEnd::refreshUpdateChip);
     connect(m_popup, &TranscriberPopup::updateRequested,
             controller->updateBanner(), &UpdateBanner::runAction);
+    connect(m_popup, &TranscriberPopup::updateLaterRequested,
+            controller->updateBanner(), &UpdateBanner::later);
+    connect(m_popup, &TranscriberPopup::updateDismissRequested,
+            controller->updateBanner(), &UpdateBanner::dismiss);
     connect(controller, &ApplicationController::whatsNewChanged,
             this, &QtFrontEnd::refreshWhatsNewChip);
     connect(m_popup, &TranscriberPopup::whatsNewRequested, this, [this] {
@@ -309,9 +313,26 @@ bool QtFrontEnd::clickGrabButtons(QWidget *window)
 
 void QtFrontEnd::showDictationError(const QString &message, const PopupErrorAction &fix)
 {
-    Q_UNUSED(fix);
     m_popup->showPopup(0);
-    m_popup->showErrorMessage(message);
+    showPopupError(message, fix);
+}
+
+// Linux has no system permission panels to open, so only a settings page
+// becomes a button.
+void QtFrontEnd::showPopupError(const QString &message, const PopupErrorAction &fix)
+{
+    m_errorFix = fix;
+    m_popup->showErrorMessage(message,
+                              fix.fix == ErrorFix::SettingsPage ? popupErrorActionLabel(fix) : QString());
+}
+
+void QtFrontEnd::applyErrorFix()
+{
+    if (m_errorFix.fix != ErrorFix::SettingsPage) {
+        return;
+    }
+    showMainWindow();
+    m_appWindow->showPage(m_errorFix.pageId);
 }
 
 void QtFrontEnd::alert()
@@ -387,7 +408,8 @@ void QtFrontEnd::wireSessionToPopup()
     DictationSession *session = m_controller->session();
     connect(session, &DictationSession::previewDisplayChanged, m_popup, &TranscriberPopup::setPreview);
     connect(session, &DictationSession::audioLevelChanged, m_popup, &TranscriberPopup::setLevel);
-    connect(session, &DictationSession::popupStatusChanged, m_popup, &TranscriberPopup::setStatus);
+    connect(session, &DictationSession::stateChanged, m_popup,
+            [this, session] { m_popup->setSessionState(session->state()); });
     connect(session, &DictationSession::popupShowRequested, m_popup, &TranscriberPopup::showPopup);
     connect(m_popup, &TranscriberPopup::popupPresented, session, &DictationSession::popupPresented);
     connect(session, &DictationSession::popupHideRequested, m_popup, &TranscriberPopup::hide);
@@ -397,7 +419,8 @@ void QtFrontEnd::wireSessionToPopup()
     connect(session, &DictationSession::popupOAuthRefreshRequested, m_popup, &TranscriberPopup::showOAuthRefreshIndicator);
     connect(session, &DictationSession::popupListeningIndicatorRequested, m_popup, &TranscriberPopup::showListeningIndicator);
     connect(session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
-    connect(session, &DictationSession::popupErrorRequested, m_popup, &TranscriberPopup::showErrorMessage);
+    connect(session, &DictationSession::popupErrorRequested, this, &QtFrontEnd::showPopupError);
+    connect(m_popup, &TranscriberPopup::errorActionRequested, this, &QtFrontEnd::applyErrorFix);
     connect(m_popup, &TranscriberPopup::errorDismissed, session, [session] {
         if (session->state() == DictationState::Error) {
             session->stopListening();

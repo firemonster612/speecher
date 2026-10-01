@@ -1,6 +1,7 @@
 #pragma once
 
 #include "frontend/qt/QtPopupSurface.h"
+#include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"
 
 #include <QLabel>
@@ -31,7 +32,7 @@ public:
     QSize sizeHint() const override;
 
 public slots:
-    void setStatus(const QString &status);
+    void setSessionState(DictationState state);
     void setPreview(const QString &preview);
     void setRefinementPreview(const QString &preview);
     void hidePreview();
@@ -41,7 +42,8 @@ public slots:
     void showOAuthRefreshIndicator();
     void showListeningIndicator();
     void showMessage(const QString &message, PopupOutcome outcome);
-    void showErrorMessage(const QString &message);
+    // actionLabel names the one fix the error offers; empty for none.
+    void showErrorMessage(const QString &message, const QString &actionLabel = QString());
     void showPopup(quint64 generation);
     // A banner is a capsule holding a plain message and, when there is
     // something to do, an explicitly labelled button ("Install and restart").
@@ -50,13 +52,17 @@ public slots:
 
 signals:
     void errorDismissed();
+    void errorActionRequested();
     void popupPresented(quint64 generation);
     void updateRequested();
+    void updateLaterRequested();
+    void updateDismissRequested();
     void whatsNewRequested();
     void whatsNewDismissed();
 
 protected:
     void changeEvent(QEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void hideEvent(QHideEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 
@@ -77,12 +83,16 @@ private:
     QLabel *m_preview = nullptr;
     QLabel *m_errorIcon = nullptr;
     QPushButton *m_errorDismiss = nullptr;
+    QPushButton *m_errorAction = nullptr;
     QProgressBar *m_errorDismissProgress = nullptr;
     QPropertyAnimation *m_errorDismissAnimation = nullptr;
     WaveformWidget *m_waveform = nullptr;
     QFrame *m_updateBanner = nullptr;
     QLabel *m_updateBannerText = nullptr;
+    QLabel *m_updateBannerIcon = nullptr;
     QPushButton *m_updateBannerAction = nullptr;
+    QPushButton *m_updateBannerLater = nullptr;
+    QPushButton *m_updateBannerDismiss = nullptr;
     QFrame *m_whatsNewRow = nullptr;
     QLabel *m_whatsNewText = nullptr;
     QPushButton *m_whatsNewAction = nullptr;

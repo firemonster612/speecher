@@ -254,9 +254,9 @@ void WaveformWidget::paintStatus(QPainter &painter, const QColor &bar)
     painter.setFont(font);
     const QRect textRect = rect().adjusted(12, 0, -12, 0);
 
-    QColor dim = bar;
-    dim.setAlphaF(0.38f);
-    painter.setPen(dim);
+    // The palette's own secondary text colour, so the words stay readable
+    // between passes of the highlight.
+    painter.setPen(QApplication::palette().color(QPalette::PlaceholderText));
     painter.drawText(textRect, Qt::AlignCenter, m_message);
 
     // A soft highlight band sweeps the text left to right and loops, so the
