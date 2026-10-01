@@ -137,8 +137,10 @@ TextBlock strongTextBlock(const QString &value)
 TextBlock secondaryTextBlock(const QString &value)
 {
     TextBlock text = textBlock(value);
-    text.FontSize(12);
-    text.Opacity(0.72);
+    text.Style(Application::Current().Resources()
+                   .Lookup(box_value(L"CaptionTextBlockStyle"))
+                   .as<Style>());
+    win::followSecondaryForeground(text);
     return text;
 }
 
@@ -384,6 +386,19 @@ StackPanel settingRow(const QString &label, const Control &control)
     return row;
 }
 
+// The settings row that holds a refinement provider's Speed choice; empty for
+// a provider without one.
+QString speedRowFor(const QString &refinementProvider)
+{
+    if (refinementProvider == QStringLiteral("openai")) {
+        return QStringLiteral("openAiSpeed");
+    }
+    if (refinementProvider == QStringLiteral("anthropic")) {
+        return QStringLiteral("anthropicFastMode");
+    }
+    return {};
+}
+
 // A provider's display name, by id, or the id itself when the registry has no
 // such provider.
 QString providerLabel(const QList<ProviderDescriptor> &providers, const QString &id)
@@ -418,7 +433,9 @@ void showProviderStats(const StackPanel &panel, const QList<ProviderDescriptor> 
             row.ColumnDefinitions().Append(valueColumn);
             row.Children().Append(secondaryTextBlock(stat.label));
             TextBlock value = textBlock(stat.value);
-            value.FontSize(12);
+            value.Style(Application::Current().Resources()
+                            .Lookup(box_value(L"CaptionTextBlockStyle"))
+                            .as<Style>());
             Grid::SetColumn(value, 1);
             row.Children().Append(value);
             appendRow(panel, row);
@@ -453,6 +470,10 @@ struct SetupWindow::Native {
         if (controller->providerRegistry()->speechProvider(kLocal)) {
             localSpeech = controller->localSetup();
         }
+        paneHost.controller = controller;
+        paneHost.alive = alive;
+        paneHost.xamlRoot = [this] { return content ? content.XamlRoot() : XamlRoot{nullptr}; };
+        paneHost.refresh = [this] { shortcutChanged(); };
         microphone = controller->platform()->createAudioInput(controller->settings(), q);
         QObject::connect(microphone, &AudioInput::levelChanged, q, [this](float value) {
             if (microphoneLevel) {
@@ -487,6 +508,7 @@ struct SetupWindow::Native {
 
     ~Native()
     {
+        *alive = false;
         microphone->stop();
         if (window) {
             tearingDown = true;
@@ -504,7 +526,8 @@ struct SetupWindow::Native {
         window.ExtendsContentIntoTitleBar(true);
         window.Closed([this](const auto &, const auto &) {
             clearPage();
-            resumeShortcut();
+            // A Global Shortcut dialog left open gives the hotkey back.
+            win::ShortcutRecorder::setRecording(paneHost, false);
 
             window = nullptr;
             content = nullptr;
@@ -517,7 +540,7 @@ struct SetupWindow::Native {
         Grid root;
         root.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
         // Rating badges pick their brushes by this window's theme.
-        themeHost.effectiveTheme = [root] { return root.ActualTheme(); };
+        paneHost.effectiveTheme = [root] { return root.ActualTheme(); };
         RowDefinition titleRow;
         titleRow.Height({48, GridUnitType::Pixel});
         RowDefinition contentRow;
@@ -787,7 +810,6 @@ struct SetupWindow::Native {
         microphoneLevel = nullptr;
         microphoneStatus = nullptr;
         microphoneProblem = nullptr;
-        shortcutStatus = nullptr;
         readyBody = nullptr;
         readyDownload = {};
         localCard = {};
@@ -807,13 +829,6 @@ struct SetupWindow::Native {
         }
         clearPage();
         pageIndex = index;
-        // The recorder page needs the bound chord delivered as a key event,
-        // which RegisterHotKey would otherwise consume system-wide.
-        if (index == shortcutPage()) {
-            suspendShortcut();
-        } else {
-            resumeShortcut();
-        }
         content.Children().Clear();
         const QString id = setupSteps().at(index).id;
         if (id == QStringLiteral("welcome")) showWelcome();
@@ -867,7 +882,7 @@ struct SetupWindow::Native {
         column.Children().Append(header);
         if (!body.isEmpty()) {
             TextBlock description = textBlock(body);
-            description.Opacity(0.72);
+            win::followSecondaryForeground(description);
             column.Children().Append(description);
         }
         return column;
@@ -1101,7 +1116,7 @@ struct SetupWindow::Native {
                 row.Children().Append(cell);
             }
             // After the cells, so they keep their indices.
-            Grid rating = win::ratingBadge(model.rating, themeHost);
+            Grid rating = win::ratingBadge(model.rating, paneHost);
             Grid::SetRow(rating, 1);
             row.Children().Append(rating);
             AutomationProperties::SetName(row, win::hs(model.name));
@@ -1147,7 +1162,7 @@ struct SetupWindow::Native {
         card.caption.Text(win::hs(
             localModelText(state.suggested ? LocalModelText::Suggested : LocalModelText::YourChoice)));
         card.name.Text(win::hs(model.name));
-        card.rating.Child(win::ratingBadge(model.rating, themeHost));
+        card.rating.Child(win::ratingBadge(model.rating, paneHost));
         card.facts.Text(win::hs(state.cardFacts));
         card.download.IsEnabled(!state.tooLarge);
         card.download.Content(box_value(win::hs(state.tooLarge ? localModelText(LocalModelText::TooLarge)
@@ -1558,10 +1573,7 @@ struct SetupWindow::Native {
         microphoneProblem.IsOpen(false);
         Button openSettings;
         openSettings.Content(box_value(win::hs(popupErrorActionLabel({ErrorFix::MicrophonePermission}))));
-        openSettings.Click([](const auto &, const auto &) {
-            ShellExecuteW(nullptr, L"open", L"ms-settings:privacy-microphone",
-                          nullptr, nullptr, SW_SHOWNORMAL);
-        });
+        openSettings.Click([](const auto &, const auto &) { win::openMicrophonePrivacySettings(); });
         microphoneProblem.ActionButton(openSettings);
         panel.Children().Append(settingRow(setupSchemaRow(QStringLiteral("audioDevice")).label, device));
         panel.Children().Append(settingRow(inputLevelLabel(), microphoneLevel));
@@ -1712,30 +1724,32 @@ struct SetupWindow::Native {
         panel.Children().Append(makeEndpointForm());
         StackPanel stats;
         panel.Children().Append(stats);
-        CheckBox fast = wrappingCheckBox(setupSchemaRow(QStringLiteral("anthropicFastMode")).label);
-        panel.Children().Append(fast);
-        // OpenAI's Standard, Fast or Ultrafast, in place of the Fast mode box.
+        // The provider's Speed settings row as a choice: OpenAI's Standard,
+        // Fast or Ultrafast, Anthropic's Standard or Fast.
         ComboBox speed;
         speed.MinWidth(240);
-        ToolTipService::SetToolTip(speed, box_value(win::hs(fastModeTooltip(QStringLiteral("openai")))));
-        StackPanel speedRow = settingRow(QStringLiteral("Speed"), speed);
-        speedRow.Children().Append(secondaryTextBlock(openAiSpeedHelp()));
+        TextBlock speedHelp = secondaryTextBlock(QString());
+        StackPanel speedRow = settingRow(setupSchemaRow(QStringLiteral("openAiSpeed")).label, speed);
+        speedRow.Children().Append(speedHelp);
         panel.Children().Append(speedRow);
 
-        refinementRefresh = [this, options, skip, fast, speed, speedRow, stats, warning] {
+        refinementRefresh = [this, options, skip, speed, speedHelp, speedRow, stats, warning] {
             const QString id = controller->settings()->refinementProvider();
             const bool ownModel = id == kLocal || id == kEndpoint;
             skip.IsChecked(id == kNone);
             showProviderStats(stats, controller->providerRegistry()->refinementProviders(),
                               ownModel ? QString() : id);
-            fast.Visibility(id == QStringLiteral("anthropic") ? Visibility::Visible : Visibility::Collapsed);
-            speedRow.Visibility(id == QStringLiteral("openai") ? Visibility::Visible : Visibility::Collapsed);
-            if (id == QStringLiteral("openai")) {
-                const QString model = controller->settings()->openAiModel();
-                const QString current = controller->settings()->openAiSpeed();
+            const QString speedRowId = speedRowFor(id);
+            speedRow.Visibility(speedRowId.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
+            if (!speedRowId.isEmpty()) {
+                const SettingsRow &speedSetting = setupSchemaRow(speedRowId);
+                const AppSettings settings = controller->settings()->snapshot();
+                const QString current = speedSetting.value(settings).toString();
+                ToolTipService::SetToolTip(speed, box_value(win::hs(speedSetting.tooltip)));
+                speedHelp.Text(win::hs(speedSetting.help));
                 speed.Items().Clear();
                 int selected = -1;
-                for (const RowOption &option : openAiSpeedOptions(model)) {
+                for (const RowOption &option : speedSetting.options(settings)) {
                     ComboBoxItem item;
                     item.Content(box_value(win::hs(option.label)));
                     item.Tag(box_value(win::hs(option.id)));
@@ -1749,8 +1763,6 @@ struct SetupWindow::Native {
                     speed.Items().Append(item);
                 }
                 speed.SelectedIndex(selected);
-            } else if (id == QStringLiteral("anthropic")) {
-                fast.IsChecked(controller->settings()->anthropicFastMode());
             }
             setShown(runner.root, id == kLocal);
             setShown(endpointForm.root, id == kEndpoint);
@@ -1792,19 +1804,24 @@ struct SetupWindow::Native {
                 }
             }
         });
-        fast.Click([this, fast](const auto &, const auto &) {
-            controller->settings()->setAnthropicFastMode(fast.IsChecked().Value());
-        });
         // Refilling the list selects the stored speed again, which WinUI can
         // report late; comparing with the stored speed keeps that from saving.
+        // The choice goes through the schema row, which knows how each
+        // provider stores it.
         speed.SelectionChanged([this, speed](const auto &, const auto &) {
             const auto item = speed.SelectedItem();
-            if (!item) {
+            const QString speedRowId = speedRowFor(controller->settings()->refinementProvider());
+            if (!item || speedRowId.isEmpty()) {
                 return;
             }
             const QString chosen = win::qs(unbox_value<hstring>(item.as<ComboBoxItem>().Tag()));
-            if (chosen != controller->settings()->openAiSpeed()) {
-                controller->settings()->setOpenAiSpeed(chosen);
+            AppSettings settings = controller->settings()->snapshot();
+            setupSchemaRow(speedRowId).apply(settings, chosen);
+            if (settings.refinement.openAiSpeed != controller->settings()->openAiSpeed()) {
+                controller->settings()->setOpenAiSpeed(settings.refinement.openAiSpeed);
+            }
+            if (settings.refinement.anthropicFastMode != controller->settings()->anthropicFastMode()) {
+                controller->settings()->setAnthropicFastMode(settings.refinement.anthropicFastMode);
             }
         });
         LocalSetup *local = controller->localSetup();
@@ -2155,156 +2172,25 @@ struct SetupWindow::Native {
     void showShortcut()
     {
         StackPanel panel = page(QStringLiteral("shortcut"));
-        TextBox recorder;
-        recorder.IsReadOnly(true);
-        recorder.MinWidth(200);
-        recorder.PlaceholderText(L"Press a key or key combination…");
-        const ShortcutBinding current = controller->globalShortcut();
-        recorder.Text(hstring(
-            (current.isEmpty() ? ShortcutBinding(WinGlobalShortcutBinder::defaultShortcut())
-                               : current)
-                .displayText()
-                .toStdWString()));
-        shortcutStatus = textBlock(shortcutProblem.isEmpty()
-                                       ? QStringLiteral("Press a key combination, or a single key such as "
-                                                        "Right Alt or F13. The default is Ctrl+Alt+D.")
-                                       : shortcutProblem);
-        shortcutPendingModifier = 0;
-
-        // The physical key, not the layout's meaning of it: the scancode plus
-        // the extended byte is the vocabulary's win column, so bare modifiers
-        // record and left is told from right. A key that also types still
-        // saves; the status line carries the warning.
-        const auto commitSingleKey = [this, recorder](int scanCode) {
-            const PhysicalKey *key = physicalKeyForWin(scanCode);
-            if (!key) {
-                shortcutStatus.Text(L"That key cannot be a dictation key.");
-                return;
-            }
-            const ShortcutBinding binding =
-                ShortcutBinding::singleKey(QString::fromLatin1(key->code));
-            const QString reason = controller->globalShortcutUnsupportedBindingReason(binding);
-            if (!reason.isEmpty()) {
-                shortcutStatus.Text(hstring(reason.toStdWString()));
-                return;
-            }
-            QString error;
-            if (!controller->setGlobalShortcut(binding, &error)) {
-                shortcutStatus.Text(hstring(QStringLiteral("Could not register the shortcut: %1")
-                                                .arg(error).toStdWString()));
-                return;
-            }
-            recorder.Text(hstring(binding.displayText().toStdWString()));
-            markShortcutRegistered();
-            const QString warning = singleKeyTypingWarning(binding);
-            shortcutStatus.Text(warning.isEmpty() ? hstring(L"Single key set.")
-                                                  : hstring(warning.toStdWString()));
-        };
-        recorder.KeyDown([this, recorder, commitSingleKey](const auto &,
-                                                           const Input::KeyRoutedEventArgs &event) {
-            const int virtualKey = static_cast<int>(event.Key());
-            // This box records whenever focused, so bare Tab and Enter must
-            // keep navigating the wizard rather than silently becoming the
-            // shortcut; with a modifier held they are recordable as part of a
-            // combination below.
-            if ((virtualKey == VK_TAB || virtualKey == VK_RETURN)
-                && win::ShortcutRecorder::heldModifiers() == Qt::NoModifier) {
-                shortcutPendingModifier = 0;
-                return;
-            }
-            event.Handled(true);
-            if (virtualKey == VK_ESCAPE) {
-                shortcutPendingModifier = 0;
-                return;
-            }
-            const auto keyStatus = event.KeyStatus();
-            if (keyStatus.WasKeyDown) {
-                // A held key auto-repeats; only the first press counts.
-                return;
-            }
-            const int scanCode = int(keyStatus.ScanCode)
-                | (keyStatus.IsExtendedKey ? 0xE000 : 0);
-            if (win::ShortcutRecorder::isModifierKey(virtualKey)) {
-                // A lone modifier commits on its release below; a second one
-                // makes a modifier-only chord, which is not a valid
-                // combination. The exception is AltGr, which Windows delivers
-                // as a synthetic Left Ctrl press followed by Right Alt: that
-                // pair is one physical key, so Right Alt stays capturable on
-                // AltGr layouts.
-                const bool altGr = shortcutPendingModifier == 0x1D && scanCode == 0xE038;
-                shortcutPendingModifier =
-                    shortcutPendingModifier == 0 || altGr ? scanCode : -1;
-                return;
-            }
-            shortcutPendingModifier = -1;
-            const Qt::KeyboardModifiers modifiers = win::ShortcutRecorder::heldModifiers();
-            if (modifiers == Qt::NoModifier) {
-                commitSingleKey(scanCode);
-                return;
-            }
-            // The settings recorder's mapping, so both accept the same keys —
-            // F-keys, Space, and the active layout's punctuation included.
-            const int qtKey = win::ShortcutRecorder::qtKeyForVirtualKey(virtualKey);
-            if (qtKey == 0) {
-                shortcutStatus.Text(L"That key cannot be part of a shortcut.");
-                return;
-            }
-            const QKeySequence sequence(QKeyCombination(modifiers, static_cast<Qt::Key>(qtKey)));
-            QString error;
-            if (!controller->setGlobalShortcut(sequence, &error)) {
-                shortcutStatus.Text(hstring(QStringLiteral("Could not register the shortcut: %1")
-                                                .arg(error).toStdWString()));
-            } else {
-                recorder.Text(hstring(sequence.toString(QKeySequence::NativeText).toStdWString()));
-                shortcutStatus.Text(L"Shortcut registered.");
-                markShortcutRegistered();
-            }
-        });
-        recorder.KeyUp([this, commitSingleKey](const auto &,
-                                               const Input::KeyRoutedEventArgs &event) {
-            const int virtualKey = static_cast<int>(event.Key());
-            // Bare Tab and Enter passed through on the way down; their release
-            // must pass through as well.
-            if (virtualKey == VK_TAB || virtualKey == VK_RETURN) {
-                return;
-            }
-            event.Handled(true);
-            const auto keyStatus = event.KeyStatus();
-            const int scanCode = int(keyStatus.ScanCode)
-                | (keyStatus.IsExtendedKey ? 0xE000 : 0);
-            if (shortcutPendingModifier == scanCode) {
-                shortcutPendingModifier = 0;
-                commitSingleKey(scanCode);
-                return;
-            }
-            // Once every modifier is up an abandoned or chorded press is
-            // over; the next lone modifier can record again.
-            if (win::ShortcutRecorder::heldModifiers() == Qt::NoModifier) {
-                shortcutPendingModifier = 0;
-            }
-        });
-        // The key itself on the right of a single row, named as the Settings
-        // window names it, with whatever the recorder has to say under it.
-        StackPanel keyCard = card(panel, QString());
-        keyCard.Children().Append(
-            cardRow(glyphMark(L'\uE765'),
-                    rowText(textBlock(setupSchemaRow(QStringLiteral("globalShortcut")).label, false)),
-                    recorder));
-        keyCard.Children().Append(shortcutStatus);
+        // The Settings window's own Global Shortcut row, so both record in the
+        // same dialog. A registration Windows refused says so under it.
+        const SettingsRow &shortcutRow = setupSchemaRow(QStringLiteral("globalShortcut"));
+        win::RowSnapshot row;
+        row.id = shortcutRow.id;
+        row.label = shortcutRow.label;
+        row.help = shortcutRow.help;
+        paneHost.shortcutProblem = shortcutProblem;
+        panel.Children().Append(win::cardContainer(win::ShortcutRecorder::element(row, paneHost)));
 
         // The shortcut and its behaviour are set together; the combo shares
-        // the shortcuts/activationMode setting the General page's schema row
-        // edits rather than keeping a second copy of the value.
-        // The wording is the activationMode schema row's, so the wizard and
-        // the settings page describe each mode identically.
-        const QList<QPair<QString, QString>> modes{
-            {shortcutActivationModeName(ShortcutActivationMode::PushToTalk),
-             QStringLiteral("Push to talk — dictate only while the key is held")},
-            {shortcutActivationModeName(ShortcutActivationMode::Toggle),
-             QStringLiteral("Toggle — one press starts, the next press stops")},
-            {shortcutActivationModeName(ShortcutActivationMode::Hybrid),
-             QStringLiteral("Hybrid — a tap toggles; holding dictates until release")}};
+        // the shortcuts/activationMode setting the Dictation page's schema row
+        // edits rather than keeping a second copy of the value, and reads
+        // each mode's name and help from that row.
         const SettingsRow &modeRow = setupSchemaRow(QStringLiteral("activationMode"));
+        QList<QPair<QString, QString>> modes;
+        for (const RowOption &option : modeRow.options(controller->settings()->snapshot())) {
+            modes.append({option.id, QStringLiteral("%1 — %2").arg(option.label, option.help)});
+        }
         ComboBox mode = combo(modes,
                               shortcutActivationModeName(
                                   controller->settings()->shortcutActivationMode()));
@@ -2595,33 +2481,17 @@ struct SetupWindow::Native {
         refreshGates();
     }
 
-    void suspendShortcut()
+    // The Global Shortcut row recorded or reset a binding. A refusal leaves
+    // the gate as it was: the binding before it may still hold.
+    void shortcutChanged()
     {
-        if (shortcutSuspended) {
-            return;
-        }
-        shortcutSuspended = true;
-        controller->suspendGlobalShortcut();
-    }
-
-    void resumeShortcut()
-    {
-        if (!shortcutSuspended) {
-            return;
-        }
-        shortcutSuspended = false;
-        const QString error = controller->resumeGlobalShortcut();
-        if (error.isEmpty()) {
-            return;
-        }
-        shortcutRegistered = false;
-        shortcutProblem = error;
-        refreshGates();
-        if (shortcutStatus) {
-            shortcutStatus.Text(hstring(QStringLiteral("Could not register the shortcut: %1")
-                                            .arg(error).toStdWString()));
+        if (paneHost.shortcutProblem.isEmpty()) {
+            markShortcutRegistered();
         } else {
-            qWarning().noquote() << "Could not restore the Global Shortcut:" << error;
+            shortcutProblem = paneHost.shortcutProblem;
+        }
+        if (window && pageIndex == shortcutPage()) {
+            showPage(pageIndex);
         }
     }
 
@@ -2655,8 +2525,10 @@ struct SetupWindow::Native {
     ApplicationController *controller;
     std::function<void()> firstFrame;
     SetupWindow *setup;
-    // Only its effectiveTheme is set, for win::themeBrush.
-    win::PaneHost themeHost;
+    // What the rating badges and the Global Shortcut row need from a window.
+    win::PaneHost paneHost;
+    // The window's lifetime token, which the shortcut dialog's handler checks.
+    std::shared_ptr<bool> alive = std::make_shared<bool>(true);
     Window window{nullptr};
     StackPanel content{nullptr};
     Button skip{nullptr};
@@ -2666,7 +2538,6 @@ struct SetupWindow::Native {
     ProgressBar microphoneLevel{nullptr};
     TextBlock microphoneStatus{nullptr};
     InfoBar microphoneProblem{nullptr};
-    TextBlock shortcutStatus{nullptr};
     // The Ready page's body, redrawn in place as its re-probes land, and null
     // whenever another page is on screen.
     StackPanel readyBody{nullptr};
@@ -2765,11 +2636,6 @@ struct SetupWindow::Native {
     int pageIndex = 0;
     bool launchAtLogin;
     bool singlePage = false;
-    bool shortcutSuspended = false;
-    // The recorder's pending lone modifier: its scancode (with the extended
-    // byte) while it alone is down, 0 when none, -1 once another key joined
-    // it — a modifier-only chord must not commit on release.
-    int shortcutPendingModifier = 0;
 };
 
 SetupWindow::SetupWindow(ApplicationController *controller,
