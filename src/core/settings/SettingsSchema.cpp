@@ -2518,6 +2518,9 @@ QList<ProviderAccount> providerAccounts()
     ProviderAccount anthropic;
     anthropic.providerId = QStringLiteral("anthropic");
     anthropic.sectionTitle = QStringLiteral("Anthropic");
+    anthropic.note = QStringLiteral(
+        "Claude Code sign-in uses whichever account Claude Code is signed in to, in its desktop app "
+        "or with /login in the claude CLI.");
     anthropic.modelRowId = QStringLiteral("anthropicModel");
     anthropic.modelTooltip =
         QStringLiteral("Defaults to Claude Opus 5.5. Select a model or type another model ID.");
