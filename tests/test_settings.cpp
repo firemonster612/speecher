@@ -133,8 +133,8 @@ private slots:
 
     // Paste with no longer offers inserting directly or copying only. Under
     // either, a rule that said to paste only inserted, or only copied, so those
-    // rules take that method now and every target delivers as before.
-    void outputMethodMigrationKeepsEveryTargetDeliveringAsBefore()
+    // rules take that method now.
+    void outputMethodMigrationMovesPastingRulesToTheOldMethod()
     {
         using Scope = PasteRuleScope;
         using Method = PasteMethod;
