@@ -1,15 +1,21 @@
 #include "frontend/qt/CollectionRow.h"
 
+#include "ui/InlineMessage.h"
 #include "ui/InsightsCharts.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -68,6 +74,17 @@ QString optionLabel(const CollectionColumn &column, const QString &id, const App
     return id;
 }
 
+// What a record's dialog is titled after: its first text column, which names it.
+QString recordName(const CollectionDescriptor &collection, const QVariantMap &record)
+{
+    for (const CollectionColumn &column : collection.columns) {
+        if (column.kind == ColumnKind::Text) {
+            return record.value(column.id).toString();
+        }
+    }
+    return {};
+}
+
 // Buttons are named after the collection they act on, so a test can find them
 // without the descriptor spelling out a widget name.
 QString buttonObjectName(const QString &verb, const QString &collectionId)
@@ -96,6 +113,8 @@ private:
     void appendRecord(const QVariantMap &record, bool locked);
     QList<QVariantMap> lockedRecords() const;
     void importRecords();
+    // A negative row adds a record.
+    void editRecord(int row);
     void runAction(const QString &actionId);
     QList<int> selectedEditableRows() const;
     void updateButtons();
@@ -164,11 +183,6 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
             m_collection.columns.at(column).stretch ? QHeaderView::Stretch
                                                     : QHeaderView::ResizeToContents);
     }
-    for (int column = 0; column < m_collection.columns.size(); ++column) {
-        if (m_collection.columns.at(column).multiline) {
-            useMultilineEditor(m_table, column);
-        }
-    }
     m_table->verticalHeader()->hide();
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     // Extended, not single: deleting a batch of learned corrections or imported
@@ -224,28 +238,14 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
 
     connect(m_table, &QTableWidget::itemChanged, this, [this] { m_notifyChanged(); });
     connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] { updateButtons(); });
+    connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int column) {
+        // A double-click on a toggle is two clicks on its box.
+        if (m_collection.columns.at(column).kind != ColumnKind::Toggle) {
+            editRecord(row);
+        }
+    });
     if (m_add) {
-        connect(m_add, &QPushButton::clicked, this, [this] {
-            {
-                // Building the row fires itemChanged per cell, and announcing
-                // the change reloads every settings page from the round-tripped
-                // draft — which drops a still-blank record and takes the new
-                // row back before it can be typed into. Stay quiet until the
-                // first real cell edit announces it.
-                const QSignalBlocker blocker(m_table);
-                appendRecord(m_collection.blankRecord, false);
-            }
-            const int row = m_table->rowCount() - 1;
-            m_table->selectRow(row);
-            for (int column = 0; column < m_collection.columns.size(); ++column) {
-                if (m_collection.columns.at(column).kind == ColumnKind::Text) {
-                    m_table->setCurrentCell(row, column);
-                    m_table->editItem(m_table->item(row, column));
-                    break;
-                }
-            }
-            updateButtons();
-        });
+        connect(m_add, &QPushButton::clicked, this, [this] { editRecord(-1); });
     }
     connect(m_delete, &QPushButton::clicked, this, [this] {
         QList<int> rows = selectedEditableRows();
@@ -286,6 +286,19 @@ void CollectionEditor::runAction(const QString &actionId)
     m_notifyChanged();
 }
 
+void CollectionEditor::editRecord(int row)
+{
+    if (!m_editable || (row >= 0 && row < m_lockedCount)) {
+        return;
+    }
+    openRecordDialog(this, m_collection, m_settings, row < 0 ? -1 : row - m_lockedCount,
+                     [this] { return records(); },
+                     [this](const QList<QVariantMap> &records) {
+                         showRecords(lockedRecords() + records);
+                         m_notifyChanged();
+                     });
+}
+
 void CollectionEditor::importRecords()
 {
     const std::optional<QList<QVariantMap>> merged =
@@ -309,29 +322,18 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
         const QVariant value = record.value(column.id);
         const QString tooltip =
             column.recordTooltip ? column.recordTooltip(record) : column.tooltip;
-        if (column.kind == ColumnKind::Toggle && !locked && !m_editable) {
+        if (column.kind == ColumnKind::Toggle && !locked) {
             auto *item = new QTableWidgetItem;
-            item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+            Qt::ItemFlags flags = Qt::ItemIsSelectable | Qt::ItemIsEnabled;
+            if (m_editable) {
+                flags |= Qt::ItemIsUserCheckable;
+            }
+            item->setFlags(flags);
             item->setCheckState(value.toBool() ? Qt::Checked : Qt::Unchecked);
             m_table->setItem(row, index, item);
             continue;
         }
-        if (locked || !m_editable || column.kind == ColumnKind::ReadOnly) {
-            QTableWidgetItem *item = readOnlyItem(column.kind == ColumnKind::Choice
-                                                      ? optionLabel(column, value.toString(), m_settings)
-                                                      : value.toString());
-            item->setToolTip(tooltip);
-            m_table->setItem(row, index, item);
-            continue;
-        }
-        if (column.kind == ColumnKind::Toggle) {
-            auto *item = new QTableWidgetItem;
-            item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
-            item->setCheckState(value.toBool() ? Qt::Checked : Qt::Unchecked);
-            m_table->setItem(row, index, item);
-            continue;
-        }
-        if (column.kind == ColumnKind::Choice) {
+        if (column.kind == ColumnKind::Choice && !locked && m_editable) {
             auto *combo = new QComboBox(m_table);
             for (const RowOption &option : column.options(m_settings)) {
                 combo->addItem(option.label, option.id);
@@ -341,7 +343,10 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
             m_table->setCellWidget(row, index, combo);
             continue;
         }
-        auto *item = new QTableWidgetItem(value.toString());
+        // Text is edited in the record dialog, so its cells only show it.
+        QTableWidgetItem *item = readOnlyItem(column.kind == ColumnKind::Choice
+                                                  ? optionLabel(column, value.toString(), m_settings)
+                                                  : value.toString());
         item->setToolTip(tooltip);
         m_table->setItem(row, index, item);
     }
@@ -514,6 +519,112 @@ std::optional<QList<QVariantMap>> importedRecords(QWidget *parent,
 void useMultilineEditor(QTableWidget *table, int column)
 {
     table->setItemDelegateForColumn(column, new MultilineDelegate(table));
+}
+
+void openRecordDialog(QWidget *parent,
+                      const CollectionDescriptor &collection,
+                      const AppSettings &appSettings,
+                      qsizetype row,
+                      std::function<QList<QVariantMap>()> current,
+                      std::function<void(const QList<QVariantMap> &)> apply)
+{
+    const QVariantMap original = row < 0 ? collection.blankRecord : current().at(row);
+    auto *dialog = new QDialog(parent);
+    dialog->setObjectName(QStringLiteral("collectionRecordDialog"));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(row < 0 ? collection.addDialogTitle : recordName(collection, original));
+    dialog->setMinimumWidth(settings::gridUnit() * 30);
+    auto *layout = new QVBoxLayout(dialog);
+    auto *form = new QFormLayout;
+    layout->addLayout(form, 1);
+
+    // Each field writes its own column into the record the dialog hands back.
+    QList<std::function<void(QVariantMap &)>> readers;
+    QWidget *firstText = nullptr;
+    for (const CollectionColumn &column : collection.columns) {
+        const QVariant value = original.value(column.id);
+        QWidget *field = nullptr;
+        if (column.kind == ColumnKind::Toggle) {
+            auto *box = new QCheckBox(column.title, dialog);
+            box->setChecked(value.toBool());
+            form->addRow(box);
+            readers.append([box, id = column.id](QVariantMap &record) {
+                record.insert(id, box->isChecked());
+            });
+            field = box;
+        } else if (column.kind == ColumnKind::Choice) {
+            auto *combo = new QComboBox(dialog);
+            for (const RowOption &option : column.options(appSettings)) {
+                combo->addItem(option.label, option.id);
+            }
+            settings::selectData(combo, value.toString());
+            form->addRow(column.title, combo);
+            readers.append([combo, id = column.id](QVariantMap &record) {
+                record.insert(id, combo->currentData().toString());
+            });
+            field = combo;
+        } else if (column.kind == ColumnKind::Text && column.multiline) {
+            auto *edit = new QPlainTextEdit(value.toString(), dialog);
+            // Return starts a new line, so Tab is what moves on.
+            edit->setTabChangesFocus(true);
+            form->addRow(column.title, edit);
+            readers.append([edit, id = column.id](QVariantMap &record) {
+                record.insert(id, edit->toPlainText());
+            });
+            field = edit;
+        } else if (column.kind == ColumnKind::Text) {
+            auto *edit = new QLineEdit(value.toString(), dialog);
+            form->addRow(column.title, edit);
+            readers.append([edit, id = column.id](QVariantMap &record) {
+                record.insert(id, edit->text().trimmed());
+            });
+            field = edit;
+        }
+        if (field) {
+            field->setObjectName(column.id);
+        }
+        if (!firstText && column.kind == ColumnKind::Text) {
+            firstText = field;
+        }
+    }
+
+    auto *problems = new InlineMessage(dialog);
+    problems->setType(InlineMessage::Type::Error);
+    problems->setCloseButtonVisible(false);
+    problems->hide();
+    layout->addWidget(problems);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
+    layout->addWidget(buttons);
+
+    QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, dialog,
+                     [dialog, problems, readers, original, row, collection, current, apply] {
+        QVariantMap record = original;
+        for (const auto &read : readers) {
+            read(record);
+        }
+        // Found again rather than taken by index: the records may have been
+        // reloaded while the dialog was open.
+        QList<QVariantMap> records = current();
+        const qsizetype index = row < 0 ? -1 : records.indexOf(original);
+        if (index < 0) {
+            records.append(record);
+        } else {
+            records[index] = record;
+        }
+        const QStringList refused = collection.validate ? collection.validate(records) : QStringList();
+        if (!refused.isEmpty()) {
+            problems->setText(refused.join(QLatin1Char('\n')));
+            problems->show();
+            return;
+        }
+        apply(records);
+        dialog->accept();
+    });
+    if (firstText) {
+        firstText->setFocus(Qt::OtherFocusReason);
+    }
+    dialog->open();
 }
 
 SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,

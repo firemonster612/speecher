@@ -7,6 +7,7 @@
 #include "core/VocabularyLimit.h"
 #include "app/AccessibilityPresentation.h"
 #include "ui/AccessibilityNotice.h"
+#include "ui/InlineMessage.h"
 #include "ui/InsightsCharts.h"
 #include "core/SecretStore.h"
 #include "app/LocalSetup.h"
@@ -29,6 +30,7 @@
 
 #include <QApplication>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QGroupBox>
 
 #include <algorithm>
@@ -39,6 +41,7 @@
 #include <QFontMetrics>
 #include <QFormLayout>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QRadioButton>
@@ -65,6 +68,23 @@ std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
     const SettingsSchema schema =
         buildSettingsSchema(qtSchemaContext(platform, providers));
     return std::make_unique<SchemaSettingsPage>(schema.page(id).sections, nullptr, std::move(customRows));
+}
+
+// The record dialog a collection editor has open. A closed one lingers until
+// the event loop deletes it, so only a shown one counts.
+QDialog *shownRecordDialog(const QWidget &page)
+{
+    for (QDialog *dialog : page.findChildren<QDialog *>(QStringLiteral("collectionRecordDialog"))) {
+        if (dialog->isVisible()) {
+            return dialog;
+        }
+    }
+    return nullptr;
+}
+
+void acceptRecordDialog(QDialog *dialog)
+{
+    dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
 }
 
 QStringList sectionLabels(const QWidget &page, const QWidget *except = nullptr)
@@ -1013,8 +1033,7 @@ private slots:
         settings.vocabulary = {{QStringLiteral("Speecher")}};
         page->load(settings);
         // SettingsPageSet reloads every page from the round-tripped draft on
-        // each change; a blank vocabulary record does not survive that trip,
-        // so a reload straight after Add would take the new row back.
+        // each change.
         AppSettings draft = settings;
         connect(page.get(), &SchemaSettingsPage::changed, page.get(), [&draft, &page] {
             page->appendToDraft(draft);
@@ -1028,14 +1047,67 @@ private slots:
         QCOMPARE(table->rowCount(), 1);
 
         add->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("New term"));
+        dialog->findChild<QLineEdit *>(QStringLiteral("term"))->setText(QStringLiteral("Deepgram"));
+        acceptRecordDialog(dialog);
         QCOMPARE(table->rowCount(), 2);
-        QCOMPARE(table->currentColumn(), 1);
-
-        // Typing the term is the change that reaches the settings.
-        table->item(table->currentRow(), 1)->setText(QStringLiteral("Deepgram"));
         AppSettings applied;
         page->appendToDraft(applied);
         QCOMPARE(applied.vocabulary.size(), 2);
+    }
+
+    void aToneIsAddedAndEditedInItsDialog()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("writingProfiles"), *platform, providers);
+        AppSettings settings;
+        settings.refinement.providerId = QStringLiteral("openai");
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("customTones"));
+        auto *add = page->findChild<QPushButton *>(QStringLiteral("addCustomTones"));
+        QVERIFY(table && add);
+        const int builtIns = table->rowCount();
+
+        // A built-in tone is nobody's to edit.
+        emit table->cellDoubleClicked(0, 0);
+        QVERIFY(!shownRecordDialog(*page));
+
+        add->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        dialog->findChild<QLineEdit *>(QStringLiteral("name"))->setText(QStringLiteral("Terse"));
+        // Refused, the dialog stays open and says why.
+        acceptRecordDialog(dialog);
+        QVERIFY(dialog->isVisible());
+        QCOMPARE(dialog->findChild<InlineMessage *>()->label()->text(),
+                 QStringLiteral("Every tone needs an instruction."));
+        QCOMPARE(table->rowCount(), builtIns);
+
+        auto *instruction = dialog->findChild<QPlainTextEdit *>(QStringLiteral("instruction"));
+        QVERIFY(instruction);
+        instruction->setPlainText(QStringLiteral("Short sentences.\nNo filler."));
+        acceptRecordDialog(dialog);
+        QVERIFY(!dialog->isVisible());
+        QCOMPARE(table->rowCount(), builtIns + 1);
+
+        emit table->cellDoubleClicked(builtIns, 1);
+        dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Terse"));
+        dialog->findChild<QPlainTextEdit *>(QStringLiteral("instruction"))
+            ->setPlainText(QStringLiteral("Short sentences."));
+        acceptRecordDialog(dialog);
+
+        AppSettings applied;
+        page->appendToDraft(applied);
+        QCOMPARE(applied.refinement.customTones.size(), 1);
+        QCOMPARE(applied.refinement.customTones.first().name, QStringLiteral("Terse"));
+        QCOMPARE(applied.refinement.customTones.first().instruction, QStringLiteral("Short sentences."));
     }
 
     void undoingADeletedCorrectionPutsBackEverythingItKnew()
@@ -1829,15 +1901,17 @@ private slots:
         QCOMPARE(table->rowCount(), builtInAppRecognitionRules().size() + 1);
 
         add->click();
-        QCOMPARE(table->rowCount(), builtInAppRecognitionRules().size() + 2);
-        const int row = table->rowCount() - 1;
-        table->item(row, 0)->setText(QStringLiteral("com.acme.shell"));
-        auto *category = qobject_cast<QComboBox *>(table->cellWidget(row, 1));
-        auto *profile = qobject_cast<QComboBox *>(table->cellWidget(row, 2));
+        QDialog *dialog = shownRecordDialog(page);
+        QVERIFY(dialog);
+        dialog->findChild<QLineEdit *>(QStringLiteral("match"))->setText(QStringLiteral("com.acme.shell"));
+        auto *category = dialog->findChild<QComboBox *>(QStringLiteral("category"));
+        auto *profile = dialog->findChild<QComboBox *>(QStringLiteral("profile"));
         QVERIFY(category);
         QVERIFY(profile);
         category->setCurrentIndex(category->findData(QStringLiteral("terminal")));
         profile->setCurrentIndex(profile->findData(QStringLiteral("work")));
+        acceptRecordDialog(dialog);
+        QCOMPARE(table->rowCount(), builtInAppRecognitionRules().size() + 2);
 
         page.appendToDraft(settings);
         QCOMPARE(settings.appRecognitionRules.size(), 2);
