@@ -382,11 +382,6 @@ int main(int argc, char **argv)
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
     }
-#ifdef Q_OS_WIN
-    // Held until the process exits. The uninstaller asks Speecher to quit and
-    // waits for this to go before deleting files; see speecher.iss.
-    CreateMutexW(nullptr, FALSE, L"SpeecherRunning");
-#endif
 
     if ((!controller.settings()->setupCompleted() && decision.grabPath.isEmpty()) || decision.showSetup) {
         QTimer::singleShot(0, &controller, [&controller, &decision] {

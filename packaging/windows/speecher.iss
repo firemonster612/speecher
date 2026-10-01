@@ -97,26 +97,65 @@ Filename: "{app}\speecher.exe"; Description: "Launch Speecher"; Flags: nowait po
 Filename: "{app}\speecher.exe"; Parameters: "{code:RestartArguments}"; Flags: nowait skipifnotsilent; Check: ShouldLaunchSpeecher
 
 [Code]
-// The uninstaller has no Restart Manager step. Run under a live Speecher, it
-// cannot delete the locked files, so the folder stays behind with Speecher
-// still running from it, and the next install has to close it. Ask it to
-// quit first and give it up to ten seconds to exit.
-function InitializeUninstall(): Boolean;
+// Whether speecher.exe from this install folder is running. WMI rather than
+// a marker the app sets, so it also finds releases older than any marker.
+function SpeecherRunning(): Boolean;
+var
+  Path: String;
+  Locator, Service, Processes: Variant;
+begin
+  Path := ExpandConstant('{app}\speecher.exe');
+  StringChangeEx(Path, '\', '\\', True);
+  StringChangeEx(Path, '''', '\''', True);
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Service := Locator.ConnectServer('.', 'root\CIMV2');
+    Processes := Service.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE ExecutablePath = ''' + Path + '''');
+    Result := Processes.Count > 0;
+  except
+    Result := False;
+  end;
+end;
+
+// Asks the running Speecher to quit and waits up to ten seconds for it.
+function QuitSpeecher(): Boolean;
 var
   ResultCode: Integer;
   Waited: Integer;
 begin
-  if CheckForMutexes('SpeecherRunning') then
+  Exec(ExpandConstant('{app}\speecher.exe'), 'quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Waited := 0;
+  while SpeecherRunning() and (Waited < 40) do
   begin
-    Exec(ExpandConstant('{app}\speecher.exe'), 'quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Waited := 0;
-    while CheckForMutexes('SpeecherRunning') and (Waited < 40) do
-    begin
-      Sleep(250);
-      Waited := Waited + 1;
-    end;
+    Sleep(250);
+    Waited := Waited + 1;
   end;
-  Result := True;
+  Result := not SpeecherRunning();
+end;
+
+// Releases before the tray window answered Restart Manager ignore its close
+// request, so Setup would wait on them and then fail. Ask over IPC first;
+// anything still running falls through to Restart Manager as before.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  if SpeecherRunning() then
+    QuitSpeecher();
+  Result := '';
+end;
+
+// The uninstaller has no Restart Manager step. Run under a live Speecher, it
+// cannot delete the locked files, so the folder stays behind with Speecher
+// still running from it. Once the person has confirmed, quit Speecher; if it
+// is still running, stop before anything is removed rather than leave half an
+// install.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep <> usUninstall then
+    Exit;
+  while SpeecherRunning() and not QuitSpeecher() do
+    if SuppressibleMsgBox('Speecher is still running. Quit it from its tray icon, then click Retry.',
+                          mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
+      Abort;
 end;
 
 function ShouldLaunchSpeecher(): Boolean;

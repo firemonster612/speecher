@@ -283,14 +283,21 @@ struct TrayIcon::Native {
             return 1;
         }
         // This hidden window is the one top-level window Speecher always has,
-        // so it is where Restart Manager (an installer closing the app) and
-        // sign-out ask the process to close. Left to DefWindowProc, WM_CLOSE
-        // destroys only this window and the process stays, so Setup waits on
-        // it forever. Queued: the sender is blocked until this returns.
-        if ((message == WM_ENDSESSION && wParam) || message == WM_CLOSE) {
+        // so it is where Restart Manager asks the process to close when Setup
+        // replaces its files: WM_QUERYENDSESSION, which DefWindowProc agrees
+        // to, then WM_ENDSESSION. Ignoring it left Setup waiting 30 seconds
+        // and then failing. Queued: the sender is blocked until this returns.
+        if (message == WM_ENDSESSION && wParam) {
             QMetaObject::invokeMethod(controller, &ApplicationController::quitApplication,
                                       Qt::QueuedConnection);
-            return message == WM_CLOSE ? 1 : 0;
+            return 0; // Falls through to DefWindowProc, which also returns 0.
+        }
+        // A plain close request, such as taskkill without /F. DefWindowProc
+        // would destroy only this window and leave Speecher running.
+        if (message == WM_CLOSE) {
+            QMetaObject::invokeMethod(controller, &ApplicationController::quitApplication,
+                                      Qt::QueuedConnection);
+            return 1;
         }
         if (message != trayMessage) {
             return 0;

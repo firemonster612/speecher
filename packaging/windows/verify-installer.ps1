@@ -12,6 +12,17 @@ $OriginalPlatform = $env:QT_QPA_PLATFORM
 $OriginalGrabPage = $env:SPEECHER_GRAB_PAGE
 $App = $null
 
+# Starts the installed app and fails unless it is still running after startup.
+function Start-Speecher([string]$Argument) {
+    $Process = Start-Process $Exe -ArgumentList $Argument -PassThru
+    Start-Sleep -Seconds 8
+    $Process.Refresh()
+    if ($Process.HasExited) {
+        throw "Application started with $Argument exited during startup with code $($Process.ExitCode)"
+    }
+    return $Process
+}
+
 try {
     $Arguments = @(
         "/VERYSILENT",
@@ -105,10 +116,52 @@ try {
         throw "Installed application exited during startup with code $($App.ExitCode) (missing runtime dependency?)"
     }
     Write-Output "Installed application launched and stayed alive without Qt on PATH"
+    $App | Stop-Process -Force
+    $App.WaitForExit()
 
-    # Installing over the running app: Setup asks it to close through Restart
-    # Manager, without forcing. If Speecher ignores that, Setup waits on
-    # "Closing applications" and then cannot replace its files.
+    # Restart Manager closing the running app without forcing, the way Setup
+    # does when it replaces files in use. Run windowless, as at login, so the
+    # request reaches only the tray window.
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class RestartManager {
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmStartSession(out uint session, int flags, StringBuilder key);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmEndSession(uint session);
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmRegisterResources(uint session, uint fileCount, string[] files,
+                                          uint appCount, IntPtr apps, uint serviceCount, string[] services);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmShutdown(uint session, uint flags, IntPtr progress);
+
+    public static int Shutdown(string path) {
+        uint session;
+        int error = RmStartSession(out session, 0, new StringBuilder(33));
+        if (error != 0) {
+            return error;
+        }
+        try {
+            error = RmRegisterResources(session, 1, new[] { path }, 0, IntPtr.Zero, 0, null);
+            return error != 0 ? error : RmShutdown(session, 0, IntPtr.Zero);
+        } finally {
+            RmEndSession(session);
+        }
+    }
+}
+"@
+    $App = Start-Speecher "--daemon"
+    $Shutdown = [RestartManager]::Shutdown($Exe)
+    if ($Shutdown -ne 0 -or -not $App.WaitForExit(10000)) {
+        throw "Restart Manager could not close the running application (error $Shutdown)"
+    }
+    Write-Output "Restart Manager closed the running application"
+
+    # Installing over the running app: Setup asks it to quit before replacing
+    # its files.
+    $App = Start-Speecher "--show-settings"
     $Reinstall = Start-Process $InstallerPath -ArgumentList $Arguments -Wait -PassThru
     if ($Reinstall.ExitCode -ne 0) {
         throw "Reinstall over the running application exited with code $($Reinstall.ExitCode)"
@@ -120,8 +173,7 @@ try {
 
     # Uninstalling under the running app must quit it rather than leave its
     # locked files, and the folder, behind.
-    $App = Start-Process $Exe -ArgumentList "--show-settings" -PassThru
-    Start-Sleep -Seconds 8
+    $App = Start-Speecher "--show-settings"
     Start-Process (Join-Path $InstallDir "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
     if (-not $App.WaitForExit(10000)) {
         throw "Uninstall left the application running"
