@@ -74,10 +74,12 @@ final class AppModel: ObservableObject {
     private static let lastPaneKey = "lastSettingsPane"
 
     /// Where a settings window opened from closed starts: the pane last shown,
-    /// or Home. A screenshot run starts on Home, so what it grabs does not
-    /// depend on what the machine showed before.
+    /// or Home. A screenshot run, which names a page or a window size, starts
+    /// on Home, so what it grabs does not depend on what the machine showed
+    /// before.
     var reopenPane: String {
-        let grabbing = !(ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"] ?? "").isEmpty
+        let environment = ProcessInfo.processInfo.environment
+        let grabbing = ["SPEECHER_GRAB_PAGE", "SPEECHER_GRAB_SIZE"].contains { !(environment[$0] ?? "").isEmpty }
         return grabbing ? "home" : UserDefaults.standard.string(forKey: Self.lastPaneKey) ?? "home"
     }
     /// The recorder whose recording is in progress, if any. Stopped directly
