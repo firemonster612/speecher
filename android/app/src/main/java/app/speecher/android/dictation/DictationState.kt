@@ -195,8 +195,11 @@ data class SpeecherSettings(
     val transcriptionProvider: Provider = providerOrder.first(),
     val refinementEnabled: Boolean = true,
     val refinementProvider: Provider = providerOrder.first(),
-    /** Whether both Insert buttons re-transcribe ChatGPT dictation with GPT Transcribe first. */
-    val transcribePassEnabled: Boolean = true,
+    /**
+     * Whether both Insert buttons re-transcribe ChatGPT dictation with GPT Transcribe first. Off by
+     * default, as on the desktop: it is slower and spends an extra request.
+     */
+    val transcribePassEnabled: Boolean = false,
     val chatGptRefinement: RefinementChoice = Provider.ChatGpt.defaultRefinement,
     val claudeRefinement: RefinementChoice = Provider.Claude.defaultRefinement,
     /**
@@ -307,12 +310,16 @@ fun SpeecherSettings.profileDeletionNotice(profile: WritingProfile): String {
         .joinToString(" ")
 }
 
-/** What the setup checklist needs to know. Each flag is one step. */
+/**
+ * What the setup checklist needs to know. Each flag is one step. [sessionEnded] holds the signed-in
+ * providers whose sign-in was rejected during a dictation; they still count as signed in here.
+ */
 data class SetupStatus(
     val signedIn: Set<Provider>,
     val microphoneGranted: Boolean,
     val keyboardEnabled: Boolean,
     val chipEnabled: Boolean,
+    val sessionEnded: Set<Provider> = emptySet(),
 ) {
     val complete: Boolean
         get() = signedIn.isNotEmpty() && microphoneGranted && keyboardEnabled && chipEnabled

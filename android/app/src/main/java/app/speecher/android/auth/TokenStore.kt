@@ -57,7 +57,10 @@ class TokenStore(context: Context) {
         cipher.init(Cipher.ENCRYPT_MODE, key)
         val encrypted = cipher.doFinal(plain)
         val value = Base64.getEncoder().encodeToString(cipher.iv + encrypted)
-        preferences.edit(commit = true) { putString(provider.name, value) }
+        preferences.edit(commit = true) {
+            putString(provider.name, value)
+            remove(sessionEndedKey(provider))
+        }
     }
 
     fun load(provider: OAuthProvider): OAuthTokens? {
@@ -83,8 +86,23 @@ class TokenStore(context: Context) {
     }
 
     fun signOut(provider: OAuthProvider) {
-        preferences.edit(commit = true) { remove(provider.name) }
+        preferences.edit(commit = true) {
+            remove(provider.name)
+            remove(sessionEndedKey(provider))
+        }
     }
+
+    /** Providers that rejected their saved sign-in during a dictation, until it is replaced. */
+    fun sessionEnded(): Set<Provider> =
+        Provider.entries.filterTo(mutableSetOf()) {
+            preferences.getBoolean(sessionEndedKey(it.oauth), false)
+        }
+
+    fun endSession(provider: OAuthProvider) {
+        preferences.edit(commit = true) { putBoolean(sessionEndedKey(provider), true) }
+    }
+
+    private fun sessionEndedKey(provider: OAuthProvider) = "${provider.name}-session-ended"
 
     /** Call on a worker thread before a provider request. */
     @Synchronized

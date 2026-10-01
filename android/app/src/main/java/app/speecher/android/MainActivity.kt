@@ -14,6 +14,7 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
@@ -34,6 +35,8 @@ import app.speecher.android.dictation.sharedHttp
 import app.speecher.android.ui.ChipPosition
 import app.speecher.android.ui.Home
 import app.speecher.android.ui.Onboarding
+import app.speecher.android.ui.SettingsPage
+import app.speecher.android.ui.SettingsPageContent
 import app.speecher.android.ui.SignInStepsSheet
 import app.speecher.android.ui.SpeecherScreen
 import app.speecher.android.ui.SpeecherTheme
@@ -60,8 +63,11 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf(emptyStatus())
     private var settings by mutableStateOf(SpeecherSettings())
     private var update by mutableStateOf<ApkUpdate?>(null)
-    private var updateError by mutableStateOf<String?>(null)
+    private var updating by mutableStateOf(false)
+    private var updateFailed by mutableStateOf(false)
     private var page by mutableStateOf(Page.Home)
+    // The page open from the Settings list, or null for the list itself.
+    private var settingsPage by mutableStateOf<SettingsPage?>(null)
     // The provider whose "Before you sign in" steps are up. The browser only opens from there.
     private var signInSteps by mutableStateOf<Provider?>(null)
 
@@ -80,6 +86,7 @@ class MainActivity : ComponentActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         signInAfterPrompt =
             savedInstanceState?.getString(SIGN_IN_AFTER_PROMPT)?.let(Provider::valueOf)
@@ -97,9 +104,7 @@ class MainActivity : ComponentActivity() {
                         onDismiss = { signInSteps = null },
                     )
                 }
-                BackHandler(page != Page.Home) {
-                    page = if (page == Page.ChipPosition) Page.Settings else Page.Home
-                }
+                BackHandler(page != Page.Home, ::back)
                 when (page) {
                     Page.Home ->
                         SpeecherScreen("Speecher", onBack = null) {
@@ -108,21 +113,22 @@ class MainActivity : ComponentActivity() {
                                 settings,
                                 { page = Page.Setup },
                                 { page = Page.Settings },
+                                ::signInFromSettings,
+                                ::openAccessibilitySettings,
                                 update = update,
+                                updating = updating,
+                                updateFailed = updateFailed,
                                 onUpdate = ::installUpdate,
-                                updateError = updateError,
                             )
                         }
                     Page.Setup ->
                         SpeecherScreen("Set up Speecher", onBack = null) {
                             Onboarding(
                                 status,
-                                settings,
-                                ::changeSettings,
                                 { signInSteps = it },
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
-                                { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                                ::openAccessibilitySettings,
                                 {
                                     startActivity(
                                         Intent(
@@ -137,29 +143,49 @@ class MainActivity : ComponentActivity() {
                                 onPasteCode = signIn::paste,
                             )
                         }
-                    Page.Settings ->
-                        SpeecherScreen("Settings", onBack = { page = Page.Home }) {
-                            app.speecher.android.ui.Settings(
-                                settings,
-                                status.signedIn,
-                                ::changeSettings,
-                                { signInSteps = it },
-                                ::signOut,
-                                { page = Page.ChipPosition },
-                                signingIn = signIn.activeProvider,
-                                signInError = signIn.error,
-                                onPasteCode = signIn::paste,
-                            )
-                        }
-                    Page.ChipPosition ->
-                        SpeecherScreen(
-                            "Button position",
-                            onBack = { page = Page.Settings },
-                        ) {
-                            ChipPosition(settings.chipOffsetX, settings.chipOffsetY) { x, y ->
-                                changeSettings(settings.copy(chipOffsetX = x, chipOffsetY = y))
-                                page = Page.Settings
+                    Page.Settings -> {
+                        val open = settingsPage
+                        if (open == null) {
+                            SpeecherScreen("Settings", onBack = ::back) {
+                                app.speecher.android.ui.Settings(
+                                    settings,
+                                    status.signedIn,
+                                    { settingsPage = it },
+                                    { signInSteps = it },
+                                    ::signOut,
+                                    sessionEnded = status.sessionEnded,
+                                    signingIn = signIn.activeProvider,
+                                    signInError = signIn.error,
+                                    onPasteCode = signIn::paste,
+                                )
                             }
+                        } else {
+                            SpeecherScreen(open.title, onBack = ::back) {
+                                SettingsPageContent(
+                                    open,
+                                    settings,
+                                    status.signedIn,
+                                    ::changeSettings,
+                                    ::signInFromSettings,
+                                    { page = Page.ChipPosition },
+                                )
+                            }
+                        }
+                    }
+                    Page.ChipPosition ->
+                        SpeecherScreen("Button position", onBack = ::back) {
+                            ChipPosition(
+                                settings.chipOffsetX,
+                                settings.chipOffsetY,
+                                onSave = { x, y ->
+                                    changeSettings(settings.copy(chipOffsetX = x, chipOffsetY = y))
+                                    page = Page.Settings
+                                },
+                                onDock = {
+                                    changeSettings(settings.copy(chipDockOnMic = true))
+                                    page = Page.Settings
+                                },
+                            )
                         }
                 }
             }
@@ -194,8 +220,22 @@ class MainActivity : ComponentActivity() {
             intent.getStringExtra("sign_in_provider")?.let { name ->
                 Provider.entries.firstOrNull { it.name == name }
             } ?: return
+        signInFromSettings(provider)
+    }
+
+    /** Signs in from the Settings list, whose Accounts section shows the paste fallback. */
+    private fun signInFromSettings(provider: Provider) {
         page = Page.Settings
+        settingsPage = null
         signInSteps = provider
+    }
+
+    private fun back() {
+        when {
+            page == Page.ChipPosition -> page = Page.Settings
+            page == Page.Settings && settingsPage != null -> settingsPage = null
+            else -> page = Page.Home
+        }
     }
 
     private fun checkForUpdate() {
@@ -239,18 +279,26 @@ class MainActivity : ComponentActivity() {
 
     private fun installUpdate() {
         val release = update ?: return
+        updateFailed = false
+        updating = true
         lifecycleScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { installApk(this@MainActivity, sharedHttp, release) }
             }
-                .onFailure { updateError = "Could not install update: ${it.message}" }
+                .onFailure { updateFailed = true }
+            updating = false
         }
+    }
+
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun refresh() {
         status =
             SetupStatus(
                 signedIn = tokens.signedIn(),
+                sessionEnded = tokens.sessionEnded(),
                 microphoneGranted = granted(Manifest.permission.RECORD_AUDIO),
                 keyboardEnabled = keyboardEnabled(),
                 chipEnabled = chipEnabled(),

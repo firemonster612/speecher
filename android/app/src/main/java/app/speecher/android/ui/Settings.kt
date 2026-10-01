@@ -5,15 +5,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Badge
+import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -33,8 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -42,268 +44,237 @@ import app.speecher.android.R
 import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.label
-import app.speecher.android.dictation.profileDeletionNotice
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
 import app.speecher.android.dictation.refinementModels
-import app.speecher.protocol.AppCategory
-import app.speecher.protocol.CleanupStrength
-import app.speecher.protocol.CustomCleanupLevel
-import app.speecher.protocol.CustomTone
+import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
-import app.speecher.protocol.RecognitionRule
-import app.speecher.protocol.Tone
-import app.speecher.protocol.WritingProfile
-import app.speecher.protocol.WritingProfileSettings
-import app.speecher.protocol.builtInDictationSystemPrompt
-import app.speecher.protocol.builtInRules
 import app.speecher.protocol.claudeVoiceKeytermIndices
 import app.speecher.protocol.claudeVoiceKeyterms
-import app.speecher.protocol.cleanupLevelId
-import app.speecher.protocol.customChoiceId
 import app.speecher.protocol.modelSupportsFastMode
 import app.speecher.protocol.modelSupportsUltrafast
-import app.speecher.protocol.toneId
-import app.speecher.protocol.withCleanupLevel
-import app.speecher.protocol.withTone
 
-internal const val FAST_MODE_DESCRIPTION =
-    "Makes refinement faster. Uses a little more of your usage, but the difference is tiny."
-private const val FAST_MODE_OPUS_ONLY = "Only works with Opus models."
-private const val SPEED_DESCRIPTION =
-    "Fast answers sooner for slightly more usage. Ultrafast is much faster but uses a lot more " +
-        "usage, and needs a plan with Ultrafast access."
-private const val ULTRAFAST_ASTRA_ONLY =
-    "Ultrafast needs GPT-6 Astra. GPT-6.1 Sol support is coming later."
+/** The pages the Settings list opens, each under its own top bar with a back arrow. */
+enum class SettingsPage(val title: String) {
+    Transcription("Transcription"),
+    Refinement("Refinement"),
+    RefinementContext("What refinement can read"),
+    DictationPanel("Dictation panel"),
+    Vocabulary("Vocabulary"),
+    Profiles("Profiles"),
+    AppRules("Application rules"),
+    Tones("Tones"),
+    CleanupLevels("Cleanup levels"),
+    CustomPrompt("Custom prompt"),
+}
 
-// Labels from the desktop's Target.cpp, in its order.
-private val profileLabels =
-    mapOf(
-        WritingProfile.Work to "Work",
-        WritingProfile.Email to "Email",
-        WritingProfile.Personal to "Personal",
-        WritingProfile.AiCoding to "AI coding",
-        WritingProfile.Other to "Other",
-    )
-
-// The desktop's appCategoryLabel, in the order its rules offer them.
-private val appTypeLabels =
-    mapOf(
-        AppCategory.General to "Other app",
-        AppCategory.Terminal to "Terminal",
-        AppCategory.Browser to "Browser",
-        AppCategory.Email to "Email",
-        AppCategory.Office to "Office",
-        AppCategory.CodeEditor to "Code editor",
-        AppCategory.AiCoding to "AI coding",
-    )
-
-private val cleanupLabels =
-    mapOf(
-        CleanupStrength.None to "None",
-        CleanupStrength.LightCleanup to "Light",
-        CleanupStrength.Balanced to "Medium",
-        CleanupStrength.StrongPolish to "High",
-    )
-
-/** What a custom cleanup level can build on. */
-private val baseLabels =
-    cleanupLabels - CleanupStrength.None + (CleanupStrength.CustomOnly to "Custom only")
-
-private val toneLabels =
-    mapOf(
-        Tone.None to "No tone override",
-        Tone.Formal to "Formal",
-        Tone.Casual to "Casual",
-        Tone.VeryCasual to "Very casual",
-        Tone.Excited to "Excited",
-        Tone.GenZ to "Gen Z",
-    )
-
-/** Every level a profile can choose, by id: the built-ins, then the custom ones. */
-internal fun cleanupChoices(settings: SpeecherSettings): Map<String, String> =
-    cleanupLabels.mapKeys { it.key.id } +
-        settings.customCleanupLevels.associate { it.id to it.name }
-
-/** Every profile, by id: the built-ins, then the custom ones by name. */
-internal fun profileChoices(settings: SpeecherSettings): Map<WritingProfile, String> =
-    profileLabels +
-        settings.writingProfiles.filterKeys { !it.isBuiltIn }.mapValues { it.value.name }
-
-/** Every tone a profile can choose, by id: no override and the built-ins, then the custom ones. */
-internal fun toneChoices(settings: SpeecherSettings): Map<String, String> =
-    toneLabels.mapKeys { it.key.id } + settings.customTones.associate { it.id to it.name }
-
-/** Settings. Every change goes out whole through [onChange]; the caller persists it. */
+/**
+ * The Settings list: accounts first, since nothing works without one, then a row per page with its
+ * current value. The writing pages only matter with refinement on, so they show only then.
+ */
 @Composable
 fun Settings(
     settings: SpeecherSettings,
     signedIn: Set<Provider>,
-    onChange: (SpeecherSettings) -> Unit,
+    onOpen: (SettingsPage) -> Unit,
     onSignIn: (Provider) -> Unit,
     onSignOut: (Provider) -> Unit,
-    onSetChipPosition: () -> Unit,
     modifier: Modifier = Modifier,
+    sessionEnded: Set<Provider> = emptySet(),
     signingIn: Provider? = null,
     signInError: String? = null,
     onPasteCode: (String) -> Unit = {},
 ) {
-    val rowColors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
     Column(modifier) {
-        Section("Transcription")
-        ProviderPicker("Transcription provider", settings.transcriptionProvider, signedIn) {
-            onChange(settings.copy(transcriptionProvider = it))
+        if (signedIn.isEmpty()) {
+            Card(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
+                Text(
+                    "Sign in to start dictating. Speecher uses your own ChatGPT or Claude account.",
+                    Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
         }
-        ListItem(
-            headlineContent = { Text("Keep screen on") },
-            supportingContent = { Text("Stops the screen turning off while you dictate.") },
-            trailingContent = {
-                Switch(settings.keepScreenOn, { onChange(settings.copy(keepScreenOn = it)) })
-            },
-            colors = rowColors,
-        )
-
-        Section("Refinement")
-        ListItem(
-            headlineContent = { Text("Offer Insert refined") },
-            supportingContent = { Text("Clean up filler words and punctuation before inserting.") },
-            trailingContent = {
-                Switch(
-                    settings.refinementEnabled,
-                    { onChange(settings.copy(refinementEnabled = it)) },
-                )
-            },
-            colors = rowColors,
-        )
-        if (settings.refinementEnabled) {
-            ProviderPicker("Refinement provider", settings.refinementProvider, signedIn) {
-                onChange(settings.copy(refinementProvider = it))
-            }
-            val provider = settings.refinementProvider
-            val choice = settings.refinement(provider)
+        Section("Accounts")
+        signInError?.let {
+            Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
+        }
+        providerOrder.forEach { provider ->
+            val isSignedIn = provider in signedIn
+            val ended = isSignedIn && provider in sessionEnded
             ListItem(
-                headlineContent = { Text("Model") },
-                trailingContent = {
-                    Dropdown(provider.refinementModels, choice.model) {
-                        onChange(settings.withRefinement(provider, choice.copy(model = it)))
-                    }
-                },
-                colors = rowColors,
-            )
-            EffortPicker(provider, choice.effort) {
-                onChange(settings.withRefinement(provider, choice.copy(effort = it)))
-            }
-            if (provider == Provider.ChatGpt) {
-                val ultrafast = modelSupportsUltrafast(choice.model)
-                ListItem(
-                    headlineContent = { Text("Speed") },
-                    supportingContent = {
-                        Text(
-                            if (ultrafast) SPEED_DESCRIPTION
-                            else "$SPEED_DESCRIPTION $ULTRAFAST_ASTRA_ONLY"
-                        )
-                    },
-                    colors = rowColors,
-                )
-                SpeedPicker(settings.chatGptSpeed, ultrafast) {
-                    onChange(settings.copy(chatGptSpeed = it))
-                }
-            } else {
-                val unsupported = !modelSupportsFastMode(choice.model)
-                ListItem(
-                    headlineContent = { Text("Fast mode") },
-                    supportingContent = {
-                        Text(if (unsupported) FAST_MODE_OPUS_ONLY else FAST_MODE_DESCRIPTION)
-                    },
-                    trailingContent = {
-                        Switch(
-                            settings.claudeFastMode,
-                            { onChange(settings.copy(claudeFastMode = it)) },
-                        )
-                    },
-                    colors = rowColors,
-                )
-            }
-            ListItem(
-                headlineContent = { Text("Fallback profile") },
-                supportingContent = {
-                    Text("Writing profile used when the target app does not imply one.")
-                },
-                trailingContent = {
-                    Dropdown(profileChoices(settings), settings.defaultWritingProfile) {
-                        onChange(settings.copy(defaultWritingProfile = it))
-                    }
-                },
-                colors = rowColors,
-            )
-            ListItem(
-                headlineContent = { Text("Context") },
+                headlineContent = { Text(provider.label) },
                 supportingContent = {
                     Text(
-                        "Sends the field's placeholder and the text around the cursor to your " +
-                            "refinement provider. The app's name is always sent, to pick a " +
-                            "writing profile."
+                        when {
+                            ended -> "Session ended"
+                            isSignedIn -> "Signed in"
+                            else -> "Signed out"
+                        }
                     )
                 },
                 trailingContent = {
-                    Switch(
-                        settings.useTargetContext,
-                        { onChange(settings.copy(useTargetContext = it)) },
-                    )
+                    when {
+                        ended -> TextButton({ onSignIn(provider) }) { Text("Sign in again") }
+                        isSignedIn -> TextButton({ onSignOut(provider) }) { Text("Sign out") }
+                        else -> TextButton({ onSignIn(provider) }) { Text("Sign in") }
+                    }
                 },
-                colors = rowColors,
+                colors = rowColors(),
             )
-            if (settings.useTargetContext) {
-                ListItem(
-                    headlineContent = { Text("Screen text") },
-                    supportingContent = {
-                        Text(
-                            "Reads the visible text of the app you're dictating into and sends " +
-                                "it to your refinement provider. Speecher discards it when the " +
-                                "dictation ends."
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            settings.includeScreenText,
-                            { onChange(settings.copy(includeScreenText = it)) },
-                        )
-                    },
-                    colors = rowColors,
-                )
-                ListItem(
-                    headlineContent = { Text("Screenshot") },
-                    supportingContent = {
-                        Text(
-                            "Sends a screenshot of the app you're dictating into, without the " +
-                                "status bar or keyboard, to your refinement provider. Needs a " +
-                                "vision-capable refinement model, such as Claude Sonnet 5.5."
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            settings.includeScreenshot,
-                            { onChange(settings.copy(includeScreenshot = it)) },
-                        )
-                    },
-                    colors = rowColors,
-                )
-            }
-            InstructionsField(
-                "Additional instructions",
-                "Added to every refinement, before each profile's own instructions.",
-                settings.additionalInstructions,
-            ) {
-                onChange(settings.copy(additionalInstructions = it))
-            }
         }
+        if (signingIn != null && signingIn !in signedIn) {
+            PasteCode(signingIn, onPasteCode, Modifier.padding(horizontal = 16.dp))
+        }
+
+        Section("Dictation")
+        PageRow(SettingsPage.Transcription, transcriptionSummary(settings, signedIn), onOpen)
+        PageRow(SettingsPage.Refinement, refinementSummary(settings, signedIn), onOpen)
+        if (settings.refinementEnabled) {
+            PageRow(SettingsPage.RefinementContext, contextSummary(settings), onOpen)
+        }
+        PageRow(SettingsPage.DictationPanel, panelSummary(settings), onOpen)
+        PageRow(
+            SettingsPage.Vocabulary,
+            if (settings.vocabulary.isEmpty()) "No words"
+            else count(settings.vocabulary.size, "word", "words"),
+            onOpen,
+        )
+
+        if (settings.refinementEnabled) {
+            Section("Advanced")
+            PageRow(
+                SettingsPage.Profiles,
+                count(profileChoices(settings).size, "profile", "profiles"),
+                onOpen,
+            )
+            PageRow(
+                SettingsPage.AppRules,
+                if (settings.appRules.isEmpty()) "Built-in rules only"
+                else count(settings.appRules.size, "rule of your own", "rules of your own"),
+                onOpen,
+            )
+            PageRow(
+                SettingsPage.Tones,
+                if (settings.customTones.isEmpty()) "Built-in tones only"
+                else count(settings.customTones.size, "custom tone", "custom tones"),
+                onOpen,
+            )
+            PageRow(
+                SettingsPage.CleanupLevels,
+                if (settings.customCleanupLevels.isEmpty()) "Built-in levels only"
+                else count(settings.customCleanupLevels.size, "custom level", "custom levels"),
+                onOpen,
+            )
+            PageRow(
+                SettingsPage.CustomPrompt,
+                if (settings.customSystemPromptEnabled) "On" else "Off",
+                onOpen,
+            )
+        }
+    }
+}
+
+/**
+ * One page from the Settings list. Every change goes out whole through [onChange]; the caller
+ * persists it.
+ */
+@Composable
+fun SettingsPageContent(
+    page: SettingsPage,
+    settings: SpeecherSettings,
+    signedIn: Set<Provider>,
+    onChange: (SpeecherSettings) -> Unit,
+    onSignIn: (Provider) -> Unit,
+    onSetChipPosition: () -> Unit,
+) {
+    when (page) {
+        SettingsPage.Transcription -> TranscriptionSettings(settings, signedIn, onChange, onSignIn)
+        SettingsPage.Refinement -> RefinementSettings(settings, signedIn, onChange, onSignIn)
+        SettingsPage.RefinementContext -> RefinementContextSettings(settings, onChange)
+        SettingsPage.DictationPanel -> DictationPanelSettings(settings, onChange, onSetChipPosition)
+        SettingsPage.Vocabulary -> VocabularySettings(settings, onChange)
+        SettingsPage.Profiles -> ProfileSettings(settings, onChange)
+        SettingsPage.AppRules -> AppRuleSettings(settings, onChange)
+        SettingsPage.Tones -> ToneSettings(settings, onChange)
+        SettingsPage.CleanupLevels -> CleanupLevelSettings(settings, onChange)
+        SettingsPage.CustomPrompt -> CustomPromptSettings(settings, onChange)
+    }
+}
+
+private fun count(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
+
+/** The provider dictation will use, as the pickers show it, or null with no account. */
+private fun shownProvider(preferred: Provider, signedIn: Set<Provider>): Provider? =
+    resolveSignedIn(preferred, signedIn).takeIf { it in signedIn }
+
+private fun transcriptionSummary(settings: SpeecherSettings, signedIn: Set<Provider>): String =
+    shownProvider(settings.transcriptionProvider, signedIn)?.label ?: "Not signed in"
+
+private fun refinementSummary(settings: SpeecherSettings, signedIn: Set<Provider>): String {
+    if (!settings.refinementEnabled) return "Off"
+    val provider = shownProvider(settings.refinementProvider, signedIn) ?: return "Not signed in"
+    val model = settings.refinement(provider).model
+    return "${provider.label}, ${provider.refinementModels[model] ?: model}"
+}
+
+private fun contextSummary(settings: SpeecherSettings): String {
+    if (!settings.useTargetContext) return "Only the app's name"
+    return listOfNotNull(
+            "text around the cursor",
+            "screen text".takeIf { settings.includeScreenText },
+            "screenshot".takeIf { settings.includeScreenshot },
+        )
+        .joinToString(", ")
+        .replaceFirstChar(Char::uppercase)
+}
+
+private fun panelSummary(settings: SpeecherSettings): String =
+    "${settings.panelSize.label} panel" +
+        if (settings.refinementEnabled) ", ${settings.buttonLayout.label}" else ""
+
+@Composable
+internal fun rowColors(): ListItemColors =
+    ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
+
+/** A row that opens [page], showing its current value. */
+@Composable
+private fun PageRow(page: SettingsPage, summary: String, onOpen: (SettingsPage) -> Unit) {
+    ListItem(
+        headlineContent = { Text(page.title) },
+        supportingContent = { Text(summary) },
+        trailingContent = { Chevron() },
+        modifier = Modifier.clickable { onOpen(page) },
+        colors = rowColors(),
+    )
+}
+
+@Composable
+private fun TranscriptionSettings(
+    settings: SpeecherSettings,
+    signedIn: Set<Provider>,
+    onChange: (SpeecherSettings) -> Unit,
+    onSignIn: (Provider) -> Unit,
+) {
+    ProviderPicker("Provider", settings.transcriptionProvider, signedIn, onSignIn) {
+        onChange(settings.copy(transcriptionProvider = it))
+    }
+    ListItem(
+        headlineContent = { Text("Keep screen on") },
+        supportingContent = { Text("Stops the screen turning off while you dictate.") },
+        trailingContent = {
+            Switch(settings.keepScreenOn, { onChange(settings.copy(keepScreenOn = it)) })
+        },
+        colors = rowColors(),
+    )
+    if (resolveSignedIn(settings.transcriptionProvider, signedIn).hasBatchTranscription) {
         ListItem(
             headlineContent = { Text("Extra transcription pass") },
             supportingContent = {
                 Text(
-                    "Re-transcribes your audio with GPT Transcribe before Insert and Insert " +
-                        "refined, for accuracy — slower. ChatGPT only."
+                    "Transcribes the whole recording again before inserting. More accurate, slower."
                 )
             },
             trailingContent = {
@@ -312,653 +283,278 @@ fun Settings(
                     { onChange(settings.copy(transcribePassEnabled = it)) },
                 )
             },
-            colors = rowColors,
+            colors = rowColors(),
         )
-        if (settings.refinementEnabled) {
-            Section("Profile behavior")
-            Text(
-                "Choose a cleanup level, a tone and optional instructions for each profile.",
-                Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            val profiles = profileChoices(settings)
-            profiles.forEach { (profile, label) ->
-                val behavior = settings.writingProfiles.getValue(profile)
-                fun update(next: WritingProfileSettings) =
-                    onChange(
-                        settings.copy(
-                            writingProfiles = settings.writingProfiles + (profile to next)
-                        )
-                    )
-                ListItem(
-                    headlineContent = {
-                        if (profile.isBuiltIn) Text(label)
-                        else
-                            OutlinedTextField(
-                                behavior.name,
-                                { update(behavior.copy(name = it)) },
-                                Modifier.fillMaxWidth(),
-                                label = { Text("Name") },
-                                singleLine = true,
-                                isError = behavior.name.isBlank(),
-                            )
-                    },
-                    supportingContent = {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Dropdown(cleanupChoices(settings), behavior.cleanupLevelId) {
-                                    update(behavior.withCleanupLevel(it))
-                                }
-                                Dropdown(toneChoices(settings), behavior.toneId) {
-                                    update(behavior.withTone(it))
-                                }
-                            }
-                            OutlinedTextField(
-                                behavior.instructions,
-                                { update(behavior.copy(instructions = it)) },
-                                Modifier.fillMaxWidth(),
-                                label = { Text("Instructions") },
-                                minLines = 2,
-                            )
-                            if (!profile.isBuiltIn) {
-                                DeleteProfile(settings.profileDeletionNotice(profile)) {
-                                    onChange(
-                                        settings.withWritingProfiles(
-                                            settings.writingProfiles - profile
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    colors = rowColors,
-                )
-            }
-            AddChoice("Add profile", "Instructions", profiles.values) { name, instructions ->
-                val id = customChoiceId(name, settings.writingProfiles.keys.map { it.id })
-                onChange(
-                    settings.copy(
-                        writingProfiles =
-                            settings.writingProfiles +
-                                (WritingProfile(id) to
-                                    WritingProfileSettings(
-                                        instructions = instructions,
-                                        name = name,
-                                    ))
-                    )
-                )
-            }
+    }
+}
 
-            Section("Application rules")
-            Text(
-                "Built-in rules are read-only. Your rules come first and can set the app type, " +
-                    "the writing profile, or both.",
-                Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            BuiltInRules(profiles)
-            val appTypes = mapOf<AppCategory?, String>(null to "Automatic") + appTypeLabels
-            val ruleProfiles = mapOf<WritingProfile?, String>(null to "Automatic") + profiles
-            settings.appRules.forEachIndexed { index, rule ->
-                fun edit(next: RecognitionRule) =
-                    onChange(
-                        settings.copy(
-                            appRules =
-                                settings.appRules.mapIndexed { at, it ->
-                                    if (at == index) next else it
-                                }
-                        )
-                    )
-                RuleEditor(
-                    rule,
-                    appTypes,
-                    ruleProfiles,
-                    onEdit = ::edit,
-                    onDelete = {
-                        onChange(
-                            settings.copy(
-                                appRules = settings.appRules.filterIndexed { at, _ -> at != index }
-                            )
-                        )
-                    },
-                )
-            }
-            AddRule(appTypes, ruleProfiles) {
-                onChange(settings.copy(appRules = settings.appRules + it))
-            }
-
-            Section("Tones")
-            BuiltInNames(toneLabels.values.drop(1))
-            settings.customTones.forEach { tone ->
-                CustomChoice(
-                    tone.name,
-                    tone.instruction,
-                    "Instruction",
-                    onEdit = { name, text ->
-                        onChange(
-                            settings.withCustomChoices(
-                                tones =
-                                    settings.customTones.map {
-                                        if (it.id == tone.id)
-                                            it.copy(name = name, instruction = text)
-                                        else it
-                                    }
-                            )
-                        )
-                    },
-                    onDelete = {
-                        onChange(settings.withCustomChoices(tones = settings.customTones - tone))
-                    },
-                )
-            }
-            AddChoice("Add tone", "Instruction", toneChoices(settings).values, needsText = true) {
-                name,
-                instruction ->
-                val id = customChoiceId(name, settings.customTones.map { it.id })
-                onChange(
-                    settings.withCustomChoices(
-                        tones = settings.customTones + CustomTone(id, name, instruction)
-                    )
-                )
-            }
-
-            Section("Cleanup levels")
-            BuiltInNames(cleanupLabels.values.drop(1))
-            settings.customCleanupLevels.forEach { level ->
-                fun edit(next: CustomCleanupLevel) =
-                    onChange(
-                        settings.withCustomChoices(
-                            levels =
-                                settings.customCleanupLevels.map {
-                                    if (it.id == level.id) next else it
-                                }
-                        )
-                    )
-                CustomChoice(
-                    level.name,
-                    level.instructions,
-                    "Instructions",
-                    onEdit = { name, text -> edit(level.copy(name = name, instructions = text)) },
-                    onDelete = {
-                        onChange(
-                            settings.withCustomChoices(
-                                levels = settings.customCleanupLevels - level
-                            )
-                        )
-                    },
-                ) {
-                    Dropdown(baseLabels, level.base) { edit(level.copy(base = it)) }
-                }
-            }
-            // A new level builds on Medium; its base can be changed once it is added.
-            AddChoice("Add cleanup level", "Instructions", cleanupChoices(settings).values) {
-                name,
-                instructions ->
-                val id = customChoiceId(name, settings.customCleanupLevels.map { it.id })
-                onChange(
-                    settings.withCustomChoices(
-                        levels =
-                            settings.customCleanupLevels +
-                                CustomCleanupLevel(id, name, CleanupStrength.Balanced, instructions)
-                    )
-                )
-            }
-
-            Section("Custom system prompt")
-            ListItem(
-                headlineContent = { Text("Custom system prompt") },
-                supportingContent = {
-                    Text(
-                        "Replaces the built-in dictation rules with the prompt below. Built-in " +
-                            "cleanup levels and tones no longer apply while it is on; a " +
-                            "profile's tone is still passed to the model."
-                    )
-                },
-                trailingContent = {
-                    Switch(
-                        settings.customSystemPromptEnabled,
-                        { onChange(settings.copy(customSystemPromptEnabled = it)) },
-                    )
-                },
-                colors = rowColors,
-            )
-            OutlinedTextField(
-                settings.customSystemPrompt.ifEmpty { builtInDictationSystemPrompt },
-                { onChange(settings.copy(customSystemPrompt = it)) },
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                label = { Text("Prompt") },
-                minLines = 4,
-                maxLines = 10,
-            )
-            TextButton(
-                { onChange(settings.copy(customSystemPrompt = builtInDictationSystemPrompt)) },
-                Modifier.padding(horizontal = 8.dp),
-            ) {
-                Text("Reset to built-in")
-            }
+@Composable
+private fun RefinementSettings(
+    settings: SpeecherSettings,
+    signedIn: Set<Provider>,
+    onChange: (SpeecherSettings) -> Unit,
+    onSignIn: (Provider) -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text("Offer Insert refined") },
+        supportingContent = { Text("Cleans up filler words and punctuation before inserting.") },
+        trailingContent = {
+            Switch(settings.refinementEnabled, { onChange(settings.copy(refinementEnabled = it)) })
+        },
+        colors = rowColors(),
+    )
+    if (!settings.refinementEnabled) return
+    ProviderPicker("Provider", settings.refinementProvider, signedIn, onSignIn) {
+        onChange(settings.copy(refinementProvider = it))
+    }
+    val provider = resolveSignedIn(settings.refinementProvider, signedIn)
+    val choice = settings.refinement(provider)
+    DropdownRow("Model", provider.refinementModels, choice.model) {
+        onChange(settings.withRefinement(provider, choice.copy(model = it)))
+    }
+    DropdownRow(
+        "Reasoning effort",
+        provider.refinementEfforts.associateWith { it.replaceFirstChar(Char::uppercase) },
+        choice.effort,
+    ) {
+        onChange(settings.withRefinement(provider, choice.copy(effort = it)))
+    }
+    if (provider == Provider.ChatGpt) {
+        val ultrafast = modelSupportsUltrafast(choice.model)
+        val speeds = OpenAiSpeed.entries.filter { ultrafast || it != OpenAiSpeed.Ultrafast }
+        DropdownRow(
+            "Speed",
+            speeds.associateWith { it.label },
+            settings.chatGptSpeed,
+            description =
+                if (ultrafast)
+                    "Faster tiers use more of your plan. Ultrafast needs a plan that includes it."
+                else "Faster tiers use more of your plan. Ultrafast needs GPT-6 Astra.",
+        ) {
+            onChange(settings.copy(chatGptSpeed = it))
         }
-
-        // With refinement off the panel only offers Insert, so there is no layout to choose.
-        if (settings.refinementEnabled) {
-            Section("Buttons")
-            ButtonLayoutPicker(settings.buttonLayout) { onChange(settings.copy(buttonLayout = it)) }
-        }
-        Section("Dictation panel size")
-        PanelSizePicker(settings.panelSize) { onChange(settings.copy(panelSize = it)) }
-
-        Section("Dictation button")
+    } else {
         ListItem(
-            headlineContent = { Text("Place on the keyboard's mic key") },
+            headlineContent = { Text("Fast mode") },
             supportingContent = {
                 Text(
-                    "Turn off to put the button where you choose. Dragging it moves it until the keyboard closes."
+                    if (modelSupportsFastMode(choice.model))
+                        "Faster refinement for a little more usage."
+                    else "Only works with Opus models."
                 )
             },
             trailingContent = {
-                Switch(settings.chipDockOnMic, { onChange(settings.copy(chipDockOnMic = it)) })
+                Switch(settings.claudeFastMode, { onChange(settings.copy(claudeFastMode = it)) })
             },
-            colors = rowColors,
+            colors = rowColors(),
         )
-        if (!settings.chipDockOnMic) {
-            ListItem(
-                headlineContent = { Text("Set button position") },
-                trailingContent = {
-                    Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null)
-                },
-                modifier = Modifier.clickable(onClick = onSetChipPosition),
-                colors = rowColors,
-            )
-        }
-
-        Section("Vocabulary")
-        Text(
-            vocabularySummary(settings),
-            Modifier.padding(horizontal = 16.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        val keyTerms = keyTerms(settings)
-        settings.vocabulary.forEach { word ->
-            ListItem(
-                headlineContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(word)
-                        if (word in keyTerms) {
-                            Badge(
-                                Modifier.padding(start = 8.dp),
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ) {
-                                Text("Key term")
-                            }
-                        }
-                    }
-                },
-                trailingContent = {
-                    IconButton({
-                        onChange(settings.copy(vocabulary = settings.vocabulary - word))
-                    }) {
-                        Icon(
-                            painterResource(R.drawable.ic_close),
-                            contentDescription = "Remove $word",
-                        )
-                    }
-                },
-                colors = rowColors,
-            )
-        }
-        AddWord { word ->
-            if (word !in settings.vocabulary) {
-                onChange(settings.copy(vocabulary = settings.vocabulary + word))
-            }
-        }
-
-        Section("Accounts")
-        signInError?.let {
-            Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
-        }
-        providerOrder.forEach { provider ->
-            val isSignedIn = provider in signedIn
-            ListItem(
-                headlineContent = { Text(provider.label) },
-                supportingContent = { Text(if (isSignedIn) "Signed in" else "Signed out") },
-                trailingContent = {
-                    if (isSignedIn) {
-                        TextButton({ onSignOut(provider) }) { Text("Sign out") }
-                    } else {
-                        TextButton({ onSignIn(provider) }) { Text("Sign in") }
-                    }
-                },
-                colors = rowColors,
-            )
-        }
-        if (signingIn != null) PasteCode(signingIn, onPasteCode)
+    }
+    DropdownRow(
+        "Fallback profile",
+        profileChoices(settings),
+        settings.defaultWritingProfile,
+        description = "Used when the app doesn't suggest a profile.",
+    ) {
+        onChange(settings.copy(defaultWritingProfile = it))
+    }
+    InstructionsField(
+        "Additional instructions",
+        "Added to every refinement, before each profile's own instructions.",
+        settings.additionalInstructions,
+    ) {
+        onChange(settings.copy(additionalInstructions = it))
     }
 }
 
 @Composable
-private fun ProviderPicker(
-    label: String,
-    selected: Provider,
-    signedIn: Set<Provider>,
-    onSelect: (Provider) -> Unit,
+private fun RefinementContextSettings(
+    settings: SpeecherSettings,
+    onChange: (SpeecherSettings) -> Unit,
 ) {
-    SingleChoiceSegmentedButtonRow(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).semantics {
-            contentDescription = label
-        }
-    ) {
-        providerOrder.forEachIndexed { index, provider ->
-            // A provider you aren't signed into can't be used — dictation would silently fall back
-            // to the other account — so it's disabled here until you connect it in Accounts below.
-            SegmentedButton(
-                selected = provider == selected,
-                onClick = { onSelect(provider) },
-                enabled = provider in signedIn,
-                shape = SegmentedButtonDefaults.itemShape(index, providerOrder.size),
-            ) {
-                Text(provider.label)
-            }
-        }
-    }
-}
-
-/** A text button showing [options]' label for [selected] that opens a menu of all of them. */
-@Composable
-private fun <T> Dropdown(options: Map<T, String>, selected: T, onSelect: (T) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        TextButton({ expanded = true }) { Text(options[selected] ?: selected.toString()) }
-        DropdownMenu(expanded, { expanded = false }) {
-            options.forEach { (value, label) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        expanded = false
-                        onSelect(value)
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EffortPicker(provider: Provider, selected: String, onSelect: (String) -> Unit) {
-    val efforts = provider.refinementEfforts
-    SingleChoiceSegmentedButtonRow(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).semantics {
-            contentDescription = "Reasoning effort"
-        }
-    ) {
-        efforts.forEachIndexed { index, effort ->
-            SegmentedButton(
-                selected = effort == selected,
-                onClick = { onSelect(effort) },
-                shape = SegmentedButtonDefaults.itemShape(index, efforts.size),
-            ) {
-                Text(effort.replaceFirstChar(Char::uppercase))
-            }
-        }
-    }
-}
-
-/**
- * Standard, Fast and Ultrafast; a model without Ultrafast shows it disabled, and refines at Fast.
- */
-@Composable
-private fun SpeedPicker(
-    selected: OpenAiSpeed,
-    ultrafast: Boolean,
-    onSelect: (OpenAiSpeed) -> Unit,
-) {
-    val speeds = OpenAiSpeed.entries
-    SingleChoiceSegmentedButtonRow(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).semantics {
-            contentDescription = "Speed"
-        }
-    ) {
-        speeds.forEachIndexed { index, speed ->
-            SegmentedButton(
-                selected = speed == selected,
-                onClick = { onSelect(speed) },
-                enabled = speed != OpenAiSpeed.Ultrafast || ultrafast,
-                shape = SegmentedButtonDefaults.itemShape(index, speeds.size),
-            ) {
-                Text(speed.label)
-            }
-        }
-    }
-}
-
-/** The built-in tones or levels, which cannot be edited, as one line. */
-@Composable
-private fun BuiltInNames(names: List<String>) {
     Text(
-        "Built-in: ${names.joinToString(", ")}",
-        Modifier.padding(horizontal = 16.dp),
+        "Refinement always gets the app's name, to pick a writing profile.",
+        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    ListItem(
+        headlineContent = { Text("Text around the cursor") },
+        supportingContent = { Text("Sends the field's placeholder and the text near the cursor.") },
+        trailingContent = {
+            Switch(settings.useTargetContext, { onChange(settings.copy(useTargetContext = it)) })
+        },
+        colors = rowColors(),
+    )
+    if (!settings.useTargetContext) return
+    ListItem(
+        headlineContent = { Text("Screen text") },
+        supportingContent = { Text("Sends the visible text of the app you're dictating into.") },
+        trailingContent = {
+            Switch(settings.includeScreenText, { onChange(settings.copy(includeScreenText = it)) })
+        },
+        colors = rowColors(),
+    )
+    ListItem(
+        headlineContent = { Text("Screenshot") },
+        supportingContent = { Text("Sends a picture of that app. Needs a vision model.") },
+        trailingContent = {
+            Switch(settings.includeScreenshot, { onChange(settings.copy(includeScreenshot = it)) })
+        },
+        colors = rowColors(),
+    )
+}
+
+@Composable
+private fun DictationPanelSettings(
+    settings: SpeecherSettings,
+    onChange: (SpeecherSettings) -> Unit,
+    onSetChipPosition: () -> Unit,
+) {
+    // With refinement off the panel only offers Insert, so there is no layout to choose.
+    if (settings.refinementEnabled) {
+        Section("Insert buttons")
+        ButtonLayoutPicker(settings.buttonLayout) { onChange(settings.copy(buttonLayout = it)) }
+    }
+    Section("Panel size")
+    PanelSizePicker(settings.panelSize) { onChange(settings.copy(panelSize = it)) }
+
+    Section("Dictation button")
+    ListItem(
+        headlineContent = { Text("Dock on the keyboard's mic key") },
+        supportingContent = { Text("Dragging the button moves it until the keyboard closes.") },
+        trailingContent = {
+            Switch(settings.chipDockOnMic, { onChange(settings.copy(chipDockOnMic = it)) })
+        },
+        colors = rowColors(),
+    )
+    if (!settings.chipDockOnMic) {
+        ListItem(
+            headlineContent = { Text("Button position") },
+            supportingContent = { Text(if (settings.chipOffsetX == null) "Default" else "Saved") },
+            trailingContent = { Chevron() },
+            modifier = Modifier.clickable(onClick = onSetChipPosition),
+            colors = rowColors(),
+        )
+    }
+}
+
+@Composable
+private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
+    Text(
+        vocabularySummary(settings),
+        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    val keyTerms = keyTerms(settings)
+    settings.vocabulary.forEach { word ->
+        ListItem(
+            headlineContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(word)
+                    if (word in keyTerms) {
+                        Badge(
+                            Modifier.padding(start = 8.dp),
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ) {
+                            Text("Key term")
+                        }
+                    }
+                }
+            },
+            trailingContent = {
+                IconButton({ onChange(settings.copy(vocabulary = settings.vocabulary - word)) }) {
+                    Icon(painterResource(R.drawable.ic_close), contentDescription = "Remove $word")
+                }
+            },
+            colors = rowColors(),
+        )
+    }
+    AddWord { word ->
+        if (word !in settings.vocabulary) {
+            onChange(settings.copy(vocabulary = settings.vocabulary + word))
+        }
+    }
 }
 
 /**
- * One custom tone or level: its name and its instructions, editable, with [extra] controls beside
- * the name and a delete button.
+ * The two providers as segments under [title]. One you aren't signed into can't be used, since
+ * dictation would silently fall back to the other account, so it is disabled with a sign-in link
+ * under it, and the check sits on the provider dictation will actually use.
  */
 @Composable
-private fun CustomChoice(
-    name: String,
-    text: String,
-    textLabel: String,
-    onEdit: (name: String, text: String) -> Unit,
-    onDelete: () -> Unit,
-    extra: @Composable () -> Unit = {},
+private fun ProviderPicker(
+    title: String,
+    selected: Provider,
+    signedIn: Set<Provider>,
+    onSignIn: (Provider) -> Unit,
+    onSelect: (Provider) -> Unit,
 ) {
+    val shown = shownProvider(selected, signedIn)
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                name,
-                { onEdit(it, text) },
-                Modifier.weight(1f),
-                label = { Text("Name") },
-                singleLine = true,
-                isError = name.isBlank(),
-            )
-            extra()
-            IconButton(onDelete) {
-                Icon(painterResource(R.drawable.ic_close), contentDescription = "Delete $name")
+        Text(title, style = MaterialTheme.typography.bodyLarge)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            providerOrder.forEachIndexed { index, provider ->
+                SegmentedButton(
+                    selected = provider == shown,
+                    onClick = { onSelect(provider) },
+                    enabled = provider in signedIn,
+                    shape = SegmentedButtonDefaults.itemShape(index, providerOrder.size),
+                ) {
+                    Text(provider.label, maxLines = 1)
+                }
             }
         }
-        OutlinedTextField(
-            text,
-            { onEdit(name, it) },
-            Modifier.fillMaxWidth(),
-            label = { Text(textLabel) },
-            minLines = 2,
-        )
-    }
-}
-
-/**
- * A name and instructions for a new tone or level, added once the name is set and unlike [taken],
- * and the instructions are set when [needsText]. The id comes from the name given here.
- */
-@Composable
-private fun AddChoice(
-    action: String,
-    textLabel: String,
-    taken: Collection<String>,
-    needsText: Boolean = false,
-    onAdd: (name: String, text: String) -> Unit,
-) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var text by rememberSaveable { mutableStateOf("") }
-    val duplicate = taken.any { it.equals(name.trim(), ignoreCase = true) }
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        OutlinedTextField(
-            name,
-            { name = it },
-            Modifier.fillMaxWidth(),
-            label = { Text("Name") },
-            singleLine = true,
-            isError = duplicate,
-            supportingText = if (duplicate) ({ Text("That name is taken.") }) else null,
-        )
-        OutlinedTextField(
-            text,
-            { text = it },
-            Modifier.fillMaxWidth(),
-            label = { Text(textLabel) },
-            minLines = 2,
-        )
-        TextButton(
-            {
-                onAdd(name.trim(), text)
-                name = ""
-                text = ""
-            },
-            enabled = name.isNotBlank() && !duplicate && (!needsText || text.isNotBlank()),
-        ) {
-            Text(action)
-        }
-    }
-}
-
-/**
- * Deletes a custom profile. When a rule or the fallback points at it, the first tap shows what the
- * delete changes and asks again, as the desktop's confirmation does.
- */
-@Composable
-private fun DeleteProfile(notice: String, onDelete: () -> Unit) {
-    var confirming by remember { mutableStateOf(false) }
-    if (confirming) {
-        Text(
-            notice,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    Row {
-        if (confirming) TextButton({ confirming = false }) { Text("Cancel") }
-        TextButton({ if (notice.isEmpty() || confirming) onDelete() else confirming = true }) {
-            Text("Delete")
-        }
-    }
-}
-
-/** The app type and profile a rule sets, as one line. */
-private fun ruleSummary(
-    rule: RecognitionRule,
-    profiles: Map<WritingProfile, String>,
-): String =
-    listOfNotNull(
-            rule.category?.let { appTypeLabels[it] },
-            rule.profile?.let { profiles[it] },
-        )
-        .joinToString(" · ")
-
-/** The desktop's built-in rules, read-only and folded away until asked for. */
-@Composable
-private fun BuiltInRules(profiles: Map<WritingProfile, String>) {
-    var shown by rememberSaveable { mutableStateOf(false) }
-    TextButton({ shown = !shown }, Modifier.padding(horizontal = 8.dp)) {
-        Text(if (shown) "Hide built-in rules" else "Show ${builtInRules.size} built-in rules")
-    }
-    if (shown) {
-        builtInRules.forEach { rule ->
-            ListItem(
-                headlineContent = { Text(rule.match) },
-                supportingContent = { Text(ruleSummary(rule, profiles)) },
-            )
-        }
-    }
-}
-
-/** One of the user's rules: its match text, app type and profile, editable, and delete. */
-@Composable
-private fun RuleEditor(
-    rule: RecognitionRule,
-    appTypes: Map<AppCategory?, String>,
-    profiles: Map<WritingProfile?, String>,
-    onEdit: (RecognitionRule) -> Unit,
-    onDelete: () -> Unit,
-) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                rule.match,
-                { onEdit(rule.copy(match = it)) },
-                Modifier.weight(1f),
-                label = { Text("App name or ID contains") },
-                singleLine = true,
-                isError = rule.match.isBlank(),
-            )
-            IconButton(onDelete) {
-                Icon(
-                    painterResource(R.drawable.ic_close),
-                    contentDescription = "Delete ${rule.match}",
-                )
+        providerOrder
+            .filter { it !in signedIn }
+            .forEach { provider ->
+                TextButton({ onSignIn(provider) }, Modifier.offset(x = (-12).dp)) {
+                    Text("Sign in to ${provider.label} to use it")
+                }
             }
-        }
-        RuleChoices(rule.category, rule.profile, appTypes, profiles) { category, profile ->
-            onEdit(rule.copy(category = category, profile = profile))
-        }
     }
 }
 
+/** A row named [title] whose value opens a menu of [options]; the whole row is the target. */
 @Composable
-private fun RuleChoices(
-    category: AppCategory?,
-    profile: WritingProfile?,
-    appTypes: Map<AppCategory?, String>,
-    profiles: Map<WritingProfile?, String>,
-    onChange: (AppCategory?, WritingProfile?) -> Unit,
+internal fun <T> DropdownRow(
+    title: String,
+    options: Map<T, String>,
+    selected: T,
+    description: String? = null,
+    onSelect: (T) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("App type", style = MaterialTheme.typography.bodyMedium)
-        Dropdown(appTypes, category) { onChange(it, profile) }
-        Text("Profile", style = MaterialTheme.typography.bodyMedium)
-        Dropdown(profiles, profile) { onChange(category, it) }
-    }
-}
-
-/** A new rule, added once it has a match text and sets an app type or a profile. */
-@Composable
-private fun AddRule(
-    appTypes: Map<AppCategory?, String>,
-    profiles: Map<WritingProfile?, String>,
-    onAdd: (RecognitionRule) -> Unit,
-) {
-    var match by rememberSaveable { mutableStateOf("") }
-    var category by remember { mutableStateOf<AppCategory?>(null) }
-    var profile by remember { mutableStateOf<WritingProfile?>(null) }
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        OutlinedTextField(
-            match,
-            { match = it },
-            Modifier.fillMaxWidth(),
-            label = { Text("App name or ID contains") },
-            singleLine = true,
-        )
-        RuleChoices(category, profile, appTypes, profiles) { nextCategory, nextProfile ->
-            category = nextCategory
-            profile = nextProfile
-        }
-        TextButton(
-            {
-                onAdd(RecognitionRule(match.trim(), category, profile))
-                match = ""
-                category = null
-                profile = null
-            },
-            enabled = match.isNotBlank() && (category != null || profile != null),
-        ) {
-            Text("Add rule")
-        }
-    }
+    var expanded by remember { mutableStateOf(false) }
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = description?.let { { Text(it) } },
+        trailingContent = {
+            Box {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        options[selected] ?: selected.toString(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Icon(painterResource(R.drawable.ic_arrow_drop_down), contentDescription = null)
+                }
+                DropdownMenu(expanded, { expanded = false }) {
+                    options.forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                expanded = false
+                                onSelect(value)
+                            },
+                        )
+                    }
+                }
+            }
+        },
+        modifier = Modifier.clickable(role = Role.DropdownList) { expanded = true },
+        colors = rowColors(),
+    )
 }
 
 /** Several lines of instructions for the refiner, under a title and what they are for. */
@@ -985,9 +581,13 @@ private fun InstructionsField(
  * the fallback without looking for it.
  */
 @Composable
-internal fun PasteCode(provider: Provider, onPasteCode: (String) -> Unit) {
+internal fun PasteCode(
+    provider: Provider,
+    onPasteCode: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var code by rememberSaveable { mutableStateOf("") }
-    Column(Modifier.padding(horizontal = 16.dp)) {
+    Column(modifier) {
         Text(
             "Waiting for ${provider.label}. If the browser didn't bring you back, copy its " +
                 "address bar (it starts with http://localhost) and paste it here.",
@@ -1038,7 +638,7 @@ private fun AddWord(onAdd: (String) -> Unit) {
         word = ""
     }
     Row(
-        Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp),
+        Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedTextField(
@@ -1056,7 +656,7 @@ private fun AddWord(onAdd: (String) -> Unit) {
 
 @Composable
 private fun SettingsPreview(settings: SpeecherSettings, signedIn: Set<Provider>) = SpeecherTheme {
-    Surface { Settings(settings, signedIn, {}, {}, {}, {}) }
+    Surface { Settings(settings, signedIn, {}, {}, {}) }
 }
 
 @PreviewLightDark
@@ -1069,8 +669,21 @@ internal fun SettingsPreview() =
 
 @PreviewLightDark
 @Composable
-internal fun SettingsRefinementOffPreview() =
-    SettingsPreview(
-        SpeecherSettings(transcriptionProvider = Provider.ChatGpt, refinementEnabled = false),
-        setOf(Provider.ChatGpt),
-    )
+internal fun SettingsSignedOutPreview() = SettingsPreview(SpeecherSettings(), emptySet())
+
+@PreviewLightDark
+@Composable
+internal fun SettingsRefinementPreview() = SpeecherTheme {
+    Surface {
+        Column {
+            SettingsPageContent(
+                SettingsPage.Refinement,
+                SpeecherSettings(),
+                setOf(Provider.ChatGpt),
+                {},
+                {},
+                {},
+            )
+        }
+    }
+}

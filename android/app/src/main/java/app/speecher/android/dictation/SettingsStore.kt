@@ -28,7 +28,7 @@ class SettingsStore(private val context: Context) {
                 refinementEnabled = preferences.getBoolean("refinement", true),
                 refinementProvider =
                     enumOf(preferences.getString("refinementProvider", null), default),
-                transcribePassEnabled = preferences.getBoolean("transcribePass", true),
+                transcribePassEnabled = preferences.getBoolean("transcribePass", false),
                 chatGptRefinement = loadRefinement(Provider.ChatGpt),
                 claudeRefinement = loadRefinement(Provider.Claude),
                 // Before Speed there was only the fast-mode switch.
