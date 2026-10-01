@@ -325,6 +325,10 @@ private slots:
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
         QCOMPARE(settings.anthropicFastMode(), true);
+        // The Codex accuracy pass is on until someone turns it off.
+        QCOMPARE(settings.codexFinalRetranscribe(), true);
+        settings.setCodexFinalRetranscribe(false);
+        QCOMPARE(settings.codexFinalRetranscribe(), false);
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
         QCOMPARE(settings.pasteRules(), defaultPasteRules());
