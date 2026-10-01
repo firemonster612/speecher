@@ -413,7 +413,10 @@ struct HomePane: View {
     private var corrections: some View {
         card(model.homeLabel("correctionsTitle")) {
             let learned = model.learnedCorrectionCount
-            figure(learned.formatted(), caption: model.bridge.learnedCorrectionsCaption(learned))
+            // None learned yet: the note says why, and a 0 would only repeat it.
+            if learned > 0 {
+                figure(learned.formatted(), caption: model.bridge.learnedCorrectionsCaption(learned))
+            }
             Text(model.bridge.learnedCorrectionsNote)
                 .foregroundStyle(.secondary)
             let action = model.bridge.learnedCorrectionsAction

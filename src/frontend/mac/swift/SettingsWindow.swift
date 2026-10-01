@@ -45,32 +45,16 @@ struct RootView: View {
         }
     }
 
-    /// The banner, the title and the pane share one column, as wide as a
-    /// grouped form's cards go, so their edges line up however wide the
-    /// window is.
+    /// The banner and the title keep to the column a grouped form centres its
+    /// cards in, so their edges line up however wide the window is. The pane
+    /// itself stays full width, so its scroller sits at the window edge.
     private static let columnWidth: CGFloat = 742
 
     @ViewBuilder private var detail: some View {
         if let pane = model.pane(withId: model.pane) {
-            VStack(alignment: .leading, spacing: 0) {
-                if model.update.visible {
-                    UpdateBanner(model: model)
-                        .scenePadding([.top, .horizontal])
-                } else if model.whatsNewPending {
-                    WhatsNewStrip(banner: model.whatsNewBanner,
-                                  seeWhatsNew: { model.showWhatsNew() },
-                                  dismiss: { model.dismissWhatsNew() })
-                        .scenePadding([.top, .horizontal])
-                }
-                HStack {
-                    if pane.id == "whatsNew" {
-                        Button("Back", systemImage: "chevron.backward") { model.leaveWhatsNew() }
-                            .labelStyle(.iconOnly)
-                    }
-                    Text(pane.title)
-                        .font(.title2.weight(.semibold))
-                }
-                .scenePadding([.top, .horizontal])
+            VStack(spacing: 0) {
+                header(pane)
+                    .frame(maxWidth: Self.columnWidth, alignment: .leading)
                 // Content scrolls under the title, so the two are kept apart
                 // rather than the content being cut off at a glyph.
                 Divider()
@@ -80,8 +64,29 @@ struct RootView: View {
                     // Vocabulary's chosen view, does not carry over to the next.
                     .id(pane.id)
             }
-            .frame(maxWidth: Self.columnWidth)
-            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder private func header(_ pane: Pane) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if model.update.visible {
+                UpdateBanner(model: model)
+                    .scenePadding([.top, .horizontal])
+            } else if model.whatsNewPending {
+                WhatsNewStrip(banner: model.whatsNewBanner,
+                              seeWhatsNew: { model.showWhatsNew() },
+                              dismiss: { model.dismissWhatsNew() })
+                    .scenePadding([.top, .horizontal])
+            }
+            HStack {
+                if pane.id == "whatsNew" {
+                    Button("Back", systemImage: "chevron.backward") { model.leaveWhatsNew() }
+                        .labelStyle(.iconOnly)
+                }
+                Text(pane.title)
+                    .font(.title2.weight(.semibold))
+            }
+            .scenePadding([.top, .horizontal])
         }
     }
 }
@@ -172,18 +177,25 @@ struct WhatsNewStrip: View {
 struct SidebarList: View {
     @ObservedObject var model: AppModel
     @Binding var query: String
+    /// The hit picked in the current search. A search starts with none, so
+    /// picking the pane already open still reaches the row that matched.
+    @State private var searchPick: String?
 
     var body: some View {
         // Every pick goes through showPage, so choosing What's New here is the
         // same as any other way of opening it. A search hit opens at the row
         // that matched.
-        List(selection: Binding<String>(get: { model.pane },
-                                        set: { pick in
-                                            guard pick != model.pane else { return }
-                                            let row = query.isEmpty ? nil
-                                                : model.search(query).first(where: { $0.pane.id == pick })?.row
-                                            model.showPage(pick, row: row)
-                                        })) {
+        List(selection: Binding<String?>(get: { query.isEmpty ? model.pane : searchPick },
+                                         set: { pick in
+                                             guard let pick else { return }
+                                             if query.isEmpty {
+                                                 if pick != model.pane { model.showPage(pick) }
+                                                 return
+                                             }
+                                             searchPick = pick
+                                             let row = model.search(query).first(where: { $0.pane.id == pick })?.row
+                                             model.showPage(pick, row: row)
+                                         })) {
             if query.isEmpty {
                 // Each titled group under the native section header; the top
                 // group has none, and What's New leads it while pending or open.
@@ -210,6 +222,7 @@ struct SidebarList: View {
             }
         }
         .listStyle(.sidebar)
+        .onChange(of: query) { searchPick = nil }
         .overlay {
             if !query.isEmpty, model.search(query).isEmpty {
                 ContentUnavailableView(SpeecherBridge.noSettingsMatchText, systemImage: "magnifyingglass")

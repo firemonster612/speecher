@@ -98,9 +98,10 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         if settings == nil {
             settings = SpeecherSettingsWindow(model: model)
         }
-        // Opened from closed it starts on Home; one already up keeps its page.
+        // Opened from closed it starts on the pane last shown; one already up
+        // keeps its page.
         if settings?.isVisible != true {
-            model.showPage("home")
+            model.showPage(model.reopenPane)
         }
         settings?.show()
         NSApp.activate(ignoringOtherApps: true)
@@ -142,10 +143,10 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         model.showPage(page)
     }
 
-    /// The ⌘, menu item's action: Settings… on General.
+    /// The ⌘, menu item's action: the settings window, as a Dock click opens it.
     @MainActor
-    @objc private func openGeneralSettings() {
-        openSettingsPage("general")
+    @objc private func openSettingsFromMenu() {
+        showSettings()
     }
 
     /// Starts the files the Transcribe pane lists, for the screenshot path.
@@ -199,6 +200,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     @objc public func showDictationProblem(_ message: String, fix: SpeecherErrorAction?) {
+        model.noteRefusedStart(message, fix: fix)
         panel.show(problem: message, fix: fix)
     }
 
@@ -269,13 +271,13 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         // than adding a second one is what keeps ⌘, unambiguous.
         if let reserved = appMenu.items.first(where: { $0.keyEquivalent == comma }) {
             reserved.title = "Settings…"
-            reserved.action = #selector(openGeneralSettings)
+            reserved.action = #selector(openSettingsFromMenu)
             reserved.target = self
             reserved.isHidden = false
             reserved.isEnabled = true
             return
         }
-        let item = NSMenuItem(title: "Settings…", action: #selector(openGeneralSettings), keyEquivalent: comma)
+        let item = NSMenuItem(title: "Settings…", action: #selector(openSettingsFromMenu), keyEquivalent: comma)
         item.target = self
         // After About, which is where the item sits in every other Mac app.
         let index = min(1, appMenu.items.count)

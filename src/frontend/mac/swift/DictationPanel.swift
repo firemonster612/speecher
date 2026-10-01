@@ -708,6 +708,8 @@ final class SpeecherDictationPanel {
         present()
         announce(problem)
         countDownProblem(for: seconds)
+        // A pointer already where the panel appeared sends no enter event.
+        if panel.frame.contains(NSEvent.mouseLocation) { holdProblem(true) }
     }
 
     private func countDownProblem(for seconds: TimeInterval) {

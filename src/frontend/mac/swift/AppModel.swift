@@ -62,9 +62,25 @@ final class AppModel: ObservableObject {
     /// The last single-key binding was refused for the missing Accessibility
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
-    /// The pane the sidebar is on. A window opened from closed starts on Home.
+    /// The pane the sidebar is on. A window opened from closed starts on
+    /// reopenPane.
     @Published var pane = "home" {
-        didSet { if pane != oldValue { activeShortcutRecorder?.stop() } }
+        didSet {
+            guard pane != oldValue else { return }
+            activeShortcutRecorder?.stop()
+            if pane != "whatsNew" { UserDefaults.standard.set(pane, forKey: Self.lastPaneKey) }
+        }
+    }
+    private static let lastPaneKey = "lastSettingsPane"
+
+    /// Where a settings window opened from closed starts: the pane last shown,
+    /// or Home. A screenshot run, which names a page or a window size, starts
+    /// on Home, so what it grabs does not depend on what the machine showed
+    /// before.
+    var reopenPane: String {
+        let environment = ProcessInfo.processInfo.environment
+        let grabbing = ["SPEECHER_GRAB_PAGE", "SPEECHER_GRAB_SIZE"].contains { !(environment[$0] ?? "").isEmpty }
+        return grabbing ? "home" : UserDefaults.standard.string(forKey: Self.lastPaneKey) ?? "home"
     }
     /// The recorder whose recording is in progress, if any. Stopped directly
     /// when the pane changes or the settings window closes, rather than
@@ -106,6 +122,7 @@ final class AppModel: ObservableObject {
     /// Whether the slow rows have been asked for once, after which asking again
     /// costs nothing new.
     private var deferredLoaded = false
+    private var keyWindowObserver: NSObjectProtocol?
 
     var accessibilitySupported: Bool { bridge.accessibilitySupported }
     var shortcutSupported: Bool { bridge.shortcutSupported }
@@ -191,6 +208,14 @@ final class AppModel: ObservableObject {
             }
         }
         refreshTranscriptDetail()
+        // A snapshot reuses the last device list, so a microphone plugged in
+        // while Speecher was in the background is listed when one of its
+        // windows comes forward.
+        keyWindowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshAudioInputs() }
+        }
     }
 
     /// Re-reads Home's numbers. Home calls it when it appears, so a day that
@@ -223,6 +248,14 @@ final class AppModel: ObservableObject {
     /// The popup reported a failure with this fix.
     func noteFailure(fix: SpeecherErrorAction) {
         failureFix = fix.fix == .none ? nil : fix
+    }
+
+    /// A dictation that never started, such as one the microphone grant
+    /// refused. No session failed, so the reason is held here rather than
+    /// read from the session, until the next session starts.
+    func noteRefusedStart(_ message: String, fix: SpeecherErrorAction?) {
+        failureNote = message
+        failureFix = fix?.fix == SpeecherErrorFix.none ? nil : fix
     }
 
     /// Runs what an error offered: a settings page, the Accessibility grant,
@@ -286,6 +319,11 @@ final class AppModel: ObservableObject {
         // Only the keyring can stop to ask for an unlock, so it waits another
         // turn rather than holding up the other two.
         DispatchQueue.main.async { [weak self] in self?.loadApiKey() }
+    }
+
+    private func refreshAudioInputs() {
+        bridge.settingsSchema.refreshAudioInputs()
+        pages = bridge.settingsSchema.pages
     }
 
     func reloadSettingsDraft() {
