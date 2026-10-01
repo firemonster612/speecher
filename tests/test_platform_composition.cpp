@@ -106,6 +106,12 @@ public:
         registerCount += 1;
     }
 
+    bool removeRegistration(QString *) override
+    {
+        publishShortcut({});
+        return true;
+    }
+
     void suspend() override { suspendCount += 1; }
 
     QString resume() override
@@ -1048,6 +1054,28 @@ private slots:
         platform->binder->publishRegistrationResult(true, result);
         QCOMPARE(status->text(),
                  QStringLiteral("Shortcut set to Ctrl+Alt+Space. Try it now."));
+    }
+
+    void globalShortcutPageClearsASingleKeyOnPortalDesktops()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->desktopChooser = true;
+        platform->binder->publishShortcut(ShortcutBinding::singleKey(QStringLiteral("F13")));
+        LinuxGlobalShortcutSetupPage page(controller);
+
+        auto *capture = page.findChild<QPushButton *>(QStringLiteral("globalShortcutCapture"));
+        auto *binding = page.findChild<QLabel *>(QStringLiteral("globalShortcutBinding"));
+        auto *clear = page.findChild<QPushButton *>(QStringLiteral("clearGlobalShortcut"));
+        QVERIFY(capture && binding && clear);
+        // Beside the desktop's Choose shortcut, the capture names what it records.
+        QCOMPARE(capture->text(), QStringLiteral("Set single key"));
+        QVERIFY(!clear->isHidden());
+
+        clear->click();
+        QVERIFY(!controller.globalShortcut().isSingleKey());
+        QCOMPARE(binding->text(), QStringLiteral("Not set"));
+        QVERIFY(clear->isHidden());
     }
 
     void globalShortcutPageKeepsPortalFailureAfterRestoringTheOldShortcut()

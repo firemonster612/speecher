@@ -328,18 +328,6 @@ ProviderOptionRow addOptionRow(QFormLayout *card,
     return {id, label, button, status};
 }
 
-// A check box row with its title and a grey description, as every other row
-// has: the settings row otherwise turns a check box's description into its
-// title.
-QFrame *checkBoxRow(const QString &title, const QString &description, QCheckBox *box, QWidget *parent)
-{
-    QFrame *row = settings::makeRow(title, QString(), box, parent, nullptr, true);
-    auto *subtitle = row->findChild<QLabel *>(QStringLiteral("rowDescription"));
-    subtitle->setText(description);
-    subtitle->show();
-    return row;
-}
-
 // A small grey line under something, indented to start where its text does.
 QLabel *makeNote(const QString &text, QWidget *parent, int indent = 0)
 {
@@ -997,11 +985,14 @@ void SpeechProviderSetupPage::showSelectedProvider()
         return;
     }
     setStatusColor(m_status, option.ok);
-    // The provider's own message names files and commands; the hint below
-    // already says what to do, so the message is there on hover only.
-    m_status->setText(option.ok ? setupProviderReady(option.label)
-                                : setupTranscriptionBlocked(false, option.label));
-    m_status->setToolTip(option.ok ? QString() : option.message);
+    // A sign-in's own message names files and commands; the hint below
+    // already says what to do, so that message is there on hover only. Any
+    // other failure, such as a Custom Endpoint without a URL, is the reason.
+    const bool showsReason = !isSetupSignInProvider(option.id) && !option.message.isEmpty();
+    m_status->setText(option.ok      ? setupProviderReady(option.label)
+                      : showsReason ? option.message
+                                    : setupTranscriptionBlocked(false, option.label));
+    m_status->setToolTip(option.ok || showsReason ? QString() : option.message);
     m_statusGlyph->setVisible(!option.ok);
     m_hint->setVisible(!option.ok);
     m_checkAgain->setVisible(!option.ok);
@@ -1335,16 +1326,16 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     keyboardLayout->addWidget(m_setup, 0, Qt::AlignLeft);
     settings::addCardRow(card, keyboardRow, host);
 
-    m_clipboardOnlyRow = checkBoxRow(QStringLiteral("Paste from the clipboard instead"),
-                                     QStringLiteral("Continue without the virtual keyboard."),
-                                     m_clipboardOnly, host);
+    m_clipboardOnlyRow = settings::makeRow(QStringLiteral("Paste from the clipboard instead"),
+                                           QStringLiteral("Continue without the virtual keyboard."),
+                                           m_clipboardOnly, host);
     settings::addCardRow(card, m_clipboardOnlyRow, host);
     settings::addCardRow(
         card,
         settings::makeRow(setupSchemaRow(QStringLiteral("outputFormat")).label, QString(), m_format, host),
         host);
     const SettingsRow &restore = setupSchemaRow(QStringLiteral("restoreClipboardAfterTyping"));
-    settings::addCardRow(card, checkBoxRow(restore.label, restore.help, m_restoreClipboard, host), host);
+    settings::addCardRow(card, settings::makeRow(restore.label, restore.help, m_restoreClipboard, host), host);
     layout->addStretch();
 #ifndef SPEECHER_WITH_YDOTOOL
     // Nothing to install and nothing to opt out of.

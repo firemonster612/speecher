@@ -1625,6 +1625,30 @@ private slots:
         QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
     }
 
+    void speechProviderSetupShowsAnEndpointProblemAsTheStatus()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("endpoint"));
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint"), QString()},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {
+                    false, QStringLiteral("Set the speech endpoint's server URL in Settings.")};
+                return provider;
+            });
+
+        SpeechProviderSetupPage setup(settings, providers);
+        setup.show();
+        auto *status = setup.findChild<QLabel *>(QStringLiteral("speechProviderStatus"));
+        QVERIFY(status);
+        QTRY_COMPARE(status->text(),
+                     QStringLiteral("Set the speech endpoint's server URL in Settings."));
+        QCOMPARE(status->toolTip(), QString());
+    }
+
     void completionStatusDurationLoadsAndSaves()
     {
         ProviderRegistry providers;
