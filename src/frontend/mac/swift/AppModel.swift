@@ -68,19 +68,22 @@ final class AppModel: ObservableObject {
         didSet {
             guard pane != oldValue else { return }
             activeShortcutRecorder?.stop()
-            if pane != "whatsNew" { UserDefaults.standard.set(pane, forKey: Self.lastPaneKey) }
+            if pane != "whatsNew", !Self.screenshotRun {
+                UserDefaults.standard.set(pane, forKey: Self.lastPaneKey)
+            }
         }
     }
     private static let lastPaneKey = "lastSettingsPane"
+    /// A screenshot run names a page or a window size. It neither reads nor
+    /// stores the last pane, so what it grabs does not depend on what the
+    /// machine showed before, and the pane the machine reopens stays as it was.
+    private static let screenshotRun = ["SPEECHER_GRAB_PAGE", "SPEECHER_GRAB_SIZE"]
+        .contains { !(ProcessInfo.processInfo.environment[$0] ?? "").isEmpty }
 
     /// Where a settings window opened from closed starts: the pane last shown,
-    /// or Home. A screenshot run, which names a page or a window size, starts
-    /// on Home, so what it grabs does not depend on what the machine showed
-    /// before.
+    /// or Home.
     var reopenPane: String {
-        let environment = ProcessInfo.processInfo.environment
-        let grabbing = ["SPEECHER_GRAB_PAGE", "SPEECHER_GRAB_SIZE"].contains { !(environment[$0] ?? "").isEmpty }
-        return grabbing ? "home" : UserDefaults.standard.string(forKey: Self.lastPaneKey) ?? "home"
+        Self.screenshotRun ? "home" : UserDefaults.standard.string(forKey: Self.lastPaneKey) ?? "home"
     }
     /// The recorder whose recording is in progress, if any. Stopped directly
     /// when the pane changes or the settings window closes, rather than
