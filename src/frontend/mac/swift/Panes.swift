@@ -104,27 +104,38 @@ struct PaneView: View {
         case .home:
             HomePane(model: model)
         case .sections:
-            Form {
-                ForEach(model.groupCards(for: pane)) { card($0) }
+            ScrollViewReader { proxy in
+                Form {
+                    ForEach(model.groupCards(for: pane)) { card($0) }
+                }
+                .formStyle(.grouped)
+                .onChange(of: model.requestedRow, initial: true) { _, row in scroll(to: row, proxy) }
             }
-            .formStyle(.grouped)
         case .alternatives:
-            Form {
-                Section {
-                    Picker("View", selection: $alternative) {
-                        ForEach(Array(pane.groups.enumerated()), id: \.offset) { index, group in
-                            Text(group.title).tag(index)
+            // The views of one idea are chosen above the form rather than in a
+            // card of their own: a box holding only the picker reads as one
+            // more setting.
+            VStack(spacing: 0) {
+                Picker("View", selection: $alternative) {
+                    ForEach(Array(pane.groups.enumerated()), id: \.offset) { index, group in
+                        Text(group.title).tag(index)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .scenePadding([.top, .horizontal])
+                ScrollViewReader { proxy in
+                    Form {
+                        let groups = model.groupCards(for: pane)
+                        if groups.indices.contains(alternative) {
+                            card(groups[alternative], titled: false)
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                }
-                let groups = model.groupCards(for: pane)
-                if groups.indices.contains(alternative) {
-                    card(groups[alternative], titled: false)
+                    .formStyle(.grouped)
+                    .onChange(of: model.requestedRow, initial: true) { _, row in scroll(to: row, proxy) }
                 }
             }
-            .formStyle(.grouped)
             // A page id can name one of these views, as Home's link to
             // vocabulary:corrections does.
             .onChange(of: model.requestedView, initial: true) { _, view in
@@ -133,6 +144,15 @@ struct PaneView: View {
                 alternative = index
                 model.requestedView = nil
             }
+        }
+    }
+
+    /// Brings the row a search led to into view, once the pane has laid out.
+    private func scroll(to row: String?, _ proxy: ScrollViewProxy) {
+        guard let row else { return }
+        model.requestedRow = nil
+        DispatchQueue.main.async {
+            withAnimation { proxy.scrollTo(row, anchor: .top) }
         }
     }
 
@@ -150,6 +170,7 @@ struct PaneView: View {
                         VStack(alignment: .leading) { GateNote(row: row, model: model) }
                     }
                     RowView(row: row, model: model, gateNote: !grouped)
+                        .id(row.rowId)
                 }
             } header: {
                 if titled { Text(card.title) }
