@@ -92,7 +92,10 @@ class TokenStore(context: Context) {
         }
     }
 
-    /** Providers that rejected their saved sign-in during a dictation, until it is replaced. */
+    /**
+     * Providers that rejected their saved sign-in during a dictation, until it is replaced or a
+     * later dictation is accepted.
+     */
     fun sessionEnded(): Set<Provider> =
         Provider.entries.filterTo(mutableSetOf()) {
             preferences.getBoolean(sessionEndedKey(it.oauth), false)
@@ -100,6 +103,10 @@ class TokenStore(context: Context) {
 
     fun endSession(provider: OAuthProvider) {
         preferences.edit(commit = true) { putBoolean(sessionEndedKey(provider), true) }
+    }
+
+    fun clearSessionEnded(provider: OAuthProvider) {
+        preferences.edit(commit = true) { remove(sessionEndedKey(provider)) }
     }
 
     private fun sessionEndedKey(provider: OAuthProvider) = "${provider.name}-session-ended"

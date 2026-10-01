@@ -260,15 +260,16 @@ class SignInViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * After the app was killed mid-sign-in, bring back the paste field for the pending provider.
+     * After the app was killed mid-sign-in, bring back the paste field for the pending provider. An
+     * attempt for an account in [working] is one an earlier release left behind, so it is dropped.
      */
-    fun restore() {
-        if (activeProvider == null) {
-            activeProvider =
-                signIn.pendingProvider?.let { pending ->
-                    Provider.entries.firstOrNull { it.oauth == pending }
-                }
-        }
+    fun restore(working: Set<Provider>) {
+        if (activeProvider != null) return
+        val pending =
+            signIn.pendingProvider?.let { pending ->
+                Provider.entries.firstOrNull { it.oauth == pending }
+            }
+        if (pending in working) signIn.clearPending() else activeProvider = pending
     }
 
     fun paste(pasted: String) {

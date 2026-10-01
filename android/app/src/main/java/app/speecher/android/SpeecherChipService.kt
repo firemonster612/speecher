@@ -13,6 +13,7 @@ import android.view.Gravity
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.platform.ComposeView
@@ -43,9 +44,9 @@ class SpeecherChipService : AccessibilityService() {
     private val owner = ServiceViewOwner()
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     private var chip: ComposeView? = null
-    // Offers to keep a drag's position until the keyboard hides; ignored, the drag stays
-    // temporary.
+    // Offers to keep a drag's position for a while; ignored, the drag stays temporary.
     private var pill: ComposeView? = null
+    private val dismissPill = Runnable { removePill() }
     private var chipX = Int.MIN_VALUE
     private var chipY = Int.MIN_VALUE
     // The chip window's position when the current drag began.
@@ -215,7 +216,9 @@ class SpeecherChipService : AccessibilityService() {
 
     /**
      * Shows the save offer just above the keyboard's top edge, so it covers no keys, on the side of
-     * the screen the chip is on. It stays until the keyboard hides or the user answers.
+     * the screen the chip is on. It goes when the user answers, the keyboard hides, or after the
+     * time the user's accessibility settings give controls, since it can cover the app's own
+     * buttons above the keyboard.
      */
     private fun showPill() {
         removePill()
@@ -247,6 +250,14 @@ class SpeecherChipService : AccessibilityService() {
         }
         window.addView(view, params)
         pill = view
+        val timeout =
+            getSystemService(AccessibilityManager::class.java)
+                .getRecommendedTimeoutMillis(
+                    PILL_MILLIS,
+                    AccessibilityManager.FLAG_CONTENT_TEXT or
+                        AccessibilityManager.FLAG_CONTENT_CONTROLS,
+                )
+        handler.postDelayed(dismissPill, timeout.toLong())
     }
 
     /**
@@ -270,6 +281,7 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun removePill() {
+        handler.removeCallbacks(dismissPill)
         pill?.let(window::removeView)
         pill = null
     }
@@ -439,6 +451,7 @@ class SpeecherChipService : AccessibilityService() {
 
     private companion object {
         const val JITTER_DP = 8f
+        const val PILL_MILLIS = 10_000
         // English plus the common European forms: voz (es/pt), vocal/vocale (fr/it), Sprach- and
         // Mikro- (de), dictado/dictée/Diktat. "mic" covers microphone, micrófono and microfone.
         val VOICE_TOKENS =

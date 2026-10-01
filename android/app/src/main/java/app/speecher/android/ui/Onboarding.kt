@@ -100,8 +100,8 @@ fun Onboarding(
             DictationButtonSteps(onOpenAppInfo, onOpenChipSettings)
         }
         Text(
-            "Insert refined sends the text around your cursor to your provider, at its faster " +
-                "tier. Change this in Settings.",
+            "Insert refined sends the text around your cursor to your provider. ChatGPT " +
+                "refines at Fast speed. Change these in Settings.",
             Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -163,7 +163,7 @@ private fun SignInStep(
                     }
                 }
             }
-            if (signingIn != null && signingIn !in signedIn) PasteCode(signingIn, onPasteCode)
+            signingIn?.let { PasteCode(it, onPasteCode) }
         }
     }
 }

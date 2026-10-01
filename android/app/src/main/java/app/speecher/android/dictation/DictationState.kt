@@ -76,6 +76,9 @@ enum class FailureReason {
     /** Recovery: open the app to grant the microphone. */
     MicrophoneDenied,
 
+    /** Another app may hold the microphone. Recovery: retry. */
+    MicrophoneUnavailable,
+
     /** Recovery: open the app to sign in again. */
     SignedOut,
 
@@ -323,4 +326,8 @@ data class SetupStatus(
 ) {
     val complete: Boolean
         get() = signedIn.isNotEmpty() && microphoneGranted && keyboardEnabled && chipEnabled
+
+    /** The signed-in providers whose sign-in still works. */
+    val working: Set<Provider>
+        get() = signedIn - sessionEnded
 }
