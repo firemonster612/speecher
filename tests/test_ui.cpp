@@ -1117,115 +1117,7 @@ private slots:
         QVERIFY(setup.ready());
     }
 
-    void theWelcomePageHoldsNextUntilOneSignInIsFound()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        // The machine running the tests may have real CLI Proxy API accounts,
-        // which would open the gate this test holds shut.
-        QTemporaryDir emptyCliproxyDir;
-        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), emptyCliproxyDir.path());
-
-        ProviderRegistry providers;
-        providers.registerSpeechProvider(
-            {QStringLiteral("claude"), QStringLiteral("Claude Voice"),
-             QStringLiteral("Install Claude Code from claude.com/code, run claude in a terminal, and use /login.")},
-            [](QObject *parent) {
-                auto *provider = new FakeSpeechTranscriber(parent);
-                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
-                return provider;
-            });
-
-        WelcomeSetupPage welcome(settings, providers);
-        welcome.show();
-        auto *status = welcome.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialStatus_claude"));
-        auto *hint = welcome.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialHint_claude"));
-        QVERIFY(status && hint);
-        QCOMPARE(status->text(), QStringLiteral("Not found"));
-        QVERIFY(hint->text().contains(QStringLiteral("claude.com/code")));
-        QVERIFY(!welcome.ready());
-
-        ProviderRegistry signedIn;
-        signedIn.registerSpeechProvider(
-            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
-            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
-        WelcomeSetupPage found(settings, signedIn);
-        found.show();
-        auto *foundStatus = found.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialStatus_claude"));
-        QVERIFY(foundStatus);
-        QCOMPARE(foundStatus->text(), QStringLiteral("Sign-in found"));
-        QVERIFY(found.ready());
-    }
-
-    void theWelcomePageReprobesWhenItIsShownAgain()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        QTemporaryDir emptyCliproxyDir;
-        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), emptyCliproxyDir.path());
-
-        ProviderRegistry providers;
-        providers.registerSpeechProvider(
-            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
-            [](QObject *parent) {
-                auto *provider = new FakeSpeechTranscriber(parent);
-                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
-                return provider;
-            });
-
-        WelcomeSetupPage welcome(settings, providers);
-        welcome.show();
-        auto *status = welcome.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialStatus_claude"));
-        QVERIFY(status);
-        QCOMPARE(status->text(), QStringLiteral("Not found"));
-        QVERIFY(!welcome.ready());
-
-        // The user signs in from a terminal while the assistant sits open.
-        auto *provider = static_cast<FakeSpeechTranscriber *>(
-            providers.speechProvider(QStringLiteral("claude")));
-        QVERIFY(provider);
-        provider->prepareResult = {true, QString()};
-
-        welcome.hide();
-        welcome.show();
-        QCOMPARE(status->text(), QStringLiteral("Sign-in found"));
-        QVERIFY(welcome.ready());
-    }
-
-    void theWelcomePageAcceptsACliProxyAccountAlone()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        QTemporaryDir dir;
-        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
-        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
-                                     QStringLiteral("claude"), QStringLiteral("token"),
-                                     QDateTime::currentDateTimeUtc().addSecs(3600)));
-
-        // The provider CLI itself is not signed in; only CLI Proxy API is.
-        ProviderRegistry providers;
-        providers.registerSpeechProvider(
-            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
-            [](QObject *parent) {
-                auto *provider = new FakeSpeechTranscriber(parent);
-                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
-                return provider;
-            });
-
-        WelcomeSetupPage welcome(settings, providers);
-        welcome.show();
-        auto *status = welcome.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialStatus_cliproxy"));
-        QVERIFY(status);
-        QCOMPARE(status->text(), QStringLiteral("Accounts found"));
-        QVERIFY(welcome.ready());
-    }
-
-    void theWelcomePageOffersThisComputerWhenNoSignInIsFound()
+    void theTranscriptionPageChoosesThisComputerWhenNoSignInIsFound()
     {
         SettingsStore settings;
         settings.raw().clear();
@@ -1239,32 +1131,18 @@ private slots:
                 provider->prepareResult = {false, QStringLiteral("Sign-in required")};
                 return provider;
             });
-        // A ready local provider is not a sign-in.
-        providers.registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local model"), QString()},
+        providers.registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local Model"), QString()},
             [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
         QTemporaryDir models;
         LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
         LocalSetup local(settings, providers, store);
 
-        WelcomeSetupPage welcome(settings, providers, &local);
-        QSignalSpy localChosen(&welcome, &WelcomeSetupPage::localPathChosen);
-        welcome.show();
-        auto *signIn = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathSignIn"));
-        auto *here = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathLocal"));
-        auto *status = welcome.findChild<QLabel *>(QStringLiteral("welcomePathSignInStatus"));
-        QVERIFY(signIn && here && status);
-        // Nothing to sign in with, so this computer is the default and Next
-        // is open.
+        SpeechProviderSetupPage setup(settings, providers, &local);
+        setup.show();
+        auto *here = setup.findChild<QRadioButton *>(QStringLiteral("speechProviderOption_local"));
+        QVERIFY(here);
         QVERIFY(here->isChecked());
-        QCOMPARE(status->text(), QStringLiteral("None found"));
-        QVERIFY(welcome.ready());
-        QCOMPARE(localChosen.size(), 1);
-
-        // The sign-in path waits for a sign-in.
-        signIn->click();
-        QVERIFY(!welcome.ready());
-        here->click();
-        QVERIFY(welcome.ready());
+        QCOMPARE(settings.speechProvider(), QStringLiteral("local"));
     }
 
     void theLocalModelCardHoldsNextUntilADownloadStarts()

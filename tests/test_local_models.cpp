@@ -267,45 +267,34 @@ private slots:
         QStringList ids;
         for (const SetupStepInfo &step : setupSteps()) ids.append(step.id);
         QCOMPARE(ids.last(), QString("ready"));
-        QVERIFY(ids.indexOf("shortcut") < ids.indexOf("ready"));
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-        QCOMPARE(ids.indexOf("login"), ids.size() - 2);
-#endif
+        QCOMPARE(ids.indexOf("shortcut"), ids.size() - 2);
+        QVERIFY(!ids.contains("profiles"));
 #ifdef Q_OS_WIN
         const bool accessibilityStep = false;
 #else
         const bool accessibilityStep = true;
 #endif
         QCOMPARE(ids.contains("accessibility"), accessibilityStep);
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+        QVERIFY(!ids.contains("delivery"));
+#else
+        QVERIFY(ids.contains("delivery"));
+#endif
         QCOMPARE(findSetupStep("shortcut")->title, QString("Global Shortcut"));
-        QCOMPARE(setupChecklistLine("delivery", "clipboard"), QString("Text delivery — clipboard"));
+        QCOMPARE(setupChecklistLine("microphone", "Built-in"), QString("Microphone — Built-in"));
         QCOMPARE(setupProviderVerdict("codex", false), QString("Not signed in"));
         QCOMPARE(setupProviderVerdict("endpoint", false), QString("Not set up"));
         QCOMPARE(setupRefinementStatus("none", std::nullopt), QString("No cleanup"));
         QCOMPARE(setupSchemaRow("defaultWritingProfile").label, QString("Fallback profile"));
     }
 
-    void welcomeDefaultsFollowOnlySignInsAndUndoTheirOwnWrite()
+    void speechDefaultsToThisComputerOnlyWithoutAnySignIn()
     {
-        WelcomeChoice choice;
-        auto provider = choice.update("claude", {"local", "endpoint"}, false);
-        QVERIFY(choice.local());
-        QCOMPARE(provider, QString("local"));
-        provider = choice.update(provider, {"claude"}, false);
-        QVERIFY(!choice.local());
-        QCOMPARE(provider, QString("claude"));
-        provider = choice.update(provider, {"claude"}, false, true);
-        QCOMPARE(provider, QString("local"));
-        QCOMPARE(choice.update(provider, {"claude"}, false), QString("local"));
-        provider = choice.update(provider, {"claude"}, false, false);
-        QCOMPARE(provider, QString("claude"));
-        WelcomeChoice reopened;
-        QCOMPARE(reopened.update("local", {}, false), QString("local"));
-        QCOMPARE(reopened.update("local", {"claude"}, false), QString("local"));
-        WelcomeChoice automatic;
-        QCOMPARE(automatic.update("claude", {}, false), QString("local"));
-        automatic.providerChosen();
-        QCOMPARE(automatic.update("local", {"claude"}, false), QString("local"));
+        QCOMPARE(setupSpeechChoice("claude", {}, true, false, false), QString("local"));
+        QCOMPARE(setupSpeechChoice("claude", {"codex"}, true, false, false), QString("codex"));
+        QCOMPARE(setupSpeechChoice("claude", {}, true, true, false), QString("claude"));
+        QCOMPARE(setupSpeechChoice("claude", {}, false, false, false), QString("claude"));
+        QCOMPARE(setupSpeechChoice("claude", {}, true, false, true), QString("claude"));
         QVERIFY(!isSetupSignInProvider("local"));
         QVERIFY(!isSetupSignInProvider("endpoint"));
         QVERIFY(isSetupSignInProvider("codex"));

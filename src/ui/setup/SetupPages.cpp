@@ -357,324 +357,10 @@ QWidget *makeGlyphLine(QWidget *parent, const QString &iconName, QLabel **textOu
 
 } // namespace
 
-WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
-                                   ProviderRegistry &providers,
-                                   LocalSetup *local,
-                                   QWidget *parent)
+WelcomeSetupPage::WelcomeSetupPage(QWidget *parent)
     : QWidget(parent)
-    , m_settings(settings)
-    , m_providers(providers)
-    , m_signIn(settings)
-    , m_local(local)
 {
-    QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("welcome"))->intro);
-    auto *checks = new QLabel(setupWelcomeDetail(), this);
-    checks->setWordWrap(true);
-    layout->addWidget(checks);
-
-    // Two ways into dictation: a sign-in the person already has, or a model
-    // on this computer. The sign-in rows below only matter for the first.
-    if (m_local) {
-        QFormLayout *paths = addCard(layout, this, QStringLiteral("How should Speecher turn speech into text?"));
-        QWidget *pathsHost = paths->parentWidget();
-        auto *group = new QButtonGroup(this);
-        const auto addPath = [&](const QString &name, const QString &title, const QString &note,
-                                 const QString &iconName) {
-            auto *row = new QWidget(pathsHost);
-            auto *rowLayout = new QVBoxLayout(row);
-            rowLayout->setContentsMargins(settings::rowPadding());
-            rowLayout->setSpacing(settings::smallSpacing());
-            auto *top = new QHBoxLayout;
-            top->setSpacing(settings::largeSpacing());
-            top->addWidget(makeGlyph(row, iconName, QStyle::SP_ComputerIcon), 0, Qt::AlignVCenter);
-            auto *button = new QRadioButton(title, row);
-            button->setObjectName(name);
-            QFont bold = button->font();
-            bold.setBold(true);
-            button->setFont(bold);
-            top->addWidget(button, 1);
-            rowLayout->addLayout(top);
-            rowLayout->addWidget(makeNote(note, row, markSize() + settings::largeSpacing()));
-            settings::addCardRow(paths, row, pathsHost);
-            group->addButton(button);
-            return std::pair{button, qobject_cast<QHBoxLayout *>(top)};
-        };
-        auto [signInPath, signInTop] = addPath(QStringLiteral("welcomePathSignIn"),
-                                               QStringLiteral("Use my ChatGPT or Claude sign-in"),
-                                               QStringLiteral("Transcribed in the cloud by the service you already pay for."),
-                                               QStringLiteral("im-user"));
-        m_signInPath = signInPath;
-        m_signInPathStatus = new QLabel(pathsHost);
-        m_signInPathStatus->setObjectName(QStringLiteral("welcomePathSignInStatus"));
-        signInTop->addWidget(m_signInPathStatus, 0, Qt::AlignRight | Qt::AlignVCenter);
-        m_localPath = addPath(QStringLiteral("welcomePathLocal"),
-                              QStringLiteral("Run on this computer"),
-                              QStringLiteral("Private, no account, works offline after a one-time download."),
-                              QStringLiteral("computer"))
-                          .first;
-        connect(m_signInPath, &QRadioButton::clicked, this, [this] {
-            choosePath(false);
-        });
-        connect(m_localPath, &QRadioButton::clicked, this, [this] {
-            choosePath(true);
-        });
-
-        m_localDetail = new QWidget(this);
-        auto *localLayout = new QVBoxLayout(m_localDetail);
-        localLayout->setContentsMargins(0, 0, 0, 0);
-        localLayout->setSpacing(settings::smallSpacing());
-        localLayout->addWidget(makeGlyphLine(m_localDetail, QStringLiteral("computer"), &m_hardware));
-        m_hardware->setObjectName(QStringLiteral("welcomeHardware"));
-        auto *localNote = new WrappingLabel(
-            QStringLiteral("Speecher will suggest a speech model for this computer on the next step. "
-                           "Dictation stays on this computer and works offline once the model is downloaded."),
-            m_localDetail);
-        localNote->setWordWrap(true);
-        localLayout->addWidget(localNote);
-        layout->addWidget(m_localDetail);
-        connect(m_local, &LocalSetup::changed, this, [this] { m_hardware->setText(m_local->hardwareLine()); });
-        m_hardware->setText(m_local->hardwareLine());
-    }
-
-    m_signInDetail = new QWidget(this);
-    auto *signInLayout = new QVBoxLayout(m_signInDetail);
-    signInLayout->setContentsMargins(0, 0, 0, 0);
-    signInLayout->setSpacing(settings::largeSpacing());
-    layout->addWidget(m_signInDetail);
-
-    // Nothing later in the assistant can succeed without one of these
-    // sign-ins, so the one real prerequisite is stated on the first page.
-    QFormLayout *card = addCard(signInLayout, m_signInDetail,
-                                m_local ? QStringLiteral("Sign-ins on this computer")
-                                        : QStringLiteral("Before you start"));
-    QWidget *host = card->parentWidget();
-
-    auto *leadRow = new QWidget(host);
-    auto *leadLayout = new QVBoxLayout(leadRow);
-    leadLayout->setContentsMargins(settings::rowPadding());
-    auto *lead = new WrappingLabel(
-        QStringLiteral("Speecher uses your existing ChatGPT or Claude sign-in, or an account saved by CLI Proxy API. Sign in to one of these, then choose Check again:"),
-        leadRow);
-    lead->setWordWrap(true);
-    leadLayout->addWidget(lead);
-    settings::addCardRow(card, leadRow, host);
-
-    for (const ProviderDescriptor &provider : m_providers.speechProviders()) {
-        if (!isSetupSignInProvider(provider.id)) continue;
-        const StatusRow row = makeStatusRow(host,
-                                            makeProviderMark(provider.id, host),
-                                            credentialSourceLabel(provider.id, provider.label),
-                                            false);
-        row.status->setObjectName(QStringLiteral("welcomeCredentialStatus_") + provider.id);
-        row.status->setText(QStringLiteral("Checking…"));
-        row.hint->setObjectName(QStringLiteral("welcomeCredentialHint_") + provider.id);
-        row.hint->setText(provider.setupHint);
-        settings::addCardRow(card, row.widget, host);
-        m_rows.append({provider.id, row.status, row.hint, false});
-    }
-
-    const StatusRow cliproxyRow = makeStatusRow(host, nullptr, QStringLiteral("CLI Proxy API"), false);
-    m_cliproxyStatus = cliproxyRow.status;
-    m_cliproxyStatus->setObjectName(QStringLiteral("welcomeCredentialStatus_cliproxy"));
-    m_cliproxyStatus->setText(QStringLiteral("Checking…"));
-    m_cliproxyHint = cliproxyRow.hint;
-    m_cliproxyHint->setObjectName(QStringLiteral("welcomeCredentialHint_cliproxy"));
-    m_cliproxyHint->setText(ProviderSignIn::cliproxyAccountsMissingHint());
-    // The directory has to be enterable here: a user whose accounts live in a
-    // custom directory would otherwise be held on this page, with the field
-    // that could free them gated behind Next.
-    m_cliproxyDir = new QLineEdit(cliproxyRow.widget);
-    m_cliproxyDir->setObjectName(QStringLiteral("welcomeCliproxyDir"));
-    m_cliproxyDir->setClearButtonEnabled(true);
-    m_cliproxyDir->setText(m_signIn.configuredAccountDirectory());
-    m_cliproxyDir->hide();
-    cliproxyRow.widget->layout()->addWidget(m_cliproxyDir);
-    connect(m_cliproxyDir, &QLineEdit::editingFinished, this, [this] {
-        const QString directory = m_cliproxyDir->text().trimmed();
-        if (directory == m_signIn.configuredAccountDirectory()) {
-            return;
-        }
-        m_signIn.setAccountDirectory(directory);
-        checkCredentials();
-    });
-    settings::addCardRow(card, cliproxyRow.widget, host);
-
-    auto *checkAgain = new QPushButton(QStringLiteral("Check again"), m_signInDetail);
-    checkAgain->setObjectName(QStringLiteral("welcomeCheckAgain"));
-    checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-    connect(checkAgain, &QPushButton::clicked, this, &WelcomeSetupPage::checkCredentials);
-    signInLayout->addWidget(checkAgain, 0, Qt::AlignLeft);
-
-    layout->addStretch();
-    if (m_local) {
-        m_signInPath->setChecked(true);
-        m_localDetail->hide();
-        // Default to the sign-in when the first round finds one, else to this
-        // computer; either way only until the person picks.
-        connect(this, &WelcomeSetupPage::checkFinished, this, [this] {
-            choosePath();
-        });
-    }
-    // The first showEvent runs the first probe. Probing from here as well
-    // aimed two rounds at the same providers before the page was even visible.
-}
-
-void WelcomeSetupPage::choosePath(std::optional<bool> choice)
-{
-    QStringList ready;
-    for (const auto &row : m_rows) if (row.found) ready.append(row.providerId);
-    const QString current = m_settings.speechProvider();
-    const QString provider = m_pathChoice.update(current, ready, m_cliproxyFound, choice);
-    const bool local = m_pathChoice.local();
-    const bool changed = m_localPath->isChecked() != local;
-    m_localPath->setChecked(local);
-    m_signInPath->setChecked(!local);
-    m_localDetail->setVisible(local);
-    m_signInDetail->setVisible(!local);
-    if (provider != current) {
-        m_settings.setSpeechProvider(provider);
-        emit pathProviderChanged(provider);
-    }
-    if (local && (changed || choice)) emit localPathChosen();
-    updateReady();
-}
-
-void WelcomeSetupPage::showSignInPathStatus()
-{
-    const bool found = std::any_of(m_rows.cbegin(), m_rows.cend(),
-                                   [](const CredentialRow &row) { return row.found; })
-        || m_cliproxyFound;
-    setStatusColor(m_signInPathStatus, found);
-    m_signInPathStatus->setText(found ? QStringLiteral("Sign-in found") : QStringLiteral("None found"));
-}
-
-void WelcomeSetupPage::showEvent(QShowEvent *event)
-{
-    QWidget::showEvent(event);
-    if (m_local) {
-        m_local->probeHardware();
-    }
-    // A sign-in performed in a terminal while the assistant sat open counts
-    // as soon as the user comes back to this page.
-    checkCredentials();
-}
-
-void WelcomeSetupPage::recheck()
-{
-    checkCredentials();
-}
-
-void WelcomeSetupPage::checkCredentials()
-{
-    const quint64 generation = ++m_checkGeneration;
-    m_checksOutstanding = 0;
-    const SpeechSettings speech = m_settings.snapshot().speech;
-    for (int index = 0; index < m_rows.size(); ++index) {
-        const CredentialRow &row = m_rows.at(index);
-        SpeechTranscriber *provider = m_providers.speechProvider(row.providerId);
-        if (!provider) {
-            showCredential(index, false);
-            continue;
-        }
-        setStatusColor(row.status, false);
-        row.status->setText(QStringLiteral("Checking…"));
-        row.hint->hide();
-
-        std::optional<SpeechPrepareJob> job = provider->createPrepareJob(speech);
-        if (!job || !job->run) {
-            showCredential(index, provider->prepare(speech).ok);
-            continue;
-        }
-        auto prepareJob = std::make_shared<SpeechPrepareJob>(std::move(*job));
-        ++m_checksOutstanding;
-        runProviderProbe<SpeechPrepareResult>(
-            &m_providers,
-            this,
-            [prepareJob] { return prepareJob->run(); },
-            [this, index, generation, prepareJob](const SpeechPrepareResult &result) {
-                // A newer round owns the counter now; this answer is stale.
-                if (generation != m_checkGeneration) {
-                    return;
-                }
-                if (prepareJob->apply) {
-                    prepareJob->apply(result);
-                }
-                showCredential(index, result.ok);
-                --m_checksOutstanding;
-                if (m_checksOutstanding == 0) {
-                    emit checkFinished();
-                }
-            });
-    }
-    // Accounts saved by CLI Proxy API count as a sign-in of their own: someone
-    // whose only login lives there opts in on the Transcription step.
-    m_cliproxyDir->setPlaceholderText(m_signIn.resolvedAccountDirectory());
-    QStringList providerIds;
-    for (const CredentialRow &row : m_rows) {
-        providerIds.append(row.providerId);
-    }
-    showCliproxyCredential(m_signIn.anyUsableAccount(providerIds));
-
-    if (m_checksOutstanding == 0) {
-        emit checkFinished();
-    }
-}
-
-void WelcomeSetupPage::showCredential(int index, bool found)
-{
-    CredentialRow &row = m_rows[index];
-    row.found = found;
-    setStatusColor(row.status, found);
-    row.status->setText(found ? QStringLiteral("Sign-in found")
-                              : QStringLiteral("Not found"));
-    row.hint->setVisible(!found && !row.hint->text().isEmpty());
-    updateReady();
-}
-
-void WelcomeSetupPage::showCliproxyCredential(bool found)
-{
-    m_cliproxyFound = found;
-    setStatusColor(m_cliproxyStatus, found);
-    m_cliproxyStatus->setText(found ? QStringLiteral("Accounts found")
-                                    : QStringLiteral("Not found"));
-    // Unlike the provider rows, the found state is the one that needs a next
-    // step: the user this row exists for must switch the sign-in source on the
-    // Transcription step, or its probes will fail against the CLI sign-ins.
-    m_cliproxyHint->setText(found ? ProviderSignIn::cliproxyAccountsFoundHint()
-                                  : ProviderSignIn::cliproxyAccountsMissingHint());
-    m_cliproxyHint->show();
-    // Keep the field while it has focus: this very check can be the one its
-    // editingFinished just triggered.
-    m_cliproxyDir->setVisible(!found || m_cliproxyDir->hasFocus());
-    updateReady();
-}
-
-void WelcomeSetupPage::updateReady()
-{
-    const bool anyFound = std::any_of(m_rows.cbegin(), m_rows.cend(),
-                                      [](const CredentialRow &row) { return row.found; });
-    if (m_local) {
-        showSignInPathStatus();
-        setReady(m_pathChoice.ready());
-        return;
-    }
-    // With no speech providers registered at all there is nothing to sign in
-    // to, and holding Next would strand the user on page one.
-    setReady(m_rows.isEmpty() || anyFound || m_cliproxyFound);
-}
-
-QString WelcomeSetupPage::blockedReason() const
-{
-    return setupSignInMissing(m_local != nullptr);
-}
-
-void WelcomeSetupPage::setReady(bool ready)
-{
-    if (m_ready == ready) {
-        return;
-    }
-    m_ready = ready;
-    emit readyChanged();
+    makePage(this, findSetupStep(QStringLiteral("welcome"))->intro)->addStretch();
 }
 
 SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
@@ -778,10 +464,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
 
     for (const ProviderOptionRow &option : m_options) {
         const QString providerId = option.id;
-        connect(option.button, &QRadioButton::clicked, this, [this] {
-            m_userSelected = true;
-            emit providerChosen();
-        });
+        connect(option.button, &QRadioButton::clicked, this, [this] { m_userSelected = true; });
         connect(option.button, &QRadioButton::toggled, this, [this, providerId](bool checked) {
             if (checked) {
                 m_settings.setSpeechProvider(providerId);
@@ -1309,8 +992,13 @@ void SpeechProviderSetupPage::autoSelectReadyProvider()
     const int index = selectedIndex();
     if (index < 0) return;
     QStringList ready;
-    for (const auto &option : m_options) if (option.ok) ready.append(option.id);
-    const auto chosen = setupProviderChoice(m_options.at(index).id, ready, m_userSelected);
+    QStringList signIns;
+    for (const auto &option : m_options) {
+        if (option.ok) ready.append(option.id);
+        if (isSetupSignInProvider(option.id)) signIns.append(option.id);
+    }
+    const auto chosen = setupSpeechChoice(m_options.at(index).id, ready, m_local != nullptr,
+                                          m_signIn.anyUsableAccount(signIns), m_userSelected);
     for (const auto &option : m_options) {
         if (option.id == chosen) option.button->setChecked(true);
     }
@@ -1829,10 +1517,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
             if (!card) {
                 card = addCard(layout, this, title);
             }
-            const QString label = provider.id == QStringLiteral("local")      ? QStringLiteral("This computer")
-                                  : provider.id == QStringLiteral("endpoint") ? QStringLiteral("A server I run")
-                                                                              : provider.label;
-            m_options.append(addOptionRow(card, m_group, provider.id, label, provider.setupHint,
+            m_options.append(addOptionRow(card, m_group, provider.id, provider.label, provider.setupHint,
                                           QStringLiteral("refinementProvider")));
             m_options.last().button->setChecked(provider.id == savedProvider);
         }
@@ -2447,73 +2132,6 @@ void RefinementSetupPage::updateFastModeControl()
         const QSignalBlocker blocker(m_fastMode);
         m_fastMode->setChecked(m_settings.anthropicFastMode());
     }
-}
-
-WritingProfilesSetupPage::WritingProfilesSetupPage(SettingsStore &settings, QWidget *parent)
-    : QWidget(parent)
-    , m_settings(settings)
-    , m_defaultProfile(new QComboBox(this))
-{
-    QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("profiles"))->intro);
-    const QList<WritingProfileSettings> current = m_settings.writingProfileSettings();
-    const QList<RowOption> profiles = writingProfileChoices(current);
-    addOptions(m_defaultProfile, profiles);
-    settings::selectData(m_defaultProfile, m_settings.defaultWritingProfile());
-
-    auto *grid = new QGridLayout;
-    grid->addWidget(new QLabel(setupSchemaRow(QStringLiteral("defaultWritingProfile")).label, this), 0, 0);
-    grid->addWidget(m_defaultProfile, 0, 1, 1, 2);
-    grid->addWidget(new QLabel(QStringLiteral("Profile"), this), 2, 0);
-    grid->addWidget(new QLabel(QStringLiteral("Cleanup"), this), 2, 1);
-    grid->addWidget(new QLabel(QStringLiteral("Tone"), this), 2, 2);
-
-    int row = 3;
-    const QList<RowOption> levels = cleanupStrengths(m_settings.customCleanupLevels());
-    const QList<RowOption> tones = writingTones(m_settings.customTones());
-    for (const RowOption &profile : profiles) {
-        const WritingProfileSettings saved = writingProfileSettingsFor(current, profile.id);
-        auto *cleanup = new QComboBox(this);
-        auto *tone = new QComboBox(this);
-        addOptions(cleanup, levels);
-        addOptions(tone, tones);
-        settings::selectData(cleanup, saved.cleanupStrength);
-        settings::selectData(tone, saved.tone);
-        grid->addWidget(new QLabel(profile.label, this), row, 0);
-        grid->addWidget(cleanup, row, 1);
-        grid->addWidget(tone, row, 2);
-        m_profiles.append({profile.id, cleanup, tone});
-        connect(cleanup, &QComboBox::currentIndexChanged,
-                this, &WritingProfilesSetupPage::saveProfiles);
-        connect(tone, &QComboBox::currentIndexChanged,
-                this, &WritingProfilesSetupPage::saveProfiles);
-        ++row;
-    }
-    layout->addLayout(grid);
-    auto *note = new WrappingLabel(setupProfilesNote(), this);
-    note->setWordWrap(true);
-    note->setFont(settings::smallFont(note->font()));
-    note->setForegroundRole(QPalette::PlaceholderText);
-    layout->addWidget(note);
-    layout->addStretch();
-    connect(m_defaultProfile, &QComboBox::currentIndexChanged, this, [this] {
-        m_settings.setDefaultWritingProfile(m_defaultProfile->currentData().toString());
-    });
-}
-
-void WritingProfilesSetupPage::saveProfiles()
-{
-    // Instructions and names have no field here; they keep what Settings
-    // gave them.
-    QList<WritingProfileSettings> profiles = m_settings.writingProfileSettings();
-    for (const ProfileControls &controls : m_profiles) {
-        for (WritingProfileSettings &profile : profiles) {
-            if (profile.profile == controls.profile) {
-                profile.cleanupStrength = controls.cleanup->currentData().toString();
-                profile.tone = controls.tone->currentData().toString();
-            }
-        }
-    }
-    m_settings.setWritingProfileSettings(profiles);
 }
 
 FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *parent)

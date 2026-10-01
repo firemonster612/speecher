@@ -86,34 +86,15 @@ QString setupRefinementChoice(const QString &saved, const QStringList &ready, bo
     return runnerFound ? QStringLiteral("local") : QStringLiteral("none");
 }
 
-QString WelcomeChoice::update(const QString &provider, const QStringList &readyProviders,
-                              bool proxyAccountFound, std::optional<bool> userChoice)
+QString setupSpeechChoice(const QString &saved, const QStringList &ready, bool localOffered,
+                          bool proxyAccountFound, bool explicitlyChosen)
 {
-    QStringList signIns;
-    for (const auto &id : readyProviders) {
-        if (isSetupSignInProvider(id)) signIns.append(id);
+    const QString chosen = setupProviderChoice(saved, ready, explicitlyChosen);
+    if (explicitlyChosen || !localOffered || proxyAccountFound || !isSetupSignInProvider(chosen)
+        || ready.contains(chosen)) {
+        return chosen;
     }
-    m_signInFound = proxyAccountFound || !signIns.isEmpty();
-    if (userChoice) m_explicit = userChoice;
-    const bool local = m_explicit.value_or(!m_signInFound);
-    const bool transition = local != m_local;
-    m_local = local;
-    if (!transition && !userChoice) return provider;
-    if (local) {
-        if (provider != QStringLiteral("local") && (userChoice || isSetupSignInProvider(provider))) {
-            m_previousProvider = provider;
-            return QStringLiteral("local");
-        }
-        return provider;
-    }
-    if (m_previousProvider && provider == QStringLiteral("local")) {
-        const QString previous = *m_previousProvider;
-        m_previousProvider.reset();
-        return userChoice && !isSetupSignInProvider(previous) && !signIns.isEmpty()
-            ? signIns.first() : setupProviderChoice(previous, signIns, false);
-    }
-    m_previousProvider.reset();
-    return userChoice && !signIns.isEmpty() ? signIns.first() : provider;
+    return QStringLiteral("local");
 }
 
 RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,

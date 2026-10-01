@@ -818,13 +818,12 @@ private slots:
 
         const QStringList titles = assistant.pageTitles();
         QCOMPARE(titles,
-                 QStringList({QStringLiteral("Welcome to Speecher"),
+                 QStringList({QStringLiteral("Welcome"),
                               QStringLiteral("Transcription"),
                               QStringLiteral("Microphone"),
                               QStringLiteral("Accessibility"),
                               QStringLiteral("Text delivery"),
                               QStringLiteral("Refinement"),
-                              QStringLiteral("Writing profiles"),
                               QStringLiteral("Global Shortcut"),
                               QStringLiteral("Ready to dictate")}));
         QVERIFY(titles.indexOf(QStringLiteral("Global Shortcut"))
@@ -841,7 +840,7 @@ private slots:
         bool mentionsShortcut = false;
         for (const QLabel *label : welcome->findChildren<QLabel *>()) {
             mentionsShortcut = mentionsShortcut
-                || label->text().contains(QStringLiteral("ends by setting up a Global Shortcut"));
+                || label->text().contains(QStringLiteral("and a Global Shortcut"));
         }
         QVERIFY(mentionsShortcut);
 
@@ -913,21 +912,9 @@ private slots:
         ApplicationController controller(true, platform);
         controller.settings()->setSetupCompleted(false);
         SetupAssistant assistant(&controller);
-        auto *welcome = assistant.findChild<WelcomeSetupPage *>();
         auto *transcription = assistant.findChild<SpeechProviderSetupPage *>();
-        QVERIFY(welcome && transcription);
-        QSignalSpy checked(welcome, &WelcomeSetupPage::checkFinished);
+        QVERIFY(transcription);
         assistant.show();
-        QTRY_VERIFY(!checked.isEmpty());
-        // With no sign-in, a build with speech on this computer takes that
-        // path on Welcome, so the first unfinished step is Transcription,
-        // where no model has been downloaded. Choosing it here does what the
-        // sign-in checks do on their own. Without local speech, no sign-in
-        // holds Welcome itself.
-        auto *localPath = welcome->findChild<QAbstractButton *>(QStringLiteral("welcomePathLocal"));
-        const bool localSpeech = localPath != nullptr;
-        if (localSpeech) localPath->click();
-        else if (welcome->ready()) QSKIP("A sign-in on this computer opens Welcome.");
 
         // Walked with Next, as a person would: QWizard goes back only through
         // pages it visited.
@@ -944,8 +931,10 @@ private slots:
 
         QVERIFY(!controller.settings()->setupCompleted());
         QVERIFY(assistant.isVisible());
-        QCOMPARE(welcome->isVisible(), !localSpeech);
-        QCOMPARE(transcription->isVisible(), localSpeech);
+        // With no sign-in and no downloaded model, Transcription is the
+        // first unfinished step.
+        if (transcription->ready()) QSKIP("A sign-in on this computer opens Transcription.");
+        QVERIFY(transcription->isVisible());
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()

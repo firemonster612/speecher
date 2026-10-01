@@ -184,7 +184,7 @@ def main() -> None:
     app_command("settings")
     time.sleep(1)
     app_command("setup")
-    require("Welcome to Speecher", 20)
+    require("Welcome", 20)
     ok("setup assistant opens on a fresh profile")
     if find_containing("Skip setup", 2) is not None:
         fail("Skip setup is offered while the install is still pending")
@@ -219,7 +219,6 @@ def main() -> None:
     require("8 / 10", 10)
     ok("the refinement provider stats include a score out of 10")
 
-    go_next("Writing profiles")
     go_next("Global Shortcut")
 
     install = require("Install Speecher", 10, role="button")

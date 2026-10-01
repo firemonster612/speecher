@@ -33,7 +33,6 @@ class WelcomeSetupPage;
 class LinuxGlobalShortcutSetupPage;
 #endif
 class TextDeliverySetupPage;
-class WritingProfilesSetupPage;
 
 #ifdef SPEECHER_WITH_KASSISTANT
 class SetupAssistant final : public KAssistantDialog {
@@ -99,7 +98,6 @@ private:
     SpeechProviderSetupPage *m_speechProviderPage = nullptr;
     MicrophoneSetupPage *m_microphonePage = nullptr;
     TextDeliverySetupPage *m_deliveryPage = nullptr;
-    WritingProfilesSetupPage *m_profilesPage = nullptr;
     FinishSetupPage *m_finishPage = nullptr;
     QWidget *m_lastPage = nullptr;
     QWidget *m_activePage = nullptr;

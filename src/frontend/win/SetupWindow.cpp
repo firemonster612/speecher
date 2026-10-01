@@ -6,7 +6,6 @@
 #include "app/SetupSteps.h"
 #include "core/AppSettings.h"
 #include "core/EndpointSettings.h"
-#include "core/OutputFormat.h"
 #include "core/SettingsStore.h"
 #include "core/ShortcutBinding.h"
 #include "core/settings/SettingsSchema.h"
@@ -84,8 +83,16 @@ int stepIndex(const QString &id)
     }
     qFatal("the setup steps have no %s step", qPrintable(id));
 }
-const int shortcutPage = stepIndex(QStringLiteral("shortcut"));
-const int readyPage = stepIndex(QStringLiteral("ready"));
+// Functions rather than constants: the steps name a settings page, which
+// builds the schema, and that must not happen during static initialisation.
+int shortcutPage()
+{
+    return stepIndex(QStringLiteral("shortcut"));
+}
+int readyPage()
+{
+    return stepIndex(QStringLiteral("ready"));
+}
 // The width a provider row states for itself inside RadioButtons, which lays
 // an item out to its content rather than to the list.
 constexpr double choiceRowWidth = 560;
@@ -93,10 +100,9 @@ constexpr double choiceRowWidth = 560;
 const QString kLocal = QStringLiteral("local");
 const QString kEndpoint = QStringLiteral("endpoint");
 const QString kNone = QStringLiteral("none");
-// Segoe Fluent Icons: a desktop PC for this computer, a contact for a sign-in,
-// a network for a server someone runs.
+// Segoe Fluent Icons: a desktop PC for this computer, a network for a server
+// someone runs.
 constexpr wchar_t kComputerGlyph = L'\uE977';
-constexpr wchar_t kContactGlyph = L'\uE77B';
 constexpr wchar_t kServerGlyph = L'\uE968';
 
 void setShown(const UIElement &element, bool shown)
@@ -563,7 +569,7 @@ struct SetupWindow::Native {
         next.Click([this](const auto &, const auto &) {
             if (singlePage) {
                 window.Close();
-            } else if (pageIndex == readyPage) {
+            } else if (pageIndex == readyPage()) {
                 complete(false);
             } else {
                 showPage(pageIndex + 1);
@@ -607,14 +613,10 @@ struct SetupWindow::Native {
 
     void show(SetupAssistantPage requested)
     {
-        // A new run of the assistant starts with no path chosen.
-        if (!window) {
-            welcomeChoice = WelcomeChoice();
-        }
         ensureWindow();
         singlePage = requested == SetupAssistantPage::GlobalShortcut;
         registerShortcut();
-        showPage(singlePage ? shortcutPage : 0);
+        showPage(singlePage ? shortcutPage() : 0);
         window.Activate();
         HWND handle = nullptr;
         window.as<::IWindowNative>()->get_WindowHandle(&handle);
@@ -622,17 +624,11 @@ struct SetupWindow::Native {
         SetForegroundWindow(handle);
     }
 
-    // A page's prerequisite, as the wizard currently knows it. Only Welcome,
+    // A page's prerequisite, as the wizard currently knows it. Only
     // Transcription, Microphone and the Global Shortcut ask for anything.
     bool gateSatisfied(int index) const
     {
         const QString id = setupSteps().at(index).id;
-        if (id == QStringLiteral("welcome")) {
-            // Running on this computer was chosen, or at least one provider
-            // sign-in is on this machine, or a usable CLI Proxy API account
-            // the Transcription step can opt into.
-            return (localSpeech && welcomeChoice.local()) || anySignInFound();
-        }
         if (id == QStringLiteral("transcription")) {
             // A Local Model counts once its download has started: it keeps
             // going while setup continues.
@@ -653,7 +649,7 @@ struct SetupWindow::Native {
     // The first page whose gate is unmet, or -1 while every gate holds.
     int firstUnsatisfiedPage() const
     {
-        for (int index = 0; index < readyPage; ++index) {
+        for (int index = 0; index < readyPage(); ++index) {
             if (!gateSatisfied(index)) {
                 return index;
             }
@@ -672,10 +668,10 @@ struct SetupWindow::Native {
         // The last page's button finishes, so it answers for every gate rather
         // than its own: a prerequisite that lapsed behind the walk must hold
         // Finish shut, not bounce the person back after a click.
-        const bool ready = pageIndex == readyPage ? firstUnsatisfiedPage() < 0
+        const bool ready = pageIndex == readyPage() ? firstUnsatisfiedPage() < 0
                                                   : gateSatisfied(pageIndex);
         next.IsEnabled(singlePage || ready);
-        const bool offerSkip = !singlePage && pageIndex != readyPage && firstUnsatisfiedPage() < 0;
+        const bool offerSkip = !singlePage && pageIndex != readyPage() && firstUnsatisfiedPage() < 0;
         skip.Visibility(offerSkip ? Visibility::Visible : Visibility::Collapsed);
     }
 
@@ -813,7 +809,7 @@ struct SetupWindow::Native {
         pageIndex = index;
         // The recorder page needs the bound chord delivered as a key event,
         // which RegisterHotKey would otherwise consume system-wide.
-        if (index == shortcutPage) {
+        if (index == shortcutPage()) {
             suspendShortcut();
         } else {
             resumeShortcut();
@@ -823,15 +819,12 @@ struct SetupWindow::Native {
         if (id == QStringLiteral("welcome")) showWelcome();
         else if (id == QStringLiteral("transcription")) showTranscription();
         else if (id == QStringLiteral("microphone")) showMicrophone();
-        else if (id == QStringLiteral("delivery")) showDelivery();
         else if (id == QStringLiteral("refinement")) showRefinement();
-        else if (id == QStringLiteral("profiles")) showProfiles();
         else if (id == QStringLiteral("shortcut")) showShortcut();
-        else if (id == QStringLiteral("login")) showStartAtLogin();
         else showReady();
         back.Visibility(singlePage || index == 0 ? Visibility::Collapsed : Visibility::Visible);
         next.Content(box_value(singlePage ? L"Done"
-                                          : (index == readyPage ? L"Finish" : L"Next")));
+                                          : (index == readyPage() ? L"Finish" : L"Next")));
         refreshGates();
     }
 
@@ -880,50 +873,10 @@ struct SetupWindow::Native {
         return column;
     }
 
-    // The providers a sign-in answers for. Local models and a speech server
-    // are set up on their own pages, not signed in to.
-    QList<ProviderDescriptor> signInProviders() const
-    {
-        QList<ProviderDescriptor> providers = controller->providerRegistry()->speechProviders();
-        providers.removeIf([](const ProviderDescriptor &provider) {
-            return !isSetupSignInProvider(provider.id);
-        });
-        return providers;
-    }
-
-    bool anySignInFound() const
-    {
-        for (const ProviderDescriptor &provider : signInProviders()) {
-            if (speechReady.value(provider.id, false)) {
-                return true;
-            }
-        }
-        return cliproxyReady;
-    }
-
     // Every speech provider this assistant sets.
     void setSpeechProvider(const QString &id)
     {
         controller->settings()->setSpeechProvider(id);
-    }
-
-    // The Welcome path, the person's when choice is given and otherwise the
-    // default the completed checks suggest. WelcomeChoice decides the speech
-    // provider that goes with it, including undoing a default it wrote.
-    void choosePath(std::optional<bool> choice = std::nullopt)
-    {
-        QStringList ready;
-        for (const ProviderDescriptor &provider : signInProviders()) {
-            if (speechReady.value(provider.id, false)) {
-                ready.append(provider.id);
-            }
-        }
-        const QString current = controller->settings()->speechProvider();
-        const QString provider = welcomeChoice.update(current, ready, cliproxyReady, choice);
-        if (provider != current) {
-            setSpeechProvider(provider);
-        }
-        refreshGates();
     }
 
     // A line with the computer glyph and what the hardware probe found.
@@ -942,208 +895,7 @@ struct SetupWindow::Native {
 
     void showWelcome()
     {
-        StackPanel panel = page(QStringLiteral("welcome"));
-        panel.Children().Append(textBlock(setupWelcomeDetail()));
-
-        // Two ways into dictation: a sign-in the person already has, or a
-        // model on this computer. The sign-in rows below only matter for the
-        // first.
-        RadioButtons paths{nullptr};
-        StatusCell signInPathStatus;
-        StackPanel localDetail{nullptr};
-        StackPanel signInDetail;
-        signInDetail.Spacing(12);
-        if (localSpeech) {
-            panel.Children().Append(
-                strongTextBlock(QStringLiteral("How should Speecher turn speech into text?")));
-            paths = RadioButtons();
-            const auto addPath = [&paths](wchar_t glyph, const QString &title, const QString &note,
-                                          const FrameworkElement &trailing) {
-                StackPanel text = rowText(strongTextBlock(title));
-                text.Children().Append(secondaryTextBlock(note));
-                Grid item = cardRow(glyphMark(glyph), text, trailing);
-                item.MinWidth(choiceRowWidth);
-                AutomationProperties::SetName(item, win::hs(title));
-                paths.Items().Append(item);
-            };
-            signInPathStatus = statusCell(QStringLiteral("Checking…"), StatusTone::Neutral);
-            addPath(kContactGlyph, QStringLiteral("Use my ChatGPT or Claude sign-in"),
-                    QStringLiteral("Transcribed in the cloud by the service you already pay for."),
-                    signInPathStatus.root);
-            addPath(kComputerGlyph, QStringLiteral("Run on this computer"),
-                    QStringLiteral("Private, no account, works offline after a one-time download."),
-                    FrameworkElement{nullptr});
-            paths.SelectedIndex(welcomeChoice.local() ? 1 : 0);
-            panel.Children().Append(paths);
-
-            localDetail = StackPanel();
-            localDetail.Spacing(4);
-            TextBlock hardware{nullptr};
-            localDetail.Children().Append(hardwareLine(hardware));
-            localDetail.Children().Append(textBlock(QStringLiteral(
-                "Speecher will suggest a speech model for this computer on the next step. "
-                "Dictation stays on this computer and works offline once the model is downloaded.")));
-            panel.Children().Append(localDetail);
-            QObject::connect(localSpeech, &LocalSetup::changed, pageScope.get(), [this, hardware] {
-                hardware.Text(win::hs(localSpeech->hardwareLine()));
-            });
-            localSpeech->probeHardware();
-        }
-        panel.Children().Append(signInDetail);
-        const auto showPath = [localDetail, signInDetail, this] {
-            if (localDetail) {
-                setShown(localDetail, welcomeChoice.local());
-                setShown(signInDetail, !welcomeChoice.local());
-            }
-        };
-        if (paths) {
-            // The page selects the path WelcomeChoice holds, on building and
-            // after checks; only a move away from it is the person's choice.
-            // Treating the echo as a choice once sent Back to Welcome through
-            // a provider write the person never made.
-            paths.SelectionChanged([this, paths, showPath](const auto &, const auto &) {
-                const int index = paths.SelectedIndex();
-                if (index >= 0 && (index == 1) != welcomeChoice.local()) {
-                    choosePath(index == 1);
-                }
-                showPath();
-            });
-        }
-        showPath();
-        // Until the person picks, every round of checks sets the default:
-        // the sign-in when one is found, else this computer.
-        const auto checksAnswered = [this, paths, showPath] {
-            if (!paths) {
-                return;
-            }
-            choosePath();
-            const int wanted = welcomeChoice.local() ? 1 : 0;
-            if (paths.SelectedIndex() != wanted) {
-                paths.SelectedIndex(wanted);
-            }
-            showPath();
-        };
-        const auto showSignInPath = [this, signInPathStatus] {
-            if (!signInPathStatus.root) {
-                return;
-            }
-            const bool found = anySignInFound();
-            signInPathStatus.set(found ? QStringLiteral("Sign-in found") : QStringLiteral("None found"),
-                                 found ? StatusTone::Positive : StatusTone::Neutral);
-        };
-
-        StackPanel before = card(signInDetail, localSpeech ? QStringLiteral("Sign-ins on this computer")
-                                                           : QStringLiteral("Before you start"));
-        before.Children().Append(secondaryTextBlock(QStringLiteral(
-            "Speecher uses your existing ChatGPT or Claude sign-in, or an account saved by "
-            "CLI Proxy API. Sign in to one of these, then choose Check again:")));
-        StackPanel list = rowList(before);
-
-        QStringList ids;
-        std::vector<StatusCell> statuses;
-        std::vector<TextBlock> hints;
-        for (const ProviderDescriptor &provider : signInProviders()) {
-            TextBlock hint = secondaryTextBlock(provider.setupHint);
-            hint.Visibility(Visibility::Collapsed);
-            StackPanel text = rowText(
-                textBlock(credentialSourceLabel(provider.id, provider.label)));
-            text.Children().Append(hint);
-            const StatusCell status = statusCell(QStringLiteral("Checking…"), StatusTone::Neutral);
-            appendRow(list, cardRow(brandMark(provider.id), text, status.root));
-            ids.append(provider.id);
-            statuses.push_back(status);
-            hints.push_back(hint);
-        }
-
-        // Accounts saved by CLI Proxy API count as a sign-in of their own:
-        // someone whose only login lives there opts in on the Transcription
-        // step. The directory is enterable right here, because a user whose
-        // accounts live in a custom directory would otherwise be held on this
-        // page with the field that could free them gated behind Next.
-        TextBlock cliproxyHint = secondaryTextBlock(QString());
-        TextBox cliproxyDir;
-        cliproxyDir.Text(win::hs(signIn.configuredAccountDirectory()));
-        cliproxyDir.Visibility(Visibility::Collapsed);
-        StackPanel cliproxyText = rowText(textBlock(QStringLiteral("CLI Proxy API")));
-        cliproxyText.Children().Append(cliproxyHint);
-        cliproxyText.Children().Append(cliproxyDir);
-        const StatusCell cliproxyStatus = statusCell(QStringLiteral("Checking…"),
-                                                     StatusTone::Neutral);
-        appendRow(list, cardRow(FrameworkElement{nullptr}, cliproxyText, cliproxyStatus.root));
-
-        const auto checkCliproxy = [this, ids, cliproxyStatus, cliproxyHint, cliproxyDir,
-                                    showSignInPath] {
-            cliproxyDir.PlaceholderText(win::hs(signIn.resolvedAccountDirectory()));
-            cliproxyReady = signIn.anyUsableAccount(ids);
-            cliproxyStatus.set(cliproxyReady ? QStringLiteral("Accounts found")
-                                             : QStringLiteral("Not found"),
-                               cliproxyReady ? StatusTone::Positive : StatusTone::Neutral);
-            // Unlike the provider rows, the found state is the one that needs
-            // a next step: the sign-in must be switched on the Transcription
-            // step or its probes will fail against the CLI sign-ins.
-            cliproxyHint.Text(win::hs(cliproxyReady
-                ? ProviderSignIn::cliproxyAccountsFoundHint()
-                : ProviderSignIn::cliproxyAccountsMissingHint()));
-            cliproxyDir.Visibility(!cliproxyReady
-                                           || cliproxyDir.FocusState() != FocusState::Unfocused
-                                       ? Visibility::Visible
-                                       : Visibility::Collapsed);
-            showSignInPath();
-            refreshGates();
-        };
-        const auto commitCliproxyDir = [this, cliproxyDir, checkCliproxy] {
-            const QString directory = win::qs(cliproxyDir.Text()).trimmed();
-            if (directory == signIn.configuredAccountDirectory()) {
-                return;
-            }
-            signIn.setAccountDirectory(directory);
-            checkCliproxy();
-        };
-        cliproxyDir.LostFocus([commitCliproxyDir](const auto &, const auto &) {
-            commitCliproxyDir();
-        });
-        cliproxyDir.KeyDown([commitCliproxyDir](const auto &,
-                                                const Input::KeyRoutedEventArgs &args) {
-            if (args.Key() == Windows::System::VirtualKey::Enter) {
-                commitCliproxyDir();
-            }
-        });
-
-        Button check;
-        check.Content(box_value(L"Check again"));
-        check.HorizontalAlignment(HorizontalAlignment::Left);
-        const auto runChecks = [this, ids, statuses, hints, checkCliproxy, checksAnswered,
-                                showSignInPath] {
-            const quint64 generation = ++checkGeneration;
-            checkCliproxy();
-            auto outstanding = std::make_shared<qsizetype>(ids.size());
-            for (int index = 0; index < ids.size(); ++index) {
-                const StatusCell status = statuses.at(size_t(index));
-                const TextBlock hint = hints.at(size_t(index));
-                status.set(QStringLiteral("Checking…"), StatusTone::Neutral);
-                probeSpeechProvider(ids.at(index), generation,
-                                    [this, id = ids.at(index), status, hint, outstanding,
-                                     checksAnswered, showSignInPath](
-                                        const SpeechPrepareResult &result) {
-                    status.set(result.ok ? QStringLiteral("Sign-in found")
-                                         : QStringLiteral("Not found"),
-                               result.ok ? StatusTone::Positive : StatusTone::Neutral);
-                    hint.Visibility(result.ok ? Visibility::Collapsed : Visibility::Visible);
-                    showSignInPath();
-                    refreshGates();
-                    if (--*outstanding == 0) {
-                        checksAnswered();
-                    }
-                });
-            }
-            if (ids.isEmpty()) {
-                checksAnswered();
-            }
-        };
-        check.Click([runChecks](const auto &, const auto &) { runChecks(); });
-        before.Children().Append(check);
-        content.Children().Append(panel);
-        runChecks();
+        content.Children().Append(page(QStringLiteral("welcome")));
     }
 
     // Selects a row on the wizard's own behalf, remembering the index so the
@@ -1192,17 +944,31 @@ struct SetupWindow::Native {
     void autoSelectSpeechProvider(const RadioButtons &choices,
                                   const QList<QPair<QString, QString>> &options)
     {
-        const QString saved = controller->settings()->speechProvider();
-        if (speechSelectionSettled || !speechReady.contains(saved)) {
+        if (speechSelectionSettled) {
             return;
         }
+        // Every sign-in answers first: moving to this computer on the first
+        // verdict would leave a sign-in that answers later unused.
+        for (const auto &option : options) {
+            if (option.first != kLocal && !speechReady.contains(option.first)) {
+                return;
+            }
+        }
+        const QString saved = controller->settings()->speechProvider();
         QStringList ready;
         for (const auto &option : options) {
             if (speechReady.value(option.first, false)) {
                 ready.append(option.first);
             }
         }
-        const QString chosen = setupProviderChoice(saved, ready, false);
+        QStringList signIns;
+        for (const auto &option : options) {
+            if (isSetupSignInProvider(option.first)) {
+                signIns.append(option.first);
+            }
+        }
+        const QString chosen = setupSpeechChoice(saved, ready, localSpeech != nullptr,
+                                                 signIn.anyUsableAccount(signIns), false);
         for (int index = 0; index < options.size(); ++index) {
             if (options.at(index).first != chosen || chosen == saved) {
                 continue;
@@ -1645,8 +1411,6 @@ struct SetupWindow::Native {
             }
             if (!wasProgrammatic(programmaticSpeechIndex, index)) {
                 speechSelectionSettled = true;
-                // An explicit choice here outranks the Welcome path's default.
-                welcomeChoice.providerChosen();
             }
             setSpeechProvider(options.at(index).first);
             describeSelected();
@@ -1734,13 +1498,6 @@ struct SetupWindow::Native {
                 return;
             }
             signIn.setAccountDirectory(directory);
-            // The Welcome gate reads this too, and its own check will not run
-            // again until that page is shown.
-            QStringList providerIds;
-            for (const auto &option : options) {
-                providerIds.append(option.first);
-            }
-            cliproxyReady = signIn.anyUsableAccount(providerIds);
             const int index = choices.SelectedIndex();
             if (index >= 0 && index < options.size()) {
                 refreshSignInCard(options.at(index).first);
@@ -1847,36 +1604,6 @@ struct SetupWindow::Native {
         });
     }
 
-    void showDelivery()
-    {
-        StackPanel panel = page(QStringLiteral("delivery"));
-        const QList<QPair<QString, QString>> formats{
-            {QStringLiteral("plain"), QStringLiteral("Plain text")},
-            {QStringLiteral("html"), QStringLiteral("HTML and plain text")}};
-        ComboBox format = combo(formats, outputFormatName(controller->settings()->outputFormat()));
-        format.SelectionChanged([this, format, formats](const auto &, const auto &) {
-            controller->settings()->setOutputFormat(
-                outputFormatFromString(formats.at(format.SelectedIndex()).first));
-        });
-        const SettingsRow &restoreRow = setupSchemaRow(QStringLiteral("restoreClipboardAfterTyping"));
-        CheckBox restore = wrappingCheckBox(restoreRow.help);
-        restore.IsChecked(controller->settings()->restoreClipboardAfterTyping());
-        restore.Click([this, restore](const auto &, const auto &) {
-            controller->settings()->setRestoreClipboardAfterTyping(restore.IsChecked().Value());
-        });
-        // One card for the whole page, the way the mockup groups delivery:
-        // the format row, then the clipboard sentence under the same stroke.
-        StackPanel rows = rowList(card(panel, QString()));
-        appendRow(rows, cardRow(glyphMark(L'\uE765'),
-                                rowText(textBlock(setupSchemaRow(QStringLiteral("outputFormat")).label, false)),
-                                format));
-        rows.Children().Append(rowSeparator());
-        StackPanel restoreSetting = settingRow(restoreRow.label, restore);
-        restoreSetting.Margin({0, 12, 0, 0});
-        rows.Children().Append(restoreSetting);
-        content.Children().Append(panel);
-    }
-
     // The refinement twin of autoSelectSpeechProvider, once every provider
     // and the runner check have answered. None, someone's own runner and
     // their own server are choices, never an unready sign-in to move away
@@ -1942,10 +1669,7 @@ struct SetupWindow::Native {
                     list = rowList(card(panel, title));
                 }
                 const bool ownModel = id == kLocal || id == kEndpoint;
-                RefinementOption option{id,
-                                        id == kLocal      ? QStringLiteral("This computer")
-                                        : id == kEndpoint ? QStringLiteral("A server I run")
-                                                          : found->label};
+                RefinementOption option{id, found->label};
                 option.status = statusCell(ownModel ? QString() : QStringLiteral("Checking…"),
                                            StatusTone::Neutral);
                 StackPanel text = rowText(strongTextBlock(option.label));
@@ -2434,77 +2158,6 @@ struct SetupWindow::Native {
         endpointForm.refilling = false;
     }
 
-    void showProfiles()
-    {
-        StackPanel panel = page(QStringLiteral("profiles"));
-        const auto pairs = [](const QList<RowOption> &options) {
-            QList<QPair<QString, QString>> pairs;
-            for (const RowOption &option : options) {
-                pairs.append({option.id, option.label});
-            }
-            return pairs;
-        };
-        QList<WritingProfileSettings> saved = controller->settings()->writingProfileSettings();
-        const QList<RowOption> profileChoices = writingProfileChoices(saved);
-        const auto profiles = pairs(profileChoices);
-        ComboBox fallback = combo(profiles, controller->settings()->defaultWritingProfile());
-        fallback.SelectionChanged([this, fallback, profiles](const auto &, const auto &) {
-            controller->settings()->setDefaultWritingProfile(profiles.at(fallback.SelectedIndex()).first);
-        });
-        panel.Children().Append(settingRow(setupSchemaRow(QStringLiteral("defaultWritingProfile")).label, fallback));
-
-        const QList<QPair<QString, QString>> cleanup =
-            pairs(cleanupStrengths(controller->settings()->customCleanupLevels()));
-        const QList<QPair<QString, QString>> tones =
-            pairs(writingTones(controller->settings()->customTones()));
-        // The mockup's table header, so the two unlabelled columns say which
-        // is cleanup and which is tone.
-        StackPanel header;
-        header.Orientation(Orientation::Horizontal);
-        header.Spacing(12);
-        TextBlock profileHeading = secondaryTextBlock(QStringLiteral("Profile"));
-        profileHeading.Width(110);
-        TextBlock cleanupHeading = secondaryTextBlock(QStringLiteral("Cleanup"));
-        cleanupHeading.Width(140);
-        TextBlock toneHeading = secondaryTextBlock(QStringLiteral("Tone"));
-        toneHeading.Width(170);
-        header.Children().Append(profileHeading);
-        header.Children().Append(cleanupHeading);
-        header.Children().Append(toneHeading);
-        panel.Children().Append(header);
-        for (const RowOption &choice : profileChoices) {
-            const WritingProfileSettings current = writingProfileSettingsFor(saved, choice.id);
-            StackPanel row;
-            row.Orientation(Orientation::Horizontal);
-            row.Spacing(12);
-            TextBlock label = textBlock(choice.label, false);
-            label.Width(110);
-            label.VerticalAlignment(VerticalAlignment::Center);
-            ComboBox cleanupChoice = combo(cleanup, current.cleanupStrength);
-            cleanupChoice.MinWidth(140);
-            ComboBox toneChoice = combo(tones, current.tone);
-            toneChoice.MinWidth(170);
-            const auto save = [this, id = choice.id, cleanupChoice, toneChoice, cleanup, tones] {
-                QList<WritingProfileSettings> values = controller->settings()->writingProfileSettings();
-                for (WritingProfileSettings &value : values) {
-                    if (value.profile == id) {
-                        value.cleanupStrength = cleanup.at(cleanupChoice.SelectedIndex()).first;
-                        value.tone = tones.at(toneChoice.SelectedIndex()).first;
-                    }
-                }
-                controller->settings()->setWritingProfileSettings(values);
-            };
-            cleanupChoice.SelectionChanged([save](const auto &, const auto &) { save(); });
-            toneChoice.SelectionChanged([save](const auto &, const auto &) { save(); });
-            row.Children().Append(label);
-            row.Children().Append(cleanupChoice);
-            row.Children().Append(toneChoice);
-            panel.Children().Append(row);
-        }
-        panel.Children().Append(secondaryTextBlock(setupProfilesNote()));
-        content.Children().Append(panel);
-    }
-
     void showShortcut()
     {
         StackPanel panel = page(QStringLiteral("shortcut"));
@@ -2669,19 +2322,6 @@ struct SetupWindow::Native {
         content.Children().Append(panel);
     }
 
-    void showStartAtLogin()
-    {
-        StackPanel panel = page(QStringLiteral("login"));
-        CheckBox launch;
-        launch.Content(box_value(L"Start Speecher at login"));
-        launch.IsChecked(launchAtLogin);
-        launch.Click([this, launch](const auto &, const auto &) {
-            launchAtLogin = launch.IsChecked().Value();
-        });
-        panel.Children().Append(launch);
-        content.Children().Append(panel);
-    }
-
     // The name of the input the ready checklist reports, which is the saved
     // device when it is still present and the system default otherwise.
     QString microphoneLabel() const
@@ -2703,9 +2343,6 @@ struct SetupWindow::Native {
     QString gateReason(int index) const
     {
         const SetupStepInfo &step = setupSteps().at(index);
-        if (step.id == QStringLiteral("welcome")) {
-            return setupSignInMissing(localSpeech != nullptr);
-        }
         if (step.id == QStringLiteral("transcription")) {
             return setupTranscriptionBlocked(
                 localSelected(),
@@ -2747,7 +2384,7 @@ struct SetupWindow::Native {
         readyBody.Children().Append(textBlock(setupReadyIntro(true, false)));
         readyBody.Children().Append(strongTextBlock(setupBlockedHeading()));
         StackPanel rows = rowList(card(readyBody, QString()));
-        for (int index = 0; index < readyPage; ++index) {
+        for (int index = 0; index < readyPage(); ++index) {
             if (gateSatisfied(index)) {
                 continue;
             }
@@ -2844,9 +2481,6 @@ struct SetupWindow::Native {
         appendRow(rows, readyRow(glyphMark(L'\uE720'),
                                  setupChecklistLine(QStringLiteral("microphone"), microphoneLabel()),
                                  QStringLiteral("Ready"), StatusTone::Positive));
-        appendRow(rows, readyRow(glyphMark(L'\uE765'),
-                                 setupChecklistLine(QStringLiteral("delivery"), QStringLiteral("Windows clipboard")),
-                                 QStringLiteral("Ready"), StatusTone::Positive));
 
         // Refinement is never gated, so this row reports what the refinement
         // page last saw rather than a readiness the Ready page insists on. A
@@ -2903,6 +2537,14 @@ struct SetupWindow::Native {
         readyBody = StackPanel();
         readyBody.Spacing(12);
         panel.Children().Append(readyBody);
+        // Applied when setup finishes, so a skip leaves it alone.
+        CheckBox launch;
+        launch.Content(box_value(win::hs(setupSchemaRow(QStringLiteral("launchAtLogin")).label)));
+        launch.IsChecked(launchAtLogin);
+        launch.Click([this, launch](const auto &, const auto &) {
+            launchAtLogin = launch.IsChecked().Value();
+        });
+        panel.Children().Append(launch);
         content.Children().Append(panel);
         renderReady();
         if (localSpeech) {
@@ -2916,12 +2558,10 @@ struct SetupWindow::Native {
                              [this] { showReadyDownload(); });
         }
 
-        // Finishing must not trust what the welcome and transcription pages saw
-        // however long ago: a sign-in can expire while the wizard sits on a
-        // later page. Every provider is probed, because the welcome gate asks
-        // whether any is signed in and the transcription gate asks about the
-        // selected one; both read speechReady, and refreshGates re-reads them
-        // as each verdict lands.
+        // Finishing must not trust what the transcription page saw however
+        // long ago: a sign-in can expire while the wizard sits on a later
+        // page. The gate reads speechReady, and refreshGates re-reads it as
+        // each verdict lands.
         const quint64 generation = ++checkGeneration;
         for (const ProviderDescriptor &provider :
              controller->providerRegistry()->speechProviders()) {
@@ -3011,7 +2651,7 @@ struct SetupWindow::Native {
         // nothing to dictate with, so skipping holds here too.
         registerShortcut();
         if (!shortcutRegistered) {
-            showPage(shortcutPage);
+            showPage(shortcutPage());
             return;
         }
         controller->settings()->setLaunchAtLogin(launchAtLogin);
@@ -3093,14 +2733,12 @@ struct SetupWindow::Native {
     std::function<void()> refinementRefresh;
     // The provider to go back to when Skip cleanup is cleared.
     QString lastRefinementProvider;
-    // The Welcome page's path, kept across Back and Next.
-    WelcomeChoice welcomeChoice;
     // Owns the Qt connections of the page on screen.
     std::unique_ptr<QObject> pageScope = std::make_unique<QObject>();
     // Discards the results of a check the wizard has moved on from.
     quint64 checkGeneration = 0;
-    // What the last probe said about each provider, by id: the welcome and
-    // transcription gates read these rather than probing again.
+    // What the last probe said about each provider, by id: the transcription
+    // gate reads these rather than probing again.
     QHash<QString, bool> speechReady;
     QHash<QString, QString> speechMessage;
     // The newest probe round asked about each provider; see probeSpeechProvider.
@@ -3108,8 +2746,6 @@ struct SetupWindow::Native {
     QHash<QString, quint64> refinementProbeGeneration;
     // The sign-in decisions shared with the Qt and SwiftUI assistants.
     ProviderSignIn signIn{*controller->settings()};
-    // Whether a usable CLI Proxy API account exists, per the last welcome check.
-    bool cliproxyReady = false;
     QHash<QString, bool> refinementReady;
     // Set once a provider row has been chosen, by the user or by the one
     // auto-selection each list is allowed per wizard run.
@@ -3206,7 +2842,7 @@ bool SetupWindow::captureForTest(const QString &path)
 
 QStringList SetupWindow::welcomeCopyForTest()
 {
-    return {findSetupStep(QStringLiteral("welcome"))->intro, setupWelcomeDetail()};
+    return {findSetupStep(QStringLiteral("welcome"))->intro};
 }
 
 } // namespace speecher

@@ -625,21 +625,6 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL showSuggestion;
 @end
 
-// The welcome step's path, owned by core's WelcomeChoice. One per assistant,
-// kept across Back and Continue.
-@interface SetupWelcomeChoice : NSObject
-// After a round of sign-in checks (choice nil) or a click on a path (choice
-// set). Returns the speech provider to save.
-- (NSString *)updateWithProvider:(NSString *)provider
-                  readyProviders:(NSArray<NSString *> *)readyProviders
-               proxyAccountFound:(BOOL)proxyAccountFound
-                          choice:(nullable NSNumber *)choice
-    NS_SWIFT_NAME(update(provider:readyProviders:proxyAccountFound:choice:));
-// An explicit Transcription choice, which a later path default must not undo.
-- (void)providerChosen;
-@property (nonatomic, readonly) BOOL local;
-@end
-
 // The Local Model detail's fact names, one property per LocalModelFactLabels
 // field, so the Swift side pairs each with its value by name.
 @interface LocalModelFactNames : NSObject
@@ -854,15 +839,12 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // The steps, and the wording every assistant shares (app/SetupSteps.h).
 @property (nonatomic, readonly, copy) NSArray<SpeecherSetupStep *> *setupSteps;
 @property (nonatomic, readonly, copy) NSString *setupWindowTitle;
-@property (nonatomic, readonly, copy) NSString *setupWelcomeDetail;
 // The microphone choice's system-default entry.
 @property (nonatomic, readonly, copy) NSString *audioDeviceDefaultLabel;
 @property (nonatomic, readonly, copy) NSString *setupSilentMicrophoneHint;
-@property (nonatomic, readonly, copy) NSString *setupProfilesNote;
 @property (nonatomic, readonly, copy) NSString *setupBlockedHeading;
 @property (nonatomic, readonly, copy) NSString *setupBlockedFooter;
 - (NSString *)setupStepCounter:(NSInteger)step of:(NSInteger)total NS_SWIFT_NAME(setupStepCounter(_:of:));
-- (NSString *)setupSignInMissing:(BOOL)localOffered NS_SWIFT_NAME(setupSignInMissing(localOffered:));
 - (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
     NS_SWIFT_NAME(setupTranscriptionBlocked(localSelected:provider:));
 - (NSString *)setupMicrophoneBlocked:(BOOL)accessGranted NS_SWIFT_NAME(setupMicrophoneBlocked(accessGranted:));
@@ -876,6 +858,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
     NS_SWIFT_NAME(setupRefinementStatus(_:ready:));
 - (NSString *)setupChecklistLine:(NSString *)stepId choice:(NSString *)choice
     NS_SWIFT_NAME(setupChecklistLine(_:choice:));
+// The Ready step's verdict on pasting: Ready, or Clipboard only.
+- (NSString *)setupPasteVerdict:(BOOL)pastes NS_SWIFT_NAME(setupPasteVerdict(_:));
 
 // Every provider the registry offers, in the order it offers them.
 @property (nonatomic, readonly, copy) NSArray<SpeecherProviderModel *> *speechProviders;
@@ -900,12 +884,12 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // it needs, read from the settings now: its verdict follows every edit rather
 // than a probe.
 @property (nonatomic, readonly) BOOL ownModelRefinementReady;
-// Core's setup policy: the provider auto-selection may move to, and which
-// providers are sign-ins.
-- (NSString *)setupProviderChoiceForSaved:(NSString *)saved
-                           readyProviders:(NSArray<NSString *> *)readyProviders
-                         explicitlyChosen:(BOOL)explicitlyChosen
-    NS_SWIFT_NAME(setupProviderChoice(saved:readyProviders:explicitlyChosen:));
+// Core's setup policy: the speech provider auto-selection may move to.
+- (NSString *)setupSpeechChoiceForSaved:(NSString *)saved
+                         readyProviders:(NSArray<NSString *> *)readyProviders
+                           localOffered:(BOOL)localOffered
+                      proxyAccountFound:(BOOL)proxyAccountFound
+    NS_SWIFT_NAME(setupSpeechChoice(saved:readyProviders:localOffered:proxyAccountFound:));
 // Core's refinement default for the saved provider; nil while the runner
 // check is still looking.
 - (nullable NSString *)setupRefinementChoiceForSaved:(NSString *)saved
@@ -913,7 +897,6 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
     NS_SWIFT_NAME(setupRefinementChoice(saved:readyProviders:));
 - (BOOL)offersSetupSpeechProvider:(NSString *)providerId saved:(NSString *)saved localAvailable:(BOOL)localAvailable
     NS_SWIFT_NAME(offersSetupSpeechProvider(_:saved:localAvailable:));
-- (BOOL)isSetupSignInProvider:(NSString *)providerId NS_SWIFT_NAME(isSetupSignInProvider(_:));
 // "Ollama with gemma4:e4b" or "qwen3 on your server"; empty for other providers.
 @property (nonatomic, readonly, copy) NSString *ownModelRefinementSummary;
 

@@ -770,32 +770,6 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @implementation LocalRunnerChoice
 @end
 
-@implementation SetupWelcomeChoice {
-    speecher::WelcomeChoice _choice;
-}
-
-- (NSString *)updateWithProvider:(NSString *)provider
-                  readyProviders:(NSArray<NSString *> *)readyProviders
-               proxyAccountFound:(BOOL)proxyAccountFound
-                          choice:(NSNumber *)choice
-{
-    QStringList ready;
-    for (NSString *id in readyProviders) ready.append(QString::fromNSString(id));
-    const std::optional<bool> picked = choice ? std::optional<bool>(choice.boolValue) : std::nullopt;
-    return _choice.update(QString::fromNSString(provider), ready, proxyAccountFound, picked).toNSString();
-}
-
-- (void)providerChosen
-{
-    _choice.providerChosen();
-}
-
-- (BOOL)local
-{
-    return _choice.local();
-}
-@end
-
 @interface LocalModelFactNames ()
 @property (nonatomic, copy) NSString *bestFor;
 @property (nonatomic, copy) NSString *download;
@@ -2398,13 +2372,15 @@ static void probeSpeechProvider(BridgeState *state,
     return refiner && refiner->prepare(refinement).ok;
 }
 
-- (NSString *)setupProviderChoiceForSaved:(NSString *)saved
-                           readyProviders:(NSArray<NSString *> *)readyProviders
-                         explicitlyChosen:(BOOL)explicitlyChosen
+- (NSString *)setupSpeechChoiceForSaved:(NSString *)saved
+                         readyProviders:(NSArray<NSString *> *)readyProviders
+                           localOffered:(BOOL)localOffered
+                      proxyAccountFound:(BOOL)proxyAccountFound
 {
     QStringList ready;
     for (NSString *id in readyProviders) ready.append(QString::fromNSString(id));
-    return speecher::setupProviderChoice(QString::fromNSString(saved), ready, explicitlyChosen).toNSString();
+    return speecher::setupSpeechChoice(QString::fromNSString(saved), ready, localOffered, proxyAccountFound,
+                                       false).toNSString();
 }
 
 - (nullable NSString *)setupRefinementChoiceForSaved:(NSString *)saved
@@ -2424,11 +2400,6 @@ static void probeSpeechProvider(BridgeState *state,
     return speecher::offersSetupSpeechProvider(QString::fromNSString(providerId), QString::fromNSString(saved), localAvailable);
 }
 
-- (BOOL)isSetupSignInProvider:(NSString *)providerId
-{
-    return speecher::isSetupSignInProvider(QString::fromNSString(providerId));
-}
-
 - (NSArray<SpeecherSetupStep *> *)setupSteps
 {
     NSMutableArray<SpeecherSetupStep *> *steps = [NSMutableArray array];
@@ -2444,21 +2415,14 @@ static void probeSpeechProvider(BridgeState *state,
 }
 
 - (NSString *)setupWindowTitle { return speecher::setupWindowTitle().toNSString(); }
-- (NSString *)setupWelcomeDetail { return speecher::setupWelcomeDetail().toNSString(); }
 - (NSString *)audioDeviceDefaultLabel { return speecher::audioDeviceDefaultLabel().toNSString(); }
 - (NSString *)setupSilentMicrophoneHint { return speecher::setupSilentMicrophoneHint().toNSString(); }
-- (NSString *)setupProfilesNote { return speecher::setupProfilesNote().toNSString(); }
 - (NSString *)setupBlockedHeading { return speecher::setupBlockedHeading().toNSString(); }
 - (NSString *)setupBlockedFooter { return speecher::setupBlockedFooter().toNSString(); }
 
 - (NSString *)setupStepCounter:(NSInteger)step of:(NSInteger)total
 {
     return speecher::setupStepCounter(int(step), int(total)).toNSString();
-}
-
-- (NSString *)setupSignInMissing:(BOOL)localOffered
-{
-    return speecher::setupSignInMissing(localOffered).toNSString();
 }
 
 - (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
@@ -2500,6 +2464,11 @@ static void probeSpeechProvider(BridgeState *state,
 - (NSString *)setupChecklistLine:(NSString *)stepId choice:(NSString *)choice
 {
     return speecher::setupChecklistLine(QString::fromNSString(stepId), QString::fromNSString(choice)).toNSString();
+}
+
+- (NSString *)setupPasteVerdict:(BOOL)pastes
+{
+    return speecher::setupPasteVerdict(pastes).toNSString();
 }
 
 - (NSString *)ownModelRefinementSummary
