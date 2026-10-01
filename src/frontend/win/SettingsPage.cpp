@@ -839,6 +839,26 @@ StackPanel stateToggle(const ToggleSwitch &toggle)
             text.Text(stateText(sender.as<ToggleSwitch>().IsOn()));
         }
     });
+    // The word dims with a disabled switch, whether the row or its card
+    // disabled it. Read once in the tree, where ActualTheme is the window's.
+    const auto followEnabled = [state = make_weak(state), toggle = make_weak(toggle)] {
+        const TextBlock text = state.get();
+        const ToggleSwitch owner = toggle.get();
+        if (!text || !owner) {
+            return;
+        }
+        if (owner.IsEnabled()) {
+            text.ClearValue(TextBlock::ForegroundProperty());
+            return;
+        }
+        PaneHost theme;
+        theme.effectiveTheme = [text] { return text.ActualTheme(); };
+        if (const auto brush = themeBrush(L"SettingsCardDisabledForeground", theme)) {
+            text.Foreground(brush);
+        }
+    };
+    state.Loaded([followEnabled](const auto &, const auto &) { followEnabled(); });
+    toggle.IsEnabledChanged([followEnabled](const auto &, const auto &) { followEnabled(); });
     StackPanel panel;
     panel.Orientation(Orientation::Horizontal);
     panel.Spacing(12);
