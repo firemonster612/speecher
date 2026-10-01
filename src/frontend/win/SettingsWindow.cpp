@@ -15,6 +15,7 @@
 #include "frontend/win/TranscribePane.h"
 
 #include <QEventLoop>
+#include <QMediaDevices>
 #include <QTimer>
 
 #include <algorithm>
@@ -151,6 +152,17 @@ struct SettingsWindow::Native {
             static const QStringList livePages{QStringLiteral("dictation"), QStringLiteral("refinement"),
                                                QStringLiteral("localModels")};
             if (livePages.contains(currentPane)) {
+                queueLiveRebuild();
+            }
+        });
+        // A microphone plugged in or taken out changes the Input device row's
+        // choices, and whether it has any.
+        QObject::connect(new QMediaDevices(&lifetime), &QMediaDevices::audioInputsChanged, &lifetime, [this] {
+            if (!window) {
+                return;
+            }
+            model.refreshAudioInput();
+            if (currentPane == QStringLiteral("dictation")) {
                 queueLiveRebuild();
             }
         });

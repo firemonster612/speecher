@@ -111,9 +111,10 @@ public:
     // Lets the rows whose choices are slow to gather — a device enumeration —
     // offer them from now on. Called once the window has painted.
     void loadExpensiveRows();
-    // Asks the system again whether there is a microphone at all, as the
-    // window comes back from where its disabled note sent the person. True
-    // when the answer changed. Nothing is asked before loadExpensiveRows.
+    // Asks the system again whether there is a microphone at all, after a
+    // device change or as the window comes back from where its disabled note
+    // sent the person. True when the answer changed. Nothing is asked before
+    // loadExpensiveRows.
     bool refreshAudioInput();
 
     // Empty when these records are consistent; otherwise one message per
