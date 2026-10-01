@@ -10,15 +10,9 @@
 # Known drift no open pull request clears yet: a follow-up reads these from core.
 core-string src/frontend/mac/swift/MenuBarExtra.swift Speecher is listening
 core-string src/frontend/qt/WritingProfileGrid.cpp New profile
-core-string src/frontend/win/HomePage.cpp %1 min
-core-string src/frontend/win/HomePage.cpp %1 of audio
-core-string src/frontend/win/HomePage.cpp MMM d, yyyy
 core-string src/frontend/win/LocalModelBrowser.cpp Speech models
 core-string src/frontend/win/SetupWindow.cpp Speech models
 core-string src/ui/AppWindow.cpp Quit Speecher
-core-string src/ui/HomePage.cpp MMM d, yyyy
-core-string src/ui/InsightsCharts.cpp %1 min
-core-string src/ui/InsightsCharts.cpp %1 of audio
 core-string src/ui/SetupAssistant.cpp Global Shortcut
 core-string src/ui/settings/SettingsPageSet.cpp Quit Speecher
 core-string src/ui/settings/SettingsPageSet.cpp Remove Speecher

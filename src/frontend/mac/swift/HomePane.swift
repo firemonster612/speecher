@@ -8,12 +8,22 @@ import UniformTypeIdentifiers
 // bridge; this file only words and draws it. See docs/insights-mockup.
 
 /// What the activity heatmap colours its days by.
-private enum HeatMeasure: String, CaseIterable, Identifiable {
-    case dictations = "Dictations"
-    case words = "Words"
-    case audio = "Minutes of audio"
+private enum HeatMeasure: Int, CaseIterable, Identifiable {
+    // The bridge's order for the per-measure lists.
+    case dictations
+    case words
+    case audio
 
     var id: Self { self }
+
+    /// Its homeLabels key.
+    var labelKey: String {
+        switch self {
+        case .dictations: return "measureDictations"
+        case .words: return "measureWords"
+        case .audio: return "measureAudio"
+        }
+    }
 
     func level(_ day: SpeecherInsightsDayModel) -> Int {
         switch self {
@@ -58,14 +68,11 @@ struct HomePane: View {
             }
             dictationCard
             if !model.insightsEnabled {
-                notice(title: "Insights are off",
-                       text: "Speecher isn't recording new dictation. History you already have "
-                           + "stays on this computer until you clear it in Insights settings.",
-                       action: "Insights settings…")
+                notice(title: model.homeLabel("insightsOffTitle"),
+                       text: model.homeLabel("insightsOffBody"),
+                       action: model.homeLabel("insightsSettings"))
             } else if insights.recordCount == 0 {
-                notice(title: "No insights yet",
-                       text: "Your stats appear here after your next dictation. They're stored "
-                           + "only on this computer and never sent to the cloud.")
+                notice(title: model.homeLabel("noInsightsTitle"), text: model.homeLabel("noInsightsBody"))
             } else {
                 tiles
                 activity
@@ -96,9 +103,7 @@ struct HomePane: View {
                 .disabled(!model.toggleEnabled)
             } label: {
                 Label(model.status, systemImage: model.listening ? "mic.fill" : "mic")
-                Text(model.shortcut.isEmpty
-                     ? "Set a Global Shortcut to dictate from anywhere."
-                     : "Press \(model.shortcut) anywhere to dictate into the app you're using.")
+                Text(model.bridge.dictationShortcutHint(model.shortcut))
             }
             // The popup shows a failure for five seconds, so the reason also
             // stays here until the next session starts.
@@ -155,13 +160,12 @@ struct HomePane: View {
             }
         } header: {
             HStack {
-                Text("Your dictation")
+                Text(model.homeLabel("yourDictation"))
                 Spacer()
-                Picker("Period", selection: $model.insightsRange) {
-                    Text("Last 7 days").tag(SpeecherInsightsRange.last7Days)
-                    Text("Last 30 days").tag(SpeecherInsightsRange.last30Days)
-                    Text("This year").tag(SpeecherInsightsRange.thisYear)
-                    Text("All time").tag(SpeecherInsightsRange.allTime)
+                Picker(model.homeLabel("period"), selection: $model.insightsRange) {
+                    ForEach([SpeecherInsightsRange.last7Days, .last30Days, .thisYear, .allTime], id: \.self) {
+                        Text(model.bridge.insightsRangeLabel($0)).tag($0)
+                    }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
@@ -291,10 +295,10 @@ struct HomePane: View {
                             strengths: insights.heatStrengths, measure: measure)
         } header: {
             HStack {
-                Text("Activity")
+                Text(model.homeLabel("activity"))
                 Spacer()
-                Picker("Measure", selection: $measure) {
-                    ForEach(HeatMeasure.allCases) { Text($0.rawValue).tag($0) }
+                Picker(model.homeLabel("measure"), selection: $measure) {
+                    ForEach(HeatMeasure.allCases) { Text(model.homeLabel($0.labelKey)).tag($0) }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
@@ -338,7 +342,7 @@ struct HomePane: View {
     }
 
     private var whenYouTalk: some View {
-        card("When you talk") {
+        card(model.homeLabel("whenYouTalk")) {
             if insights.hasHourData {
                 let counts = insights.hourCounts.map(\.intValue)
                 let labels = insights.hourLabels
@@ -347,26 +351,26 @@ struct HomePane: View {
                 Text(insights.peakText).foregroundStyle(.secondary)
                 HourChart(counts: counts, labels: labels, tips: insights.hourTips, peak: peak)
             } else {
-                Text("After a few days of dictation this shows the hours you talk most.")
+                Text(model.homeLabel("noHourData"))
             }
         }
     }
 
     private var pace: some View {
-        card("Pace") {
+        card(model.homeLabel("pace")) {
             if insights.dictations == 0 {
-                Text("No dictation in this period.")
+                Text(model.homeLabel("noDictationInPeriod"))
             } else {
                 let wpm = insights.wordsPerMinute
                 let scale = max(wpm, 160)
                 HStack(alignment: .top, spacing: 32) {
-                    figure("\(wpm.formatted()) wpm", caption: "Your speaking pace")
-                    figure(minutes(insights.minutesSavedVersusTyping), caption: "Saved over typing")
+                    figure("\(wpm.formatted()) wpm", caption: model.homeLabel("speakingPace"))
+                    figure(insights.minutesSavedText, caption: model.homeLabel("savedOverTyping"))
                 }
                 let typing = insights.typingWordsPerMinute
                 barGrid {
-                    bar("You, speaking", value: wpm, total: scale, emphasised: true, caption: wpm.formatted())
-                    bar("Typical typing", value: typing, total: scale, emphasised: false,
+                    bar(model.homeLabel("youSpeaking"), value: wpm, total: scale, emphasised: true, caption: wpm.formatted())
+                    bar(model.homeLabel("typicalTyping"), value: typing, total: scale, emphasised: false,
                         caption: typing.formatted())
                 }
                 Text(insights.speedupText)
@@ -378,9 +382,9 @@ struct HomePane: View {
     // MARK: Apps and corrections
 
     private var apps: some View {
-        card("Where your words go") {
+        card(model.homeLabel("whereYourWordsGo")) {
             if insights.apps.isEmpty {
-                Text("No dictation in this period.")
+                Text(model.homeLabel("noDictationInPeriod"))
             } else {
                 let most = insights.apps.map(\.words).max() ?? 1
                 barGrid {
@@ -397,9 +401,12 @@ struct HomePane: View {
         card(model.homeLabel("correctionsTitle")) {
             let learned = model.learnedCorrectionCount
             figure(learned.formatted(), caption: model.bridge.learnedCorrectionsCaption(learned))
-            Text("Speecher learned these from edits you made after dictating.")
+            Text(model.bridge.learnedCorrectionsNote)
                 .foregroundStyle(.secondary)
-            Button(model.homeLabel("reviewCorrections")) { model.showPage("vocabulary:corrections") }
+            let action = model.bridge.learnedCorrectionsAction
+            if !action.isEmpty {
+                Button(action) { model.showPage("vocabulary:corrections") }
+            }
         }
     }
 
@@ -453,63 +460,31 @@ struct HomePane: View {
 
     private var records: some View {
         Section {
-            milestone
-            record("Longest streak",
-                   insights.bestStreakEndsToday && insights.currentStreak > 0
-                       ? "That's the one you're on"
-                       : "Ended \(insights.bestStreakEnd)",
-                   value: plural(insights.bestStreak, "day"))
-            record("Longest dictation",
-                   "\(insights.longestWords.formatted()) words into \(insights.longestApp), \(insights.longestDay)",
-                   value: insights.longestDuration)
-            record("Busiest day", capitalised(insights.busiestDay),
-                   value: plural(insights.busiestDayDictations, "dictation"))
-            record("Wordiest day", capitalised(insights.wordiestDay),
-                   value: plural(insights.wordiestDayWords, "word"))
-            if let first = insights.firstDictation {
-                record("First dictation",
-                       first.formatted(.dateTime.month(.abbreviated).day().year()),
-                       value: insights.firstDictationDaysAgo == 0
-                           ? "Today"
-                           : "\(plural(insights.firstDictationDaysAgo, "day")) ago")
+            ForEach(Array(insights.records.enumerated()), id: \.offset) { _, record in
+                LabeledContent {
+                    if record.milestoneBar {
+                        ProgressView(value: Double(insights.allTimeWords), total: Double(insights.nextMilestone))
+                            .frame(width: 120)
+                    } else {
+                        Text(record.value)
+                    }
+                } label: {
+                    Text(record.title)
+                    Text(record.detail)
+                }
             }
         } header: {
-            Text("Records")
+            Text(model.homeLabel("records"))
         } footer: {
             HStack {
-                Label("Insights are stored only on this computer and are never sent to the cloud.",
-                      systemImage: "lock")
-                Button("Insights settings") { model.showPage("general") }
+                Label(model.homeLabel("privacyNote"), systemImage: "lock")
+                Button(model.homeLabel("insightsSettings")) { model.showPage("general") }
                     .buttonStyle(.link)
             }
             .id(Self.bottomID)
         }
     }
 
-    @ViewBuilder private var milestone: some View {
-        if insights.nextMilestone > 0 {
-            let next = insights.nextMilestone
-            LabeledContent {
-                ProgressView(value: Double(insights.allTimeWords), total: Double(next))
-                    .frame(width: 120)
-            } label: {
-                Text("Next milestone: \(next.formatted()) words")
-                Text(insights.milestoneText)
-            }
-        } else {
-            record("Every milestone passed", insights.milestoneText,
-                   value: plural(insights.allTimeWords, "word"))
-        }
-    }
-
-    private func record(_ title: String, _ detail: String, value: String) -> some View {
-        LabeledContent {
-            Text(value)
-        } label: {
-            Text(title)
-            Text(detail)
-        }
-    }
 }
 
 /// The last 53 weeks, one column per week with Monday on top, in GitHub's
@@ -601,21 +576,7 @@ private struct ActivityHeatmap: View {
     }
 
     private func tooltip(_ day: SpeecherInsightsDayModel) -> String {
-        let value: String
-        if day.dictations == 0 {
-            value = "No dictation"
-        } else {
-            switch measure {
-            case .dictations:
-                value = "\(plural(day.dictations, "dictation")), \(plural(day.words, "word"))"
-            case .words:
-                value = "\(plural(day.words, "word")) from \(plural(day.dictations, "dictation"))"
-            case .audio:
-                value = "\(duration(day.audioMs)) of audio"
-            }
-        }
-        let date = day.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year())
-        return "\(value)\n\(date)"
+        day.tips.indices.contains(measure.rawValue) ? day.tips[measure.rawValue] : ""
     }
 }
 
@@ -626,28 +587,6 @@ private struct ActivityHeatmap: View {
 private func heatColor(_ level: Int, _ strengths: [NSNumber]) -> Color {
     guard level > 0, level < strengths.count else { return Color.primary.opacity(0.08) }
     return Color.accentColor.opacity(strengths[level].doubleValue)
-}
-
-private func plural(_ count: Int, _ noun: String) -> String {
-    "\(count.formatted()) \(noun)\(count == 1 ? "" : "s")"
-}
-
-private func capitalised(_ text: String) -> String {
-    text.prefix(1).uppercased() + text.dropFirst()
-}
-
-/// "45 min", "2 h 5 min".
-private func minutes(_ total: Int) -> String {
-    let hours = total / 60, rest = total % 60
-    if hours == 0 { return "\(total.formatted()) min" }
-    return rest == 0 ? "\(hours.formatted()) h" : "\(hours.formatted()) h \(rest.formatted()) min"
-}
-
-/// "40s", "12 min", "1 h 5 min".
-private func duration(_ milliseconds: Int) -> String {
-    let seconds = Double(milliseconds) / 1000
-    if seconds < 60 { return "\(Int(seconds.rounded()).formatted())s" }
-    return minutes(Int((seconds / 60).rounded()))
 }
 
 /// A Writing Profile as a badge: its label on a capsule of the accent at the

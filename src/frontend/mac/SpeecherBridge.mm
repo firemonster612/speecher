@@ -837,9 +837,20 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) NSInteger dictationsLevel;
 @property (nonatomic) NSInteger wordsLevel;
 @property (nonatomic) NSInteger audioLevel;
+@property (nonatomic, copy) NSArray<NSString *> *tips;
 @end
 
 @implementation SpeecherInsightsDayModel
+@end
+
+@interface SpeecherInsightRecordModel ()
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *detail;
+@property (nonatomic, copy) NSString *value;
+@property (nonatomic) BOOL milestoneBar;
+@end
+
+@implementation SpeecherInsightRecordModel
 @end
 
 @interface SpeecherInsightsAppModel ()
@@ -869,10 +880,6 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) NSInteger recordCount;
 @property (nonatomic) NSInteger words;
 @property (nonatomic) NSInteger dictations;
-@property (nonatomic) NSInteger currentStreak;
-@property (nonatomic) NSInteger bestStreak;
-@property (nonatomic, copy) NSString *bestStreakEnd;
-@property (nonatomic) BOOL bestStreakEndsToday;
 @property (nonatomic, copy) NSArray<NSNumber *> *weekActivity;
 @property (nonatomic) NSInteger todayIndex;
 @property (nonatomic, copy) NSArray<NSString *> *weekLetters;
@@ -895,22 +902,15 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) BOOL hasHourData;
 @property (nonatomic) NSInteger wordsPerMinute;
 @property (nonatomic) NSInteger typingWordsPerMinute;
-@property (nonatomic) NSInteger minutesSavedVersusTyping;
+@property (nonatomic, copy) NSString *minutesSavedText;
 @property (nonatomic, copy) NSString *speedupText;
 @property (nonatomic, copy) NSArray<SpeecherInsightsAppModel *> *apps;
 @property (nonatomic) NSInteger allTimeWords;
 @property (nonatomic) NSInteger nextMilestone;
-@property (nonatomic, copy) NSString *milestoneText;
-@property (nonatomic, copy) NSString *longestDuration;
-@property (nonatomic) NSInteger longestWords;
-@property (nonatomic, copy) NSString *longestApp;
-@property (nonatomic, copy) NSString *longestDay;
-@property (nonatomic, copy) NSString *busiestDay;
-@property (nonatomic) NSInteger busiestDayDictations;
-@property (nonatomic, copy) NSString *wordiestDay;
-@property (nonatomic) NSInteger wordiestDayWords;
-@property (nonatomic, copy, nullable) NSDate *firstDictation;
-@property (nonatomic) NSInteger firstDictationDaysAgo;
+@property (nonatomic, copy) NSArray<SpeecherInsightRecordModel *> *records;
+@property (nonatomic, copy) NSArray<NSString *> *heatmapDescriptions;
+@property (nonatomic, copy) NSString *hourChartDescription;
+@property (nonatomic, copy) NSString *weekDescription;
 @end
 
 @implementation SpeecherInsightsModel
@@ -938,11 +938,9 @@ NSDate *bridgedDate(const QDate &date)
     return date.startOfDay().toNSDate();
 }
 
-// The day as the page words it, or empty for a day the summary does not have.
-NSString *bridgedRelativeDay(const QDate &date, const QDate &today)
-{
-    return date.isValid() ? speecher::relativeDay(date, today).toNSString() : @"";
-}
+// The heatmap's measures in the order the bridge lists them.
+constexpr std::array<speecher::HeatMeasure, 3> kHeatMeasures{
+    speecher::HeatMeasure::Dictations, speecher::HeatMeasure::Words, speecher::HeatMeasure::Audio};
 
 // Each measure's levels are worked out up front, so switching the measure
 // only picks another column.
@@ -961,6 +959,12 @@ NSArray<SpeecherInsightsDayModel *> *bridgedHeatmap(const QList<speecher::Heatma
         model.dictationsLevel = dictations.level(day);
         model.wordsLevel = words.level(day);
         model.audioLevel = audio.level(day);
+        NSMutableArray<NSString *> *tips = [NSMutableArray array];
+        for (const speecher::HeatMeasure measure : kHeatMeasures) {
+            const speecher::ChartTip tip = speecher::heatmapDayTip(day, measure);
+            [tips addObject:(tip.title + u'\n' + tip.detail).toNSString()];
+        }
+        model.tips = tips;
         [bridged addObject:model];
     }
     return bridged;
@@ -1010,10 +1014,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.words = summary.words;
     model.dictations = summary.dictations;
 
-    model.currentStreak = summary.currentStreak;
-    model.bestStreak = summary.bestStreak;
-    model.bestStreakEnd = bridgedRelativeDay(summary.bestStreakEnd, today);
-    model.bestStreakEndsToday = summary.bestStreakEndsToday;
     NSMutableArray<NSNumber *> *week = [NSMutableArray array];
     NSMutableArray<NSString *> *letters = [NSMutableArray array];
     for (int day = 0; day < 7; ++day) {
@@ -1050,7 +1050,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
     model.wordsPerMinute = summary.wordsPerMinute;
     model.typingWordsPerMinute = summary.typingWordsPerMinute;
-    model.minutesSavedVersusTyping = summary.minutesSavedVersusTyping;
+    model.minutesSavedText = speecher::minutesText(summary.minutesSavedVersusTyping).toNSString();
     model.speedupText = summary.speedupText.toNSString();
 
     NSMutableArray<SpeecherInsightsAppModel *> *apps = [NSMutableArray array];
@@ -1066,19 +1066,23 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
     model.allTimeWords = summary.allTimeWords;
     model.nextMilestone = summary.nextMilestone;
-    model.milestoneText = speecher::milestoneText(summary).toNSString();
-    model.longestDuration = speecher::clockText(summary.longest.audioMs).toNSString();
-    model.longestWords = summary.longest.words;
-    model.longestApp = summary.longest.appName.toNSString();
-    model.longestDay = bridgedRelativeDay(summary.longest.date, today);
-    model.busiestDay = bridgedRelativeDay(summary.busiestDay.date, today);
-    model.busiestDayDictations = summary.busiestDay.dictations;
-    model.wordiestDay = bridgedRelativeDay(summary.wordiestDay.date, today);
-    model.wordiestDayWords = summary.wordiestDay.words;
-    model.firstDictation =
-        summary.firstDictation.isValid() ? bridgedDate(summary.firstDictation) : nil;
-    model.firstDictationDaysAgo =
-        summary.firstDictation.isValid() ? summary.firstDictation.daysTo(today) : 0;
+    NSMutableArray<SpeecherInsightRecordModel *> *records = [NSMutableArray array];
+    for (const speecher::InsightRecordText &text : speecher::insightRecords(summary, today)) {
+        SpeecherInsightRecordModel *record = [[SpeecherInsightRecordModel alloc] init];
+        record.title = text.title.toNSString();
+        record.detail = text.detail.toNSString();
+        record.value = text.value.toNSString();
+        record.milestoneBar = text.milestoneBar;
+        [records addObject:record];
+    }
+    model.records = records;
+    NSMutableArray<NSString *> *descriptions = [NSMutableArray array];
+    for (const speecher::HeatMeasure measure : kHeatMeasures) {
+        [descriptions addObject:speecher::heatmapDescription(summary, measure).toNSString()];
+    }
+    model.heatmapDescriptions = descriptions;
+    model.hourChartDescription = speecher::hourChartDescription(summary).toNSString();
+    model.weekDescription = speecher::weekDescription(summary).toNSString();
     return model;
 }
 
@@ -2090,10 +2094,60 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         @"saveFailed": share.saveFailed.toNSString(),
         @"saveTitle": share.saveTitle.toNSString(),
         @"correctionsTitle": speecher::learnedCorrectionsTitle().toNSString(),
-        @"reviewCorrections": speecher::reviewLearnedCorrectionsCaption().toNSString(),
         @"legendLess": speecher::heatLegendLessText().toNSString(),
         @"legendMore": speecher::heatLegendMoreText().toNSString(),
+        @"insightsOffTitle": speecher::homeText(speecher::HomeText::InsightsOffTitle).toNSString(),
+        @"insightsOffBody": speecher::homeText(speecher::HomeText::InsightsOffBody).toNSString(),
+        @"noInsightsTitle": speecher::homeText(speecher::HomeText::NoInsightsTitle).toNSString(),
+        @"noInsightsBody": speecher::homeText(speecher::HomeText::NoInsightsBody).toNSString(),
+        @"insightsSettings": speecher::homeText(speecher::HomeText::InsightsSettings).toNSString(),
+        @"yourDictation": speecher::homeText(speecher::HomeText::YourDictation).toNSString(),
+        @"period": speecher::homeText(speecher::HomeText::Period).toNSString(),
+        @"activity": speecher::homeText(speecher::HomeText::Activity).toNSString(),
+        @"measure": speecher::homeText(speecher::HomeText::Measure).toNSString(),
+        @"whenYouTalk": speecher::homeText(speecher::HomeText::WhenYouTalk).toNSString(),
+        @"noHourData": speecher::homeText(speecher::HomeText::NoHourData).toNSString(),
+        @"pace": speecher::homeText(speecher::HomeText::Pace).toNSString(),
+        @"speakingPace": speecher::homeText(speecher::HomeText::SpeakingPace).toNSString(),
+        @"savedOverTyping": speecher::homeText(speecher::HomeText::SavedOverTyping).toNSString(),
+        @"youSpeaking": speecher::homeText(speecher::HomeText::YouSpeaking).toNSString(),
+        @"typicalTyping": speecher::homeText(speecher::HomeText::TypicalTyping).toNSString(),
+        @"whereYourWordsGo": speecher::homeText(speecher::HomeText::WhereYourWordsGo).toNSString(),
+        @"noDictationInPeriod": speecher::homeText(speecher::HomeText::NoDictationInPeriod).toNSString(),
+        @"records": speecher::homeText(speecher::HomeText::Records).toNSString(),
+        @"privacyNote": speecher::homeText(speecher::HomeText::PrivacyNote).toNSString(),
+        @"measureDictations": speecher::heatMeasureLabel(speecher::HeatMeasure::Dictations).toNSString(),
+        @"measureWords": speecher::heatMeasureLabel(speecher::HeatMeasure::Words).toNSString(),
+        @"measureAudio": speecher::heatMeasureLabel(speecher::HeatMeasure::Audio).toNSString(),
     };
+}
+
+- (NSString *)learnedCorrectionsNote
+{
+    const ApplicationController &controller = *_state->controller;
+    const bool accessibility = !controller.accessibilitySupported() || controller.accessibilityEnabled();
+    return speecher::learnedCorrectionsNote(int(controller.settings()->learnedCorrections().size()),
+                                            controller.settings()->snapshot().correctionLearningEnabled,
+                                            accessibility)
+        .toNSString();
+}
+
+- (NSString *)learnedCorrectionsAction
+{
+    const ApplicationController &controller = *_state->controller;
+    return speecher::learnedCorrectionsAction(int(controller.settings()->learnedCorrections().size()),
+                                              controller.settings()->snapshot().correctionLearningEnabled)
+        .toNSString();
+}
+
+- (NSString *)insightsRangeLabel:(SpeecherInsightsRange)range
+{
+    return speecher::insightsRangeLabel(coreInsightsRange(range)).toNSString();
+}
+
+- (NSString *)dictationShortcutHint:(NSString *)shortcut
+{
+    return speecher::dictationShortcutHint(QString::fromNSString(shortcut)).toNSString();
 }
 
 - (NSString *)learnedCorrectionsCaption:(NSInteger)count

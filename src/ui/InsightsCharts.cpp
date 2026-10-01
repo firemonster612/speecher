@@ -39,21 +39,6 @@ QColor mix(const QColor &from, const QColor &to, int percent)
                   channel(from.blue(), to.blue()));
 }
 
-QString plural(int count, const QString &one, const QString &many)
-{
-    return QStringLiteral("%1 %2").arg(QLocale().toString(count), count == 1 ? one : many);
-}
-
-QString audioText(qint64 audioMs)
-{
-    const qint64 seconds = (audioMs + 500) / 1000;
-    if (seconds < 60) return QStringLiteral("%1s").arg(seconds);
-    const qint64 minutes = (seconds + 30) / 60;
-    if (minutes < 60) return QStringLiteral("%1 min").arg(minutes);
-    return minutes % 60 ? QStringLiteral("%1 h %2 min").arg(minutes / 60).arg(minutes % 60)
-                        : QStringLiteral("%1 h").arg(minutes / 60);
-}
-
 int rowLabelWidth(const QFontMetrics &metrics)
 {
     int widest = 0;
@@ -61,11 +46,6 @@ int rowLabelWidth(const QFontMetrics &metrics)
         widest = std::max(widest, metrics.horizontalAdvance(label));
     }
     return widest;
-}
-
-QString dayText(const QDate &date)
-{
-    return QLocale().toString(date, QStringLiteral("ddd, MMM d, yyyy"));
 }
 
 } // namespace
@@ -98,21 +78,6 @@ void InsightsHeatmap::setMeasure(HeatMeasure measure)
     m_scale = HeatScale(m_days, measure);
     updateGeometry();
     update();
-}
-
-QString InsightsHeatmap::describe(const HeatmapDay &day) const
-{
-    if (day.dictations == 0) return QStringLiteral("No dictation");
-    switch (m_measure) {
-    case HeatMeasure::Words:
-        return QStringLiteral("%1 from %2").arg(plural(day.words, QStringLiteral("word"), QStringLiteral("words")),
-                                               plural(day.dictations, QStringLiteral("dictation"), QStringLiteral("dictations")));
-    case HeatMeasure::Audio:
-        return QStringLiteral("%1 of audio").arg(audioText(day.audioMs));
-    case HeatMeasure::Dictations: break;
-    }
-    return QStringLiteral("%1, %2").arg(plural(day.dictations, QStringLiteral("dictation"), QStringLiteral("dictations")),
-                                        plural(day.words, QStringLiteral("word"), QStringLiteral("words")));
 }
 
 QColor InsightsHeatmap::levelColor(int level) const
@@ -167,7 +132,10 @@ InsightsHeatmap::Geometry InsightsHeatmap::layOutYear(int width) const
             geometry.cells.append({QRectF(x, labelHeight + row * pitch, cell, cell),
                                    m_scale.level(day),
                                    false,
-                                   QStringLiteral("<b>%1</b><br>%2").arg(describe(day), dayText(date))});
+                                   [&day, this] {
+                                       const ChartTip tip = heatmapDayTip(day, m_measure);
+                                       return QStringLiteral("<b>%1</b><br>%2").arg(tip.title, tip.detail);
+                                   }()});
         }
     }
     const std::array<QString, 7> rows = heatmapRowLabels();

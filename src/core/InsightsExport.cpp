@@ -156,7 +156,7 @@ QString insightsImageTitle()
     return QStringLiteral("My Speecher stats");
 }
 
-QString insightsImagePeriod(InsightsRange range)
+QString insightsRangeLabel(InsightsRange range)
 {
     QString period = insightsPeriodName(range);
     period[0] = period.at(0).toUpper();

@@ -460,6 +460,9 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger dictationsLevel;
 @property (nonatomic, readonly) NSInteger wordsLevel;
 @property (nonatomic, readonly) NSInteger audioLevel;
+// The day's tip under each measure, dictations, words, audio
+// (speecher::heatmapDayTip): its value, then the date on the next line.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *tips;
 @end
 
 // One row of "Where your words go". The "N other apps" fold has no profile.
@@ -482,6 +485,15 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) BOOL showsWeek;
 @end
 
+// One row of the Records card (speecher::InsightRecordText).
+@interface SpeecherInsightRecordModel : NSObject
+@property (nonatomic, readonly, copy) NSString *title;
+@property (nonatomic, readonly, copy) NSString *detail;
+@property (nonatomic, readonly, copy) NSString *value;
+// The next milestone shows a progress bar of allTimeWords out of nextMilestone.
+@property (nonatomic, readonly) BOOL milestoneBar;
+@end
+
 // Everything Home shows for one period, as speecher::summarize computed it.
 // Days the page words relative to today ("yesterday", "Mar 1, 2026") arrive
 // already worded, and are empty where the summary has no such day. So do the
@@ -494,12 +506,7 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger words;
 @property (nonatomic, readonly) NSInteger dictations;
 
-// Streak.
-@property (nonatomic, readonly) NSInteger currentStreak;
-@property (nonatomic, readonly) NSInteger bestStreak;
-@property (nonatomic, readonly, copy) NSString *bestStreakEnd;
-@property (nonatomic, readonly) BOOL bestStreakEndsToday;
-// Seven BOOLs, Monday first, and today's slot among them.
+// Streak: seven BOOLs, Monday first, and today's slot among them.
 @property (nonatomic, readonly, copy) NSArray<NSNumber *> *weekActivity;
 @property (nonatomic, readonly) NSInteger todayIndex;
 // One letter per weekday, Monday first (speecher::weekdayLetter).
@@ -537,7 +544,8 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 
 @property (nonatomic, readonly) NSInteger wordsPerMinute;
 @property (nonatomic, readonly) NSInteger typingWordsPerMinute;
-@property (nonatomic, readonly) NSInteger minutesSavedVersusTyping;
+// The time dictation saved over typing, "2 h 5 min" (speecher::minutesText).
+@property (nonatomic, readonly, copy) NSString *minutesSavedText;
 // "That's 3.6× faster than typing at 40 words per minute."
 @property (nonatomic, readonly, copy) NSString *speedupText;
 
@@ -547,19 +555,14 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger allTimeWords;
 // 0 once every milestone is passed.
 @property (nonatomic, readonly) NSInteger nextMilestone;
-// "8,850 to go. You passed 1,000 already.", or "You passed 1,000,000 words".
-@property (nonatomic, readonly, copy) NSString *milestoneText;
-// "m:ss".
-@property (nonatomic, readonly, copy) NSString *longestDuration;
-@property (nonatomic, readonly) NSInteger longestWords;
-@property (nonatomic, readonly, copy) NSString *longestApp;
-@property (nonatomic, readonly, copy) NSString *longestDay;
-@property (nonatomic, readonly, copy) NSString *busiestDay;
-@property (nonatomic, readonly) NSInteger busiestDayDictations;
-@property (nonatomic, readonly, copy) NSString *wordiestDay;
-@property (nonatomic, readonly) NSInteger wordiestDayWords;
-@property (nonatomic, readonly, copy, nullable) NSDate *firstDictation;
-@property (nonatomic, readonly) NSInteger firstDictationDaysAgo;
+@property (nonatomic, readonly, copy) NSArray<SpeecherInsightRecordModel *> *records;
+
+// What each chart says to assistive technology (speecher::heatmapDescription,
+// hourChartDescription, weekDescription); the heatmap's per measure, in the
+// order dictations, words, audio.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *heatmapDescriptions;
+@property (nonatomic, readonly, copy) NSString *hourChartDescription;
+@property (nonatomic, readonly, copy) NSString *weekDescription;
 @end
 
 // ModelRating, which the rating badge colours by.
@@ -725,12 +728,26 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // state, whose status already says it (speecher::dictationFailureNote).
 // Re-read on every statusChanged.
 @property (nonatomic, readonly, copy) NSString *failureNote;
-// Home's fixed wording (speecher::InsightsShareLabels and the learned
-// corrections card), keyed "share", "copyText", "saveJson", "copied",
-// "saved", "saveFailed", "saveTitle", "correctionsTitle",
-// "reviewCorrections", "legendLess", "legendMore".
+// Home's fixed wording (speecher::InsightsShareLabels, speecher::homeText
+// and the heatmap's measures), keyed "share", "copyText", "saveJson",
+// "copied", "saved", "saveFailed", "saveTitle", "correctionsTitle",
+// "legendLess", "legendMore", "insightsOffTitle", "insightsOffBody",
+// "noInsightsTitle", "noInsightsBody", "insightsSettings", "yourDictation",
+// "period", "activity", "measure", "whenYouTalk", "noHourData", "pace",
+// "speakingPace", "savedOverTyping", "youSpeaking", "typicalTyping",
+// "whereYourWordsGo", "noDictationInPeriod", "records", "privacyNote",
+// "measureDictations", "measureWords", "measureAudio".
 @property (nonatomic, readonly, copy) NSDictionary<NSString *, NSString *> *homeLabels;
 - (NSString *)learnedCorrectionsCaption:(NSInteger)count NS_SWIFT_NAME(learnedCorrectionsCaption(_:));
+// The line under the learned corrections count and the button under it,
+// empty when there is nothing to open (speecher::learnedCorrectionsNote and
+// learnedCorrectionsAction, from the settings and the Accessibility grant).
+@property (nonatomic, readonly, copy) NSString *learnedCorrectionsNote;
+@property (nonatomic, readonly, copy) NSString *learnedCorrectionsAction;
+// "Last 30 days".
+- (NSString *)insightsRangeLabel:(SpeecherInsightsRange)range NS_SWIFT_NAME(insightsRangeLabel(_:));
+// The line under Home's status (speecher::dictationShortcutHint).
+- (NSString *)dictationShortcutHint:(NSString *)shortcut NS_SWIFT_NAME(dictationShortcutHint(_:));
 @property (nonatomic, readonly, copy) NSString *noTranscriptYetText;
 - (void)quit;
 @property (nonatomic, copy, nullable) void (^audioLevelChanged)(float level);

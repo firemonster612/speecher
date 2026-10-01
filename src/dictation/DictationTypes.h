@@ -37,6 +37,10 @@ QString dictationStatusLabel(const QString &stateName, const QString &message = 
 // status line: empty in the error state, whose status line already says it.
 QString dictationFailureNote(const QString &stateName, const QString &lastFailure);
 
+// The line under Home's status: how to start dictating from anywhere, or that
+// a Global Shortcut would let you. shortcut is its display text, empty for none.
+QString dictationShortcutHint(const QString &shortcut);
+
 // Whether a tray shows the listening icon, tooltip and level meter for a
 // session state name: the states where the microphone is open or about to be.
 bool dictationListeningPresentation(const QString &stateName);

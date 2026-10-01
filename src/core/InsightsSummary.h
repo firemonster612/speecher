@@ -221,6 +221,59 @@ QString peakText(const InsightsSummary &summary);
 QString learnedCorrectionsTitle();
 // "Correction learned" or "Corrections learned", under the count.
 QString learnedCorrectionsCaption(int count);
-QString reviewLearnedCorrectionsCaption();
+// The line under it, which says how learning stands: off, held by
+// accessibility, waiting for a first correction, or what the list holds.
+QString learnedCorrectionsNote(int count, bool learningOn, bool accessibilityOn);
+// The button to the corrections page; empty while there is nothing to review
+// and nothing to turn on.
+QString learnedCorrectionsAction(int count, bool learningOn);
+
+// Home's fixed wording: card titles, captions and the empty notices.
+enum class HomeText {
+    InsightsOffTitle,
+    InsightsOffBody,
+    NoInsightsTitle,
+    NoInsightsBody,
+    InsightsSettings,
+    YourDictation,
+    Period,
+    Activity,
+    Measure,
+    WhenYouTalk,
+    NoHourData,
+    Pace,
+    SpeakingPace,
+    SavedOverTyping,
+    YouSpeaking,
+    TypicalTyping,
+    WhereYourWordsGo,
+    NoDictationInPeriod,
+    Records,
+    PrivacyNote,
+};
+QString homeText(HomeText text);
+// "45 min", "2 h", "2 h 5 min": the time Pace says dictation saved.
+QString minutesText(int minutes);
+// The heatmap's measure picker: "Dictations", "Words", "Minutes of audio".
+QString heatMeasureLabel(HeatMeasure measure);
+// A heatmap day's tip: what it held under the measure, over its date.
+ChartTip heatmapDayTip(const HeatmapDay &day, HeatMeasure measure);
+
+// What each chart says to assistive technology in place of its marks.
+QString heatmapDescription(const InsightsSummary &summary, HeatMeasure measure);
+QString hourChartDescription(const InsightsSummary &summary);
+QString weekDescription(const InsightsSummary &summary);
+
+// One row of the Records card: a title, the line under it and the figure on
+// the right. The next-milestone row shows a progress bar in place of a figure.
+struct InsightRecordText {
+    QString title;
+    QString detail;
+    QString value;
+    bool milestoneBar = false;
+};
+// The streak record is left out while it is the streak running now, which
+// the Streak tile already says.
+QList<InsightRecordText> insightRecords(const InsightsSummary &summary, const QDate &today);
 
 } // namespace speecher

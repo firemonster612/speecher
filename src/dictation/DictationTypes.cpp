@@ -61,6 +61,13 @@ QString dictationFailureNote(const QString &stateName, const QString &lastFailur
     return stateName.toLower() == QStringLiteral("error") ? QString() : lastFailure;
 }
 
+QString dictationShortcutHint(const QString &shortcut)
+{
+    return shortcut.isEmpty()
+        ? QStringLiteral("Set a Global Shortcut to dictate from anywhere.")
+        : QStringLiteral("Press %1 anywhere to dictate into the app you're using.").arg(shortcut);
+}
+
 bool dictationListeningPresentation(const QString &stateName)
 {
     const QString lowered = stateName.toLower();
