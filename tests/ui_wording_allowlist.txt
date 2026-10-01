@@ -15,5 +15,4 @@ core-string src/ui/AppWindow.cpp Quit Speecher
 core-string src/ui/SetupAssistant.cpp Global Shortcut
 core-string src/ui/settings/SettingsPageSet.cpp Quit Speecher
 core-string src/ui/settings/SettingsPageSet.cpp Remove Speecher
-core-string src/ui/setup/SetupPages.cpp HTML and plain text
 core-string src/ui/setup/SetupPages.cpp Plain text
