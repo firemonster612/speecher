@@ -2258,6 +2258,14 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 + (NSString *)statusLabelFor:(SpeecherDictationState)state
 {
+    // SpeecherDictationState mirrors speecher::DictationState value for value.
+    static_assert(int(SpeecherDictationStateIdle) == int(speecher::DictationState::Idle));
+    static_assert(int(SpeecherDictationStateStarting) == int(speecher::DictationState::Starting));
+    static_assert(int(SpeecherDictationStateListening) == int(speecher::DictationState::Listening));
+    static_assert(int(SpeecherDictationStateStopping) == int(speecher::DictationState::Stopping));
+    static_assert(int(SpeecherDictationStateRefining) == int(speecher::DictationState::Refining));
+    static_assert(int(SpeecherDictationStateDelivering) == int(speecher::DictationState::Delivering));
+    static_assert(int(SpeecherDictationStateError) == int(speecher::DictationState::Error));
     return speecher::dictationStatusLabel(
                speecher::dictationStateName(static_cast<speecher::DictationState>(state)))
         .toNSString();
@@ -2549,6 +2557,31 @@ static void probeSpeechProvider(BridgeState *state,
 
 - (NSString *)setupText:(SpeecherSetupText)text
 {
+    // SpeecherSetupText mirrors speecher::SetupText value for value.
+    static_assert(int(SpeecherSetupTextSkipSetup) == int(speecher::SetupText::SkipSetup));
+    static_assert(int(SpeecherSetupTextCheckAgain) == int(speecher::SetupText::CheckAgain));
+    static_assert(int(SpeecherSetupTextGoToStep) == int(speecher::SetupText::GoToStep));
+    static_assert(int(SpeecherSetupTextHowToDictate) == int(speecher::SetupText::HowToDictate));
+    static_assert(int(SpeecherSetupTextTranscriptionService) == int(speecher::SetupText::TranscriptionService));
+    static_assert(int(SpeecherSetupTextLocalSpeechNote) == int(speecher::SetupText::LocalSpeechNote));
+    static_assert(int(SpeecherSetupTextDownloadToContinue) == int(speecher::SetupText::DownloadToContinue));
+    static_assert(int(SpeecherSetupTextDownloadContinues) == int(speecher::SetupText::DownloadContinues));
+    static_assert(int(SpeecherSetupTextCloseWhileDownloading) == int(speecher::SetupText::CloseWhileDownloading));
+    static_assert(int(SpeecherSetupTextCliproxyAccount) == int(speecher::SetupText::CliproxyAccount));
+    static_assert(int(SpeecherSetupTextListeningForInput) == int(speecher::SetupText::ListeningForInput));
+    static_assert(int(SpeecherSetupTextInputDetected) == int(speecher::SetupText::InputDetected));
+    static_assert(int(SpeecherSetupTextUsesYourSignIn) == int(speecher::SetupText::UsesYourSignIn));
+    static_assert(int(SpeecherSetupTextYourOwnModels) == int(speecher::SetupText::YourOwnModels));
+    static_assert(int(SpeecherSetupTextCleanupProvider) == int(speecher::SetupText::CleanupProvider));
+    static_assert(int(SpeecherSetupTextSkipCleanup) == int(speecher::SetupText::SkipCleanup));
+    static_assert(int(SpeecherSetupTextLookingForRunners) == int(speecher::SetupText::LookingForRunners));
+    static_assert(int(SpeecherSetupTextNoRunnerFound) == int(speecher::SetupText::NoRunnerFound));
+    static_assert(int(SpeecherSetupTextNoRunner) == int(speecher::SetupText::NoRunner));
+    static_assert(int(SpeecherSetupTextRawUntilRunner) == int(speecher::SetupText::RawUntilRunner));
+    static_assert(int(SpeecherSetupTextInstallRunner) == int(speecher::SetupText::InstallRunner));
+    static_assert(int(SpeecherSetupTextGetOllama) == int(speecher::SetupText::GetOllama));
+    static_assert(int(SpeecherSetupTextDownloadWithOllama) == int(speecher::SetupText::DownloadWithOllama));
+    static_assert(int(SpeecherSetupTextEndpointModelHint) == int(speecher::SetupText::EndpointModelHint));
     return speecher::setupText(static_cast<speecher::SetupText>(text)).toNSString();
 }
 
@@ -3071,6 +3104,11 @@ static std::optional<QString> optionalString(NSString *value)
     return speecher::mediaFilesHint().toNSString();
 }
 
+- (NSString *)mediaFilesTooltip
+{
+    return speecher::mediaFilesTooltip().toNSString();
+}
+
 - (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
 {
     NSMutableArray<NSString *> *audio = [NSMutableArray array];
@@ -3168,6 +3206,9 @@ static std::optional<QString> optionalString(NSString *value)
     static_assert(int(SpeecherTranscribeTextRetrying) == int(speecher::TranscribeText::Retrying));
     static_assert(int(SpeecherTranscribeTextTranscribeMore) == int(speecher::TranscribeText::TranscribeMore));
     static_assert(int(SpeecherTranscribeTextProgressName) == int(speecher::TranscribeText::ProgressName));
+    static_assert(int(SpeecherTranscribeTextNoFilesYet) == int(speecher::TranscribeText::NoFilesYet));
+    static_assert(int(SpeecherTranscribeTextNeedsRefiner) == int(speecher::TranscribeText::NeedsRefiner));
+    static_assert(int(SpeecherTranscribeTextDropToAdd) == int(speecher::TranscribeText::DropToAdd));
     return speecher::transcribeText(static_cast<speecher::TranscribeText>(text)).toNSString();
 }
 

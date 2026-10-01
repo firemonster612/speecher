@@ -107,8 +107,9 @@ QString transcribeStepLabel(TranscribeStep step)
 
 QString transcribeStepHint(TranscribeStep step)
 {
-    return step == TranscribeStep::Configure ? QStringLiteral("Check these options, then press Transcribe.")
-                                             : QString();
+    return step == TranscribeStep::Configure
+        ? QStringLiteral("Add audio files, check the options, then press Transcribe.")
+        : QString();
 }
 
 QString transcribeText(TranscribeText text)
@@ -143,13 +144,13 @@ QString transcribeText(TranscribeText text)
     case TranscribeText::RefinerModel:
         return QStringLiteral("Model");
     case TranscribeText::Cleanup:
-        return QStringLiteral("Cleanup");
+        return QStringLiteral("Cleanup Level");
     case TranscribeText::CleanupHelp:
         return QStringLiteral("How much the model may rewrite");
     case TranscribeText::WritingProfile:
         return QStringLiteral("Writing Profile");
     case TranscribeText::WritingProfileHelp:
-        return QStringLiteral("Sets cleanup and tone; you can still adjust them here");
+        return QStringLiteral("Sets cleanup and tone for these files");
     case TranscribeText::Tone:
         return QStringLiteral("Tone");
     case TranscribeText::ToneHelp:
@@ -198,6 +199,12 @@ QString transcribeText(TranscribeText text)
         return QStringLiteral("Transcribe more files");
     case TranscribeText::ProgressName:
         return QStringLiteral("Transcription progress");
+    case TranscribeText::NoFilesYet:
+        return QStringLiteral("Add at least one audio file to start.");
+    case TranscribeText::NeedsRefiner:
+        return QStringLiteral("Choose a provider above to use this");
+    case TranscribeText::DropToAdd:
+        return QStringLiteral("Add to the list");
     }
     return {};
 }
@@ -254,13 +261,17 @@ QString percentSpoken(qreal progress)
 
 QString mediaFilesHint()
 {
-    return QStringLiteral("Drop audio and video files here or choose them") + kSeparator
-        + transcribableExtensions().join(QStringLiteral(", "));
+    return QStringLiteral("Drop audio or video files here, or choose them");
+}
+
+QString mediaFilesTooltip()
+{
+    return transcribableExtensions().join(QStringLiteral(", "));
 }
 
 QString refinementModelHint()
 {
-    return QStringLiteral("Change it on the %1 page").arg(paneTitleForRow(QStringLiteral("openAiModel")));
+    return QStringLiteral("Set in %1 settings").arg(paneTitleForRow(QStringLiteral("openAiModel")));
 }
 
 QString durationLabel(qint64 ms)

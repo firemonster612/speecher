@@ -1407,7 +1407,7 @@ private slots:
         QCOMPARE(paneTitle(QStringLiteral("localModels")), QStringLiteral("Local models"));
         QCOMPARE(paneTitleForRow(QStringLiteral("openAiModel")), QStringLiteral("Refinement"));
         QCOMPARE(paneTitleForRow(QStringLiteral("openAiCliproxyAccount")), QStringLiteral("Accounts"));
-        QCOMPARE(refinementModelHint(), QStringLiteral("Change it on the Refinement page"));
+        QCOMPARE(refinementModelHint(), QStringLiteral("Set in Refinement settings"));
 
         SchemaContext context = fakeContext();
         context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});

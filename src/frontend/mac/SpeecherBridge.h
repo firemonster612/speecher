@@ -399,6 +399,9 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeText) {
     SpeecherTranscribeTextRetrying,
     SpeecherTranscribeTextTranscribeMore,
     SpeecherTranscribeTextProgressName,
+    SpeecherTranscribeTextNoFilesYet,
+    SpeecherTranscribeTextNeedsRefiner,
+    SpeecherTranscribeTextDropToAdd,
 };
 
 // Mirrors speecher::DictationState, so the panel decides on the state rather
@@ -1102,6 +1105,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSArray<NSString *> *transcribableExtensions;
 // Under the file chooser while no files are listed.
 @property (nonatomic, readonly, copy) NSString *mediaFilesHint;
+@property (nonatomic, readonly, copy) NSString *mediaFilesTooltip;
 // The paths among these that are files the decoder can take.
 - (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
     NS_SWIFT_NAME(audioFiles(among:));

@@ -97,6 +97,7 @@ final class TranscriptionModel: ObservableObject {
     private let mediaTypes: [UTType]
     /// Under the file chooser while no files are listed.
     let mediaFilesHint: String
+    let mediaFilesTooltip: String
 
     init(bridge: SpeecherBridge) {
         self.bridge = bridge
@@ -109,6 +110,7 @@ final class TranscriptionModel: ObservableObject {
         configureHint = bridge.stepHint(.configure)
         mediaTypes = bridge.transcribableExtensions.compactMap { UTType(filenameExtension: $0) }
         mediaFilesHint = bridge.mediaFilesHint
+        mediaFilesTooltip = bridge.mediaFilesTooltip
         finishGlide = bridge.transcribeLandingSeconds
         seedOptions()
         bridge.transcriptionFileStarted = { [weak self] index, path in
@@ -616,6 +618,7 @@ struct TranscribePane: View {
                 } footer: {
                     if model.files.isEmpty {
                         Text(model.mediaFilesHint)
+                            .help(model.mediaFilesTooltip)
                     }
                 }
                 Section(model.text(.transcriptionSection)) {
