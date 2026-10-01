@@ -430,7 +430,7 @@ UIElement TranscribePane::build(PaneHost &host, const QString &title)
             }
         });
         scroll.Drop([this, &host](const IInspectable &, const DragEventArgs &args) { dropFiles(host, args); });
-        break;
+        return pageWithActionBar(scroll, startAction(host));
     case TranscribeStep::Transcribe:
         appendProcessing(column, m_views.back());
         break;
@@ -615,13 +615,16 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
         problem.Margin({0, 16, 0, 0});
         column.Children().Append(problem);
     }
-    // The page's one action at the end of the column, as a dialog's would be,
-    // with why it cannot start yet beside it.
+}
+
+// The page's one action, kept in view under the column, with why it cannot
+// start yet beside it.
+StackPanel TranscribePane::startAction(const PaneHost &host)
+{
     StackPanel action;
     action.Orientation(Orientation::Horizontal);
     action.Spacing(12);
     action.HorizontalAlignment(HorizontalAlignment::Right);
-    action.Margin({0, 24, 0, 0});
     if (m_files.isEmpty()) {
         TextBlock reason = secondaryTextBlock(transcribeText(TranscribeText::NoFilesYet),
                                               L"SettingsCardDescriptionStyle", host);
@@ -634,7 +637,7 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
     start.IsEnabled(!m_files.isEmpty());
     start.Click([this](const auto &, const auto &) { startBatch(); });
     action.Children().Append(start);
-    column.Children().Append(action);
+    return action;
 }
 
 void TranscribePane::appendProcessing(const StackPanel &column, View &view)

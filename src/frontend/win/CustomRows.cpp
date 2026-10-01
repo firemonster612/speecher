@@ -19,6 +19,7 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Text.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Documents.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
@@ -41,6 +42,15 @@ const QString kProfileIdKey = QStringLiteral("profileId");
 TextBlock secondaryText(const QString &text, const PaneHost &host)
 {
     return secondaryTextBlock(text, L"SettingsCardDescriptionStyle", host);
+}
+
+// A profile's fields are read one at a time, so each names its profile and
+// its column.
+void nameProfileField(const UIElement &field, const QString &profile, const QString &column)
+{
+    QStringList name{profile, column};
+    name.removeAll(QString());
+    Automation::AutomationProperties::SetName(field, hs(name.join(QStringLiteral(", "))));
 }
 
 // Free text with a commit on Enter or blur, for the CLI Proxy rows.
@@ -182,12 +192,15 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
     const QList<QVariantMap> records = row.value.value<QList<QVariantMap>>();
     QList<CollectionColumnSnapshot> choices;
     QList<CollectionColumnSnapshot> texts;
+    QString profileTitle;
     if (row.collection) {
         for (const CollectionColumnSnapshot &column : row.collection->columns) {
             if (column.kind == ColumnKind::Choice) {
                 choices.append(column);
             } else if (column.kind == ColumnKind::Text) {
                 texts.append(column);
+            } else if (column.id == kProfileColumn) {
+                profileTitle = column.title;
             }
             // A locked column says why above the profiles, not only on hover.
             if (!column.enabled && !column.disabledHelp.isEmpty()) {
@@ -198,6 +211,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         }
     }
     for (qsizetype index = 0; index < records.size(); ++index) {
+        const QString profile = records.at(index).value(kProfileColumn).toString();
         StackPanel pickers;
         pickers.Orientation(Orientation::Horizontal);
         pickers.Spacing(8);
@@ -215,6 +229,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 combo.Items().Append(item);
             }
             combo.SelectedIndex(selected);
+            nameProfileField(combo, profile, column.title);
             // The row's own gate is gatedFullWidthCard's ContentControl, whose
             // IsEnabled(false) propagates down the tree; a column can be
             // locked on its own.
@@ -259,7 +274,8 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         if (custom) {
             TextBox name;
             name.PlaceholderText(L"Name");
-            name.Text(hs(records.at(index).value(kProfileColumn).toString()));
+            name.Text(hs(profile));
+            nameProfileField(name, profile, profileTitle);
             name.LostFocus([rowId = row.id, records, index, &host](const IInspectable &sender, const auto &) {
                 const QString text = qs(sender.as<TextBox>().Text());
                 if (text == records.at(index).value(kProfileColumn).toString()) {
@@ -277,6 +293,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
             TextBox box;
             box.PlaceholderText(hs(column.title));
             box.Text(hs(records.at(index).value(column.id).toString()));
+            nameProfileField(box, profile, column.title);
             if (column.multiline) {
                 makeMultiline(box);
             }
@@ -295,7 +312,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         }
         RowSnapshot profileRow;
         profileRow.id = row.id + QLatin1Char('.') + records.at(index).value(kProfileIdKey).toString();
-        profileRow.label = records.at(index).value(kProfileColumn).toString();
+        profileRow.label = profile;
         rows.Children().Append(rowGrid(profileRow, controls, host, index > 0));
     }
     if (row.collection && !row.collection->addLabel.isEmpty()) {

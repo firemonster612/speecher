@@ -143,6 +143,15 @@ winrt::Microsoft::UI::Xaml::UIElement buildPane(const SettingsPane &pane, PaneHo
 winrt::Microsoft::UI::Xaml::Controls::ScrollViewer pageScaffold(
     const QString &title, const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column);
 
+// A pageScaffold scroller with an action that stays in view below it, at the
+// column's margins and width, as a dialog keeps its buttons.
+winrt::Microsoft::UI::Xaml::Controls::Grid pageWithActionBar(
+    const winrt::Microsoft::UI::Xaml::Controls::ScrollViewer &scroll,
+    const winrt::Microsoft::UI::Xaml::UIElement &action);
+
+// The scroller of a page: the page itself, or a pageWithActionBar's.
+winrt::Microsoft::UI::Xaml::Controls::ScrollViewer pageScroller(const winrt::Microsoft::UI::Xaml::UIElement &page);
+
 // A SettingsCard-shaped container (Card brushes, 1 px stroke, control corner
 // radius) around arbitrary content; shared with the collection editor and the
 // full-width custom rows so every card on screen is the same card.

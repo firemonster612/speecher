@@ -100,7 +100,8 @@ bool isWithin(DependencyObject element, const DependencyObject &ancestor)
 
 // A row is read as one unit: the control carries the row's title and
 // description, which UIA does not otherwise tie to it. A button keeps its
-// caption as its name and gets the row as its help.
+// caption as its name and gets the row as its help, and a control that
+// already has a name (a profile grid field) keeps it.
 void describeForAssistiveTech(const UIElement &control, const QString &title, const QString &description)
 {
     Control target = control.try_as<Control>();
@@ -118,6 +119,9 @@ void describeForAssistiveTech(const UIElement &control, const QString &title, co
         QStringList help{title, description};
         help.removeAll(QString());
         AutomationProperties::SetHelpText(target, hs(help.join(QStringLiteral(". "))));
+        return;
+    }
+    if (!AutomationProperties::GetName(target).empty()) {
         return;
     }
     if (!title.isEmpty()) {
@@ -530,15 +534,45 @@ ScrollViewer pageScaffold(const QString &title, const StackPanel &column)
     return scroll;
 }
 
+Grid pageWithActionBar(const ScrollViewer &scroll, const UIElement &action)
+{
+    Grid page;
+    RowDefinition content;
+    content.Height({1, GridUnitType::Star});
+    RowDefinition actions;
+    actions.Height({0, GridUnitType::Auto});
+    page.RowDefinitions().Append(content);
+    page.RowDefinitions().Append(actions);
+    page.Children().Append(scroll);
+    Border bar;
+    bar.MaxWidth(1064);
+    bar.Margin({36, 12, 36, 20});
+    bar.Child(action);
+    Grid::SetRow(bar, 1);
+    page.Children().Append(bar);
+    return page;
+}
+
+ScrollViewer pageScroller(const UIElement &page)
+{
+    if (const auto scroll = page.try_as<ScrollViewer>()) {
+        return scroll;
+    }
+    if (const auto grid = page.try_as<Grid>(); grid && grid.Children().Size() > 0) {
+        return grid.Children().GetAt(0).try_as<ScrollViewer>();
+    }
+    return nullptr;
+}
+
 void replacePage(const Border &pageHost, const UIElement &page, bool keepScroll)
 {
     double offset = 0;
-    if (auto previous = pageHost.Child().try_as<ScrollViewer>(); previous && keepScroll) {
+    if (auto previous = pageScroller(pageHost.Child()); previous && keepScroll) {
         offset = previous.VerticalOffset();
     }
     pageHost.Child(page);
     if (offset > 0) {
-        if (auto scroll = page.try_as<ScrollViewer>()) {
+        if (auto scroll = pageScroller(page)) {
             scroll.Loaded([offset](const IInspectable &sender, const auto &) {
                 sender.as<ScrollViewer>().ChangeView(nullptr, offset, nullptr, true);
             });
@@ -835,6 +869,26 @@ StackPanel stateToggle(const ToggleSwitch &toggle)
             text.Text(stateText(sender.as<ToggleSwitch>().IsOn()));
         }
     });
+    // The word dims with a disabled switch, whether the row or its card
+    // disabled it. Read once in the tree, where ActualTheme is the window's.
+    const auto followEnabled = [state = make_weak(state), toggle = make_weak(toggle)] {
+        const TextBlock text = state.get();
+        const ToggleSwitch owner = toggle.get();
+        if (!text || !owner) {
+            return;
+        }
+        if (owner.IsEnabled()) {
+            text.ClearValue(TextBlock::ForegroundProperty());
+            return;
+        }
+        PaneHost theme;
+        theme.effectiveTheme = [text] { return text.ActualTheme(); };
+        if (const auto brush = themeBrush(L"SettingsCardDisabledForeground", theme)) {
+            text.Foreground(brush);
+        }
+    };
+    state.Loaded([followEnabled](const auto &, const auto &) { followEnabled(); });
+    toggle.IsEnabledChanged([followEnabled](const auto &, const auto &) { followEnabled(); });
     StackPanel panel;
     panel.Orientation(Orientation::Horizontal);
     panel.Spacing(12);

@@ -34,6 +34,7 @@
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Microsoft.UI.Xaml.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
@@ -52,6 +53,11 @@ using winrt::Microsoft::UI::Xaml::Input::FocusManager;
 using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
+// The open pane (280), the page's gutters (2 x 36) and the widest row: a
+// 320 control beside a title of about 150, in a card's padding and spacing.
+// Narrower, the rows have no room left.
+constexpr int kMinimumWidth = 880;
+constexpr int kMinimumHeight = 480;
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
 const QString kHomePane = QStringLiteral("home");
 // The Transcribe pane keeps its batch across the window; entering and leaving
@@ -337,18 +343,18 @@ struct SettingsWindow::Native {
         window.SetTitleBar(titleBar);
         applyTheme();
         restoreGeometry();
-        // Below this the pane is a menu button and the rows have no room left.
         if (const auto presenter =
                 window.AppWindow().Presenter().try_as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>()) {
             const double scale = GetDpiForWindow(windowHandle()) / 96.0;
-            presenter.PreferredMinimumWidth(int(640 * scale));
-            presenter.PreferredMinimumHeight(int(480 * scale));
+            presenter.PreferredMinimumWidth(int(kMinimumWidth * scale));
+            presenter.PreferredMinimumHeight(int(kMinimumHeight * scale));
         }
         // Back from the Windows privacy page the microphone note sends people
-        // to, the Input device row asks again.
+        // to, the Input device row asks again. Other activations do not
+        // enumerate devices.
         window.Activated([this](const auto &, const WindowActivatedEventArgs &args) {
             if (args.WindowActivationState() != WindowActivationState::Deactivated
-                && model.refreshAudioInput()) {
+                && std::exchange(microphoneSettingsOpened, false) && model.refreshAudioInput()) {
                 queueRebuild();
             }
         });
@@ -426,11 +432,8 @@ struct SettingsWindow::Native {
         const int availableHeight = area.bottom - area.top;
         // A partial intersection can still leave the titlebar off-screen.
         // Bound the entire window, including the scaled default on small screens.
-        width = std::clamp(width,
-                           std::min(GetSystemMetricsForDpi(SM_CXMINTRACK, dpi), availableWidth),
-                           availableWidth);
-        height = std::clamp(height,
-                            std::min(GetSystemMetricsForDpi(SM_CYMINTRACK, dpi), availableHeight),
+        width = std::clamp(width, std::min(int(kMinimumWidth * dpi / 96.0), availableWidth), availableWidth);
+        height = std::clamp(height, std::min(int(kMinimumHeight * dpi / 96.0), availableHeight),
                             availableHeight);
         const int x = std::clamp(int(origin.x), int(area.left), int(area.right) - width);
         const int y = std::clamp(int(origin.y), int(area.top), int(area.bottom) - height);
@@ -567,6 +570,10 @@ struct SettingsWindow::Native {
             if (!paneTitle.isEmpty()) {
                 item.Children().Append(secondaryTextBlock(paneTitle, L"SettingsCardDescriptionStyle", host));
             }
+            QStringList name{title, paneTitle};
+            name.removeAll(QString());
+            winrt::Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(
+                item, hs(name.join(QStringLiteral(", "))));
             items.Append(item);
         };
         for (const SearchMatch &match : model.search(query)) {
@@ -625,6 +632,8 @@ struct SettingsWindow::Native {
             showWhatsNew();
         } else if (id == QStringLiteral("speechLocalModelDownload")) {
             host.showPage(QStringLiteral("localModels"));
+        } else if (id == QStringLiteral("openMicrophoneSettings")) {
+            microphoneSettingsOpened = true;
         } else if (id == QStringLiteral("resetCustomSystemPrompt")) {
             setValueAndCommit(host, QStringLiteral("customSystemPrompt"),
                               builtInDictationSystemPrompt());
@@ -805,8 +814,15 @@ struct SettingsWindow::Native {
         if (!request.isEmpty()) {
             showPage(request);
         }
-        // Let composition catch up with the pane switch before printing.
+        // Let composition catch up with the pane switch before printing: the
+        // new page's first layout, which a busy first launch can hold back,
+        // then a moment for its frame.
         QEventLoop settle;
+        const auto page = pageHost.Child().try_as<FrameworkElement>();
+        for (int waited = 0; page && !page.IsLoaded() && waited < 2000; waited += 50) {
+            QTimer::singleShot(50, &settle, &QEventLoop::quit);
+            settle.exec();
+        }
         QTimer::singleShot(250, &settle, &QEventLoop::quit);
         settle.exec();
         // SPEECHER_GRAB_SCROLL=bottom shows the end of the page, as on the
@@ -814,7 +830,7 @@ struct SettingsWindow::Native {
         // this short would otherwise never capture.
         const QString scrollTo = qEnvironmentVariable("SPEECHER_GRAB_SCROLL");
         if (scrollTo == QStringLiteral("bottom") || scrollTo == QStringLiteral("middle")) {
-            if (const auto scroll = pageHost.Child().try_as<ScrollViewer>()) {
+            if (const auto scroll = pageScroller(pageHost.Child())) {
                 const double end = scroll.ScrollableHeight();
                 scroll.ChangeView(nullptr, scrollTo == QStringLiteral("middle") ? end * 0.6 : end,
                                   nullptr, true);
@@ -896,6 +912,9 @@ struct SettingsWindow::Native {
     bool scrollToTop = false;
     bool rebuildQueued = false;
     bool liveRebuildPending = false;
+    // The Input device row sent the person to the privacy page; the next
+    // activation asks for devices again.
+    bool microphoneSettingsOpened = false;
 
     std::function<void()> bannerCloseAction;
 };
