@@ -27,6 +27,10 @@ class CollectionEditor;
 class LocalModelBrowser;
 class SettingsModel;
 
+// The widest of the three control widths a settings row uses, for text that
+// needs room: a paragraph, a URL, a key.
+inline constexpr double kWideControlWidth = 320;
+
 inline winrt::hstring hs(const QString &text)
 {
     return winrt::hstring(reinterpret_cast<const wchar_t *>(text.utf16()),
@@ -93,6 +97,8 @@ struct PaneHost {
     // The single-key typing cost, shown inline after a save; not an error.
     QString shortcutNotice;
     bool shortcutRecording = false;
+    // A row a search found, which the next pane build scrolls to.
+    QString revealRow;
     // Home's pickers: the stats period, and the Activity measure as an index
     // into Dictations / Words / Minutes of audio.
     InsightsRange homeRange = InsightsRange::Last30Days;
@@ -169,6 +175,15 @@ winrt::Microsoft::UI::Xaml::Controls::TextBlock secondaryTextBlock(const QString
                                                                    const wchar_t *styleKey,
                                                                    const PaneHost &host);
 
+// Gives text the secondary foreground of the theme it is shown in, once it is
+// in a window: secondaryTextBlock for surfaces without a PaneHost, the setup
+// assistant and the tray flyout.
+void followSecondaryForeground(const winrt::Microsoft::UI::Xaml::Controls::TextBlock &text);
+
+// Opens Windows Settings at Privacy > Microphone, where a microphone Speecher
+// cannot use is allowed again.
+void openMicrophonePrivacySettings();
+
 // Whether a Windows contrast theme is on, which overrides Light and Dark.
 bool highContrastOn();
 
@@ -189,6 +204,12 @@ winrt::Microsoft::UI::Xaml::Controls::Grid badge(const QString &label,
 // rows supply options for.
 winrt::Microsoft::UI::Xaml::Controls::ComboBox choiceComboBox(const RowSnapshot &row,
                                                               PaneHost &host);
+
+// A toggle switch as the Settings app shows one: On or Off on its left, its
+// right edge on the line the other controls share. The word follows the
+// switch as it flips.
+winrt::Microsoft::UI::Xaml::Controls::StackPanel stateToggle(
+    const winrt::Microsoft::UI::Xaml::Controls::ToggleSwitch &toggle);
 
 // Lets a TextBox hold several lines, for a multi-line row or column: Return
 // starts a new line, so the value is saved when the box loses focus.

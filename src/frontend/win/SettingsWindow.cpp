@@ -248,13 +248,20 @@ struct SettingsWindow::Native {
         root.Children().Append(titleBar);
 
         navigation = NavigationView();
-        navigation.PaneDisplayMode(NavigationViewPaneDisplayMode::Left);
+        // The Settings app's adaptive pane: expanded from 1008 epx, icons
+        // only from 641, and behind the menu button below that.
+        navigation.PaneDisplayMode(NavigationViewPaneDisplayMode::Auto);
+        navigation.CompactModeThresholdWidth(641);
+        navigation.ExpandedModeThresholdWidth(1008);
+        navigation.OpenPaneLength(280);
         navigation.IsBackButtonVisible(NavigationViewBackButtonVisible::Collapsed);
-        navigation.IsPaneToggleButtonVisible(false);
         navigation.IsSettingsVisible(false);
         navigation.AlwaysShowHeader(false);
         search = AutoSuggestBox();
         search.PlaceholderText(L"Find a setting");
+        // The suggestions are elements, whose text is no query to type over
+        // the box with.
+        search.UpdateTextOnSelect(false);
         SymbolIcon find;
         find.Symbol(Symbol::Find);
         search.QueryIcon(find);
@@ -263,14 +270,24 @@ struct SettingsWindow::Native {
             if (args.Reason() != AutoSuggestionBoxTextChangeReason::UserInput) {
                 return;
             }
-            query = qs(sender.Text());
-            rebuildSidebar();
+            const QString query = qs(sender.Text()).trimmed();
+            sender.ItemsSource(query.isEmpty() ? IInspectable{nullptr} : IInspectable(searchSuggestions(query)));
         });
-        // Enter opens the first hit.
-        search.QuerySubmitted([this](const AutoSuggestBox &, const auto &) {
-            const QStringList hits = model.searchPanes(query);
-            if (!hits.isEmpty()) {
-                showPage(hits.first());
+        // A chosen suggestion opens its row; Enter opens the first one.
+        search.QuerySubmitted([this](const AutoSuggestBox &,
+                                     const AutoSuggestBoxQuerySubmittedEventArgs &args) {
+            if (const auto chosen = args.ChosenSuggestion()) {
+                const auto hit = chosen.try_as<FrameworkElement>();
+                if (hit && hit.Tag()) {
+                    const QString target = qs(unbox_value<hstring>(hit.Tag()));
+                    showSearchHit(target.section(QLatin1Char('\n'), 0, 0),
+                                  target.section(QLatin1Char('\n'), 1));
+                }
+                return;
+            }
+            const QList<SearchMatch> matches = model.search(qs(args.QueryText()));
+            if (!matches.isEmpty()) {
+                showSearchHit(matches.first().pane, matches.first().rows.value(0));
             }
         });
         navigation.AutoSuggestBox(search);
@@ -302,6 +319,8 @@ struct SettingsWindow::Native {
         banner = InfoBar();
         banner.IsOpen(false);
         banner.Margin({36, 12, 36, 0});
+        // The page column's width, so the banner's edges are the cards'.
+        banner.MaxWidth(1064);
         banner.CloseButtonClick([this](const auto &, const auto &) {
             if (bannerCloseAction) {
                 bannerCloseAction();
@@ -317,6 +336,21 @@ struct SettingsWindow::Native {
         window.SetTitleBar(titleBar);
         applyTheme();
         restoreGeometry();
+        // Below this the pane is a menu button and the rows have no room left.
+        if (const auto presenter =
+                window.AppWindow().Presenter().try_as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>()) {
+            const double scale = GetDpiForWindow(windowHandle()) / 96.0;
+            presenter.PreferredMinimumWidth(int(640 * scale));
+            presenter.PreferredMinimumHeight(int(480 * scale));
+        }
+        // Back from the Windows privacy page the microphone note sends people
+        // to, the Input device row asks again.
+        window.Activated([this](const auto &, const WindowActivatedEventArgs &args) {
+            if (args.WindowActivationState() != WindowActivationState::Deactivated
+                && model.refreshAudioInput()) {
+                queueRebuild();
+            }
+        });
         closedToken = window.Closed([this](const auto &, const auto &) { windowClosed(); });
 
         rebuildSidebar();
@@ -451,26 +485,19 @@ struct SettingsWindow::Native {
             }
             navigation.MenuItems().Append(item);
         };
-        if (!query.isEmpty()) {
-            // A search lists its hits alone, from the core index.
-            for (const QString &id : model.searchPanes(query)) {
+        // What's New leads the untitled top group only while pending or
+        // selected; each titled group sits under a NavigationViewItemHeader.
+        if (SettingsWindow::offersWhatsNew(currentPane, controller->pendingWhatsNewVersion())) {
+            append(kWhatsNewPane);
+        }
+        for (const SidebarGroup &group : schema.sidebarGroups) {
+            if (!group.title.isEmpty()) {
+                NavigationViewItemHeader header;
+                header.Content(box_value(hs(group.title)));
+                navigation.MenuItems().Append(header);
+            }
+            for (const QString &id : group.panes) {
                 append(id);
-            }
-        } else {
-            // What's New leads the untitled top group only while pending or
-            // selected; each titled group sits under a NavigationViewItemHeader.
-            if (SettingsWindow::offersWhatsNew(currentPane, controller->pendingWhatsNewVersion())) {
-                append(kWhatsNewPane);
-            }
-            for (const SidebarGroup &group : schema.sidebarGroups) {
-                if (!group.title.isEmpty()) {
-                    NavigationViewItemHeader header;
-                    header.Content(box_value(hs(group.title)));
-                    navigation.MenuItems().Append(header);
-                }
-                for (const QString &id : group.panes) {
-                    append(id);
-                }
             }
         }
         navigation.SelectedItem(selected);
@@ -480,9 +507,13 @@ struct SettingsWindow::Native {
     void selectPane(const QString &id)
     {
         // The model browser belongs to its pane; left running, its download
-        // progress would keep updating controls no longer on screen.
+        // progress would keep updating controls no longer on screen. Another
+        // pane opens at its top, not at the scroll offset of this one.
         if (id != currentPane) {
             host.localModels.reset();
+            if (pageHost) {
+                pageHost.Child(nullptr);
+            }
         }
         if (id == kTranscribePane) {
             transcribe->enter();
@@ -519,6 +550,69 @@ struct SettingsWindow::Native {
         controller->clearPendingWhatsNew();
         selectPane(kWhatsNewPane);
         refreshBanner();
+    }
+
+    // The search's suggestions: each matching row under its pane's title, or
+    // the pane alone when only its title or a heading matched. Each carries
+    // "pane\nrow" as its tag; with no match, one untagged line says so.
+    winrt::Windows::Foundation::Collections::IVector<IInspectable> searchSuggestions(const QString &query)
+    {
+        auto items = winrt::single_threaded_vector<IInspectable>();
+        const SettingsSchema &schema = model.schema();
+        const auto suggestion = [this, &items](const QString &title, const QString &paneTitle,
+                                               const QString &target) {
+            StackPanel item;
+            item.Padding({0, 4, 0, 4});
+            item.Tag(box_value(hs(target)));
+            item.Children().Append(styledTextBlock(title, L"SettingsCardBodyStyle"));
+            if (!paneTitle.isEmpty()) {
+                item.Children().Append(secondaryTextBlock(paneTitle, L"SettingsCardDescriptionStyle", host));
+            }
+            items.Append(item);
+        };
+        for (const SearchMatch &match : model.search(query)) {
+            const SettingsPane *pane = schema.pane(match.pane);
+            if (match.rows.isEmpty()) {
+                suggestion(pane->title, QString(), match.pane);
+            }
+            for (const QString &rowId : match.rows) {
+                // A row the section names, with no label of its own, goes by
+                // the section's title.
+                QString title = schema.row(rowId)->label;
+                for (const SettingsPaneGroup &group : pane->groups) {
+                    if (title.isEmpty() && group.rows.contains(rowId)) {
+                        title = group.title;
+                    }
+                }
+                suggestion(title, pane->title, match.pane + QLatin1Char('\n') + rowId);
+            }
+        }
+        if (items.Size() == 0) {
+            items.Append(secondaryTextBlock(noSettingsMatchText(), L"SettingsCardBodyStyle", host));
+        }
+        return items;
+    }
+
+    // Opens the pane a search found, on the view that holds the row, scrolled
+    // to the row's card.
+    void showSearchHit(const QString &paneId, const QString &rowId)
+    {
+        const SettingsPane *pane = model.schema().pane(paneId);
+        if (!pane) {
+            return;
+        }
+        for (const SettingsPaneGroup &group : pane->groups) {
+            if (!group.view.isEmpty() && group.rows.contains(rowId)) {
+                host.views.insert(paneId, group.view);
+            }
+        }
+        host.revealRow = rowId;
+        if (paneId == currentPane) {
+            pageHost.Child(nullptr);
+            rebuildPage();
+        } else {
+            selectPane(paneId);
+        }
     }
 
     void leaveWhatsNew()
@@ -605,6 +699,8 @@ struct SettingsWindow::Native {
                 page = buildPane(*pane, host);
                 break;
             }
+            // A sought row this pane did not show is not sought on the next.
+            host.revealRow.clear();
         } catch (const winrt::hresult_error &error) {
             // A throw from a dispatcher callback dies as a stowed exception
             // with no message anywhere; log it and keep the window alive.
@@ -759,7 +855,7 @@ struct SettingsWindow::Native {
         dialog.ShowAsync();
     }
 
-    void inform(const QString &title)
+    void inform(const QString &title, const QString &text)
     {
         if (!root) {
             return;
@@ -768,7 +864,8 @@ struct SettingsWindow::Native {
         dialog.XamlRoot(root.XamlRoot());
         dialog.RequestedTheme(root.ActualTheme());
         dialog.Title(box_value(hs(title)));
-        dialog.CloseButtonText(L"OK");
+        dialog.Content(box_value(hs(text)));
+        dialog.CloseButtonText(L"Close");
         dialog.ShowAsync();
     }
 
@@ -794,7 +891,6 @@ struct SettingsWindow::Native {
 
     QString currentPane;
     QString whatsNewReturnPane;
-    QString query;
     bool sidebarUpdating = false;
     bool rebuildQueued = false;
     bool liveRebuildPending = false;
@@ -857,9 +953,9 @@ void SettingsWindow::confirm(const QString &title,
     m_native->confirm(title, text, confirmLabel, std::move(confirmed));
 }
 
-void SettingsWindow::inform(const QString &title)
+void SettingsWindow::inform(const QString &title, const QString &text)
 {
-    m_native->inform(title);
+    m_native->inform(title, text);
 }
 
 void SettingsWindow::setActionHook(std::function<void(const QString &)> hook)

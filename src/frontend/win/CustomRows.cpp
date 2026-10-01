@@ -47,7 +47,7 @@ TextBlock secondaryText(const QString &text, const PaneHost &host)
 TextBox commitTextBox(const RowSnapshot &row, PaneHost &host)
 {
     TextBox box;
-    box.MinWidth(240);
+    box.MinWidth(kWideControlWidth);
     box.PlaceholderText(hs(row.placeholder));
     box.Text(hs(row.value.toString()));
     const auto commit = [rowId = row.id, stored = row.value.toString(), &host](const TextBox &box) {
@@ -70,7 +70,7 @@ TextBox commitTextBox(const RowSnapshot &row, PaneHost &host)
 PasswordBox commitPasswordBox(const RowSnapshot &row, PaneHost &host)
 {
     PasswordBox box;
-    box.MinWidth(240);
+    box.MinWidth(kWideControlWidth);
     box.PlaceholderText(hs(row.placeholder));
     box.Password(hs(row.value.toString()));
     const auto commit = [rowId = row.id, stored = row.value.toString(), &host](
@@ -101,7 +101,7 @@ UIElement credentialField(PaneHost &host)
     StackPanel panel;
     panel.Spacing(4);
     PasswordBox box;
-    box.MinWidth(240);
+    box.MinWidth(kWideControlWidth);
     box.PlaceholderText(L"Enter OpenAI API key");
     box.Password(hs(host.apiKey));
     box.PasswordChanged([&host](const IInspectable &sender, const auto &) {
@@ -132,7 +132,9 @@ UIElement credentialField(PaneHost &host)
     });
     panel.Children().Append(box);
     if (!host.credentialProblem.isEmpty()) {
-        panel.Children().Append(secondaryText(host.credentialProblem, host));
+        TextBlock problem = secondaryText(host.credentialProblem, host);
+        problem.MaxWidth(kWideControlWidth);
+        panel.Children().Append(problem);
     }
     return panel;
 }
@@ -187,6 +189,12 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
             } else if (column.kind == ColumnKind::Text) {
                 texts.append(column);
             }
+            // A locked column says why above the profiles, not only on hover.
+            if (!column.enabled && !column.disabledHelp.isEmpty()) {
+                TextBlock note = secondaryText(column.disabledHelp, host);
+                note.Margin({16, 12, 16, 0});
+                rows.Children().Append(note);
+            }
         }
     }
     for (qsizetype index = 0; index < records.size(); ++index) {
@@ -207,10 +215,10 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 combo.Items().Append(item);
             }
             combo.SelectedIndex(selected);
-            // No per-combo gating: this row is full-width, so appendSection
-            // wraps the whole card in gatedFullWidthCard's ContentControl,
-            // whose IsEnabled(false) propagates down the tree. That wrapper
-            // is the load-bearing gate.
+            // The row's own gate is gatedFullWidthCard's ContentControl, whose
+            // IsEnabled(false) propagates down the tree; a column can be
+            // locked on its own.
+            combo.IsEnabled(column.enabled);
             combo.SelectionChanged([rowId = row.id, records, index, columnId = column.id, &host](
                                        const IInspectable &sender, const auto &) {
                 const auto item = sender.as<ComboBox>().SelectedItem();
@@ -312,7 +320,11 @@ UIElement releaseNotes(const RowSnapshot &row)
     StackPanel notes;
     notes.Padding({16, 16, 16, 16});
     notes.Spacing(8);
-    const QStringList blocks = row.value.toString().split(QStringLiteral("\n\n"));
+    // A Windows checkout gives the bundled notes CRLF line ends, which would
+    // hide every paragraph break below.
+    QString markdown = row.value.toString();
+    markdown.remove(QLatin1Char('\r'));
+    const QStringList blocks = markdown.split(QStringLiteral("\n\n"));
     for (const QString &block : blocks) {
         if (block.trimmed() == QStringLiteral("---")) {
             static const hstring divider = hstring(
@@ -375,7 +387,7 @@ UIElement releaseNotes(const RowSnapshot &row)
         text.TextWrapping(TextWrapping::Wrap);
         text.IsTextSelectionEnabled(true);
         if (heading) {
-            text.FontWeight(winrt::Windows::UI::Text::FontWeights::Bold());
+            text.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
         }
         text.Blocks().Append(paragraph);
         notes.Children().Append(text);
@@ -441,10 +453,7 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
         return credentialField(host);
     }
     if (row.id == QStringLiteral("anthropicAuth")) {
-        TextBlock text = secondaryText(host.model->anthropicCredentialStatus(), host);
-        text.HorizontalAlignment(HorizontalAlignment::Right);
-        text.TextAlignment(TextAlignment::End);
-        return text;
+        return secondaryText(host.model->anthropicCredentialStatus(), host);
     }
     // The fallback the mac renderer uses: a picker when the row supplied
     // choices, a text field when it holds text, nothing otherwise.
