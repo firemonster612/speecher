@@ -62,9 +62,23 @@ final class AppModel: ObservableObject {
     /// The last single-key binding was refused for the missing Accessibility
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
-    /// The pane the sidebar is on. A window opened from closed starts on Home.
+    /// The pane the sidebar is on. A window opened from closed starts on
+    /// reopenPane.
     @Published var pane = "home" {
-        didSet { if pane != oldValue { activeShortcutRecorder?.stop() } }
+        didSet {
+            guard pane != oldValue else { return }
+            activeShortcutRecorder?.stop()
+            if pane != "whatsNew" { UserDefaults.standard.set(pane, forKey: Self.lastPaneKey) }
+        }
+    }
+    private static let lastPaneKey = "lastSettingsPane"
+
+    /// Where a settings window opened from closed starts: the pane last shown,
+    /// or Home. A screenshot run starts on Home, so what it grabs does not
+    /// depend on what the machine showed before.
+    var reopenPane: String {
+        let grabbing = !(ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"] ?? "").isEmpty
+        return grabbing ? "home" : UserDefaults.standard.string(forKey: Self.lastPaneKey) ?? "home"
     }
     /// The recorder whose recording is in progress, if any. Stopped directly
     /// when the pane changes or the settings window closes, rather than
