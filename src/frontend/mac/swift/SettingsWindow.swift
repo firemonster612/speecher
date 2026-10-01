@@ -45,32 +45,16 @@ struct RootView: View {
         }
     }
 
-    /// The banner, the title and the pane share one column, as wide as a
-    /// grouped form's cards go, so their edges line up however wide the
-    /// window is.
+    /// The banner and the title keep to the column a grouped form centres its
+    /// cards in, so their edges line up however wide the window is. The pane
+    /// itself stays full width, so its scroller sits at the window edge.
     private static let columnWidth: CGFloat = 742
 
     @ViewBuilder private var detail: some View {
         if let pane = model.pane(withId: model.pane) {
-            VStack(alignment: .leading, spacing: 0) {
-                if model.update.visible {
-                    UpdateBanner(model: model)
-                        .scenePadding([.top, .horizontal])
-                } else if model.whatsNewPending {
-                    WhatsNewStrip(banner: model.whatsNewBanner,
-                                  seeWhatsNew: { model.showWhatsNew() },
-                                  dismiss: { model.dismissWhatsNew() })
-                        .scenePadding([.top, .horizontal])
-                }
-                HStack {
-                    if pane.id == "whatsNew" {
-                        Button("Back", systemImage: "chevron.backward") { model.leaveWhatsNew() }
-                            .labelStyle(.iconOnly)
-                    }
-                    Text(pane.title)
-                        .font(.title2.weight(.semibold))
-                }
-                .scenePadding([.top, .horizontal])
+            VStack(spacing: 0) {
+                header(pane)
+                    .frame(maxWidth: Self.columnWidth, alignment: .leading)
                 // Content scrolls under the title, so the two are kept apart
                 // rather than the content being cut off at a glyph.
                 Divider()
@@ -80,8 +64,29 @@ struct RootView: View {
                     // Vocabulary's chosen view, does not carry over to the next.
                     .id(pane.id)
             }
-            .frame(maxWidth: Self.columnWidth)
-            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder private func header(_ pane: Pane) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if model.update.visible {
+                UpdateBanner(model: model)
+                    .scenePadding([.top, .horizontal])
+            } else if model.whatsNewPending {
+                WhatsNewStrip(banner: model.whatsNewBanner,
+                              seeWhatsNew: { model.showWhatsNew() },
+                              dismiss: { model.dismissWhatsNew() })
+                    .scenePadding([.top, .horizontal])
+            }
+            HStack {
+                if pane.id == "whatsNew" {
+                    Button("Back", systemImage: "chevron.backward") { model.leaveWhatsNew() }
+                        .labelStyle(.iconOnly)
+                }
+                Text(pane.title)
+                    .font(.title2.weight(.semibold))
+            }
+            .scenePadding([.top, .horizontal])
         }
     }
 }
