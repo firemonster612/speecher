@@ -388,7 +388,7 @@ jobs:
           New-Item -Path "$root\updates" -Force | Out-Null
           New-ItemProperty -Path "$root\updates" -Name pendingWhatsNewVersion -Value "0.0.1" `
             -PropertyType String -Force | Out-Null
-          foreach ($page in "output", "accounts", "localModels", "refinement", "vocabulary:replacements", "vocabulary:terms", "whatsNew") {
+          foreach ($page in "output", "accounts", "localModels", "refinement", "vocabulary:replacements", "vocabulary:terms", "whatsNew", "writingProfiles", "dictation", "transcribe-window") {
             $env:SPEECHER_GRAB_PAGE = $page
             $out = Join-Path (Resolve-Path evidence).Path ("win-" + ($page -replace ':', '-') + ".png")
             $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
@@ -396,6 +396,17 @@ jobs:
               throw "speecher --grab for $page exited with code $($process.ExitCode)"
             }
           }
+          # The ends of the long pages, which the window above stops short of.
+          $env:SPEECHER_GRAB_SCROLL = "bottom"
+          foreach ($page in "general", "dictation", "writingProfiles", "accounts", "output") {
+            $env:SPEECHER_GRAB_PAGE = $page
+            $out = Join-Path (Resolve-Path evidence).Path ("win-" + $page + "-bottom.png")
+            $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+            if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+              throw "speecher --grab for $page-bottom exited with code $($process.ExitCode)"
+            }
+          }
+          $env:SPEECHER_GRAB_SCROLL = ""
           Remove-ItemProperty -Path "$root\bindings" -Name rules
           Remove-ItemProperty -Path "$root\updates" -Name pendingWhatsNewVersion
 
