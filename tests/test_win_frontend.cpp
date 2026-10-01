@@ -557,7 +557,7 @@ private slots:
         QVERIFY(row);
         for (const RowOption &method : row->options(controller->settings()->snapshot())) {
             if (method.id == QString::fromLatin1(OutputMethod::WinPaste)) {
-                QCOMPARE(method.label, QStringLiteral("Standard paste (Ctrl+V)"));
+                QCOMPARE(method.label, QStringLiteral("Ctrl+V only"));
                 return;
             }
         }

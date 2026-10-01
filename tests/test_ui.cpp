@@ -774,6 +774,8 @@ private slots:
         const std::unique_ptr<SchemaSettingsPage> page =
             schemaPage(QStringLiteral("refinement"), *platform, providers);
         SchemaSettingsPage &refinement = *page;
+        const std::unique_ptr<SchemaSettingsPage> profilesPage =
+            schemaPage(QStringLiteral("writingProfiles"), *platform, providers);
         const std::unique_ptr<SchemaSettingsPage> correctionsPage =
             schemaPage(QStringLiteral("corrections"), *platform, providers);
         SchemaSettingsPage &corrections = *correctionsPage;
@@ -783,7 +785,8 @@ private slots:
         AppSettings refining = settings.snapshot();
         refining.refinement.providerId = QStringLiteral("openai");
         refinement.load(refining);
-        auto *profileSettings = refinement.findChild<QTableWidget *>(QStringLiteral("vocabInput"));
+        profilesPage->load(refining);
+        auto *profileSettings = profilesPage->findChild<QTableWidget *>(QStringLiteral("vocabInput"));
         QVERIFY(profileSettings);
         QCOMPARE(profileSettings->rowCount(), 5);
 
@@ -838,9 +841,8 @@ private slots:
         output.setCapabilities({true});
         refinement.setCapabilities({true});
         corrections.setCapabilities({true});
-        // A row that is usable says what it does; one that is not says why.
-        QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
-        QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
+        // A row that is usable drops the note that said why it was not.
+        QVERIFY(correctionLearning->toolTip().isEmpty());
         QVERIFY(output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
         QVERIFY(output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
@@ -898,7 +900,8 @@ private slots:
         }
     }
 
-    void outputMethodsOfferAccessibilityInsertion()
+    // Paste with picks how to paste; inserting directly is a Default paste choice.
+    void defaultPasteOffersAccessibilityInsertion()
     {
         SettingsStore settings;
         ProviderRegistry providers;
@@ -909,7 +912,10 @@ private slots:
 
         auto *method = page->findChild<QComboBox *>(QStringLiteral("outputMethod"));
         QVERIFY(method);
-        QVERIFY(method->findData(QStringLiteral("direct_insert")) >= 0);
+        QCOMPARE(method->findData(QStringLiteral("direct_insert")), -1);
+        auto *defaultPaste = page->findChild<QComboBox *>(QStringLiteral("globalPasteRule"));
+        QVERIFY(defaultPaste);
+        QVERIFY(defaultPaste->findData(QStringLiteral("direct_insert")) >= 0);
         // Choices describe what happens, not which tool does it.
         for (int index = 0; index < method->count(); ++index) {
             const QString text = method->itemText(index);
@@ -1046,18 +1052,19 @@ private slots:
 
     void theHaikuCautionComesAndGoesWithTheModel()
     {
-        SettingsStore settings;
-        SecretStore secrets(&settings);
         ProviderRegistry providers;
+        providers.registerRefinementProvider(
+            {QStringLiteral("anthropic"), QStringLiteral("Fake Anthropic")},
+            [](QObject *) -> TranscriptRefiner * { return nullptr; });
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        ProviderCustomRows providerRows(settings, secrets);
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+            schemaPage(QStringLiteral("refinement"), *platform, providers);
         auto *caution = page->findChild<QLabel *>(QStringLiteral("anthropicModelCaution"));
         auto *model = page->findChild<QComboBox *>(QStringLiteral("anthropicModel"));
         QVERIFY(caution && model);
 
         AppSettings snapshot;
+        snapshot.refinement.providerId = QStringLiteral("anthropic");
         page->load(snapshot);
         QVERIFY(!caution->isVisibleTo(page.get()));
 
@@ -1695,15 +1702,18 @@ private slots:
         QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
     }
 
-    void outputCompletionStatusDurationLoadsAndSaves()
+    void completionStatusDurationLoadsAndSaves()
     {
-        SettingsStore store;
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        OutputCustomRows outputRows(store);
-        const std::unique_ptr<SchemaSettingsPage> output =
-            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
-        SchemaSettingsPage &page = *output;
+        const SettingsSchema schema = buildSettingsSchema(qtSchemaContext(*platform, providers));
+        SchemaSettingsPage page(
+            {schema.section(*std::find_if(schema.pane(QStringLiteral("dictation"))->groups.cbegin(),
+                                          schema.pane(QStringLiteral("dictation"))->groups.cend(),
+                                          [](const SettingsPaneGroup &group) {
+                                              return group.rows.contains(QStringLiteral("completionStatusDuration"));
+                                          }))},
+            nullptr);
         AppSettings settings;
         settings.output.completionStatusDurationMs = 1200;
         page.load(settings);

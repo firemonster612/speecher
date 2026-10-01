@@ -127,13 +127,13 @@ private slots:
                 rows.append(item->text());
             }
         }
-        QStringList expected{QStringLiteral("Home"), QStringLiteral("General"), QStringLiteral("Accounts"),
-                             QStringLiteral("[Speech]"), QStringLiteral("Dictation")};
+        QStringList expected{QStringLiteral("Home"), QStringLiteral("Transcribe"), QStringLiteral("General"),
+                             QStringLiteral("Accounts"), QStringLiteral("[Speech]"), QStringLiteral("Dictation")};
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         expected.append(QStringLiteral("Local models"));
 #endif
-        expected += QStringList{QStringLiteral("Transcribe"), QStringLiteral("[Text]"),
-                                QStringLiteral("Refinement"), QStringLiteral("Vocabulary"),
+        expected += QStringList{QStringLiteral("[Text]"), QStringLiteral("Refinement"),
+                                QStringLiteral("Writing Profiles"), QStringLiteral("Vocabulary"),
                                 QStringLiteral("Output")};
         QCOMPARE(rows, expected);
 
@@ -162,7 +162,8 @@ private slots:
         // Up and Down step over the headers, from one pane to the next.
         navigation->setFocus();
         QTest::keyClick(navigation, Qt::Key_Down);
-        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("General"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Transcribe"));
+        QTest::keyClick(navigation, Qt::Key_Down);
         QTest::keyClick(navigation, Qt::Key_Down);
         QTest::keyClick(navigation, Qt::Key_Down);
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Dictation"));
@@ -182,7 +183,7 @@ private slots:
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Vocabulary"));
         QTabWidget *tabs = nullptr;
         for (QTabWidget *candidate : window.findChildren<QTabWidget *>()) {
-            if (candidate->isVisibleTo(&window) || candidate->tabText(0) == QStringLiteral("Vocabulary")) {
+            if (candidate->isVisibleTo(&window) || candidate->tabText(0) == QStringLiteral("Terms")) {
                 tabs = candidate;
             }
         }
@@ -918,7 +919,7 @@ private slots:
             QVERIFY(!navigation->item(row)->text().isEmpty());
         }
         // Return opens the first hit.
-        search->setText(QStringLiteral("paste"));
+        search->setText(QStringLiteral("default paste"));
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Output"));
         QTest::keyClick(search, Qt::Key_Return);
         QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Output"));

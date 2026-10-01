@@ -67,6 +67,7 @@ wchar_t glyphForIconId(const QString &iconId)
         {QStringLiteral("whatsNew"), L'\uE7E7'},
         {QStringLiteral("microphone"), L'\uE720'},
         {QStringLiteral("refinement"), L'\uE8D2'},
+        {QStringLiteral("writingProfiles"), L'\uE70F'},
         {QStringLiteral("localModels"), L'\uE977'},
         {QStringLiteral("transcribe"), L'\uE8D6'},
         {QStringLiteral("output"), L'\uF0E3'},

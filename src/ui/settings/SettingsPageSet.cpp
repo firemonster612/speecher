@@ -449,7 +449,7 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         QString error;
         if (!m_controller->enableAccessibility(&error)) {
             QMessageBox::warning(qobject_cast<QWidget *>(parent()),
-                                 QStringLiteral("Desktop accessibility"),
+                                 m_schema.row(QStringLiteral("desktopAccessibility"))->label,
                                  error.isEmpty()
                                      ? QStringLiteral("Desktop accessibility could not be turned on.")
                                      : error);

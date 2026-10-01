@@ -199,6 +199,6 @@ struct ShortcutRecorderRow: View {
         }
         if !model.shortcutProblem.isEmpty { return model.shortcutProblem }
         if !model.shortcutWarning.isEmpty { return model.shortcutWarning }
-        return "Press a key combination, or a single key such as Right Option or F13."
+        return SpeecherBridge.globalShortcutPrompt
     }
 }

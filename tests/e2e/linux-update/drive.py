@@ -220,7 +220,7 @@ def flow_popup() -> None:
     whats_new = require("See what's new", 20)
     ok("the offer survives auto-hide; the settings banner still shows it")
     click(whats_new)
-    require("Release notes", 20)
+    require("What's New", 20)
     ok("see what's new opens the What's New page")
     save_window("whats-new-page")
     app_command("quit")

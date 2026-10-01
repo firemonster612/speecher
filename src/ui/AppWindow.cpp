@@ -89,6 +89,7 @@ QIcon paneIcon(const QString &iconId)
         {QStringLiteral("whatsNew"), {QStringLiteral("help-about")}},
         {QStringLiteral("microphone"), {QStringLiteral("audio-input-microphone")}},
         {QStringLiteral("refinement"), {QStringLiteral("tools-wizard"), QStringLiteral("document-edit")}},
+        {QStringLiteral("writingProfiles"), {QStringLiteral("draw-text"), QStringLiteral("format-text-bold")}},
         {QStringLiteral("localModels"), {QStringLiteral("computer"), QStringLiteral("computer-laptop")}},
         {QStringLiteral("transcribe"), {QStringLiteral("view-media-lyrics"), QStringLiteral("document-import")}},
         {QStringLiteral("output"), {QStringLiteral("edit-paste"), QStringLiteral("edit-copy")}},
