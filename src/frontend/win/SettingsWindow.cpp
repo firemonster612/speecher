@@ -54,10 +54,12 @@ using winrt::Microsoft::UI::Xaml::Input::FocusManager;
 using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
-// The open pane (280), the page's gutters (2 x 36) and the widest row: a
-// 320 control beside a title of about 150, in a card's padding and spacing.
-// Narrower, the rows have no room left.
-constexpr int kMinimumWidth = 880;
+// The open sidebar, narrower than NavigationView's 320 to leave the page room.
+constexpr int kPaneLength = 240;
+// Under half of a 1080p screen at 125% (768), so Snap can put the window
+// beside another. The page then keeps, beside the pane and inside its gutters, a
+// card wide enough for the widest control below its title.
+constexpr int kMinimumWidth = 760;
 constexpr int kMinimumHeight = 480;
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
 const QString kHomePane = QStringLiteral("home");
@@ -267,11 +269,10 @@ struct SettingsWindow::Native {
         root.Children().Append(titleBar);
 
         navigation = NavigationView();
-        // Always open, at the narrower width the Settings app uses. The
-        // adaptive Auto mode is not used: every pane switch while it was
-        // compact ended in a layout cycle.
+        // Always open. The adaptive Auto mode is not used: every pane switch
+        // while it was compact ended in a layout cycle.
         navigation.PaneDisplayMode(NavigationViewPaneDisplayMode::Left);
-        navigation.OpenPaneLength(280);
+        navigation.OpenPaneLength(kPaneLength);
         navigation.IsBackButtonVisible(NavigationViewBackButtonVisible::Collapsed);
         navigation.IsPaneToggleButtonVisible(false);
         navigation.IsSettingsVisible(false);
