@@ -285,7 +285,7 @@ private slots:
         QCOMPARE(setupProviderVerdict("codex", false), QString("Not signed in"));
         QCOMPARE(setupProviderVerdict("endpoint", false), QString("Not set up"));
         QCOMPARE(setupRefinementStatus("none", std::nullopt), QString("No cleanup"));
-        QCOMPARE(setupSchemaRow("defaultWritingProfile").label, QString("Fallback profile"));
+        QCOMPARE(setupSchemaRow("defaultWritingProfile").label, QString("When the app isn't recognized"));
     }
 
     void speechDefaultsToThisComputerOnlyWithoutAnySignIn()

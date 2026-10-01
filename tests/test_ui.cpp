@@ -38,6 +38,7 @@
 #include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QRegularExpression>
 #include <QFontMetrics>
 #include <QFormLayout>
 #include <QLineEdit>
@@ -853,9 +854,8 @@ private slots:
         refining.refinement.providerId = QStringLiteral("openai");
         refinement.load(refining);
         profilesPage->load(refining);
-        auto *profileSettings = profilesPage->findChild<QTableWidget *>(QStringLiteral("vocabInput"));
-        QVERIFY(profileSettings);
-        QCOMPARE(profileSettings->rowCount(), 5);
+        QCOMPARE(profilesPage->findChildren<QPushButton *>(QRegularExpression(QStringLiteral("^writingProfile_"))).size(),
+                 5);
 
         output.setCapabilities({false});
         refinement.setCapabilities({false});
@@ -1118,11 +1118,9 @@ private slots:
         auto *table = page->findChild<QTableWidget *>(QStringLiteral("customTones"));
         auto *add = page->findChild<QPushButton *>(QStringLiteral("addCustomTones"));
         QVERIFY(table && add);
-        const int builtIns = table->rowCount();
-
-        // A built-in tone is nobody's to edit.
-        emit table->cellActivated(0, 0);
-        QVERIFY(!shownRecordDialog(*page));
+        // Only the person's own tones are listed.
+        const int builtIns = 0;
+        QCOMPARE(table->rowCount(), builtIns);
 
         add->click();
         QDialog *dialog = shownRecordDialog(*page);
@@ -1155,6 +1153,61 @@ private slots:
         QCOMPARE(applied.refinement.customTones.size(), 1);
         QCOMPARE(applied.refinement.customTones.first().name, QStringLiteral("Terse"));
         QCOMPARE(applied.refinement.customTones.first().instruction, QStringLiteral("Short sentences."));
+    }
+
+    // A profile's row opens it in the record dialog, where each choice says
+    // what it does; a profile the person added is named and deleted there.
+    void aProfileIsEditedInItsDialog()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("writingProfiles"), *platform, providers);
+        AppSettings settings;
+        settings.refinement.providerId = QStringLiteral("openai");
+        page->load(settings);
+        const auto profiles = [&page] {
+            AppSettings draft;
+            page->appendToDraft(draft);
+            return draft.refinement.writingProfiles;
+        };
+
+        auto *email = page->findChild<QPushButton *>(QStringLiteral("writingProfile_email"));
+        QVERIFY(email);
+        email->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Email"));
+        // A built-in profile keeps its name.
+        QVERIFY(!dialog->findChild<QLineEdit *>(QStringLiteral("profile")));
+        QVERIFY(!dialog->findChild<QPushButton *>(QStringLiteral("deleteRecord")));
+        auto *cleanup = dialog->findChild<QComboBox *>(QStringLiteral("cleanup"));
+        auto *cleanupHelp = dialog->findChild<QLabel *>(QStringLiteral("cleanupHelp"));
+        QVERIFY(cleanup && cleanupHelp);
+        QCOMPARE(cleanupHelp->text(), QStringLiteral("Also removes filler words and false starts, and adds paragraphs."));
+        settings::selectData(cleanup, QStringLiteral("strong_polish"));
+        QCOMPARE(cleanupHelp->text(), QStringLiteral("Also rewrites for clarity, flow and organization, keeping the facts."));
+        acceptRecordDialog(dialog);
+        QCOMPARE(writingProfileSettingsFor(profiles(), QStringLiteral("email")).cleanupStrength,
+                 QStringLiteral("strong_polish"));
+        QVERIFY(email->findChild<QLabel *>(QStringLiteral("rowDescription"))->text().startsWith(
+            QStringLiteral("High cleanup, no tone.")));
+
+        page->findChild<QPushButton *>(QStringLiteral("addWritingProfile"))->click();
+        dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("New profile"));
+        dialog->findChild<QLineEdit *>(QStringLiteral("profile"))->setText(QStringLiteral("Notes"));
+        acceptRecordDialog(dialog);
+        QCOMPARE(profiles().last().profile, QStringLiteral("custom_notes"));
+
+        page->findChild<QPushButton *>(QStringLiteral("writingProfile_custom_notes"))->click();
+        dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        dialog->findChild<QPushButton *>(QStringLiteral("deleteRecord"))->click();
+        QVERIFY(!dialog->isVisible());
+        QVERIFY(!page->findChild<QPushButton *>(QStringLiteral("writingProfile_custom_notes")));
+        QCOMPARE(profiles().size(), 5);
     }
 
     void undoingADeletedCorrectionPutsBackEverythingItKnew()

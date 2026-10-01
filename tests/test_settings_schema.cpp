@@ -839,7 +839,7 @@ private slots:
             QVERIFY2(!rowById(refinement, id).visible(openAi, Capabilities{}), qPrintable(id));
         }
         QCOMPARE(rowById(refinement, QStringLiteral("anthropicModel")).label, QStringLiteral("Model"));
-        QCOMPARE(rowById(refinement, QStringLiteral("anthropicEffort")).label, QStringLiteral("Effort"));
+        QCOMPARE(rowById(refinement, QStringLiteral("anthropicEffort")).label, QStringLiteral("Thinking"));
 
         AppSettings settings;
         rowById(refinement, QStringLiteral("openAiModel")).apply(settings, QStringLiteral("gpt-5.4"));
@@ -1183,9 +1183,9 @@ private slots:
                  QStringLiteral("If Speecher cannot confirm the paste, your dictation stays on the clipboard."));
     }
 
-    // Writing Profiles holds the profiles and what they choose from, ending
-    // with the custom prompt, gated like the other rows; the prompt shows the
-    // built-in one until something is stored.
+    // Writing Profiles holds the profiles, then what they choose from behind
+    // one dialog each, ending with the custom prompt, gated like the other
+    // rows; the prompt shows the built-in one until something is stored.
     void writingProfilesPaneCarriesInstructionsAndTheCustomPrompt()
     {
         SchemaContext context = fakeContext();
@@ -1197,11 +1197,17 @@ private slots:
         }
         QCOMPARE(groups,
                  (QStringList{QStringLiteral("Profiles:defaultWritingProfile,writingProfileBehavior"),
-                              QStringLiteral("Tones:customTones"),
-                              QStringLiteral("Cleanup Levels:customCleanupLevels"),
-                              QStringLiteral("Additional Instructions:additionalInstructions"),
-                              QStringLiteral("Custom system prompt:customSystemPromptEnabled,"
-                                             "resetCustomSystemPrompt,customSystemPrompt")}));
+                              QStringLiteral("Advanced:customTones,customCleanupLevels,additionalInstructions,"
+                                             "customSystemPromptEnabled,resetCustomSystemPrompt,"
+                                             "customSystemPrompt")}));
+        QStringList dialogs;
+        for (const QString &id : schema.pane(QStringLiteral("writingProfiles"))->groups.last().rows) {
+            dialogs.append(schema.row(id)->dialog.title);
+        }
+        QCOMPARE(dialogs, (QStringList{QStringLiteral("Your tones"), QStringLiteral("Your cleanup levels"),
+                                       QStringLiteral("Instructions for every profile"),
+                                       QStringLiteral("Custom system prompt"), QStringLiteral("Custom system prompt"),
+                                       QStringLiteral("Custom system prompt")}));
         const SettingsRow &instructions = *schema.row(QStringLiteral("additionalInstructions"));
         const SettingsRow &prompt = *schema.row(QStringLiteral("customSystemPrompt"));
         QVERIFY(instructions.multiline);
@@ -1217,6 +1223,10 @@ private slots:
                                            QStringLiteral("tone"), QStringLiteral("instructions*")}));
 
         AppSettings settings;
+        QCOMPARE(instructions.dialog.summary(settings), QStringLiteral("None"));
+        settings.refinement.additionalInstructions = QStringLiteral("Spell it Speecher.\nNo emoji.");
+        QCOMPARE(instructions.dialog.summary(settings), QStringLiteral("Spell it Speecher."));
+        QCOMPARE(prompt.dialog.summary(settings), QStringLiteral("Off"));
         QCOMPARE(prompt.value(settings).toString(), QStringLiteral("Built-in rules."));
         prompt.apply(settings, QStringLiteral("Mine."));
         QCOMPARE(prompt.value(settings).toString(), QStringLiteral("Mine."));
@@ -1239,20 +1249,18 @@ private slots:
                  QStringLiteral("custom_terse_3"));
     }
 
-    // Built-ins come first, locked; the custom records get an id from their
-    // name once, and validation names what is wrong.
-    void tonesAndCleanupLevelsAreCollectionsAfterTheBuiltIns()
+    // The collections hold only what the person added; a record gets an id
+    // from its name once, and validation names what is wrong.
+    void tonesAndCleanupLevelsAreCollectionsOfTheCustomOnes()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const CollectionDescriptor &tones = schema.row(QStringLiteral("customTones"))->collection;
+        const SettingsRow &toneRow = *schema.row(QStringLiteral("customTones"));
+        const CollectionDescriptor &tones = toneRow.collection;
         const CollectionDescriptor &levels = schema.row(QStringLiteral("customCleanupLevels"))->collection;
-        QCOMPARE(tones.lockedRecordCount(), 5);
-        QCOMPARE(levels.lockedRecordCount(), 3);
 
         AppSettings settings;
-        // A locked built-in still says what it does.
-        QCOMPARE(tones.records(settings).first().value(QStringLiteral("instruction")).toString(),
-                 QStringLiteral("Professional and polished."));
+        QCOMPARE(tones.records(settings), QList<QVariantMap>());
+        QCOMPARE(toneRow.dialog.summary(settings), QStringLiteral("Add a voice you can pick in any profile."));
         QList<QVariantMap> records = tones.records(settings);
         records.append({{QStringLiteral("name"), QStringLiteral("Terse")},
                         {QStringLiteral("instruction"), QStringLiteral("Short.")}});
@@ -1260,6 +1268,8 @@ private slots:
         QCOMPARE(settings.refinement.customTones,
                  (QList<CustomTone>{{QStringLiteral("custom_terse"), QStringLiteral("Terse"),
                                      QStringLiteral("Short.")}}));
+        QCOMPARE(toneRow.dialog.summary(settings),
+                 QStringLiteral("Add a voice you can pick in any profile. You have 1."));
         records = levels.records(settings);
         records.append({{QStringLiteral("name"), QStringLiteral("Notes")},
                         {QStringLiteral("base"), QStringLiteral("custom_only")},
@@ -1356,10 +1366,37 @@ private slots:
                               QStringLiteral("balanced=Medium"), QStringLiteral("strong_polish=High"),
                               QStringLiteral("custom_notes=Notes")}));
         QCOMPARE(ids(columns.at(2).options(settings)),
-                 (QStringList{QStringLiteral("none=No tone override"), QStringLiteral("formal=Formal"),
+                 (QStringList{QStringLiteral("none=No tone"), QStringLiteral("formal=Formal"),
                               QStringLiteral("casual=Casual"), QStringLiteral("very_casual=Very casual"),
                               QStringLiteral("excited=Excited"), QStringLiteral("gen_z=Gen Z"),
                               QStringLiteral("custom_terse=Terse")}));
+        // Each choice says what it does, for the profile dialog to show.
+        QCOMPARE(columns.at(1).options(settings).last().help, QStringLiteral("Medium, plus your own instructions."));
+        QCOMPARE(columns.at(2).options(settings).at(1).help, QStringLiteral("Professional and polished."));
+        QCOMPARE(columns.at(2).options(settings).last().help, QStringLiteral("Short."));
+    }
+
+    // A profile's row says what it does and where Speecher uses it.
+    void aProfileSummarySaysWhatItDoesAndWhereItApplies()
+    {
+        AppSettings settings;
+        QCOMPARE(writingProfileSummary(settings, QStringLiteral("email")),
+                 QStringLiteral("Medium cleanup, no tone. Used in Thunderbird, KMail and 1 more."));
+        QCOMPARE(writingProfileSummary(settings, QStringLiteral("other")),
+                 QStringLiteral("Medium cleanup, no tone. Used when no other profile matches."));
+        settings.appRecognitionRules = {{QStringLiteral("gmail"), std::nullopt, QStringLiteral("email")}};
+        settings.refinement.writingProfiles = {{QStringLiteral("email"), QStringLiteral("strong_polish"),
+                                                QStringLiteral("formal"), QStringLiteral("Sign off as Ann."),
+                                                QString()},
+                                               {QStringLiteral("custom_notes"), QStringLiteral("none"),
+                                                QStringLiteral("none"), QString(), QStringLiteral("Notes")}};
+        settings.refinement.defaultWritingProfile = QStringLiteral("custom_notes");
+        QCOMPARE(writingProfileSummary(settings, QStringLiteral("email")),
+                 QStringLiteral("High cleanup, Formal tone. Has its own instructions. "
+                                "Used in Gmail, Thunderbird and 2 more."));
+        QCOMPARE(writingProfileSummary(settings, QStringLiteral("custom_notes")),
+                 QStringLiteral("No cleanup. Used when no other profile matches."));
+        QCOMPARE(writingProfileSummary(settings, QStringLiteral("other")), QStringLiteral("Medium cleanup, no tone."));
     }
 
     // A row no pane shows is a setting nobody can reach, and a row two panes

@@ -579,7 +579,7 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/frontend/qt/QtFrontEnd.cpp
   src/frontend/qt/QtPopupSurface.cpp
   src/frontend/qt/SchemaSettingsPage.cpp
-  src/frontend/qt/WritingProfileGrid.cpp
+  src/frontend/qt/WritingProfileList.cpp
   src/ui/AccessibilityNotice.cpp
   src/ui/AppWindow.cpp
   src/ui/HomePage.cpp
@@ -608,7 +608,7 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/frontend/qt/QtFrontEnd.h
   src/frontend/qt/QtPopupSurface.h
   src/frontend/qt/SchemaSettingsPage.h
-  src/frontend/qt/WritingProfileGrid.h
+  src/frontend/qt/WritingProfileList.h
   src/ui/AccessibilityNotice.h
   src/ui/AppWindow.h
   src/ui/HomePage.h

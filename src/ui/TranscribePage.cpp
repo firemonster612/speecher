@@ -41,6 +41,20 @@
 namespace speecher {
 namespace {
 
+// What a cleanup level, tone or profile does, kept on its combo item.
+constexpr int kSelectionHelpRole = Qt::UserRole + 1;
+
+// The row's description says what the chosen item does, as the profile
+// dialog says under the same choices.
+void showSelectionHelp(QComboBox *combo)
+{
+    auto *description = combo->parentWidget()->findChild<QLabel *>(QStringLiteral("rowDescription"));
+    const QString help = combo->currentData(kSelectionHelpRole).toString();
+    description->setText(help);
+    description->setVisible(!help.isEmpty());
+    combo->setAccessibleDescription(help);
+}
+
 QIcon themedIcon(const QString &name, const QString &fallback)
 {
     return QIcon::fromTheme(name, QIcon::fromTheme(fallback));
@@ -324,6 +338,9 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     m_refinementDependents = {profileRow, cleanupRow, toneRow};
     connect(m_refiner, &QComboBox::currentIndexChanged, this, &TranscribePage::refreshRefinementRows);
     connect(m_profile, &QComboBox::currentIndexChanged, this, &TranscribePage::applyWritingProfile);
+    for (QComboBox *combo : {m_profile, m_cleanup, m_tone}) {
+        connect(combo, &QComboBox::currentIndexChanged, this, [combo] { showSelectionHelp(combo); });
+    }
 
     QFrame *outputCard = addCard(setup, transcribeText(TranscribeText::OutputSection), m_setup);
     m_destination = new QComboBox(outputCard);
@@ -649,12 +666,17 @@ void TranscribePage::showChoices(const AppSettings &settings)
         combo->clear();
         for (const RowOption &option : options) {
             combo->addItem(option.label, option.id);
+            combo->setItemData(combo->count() - 1, option.help, kSelectionHelpRole);
         }
         const int index = combo->findData(picked);
         combo->setCurrentIndex(qMax(index, 0));
         return index >= 0;
     };
-    const bool keptProfile = refill(m_profile, writingProfileChoices(settings.refinement.writingProfiles));
+    QList<RowOption> profiles = writingProfileChoices(settings.refinement.writingProfiles);
+    for (RowOption &profile : profiles) {
+        profile.help = writingProfileChoiceSummary(settings, profile.id);
+    }
+    const bool keptProfile = refill(m_profile, profiles);
     const bool keptCleanup = refill(m_cleanup, cleanupStrengths(settings.refinement.customCleanupLevels));
     const bool keptTone = refill(m_tone, writingTones(settings.refinement.customTones));
     if (!keptProfile || !keptCleanup) {
@@ -662,6 +684,9 @@ void TranscribePage::showChoices(const AppSettings &settings)
     }
     if (!keptProfile || !keptTone) {
         applyProfileTone();
+    }
+    for (QComboBox *combo : {m_profile, m_cleanup, m_tone}) {
+        showSelectionHelp(combo);
     }
 }
 
