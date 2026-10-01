@@ -476,6 +476,13 @@ QString lookingForRunnersStatus();
 // What the Global Shortcut row says while it waits for keys, naming this
 // platform's keys.
 QString globalShortcutPrompt();
+// The Global Shortcut row's buttons: record a new binding, and go back to the
+// binder's default, named by its display text.
+QString globalShortcutChangeCaption();
+QString globalShortcutResetCaption(const QString &defaultShortcut);
+
+// What settings search shows when nothing matches the query.
+QString noSettingsMatchText();
 
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device
