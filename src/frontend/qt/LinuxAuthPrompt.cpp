@@ -6,16 +6,45 @@
 #include <QInputDialog>
 #include <QThread>
 
+#ifdef SPEECHER_WITH_KASSISTANT
+#include <KPasswordDialog>
+#endif
+
 namespace speecher {
 namespace {
 
+// pkexec's own prompt is usually just "Password:", which names neither the
+// app asking nor why.
+QString promptTitle()
+{
+    return QStringLiteral("Speecher needs permission");
+}
+
+QString promptPurpose()
+{
+    return QStringLiteral("Speecher needs your administrator password to finish setting up a "
+                          "system component, such as the virtual keyboard.");
+}
+
 bool askOnGuiThread(const QString &promptText, bool echoOff, QString *reply)
 {
+#ifdef SPEECHER_WITH_KASSISTANT
+    if (echoOff) {
+        KPasswordDialog dialog(QApplication::activeWindow());
+        dialog.setWindowTitle(promptTitle());
+        dialog.setPrompt(promptPurpose());
+        if (dialog.exec() != QDialog::Accepted) {
+            return false;
+        }
+        *reply = dialog.password();
+        return true;
+    }
+#endif
     bool accepted = false;
     const QString answer = QInputDialog::getText(
         QApplication::activeWindow(),
-        QStringLiteral("Authentication required"),
-        promptText.trimmed(),
+        promptTitle(),
+        promptPurpose() + QStringLiteral("\n\n") + promptText.trimmed(),
         echoOff ? QLineEdit::Password : QLineEdit::Normal,
         QString(),
         &accepted);
