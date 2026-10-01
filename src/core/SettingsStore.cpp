@@ -1,8 +1,10 @@
 #include "core/SettingsStore.h"
+#include "core/OutputMethod.h"
 #include "core/SecretStore.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -68,6 +70,31 @@ void migrateRefinementModels(QSettings &settings)
     replace(SettingsKeys::AnthropicModel, QStringLiteral("claude-sonnet-5"),
             QStringLiteral("claude-sonnet-5-5"));
     settings.setValue(SettingsKeys::RefinementModelMigrationVersion, currentMigrationVersion);
+}
+
+void migrateOutputMethod(QSettings &settings)
+{
+    const QString method = OutputMethod::normalized(settings.value(SettingsKeys::OutputMethod).toString());
+    PasteMethod paste;
+    if (method == QString::fromLatin1(OutputMethod::DirectInsert)) {
+        paste = PasteMethod::DirectInsert;
+    } else if (method == QString::fromLatin1(OutputMethod::WlCopy)
+               || method == QString::fromLatin1(OutputMethod::QtClipboard)) {
+        paste = PasteMethod::ClipboardOnly;
+    } else {
+        return;
+    }
+    QList<PasteRule> rules = pasteRulesFromJson(settings.value(SettingsKeys::PasteRules).toByteArray());
+    // Without an enabled default, or with Clipboard only, nothing was inserted
+    // or pasted before either, so that stays as it is.
+    const auto global = std::find_if(rules.begin(), rules.end(), [](const PasteRule &rule) {
+        return rule.enabled && rule.scope == PasteRuleScope::Global;
+    });
+    if (global != rules.end() && global->method != PasteMethod::ClipboardOnly) {
+        global->method = paste;
+    }
+    settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
+    settings.setValue(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic));
 }
 
 SettingsStore::SettingsStore(QObject *parent)

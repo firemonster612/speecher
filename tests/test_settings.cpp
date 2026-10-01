@@ -131,6 +131,45 @@ private slots:
                  QStringLiteral("claude-sonnet-5"));
     }
 
+    // Paste with no longer offers inserting directly or copying only; a stored
+    // one becomes the Default paste, unless that already kept text on the
+    // clipboard, so dictation delivers as before.
+    void outputMethodMigrationMovesInsertAndCopyOnlyToTheDefaultPaste()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        const auto defaultPaste = [&settings] {
+            for (const PasteRule &rule : pasteRulesFromJson(settings.value(QStringLiteral("output/pasteRules")).toByteArray())) {
+                if (rule.scope == PasteRuleScope::Global) {
+                    return rule.method;
+                }
+            }
+            return PasteMethod::StandardPaste;
+        };
+
+        settings.setValue(QStringLiteral("output/method"), QStringLiteral("direct_insert"));
+        migrateOutputMethod(settings);
+        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("automatic"));
+        QCOMPARE(defaultPaste(), PasteMethod::DirectInsert);
+        // The terminal rule every install starts with is kept.
+        QCOMPARE(pasteRulesFromJson(settings.value(QStringLiteral("output/pasteRules")).toByteArray()).first(),
+                 (PasteRule{PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true}));
+
+        settings.setValue(QStringLiteral("output/method"), QStringLiteral("qt-clipboard"));
+        migrateOutputMethod(settings);
+        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("automatic"));
+        QCOMPARE(defaultPaste(), PasteMethod::ClipboardOnly);
+
+        settings.setValue(QStringLiteral("output/method"), QStringLiteral("direct_insert"));
+        migrateOutputMethod(settings);
+        QCOMPARE(defaultPaste(), PasteMethod::ClipboardOnly);
+
+        settings.setValue(QStringLiteral("output/method"), QStringLiteral("ydotool"));
+        migrateOutputMethod(settings);
+        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("ydotool"));
+    }
+
     // Old installs hold QKeySequence text under shortcuts/toggleDictation, so
     // that form must keep reading as a combination while a single key gets its
     // own prefix.
