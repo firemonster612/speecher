@@ -41,9 +41,9 @@ class SpeecherChipService : AccessibilityService() {
     private val owner = ServiceViewOwner()
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     private var chip: ComposeView? = null
-    // Offers to keep a drag's position; ignored, it goes away and the drag stays temporary.
+    // Offers to keep a drag's position until the keyboard hides; ignored, the drag stays
+    // temporary.
     private var pill: ComposeView? = null
-    private val dismissPill = Runnable { removePill() }
     private var chipX = Int.MIN_VALUE
     private var chipY = Int.MIN_VALUE
     // The chip window's position when the current drag began.
@@ -212,34 +212,39 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     /**
-     * Shows the save offer beside the chip, on whichever side has more room, centred on it
-     * vertically, and takes it down again after a few seconds.
+     * Shows the save offer just above the keyboard's top edge, so it covers no keys, on the side of
+     * the screen the chip is on. It stays until the keyboard hides or the user answers.
      */
     private fun showPill() {
         removePill()
         val chipParams = chip?.layoutParams as? WindowManager.LayoutParams ?: return
+        val keyboard = keyboardWindow() ?: return
+        val kb = Rect().also(keyboard::getBoundsInScreen)
         val bounds = window.currentWindowMetrics.bounds
         val gap = (ChipMargin.value * resources.displayMetrics.density).toInt()
-        val onLeft = chipX + chipParams.width / 2 > bounds.centerX()
+        val onRight = chipX + chipParams.width / 2 > bounds.centerX()
         val params =
             overlayParams(
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.WRAP_CONTENT,
                 )
                 .apply {
-                    gravity = Gravity.CENTER_VERTICAL or if (onLeft) Gravity.END else Gravity.START
-                    x = if (onLeft) bounds.right - chipX + gap else chipX + chipParams.width + gap
-                    y = chipY + chipParams.height / 2 - bounds.centerY()
+                    gravity = Gravity.BOTTOM or if (onRight) Gravity.END else Gravity.START
+                    x = gap
+                    y = bounds.bottom - kb.top + gap
                     fitInsetsTypes = 0
                     layoutInDisplayCutoutMode =
                         WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
                 }
         val view = ComposeView(this)
         owner.attach(view)
-        view.setContent { SpeecherTheme { SavePositionPill(onSave = ::saveChipPosition) } }
+        view.setContent {
+            SpeecherTheme {
+                SavePositionPill(onSave = ::saveChipPosition, onDismiss = ::removePill)
+            }
+        }
         window.addView(view, params)
         pill = view
-        handler.postDelayed(dismissPill, PILL_MILLIS)
     }
 
     /**
@@ -263,7 +268,6 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun removePill() {
-        handler.removeCallbacks(dismissPill)
         pill?.let(window::removeView)
         pill = null
     }
@@ -429,7 +433,6 @@ class SpeecherChipService : AccessibilityService() {
 
     private companion object {
         const val JITTER_DP = 8f
-        const val PILL_MILLIS = 4_000L
         // English plus the common European forms: voz (es/pt), vocal/vocale (fr/it), Sprach- and
         // Mikro- (de), dictado/dictée/Diktat. "mic" covers microphone, micrófono and microfone.
         val VOICE_TOKENS =

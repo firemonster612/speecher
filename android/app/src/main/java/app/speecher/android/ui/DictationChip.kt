@@ -26,8 +26,11 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.hypot
 
-/** The chip's size, shared with the overlay window that holds it. */
-val ChipSize = DpSize(52.dp, 36.dp)
+/** The chip's touch target, and the size of the overlay window that holds it. */
+val ChipSize = DpSize(56.dp, 48.dp)
+
+/** The visible pill, centred in [ChipSize]. */
+private val ChipPillSize = DpSize(52.dp, 36.dp)
 
 /** The chip's inset from the keyboard's bottom-right corner when it has nowhere better to sit. */
 val ChipMargin = 6.dp
@@ -47,7 +50,7 @@ fun DictationChip(
     modifier: Modifier = Modifier,
     onDragEnd: () -> Unit = {},
 ) {
-    Surface(
+    Box(
         modifier =
             modifier
                 .size(ChipSize)
@@ -94,23 +97,31 @@ fun DictationChip(
                         }
                     }
                 },
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shadowElevation = 2.dp,
+        contentAlignment = Alignment.Center,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            MarkBars(
-                MarkBarHeights,
-                MaterialTheme.colorScheme.onSurfaceVariant,
-                Modifier.padding(horizontal = 6.dp),
-            )
+        Surface(
+            Modifier.size(ChipPillSize),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            shadowElevation = 2.dp,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                MarkBars(
+                    MarkBarHeights,
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                    Modifier.padding(horizontal = 6.dp),
+                )
+            }
         }
     }
 }
 
-/** Offered beside the chip after a drag; [onSave] keeps the dragged position. */
+/**
+ * Offered above the keyboard after a drag; [onSave] keeps the dragged position, [onDismiss] leaves
+ * it for this showing only.
+ */
 @Composable
-fun SavePositionPill(onSave: () -> Unit) {
+fun SavePositionPill(onSave: () -> Unit, onDismiss: () -> Unit) {
     Surface(
         shape = CircleShape,
         color = MaterialTheme.colorScheme.inverseSurface,
@@ -118,6 +129,9 @@ fun SavePositionPill(onSave: () -> Unit) {
     ) {
         Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Save position?", style = MaterialTheme.typography.bodyMedium)
+            TextButton(onDismiss) {
+                Text("Dismiss", color = MaterialTheme.colorScheme.inverseOnSurface)
+            }
             TextButton(onSave) { Text("Save", color = MaterialTheme.colorScheme.inversePrimary) }
         }
     }
@@ -125,7 +139,7 @@ fun SavePositionPill(onSave: () -> Unit) {
 
 @PreviewLightDark
 @Composable
-internal fun SavePositionPillPreview() = SpeecherTheme { SavePositionPill {} }
+internal fun SavePositionPillPreview() = SpeecherTheme { SavePositionPill({}, {}) }
 
 @PreviewLightDark
 @Composable
