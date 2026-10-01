@@ -195,8 +195,11 @@ data class SpeecherSettings(
     val transcriptionProvider: Provider = providerOrder.first(),
     val refinementEnabled: Boolean = true,
     val refinementProvider: Provider = providerOrder.first(),
-    /** Whether both Insert buttons re-transcribe ChatGPT dictation with GPT Transcribe first. */
-    val transcribePassEnabled: Boolean = true,
+    /**
+     * Whether both Insert buttons re-transcribe ChatGPT dictation with GPT Transcribe first. Off by
+     * default, as on the desktop: it is slower and spends an extra request.
+     */
+    val transcribePassEnabled: Boolean = false,
     val chatGptRefinement: RefinementChoice = Provider.ChatGpt.defaultRefinement,
     val claudeRefinement: RefinementChoice = Provider.Claude.defaultRefinement,
     /**

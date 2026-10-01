@@ -152,6 +152,13 @@ class SignIn(context: Context) : AutoCloseable {
         }
     }
 
+    /** Forgets the attempt, so one that ended, however it ended, isn't restored after a restart. */
+    fun clearPending() {
+        attempt = null
+        provider = null
+        pending.edit(commit = true) { clear() }
+    }
+
     private fun restoredPending(): OAuthAttempt? {
         val verifier = pending.getString("verifier", null) ?: return null
         val state = pending.getString("state", null) ?: return null
@@ -275,6 +282,7 @@ class SignInViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun finish(result: Result<OAuthTokens>) {
         SignInListenerService.stop(getApplication())
+        signIn.clearPending()
         error = result.exceptionOrNull()?.let(::signInErrorMessage)
         activeProvider = null
     }

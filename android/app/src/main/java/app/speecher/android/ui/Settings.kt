@@ -634,7 +634,9 @@ fun Settings(
                 colors = rowColors,
             )
         }
-        if (signingIn != null) PasteCode(signingIn, onPasteCode)
+        if (signingIn != null) {
+            PasteCode(signingIn, onPasteCode, Modifier.padding(horizontal = 16.dp))
+        }
     }
 }
 
@@ -985,9 +987,13 @@ private fun InstructionsField(
  * the fallback without looking for it.
  */
 @Composable
-internal fun PasteCode(provider: Provider, onPasteCode: (String) -> Unit) {
+internal fun PasteCode(
+    provider: Provider,
+    onPasteCode: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var code by rememberSaveable { mutableStateOf("") }
-    Column(Modifier.padding(horizontal = 16.dp)) {
+    Column(modifier) {
         Text(
             "Waiting for ${provider.label}. If the browser didn't bring you back, copy its " +
                 "address bar (it starts with http://localhost) and paste it here.",
