@@ -203,6 +203,10 @@ QString weekdayLetter(int dayOfWeek);
 std::array<QString, 7> heatmapRowLabels();
 // "12 days with dictation in the last year".
 QString activeDaysLastYearText(int days);
+// The heatmap's caption for the weeks a narrow one draws: the last year's
+// line while all 53 show, else "4 days with dictation in the last 20 weeks",
+// counted over those weeks only.
+QString heatmapSpanText(const InsightsSummary &summary, int drawnWeeks);
 // The words either side of the heatmap's legend.
 QString heatLegendLessText();
 QString heatLegendMoreText();

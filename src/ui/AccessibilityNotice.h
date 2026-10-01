@@ -1,13 +1,14 @@
 #pragma once
 
-#include <QFrame>
+#include "ui/InlineMessage.h"
 
-class QLabel;
 class QPushButton;
 
 namespace speecher {
 
-class AccessibilityNotice final : public QFrame {
+// The warning shown while desktop accessibility is off, with the button that
+// turns it on.
+class AccessibilityNotice final : public InlineMessage {
     Q_OBJECT
 
 public:
@@ -22,7 +23,6 @@ signals:
     void enableRequested();
 
 private:
-    QLabel *m_message;
     QPushButton *m_enableButton;
     bool m_compact = false;
     bool m_stateKnown = false;

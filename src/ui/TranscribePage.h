@@ -7,7 +7,6 @@
 #include <QWidget>
 
 class QAbstractButton;
-class QButtonGroup;
 class QComboBox;
 class QCheckBox;
 class QFrame;
@@ -36,14 +35,20 @@ public:
     // Lists the files (media only, no duplicates), ready to start.
     void addFiles(const QStringList &paths);
 
+signals:
+    // A settings page to open, such as Refinement for the model.
+    void pageRequested(const QString &pageId);
+
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragLeaveEvent(QDragLeaveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     void showEvent(QShowEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void showStep();
+    void showDropTarget(bool dragging);
     void refreshSteps(TranscribeStep current);
     void seedOptionsFromSettings();
     // Offers the built-in and custom cleanup levels and tones in the settings.
@@ -79,11 +84,9 @@ private:
     QLabel *m_speechSummary;
     QCheckBox *m_vocabulary;
     QComboBox *m_refiner;
-    QFrame *m_refinerModelRow;
-    QLabel *m_refinerModel;
+    QPushButton *m_refinerModelRow;
     QList<QWidget *> m_refinementDependents;
-    QWidget *m_cleanupButtons;
-    QButtonGroup *m_cleanup;
+    QComboBox *m_cleanup;
     QComboBox *m_profile;
     QComboBox *m_tone;
     QComboBox *m_destination;
@@ -93,6 +96,7 @@ private:
     QString m_folder;
     InlineMessage *m_startError;
     QPushButton *m_start;
+    QLabel *m_noFiles;
 
     // Processing
     QLabel *m_processingHeader;

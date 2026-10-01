@@ -242,7 +242,7 @@ private slots:
             QVERIFY(popup.sizeHint().height() >= pill->height() + 4);
         };
 
-        popup.setStatus(QStringLiteral("Stopping"));
+        popup.setSessionState(DictationState::Stopping);
         verifyContained();
         popup.showMessage(QStringLiteral("Input sent"), PopupOutcome::Inserted);
         verifyContained();
@@ -352,7 +352,7 @@ private slots:
         popup.setPreview(QStringLiteral("the very last words"));
         verifyAnchored();
         // Words go away for "Transcribing…" and the popup shrinks back.
-        popup.setStatus(QStringLiteral("Stopping"));
+        popup.setSessionState(DictationState::Stopping);
         verifyAnchored();
         // The refinement preview grows it again over the "Refining…" strip.
         popup.setRefining(true);
@@ -382,6 +382,37 @@ private slots:
         popup.showPopup(0);
         popup.setPreview(QStringLiteral("words again"));
         QVERIFY(dismiss->isHidden());
+    }
+
+    void popupErrorOffersItsFixAndWaitsWhileHovered()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        popup.showPopup(0);
+        popup.showErrorMessage(QStringLiteral("Claude Voice is not signed in."),
+                               QStringLiteral("Open Accounts"));
+        auto *action = popup.findChild<QPushButton *>(QStringLiteral("errorAction"));
+        auto *pill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *countdown = popup.findChild<QPropertyAnimation *>();
+        QVERIFY(action && pill && countdown);
+        QVERIFY(!action->isHidden());
+        QCOMPARE(action->text(), QStringLiteral("Open Accounts"));
+
+        QEnterEvent enter(QPointF(1, 1), QPointF(1, 1), QPointF(1, 1));
+        QCoreApplication::sendEvent(pill, &enter);
+        QCOMPARE(countdown->state(), QAbstractAnimation::Paused);
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(pill, &leave);
+        QCOMPARE(countdown->state(), QAbstractAnimation::Running);
+
+        QSignalSpy requested(&popup, &TranscriberPopup::errorActionRequested);
+        action->click();
+        QCOMPARE(requested.count(), 1);
+        QVERIFY(popup.isHidden());
+
+        // An error without a fix shows no button.
+        popup.showPopup(0);
+        popup.showErrorMessage(QStringLiteral("Microphone unavailable"));
+        QVERIFY(action->isHidden());
     }
 
     void popupDoesNotCarryAnErrorIntoTheNextDictation()

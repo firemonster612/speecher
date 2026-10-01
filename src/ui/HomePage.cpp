@@ -225,12 +225,17 @@ QString twoLines(const QString &text, const QFont &font, int width)
 }
 
 
-// "12 days with dictation in the last year", then Less, the levels and More.
-void addHeatLegend(QVBoxLayout *content, const InsightsSummary &summary, QWidget *host)
+// "12 days with dictation in the last year", or in the weeks the heatmap
+// has room for, then Less, the levels and More.
+void addHeatLegend(QVBoxLayout *content, const InsightsSummary &summary, InsightsHeatmap *heatmap,
+                   QWidget *host)
 {
     auto *foot = new QHBoxLayout;
     foot->setSpacing(settings::relatedSpacing());
-    foot->addWidget(mutedLabel(activeDaysLastYearText(summary.activeDaysLastYear), host), 1);
+    QLabel *span = mutedLabel(activeDaysLastYearText(summary.activeDaysLastYear), host);
+    QObject::connect(heatmap, &InsightsHeatmap::drawnWeeksChanged, span,
+                     [span, summary](int weeks) { span->setText(heatmapSpanText(summary, weeks)); });
+    foot->addWidget(span, 1);
     foot->addWidget(mutedLabel(heatLegendLessText(), host));
     foot->addWidget(new InsightsHeatmap(InsightsHeatmap::Shape::Legend, host));
     foot->addWidget(mutedLabel(heatLegendMoreText(), host));
@@ -283,9 +288,7 @@ QImage statsImage(const InsightsSummary &summary, InsightsRange range, HeatMeasu
     heatmap->setMeasure(measure);
     heatmap->setFixedWidth(heatmap->sizeHint().width());
     content->addWidget(heatmap);
-    auto *foot = new QHBoxLayout;
-    foot->setSpacing(settings::relatedSpacing());
-    addHeatLegend(content, summary, host);
+    addHeatLegend(content, summary, heatmap, host);
 
     root.adjustSize();
     constexpr qreal scale = 2;
@@ -348,7 +351,8 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
     m_insightsHeader = new QWidget(m_column);
     {
         auto *header = new QHBoxLayout(m_insightsHeader);
-        header->setContentsMargins(0, settings::relatedSpacing(), 0, 0);
+        // The controls end where the cards' content does.
+        header->setContentsMargins(0, settings::relatedSpacing(), settings::rowPadding().right(), 0);
         header->addWidget(settings::makeSectionLabel(homeText(HomeText::YourDictation), m_insightsHeader),
                           1, Qt::AlignBottom);
         m_range = new QComboBox(m_insightsHeader);
@@ -433,8 +437,10 @@ QFrame *HomePage::buildDictationCard(QWidget *parent)
     text->addLayout(statusRow);
     m_hint = mutedLabel(QString(), host, false);
     m_hint->setObjectName(QStringLiteral("dictationHint"));
+    m_hint->setTextFormat(Qt::RichText);
+    connect(m_hint, &QLabel::linkActivated, this, &HomePage::pageRequested);
     text->addWidget(m_hint);
-    // The popup shows a failure for five seconds and cannot take focus, so the
+    // The popup shows a failure for a few seconds and cannot take focus, so the
     // reason also stays here until the next session starts (lastFailure).
     m_errorText = new QLabel(host);
     m_errorText->setObjectName(QStringLiteral("dictationError"));
@@ -598,6 +604,7 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
             auto *week = new InsightsHeatmap(InsightsHeatmap::Shape::Week, cardHost);
             week->setObjectName(QStringLiteral("streakWeek"));
             week->setDays(summary.heatmap);
+            week->setAccessibleName(text.title);
             week->setAccessibleDescription(weekDescription(summary));
             content->addSpacing(settings::tightSpacing());
             content->addWidget(week);
@@ -636,6 +643,7 @@ QFrame *HomePage::buildActivityCard(const InsightsSummary &summary, QWidget *par
     heatmap->setObjectName(QStringLiteral("activityHeatmap"));
     heatmap->setDays(summary.heatmap);
     heatmap->setMeasure(m_measure);
+    heatmap->setAccessibleName(homeText(HomeText::Activity));
     heatmap->setAccessibleDescription(heatmapDescription(summary, m_measure));
     content->addWidget(heatmap);
     connect(measure, &QComboBox::currentIndexChanged, heatmap, [this, measure, heatmap, summary] {
@@ -644,7 +652,7 @@ QFrame *HomePage::buildActivityCard(const InsightsSummary &summary, QWidget *par
         heatmap->setAccessibleDescription(heatmapDescription(summary, m_measure));
     });
 
-    addHeatLegend(content, summary, host);
+    addHeatLegend(content, summary, heatmap, host);
     return card;
 }
 
@@ -665,6 +673,7 @@ QFrame *HomePage::buildHoursCard(const InsightsSummary &summary, QWidget *parent
     auto *chart = new InsightsBarChart(host);
     chart->setObjectName(QStringLiteral("hoursChart"));
     chart->setCounts(summary.hourCounts, summary.peakHour);
+    chart->setAccessibleName(homeText(HomeText::WhenYouTalk));
     chart->setAccessibleDescription(hourChartDescription(summary));
     content->addWidget(chart);
     return card;
@@ -704,11 +713,12 @@ QFrame *HomePage::buildPaceCard(const InsightsSummary &summary, QWidget *parent)
 
     QGridLayout *grid = makeBarGrid(content);
     const int scale = std::max(summary.wordsPerMinute, 160);
+    // The figures are in the big number and the sentence below; the bars
+    // only compare them.
     addBarRow(grid, new QLabel(homeText(HomeText::YouSpeaking), host),
-              makeBar(summary.wordsPerMinute, scale, true, host), number(summary.wordsPerMinute));
+              makeBar(summary.wordsPerMinute, scale, true, host), QString());
     addBarRow(grid, new QLabel(homeText(HomeText::TypicalTyping), host),
-              makeBar(summary.typingWordsPerMinute, scale, false, host),
-              number(summary.typingWordsPerMinute));
+              makeBar(summary.typingWordsPerMinute, scale, false, host), QString());
     content->addWidget(mutedLabel(summary.speedupText, host));
     return card;
 }
@@ -759,11 +769,14 @@ QFrame *HomePage::buildCorrectionsCard(QWidget *parent)
     const int learned = m_controller->settings()->learnedCorrections().size();
     const bool learning = m_controller->settings()->snapshot().correctionLearningEnabled;
     const bool accessibility = !m_controller->accessibilitySupported() || m_controller->accessibilityEnabled();
-    auto *stat = new QVBoxLayout;
-    stat->setSpacing(0);
-    stat->addWidget(bigNumber({{number(learned), {}}}, host));
-    stat->addWidget(mutedLabel(learnedCorrectionsCaption(learned), host));
-    content->addLayout(stat);
+    // Nothing learned yet is said by the note alone, not by a big 0.
+    if (learned > 0) {
+        auto *stat = new QVBoxLayout;
+        stat->setSpacing(0);
+        stat->addWidget(bigNumber({{number(learned), {}}}, host));
+        stat->addWidget(mutedLabel(learnedCorrectionsCaption(learned), host));
+        content->addLayout(stat);
+    }
     content->addWidget(mutedLabel(learnedCorrectionsNote(learned, learning, accessibility), host, false));
     content->addStretch();
     const QString action = learnedCorrectionsAction(learned, learning);
@@ -803,17 +816,13 @@ QFrame *HomePage::buildRecordsCard(const InsightsSummary &summary, QWidget *pare
     return card;
 }
 
-QToolButton *HomePage::buildShareButton(QWidget *parent)
+QPushButton *HomePage::buildShareButton(QWidget *parent)
 {
-    auto *button = new QToolButton(parent);
+    auto *button = new QPushButton(parent);
     button->setObjectName(QStringLiteral("shareInsights"));
     const InsightsShareLabels labels = insightsShareLabels();
-    const QIcon shareIcon = themedIcon(QStringLiteral("document-share"), QStringLiteral("emblem-shared"));
-    button->setIcon(shareIcon);
+    button->setIcon(themedIcon(QStringLiteral("document-share"), QStringLiteral("emblem-shared")));
     button->setText(labels.share);
-    button->setToolButtonStyle(shareIcon.isNull() ? Qt::ToolButtonTextOnly : Qt::ToolButtonTextBesideIcon);
-    button->setAutoRaise(true);
-    button->setPopupMode(QToolButton::InstantPopup);
     // The button's text says what the last choice did, then goes back.
     const auto report = [button, labels](const QString &text, const QString &tip = QString()) {
         button->setText(text);
@@ -867,33 +876,28 @@ InsightsRange HomePage::currentRange() const
 
 QWidget *HomePage::buildFooter(QWidget *parent)
 {
-    // The lock and the sentence on one centred line, the link under them.
+    // The lock, then the sentence with its link at the end, in one flow that
+    // wraps at the cards' content width.
     auto *footer = new QWidget(parent);
     footer->setObjectName(QStringLiteral("insightsPrivacyNote"));
-    auto *column = new QVBoxLayout(footer);
-    column->setContentsMargins(0, settings::relatedSpacing(), 0, 0);
-    column->setSpacing(settings::tightSpacing());
-    auto *line = new QHBoxLayout;
+    auto *line = new QHBoxLayout(footer);
+    const QMargins padding = settings::rowPadding();
+    line->setContentsMargins(padding.left(), settings::relatedSpacing(), padding.right(), 0);
     line->setSpacing(settings::tightSpacing());
-    line->addStretch();
     const QIcon lockIcon = themedIcon(QStringLiteral("object-locked"), QStringLiteral("lock"));
     if (!lockIcon.isNull()) {
         auto *lock = new QLabel(footer);
         const int extent = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
         lock->setPixmap(lockIcon.pixmap(extent, extent));
-        line->addWidget(lock, 0, Qt::AlignVCenter);
+        line->addWidget(lock, 0, Qt::AlignTop);
     }
-    QLabel *note = mutedLabel(homeText(HomeText::PrivacyNote), footer);
-    line->addWidget(note);
-    line->addStretch();
-    column->addLayout(line);
-    auto *link = new QLabel(QStringLiteral("<a href=\"general\">%1</a>").arg(homeText(HomeText::InsightsSettings)),
-                            footer);
-    link->setFont(settings::smallFont(link->font()));
-    link->setAlignment(Qt::AlignHCenter);
-    connect(link, &QLabel::linkActivated, this,
-            [this] { emit pageRequested(QStringLiteral("general")); });
-    column->addWidget(link);
+    QLabel *note = mutedLabel(QStringLiteral("%1 <a href=\"general\">%2</a>")
+                                  .arg(homeText(HomeText::PrivacyNote).toHtmlEscaped(),
+                                       homeText(HomeText::InsightsSettings).toHtmlEscaped()),
+                              footer);
+    note->setTextFormat(Qt::RichText);
+    connect(note, &QLabel::linkActivated, this, &HomePage::pageRequested);
+    line->addWidget(note, 1);
     return footer;
 }
 
@@ -970,8 +974,10 @@ QPushButton *HomePage::toggleButton() const
 
 void HomePage::updateShortcutHint()
 {
+    // Without a Global Shortcut the hint is a link to where one is set.
     const QString shortcut = m_controller->globalShortcutDisplay();
-    m_hint->setText(dictationShortcutHint(shortcut));
+    const QString hint = dictationShortcutHint(shortcut).toHtmlEscaped();
+    m_hint->setText(shortcut.isEmpty() ? QStringLiteral("<a href=\"shortcut\">%1</a>").arg(hint) : hint);
 }
 
 void HomePage::setStatus(const QString &stateName)

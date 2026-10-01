@@ -19,11 +19,12 @@ namespace speecher {
 
 namespace {
 
-// Chart geometry from the design: cells between 10 and 14 px with 3 px gaps,
-// 2 px between hour bars.
+// Chart geometry from the design: cells between 8 and 14 px with 3 px gaps,
+// 2 px between hour bars. Under 8 px a day stops being a target, so a
+// narrower heatmap drops its oldest weeks instead.
 constexpr int kWeeks = 53;
 constexpr int kMaxCell = 14;
-constexpr int kMinCell = 10;
+constexpr int kMinCell = 8;
 constexpr int kCellGap = 3;
 constexpr int kDot = 10;
 constexpr int kBarGap = 2;
@@ -113,6 +114,7 @@ InsightsHeatmap::Geometry InsightsHeatmap::layOutYear(int width) const
     }
     const int pitch = cell + kCellGap;
     geometry.size = QSize(labelWidth + weeks * pitch - kCellGap, labelHeight + 7 * pitch - kCellGap);
+    geometry.weeks = weeks;
     if (m_days.isEmpty()) return geometry;
 
     const QDate today = m_days.last().date;
@@ -248,6 +250,16 @@ void InsightsHeatmap::mouseMoveEvent(QMouseEvent *event)
     const qreal pad = kCellGap / 2.0;
     QToolTip::showText(event->globalPosition().toPoint(), cell.tip, this,
                        cell.rect.adjusted(-pad, -pad, pad, pad).toAlignedRect());
+}
+
+void InsightsHeatmap::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (m_shape != Shape::Year) return;
+    const int weeks = layOut(width()).weeks;
+    if (weeks == m_drawnWeeks) return;
+    m_drawnWeeks = weeks;
+    emit drawnWeeksChanged(weeks);
 }
 
 void InsightsHeatmap::leaveEvent(QEvent *event)

@@ -419,7 +419,7 @@ private slots:
         QCOMPARE(values.first(), QStringLiteral("90"));
         QVERIFY(page.findChild<QWidget *>(QStringLiteral("activityHeatmap")));
         const QList<QAction *> share =
-            page.findChild<QToolButton *>(QStringLiteral("shareInsights"))->menu()->actions();
+            page.findChild<QPushButton *>(QStringLiteral("shareInsights"))->menu()->actions();
         share.at(0)->trigger();
         QVERIFY(!QGuiApplication::clipboard()->image().isNull());
         share.at(1)->trigger();
@@ -1100,6 +1100,18 @@ private slots:
         windowAgain->click();
         QVERIFY(pageStart->isVisibleTo(&page));
         QVERIFY(!listed(&page));
+    }
+
+    void transcribeModelRowOpensRefinement()
+    {
+        ApplicationController controller(true);
+        TranscribePage page(&controller);
+        auto *model = page.findChild<QPushButton *>(QStringLiteral("transcribeRefinerModel"));
+        QVERIFY(model);
+        QSignalSpy requested(&page, &TranscribePage::pageRequested);
+        model->click();
+        QCOMPARE(requested.count(), 1);
+        QCOMPARE(requested.first().first().toString(), QStringLiteral("refinement"));
     }
 
     // Going back to setup while a retry runs, then starting the next batch:

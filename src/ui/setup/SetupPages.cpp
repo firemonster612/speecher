@@ -328,6 +328,18 @@ ProviderOptionRow addOptionRow(QFormLayout *card,
     return {id, label, button, status};
 }
 
+// A check box row with its title and a grey description, as every other row
+// has: the settings row otherwise turns a check box's description into its
+// title.
+QFrame *checkBoxRow(const QString &title, const QString &description, QCheckBox *box, QWidget *parent)
+{
+    QFrame *row = settings::makeRow(title, QString(), box, parent, nullptr, true);
+    auto *subtitle = row->findChild<QLabel *>(QStringLiteral("rowDescription"));
+    subtitle->setText(description);
+    subtitle->show();
+    return row;
+}
+
 // A small grey line under something, indented to start where its text does.
 QLabel *makeNote(const QString &text, QWidget *parent, int indent = 0)
 {
@@ -455,7 +467,16 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     const SettingsRow &accuracy = setupSchemaRow(QStringLiteral("codexFinalRetranscribe"));
     m_accuracyRow = settings::makeRow(accuracy.label, accuracy.help, m_accuracyPass, this);
     layout->addWidget(m_accuracyRow);
-    layout->addWidget(m_status);
+    // One status line, with a warning sign while the service cannot be used;
+    // the hint under it is the next step.
+    auto *statusLine = new QHBoxLayout;
+    statusLine->setSpacing(settings::relatedSpacing());
+    m_statusGlyph = makeGlyph(this, QStringLiteral("dialog-warning"), QStyle::SP_MessageBoxWarning);
+    m_statusGlyph->setObjectName(QStringLiteral("speechProviderStatusGlyph"));
+    m_statusGlyph->hide();
+    statusLine->addWidget(m_statusGlyph, 0, Qt::AlignTop);
+    statusLine->addWidget(m_status, 1);
+    layout->addLayout(statusLine);
     layout->addWidget(m_hint);
     layout->addWidget(m_checkAgain, 0, Qt::AlignLeft);
     layout->addStretch();
@@ -935,6 +956,8 @@ void SpeechProviderSetupPage::showSelectedProvider()
     if (index < 0) {
         setStatusColor(m_status, false);
         m_status->setText(setupTranscriptionBlocked(false, QString()));
+        m_status->setToolTip(QString());
+        m_statusGlyph->show();
         m_hint->hide();
         m_checkAgain->hide();
         setReady(false);
@@ -947,6 +970,8 @@ void SpeechProviderSetupPage::showSelectedProvider()
         const bool downloaded = m_local->modelState(localChoice()).downloaded;
         const bool started = localDownloadStarted();
         setStatusColor(m_status, false);
+        m_status->setToolTip(QString());
+        m_statusGlyph->hide();
         m_status->setText(downloaded ? QString()
                           : started  ? setupText(SetupText::DownloadContinues)
                                      : setupText(SetupText::DownloadToContinue));
@@ -963,6 +988,8 @@ void SpeechProviderSetupPage::showSelectedProvider()
     m_status->show();
     if (!option.probed) {
         setStatusColor(m_status, false);
+        m_status->setToolTip(QString());
+        m_statusGlyph->hide();
         m_status->setText(QStringLiteral("Checking…"));
         m_hint->show();
         m_checkAgain->show();
@@ -970,8 +997,12 @@ void SpeechProviderSetupPage::showSelectedProvider()
         return;
     }
     setStatusColor(m_status, option.ok);
+    // The provider's own message names files and commands; the hint below
+    // already says what to do, so the message is there on hover only.
     m_status->setText(option.ok ? setupProviderReady(option.label)
-                                : option.message);
+                                : setupTranscriptionBlocked(false, option.label));
+    m_status->setToolTip(option.ok ? QString() : option.message);
+    m_statusGlyph->setVisible(!option.ok);
     m_hint->setVisible(!option.ok);
     m_checkAgain->setVisible(!option.ok);
     setReady(option.ok);
@@ -1014,11 +1045,23 @@ MicrophoneSetupPage::MicrophoneSetupPage(SettingsStore &settings,
     m_level->setFormat(QStringLiteral("%p%"));
     m_status->setWordWrap(true);
 
+    // A microphone plugged in while this page is open shows up here.
+    auto *checkAgain = new QPushButton(setupText(SetupText::CheckAgain), this);
+    checkAgain->setObjectName(QStringLiteral("microphoneCheckAgain"));
+    connect(checkAgain, &QPushButton::clicked, this, [this] {
+        refreshDevices();
+        if (m_active) {
+            startMeter();
+        }
+    });
+
     auto *form = new QGridLayout;
     form->addWidget(new QLabel(setupSchemaRow(QStringLiteral("audioDevice")).label, this), 0, 0);
     form->addWidget(m_device, 0, 1);
+    form->addWidget(checkAgain, 0, 2);
     form->addWidget(new QLabel(inputLevelLabel(), this), 1, 0);
-    form->addWidget(m_level, 1, 1);
+    form->addWidget(m_level, 1, 1, 1, 2);
+    form->setColumnStretch(1, 1);
     layout->addLayout(form);
     layout->addWidget(m_status);
     layout->addStretch();
@@ -1088,10 +1131,7 @@ void MicrophoneSetupPage::setActive(bool active)
     m_active = active;
     if (active) {
         if (isVisible()) {
-            if (!m_devicesLoaded) {
-                refreshDevices();
-                m_devicesLoaded = true;
-            }
+            refreshDevices();
             startMeter();
         }
     } else if (m_input) {
@@ -1104,10 +1144,8 @@ void MicrophoneSetupPage::setActive(bool active)
 void MicrophoneSetupPage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
-    if (!m_devicesLoaded) {
-        refreshDevices();
-        m_devicesLoaded = true;
-    }
+    // Read afresh each time: a microphone may have been connected since.
+    refreshDevices();
     if (m_active) {
         startMeter();
     }
@@ -1266,9 +1304,7 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     , m_status(new WrappingLabel(this))
     , m_setup(new QPushButton(QStringLiteral("Set up virtual keyboard"), this))
     , m_progress(new QProgressBar(this))
-    , m_clipboardOnly(new QCheckBox(
-          QStringLiteral("Continue without the virtual keyboard; Speecher pastes from the clipboard instead"),
-          this))
+    , m_clipboardOnly(new QCheckBox(this))
     , m_restoreClipboard(new QCheckBox(this))
     , m_format(new QComboBox(this))
 {
@@ -1299,23 +1335,16 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     keyboardLayout->addWidget(m_setup, 0, Qt::AlignLeft);
     settings::addCardRow(card, keyboardRow, host);
 
-    // QCheckBox does not wrap its own label, and both of these are sentences:
-    // the settings row pairs a wrapping caption with an unlabelled box.
-    m_clipboardOnlyRow = settings::makeRow(
-        QStringLiteral("Continue without the virtual keyboard; Speecher pastes from the clipboard instead"),
-        QString(),
-        m_clipboardOnly,
-        host);
+    m_clipboardOnlyRow = checkBoxRow(QStringLiteral("Paste from the clipboard instead"),
+                                     QStringLiteral("Continue without the virtual keyboard."),
+                                     m_clipboardOnly, host);
     settings::addCardRow(card, m_clipboardOnlyRow, host);
     settings::addCardRow(
         card,
         settings::makeRow(setupSchemaRow(QStringLiteral("outputFormat")).label, QString(), m_format, host),
         host);
     const SettingsRow &restore = setupSchemaRow(QStringLiteral("restoreClipboardAfterTyping"));
-    settings::addCardRow(
-        card,
-        settings::makeRow(restore.label, restore.help, m_restoreClipboard, host),
-        host);
+    settings::addCardRow(card, checkBoxRow(restore.label, restore.help, m_restoreClipboard, host), host);
     layout->addStretch();
 #ifndef SPEECHER_WITH_YDOTOOL
     // Nothing to install and nothing to opt out of.
@@ -1381,9 +1410,11 @@ void TextDeliverySetupPage::refreshStatus()
 {
     const YdotoolSetupStatus status = YdotoolSetup::probe(m_settings.ydotoolEnabled());
     const bool needsSignIn = status.state == YdotoolSetupState::NeedsSignOut;
+    // The state in words; which program is missing is detail for the tooltip.
     m_status->setText(needsSignIn
                           ? QStringLiteral("Almost done — log out of your computer and back in, then turn on the virtual keyboard in Settings > Output.")
-                          : status.label + QStringLiteral(". ") + status.detail);
+                          : QStringLiteral("Virtual keyboard: %1").arg(status.label));
+    m_status->setToolTip(needsSignIn ? QString() : status.detail);
     m_setup->setEnabled(!status.ready() && !needsSignIn);
     m_setup->setText(status.ready() ? QStringLiteral("Virtual keyboard ready")
                                     : QStringLiteral("Set up virtual keyboard"));

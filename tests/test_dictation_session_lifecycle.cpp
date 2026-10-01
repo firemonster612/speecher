@@ -1157,7 +1157,7 @@ private slots:
 
         // Mic toggled off: the speech preview disappears for the whole
         // transcribe-then-refine stretch, even when late partials arrive.
-        popup.setStatus(QStringLiteral("Stopping"));
+        popup.setSessionState(DictationState::Stopping);
         QVERIFY(!previewPill->isHidden());
         QVERIFY(rawTranscript->isHidden());
         QVERIFY(!waveform->isHidden());
@@ -1205,6 +1205,8 @@ private slots:
         const QString error = QStringLiteral(
             "Claude login cannot be refreshed; run `claude` in a terminal and use the `/login` command");
 
+        // Clear of the test's pointer: resting on the capsule holds the countdown.
+        popup.move(QCursor::pos() + QPoint(50, 50));
         popup.show();
         QVERIFY(QMetaObject::invokeMethod(
             &popup,
