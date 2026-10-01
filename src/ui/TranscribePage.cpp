@@ -276,15 +276,11 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
         m_speechSummary->setText(summary);
         m_speechSummary->setVisible(!summary.isEmpty());
     });
-    // A check box row takes a description as its title, so the description
-    // goes in the row's own slot for it, as macOS and Windows show it.
     m_vocabulary = new QCheckBox(speechCard);
-    QFrame *vocabularyRow = settings::makeRow(transcribeText(TranscribeText::Vocabulary), QString(), m_vocabulary,
-                                              speechCard, nullptr, true);
-    auto *vocabularyDescription = vocabularyRow->findChild<QLabel *>(QStringLiteral("rowDescription"));
-    vocabularyDescription->setText(transcribeText(TranscribeText::VocabularyHelp));
-    vocabularyDescription->show();
-    settings::addCardRow(settings::cardFormLayout(speechCard), vocabularyRow, speechCard);
+    settings::addCardRow(settings::cardFormLayout(speechCard),
+                         settings::makeRow(transcribeText(TranscribeText::Vocabulary),
+                                           transcribeText(TranscribeText::VocabularyHelp), m_vocabulary, speechCard),
+                         speechCard);
 
     QFrame *refineCard = addCard(setup, transcribeText(TranscribeText::RefinementSection), m_setup);
     QFormLayout *refineForm = settings::cardFormLayout(refineCard);
