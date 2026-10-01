@@ -72,7 +72,7 @@ QString inheritGlobalPasteRule()
 }
 
 // The paste chord differs per platform, and so does the copy that names it.
-QList<RowOption> pasteMethodOptions(bool includeDirectInsert, bool includeGlobalFallback)
+QList<RowOption> pasteMethodOptions(bool includeGlobalFallback)
 {
     QList<RowOption> options;
     if (includeGlobalFallback) {
@@ -83,26 +83,20 @@ QList<RowOption> pasteMethodOptions(bool includeDirectInsert, bool includeGlobal
     // (MacPasteDelivery::paste sends one chord), so there is no terminal
     // option; shownPasteMethod shows a stored one as Standard paste.
     options.append({pasteMethodName(PasteMethod::StandardPaste), QStringLiteral("Standard paste (Cmd+V)")});
-    if (includeDirectInsert) {
-        options.append({pasteMethodName(PasteMethod::DirectInsert),
-                        QStringLiteral("Direct insertion (Accessibility)")});
-    }
+    options.append({pasteMethodName(PasteMethod::DirectInsert),
+                    QStringLiteral("Direct insertion (Accessibility)")});
 #elif defined(Q_OS_WIN)
     options.append({pasteMethodName(PasteMethod::StandardPaste), QStringLiteral("Standard paste (Ctrl+V)")});
     options.append({pasteMethodName(PasteMethod::TerminalPaste),
                     QStringLiteral("Terminal paste (Ctrl+Shift+V)")});
-    if (includeDirectInsert) {
-        options.append({pasteMethodName(PasteMethod::DirectInsert),
-                        QStringLiteral("Direct insertion (UI Automation)")});
-    }
+    options.append({pasteMethodName(PasteMethod::DirectInsert),
+                    QStringLiteral("Direct insertion (UI Automation)")});
 #else
     options.append({pasteMethodName(PasteMethod::StandardPaste), QStringLiteral("Standard paste (Ctrl+V)")});
     options.append({pasteMethodName(PasteMethod::TerminalPaste),
                     QStringLiteral("Terminal paste (Ctrl+Shift+V)")});
-    if (includeDirectInsert) {
-        options.append({pasteMethodName(PasteMethod::DirectInsert),
-                        QStringLiteral("Direct insertion (desktop accessibility)")});
-    }
+    options.append({pasteMethodName(PasteMethod::DirectInsert),
+                    QStringLiteral("Direct insertion (desktop accessibility)")});
 #endif
     options.append({pasteMethodName(PasteMethod::ClipboardOnly), QStringLiteral("Clipboard only")});
     return options;
@@ -1901,7 +1895,7 @@ SettingsRow applicationPasteRuleRow()
         {kMethodColumn,
          QStringLiteral("Paste method"),
          ColumnKind::Choice,
-         fixedOptions(pasteMethodOptions(true, false))},
+         fixedOptions(pasteMethodOptions(false))},
     };
     descriptor.records = [](const AppSettings &settings) {
         QList<QVariantMap> records;
@@ -1949,7 +1943,7 @@ SettingsRow categoryPasteRuleRow(AppCategory category)
         QStringLiteral("categoryPasteRule_") + match,
         pasteCategoryLabel(category),
         QString(),
-        fixedOptions(pasteMethodOptions(false, true)),
+        fixedOptions(pasteMethodOptions(true)),
         [match](const AppSettings &settings) {
             for (const PasteRule &rule : settings.output.pasteRules) {
                 if (rule.scope == PasteRuleScope::Category && rule.match == match) {
@@ -2029,7 +2023,7 @@ SettingsPage outputPage(const SchemaContext &context)
         QStringLiteral("globalPasteRule"),
         QStringLiteral("Default paste"),
         QStringLiteral("How Speecher pastes unless a paste rule says otherwise."),
-        fixedOptions(pasteMethodOptions(true, false)),
+        fixedOptions(pasteMethodOptions(false)),
         [](const AppSettings &settings) {
             for (const PasteRule &rule : settings.output.pasteRules) {
                 if (rule.scope == PasteRuleScope::Global) {
@@ -2069,12 +2063,6 @@ SettingsPage outputPage(const SchemaContext &context)
     // fall together with desktop accessibility.
     QList<SettingsRow> categoryRows;
     for (AppCategory category : managedPasteCategories()) {
-#ifdef Q_OS_MACOS
-        // Terminals take the same Cmd+V as every other app here.
-        if (category == AppCategory::Terminal) {
-            continue;
-        }
-#endif
         SettingsRow row = categoryPasteRuleRow(category);
         row.groupId = QStringLiteral("targetPasteControls");
         gateOnTargetAccessibility(row, targetAccessibilityHint());

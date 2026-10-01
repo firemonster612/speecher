@@ -10,6 +10,8 @@
 #include "transcribe/TranscribePresentation.h"
 
 #include <QRegularExpression>
+#include <QSettings>
+#include <QTemporaryDir>
 #include <algorithm>
 
 using namespace speecher;
@@ -973,6 +975,50 @@ private slots:
         browsers.apply(settings, QStringLiteral("inherit"));
         QCOMPARE(settings.output.pasteRules.size(), 2);
         QCOMPARE(settings.output.pasteRules.first().match, QStringLiteral("unknown"));
+    }
+
+    // A front end shows each choice's value and saves what it shows, so a
+    // migrated rule survives a save only if its row offers that value.
+    void migratedPasteRulesSurviveSavingTheOutputPage()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings stored(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        stored.setValue(QStringLiteral("output/method"), QStringLiteral("direct_insert"));
+        stored.setValue(QStringLiteral("output/pasteRules"),
+                        pasteRulesToJson({
+                            {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::TerminalPaste, true},
+                            {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
+                        }));
+        migrateOutputMethod(stored);
+        AppSettings loaded;
+        loaded.output.method = stored.value(QStringLiteral("output/method")).toString();
+        loaded.output.pasteRules =
+            pasteRulesFromJson(stored.value(QStringLiteral("output/pasteRules")).toByteArray());
+
+        const SettingsSchema schema = buildSettingsSchema(fakeContext());
+        const SettingsPage &output = schema.page(QStringLiteral("output"));
+        AppSettings saved = loaded;
+        rowById(output, QStringLiteral("outputFormat")).apply(saved, QStringLiteral("html"));
+        for (const SettingsSection &section : output.sections) {
+            for (const SettingsRow &row : section.rows) {
+                if (!row.options || !row.value || !row.apply) {
+                    continue;
+                }
+                const QString shown = row.value(loaded).toString();
+                const QList<RowOption> options = row.options(loaded);
+                QVERIFY2(std::any_of(options.cbegin(), options.cend(),
+                                     [&shown](const RowOption &option) { return option.id == shown; }),
+                         qPrintable(row.id + QStringLiteral(" does not offer ") + shown));
+                row.apply(saved, shown);
+            }
+        }
+        QCOMPARE(saved.output.method, QStringLiteral("automatic"));
+        QCOMPARE(saved.output.pasteRules,
+                 (QList<PasteRule>{
+                     {PasteRuleScope::Category, QStringLiteral("terminal"), PasteMethod::DirectInsert, true},
+                     {PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly, true},
+                 }));
     }
 
     void vocabularyIsNormalisedWhenItIsApplied()
