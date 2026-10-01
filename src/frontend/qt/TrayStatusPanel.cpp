@@ -16,6 +16,7 @@
 #include <QScreen>
 #include <QStyle>
 #include <QTextLayout>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWindow>
 
@@ -147,6 +148,9 @@ TrayStatusPanel::TrayStatusPanel(ApplicationController *controller, QWidget *par
     });
     connect(m_copy, &QPushButton::clicked, this, [this] {
         QGuiApplication::clipboard()->setText(m_controller->lastTranscript());
+        m_copy->setText(copiedCaption());
+        QTimer::singleShot(kCopiedFeedbackMs, m_copy,
+                           [this] { m_copy->setText(copyTranscriptCaption()); });
     });
     connect(settingsButton, &QPushButton::clicked, this, [this] {
         hide();
