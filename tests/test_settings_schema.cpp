@@ -355,6 +355,14 @@ private slots:
                  QStringLiteral("## Added\n\n- A shared change that wraps onto a second line."));
     }
 
+    void releaseNotesDropThisPlatformsPrefixAndKeepNestedBullets()
+    {
+        const QString notes = QStringLiteral("- Linux: the tray, with\n  two parts:\n  - a menu\n  - a panel\n"
+                                             "- Windows: a fix:\n  - its detail");
+        QCOMPARE(releaseNotesForPlatform(notes, QStringLiteral("Linux")),
+                 QStringLiteral("- The tray, with two parts:\n  - a menu\n  - a panel"));
+    }
+
     void whatsNewPageSelectsLiveRowsInTheVersionRange()
     {
         SchemaContext context = fakeContext();

@@ -8,36 +8,46 @@ namespace speecher {
 QString releaseNotesForPlatform(const QString &markdown, const QString &platform)
 {
     static const QRegularExpression platformPrefix(QStringLiteral("^- (Linux|macOS|Windows): "));
-    const QStringList lines = markdown.split(u'\n');
-    // Bullets joined to one line each; every other line as it was.
-    QStringList blocks;
-    for (const QString &line : lines) {
-        if (line.startsWith(QStringLiteral("  ")) && !blocks.isEmpty()
-            && blocks.last().startsWith(QStringLiteral("- "))) {
-            blocks.last() += u' ' + line.trimmed();
+    // Each bullet with its nested bullets, which go with it. A bullet's
+    // hard-wrapped lines join onto it; every other line stays as it was.
+    QList<QStringList> blocks;
+    for (const QString &line : markdown.split(u'\n')) {
+        if (!line.startsWith(QStringLiteral("  ")) || blocks.isEmpty()
+            || !blocks.last().first().startsWith(QStringLiteral("- "))) {
+            blocks.append({line});
+        } else if (line.trimmed().startsWith(QStringLiteral("- "))) {
+            blocks.last().append(line);
         } else {
-            blocks.append(line);
+            blocks.last().last() += u' ' + line.trimmed();
         }
     }
-    blocks.removeIf([&platform](const QString &block) {
-        const QRegularExpressionMatch match = platformPrefix.match(block);
-        return match.hasMatch() && match.captured(1) != platform;
-    });
+    QStringList lines;
+    for (QStringList &block : blocks) {
+        const QRegularExpressionMatch match = platformPrefix.match(block.first());
+        if (match.hasMatch()) {
+            if (match.captured(1) != platform) {
+                continue;
+            }
+            const QString text = block.first().mid(match.capturedLength());
+            block.first() = QStringLiteral("- ") + text.left(1).toUpper() + text.mid(1);
+        }
+        lines.append(block);
+    }
     // A heading whose section lost every bullet.
     QStringList kept;
-    for (int index = 0; index < blocks.size(); ++index) {
-        const QString &block = blocks.at(index);
-        if (block.startsWith(u'#')) {
+    for (int index = 0; index < lines.size(); ++index) {
+        const QString &line = lines.at(index);
+        if (line.startsWith(u'#')) {
             int next = index + 1;
-            while (next < blocks.size() && blocks.at(next).trimmed().isEmpty()) {
+            while (next < lines.size() && lines.at(next).trimmed().isEmpty()) {
                 ++next;
             }
-            if (next == blocks.size() || blocks.at(next).startsWith(u'#')) {
+            if (next == lines.size() || lines.at(next).startsWith(u'#')) {
                 index = next - 1;
                 continue;
             }
         }
-        kept.append(block);
+        kept.append(line);
     }
     return kept.join(u'\n').trimmed();
 }
