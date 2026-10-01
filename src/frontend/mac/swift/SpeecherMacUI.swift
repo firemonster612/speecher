@@ -72,6 +72,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
             self?.showSettings()
             self?.model.showWhatsNew()
         }
+        model.openSettingsPage = { [weak self] page in self?.openSettingsPage(page) }
         applicationDelegate = ReopenApplicationDelegate(forwardingTo: NSApp.delegate) {
             [weak self] in self?.showSettings()
         }
@@ -197,8 +198,8 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    @objc public func showDictationProblem(_ message: String) {
-        panel.show(problem: message)
+    @objc public func showDictationProblem(_ message: String, fix: SpeecherErrorAction?) {
+        panel.show(problem: message, fix: fix)
     }
 
     @MainActor
