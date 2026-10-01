@@ -172,7 +172,10 @@ public static class RestartManager {
     Write-Output "Setup closed the running application"
 
     # Uninstalling under the running app must quit it rather than leave its
-    # locked files, and the folder, behind.
+    # locked files, and the folder, behind. The empty folders stand in for
+    # what an earlier interrupted uninstall leaves, which this install did
+    # not create.
+    New-Item -ItemType Directory -Force (Join-Path $InstallDir "leftover\nested") | Out-Null
     $App = Start-Speecher "--show-settings"
     Start-Process (Join-Path $InstallDir "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
     if (-not $App.WaitForExit(10000)) {

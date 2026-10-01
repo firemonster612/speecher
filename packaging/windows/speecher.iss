@@ -152,19 +152,48 @@ begin
   Result := '';
 end;
 
+// Removes Dir and every folder under it that holds no files. RemoveDir only
+// removes empty folders, and junctions are not followed.
+procedure RemoveEmptyDirs(const Dir: String);
+const
+  ReparsePoint = $400;
+var
+  Find: TFindRec;
+begin
+  if FindFirst(Dir + '\*', Find) then
+  try
+    repeat
+      if ((Find.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0)
+         and ((Find.Attributes and ReparsePoint) = 0)
+         and (Find.Name <> '.') and (Find.Name <> '..') then
+        RemoveEmptyDirs(Dir + '\' + Find.Name);
+    until not FindNext(Find);
+  finally
+    FindClose(Find);
+  end;
+  RemoveDir(Dir);
+end;
+
 // The uninstaller has no Restart Manager step. Run under a live Speecher, it
 // cannot delete the locked files, so the folder stays behind with Speecher
 // still running from it. Once the person has confirmed, quit Speecher; if it
 // is still running, stop before anything is removed rather than leave half an
 // install.
+//
+// Folders an earlier interrupted uninstall left behind were not created by
+// this install, so Inno does not remove them and the install folder outlives
+// the uninstall. Afterwards, remove whatever is left empty.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
-  if CurUninstallStep <> usUninstall then
-    Exit;
-  while SpeecherRunning() and not QuitSpeecher() do
-    if SuppressibleMsgBox('Speecher is still running. Quit it from its tray icon, then click Retry.',
-                          mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
-      Abort;
+  case CurUninstallStep of
+    usUninstall:
+      while SpeecherRunning() and not QuitSpeecher() do
+        if SuppressibleMsgBox('Speecher is still running. Quit it from its tray icon, then click Retry.',
+                              mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
+          Abort;
+    usPostUninstall:
+      RemoveEmptyDirs(ExpandConstant('{app}'));
+  end;
 end;
 
 function ShouldLaunchSpeecher(): Boolean;
