@@ -1326,8 +1326,9 @@ TextDeliverySetupPage::TextDeliverySetupPage(SettingsStore &settings, QWidget *p
     keyboardLayout->addWidget(m_setup, 0, Qt::AlignLeft);
     settings::addCardRow(card, keyboardRow, host);
 
-    m_clipboardOnlyRow = settings::makeRow(QStringLiteral("Paste from the clipboard instead"),
-                                           QStringLiteral("Continue without the virtual keyboard."),
+    m_clipboardOnlyRow = settings::makeRow(QStringLiteral("Copy to the clipboard instead"),
+                                           QStringLiteral("Skip the virtual keyboard. Speecher copies "
+                                                          "your text and you paste it yourself."),
                                            m_clipboardOnly, host);
     settings::addCardRow(card, m_clipboardOnlyRow, host);
     settings::addCardRow(
