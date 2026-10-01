@@ -27,12 +27,12 @@ import androidx.compose.ui.unit.dp
 import app.speecher.android.dictation.ButtonLayout
 import app.speecher.android.dictation.InsertAction
 
-private val ButtonLayout.label: String
+internal val ButtonLayout.label: String
     get() =
         when (this) {
-            ButtonLayout.RefinedPrimary -> "Refined + Insert"
+            ButtonLayout.RefinedPrimary -> "Insert and Insert refined"
             ButtonLayout.InsertOnly -> "Insert only"
-            ButtonLayout.RefinedOnly -> "Refined only"
+            ButtonLayout.RefinedOnly -> "Insert refined only"
         }
 
 /** One radio row per [ButtonLayout], each with a sketch of the panel's buttons. */

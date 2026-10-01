@@ -137,7 +137,7 @@ fun Home(
 }
 
 @Composable
-private fun Chevron() {
+internal fun Chevron() {
     Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null)
 }
 

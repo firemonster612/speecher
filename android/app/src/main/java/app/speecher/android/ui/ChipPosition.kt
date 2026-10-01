@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,10 +29,11 @@ import kotlin.math.roundToInt
 /**
  * Places the dictation button for when it isn't docked on the mic key. The block at the bottom
  * stands in for the keyboard. The saved position is the chip's top-left as a pixel offset from the
- * block's bottom-right corner, the same anchor the overlay uses on the real keyboard.
+ * block's bottom-right corner, the same anchor the overlay uses on the real keyboard. [onDock] goes
+ * back to the mic key instead.
  */
 @Composable
-fun ChipPosition(offsetX: Int?, offsetY: Int?, onSave: (Int, Int) -> Unit) {
+fun ChipPosition(offsetX: Int?, offsetY: Int?, onSave: (Int, Int) -> Unit, onDock: () -> Unit) {
     val density = LocalDensity.current
     val chipWidth = with(density) { ChipSize.width.roundToPx() }
     val chipHeight = with(density) { ChipSize.height.roundToPx() }
@@ -43,11 +45,12 @@ fun ChipPosition(offsetX: Int?, offsetY: Int?, onSave: (Int, Int) -> Unit) {
     var startY by remember { mutableIntStateOf(0) }
     Column {
         Text(
-            "Drag the button to where it should sit over your keyboard.",
+            "Drag the dictation button to where it should sit on your keyboard.",
             Modifier.padding(16.dp),
             style = MaterialTheme.typography.bodyLarge,
         )
-        BoxWithConstraints(Modifier.fillMaxWidth().height(440.dp)) {
+        // Room above the keyboard too, since the button may sit just over it.
+        BoxWithConstraints(Modifier.fillMaxWidth().height(364.dp)) {
             val width = constraints.maxWidth
             val height = constraints.maxHeight
             Surface(
@@ -72,11 +75,14 @@ fun ChipPosition(offsetX: Int?, offsetY: Int?, onSave: (Int, Int) -> Unit) {
             )
         }
         Button({ onSave(x, y) }, Modifier.padding(16.dp).fillMaxWidth()) { Text("Save position") }
+        OutlinedButton(onDock, Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
+            Text("Use the keyboard's mic key")
+        }
     }
 }
 
 @PreviewLightDark
 @Composable
 internal fun ChipPositionPreview() = SpeecherTheme {
-    Surface { ChipPosition(null, null) { _, _ -> } }
+    Surface { ChipPosition(null, null, { _, _ -> }, {}) }
 }
