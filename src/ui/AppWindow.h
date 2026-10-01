@@ -57,7 +57,7 @@ protected:
 
 private:
     // Opens the pane a search found and brings its first matching row into
-    // view with focus.
+    // view, and with focusRow also gives the row's control the focus.
     void showSearchMatch(const SearchMatch &match, bool focusRow);
     void buildPages();
     void buildSidebarShell();
