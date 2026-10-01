@@ -6,6 +6,7 @@
 #include "core/EndpointUrl.h"
 #include "core/LocalModelCatalog.h"
 #include "core/OutputMethod.h"
+#include "core/ReleaseNotesPresentation.h"
 
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
@@ -709,7 +710,7 @@ QString releaseNotesMarkdown(const SchemaContext &context)
         QFile file(directory.filePath(fileName));
         if (file.open(QIODevice::ReadOnly)) {
             notes.append({QFileInfo(fileName).completeBaseName(),
-                          QString::fromUtf8(file.readAll()).trimmed()});
+                          releaseNotesForThisPlatform(QString::fromUtf8(file.readAll()))});
         }
     }
     std::sort(notes.begin(), notes.end(), [](const Note &left, const Note &right) {

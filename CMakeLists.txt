@@ -248,6 +248,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
+  src/core/ReleaseNotesPresentation.cpp
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
@@ -279,6 +280,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/OutputMethod.h
   src/core/OutputFormat.h
   src/core/PasteRules.h
+  src/core/ReleaseNotesPresentation.h
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
