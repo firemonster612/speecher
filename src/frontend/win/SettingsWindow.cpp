@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include <windows.h>
 #include <shellapi.h>
@@ -248,13 +249,13 @@ struct SettingsWindow::Native {
         root.Children().Append(titleBar);
 
         navigation = NavigationView();
-        // The Settings app's adaptive pane: expanded from 1008 epx, icons
-        // only from 641, and behind the menu button below that.
-        navigation.PaneDisplayMode(NavigationViewPaneDisplayMode::Auto);
-        navigation.CompactModeThresholdWidth(641);
-        navigation.ExpandedModeThresholdWidth(1008);
+        // Always open, at the narrower width the Settings app uses. The
+        // adaptive Auto mode is not used: every pane switch while it was
+        // compact ended in a layout cycle.
+        navigation.PaneDisplayMode(NavigationViewPaneDisplayMode::Left);
         navigation.OpenPaneLength(280);
         navigation.IsBackButtonVisible(NavigationViewBackButtonVisible::Collapsed);
+        navigation.IsPaneToggleButtonVisible(false);
         navigation.IsSettingsVisible(false);
         navigation.AlwaysShowHeader(false);
         search = AutoSuggestBox();
@@ -511,9 +512,7 @@ struct SettingsWindow::Native {
         // pane opens at its top, not at the scroll offset of this one.
         if (id != currentPane) {
             host.localModels.reset();
-            if (pageHost) {
-                pageHost.Child(nullptr);
-            }
+            scrollToTop = true;
         }
         if (id == kTranscribePane) {
             transcribe->enter();
@@ -608,7 +607,7 @@ struct SettingsWindow::Native {
         }
         host.revealRow = rowId;
         if (paneId == currentPane) {
-            pageHost.Child(nullptr);
+            scrollToTop = true;
             rebuildPage();
         } else {
             selectPane(paneId);
@@ -709,7 +708,7 @@ struct SettingsWindow::Native {
                        << QString::fromWCharArray(error.message().c_str());
             return;
         }
-        replacePage(pageHost, page);
+        replacePage(pageHost, page, !std::exchange(scrollToTop, false));
     }
 
     void loadApiKey()
@@ -892,6 +891,9 @@ struct SettingsWindow::Native {
     QString currentPane;
     QString whatsNewReturnPane;
     bool sidebarUpdating = false;
+    // The next build is another pane, or a search's row, not a rebuild of
+    // the page on screen.
+    bool scrollToTop = false;
     bool rebuildQueued = false;
     bool liveRebuildPending = false;
 
