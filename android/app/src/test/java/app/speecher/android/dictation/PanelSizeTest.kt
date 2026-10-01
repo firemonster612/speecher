@@ -50,4 +50,10 @@ class PanelSizeTest {
         assertEquals(184f, panelHeight(PanelSize.Compact, 800.dp).value, 0.01f)
         assertEquals(56f, panelHeight(PanelSize.Minimized, 800.dp).value, 0.01f)
     }
+
+    @Test
+    fun `a short display caps the panel at half its height`() {
+        assertEquals(205.5f, panelHeight(PanelSize.Full, 411.dp).value, 0.01f)
+        assertEquals(160f, panelHeight(PanelSize.Compact, 300.dp).value, 0.01f)
+    }
 }
