@@ -785,8 +785,12 @@ private slots:
         refinement.setCapabilities({false});
         corrections.setCapabilities({false});
 
-        QVERIFY(!output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
-        QVERIFY(!output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        auto *terminalRule = output.findChild<QWidget *>(QStringLiteral("categoryPasteRule_terminal"));
+        QVERIFY(terminalRule);
+        QVERIFY(!terminalRule->isEnabled());
+        // A gated collection stays readable; only adding to it stops.
+        QVERIFY(output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        QVERIFY(!output.findChild<QPushButton *>(QStringLiteral("addAppRecognitionRules"))->isEnabled());
         QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
 
@@ -819,9 +823,8 @@ private slots:
             auto *action = note->findChild<QPushButton *>(QStringLiteral("gateAction"));
             QCOMPARE(action ? action->text() : QString(), gateAction);
         }
-        // One note per gated group: the category paste rules, the app paste
-        // rules and the app recognition rules.
-        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 3);
+        // One note for the page, however many rows the gate holds.
+        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 1);
 #ifndef Q_OS_WIN
         QSignalSpy triggered(&output, &SchemaSettingsPage::actionTriggered);
         output.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
@@ -834,8 +837,8 @@ private slots:
         corrections.setCapabilities({true});
         // A row that is usable drops the note that said why it was not.
         QVERIFY(correctionLearning->toolTip().isEmpty());
-        QVERIFY(output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
-        QVERIFY(output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        QVERIFY(terminalRule->isEnabled());
+        QVERIFY(output.findChild<QPushButton *>(QStringLiteral("addAppRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
         for (SchemaSettingsPage *page : {&output, &refinement, &corrections}) {
@@ -853,7 +856,8 @@ private slots:
                 for (const SettingsPaneGroup &group : pane.groups) {
                     const QString id = pane.id + QLatin1Char(':') + group.view;
                     QVERIFY2(pages.page(id), qPrintable(id));
-                    QCOMPARE(sectionLabels(*pages.page(id)), QStringList{group.title});
+                    // The view's tab carries its title, so no header repeats it.
+                    QCOMPARE(sectionLabels(*pages.page(id)), QStringList{});
                 }
                 continue;
             }
@@ -1022,13 +1026,14 @@ private slots:
         auto *remove = page->findChild<QPushButton *>(QStringLiteral("deleteLearnedCorrections"));
         auto *undo = page->findChild<QPushButton *>(QStringLiteral("undoDeleteLearnedCorrections"));
         QVERIFY(table && remove && undo);
-        QVERIFY(!undo->isEnabled());
+        // Undo shows only while there is something to undo.
+        QVERIFY(undo->isHidden());
 
         // The second row, so an undo that put it back first would reorder them.
         table->setCurrentCell(1, 0);
         remove->click();
         QCOMPARE(table->rowCount(), 1);
-        QVERIFY(undo->isEnabled());
+        QVERIFY(!undo->isHidden());
 
         undo->click();
         QCOMPARE(table->rowCount(), 2);
@@ -1038,7 +1043,7 @@ private slots:
 
         // Reloading commits whatever Delete took.
         page->load(settings);
-        QVERIFY(!undo->isEnabled());
+        QVERIFY(undo->isHidden());
     }
 
     void theHaikuCautionComesAndGoesWithTheModel()
@@ -1427,16 +1432,9 @@ private slots:
         QVERIFY(!account->isVisibleTo(&setup));
         QVERIFY(!directory->isVisibleTo(&setup));
 
-        // Opt in through the row caption, which toggles the box without ever
-        // emitting clicked; the page must react to that path too.
-        QLabel *caption = nullptr;
-        for (QLabel *label : setup.findChildren<QLabel *>(QStringLiteral("rowTitle"))) {
-            if (label->buddy() == useCliproxy) {
-                caption = label;
-            }
-        }
-        QVERIFY(caption);
-        QTest::mouseClick(caption, Qt::LeftButton);
+        // Opt in without emitting clicked, as a keyboard toggle can; the page
+        // must react to that path too.
+        useCliproxy->toggle();
         QVERIFY(useCliproxy->isChecked());
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("cliproxy"));
         QVERIFY(account->isVisibleTo(&setup));
@@ -1847,27 +1845,23 @@ private slots:
         QVERIFY(control->mapTo(describedRow, QPoint(control->width(), 0)).x()
                 >= describedRow->width() - settings::rowPadding().right() - 1);
 
-        // A check box row reads as one sentence: the sentence is the row's
-        // title, the box carries no text of its own, and clicking the words
-        // toggles it.
+        // A check box row is FormCheckDelegate: the box carries the label and
+        // the description reads under it, past the indicator.
         auto *checkBox = new QCheckBox(&parent);
-        const QString sentence = QStringLiteral(
-            "Download the update in the background and install it the next time Speecher "
-            "restarts, without asking first.");
         QFrame *checkBoxRow = settings::makeRow(
-            QStringLiteral("Updates"), sentence, checkBox, &parent);
-        QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
-        auto *caption = checkBoxRow->findChild<QLabel *>(QStringLiteral("rowTitle"));
-        QVERIFY(caption);
-        QVERIFY(checkBox->text().isEmpty());
-        QCOMPARE(checkBox->accessibleName(), sentence);
-        QCOMPARE(caption->text(), sentence);
-        QVERIFY(caption->wordWrap());
-        parent.show();
+            QStringLiteral("Install updates automatically"), description, checkBox, &parent);
+        QCOMPARE(checkBox->text(), QStringLiteral("Install updates automatically"));
+        auto *checkBoxDescription = checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QVERIFY(checkBoxDescription);
+        QCOMPARE(checkBoxDescription->text(), description);
+        QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowTitle")));
+        checkBoxRow->show();
+        checkBoxRow->resize(600, checkBoxRow->sizeHint().height());
+        checkBoxRow->layout()->activate();
         QCoreApplication::processEvents();
-        QVERIFY(!checkBox->isChecked());
-        QTest::mouseClick(caption, Qt::LeftButton);
-        QVERIFY(checkBox->isChecked());
+        QVERIFY(checkBoxDescription->mapTo(checkBoxRow, QPoint()).y()
+                > checkBox->mapTo(checkBoxRow, QPoint()).y());
+        QVERIFY(checkBoxDescription->contentsMargins().left() > 0);
     }
 
     void settingsCardsFitANarrowPaneWithoutClipping()

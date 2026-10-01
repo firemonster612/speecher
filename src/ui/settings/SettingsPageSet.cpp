@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/PlatformComposition.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #include "core/InsightsSummary.h"
@@ -26,11 +27,15 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QLabel>
+#include <QMediaDevices>
 #include <QPushButton>
 #include <QSettings>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QTextBlock>
+#include <QTextCursor>
+#include <QTextDocument>
 #include <QTimer>
 #include <QUrl>
 
@@ -184,8 +189,10 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     for (const SettingsPane &pane : std::as_const(m_schema.panes)) {
         if (pane.layout == PaneLayout::Alternatives) {
             for (const SettingsPaneGroup &group : pane.groups) {
-                addPage(pane.id + QLatin1Char(':') + group.view, {m_schema.section(group)}, parent,
-                        customRows);
+                // The view's tab already carries its title.
+                SettingsSection section = m_schema.section(group);
+                section.title.clear();
+                addPage(pane.id + QLatin1Char(':') + group.view, {section}, parent, customRows);
             }
         } else if (!pane.groups.isEmpty()) {
             QList<SettingsSection> sections;
@@ -201,6 +208,8 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
             &ApplicationController::accessibilityStateChanged,
             this,
             &SettingsPageSet::updateAccessibilityState);
+    connect(new QMediaDevices(this), &QMediaDevices::audioInputsChanged,
+            this, &SettingsPageSet::refreshMicrophones);
     connect(controller->updateBanner(),
             &UpdateBanner::changed,
             this,
@@ -278,6 +287,7 @@ void SettingsPageSet::loadAfterShow()
         page->loadExpensiveRows(snapshot);
     }
     m_providerRows.loadSecret();
+    refreshMicrophones();
     refreshUpdateRows();
     m_controller->localSetup()->probeHardware();
     m_controller->localSetup()->detectRunners();
@@ -421,6 +431,11 @@ void SettingsPageSet::runPageAction(const QString &rowId)
             candidate->load(m_draft);
         }
         emit changed();
+        return;
+    }
+    if (rowId == QStringLiteral("refreshMicrophones")) {
+        refreshMicrophones();
+        page(QStringLiteral("dictation"))->loadExpensiveRows(m_draft);
         return;
     }
     if (rowId == QStringLiteral("checkForUpdates")) {
@@ -607,10 +622,20 @@ void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, boo
     applyCapabilities();
 }
 
+void SettingsPageSet::refreshMicrophones()
+{
+    m_audioInput = !m_controller->platform()->availableAudioInputDevices().isEmpty();
+    applyCapabilities();
+}
+
 Capabilities SettingsPageSet::capabilities() const
 {
-    return {m_targetAccessibility, m_controller->updates()->supportsAutomaticDownloads(),
-            Theme::overrideHonored()};
+    Capabilities capabilities;
+    capabilities.targetAccessibility = m_targetAccessibility;
+    capabilities.automaticUpdateDownloads = m_controller->updates()->supportsAutomaticDownloads();
+    capabilities.colorSchemeOverride = Theme::overrideHonored();
+    capabilities.audioInput = m_audioInput;
+    return capabilities;
 }
 
 void SettingsPageSet::applyCapabilities()

@@ -225,11 +225,14 @@ void BindingRows::refreshList()
         edit->setIcon(QIcon::fromTheme(QStringLiteral("document-edit")));
         edit->setMinimumWidth(edit->fontMetrics().horizontalAdvance(edit->text()) + 32);
         edit->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+        // Every row has the same two buttons, so their names say which phrase.
+        edit->setAccessibleName(QStringLiteral("%1 %2").arg(edit->text(), phrase(record)));
 
         auto *remove = new QPushButton(m_collection.deleteLabel, rowWidget);
         remove->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
         remove->setMinimumWidth(remove->fontMetrics().horizontalAdvance(remove->text()) + 32);
         remove->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+        remove->setAccessibleName(QStringLiteral("%1 %2").arg(remove->text(), phrase(record)));
 
         layout->addWidget(spoken, 1);
         layout->addWidget(arrow, 0);

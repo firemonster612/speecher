@@ -5,6 +5,7 @@
 #include "frontend/qt/WritingProfileGrid.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/TranscriptRefinementPrompt.h"
+#include "ui/InlineMessage.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
@@ -93,20 +94,6 @@ SchemaCustomRow builtInRow(const SettingsRow &descriptor,
     qFatal("the Qt front end has no widget for settings row %s", qPrintable(descriptor.id));
 }
 
-// A run of rows that render together inside the card, so one capability can
-// gate the whole cluster.
-QWidget *addRowGroup(const QString &id, QWidget *form)
-{
-    auto *group = new QWidget(form);
-    group->setObjectName(id);
-    auto *layout = new QFormLayout(group);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setVerticalSpacing(0);
-    settings::configureFormLayout(layout);
-    settings::addCardRow(qobject_cast<QFormLayout *>(form->layout()), group, form);
-    return group;
-}
-
 } // namespace
 
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
@@ -140,6 +127,11 @@ SchemaSettingsPage::SchemaSettingsPage(const QList<SettingsSection> &sections,
 {
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);
+    for (const SettingsSection &section : sections) {
+        for (const SettingsRow &row : section.rows) {
+            addGateNotice(row, pageLayout);
+        }
+    }
     for (int index = 0; index < sections.size(); ++index) {
         if (index > 0) {
             pageLayout->addSpacing(settings::groupGap());
@@ -174,30 +166,19 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
     QFrame *card = settings::makeSettingsCard(column);
     columnLayout->addWidget(card);
     QWidget *form = settings::cardFormLayout(card)->parentWidget();
-    QWidget *group = nullptr;
-    QWidget *groupNote = nullptr;
-    for (int index = 0; index < section.rows.size(); ++index) {
-        const SettingsRow &descriptor = section.rows.at(index);
-        if (descriptor.groupId.isEmpty()) {
-            group = nullptr;
-            groupNote = nullptr;
-        } else if (!group || group->objectName() != descriptor.groupId) {
-            // Rows of a group share one gate, so one note above the group
-            // explains it for all of them.
-            groupNote = addGateNote(descriptor, form);
-            group = addRowGroup(descriptor.groupId, form);
-        }
-        QWidget *host = group ? group : form;
-        addRow(descriptor, host, group, group ? groupNote : addGateNote(descriptor, form));
+    QString previousGroup;
+    for (const SettingsRow &descriptor : section.rows) {
+        // Rows of a group share one gate, so the first of them says why.
+        const bool repeatsGroup = !descriptor.groupId.isEmpty() && descriptor.groupId == previousGroup;
+        previousGroup = descriptor.groupId;
+        addRow(descriptor, form,
+               descriptor.enabled && descriptor.disabledAction.isEmpty() && !repeatsGroup);
     }
     // The card's title already names its leading block, so that block's own
-    // heading stays hidden (a custom block's whole header, a collection's title).
+    // heading stays hidden; its description still explains it.
     if (leadingBlock && !title.isEmpty() && section.rows.first().label == title
         && entry.rowStart < m_rows.size()) {
-        QWidget *block = m_rows.at(entry.rowStart).frame;
-        if (auto *header = block->findChild<QWidget *>(QStringLiteral("blockHeader"))) {
-            header->hide();
-        } else if (auto *heading = block->findChild<QLabel *>(QStringLiteral("subsectionLabel"))) {
+        if (auto *heading = m_rows.at(entry.rowStart).frame->findChild<QLabel *>(QStringLiteral("subsectionLabel"))) {
             heading->hide();
         }
     }
@@ -232,47 +213,45 @@ SchemaCustomRow SchemaSettingsPage::supplyRow(const SettingsRow &descriptor,
 }
 
 // A disabled control with a hover tooltip does not explain itself: disabled
-// widgets do not always receive hover, and nothing says how to fix it. The
-// note sits above the gated row (or group) with the explanation and, when the
-// schema names one, the action that lifts the gate.
-QWidget *SchemaSettingsPage::addGateNote(const SettingsRow &descriptor, QWidget *form)
+// widgets do not always receive hover, and nothing says how to fix it. A gate
+// that an action can lift is explained once, at the top of the page, with the
+// action beside it; any other gate is explained in the row's description.
+void SchemaSettingsPage::addGateNotice(const SettingsRow &descriptor, QVBoxLayout *pageLayout)
 {
-    if (!descriptor.enabled || descriptor.disabledHelp.isEmpty()) {
-        return nullptr;
+    if (descriptor.disabledAction.isEmpty()) {
+        return;
     }
-    auto *note = new QWidget(form);
-    note->setObjectName(QStringLiteral("gateNote"));
-    auto *layout = new QHBoxLayout(note);
-    // Same inset as a card row, so the note lines up with the rows it gates.
-    layout->setContentsMargins(settings::rowPadding());
-    layout->setSpacing(settings::relatedSpacing());
-    auto *text = new QLabel(descriptor.disabledHelp, note);
-    text->setObjectName(QStringLiteral("gateNoteText"));
-    text->setWordWrap(true);
-    layout->addWidget(text, 1);
-    if (!descriptor.disabledAction.isEmpty()) {
-        auto *action = new QPushButton(descriptor.disabledActionLabel, note);
-        action->setObjectName(QStringLiteral("gateAction"));
-        connect(action, &QPushButton::clicked, this, [this, id = descriptor.disabledAction] {
-            emit actionTriggered(id);
-        });
-        layout->addWidget(action, 0, Qt::AlignTop);
+    for (const GateNotice &notice : std::as_const(m_gateNotices)) {
+        if (notice.action == descriptor.disabledAction) {
+            return;
+        }
     }
-    note->hide();
-    qobject_cast<QFormLayout *>(form->layout())->addRow(note);
-    return note;
+    auto *holder = new QWidget(this);
+    auto *holderLayout = new QVBoxLayout(holder);
+    holderLayout->setContentsMargins(0, 0, 0, settings::groupGap());
+    auto *message = new InlineMessage(holder);
+    message->setObjectName(QStringLiteral("gateNote"));
+    message->label()->setObjectName(QStringLiteral("gateNoteText"));
+    message->setCloseButtonVisible(false);
+    auto *action = new QPushButton(descriptor.disabledActionLabel, message);
+    action->setObjectName(QStringLiteral("gateAction"));
+    connect(action, &QPushButton::clicked, this, [this, id = descriptor.disabledAction] {
+        emit actionTriggered(id);
+    });
+    message->addAction(action);
+    holderLayout->addWidget(message);
+    holder->hide();
+    pageLayout->addWidget(settings::centerColumn(holder, this));
+    m_gateNotices.append({descriptor.disabledAction, holder, message});
 }
 
-void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
-                                QWidget *host,
-                                QWidget *group,
-                                QWidget *gateNote)
+void SchemaSettingsPage::addRow(const SettingsRow &descriptor, QWidget *host, bool explainsGate)
 {
     auto *form = qobject_cast<QFormLayout *>(host->layout());
     Row row;
     row.descriptor = descriptor;
-    row.group = group;
-    row.gateNote = gateNote;
+    row.explainsGate = explainsGate;
+    const bool dynamicDescription = bool(descriptor.helpValue) || explainsGate;
 
     const auto announce = [this] {
         refreshRows();
@@ -288,6 +267,7 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         row.value = editor.value;
         row.setValue = editor.setValue;
         row.refresh = editor.refresh;
+        row.setEditable = editor.setEditable;
         m_rows.append(row);
         applyRow(m_rows.last(), AppSettings{});
         return;
@@ -295,6 +275,18 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
 
     if (descriptor.kind == RowKind::Custom) {
         const SchemaCustomRow custom = supplyRow(descriptor, host, announce);
+        row.control = custom.widget;
+        row.value = custom.value;
+        row.setValue = custom.setValue;
+        row.refresh = custom.refresh;
+        row.setEditable = custom.setEditable;
+        if (custom.cardRows) {
+            settings::addCardRow(form, custom.widget, host);
+            row.frame = custom.widget;
+            m_rows.append(row);
+            applyRow(m_rows.last(), AppSettings{});
+            return;
+        }
         if (!custom.fullWidth) {
             custom.widget->setObjectName(descriptor.id);
             QFrame *frame = settings::makeRow(descriptor.label,
@@ -302,14 +294,14 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
                                               custom.widget,
                                               host,
                                               custom.titleAccessory,
-                                              bool(descriptor.helpValue));
+                                              dynamicDescription);
+            if (custom.detail) {
+                frame->findChild<QWidget *>(QStringLiteral("rowLabelCell"))->layout()->addWidget(custom.detail);
+            }
             settings::addRow(form, frame, host, false);
             row.frame = frame;
-            row.control = custom.widget;
+            row.title = frame->findChild<QLabel *>(QStringLiteral("rowTitle"));
             row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
-            row.value = custom.value;
-            row.setValue = custom.setValue;
-            row.refresh = custom.refresh;
             m_rows.append(row);
             applyRow(m_rows.last(), AppSettings{});
             return;
@@ -320,28 +312,27 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         // Same inset as a card row so the block's text lines up with row titles.
         containerLayout->setContentsMargins(settings::rowPadding());
         containerLayout->setSpacing(settings::relatedSpacing());
-        auto *header = new QWidget(container);
-        header->setObjectName(QStringLiteral("blockHeader"));
-        auto *headerLayout = new QVBoxLayout(header);
-        headerLayout->setContentsMargins(0, 0, 0, 0);
-        headerLayout->setSpacing(settings::tightSpacing());
-        auto *headerTitle = new QLabel(descriptor.label, header);
-        headerTitle->setObjectName(QStringLiteral("subsectionLabel"));
-        auto *headerHelp = new QLabel(descriptor.help, header);
-        headerHelp->setObjectName(QStringLiteral("rowDescription"));
-        headerHelp->setWordWrap(true);
-        headerLayout->addWidget(headerTitle);
-        headerLayout->addWidget(headerHelp);
-        containerLayout->addWidget(header);
-
+        if (!descriptor.label.isEmpty() || !descriptor.help.isEmpty() || dynamicDescription) {
+            auto *header = new QWidget(container);
+            header->setObjectName(QStringLiteral("blockHeader"));
+            auto *headerLayout = new QVBoxLayout(header);
+            headerLayout->setContentsMargins(0, 0, 0, 0);
+            headerLayout->setSpacing(settings::tightSpacing());
+            if (!descriptor.label.isEmpty()) {
+                row.title = new QLabel(descriptor.label, header);
+                row.title->setObjectName(QStringLiteral("subsectionLabel"));
+                headerLayout->addWidget(row.title);
+            }
+            row.description = new QLabel(descriptor.help, header);
+            row.description->setObjectName(QStringLiteral("rowDescription"));
+            row.description->setWordWrap(true);
+            row.description->setVisible(!descriptor.help.isEmpty());
+            headerLayout->addWidget(row.description);
+            containerLayout->addWidget(header);
+        }
         containerLayout->addWidget(custom.widget);
         settings::addCardRow(form, container, host);
         row.frame = container;
-        row.control = custom.widget;
-        row.description = headerHelp;
-        row.value = custom.value;
-        row.setValue = custom.setValue;
-        row.refresh = custom.refresh;
         m_rows.append(row);
         applyRow(m_rows.last(), AppSettings{});
         return;
@@ -358,42 +349,24 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor,
         connect(button, &QPushButton::clicked, this, [this, id = descriptor.id] {
             emit actionTriggered(id);
         });
-        QFrame *frame = settings::makeRow(descriptor.label,
-                                          descriptor.help,
-                                          button,
-                                          host,
-                                          nullptr,
-                                          bool(descriptor.helpValue));
-        settings::addRow(form, frame, host, false);
-        row.frame = frame;
         row.control = button;
-        row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
-        m_rows.append(row);
-        if (!descriptor.expensive) {
-            applyRow(m_rows.last(), AppSettings{});
+    } else {
+        row.control = makeControl(descriptor, host, row);
+        row.control->setObjectName(descriptor.id);
+        if (!descriptor.tooltip.isEmpty()) {
+            row.control->setToolTip(descriptor.tooltip);
         }
-        return;
-    }
-    row.control = makeControl(descriptor, host, row);
-    row.control->setObjectName(descriptor.id);
-    if (!descriptor.tooltip.isEmpty()) {
-        row.control->setToolTip(descriptor.tooltip);
     }
     QFrame *frame = settings::makeRow(descriptor.label,
                                       descriptor.help,
                                       row.control,
                                       host,
                                       nullptr,
-                                      bool(descriptor.helpValue));
+                                      dynamicDescription);
     settings::addRow(form, frame, host, false);
     row.frame = frame;
+    row.title = frame->findChild<QLabel *>(QStringLiteral("rowTitle"));
     row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
-    if (!row.description) {
-        row.description = frame->findChild<QLabel *>(QStringLiteral("checkBoxCaption"));
-    }
-    if (!row.description) {
-        row.description = qobject_cast<QCheckBox *>(row.control);
-    }
     m_rows.append(row);
     if (descriptor.id == QStringLiteral("audioDevice")) {
         auto *mediaDevices = new QMediaDevices(this);
@@ -630,6 +603,8 @@ void SchemaSettingsPage::refreshRows()
     // sit under a card this same pass is about to show or hide, and Qt's
     // isVisible()/isVisibleTo() would see that ancestor's stale state.
     QList<bool> shown(m_rows.size(), true);
+    // What each page notice says: the first closed gate its action lifts.
+    QHash<QString, QString> noticeText;
     for (int index = 0; index < m_rows.size(); ++index) {
         const Row &row = m_rows.at(index);
         if (row.descriptor.visible) {
@@ -648,29 +623,48 @@ void SchemaSettingsPage::refreshRows()
             if (row.descriptor.actionLabelValue) {
                 qobject_cast<QPushButton *>(row.control)->setText(row.descriptor.actionLabelValue(draft));
             }
-            if (row.descriptor.value) {
-                row.frame->findChild<QLabel *>(QStringLiteral("rowTitle"))
-                    ->setText(row.descriptor.value(draft).toString());
+            if (row.descriptor.value && row.title) {
+                row.title->setText(row.descriptor.value(draft).toString());
+                row.title->setVisible(!row.title->text().isEmpty());
             }
         }
-        if (row.descriptor.helpValue && row.description) {
-            const QString description = row.descriptor.helpValue(draft);
-            if (auto *label = qobject_cast<QLabel *>(row.description)) {
-                label->setText(description);
-            } else if (auto *checkBox = qobject_cast<QCheckBox *>(row.description)) {
-                checkBox->setText(description);
-            }
+        if (row.descriptor.labelValue && row.title) {
+            row.title->setText(row.descriptor.labelValue(draft));
+            row.control->setAccessibleName(row.title->text());
+        }
+        const bool live = !row.descriptor.enabled || row.descriptor.enabled(draft, m_capabilities);
+        const QString reason = live ? QString()
+            : row.descriptor.disabledHelpValue ? row.descriptor.disabledHelpValue(draft, m_capabilities)
+                                               : row.descriptor.disabledHelp;
+        if (row.description && (row.descriptor.helpValue || row.explainsGate)) {
+            const QString description = !live && row.explainsGate ? reason
+                : row.descriptor.helpValue                       ? row.descriptor.helpValue(draft)
+                                                                 : row.descriptor.help;
+            row.description->setText(description);
+            row.description->setVisible(!description.isEmpty());
+            row.control->setAccessibleDescription(description);
         }
         if (row.descriptor.enabled) {
-            const bool live = row.descriptor.enabled(draft, m_capabilities);
-            QWidget *gated = row.group ? row.group : row.frame;
-            QWidget *hinted = row.group ? row.group : row.control;
-            gated->setEnabled(live);
-            hinted->setToolTip(live ? row.descriptor.tooltip : row.descriptor.disabledHelp);
-            if (row.gateNote) {
-                row.gateNote->setVisible(!live && shown[index]);
+            // The description stays enabled, so its grey is not dimmed twice.
+            if (row.setEditable) {
+                row.setEditable(live);
+            } else {
+                row.control->setEnabled(live);
+                if (row.title) {
+                    row.title->setEnabled(live);
+                }
+            }
+            row.control->setToolTip(live ? row.descriptor.tooltip : reason);
+            if (!live && shown[index] && !row.descriptor.disabledAction.isEmpty()
+                && !noticeText.contains(row.descriptor.disabledAction)) {
+                noticeText.insert(row.descriptor.disabledAction, reason);
             }
         }
+    }
+    for (const GateNotice &notice : std::as_const(m_gateNotices)) {
+        const QString text = noticeText.value(notice.action);
+        notice.message->setText(text);
+        notice.holder->setVisible(!text.isEmpty());
     }
 
     // Section chrome depends on every row's visibility above, so update it

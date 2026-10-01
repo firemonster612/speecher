@@ -87,6 +87,9 @@ public:
     // Keeps the settings a choice column's options come from, and re-derives
     // the badges beside each record for them.
     void refresh(const AppSettings &settings);
+    // A collection whose gate is closed keeps its records readable and stops
+    // taking edits.
+    void setEditable(bool editable);
 
 private:
     void showRecords(const QList<QVariantMap> &records);
@@ -105,6 +108,8 @@ private:
     QLabel *m_empty = nullptr;
     QHash<QString, QPushButton *> m_actions;
     int m_lockedCount;
+    bool m_editable = true;
+    QPushButton *m_import = nullptr;
     // What Delete took and its index among the editable records, newest last,
     // so undo can put it back in its place.
     QList<QPair<qsizetype, QVariantMap>> m_deleted;
@@ -195,10 +200,10 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
 
     auto *buttons = new QHBoxLayout;
     if (m_collection.supportsImport.parse) {
-        auto *import = new QPushButton(m_collection.supportsImport.actionLabel, this);
-        import->setObjectName(buttonObjectName(QStringLiteral("import"), descriptor.id));
-        connect(import, &QPushButton::clicked, this, [this] { importRecords(); });
-        buttons->addWidget(import);
+        m_import = new QPushButton(m_collection.supportsImport.actionLabel, this);
+        m_import->setObjectName(buttonObjectName(QStringLiteral("import"), descriptor.id));
+        connect(m_import, &QPushButton::clicked, this, [this] { importRecords(); });
+        buttons->addWidget(m_import);
     }
     buttons->addStretch();
     for (const RowOption &action : m_collection.actions) {
@@ -304,7 +309,14 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
         const QVariant value = record.value(column.id);
         const QString tooltip =
             column.recordTooltip ? column.recordTooltip(record) : column.tooltip;
-        if (locked || column.kind == ColumnKind::ReadOnly) {
+        if (column.kind == ColumnKind::Toggle && !locked && !m_editable) {
+            auto *item = new QTableWidgetItem;
+            item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+            item->setCheckState(value.toBool() ? Qt::Checked : Qt::Unchecked);
+            m_table->setItem(row, index, item);
+            continue;
+        }
+        if (locked || !m_editable || column.kind == ColumnKind::ReadOnly) {
             QTableWidgetItem *item = readOnlyItem(column.kind == ColumnKind::Choice
                                                       ? optionLabel(column, value.toString(), m_settings)
                                                       : value.toString());
@@ -410,6 +422,17 @@ void CollectionEditor::refresh(const AppSettings &settings)
     }
 }
 
+void CollectionEditor::setEditable(bool editable)
+{
+    if (m_editable == editable) {
+        return;
+    }
+    // Read before the flag flips: records() reads the cells as they are.
+    const QList<QVariantMap> shown = lockedRecords() + records();
+    m_editable = editable;
+    showRecords(shown);
+}
+
 QList<QVariantMap> CollectionEditor::lockedRecords() const
 {
     QList<QVariantMap> locked;
@@ -438,12 +461,18 @@ void CollectionEditor::updateButtons()
     if (m_empty) {
         m_empty->setVisible(m_table->rowCount() == 0);
     }
-    m_delete->setEnabled(!selectedEditableRows().isEmpty());
+    m_delete->setEnabled(m_editable && !selectedEditableRows().isEmpty());
+    if (m_add) {
+        m_add->setEnabled(m_editable);
+    }
+    if (m_import) {
+        m_import->setEnabled(m_editable);
+    }
     if (QPushButton *undoDelete = m_actions.value(QStringLiteral("undoDelete"))) {
-        undoDelete->setEnabled(!m_deleted.isEmpty());
+        undoDelete->setVisible(m_editable && !m_deleted.isEmpty());
     }
     if (QPushButton *undoLatestLearn = m_actions.value(QStringLiteral("undoLatestLearn"))) {
-        undoLatestLearn->setEnabled(m_table->rowCount() > m_lockedCount);
+        undoLatestLearn->setEnabled(m_editable && m_table->rowCount() > m_lockedCount);
     }
 }
 
@@ -499,6 +528,7 @@ SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
         true,
         nullptr,
         [editor](const AppSettings &settings) { editor->refresh(settings); },
+        [editor](bool editable) { editor->setEditable(editable); },
     };
 }
 

@@ -145,7 +145,6 @@ SchemaCustomRow OutputCustomRows::makeVirtualKeyboardRow(QWidget *parent,
     m_status = new WrappedStatusLabel(control);
     m_status->setObjectName(QStringLiteral("statusText"));
     m_status->setWordWrap(true);
-    m_status->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_status->setForegroundRole(QPalette::WindowText);
     m_status->setAttribute(Qt::WA_StyledBackground, false);
 
@@ -161,7 +160,6 @@ SchemaCustomRow OutputCustomRows::makeVirtualKeyboardRow(QWidget *parent,
         button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
         buttons->addWidget(button);
     }
-    layout->addWidget(m_status);
     layout->addLayout(buttons);
 
 #ifdef SPEECHER_WITH_YDOTOOL
@@ -183,7 +181,9 @@ SchemaCustomRow OutputCustomRows::makeVirtualKeyboardRow(QWidget *parent,
     QObject::connect(m_remove, &QPushButton::clicked, control, [this] { removeSetup(); });
 #endif
     updateButtons();
-    return {control, {}, {}};
+    SchemaCustomRow row{control, {}, {}};
+    row.detail = m_status;
+    return row;
 }
 
 #ifdef SPEECHER_WITH_YDOTOOL

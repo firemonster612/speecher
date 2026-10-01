@@ -70,6 +70,8 @@ private:
     // Keeps the replacements list where it was while its rows are rebuilt.
     void preserveScroll(QScrollArea *scroll);
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);
+    // Asks the system for its microphones again, for the Input device row.
+    void refreshMicrophones();
     void applyCapabilities();
     Capabilities capabilities() const;
     void runPageAction(const QString &rowId);
@@ -81,6 +83,8 @@ private:
     ApplicationController *m_controller;
     bool m_settingsDeletionStarted = false;
     bool m_targetAccessibility = false;
+    // Assumed until the device list, read once the window has painted, is empty.
+    bool m_audioInput = true;
     SettingsSchema m_schema;
     AppSettings m_draft;
     AppSettings m_loaded;
