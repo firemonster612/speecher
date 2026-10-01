@@ -1083,6 +1083,25 @@ private slots:
         QCOMPARE(applied.vocabulary.size(), 2);
     }
 
+    void returnOnARecordOpensItsDialog()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
+        AppSettings settings;
+        settings.vocabulary = {{QStringLiteral("Speecher")}};
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
+        QVERIFY(table);
+        table->setCurrentCell(0, 1);
+        QTest::keyClick(table, Qt::Key_Return);
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Speecher"));
+    }
+
     void aToneIsAddedAndEditedInItsDialog()
     {
         ProviderRegistry providers;
@@ -1099,7 +1118,7 @@ private slots:
         const int builtIns = table->rowCount();
 
         // A built-in tone is nobody's to edit.
-        emit table->cellDoubleClicked(0, 0);
+        emit table->cellActivated(0, 0);
         QVERIFY(!shownRecordDialog(*page));
 
         add->click();
@@ -1120,7 +1139,7 @@ private slots:
         QVERIFY(!dialog->isVisible());
         QCOMPARE(table->rowCount(), builtIns + 1);
 
-        emit table->cellDoubleClicked(builtIns, 1);
+        emit table->cellActivated(builtIns, 1);
         dialog = shownRecordDialog(*page);
         QVERIFY(dialog);
         QCOMPARE(dialog->windowTitle(), QStringLiteral("Terse"));

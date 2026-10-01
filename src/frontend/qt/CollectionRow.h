@@ -9,9 +9,10 @@ class QTableWidget;
 namespace speecher {
 
 // The editor every Collection row renders as: a table built from the described
-// columns, with Delete and Add beneath it. Add and a double-click open the
-// record dialog; toggles and choices also edit in place. One of these replaces each of the
-// hand-built collection editors the settings pages used to carry.
+// columns, with Delete and Add beneath it. Add and activating a row (a
+// double-click, Return or F2) open the record dialog; toggles and choices also
+// edit in place. One of these replaces each of the hand-built collection
+// editors the settings pages used to carry.
 SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
                                   QWidget *parent,
                                   std::function<void()> notifyChanged);

@@ -19,6 +19,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
@@ -238,10 +239,18 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
 
     connect(m_table, &QTableWidget::itemChanged, this, [this] { m_notifyChanged(); });
     connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] { updateButtons(); });
-    connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int column) {
-        // A double-click on a toggle is two clicks on its box.
+    // Return, Enter and a double-click activate a row, or a single click where
+    // the style activates on one. A toggle's cell is its box instead.
+    connect(m_table, &QTableWidget::cellActivated, this, [this](int row, int column) {
         if (m_collection.columns.at(column).kind != ColumnKind::Toggle) {
             editRecord(row);
+        }
+    });
+    auto *editShortcut = new QShortcut(QKeySequence(Qt::Key_F2), m_table);
+    editShortcut->setContext(Qt::WidgetShortcut);
+    connect(editShortcut, &QShortcut::activated, this, [this] {
+        if (m_table->currentRow() >= 0) {
+            editRecord(m_table->currentRow());
         }
     });
     if (m_add) {
