@@ -1092,6 +1092,18 @@ private slots:
         QVERIFY(!listed(&page));
     }
 
+    void transcribeModelRowOpensRefinement()
+    {
+        ApplicationController controller(true);
+        TranscribePage page(&controller);
+        auto *model = page.findChild<QPushButton *>(QStringLiteral("transcribeRefinerModel"));
+        QVERIFY(model);
+        QSignalSpy requested(&page, &TranscribePage::pageRequested);
+        model->click();
+        QCOMPARE(requested.count(), 1);
+        QCOMPARE(requested.first().first().toString(), QStringLiteral("refinement"));
+    }
+
     // Going back to setup while a retry runs, then starting the next batch:
     // the retry stops, the batch starts, and its results are the new file's.
     // A start refused while something runs changes nothing.

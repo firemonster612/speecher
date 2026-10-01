@@ -164,6 +164,13 @@ TranscribeWindow *QtFrontEnd::transcribeWindow()
 {
     if (!m_transcribeWindow) {
         m_transcribeWindow = new TranscribeWindow(m_controller);
+        // The compact window has no settings of its own; they open in the
+        // main window.
+        connect(m_transcribeWindow->page(), &TranscribePage::pageRequested, this,
+                [this](const QString &pageId) {
+                    showMainWindow();
+                    m_appWindow->showPage(pageId);
+                });
         watchForFirstFrame(m_transcribeWindow);
     }
     return m_transcribeWindow;

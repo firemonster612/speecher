@@ -29,6 +29,7 @@
 #include <QMimeData>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QSaveFile>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -39,9 +40,6 @@
 
 namespace speecher {
 namespace {
-
-// The cleanup level a Cleanup button stands for.
-constexpr char kLevelIdProperty[] = "cleanupLevelId";
 
 QIcon themedIcon(const QString &name, const QString &fallback)
 {
@@ -300,33 +298,34 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
                                            transcribeText(TranscribeText::RefinerHelp),
                                            m_refiner, refineCard),
                          refineCard);
-    m_refinerModel = new QLabel(refineCard);
-    m_refinerModelRow = settings::makeRow(transcribeText(TranscribeText::RefinerModel),
-                                          refinementModelHint(),
-                                          m_refinerModel, refineCard);
+    // The model is set in Refinement settings, so the row opens them, with
+    // the model it will use as its value.
+    m_refinerModelRow = settings::makeButtonRow(transcribeText(TranscribeText::RefinerModel),
+                                                QStringLiteral(" "), refineCard);
+    m_refinerModelRow->setObjectName(QStringLiteral("transcribeRefinerModel"));
+    m_refinerModelRow->setToolTip(refinementModelHint());
     settings::addCardRow(refineForm, m_refinerModelRow, refineCard);
+    connect(m_refinerModelRow, &QPushButton::clicked, this,
+            [this] { emit pageRequested(QStringLiteral("refinement")); });
 
-    m_cleanupButtons = new QWidget(refineCard);
-    auto *cleanupLayout = new QHBoxLayout(m_cleanupButtons);
-    cleanupLayout->setContentsMargins(0, 0, 0, 0);
-    cleanupLayout->setSpacing(0);
-    m_cleanup = new QButtonGroup(this);
-    QFrame *cleanupRow = settings::makeRow(transcribeText(TranscribeText::Cleanup),
-                                           transcribeText(TranscribeText::CleanupHelp),
-                                           m_cleanupButtons, refineCard);
-    settings::addCardRow(refineForm, cleanupRow, refineCard);
-
+    // The profile comes first: it sets the cleanup level and tone below it.
     m_profile = new QComboBox(refineCard);
     QFrame *profileRow = settings::makeRow(transcribeText(TranscribeText::WritingProfile),
                                            transcribeText(TranscribeText::WritingProfileHelp),
                                            m_profile, refineCard);
     settings::addCardRow(refineForm, profileRow, refineCard);
+    m_cleanup = new QComboBox(refineCard);
+    m_cleanup->setObjectName(QStringLiteral("transcribeCleanup"));
+    QFrame *cleanupRow = settings::makeRow(transcribeText(TranscribeText::Cleanup),
+                                           transcribeText(TranscribeText::CleanupHelp),
+                                           m_cleanup, refineCard);
+    settings::addCardRow(refineForm, cleanupRow, refineCard);
     m_tone = new QComboBox(refineCard);
     QFrame *toneRow = settings::makeRow(transcribeText(TranscribeText::Tone),
                                         transcribeText(TranscribeText::ToneHelp),
                                         m_tone, refineCard);
     settings::addCardRow(refineForm, toneRow, refineCard);
-    m_refinementDependents = {cleanupRow, profileRow, toneRow};
+    m_refinementDependents = {profileRow, cleanupRow, toneRow};
     connect(m_refiner, &QComboBox::currentIndexChanged, this, &TranscribePage::refreshRefinementRows);
     connect(m_profile, &QComboBox::currentIndexChanged, this, &TranscribePage::applyWritingProfile);
 
@@ -379,6 +378,11 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     m_start->setMinimumWidth(160);
     connect(m_start, &QPushButton::clicked, this, &TranscribePage::startBatch);
     addCentered(setup, m_start);
+    // Why the button is disabled, right under it.
+    m_noFiles = dimLabel(transcribeText(TranscribeText::NoFilesYet), m_setup);
+    m_noFiles->setObjectName(QStringLiteral("transcribeNoFiles"));
+    setup->addSpacing(settings::smallSpacing());
+    setup->addWidget(m_noFiles, 0, Qt::AlignHCenter);
     column->addWidget(m_setup);
 
     // ---- Processing ----
@@ -442,11 +446,10 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     auto *variantLayout = new QHBoxLayout(m_variants);
     variantLayout->setContentsMargins(0, 0, 0, 0);
     variantLayout->setSpacing(0);
+    variantLayout->setSpacing(settings::largeSpacing());
     auto *variants = new QButtonGroup(this);
     for (const QString &label : {transcribeText(TranscribeText::Refined), transcribeText(TranscribeText::Raw)}) {
-        auto *button = new QToolButton(m_variants);
-        button->setText(label);
-        button->setCheckable(true);
+        auto *button = new QRadioButton(label, m_variants);
         variants->addButton(button);
         variantLayout->addWidget(button);
     }
@@ -522,6 +525,7 @@ void TranscribePage::dragEnterEvent(QDragEnterEvent *event)
 {
     if (m_setup->isVisible() && event->mimeData()->hasUrls()) {
         event->acceptProposedAction();
+        showDropTarget(true);
     }
 }
 
@@ -535,14 +539,30 @@ void TranscribePage::dropEvent(QDropEvent *event)
     }
     addFiles(paths);
     event->acceptProposedAction();
+    showDropTarget(false);
 }
 
+void TranscribePage::dragLeaveEvent(QDragLeaveEvent *event)
+{
+    QWidget::dragLeaveEvent(event);
+    showDropTarget(false);
+}
+
+// While files are dragged over the page, the file chooser says a drop adds
+// them; the style draws no drop highlight for a whole card.
+void TranscribePage::showDropTarget(bool dragging)
+{
+    auto *choose = m_filesCard->findChild<QPushButton *>(QStringLiteral("transcribeChooseFiles"));
+    settings::setButtonRowCaption(choose, dragging ? transcribeText(TranscribeText::DropToAdd)
+                                                   : chooseFilesCaption(!m_model->files().isEmpty()));
+}
+
+// Options chosen here survive leaving the page, say to change the model in
+// Refinement settings; only the model row follows the settings.
 void TranscribePage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
-    if (m_setup->isVisible()) {
-        seedOptionsFromSettings();
-    }
+    refreshRefinementRows();
 }
 
 void TranscribePage::showStep()
@@ -625,17 +645,9 @@ void TranscribePage::seedOptionsFromSettings()
 
 void TranscribePage::showChoices(const AppSettings &settings)
 {
-    for (QAbstractButton *button : m_cleanup->buttons()) {
-        m_cleanup->removeButton(button);
-        delete button;
-    }
+    m_cleanup->clear();
     for (const RowOption &level : cleanupStrengths(settings.refinement.customCleanupLevels)) {
-        auto *button = new QToolButton(m_cleanupButtons);
-        button->setText(level.label);
-        button->setProperty(kLevelIdProperty, level.id);
-        button->setCheckable(true);
-        m_cleanup->addButton(button);
-        m_cleanupButtons->layout()->addWidget(button);
+        m_cleanup->addItem(level.label, level.id);
     }
     {
         const QSignalBlocker blocker(m_profile);
@@ -658,12 +670,8 @@ void TranscribePage::applyWritingProfile()
     const WritingProfileSettings profile = writingProfileSettingsFor(
         refinement.writingProfiles, writingProfileFromName(m_profile->currentData().toString()));
     // A stored strength this build does not know falls back to the middle one.
-    const QString level = offeredCleanupLevel(profile.cleanupStrength, refinement.customCleanupLevels);
-    for (QAbstractButton *button : m_cleanup->buttons()) {
-        if (button->property(kLevelIdProperty).toString() == level) {
-            button->setChecked(true);
-        }
-    }
+    settings::selectData(m_cleanup,
+                         offeredCleanupLevel(profile.cleanupStrength, refinement.customCleanupLevels));
     settings::selectData(m_tone, profile.tone);
 }
 
@@ -671,7 +679,7 @@ void TranscribePage::refreshRefinementRows()
 {
     const QString provider = m_refiner->currentData().toString();
     const QString model = refinementModel(provider, m_controller->settings()->snapshot().refinement);
-    m_refinerModel->setText(model);
+    m_refinerModelRow->findChild<QLabel *>(QStringLiteral("rowDescription"))->setText(model);
     setCardRowVisible(m_refinerModelRow, !model.isEmpty());
     for (QWidget *row : std::as_const(m_refinementDependents)) {
         row->setEnabled(provider != QStringLiteral("none"));
@@ -716,6 +724,7 @@ void TranscribePage::refreshFileList()
     settings::setButtonRowCaption(choose, chooseFilesCaption(!files.isEmpty()));
     choose->findChild<QLabel *>(QStringLiteral("rowDescription"))->setVisible(files.isEmpty());
     m_start->setEnabled(!files.isEmpty());
+    m_noFiles->setVisible(files.isEmpty());
     m_start->setText(startCaption(int(files.size())));
     settings::applyLabelHierarchy(m_filesCard);
 }
@@ -726,9 +735,8 @@ TranscribeOptions TranscribePage::options() const
     options.speechProviderId = m_speech->currentData().toString();
     options.applyVocabulary = m_vocabulary->isChecked();
     options.refinementProviderId = m_refiner->currentData().toString();
-    options.cleanupStrength = m_cleanup->checkedButton()
-        ? m_cleanup->checkedButton()->property(kLevelIdProperty).toString()
-        : QStringLiteral("none");
+    options.cleanupStrength = m_cleanup->currentIndex() >= 0 ? m_cleanup->currentData().toString()
+                                                            : QStringLiteral("none");
     options.tone = m_tone->currentData().toString();
     options.writingProfile = m_profile->currentData().toString();
     options.destination = TranscriptDestination(m_destination->currentData().toInt());
