@@ -69,7 +69,7 @@ QByteArray readNativeCredential(const QByteArray &service, const QByteArray &acc
     process.write(command);
     process.closeWriteChannel();
     if (!finishKeychainTool(process,
-                            QStringLiteral("Speecher can't read the saved login. Unlock your Keychain, then check again."),
+                            QStringLiteral("Speecher can't read the saved login. Unlock your Keychain or sign in again."),
                             error)) return {};
     QByteArray bytes = process.readAllStandardOutput();
     if (bytes.endsWith('\n')) bytes.chop(1);
