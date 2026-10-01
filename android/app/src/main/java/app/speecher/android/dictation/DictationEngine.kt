@@ -230,7 +230,7 @@ class DictationEngine(
         } catch (_: SecurityException) {
             fail(current, FailureReason.MicrophoneDenied, "Grant microphone permission in Speecher")
         } catch (_: Exception) {
-            fail(current, FailureReason.Provider, "Microphone unavailable")
+            fail(current, FailureReason.MicrophoneUnavailable, "Microphone unavailable")
         }
     }
 

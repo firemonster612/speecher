@@ -538,6 +538,31 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `a microphone that cannot start fails as unavailable, not as the provider`() {
+        val engine =
+            DictationEngine(
+                { _, _ -> error("Microphone unavailable") },
+                {},
+                { _, _ -> Client() },
+                { _, raw, _ -> raw },
+                null,
+                { true },
+                Executor { it.run() },
+                {},
+            )
+        engine.start(Provider.Claude)
+        assertEquals(
+            DictationState.Failed(
+                FailureReason.MicrophoneUnavailable,
+                "Microphone unavailable",
+                "",
+                Provider.Claude,
+            ),
+            engine.state,
+        )
+    }
+
+    @Test
     fun `refined insert uses cleanup result once and failures stay in panel state`() {
         val capture = Capture()
         val commits = mutableListOf<String>()

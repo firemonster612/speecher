@@ -76,6 +76,9 @@ enum class FailureReason {
     /** Recovery: open the app to grant the microphone. */
     MicrophoneDenied,
 
+    /** Another app may hold the microphone. Recovery: retry. */
+    MicrophoneUnavailable,
+
     /** Recovery: open the app to sign in again. */
     SignedOut,
 

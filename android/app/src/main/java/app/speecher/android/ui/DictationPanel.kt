@@ -372,6 +372,7 @@ private val DictationState.Failed.title: String
         else
             when (reason) {
                 FailureReason.MicrophoneDenied -> "Speecher can't use the microphone"
+                FailureReason.MicrophoneUnavailable -> "Microphone unavailable"
                 FailureReason.SignedOut -> "You're signed out"
                 FailureReason.Network -> "No connection"
                 FailureReason.Provider -> "Transcription failed"
@@ -384,6 +385,8 @@ private val DictationState.Failed.advice: String
         return when {
             commitFailed -> "Tap Retry to insert it again."
             reason == FailureReason.MicrophoneDenied -> "Open Speecher and allow the microphone."
+            reason == FailureReason.MicrophoneUnavailable ->
+                "Another app may be using it. Try again when it's free."
             reason == FailureReason.SignedOut ->
                 "Sign in to ${name ?: "your account"} to keep dictating."
             reason == FailureReason.Network -> "Check your network and try again."
@@ -396,6 +399,7 @@ private val FailureReason.recovery: String
         when (this) {
             FailureReason.MicrophoneDenied -> "Open Speecher"
             FailureReason.SignedOut -> "Sign in"
+            FailureReason.MicrophoneUnavailable,
             FailureReason.Network,
             FailureReason.Provider -> "Retry"
         }
