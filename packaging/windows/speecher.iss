@@ -97,20 +97,27 @@ Filename: "{app}\speecher.exe"; Description: "Launch Speecher"; Flags: nowait po
 Filename: "{app}\speecher.exe"; Parameters: "{code:RestartArguments}"; Flags: nowait skipifnotsilent; Check: ShouldLaunchSpeecher
 
 [Code]
+var
+  Wmi: Variant;
+
 // Whether speecher.exe from this install folder is running. WMI rather than
-// a marker the app sets, so it also finds releases older than any marker.
+// a marker the app sets, so it also finds releases older than any marker. If
+// WMI is unavailable this answers no, which is how Setup behaved before.
 function SpeecherRunning(): Boolean;
 var
   Path: String;
-  Locator, Service, Processes: Variant;
+  Locator, Processes: Variant;
 begin
   Path := ExpandConstant('{app}\speecher.exe');
   StringChangeEx(Path, '\', '\\', True);
   StringChangeEx(Path, '''', '\''', True);
   try
-    Locator := CreateOleObject('WbemScripting.SWbemLocator');
-    Service := Locator.ConnectServer('.', 'root\CIMV2');
-    Processes := Service.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE ExecutablePath = ''' + Path + '''');
+    if VarIsEmpty(Wmi) then
+    begin
+      Locator := CreateOleObject('WbemScripting.SWbemLocator');
+      Wmi := Locator.ConnectServer('.', 'root\CIMV2');
+    end;
+    Processes := Wmi.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE ExecutablePath = ''' + Path + '''');
     Result := Processes.Count > 0;
   except
     Result := False;
@@ -133,9 +140,11 @@ begin
   Result := not SpeecherRunning();
 end;
 
-// Releases before the tray window answered Restart Manager ignore its close
-// request, so Setup would wait on them and then fail. Ask over IPC first;
-// anything still running falls through to Restart Manager as before.
+// Quit a running Speecher before Setup's files-in-use check. Releases before
+// the tray window answered Restart Manager ignore its close request, so Setup
+// would wait on them and then fail. This quits Speecher whatever is chosen on
+// the Preparing page: leaving it running only ever ended in a half-replaced
+// install. Anything still running falls through to Restart Manager.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   if SpeecherRunning() then

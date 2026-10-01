@@ -120,8 +120,8 @@ try {
     $App.WaitForExit()
 
     # Restart Manager closing the running app without forcing, the way Setup
-    # does when it replaces files in use. Run windowless, as at login, so the
-    # request reaches only the tray window.
+    # does when it replaces files in use. Only the tray window answers it;
+    # before it did, Speecher stayed running here even with a window open.
     Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
