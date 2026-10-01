@@ -63,7 +63,8 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf(emptyStatus())
     private var settings by mutableStateOf(SpeecherSettings())
     private var update by mutableStateOf<ApkUpdate?>(null)
-    private var updateError by mutableStateOf<String?>(null)
+    private var updating by mutableStateOf(false)
+    private var updateFailed by mutableStateOf(false)
     private var page by mutableStateOf(Page.Home)
     // The page open from the Settings list, or null for the list itself.
     private var settingsPage by mutableStateOf<SettingsPage?>(null)
@@ -112,9 +113,12 @@ class MainActivity : ComponentActivity() {
                                 settings,
                                 { page = Page.Setup },
                                 { page = Page.Settings },
+                                ::signInFromSettings,
+                                ::openAccessibilitySettings,
                                 update = update,
+                                updating = updating,
+                                updateFailed = updateFailed,
                                 onUpdate = ::installUpdate,
-                                updateError = updateError,
                             )
                         }
                     Page.Setup ->
@@ -124,7 +128,7 @@ class MainActivity : ComponentActivity() {
                                 { signInSteps = it },
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
-                                { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                                ::openAccessibilitySettings,
                                 {
                                     startActivity(
                                         Intent(
@@ -149,6 +153,7 @@ class MainActivity : ComponentActivity() {
                                     { settingsPage = it },
                                     { signInSteps = it },
                                     ::signOut,
+                                    sessionEnded = status.sessionEnded,
                                     signingIn = signIn.activeProvider,
                                     signInError = signIn.error,
                                     onPasteCode = signIn::paste,
@@ -274,18 +279,26 @@ class MainActivity : ComponentActivity() {
 
     private fun installUpdate() {
         val release = update ?: return
+        updateFailed = false
+        updating = true
         lifecycleScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { installApk(this@MainActivity, sharedHttp, release) }
             }
-                .onFailure { updateError = "Could not install update: ${it.message}" }
+                .onFailure { updateFailed = true }
+            updating = false
         }
+    }
+
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun refresh() {
         status =
             SetupStatus(
                 signedIn = tokens.signedIn(),
+                sessionEnded = tokens.sessionEnded(),
                 microphoneGranted = granted(Manifest.permission.RECORD_AUDIO),
                 keyboardEnabled = keyboardEnabled(),
                 chipEnabled = chipEnabled(),

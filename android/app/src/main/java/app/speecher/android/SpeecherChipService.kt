@@ -20,9 +20,11 @@ import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationEngine
 import app.speecher.android.dictation.DictationState
+import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.createDictationEngine
+import app.speecher.android.dictation.oauth
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.screenCapture
 import app.speecher.android.dictation.screenshotJpeg
@@ -323,6 +325,7 @@ class SpeecherChipService : AccessibilityService() {
     /** The mic starts on the tap, before the keyboard swap lands, to cover the swap gap. */
     private fun startDictation(): DictationEngine {
         val settings = SettingsStore(this).load()
+        val tokens = TokenStore(this)
         ActiveDictation.settings = settings
         ActiveDictation.state = DictationState.Listening()
         ActiveDictation.end()
@@ -333,13 +336,16 @@ class SpeecherChipService : AccessibilityService() {
                 settings,
                 { ActiveDictation.connection },
                 { state ->
+                    if (state is DictationState.Failed && state.reason == FailureReason.SignedOut) {
+                        state.provider?.let { tokens.endSession(it.oauth) }
+                    }
                     ActiveDictation.state = state
                     ActiveDictation.observe?.invoke(state)
                 },
                 { ActiveDictation.onInserted?.invoke() },
             )
         ActiveDictation.engine = engine
-        val signedIn = TokenStore(this).signedIn()
+        val signedIn = tokens.signedIn()
         engine.start(resolveSignedIn(settings.transcriptionProvider, signedIn))
         return engine
     }

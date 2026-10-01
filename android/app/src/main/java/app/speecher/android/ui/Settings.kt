@@ -82,6 +82,7 @@ fun Settings(
     onSignIn: (Provider) -> Unit,
     onSignOut: (Provider) -> Unit,
     modifier: Modifier = Modifier,
+    sessionEnded: Set<Provider> = emptySet(),
     signingIn: Provider? = null,
     signInError: String? = null,
     onPasteCode: (String) -> Unit = {},
@@ -102,14 +103,23 @@ fun Settings(
         }
         providerOrder.forEach { provider ->
             val isSignedIn = provider in signedIn
+            val ended = isSignedIn && provider in sessionEnded
             ListItem(
                 headlineContent = { Text(provider.label) },
-                supportingContent = { Text(if (isSignedIn) "Signed in" else "Signed out") },
+                supportingContent = {
+                    Text(
+                        when {
+                            ended -> "Session ended"
+                            isSignedIn -> "Signed in"
+                            else -> "Signed out"
+                        }
+                    )
+                },
                 trailingContent = {
-                    if (isSignedIn) {
-                        TextButton({ onSignOut(provider) }) { Text("Sign out") }
-                    } else {
-                        TextButton({ onSignIn(provider) }) { Text("Sign in") }
+                    when {
+                        ended -> TextButton({ onSignIn(provider) }) { Text("Sign in again") }
+                        isSignedIn -> TextButton({ onSignOut(provider) }) { Text("Sign out") }
+                        else -> TextButton({ onSignIn(provider) }) { Text("Sign in") }
                     }
                 },
                 colors = rowColors(),

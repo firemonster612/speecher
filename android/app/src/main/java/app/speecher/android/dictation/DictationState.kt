@@ -310,12 +310,16 @@ fun SpeecherSettings.profileDeletionNotice(profile: WritingProfile): String {
         .joinToString(" ")
 }
 
-/** What the setup checklist needs to know. Each flag is one step. */
+/**
+ * What the setup checklist needs to know. Each flag is one step. [sessionEnded] holds the signed-in
+ * providers whose sign-in was rejected during a dictation; they still count as signed in here.
+ */
 data class SetupStatus(
     val signedIn: Set<Provider>,
     val microphoneGranted: Boolean,
     val keyboardEnabled: Boolean,
     val chipEnabled: Boolean,
+    val sessionEnded: Set<Provider> = emptySet(),
 ) {
     val complete: Boolean
         get() = signedIn.isNotEmpty() && microphoneGranted && keyboardEnabled && chipEnabled
