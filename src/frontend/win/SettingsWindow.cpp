@@ -814,8 +814,15 @@ struct SettingsWindow::Native {
         if (!request.isEmpty()) {
             showPage(request);
         }
-        // Let composition catch up with the pane switch before printing.
+        // Let composition catch up with the pane switch before printing: the
+        // new page's first layout, which a busy first launch can hold back,
+        // then a moment for its frame.
         QEventLoop settle;
+        const auto page = pageHost.Child().try_as<FrameworkElement>();
+        for (int waited = 0; page && !page.IsLoaded() && waited < 2000; waited += 50) {
+            QTimer::singleShot(50, &settle, &QEventLoop::quit);
+            settle.exec();
+        }
         QTimer::singleShot(250, &settle, &QEventLoop::quit);
         settle.exec();
         // SPEECHER_GRAB_SCROLL=bottom shows the end of the page, as on the
