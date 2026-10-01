@@ -1279,17 +1279,6 @@ bool offers(const QList<RowOption> &options, const QString &id)
                        [&id](const RowOption &option) { return option.id == id; });
 }
 
-bool customSystemPromptOff(const AppSettings &settings, const Capabilities &)
-{
-    return !settings.refinement.customSystemPromptEnabled;
-}
-
-QString customSystemPromptReplacesLevels()
-{
-    // ui-lint: allow avoid-term (the setting that replaces the system prompt)
-    return QStringLiteral("The custom system prompt replaces cleanup levels.");
-}
-
 // What a custom tone or level record holds besides its columns.
 const QString kChoiceIdKey = QStringLiteral("id");
 const QString kChoiceNameColumn = QStringLiteral("name");
@@ -1505,7 +1494,6 @@ SettingsRow customCleanupLevelsRow()
         std::move(levels));
     row.tooltip = QStringLiteral("Custom only keeps just the rules every level shares, such as keeping "
                                  "facts and returning only the text.");
-    addGate(row, customSystemPromptOff, customSystemPromptReplacesLevels());
     gateOnRefinementProvider(row);
     return row;
 }
@@ -1627,8 +1615,9 @@ SettingsPage writingProfilesPage(const SchemaContext &context)
         QStringLiteral("customSystemPromptEnabled"),
         // ui-lint: allow avoid-term (the setting that replaces the system prompt)
         QStringLiteral("Use a custom system prompt"),
-        QStringLiteral("Replaces the built-in rules and cleanup levels with your prompt. Each "
-                       "profile's tone and instructions are still added."),
+        QStringLiteral("Replaces the built-in rules with your prompt. Each profile's tone and "
+                       "instructions still apply, and so do the instructions of a Cleanup Level "
+                       "you added. A profile set to None is not refined."),
         [](const AppSettings &settings) { return settings.refinement.customSystemPromptEnabled; },
         [](AppSettings &settings, bool value) { settings.refinement.customSystemPromptEnabled = value; });
     gateOnRefinementProvider(customPromptEnabled);
@@ -3443,9 +3432,6 @@ CollectionDescriptor writingProfileGrid()
         {kInstructionsColumn, QStringLiteral("Instructions"), ColumnKind::Text, {}, true},
     };
     grid.columns.last().multiline = true;
-    CollectionColumn &cleanup = grid.columns[1];
-    cleanup.enabled = [](const AppSettings &settings) { return customSystemPromptOff(settings, {}); };
-    cleanup.disabledHelp = customSystemPromptReplacesLevels();
     // The built-ins always exist, so the stored list only says what each of
     // them was set to; the custom profiles follow in stored order.
     grid.records = [=](const AppSettings &settings) {
