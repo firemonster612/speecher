@@ -394,6 +394,9 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
                 } else {
                     m_accessibilityNotice->setState(supported, enabled, persistent);
                 }
+                // The learned corrections card says whether accessibility
+                // holds learning back.
+                refresh();
             });
     if (controller->accessibilitySupported()) {
         m_accessibilityNotice->setState(true,
