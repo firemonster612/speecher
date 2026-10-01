@@ -165,6 +165,7 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     connect(m_pages, &SettingsPageSet::localModelsRequested, this,
             [this] { showPage(QStringLiteral("localModels")); });
     connect(m_home, &HomePage::pageRequested, this, &AppWindow::showPage);
+    connect(m_transcribe, &TranscribePage::pageRequested, this, &AppWindow::showPage);
     connect(m_controller->updateBanner(),
             &UpdateBanner::changed,
             this,
