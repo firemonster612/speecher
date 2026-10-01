@@ -5,6 +5,7 @@
 #include "app/PlatformComposition.h"
 #include "app/SetupSteps.h"
 #include "core/AppSettings.h"
+#include "core/CliToolDiscovery.h"
 #include "core/EndpointSettings.h"
 #include "core/OutputFormat.h"
 #include "core/SettingsStore.h"
@@ -628,10 +629,15 @@ struct SetupWindow::Native {
     {
         const QString id = setupSteps().at(index).id;
         if (id == QStringLiteral("welcome")) {
-            // Running on this computer was chosen, or at least one provider
-            // sign-in is on this machine, or a usable CLI Proxy API account
-            // the Transcription step can opt into.
-            return (localSpeech && welcomeChoice.local()) || anySignInFound();
+            // Running on this computer was chosen and the hardware can run a
+            // model, or at least one provider sign-in is on this machine, or
+            // a usable CLI Proxy API account the Transcription step can opt
+            // into, or a speech server the person already configured. Read
+            // live: a hardware or probe answer that lands while a later page
+            // shows must still shut this gate.
+            return (localSpeech && localSpeech->canRunAnyModel() && welcomeChoice.local())
+                || anySignInFound()
+                || controller->settings()->speechProvider() == QStringLiteral("endpoint");
         }
         if (id == QStringLiteral("transcription")) {
             // A Local Model counts once its download has started: it keeps
@@ -919,7 +925,8 @@ struct SetupWindow::Native {
             }
         }
         const QString current = controller->settings()->speechProvider();
-        const QString provider = welcomeChoice.update(current, ready, cliproxyReady, choice);
+        const QString provider = welcomeChoice.update(current, ready, cliproxyReady, choice,
+                                                      localSpeech && localSpeech->canRunAnyModel());
         if (provider != current) {
             setSpeechProvider(provider);
         }
@@ -944,6 +951,23 @@ struct SetupWindow::Native {
     {
         StackPanel panel = page(QStringLiteral("welcome"));
         panel.Children().Append(textBlock(setupWelcomeDetail()));
+
+        // The dead end, on either path; core words it and decides when it
+        // shows. canRunAnyModel stays optimistic until the hardware probe
+        // answers, so nothing shows while the machine is still measured.
+        InfoBar deadEnd;
+        deadEnd.Severity(InfoBarSeverity::Warning);
+        deadEnd.IsClosable(false);
+        deadEnd.IsOpen(false);
+        panel.Children().Append(deadEnd);
+        const auto refreshDeadEnd = [this, deadEnd] {
+            const QString note = setupWelcomeDeadEnd(
+                anySignInFound(), localSpeech && localSpeech->canRunAnyModel(),
+                controller->settings()->speechProvider() == QStringLiteral("endpoint"),
+                !signInProviders().isEmpty());
+            deadEnd.Message(win::hs(note));
+            deadEnd.IsOpen(!note.isEmpty());
+        };
 
         // Two ways into dictation: a sign-in the person already has, or a
         // model on this computer. The sign-in rows below only matter for the
@@ -1001,12 +1025,15 @@ struct SetupWindow::Native {
             // after checks; only a move away from it is the person's choice.
             // Treating the echo as a choice once sent Back to Welcome through
             // a provider write the person never made.
-            paths.SelectionChanged([this, paths, showPath](const auto &, const auto &) {
+            paths.SelectionChanged([this, paths, showPath, refreshDeadEnd](const auto &, const auto &) {
                 const int index = paths.SelectedIndex();
                 if (index >= 0 && (index == 1) != welcomeChoice.local()) {
                     choosePath(index == 1);
                 }
                 showPath();
+                // Choosing a path can change the saved provider, and with it
+                // whether a configured endpoint still silences the note.
+                refreshDeadEnd();
             });
         }
         showPath();
@@ -1023,7 +1050,8 @@ struct SetupWindow::Native {
             }
             showPath();
         };
-        const auto showSignInPath = [this, signInPathStatus] {
+        const auto showSignInPath = [this, signInPathStatus, refreshDeadEnd] {
+            refreshDeadEnd();
             if (!signInPathStatus.root) {
                 return;
             }
@@ -1142,6 +1170,17 @@ struct SetupWindow::Native {
         };
         check.Click([runChecks](const auto &, const auto &) { runChecks(); });
         before.Children().Append(check);
+        if (localSpeech) {
+            // The hardware answer can close the local path: re-run the path
+            // default so a machine too small for every model falls back to
+            // the sign-in path, with the note and the gates following.
+            QObject::connect(localSpeech, &LocalSetup::changed, pageScope.get(),
+                             [checksAnswered, refreshDeadEnd, this] {
+                checksAnswered();
+                refreshDeadEnd();
+                refreshGates();
+            });
+        }
         content.Children().Append(panel);
         runChecks();
     }
@@ -2704,7 +2743,9 @@ struct SetupWindow::Native {
     {
         const SetupStepInfo &step = setupSteps().at(index);
         if (step.id == QStringLiteral("welcome")) {
-            return setupSignInMissing(localSpeech != nullptr);
+            return setupSignInMissing(localSpeech && localSpeech->canRunAnyModel(),
+                                      CliToolDiscovery::isClaudeCodeInstalled()
+                                          || CliToolDiscovery::isCodexInstalled());
         }
         if (step.id == QStringLiteral("transcription")) {
             return setupTranscriptionBlocked(

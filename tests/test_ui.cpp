@@ -4,8 +4,11 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
 #include "common/test_auth.h"
+#include "common/test_local_setup.h"
+#include "app/SetupSteps.h"
 #include "core/VocabularyLimit.h"
 #include "ui/AccessibilityNotice.h"
+#include "ui/InlineMessage.h"
 #include "ui/InsightsCharts.h"
 #include "core/SecretStore.h"
 #include "app/LocalSetup.h"
@@ -1264,6 +1267,79 @@ private slots:
         signIn->click();
         QVERIFY(!welcome.ready());
         here->click();
+        QVERIFY(welcome.ready());
+    }
+
+    void theWelcomePageNamesTheDeadEndWhenNothingCanTranscribe()
+    {
+        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CLAUDE_INSTALLED");
+            qunsetenv("SPEECHER_TEST_CODEX_INSTALLED");
+        });
+        SettingsStore settings;
+        settings.raw().clear();
+        QTemporaryDir emptyCliproxyDir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), emptyCliproxyDir.path());
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
+                return provider;
+            });
+        providers.registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local model"), QString()},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        QTemporaryDir models;
+        LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, store);
+
+        WelcomeSetupPage welcome(settings, providers, &local);
+        welcome.show();
+        auto *deadEnd = welcome.findChild<InlineMessage *>(QStringLiteral("welcomeDeadEnd"));
+        auto *signIn = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathSignIn"));
+        auto *here = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathLocal"));
+        QVERIFY(deadEnd && signIn && here);
+        // Until the hardware answers, this computer is still a way out.
+        QVERIFY(!deadEnd->isVisibleTo(&welcome));
+        QVERIFY(here->isChecked());
+        QVERIFY(welcome.ready());
+
+        // The hardware answers that no model fits: the default falls back to
+        // the sign-in path, and with nothing installed to sign in to the page
+        // says to get an account and install Claude Code or Codex.
+        HardwareSummary tiny;
+        tiny.profile.systemRamBytes = 2ull * 1000 * 1000 * 1000;
+        tiny.profile.availableRamBytes = 2ull * 1000 * 1000 * 1000;
+        LocalSetupTestAccess::setHardware(local, tiny);
+        QVERIFY(signIn->isChecked());
+        QVERIFY(deadEnd->isVisibleTo(&welcome));
+        QVERIFY(!welcome.ready());
+        QCOMPARE(deadEnd->label()->text(), setupSignInMissing(false, false));
+        QCOMPARE(welcome.blockedReason(), setupSignInMissing(false, false));
+
+        // Choosing this computer anyway keeps the note and the shut gate.
+        here->click();
+        QVERIFY(deadEnd->isVisibleTo(&welcome));
+        QVERIFY(!welcome.ready());
+        signIn->click();
+
+        // Codex appears on this machine: installing was the missing step, so
+        // the note becomes the plain missing-sign-in line.
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
+        welcome.recheck();
+        QVERIFY(deadEnd->isVisibleTo(&welcome));
+        QCOMPARE(deadEnd->label()->text(), setupSignInMissing(false, true));
+        QVERIFY(!welcome.ready());
+        QCOMPARE(welcome.blockedReason(), setupSignInMissing(false, true));
+
+        // A speech server the person already configured is a way out: the
+        // Transcription step gates on its readiness, not this page.
+        settings.setSpeechProvider(QStringLiteral("endpoint"));
+        welcome.recheck();
+        QVERIFY(!deadEnd->isVisibleTo(&welcome));
         QVERIFY(welcome.ready());
     }
 

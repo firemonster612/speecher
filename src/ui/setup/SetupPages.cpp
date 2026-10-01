@@ -4,6 +4,7 @@
 #include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
 #include "app/SetupSteps.h"
+#include "core/CliToolDiscovery.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
@@ -372,6 +373,14 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
     checks->setWordWrap(true);
     layout->addWidget(checks);
 
+    // The dead end, on either path; core words it and decides when it shows.
+    m_deadEnd = new InlineMessage(this);
+    m_deadEnd->setObjectName(QStringLiteral("welcomeDeadEnd"));
+    m_deadEnd->setType(InlineMessage::Type::Warning);
+    m_deadEnd->setCloseButtonVisible(false);
+    m_deadEnd->hide();
+    layout->addWidget(m_deadEnd);
+
     // Two ways into dictation: a sign-in the person already has, or a model
     // on this computer. The sign-in rows below only matter for the first.
     if (m_local) {
@@ -432,7 +441,12 @@ WelcomeSetupPage::WelcomeSetupPage(SettingsStore &settings,
         localNote->setWordWrap(true);
         localLayout->addWidget(localNote);
         layout->addWidget(m_localDetail);
-        connect(m_local, &LocalSetup::changed, this, [this] { m_hardware->setText(m_local->hardwareLine()); });
+        connect(m_local, &LocalSetup::changed, this, [this] {
+            m_hardware->setText(m_local->hardwareLine());
+            // The hardware answer can close the local path: a machine too
+            // small for every model falls back to the sign-in path.
+            choosePath();
+        });
         m_hardware->setText(m_local->hardwareLine());
     }
 
@@ -524,7 +538,8 @@ void WelcomeSetupPage::choosePath(std::optional<bool> choice)
     QStringList ready;
     for (const auto &row : m_rows) if (row.found) ready.append(row.providerId);
     const QString current = m_settings.speechProvider();
-    const QString provider = m_pathChoice.update(current, ready, m_cliproxyFound, choice);
+    const QString provider = m_pathChoice.update(current, ready, m_cliproxyFound, choice,
+                                                 m_local && m_local->canRunAnyModel());
     const bool local = m_pathChoice.local();
     const bool changed = m_localPath->isChecked() != local;
     m_localPath->setChecked(local);
@@ -653,19 +668,32 @@ void WelcomeSetupPage::updateReady()
 {
     const bool anyFound = std::any_of(m_rows.cbegin(), m_rows.cend(),
                                       [](const CredentialRow &row) { return row.found; });
+    const bool signInFound = anyFound || m_cliproxyFound;
+    // A server the person already configured is a way into dictation too;
+    // the Transcription step gates on its readiness.
+    const bool endpointSaved = m_settings.speechProvider() == QStringLiteral("endpoint");
+    // canRunAnyModel stays optimistic until the hardware probe answers, so
+    // the dead end never shows while the machine is still being measured.
+    const QString deadEnd = setupWelcomeDeadEnd(signInFound,
+                                                m_local && m_local->canRunAnyModel(),
+                                                endpointSaved, !m_rows.isEmpty());
+    m_deadEnd->setText(deadEnd);
+    m_deadEnd->setVisible(!deadEnd.isEmpty());
     if (m_local) {
         showSignInPathStatus();
-        setReady(m_pathChoice.ready());
+        setReady(m_pathChoice.ready() || endpointSaved);
         return;
     }
     // With no speech providers registered at all there is nothing to sign in
     // to, and holding Next would strand the user on page one.
-    setReady(m_rows.isEmpty() || anyFound || m_cliproxyFound);
+    setReady(m_rows.isEmpty() || signInFound || endpointSaved);
 }
 
 QString WelcomeSetupPage::blockedReason() const
 {
-    return setupSignInMissing(m_local != nullptr);
+    return setupSignInMissing(m_local && m_local->canRunAnyModel(),
+                              CliToolDiscovery::isClaudeCodeInstalled()
+                                  || CliToolDiscovery::isCodexInstalled());
 }
 
 void WelcomeSetupPage::setReady(bool ready)

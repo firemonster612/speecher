@@ -6,6 +6,7 @@
 #include "core/settings/SettingsSchema.h"
 #include "providers/ProviderRegistry.h"
 #include "common/test_http.h"
+#include "common/test_local_setup.h"
 #include "common/test_suites.h"
 #include "core/LocalModelCatalog.h"
 #include "core/TranscriptState.h"
@@ -66,22 +67,6 @@ LocalModel fakeModel(const QByteArray &content)
 }
 
 } // namespace
-
-namespace speecher {
-class LocalSetupTestAccess {
-public:
-    static void setHardware(LocalSetup &setup, const HardwareProfile &profile)
-    {
-        setup.m_hardware.profile = profile;
-        setup.m_hardwareKnown = true;
-    }
-    static void setHardware(LocalSetup &setup, const HardwareSummary &hardware)
-    {
-        setup.m_hardware = hardware;
-        setup.m_hardwareKnown = true;
-    }
-};
-} // namespace speecher
 
 namespace {
 
@@ -285,6 +270,84 @@ private slots:
         QCOMPARE(setupSchemaRow("defaultWritingProfile").label, QString("Fallback profile"));
     }
 
+    void signInMissingNamesTheWayOutOfEachDeadEnd()
+    {
+        QCOMPARE(setupSignInMissing(true, false),
+                 QString("No sign-in was found. Sign in, or choose to run on this computer."));
+        QCOMPARE(setupSignInMissing(false, true),
+                 QString("No ChatGPT, Claude, or CLI Proxy API sign-in was found."));
+        // Nothing on this machine can transcribe: say how to get something.
+        const QString deadEnd = setupSignInMissing(false, false);
+        QVERIFY(deadEnd.contains("can't run a local speech model"));
+        QVERIFY(deadEnd.contains("free ChatGPT or Claude account"));
+        QVERIFY(deadEnd.contains("install Claude Code or Claude Desktop, or Codex"));
+
+        // Core also decides when the note shows: any way out silences it, and
+        // an installed CLI turns it into the plain missing-sign-in line.
+        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CLAUDE_INSTALLED");
+            qunsetenv("SPEECHER_TEST_CODEX_INSTALLED");
+        });
+        QCOMPARE(setupWelcomeDeadEnd(false, false, false, true), deadEnd);
+        QVERIFY(setupWelcomeDeadEnd(true, false, false, true).isEmpty());
+        QVERIFY(setupWelcomeDeadEnd(false, true, false, true).isEmpty());
+        QVERIFY(setupWelcomeDeadEnd(false, false, true, true).isEmpty());
+        QVERIFY(setupWelcomeDeadEnd(false, false, false, false).isEmpty());
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
+        QCOMPARE(setupWelcomeDeadEnd(false, false, false, true), setupSignInMissing(false, true));
+    }
+
+    void tooSmallAMachineCannotRunAnyModel()
+    {
+        // 16 GB of free RAM runs the smallest model; 2 GB runs nothing.
+        QVERIFY(anyLocalModelFits(laptop4750u()));
+        HardwareProfile tiny = laptop4750u();
+        tiny.systemRamBytes = 2 * gb;
+        tiny.availableRamBytes = 2 * gb;
+        QVERIFY(!anyLocalModelFits(tiny));
+
+        QTemporaryDir directory;
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        LocalModelStore models(directory.path(), QUrl("http://127.0.0.1:1"));
+        LocalSetup setup(settings, providers, models);
+        // Optimistic until the probe answers: nothing is too small before
+        // anyone measured it.
+        QVERIFY(setup.canRunAnyModel());
+        HardwareSummary hardware;
+        hardware.profile = tiny;
+        LocalSetupTestAccess::setHardware(setup, hardware);
+        QVERIFY(!setup.canRunAnyModel());
+        hardware.profile = laptop4750u();
+        LocalSetupTestAccess::setHardware(setup, hardware);
+        QVERIFY(setup.canRunAnyModel());
+
+        // A too-small card does not condemn the machine: the CPU placement
+        // still counts.
+        HardwareSummary smallCard;
+        smallCard.profile = laptop4750u();
+        smallCard.profile.accelerator = HardwareProfile::Accelerator::DedicatedGpu;
+        smallCard.profile.gpuMemoryBytes = 1 * gib;
+        LocalSetupTestAccess::setHardware(setup, smallCard);
+        QVERIFY(setup.canRunAnyModel());
+
+        // Free memory at probe time is pressure, not capacity: a loaded but
+        // capable machine is still able, even though nothing fits right now.
+        HardwareSummary loaded;
+        loaded.profile = laptop4750u();
+        loaded.profile.availableRamBytes = 1 * gb;
+        QVERIFY(!anyLocalModelFits(loaded.profile));
+        LocalSetupTestAccess::setHardware(setup, loaded);
+        QVERIFY(setup.canRunAnyModel());
+
+        // A probe that answered nothing stays unknown rather than too small.
+        LocalSetupTestAccess::setHardware(setup, HardwareSummary());
+        QVERIFY(setup.canRunAnyModel());
+    }
+
     void welcomeDefaultsFollowOnlySignInsAndUndoTheirOwnWrite()
     {
         WelcomeChoice choice;
@@ -309,6 +372,16 @@ private slots:
         QVERIFY(!isSetupSignInProvider("local"));
         QVERIFY(!isSetupSignInProvider("endpoint"));
         QVERIFY(isSetupSignInProvider("codex"));
+
+        // A machine that can't run a model never defaults to the local path,
+        // and even choosing that path there does not open ready.
+        WelcomeChoice unusable;
+        QCOMPARE(unusable.update("claude", {}, false, std::nullopt, false), QString("claude"));
+        QVERIFY(!unusable.local());
+        QVERIFY(!unusable.ready());
+        QCOMPARE(unusable.update("claude", {}, false, true, false), QString("local"));
+        QVERIFY(unusable.local());
+        QVERIFY(!unusable.ready());
     }
 
     void interruptedDownloadsResumeButCancelledOnesDoNot()

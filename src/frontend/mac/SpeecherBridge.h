@@ -634,7 +634,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
                   readyProviders:(NSArray<NSString *> *)readyProviders
                proxyAccountFound:(BOOL)proxyAccountFound
                           choice:(nullable NSNumber *)choice
-    NS_SWIFT_NAME(update(provider:readyProviders:proxyAccountFound:choice:));
+                     localUsable:(BOOL)localUsable
+    NS_SWIFT_NAME(update(provider:readyProviders:proxyAccountFound:choice:localUsable:));
 // An explicit Transcription choice, which a later path default must not undo.
 - (void)providerChosen;
 @property (nonatomic, readonly) BOOL local;
@@ -862,7 +863,15 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSString *setupBlockedHeading;
 @property (nonatomic, readonly, copy) NSString *setupBlockedFooter;
 - (NSString *)setupStepCounter:(NSInteger)step of:(NSInteger)total NS_SWIFT_NAME(setupStepCounter(_:of:));
-- (NSString *)setupSignInMissing:(BOOL)localOffered NS_SWIFT_NAME(setupSignInMissing(localOffered:));
+- (NSString *)setupSignInMissing:(BOOL)localOffered cliToolFound:(BOOL)cliToolFound
+    NS_SWIFT_NAME(setupSignInMissing(localOffered:cliToolFound:));
+// The welcome step's dead-end note, or empty while any way into dictation
+// remains; core decides when it shows and words it.
+- (NSString *)setupWelcomeDeadEnd:(BOOL)signInFound
+                      localUsable:(BOOL)localUsable
+                    endpointSaved:(BOOL)endpointSaved
+        signInProvidersRegistered:(BOOL)signInProvidersRegistered
+    NS_SWIFT_NAME(setupWelcomeDeadEnd(signInFound:localUsable:endpointSaved:signInProvidersRegistered:));
 - (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
     NS_SWIFT_NAME(setupTranscriptionBlocked(localSelected:provider:));
 - (NSString *)setupMicrophoneBlocked:(BOOL)accessGranted NS_SWIFT_NAME(setupMicrophoneBlocked(accessGranted:));
@@ -988,6 +997,11 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // download, a Speed Test or a pull outlives the window that started it.
 // Whether this build can run speech on this computer at all.
 @property (nonatomic, readonly) BOOL localSpeechAvailable;
+// Whether the hardware can run any catalog model. Optimistically YES until
+// the hardware probe answers.
+@property (nonatomic, readonly) BOOL localSpeechCanRun;
+// Whether Claude Code or Codex is installed, signed in or not.
+@property (nonatomic, readonly) BOOL speechCliToolFound;
 // Anything below changed. rowsChanged says the settings rows that report it,
 // and the settings LocalSetup writes, changed too; it is NO for a download or
 // pull's progress alone. Arrives on the main thread, often while one runs.
