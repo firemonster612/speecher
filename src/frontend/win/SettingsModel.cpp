@@ -489,7 +489,8 @@ QString SettingsModel::credentialStatus() const
                               {},
                               m_draft.refinement.cliproxyBaseUrl,
                               m_draft.refinement.cliproxyApiKey)
-        .status();
+        .status()
+        .text;
 }
 
 QString SettingsModel::anthropicCredentialStatus() const

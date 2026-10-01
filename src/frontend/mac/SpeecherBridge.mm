@@ -2988,9 +2988,10 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
                                                 {},
                                                 draft.refinement.cliproxyBaseUrl,
                                                 draft.refinement.cliproxyApiKey);
+    const speecher::OpenAiAuthStatus found = provider.status();
     SpeecherCredentialStatus *status = [[SpeecherCredentialStatus alloc] init];
-    status.text = provider.status().toNSString();
-    status.ready = provider.resolve(false).ok;
+    status.text = found.text.toNSString();
+    status.ready = found.ready;
     return status;
 }
 

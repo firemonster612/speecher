@@ -444,7 +444,8 @@ void ProviderCustomRows::updateCredentialControl()
                                      settingsStatus,
                                      cliproxyBaseUrl,
                                      cliproxyApiKey)
-                      .status();
+                      .status()
+                      .text;
     });
     QObject::connect(thread,
                      &QThread::finished,

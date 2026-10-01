@@ -449,13 +449,13 @@ OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
     return readCodexOauth(CodexCredentialStorage{}, true);
 }
 
-QString OpenAiAuthProvider::status() const
+OpenAiAuthStatus OpenAiAuthProvider::status() const
 {
     const OpenAiAuth auth = resolve(false);
     if (!auth.status.isEmpty()) {
-        return auth.status;
+        return {auth.status, auth.ok};
     }
-    return auth.ok ? QStringLiteral("Signed in") : QStringLiteral("Not signed in");
+    return {auth.ok ? QStringLiteral("Signed in") : QStringLiteral("Not signed in"), auth.ok};
 }
 
 } // namespace speecher

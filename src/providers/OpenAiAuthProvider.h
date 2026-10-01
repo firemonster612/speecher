@@ -18,6 +18,12 @@ struct OpenAiAuth {
     bool chatgptBackend = false;
 };
 
+// What the Accounts page says about the sign-in, and whether it can be used.
+struct OpenAiAuthStatus {
+    QString text;
+    bool ready = false;
+};
+
 class OpenAiAuthProvider {
 public:
     explicit OpenAiAuthProvider(SecretStore *secretStore = nullptr,
@@ -30,7 +36,7 @@ public:
                                 const QString &cliproxyApiKey = {});
 
     OpenAiAuth resolve(bool refreshExpired = true) const;
-    QString status() const;
+    OpenAiAuthStatus status() const;
     bool requiresCodexOauthRefresh() const;
     OpenAiAuth refreshCodexOauth() const;
 
