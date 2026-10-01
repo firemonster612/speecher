@@ -177,18 +177,25 @@ struct WhatsNewStrip: View {
 struct SidebarList: View {
     @ObservedObject var model: AppModel
     @Binding var query: String
+    /// The hit picked in the current search. A search starts with none, so
+    /// picking the pane already open still reaches the row that matched.
+    @State private var searchPick: String?
 
     var body: some View {
         // Every pick goes through showPage, so choosing What's New here is the
         // same as any other way of opening it. A search hit opens at the row
         // that matched.
-        List(selection: Binding<String>(get: { model.pane },
-                                        set: { pick in
-                                            guard pick != model.pane else { return }
-                                            let row = query.isEmpty ? nil
-                                                : model.search(query).first(where: { $0.pane.id == pick })?.row
-                                            model.showPage(pick, row: row)
-                                        })) {
+        List(selection: Binding<String?>(get: { query.isEmpty ? model.pane : searchPick },
+                                         set: { pick in
+                                             guard let pick else { return }
+                                             if query.isEmpty {
+                                                 if pick != model.pane { model.showPage(pick) }
+                                                 return
+                                             }
+                                             searchPick = pick
+                                             let row = model.search(query).first(where: { $0.pane.id == pick })?.row
+                                             model.showPage(pick, row: row)
+                                         })) {
             if query.isEmpty {
                 // Each titled group under the native section header; the top
                 // group has none, and What's New leads it while pending or open.
@@ -215,6 +222,7 @@ struct SidebarList: View {
             }
         }
         .listStyle(.sidebar)
+        .onChange(of: query) { searchPick = nil }
         .overlay {
             if !query.isEmpty, model.search(query).isEmpty {
                 ContentUnavailableView(SpeecherBridge.noSettingsMatchText, systemImage: "magnifyingglass")
