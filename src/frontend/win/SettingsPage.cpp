@@ -524,8 +524,8 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
 ScrollViewer pageScaffold(const QString &title, const StackPanel &column)
 {
     ScrollViewer scroll;
-    scroll.Padding({36, 0, 36, 0});
-    column.MaxWidth(1064);
+    scroll.Padding({kPageGutter, 0, kPageGutter, 0});
+    column.MaxWidth(kPageColumnWidth);
     column.Padding({0, 0, 0, 36});
     if (!title.isEmpty()) {
         column.Children().Append(styledText(title, L"SettingsPageTitleStyle"));
@@ -545,8 +545,8 @@ Grid pageWithActionBar(const ScrollViewer &scroll, const UIElement &action)
     page.RowDefinitions().Append(actions);
     page.Children().Append(scroll);
     Border bar;
-    bar.MaxWidth(1064);
-    bar.Margin({36, 12, 36, 20});
+    bar.MaxWidth(kPageColumnWidth);
+    bar.Margin({kPageGutter, 12, kPageGutter, 20});
     bar.Child(action);
     Grid::SetRow(bar, 1);
     page.Children().Append(bar);

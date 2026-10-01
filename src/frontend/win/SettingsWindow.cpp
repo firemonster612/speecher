@@ -325,9 +325,9 @@ struct SettingsWindow::Native {
         content.RowDefinitions().Append(pageRow);
         banner = InfoBar();
         banner.IsOpen(false);
-        banner.Margin({36, 12, 36, 0});
         // The page column's width, so the banner's edges are the cards'.
-        banner.MaxWidth(1064);
+        banner.Margin({kPageGutter, 12, kPageGutter, 0});
+        banner.MaxWidth(kPageColumnWidth);
         banner.CloseButtonClick([this](const auto &, const auto &) {
             if (bannerCloseAction) {
                 bannerCloseAction();
