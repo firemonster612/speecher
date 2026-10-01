@@ -250,12 +250,12 @@ final class AppModel: ObservableObject {
         failureFix = fix.fix == .none ? nil : fix
     }
 
-    /// A dictation that never started, such as one the microphone grant
-    /// refused. No session failed, so the reason is held here rather than
-    /// read from the session, until the next session starts.
-    func noteRefusedStart(_ message: String, fix: SpeecherErrorAction?) {
+    /// A dictation that never started for a reason the user has to fix, such
+    /// as the microphone grant. No session failed, so the reason is held here
+    /// rather than read from the session, until the next session starts.
+    func noteRefusedStart(_ message: String, fix: SpeecherErrorAction) {
         failureNote = message
-        failureFix = fix?.fix == SpeecherErrorFix.none ? nil : fix
+        failureFix = fix
     }
 
     /// Runs what an error offered: a settings page, the Accessibility grant,
