@@ -284,13 +284,10 @@ private slots:
         QVERIFY(integration);
         QVERIFY(integration->isHidden());
 
-        bool hasFullWidthHeading = false;
-        for (const QLabel *label : window.findChildren<QLabel *>(
-                 QStringLiteral("subsectionLabel"))) {
-            hasFullWidthHeading = hasFullWidthHeading
-                || label->text() == QStringLiteral("Global Shortcut");
-        }
-        QVERIFY(hasFullWidthHeading);
+        // The shortcut is a row of the card, titled like the other rows.
+        auto *row = control->findChild<QWidget *>(QStringLiteral("shortcutCapture"));
+        QVERIFY(row);
+        QCOMPARE(row->findChild<QLabel *>(QStringLiteral("rowTitle"))->text(), QStringLiteral("Global Shortcut"));
     }
 
     void sidebarOffersQuitSpeecher()

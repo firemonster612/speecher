@@ -6,6 +6,7 @@
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
+#include "platform/GlobalShortcutBinder.h"
 #include "platform/KeywatchSetup.h"
 #include "platform/LinuxDesktopIntegration.h"
 #include "ui/settings/SettingsPageSupport.h"
@@ -47,6 +48,11 @@ QLabel *guidanceLabel(const QString &text, QWidget *parent)
     return label;
 }
 
+QString checkingDesktopStatus()
+{
+    return QStringLiteral("Checking your desktop…");
+}
+
 QString shortcutSetStatus(const QString &display)
 {
     return QStringLiteral("Shortcut set to %1. Try it now.").arg(display);
@@ -74,17 +80,13 @@ bool isModifierKey(int key)
     }
 }
 
-// One lead for the one capture control. Where the desktop registers
-// combinations the whole range is on offer; portal desktops pick combinations
-// through their own dialog ("Or press…" reads on from that block), and
-// manual-command desktops can only watch a single key.
-QString captureLead(bool combinationsAvailable, bool followsPortal)
+// What to press while the capture waits. Where the desktop registers
+// combinations the whole range is on offer; elsewhere Speecher can only watch
+// a single key, and portal desktops pick combinations through Choose shortcut.
+QString captureLead(bool combinationsAvailable)
 {
-    if (combinationsAvailable) {
-        return globalShortcutPrompt();
-    }
-    return followsPortal
-        ? QStringLiteral("Or press a single key, such as Right Alt or F13, to use on its own.")
+    return combinationsAvailable
+        ? globalShortcutPrompt()
         : QStringLiteral("Press a single key, such as Right Alt or F13, to use on its own.");
 }
 
@@ -93,13 +95,12 @@ QString captureLead(bool combinationsAvailable, bool followsPortal)
 ShortcutCaptureButton::ShortcutCaptureButton(QWidget *parent)
     : QPushButton(QStringLiteral("Set shortcut"), parent)
 {
-    setCheckable(true);
-    connect(this, &QPushButton::clicked, this, [this](bool checked) { setArmed(checked); });
+    connect(this, &QPushButton::clicked, this, [this] { setArmed(!m_armed); });
 }
 
 QString ShortcutCaptureButton::idleText() const
 {
-    return m_display.isEmpty() ? QStringLiteral("Set shortcut") : m_display;
+    return m_display.isEmpty() ? QStringLiteral("Set shortcut") : globalShortcutChangeCaption();
 }
 
 void ShortcutCaptureButton::setShortcutDisplay(const QString &display)
@@ -118,14 +119,12 @@ void ShortcutCaptureButton::setCombinationsAvailable(bool available)
 void ShortcutCaptureButton::setArmed(bool armed)
 {
     if (m_armed == armed) {
-        setChecked(armed);
         return;
     }
     m_armed = armed;
-    setChecked(armed);
     m_heldModifiers.clear();
     m_pendingModifier = 0;
-    setText(armed ? QStringLiteral("Press a key or key combination…") : idleText());
+    setText(armed ? QStringLiteral("Cancel") : idleText());
     if (armed) {
         setFocus(Qt::OtherFocusReason);
     }
@@ -242,13 +241,15 @@ QString linuxGlobalShortcutCommand()
 
 LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     ApplicationController &controller,
-    QWidget *parent)
+    QWidget *parent,
+    Placement placement)
     : QWidget(parent)
     , m_controller(controller)
     , m_homePath(QDir::homePath())
     , m_appImagePath(QString::fromLocal8Bit(qgetenv("APPIMAGE")))
     , m_binaryPath(resolvedPath(QCoreApplication::applicationFilePath()))
     , m_waylandSession(isWaylandSession())
+    , m_settingsCard(placement == Placement::SettingsCard)
 {
     if (!m_appImagePath.isEmpty()) {
         m_appImagePath = resolvedPath(m_appImagePath);
@@ -282,97 +283,89 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     integrationRow->addWidget(m_integrationButton);
     integrationRow->addWidget(m_integrationStatus, 1);
     integrationLayout->addLayout(integrationRow);
-    m_integration->setVisible(!m_appImagePath.isEmpty());
+    m_integration->setVisible(!m_settingsCard && !m_appImagePath.isEmpty());
     layout->addWidget(m_integration);
 
-    // Portal desktops pick combinations through their own dialog, so their
-    // block reads first and the capture lead below continues it with "Or
-    // press a single key…".
-    m_portalControls = new QWidget(this);
-    m_portalControls->setObjectName(QStringLiteral("portalShortcut"));
-    auto *portalLayout = new QVBoxLayout(m_portalControls);
-    portalLayout->setContentsMargins(0, 0, 0, 0);
-    portalLayout->addWidget(guidanceLabel(
-        QStringLiteral("Your desktop will ask you to pick a key combination."),
-        m_portalControls));
-    m_chooseShortcut = new QPushButton(QStringLiteral("Choose shortcut"), m_portalControls);
-    portalLayout->addWidget(m_chooseShortcut, 0, Qt::AlignLeft);
-    layout->addWidget(m_portalControls);
+    // The shortcut's rows, as card rows: inside a card of their own on the
+    // setup step, straight into the Dictation card in settings.
+    QFormLayout *rows = nullptr;
+    if (m_settingsCard) {
+        auto *host = new QWidget(this);
+        rows = new QFormLayout(host);
+        rows->setContentsMargins(0, 0, 0, 0);
+        rows->setVerticalSpacing(0);
+        settings::configureFormLayout(rows);
+        layout->addWidget(host);
+    } else {
+        QFrame *card = settings::makeSettingsCard(this);
+        rows = settings::cardFormLayout(card);
+        layout->addWidget(card);
+    }
+    QWidget *rowHost = rows->parentWidget();
 
-    // One capture button records the whole range: a key combination or a
-    // single key, a bare modifier included, which QKeySequenceEdit cannot
-    // report. Any key records and saves; a warning explains the cost of a
-    // typing key rather than a modal blocking it.
-    m_captureControls = new QWidget(this);
-    m_captureControls->setObjectName(QStringLiteral("shortcutCapture"));
-    // One card, so the key and the helper that watches it read as one thing
-    // rather than as loose controls on the page. It has no heading: the setup
-    // step's title and the Dictation section's header both already say
-    // Global Shortcut right above it.
-    auto *captureOuter = new QVBoxLayout(m_captureControls);
-    captureOuter->setContentsMargins(0, 0, 0, 0);
-    captureOuter->setSpacing(0);
-    QFrame *captureCard = settings::makeSettingsCard(m_captureControls);
-    captureOuter->addWidget(captureCard);
-    QFormLayout *captureRows = settings::cardFormLayout(captureCard);
-    QWidget *captureHost = captureRows->parentWidget();
-
-    auto *captureBody = new QWidget(captureHost);
-    auto *captureLayout = new QVBoxLayout(captureBody);
-    captureLayout->setContentsMargins(settings::rowPadding());
-    captureLayout->setSpacing(settings::smallSpacing());
-    // Reworded by refreshControls() for portal and manual desktops. Give it
-    // the full wording now rather than starting empty: an empty word-wrap
-    // label is allocated a collapsed height, and the button directly below
-    // would paint over it on first show before the text-set relayout catches
-    // up.
-    m_captureLead = guidanceLabel(captureLead(true, false), captureBody);
-    captureLayout->addWidget(m_captureLead);
-    m_setShortcut = new ShortcutCaptureButton(captureBody);
+    // Title, current binding, and the buttons that change it. One capture
+    // button records the whole range: a key combination or a single key, a
+    // bare modifier included, which QKeySequenceEdit cannot report. Portal
+    // desktops pick combinations through their own dialog instead.
+    const SettingsRow &shortcutRow = setupSchemaRow(QStringLiteral("globalShortcut"));
+    auto *trailing = new QWidget(rowHost);
+    auto *buttons = new QHBoxLayout(trailing);
+    buttons->setContentsMargins(0, 0, 0, 0);
+    buttons->setSpacing(settings::relatedSpacing());
+    m_binding = new QLabel(trailing);
+    m_binding->setObjectName(QStringLiteral("globalShortcutBinding"));
+    buttons->addWidget(m_binding);
+    m_chooseShortcut = new QPushButton(QStringLiteral("Choose shortcut"), trailing);
+    m_chooseShortcut->setObjectName(QStringLiteral("portalShortcut"));
+    buttons->addWidget(m_chooseShortcut);
+    m_setShortcut = new ShortcutCaptureButton(trailing);
     m_setShortcut->setObjectName(QStringLiteral("globalShortcutCapture"));
-    captureLayout->addWidget(m_setShortcut, 0, Qt::AlignLeft);
-    m_captureFeedback = guidanceLabel(QString(), captureBody);
+    buttons->addWidget(m_setShortcut);
+    m_resetShortcut = new QPushButton(
+        globalShortcutResetCaption(ShortcutBinding(GlobalShortcutBinder::defaultShortcut()).displayText()),
+        trailing);
+    m_resetShortcut->setObjectName(QStringLiteral("resetGlobalShortcut"));
+    buttons->addWidget(m_resetShortcut);
+    m_captureControls = settings::makeRow(shortcutRow.label, shortcutRow.help, trailing, rowHost);
+    m_captureControls->setObjectName(QStringLiteral("shortcutCapture"));
+    m_description = m_captureControls->findChild<QLabel *>(QStringLiteral("rowDescription"));
+    m_description->setObjectName(QStringLiteral("globalShortcutStatus"));
+    settings::addCardRow(rows, m_captureControls, rowHost);
+
+    // A refusal or a warning about the key just recorded, under the row.
+    m_captureFeedback = guidanceLabel(QString(), rowHost);
     m_captureFeedback->setObjectName(QStringLiteral("shortcutCaptureFeedback"));
+    m_captureFeedback->setContentsMargins(settings::rowPadding());
     m_captureFeedback->hide();
-    captureLayout->addWidget(m_captureFeedback);
-    settings::addCardRow(captureRows, captureBody, captureHost);
+    rows->addRow(m_captureFeedback);
 
     // Wayland's only route to a single key is the privileged key-watch
     // helper. Recording stays enabled without it — combinations need no
     // helper — and a single key recorded too early is refused with the
-    // helper's own status, which reads directly above this block's install
-    // button.
-    m_keyHelperControls = new QWidget(captureHost);
-    m_keyHelperControls->setObjectName(QStringLiteral("keyHelperInstall"));
-    auto *keyHelperLayout = new QVBoxLayout(m_keyHelperControls);
-    keyHelperLayout->setContentsMargins(settings::rowPadding());
-    keyHelperLayout->setSpacing(settings::smallSpacing());
-    keyHelperLayout->addWidget(guidanceLabel(
+    // helper's own status, which reads in this row.
+    m_keyHelperButton = new QPushButton(QStringLiteral("Set up single-key helper"), rowHost);
+    m_keyHelperControls = settings::makeRow(
+        QStringLiteral("Single-key helper"),
         QStringLiteral("On Wayland, a single-key shortcut needs a small helper that watches for "
                        "that one key. Setting it up asks for administrator permission once; "
                        "Speecher itself stays unprivileged. The helper only allows keys that "
                        "cannot type text: modifiers, Caps Lock and F13 to F24."),
-        m_keyHelperControls));
-    m_keyHelperButton = new QPushButton(QStringLiteral("Set up single-key helper"), m_keyHelperControls);
-    keyHelperLayout->addWidget(m_keyHelperButton, 0, Qt::AlignLeft);
-    m_keyHelperStatus = new QLabel(m_keyHelperControls);
+        m_keyHelperButton, rowHost);
+    m_keyHelperControls->setObjectName(QStringLiteral("keyHelperInstall"));
+    auto *keyHelperText = m_keyHelperControls->findChild<QWidget *>(QStringLiteral("rowLabelCell"));
+    m_keyHelperStatus = new QLabel(keyHelperText);
     m_keyHelperStatus->setWordWrap(true);
-    keyHelperLayout->addWidget(m_keyHelperStatus);
-    m_keyHelperProgress = new QProgressBar(m_keyHelperControls);
+    keyHelperText->layout()->addWidget(m_keyHelperStatus);
+    m_keyHelperProgress = new QProgressBar(keyHelperText);
     m_keyHelperProgress->setRange(0, 0);
     m_keyHelperProgress->setVisible(false);
-    keyHelperLayout->addWidget(m_keyHelperProgress);
-    settings::addCardRow(captureRows, m_keyHelperControls, captureHost);
-    layout->addWidget(m_captureControls);
+    keyHelperText->layout()->addWidget(m_keyHelperProgress);
+    settings::addCardRow(rows, m_keyHelperControls, rowHost);
 
-    m_status = guidanceLabel(QString(), this);
-    m_status->setObjectName(QStringLiteral("globalShortcutStatus"));
-    layout->addWidget(m_status);
-
-    m_manualControls = new QWidget(this);
+    m_manualControls = new QWidget(rowHost);
     m_manualControls->setObjectName(QStringLiteral("manualShortcut"));
     auto *manualLayout = new QVBoxLayout(m_manualControls);
-    manualLayout->setContentsMargins(0, 0, 0, 0);
+    manualLayout->setContentsMargins(settings::rowPadding());
     manualLayout->addWidget(guidanceLabel(linuxGlobalShortcutManualInstruction(),
                                           m_manualControls));
     auto *commandRow = new QHBoxLayout;
@@ -388,7 +381,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     commandRow->addWidget(m_command, 1);
     commandRow->addWidget(copy);
     manualLayout->addLayout(commandRow);
-    layout->addWidget(m_manualControls);
+    settings::addCardRow(rows, m_manualControls, rowHost);
 
     // Not shown on manual-command desktops: their command starts Speecher by
     // itself, so "only while running" would be wrong there.
@@ -426,8 +419,11 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     m_holdUnavailableNote->setObjectName(QStringLiteral("holdToTalkUnavailable"));
     modeLayout->addWidget(m_holdUnavailableNote);
     layout->addWidget(modeRow);
+    modeRow->setVisible(!m_settingsCard);
 
-    layout->addStretch();
+    if (!m_settingsCard) {
+        layout->addStretch();
+    }
 
     const auto currentMode = shortcutActivationModeName(
         m_controller.settings()->shortcutActivationMode());
@@ -449,6 +445,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     // While the capture is armed, the currently bound shortcut must record,
     // not fire dictation; the mac and Windows recorders suspend the same way.
     connect(m_setShortcut, &ShortcutCaptureButton::armedChanged, this, [this](bool armed) {
+        refreshDescription();
         if (armed) {
             // A stale refusal from the last attempt would read as a verdict on
             // the capture that is only just starting.
@@ -458,12 +455,11 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
             m_controller.resumeGlobalShortcut();
         }
     });
-    // The feedback label, not m_status: the status line is hidden on desktops
-    // with no shortcut service, where a single key can still be recorded.
     connect(m_setShortcut, &ShortcutCaptureButton::unknownKeyPressed, this, [this] {
         showCaptureFeedback(QStringLiteral("That key cannot be a dictation key."));
     });
     connect(m_chooseShortcut, &QPushButton::clicked, this, [this] { chooseShortcut(); });
+    connect(m_resetShortcut, &QPushButton::clicked, this, [this] { resetShortcut(); });
     connect(copy, &QToolButton::clicked, this, [this, copy] {
         QGuiApplication::clipboard()->setText(m_command->text().remove(QChar(0x200B)));
         copy->setIcon(QIcon::fromTheme(
@@ -508,22 +504,11 @@ void LinuxGlobalShortcutSetupPage::showEvent(QShowEvent *event)
     refresh();
 }
 
-void LinuxGlobalShortcutSetupPage::hideAppMenuIntegration()
-{
-    m_integration->hide();
-    m_integrationHidden = true;
-}
-
-void LinuxGlobalShortcutSetupPage::hideActivationMode()
-{
-    m_activationModeRow->hide();
-}
-
 bool LinuxGlobalShortcutSetupPage::installRequired() const
 {
     // A command link from an earlier version can point at an image still in
     // Downloads; that is not installed either — the move is part of the deal.
-    return !m_integrationHidden && !m_appImagePath.isEmpty()
+    return !m_settingsCard && !m_appImagePath.isEmpty()
         && (!appImageIntegrationInstalled(m_homePath, m_appImagePath)
             || !appImageInInstallFolder(m_homePath, m_appImagePath));
 }
@@ -560,6 +545,19 @@ void LinuxGlobalShortcutSetupPage::showCaptureFeedback(const QString &text)
     m_captureFeedback->setVisible(!text.isEmpty());
 }
 
+void LinuxGlobalShortcutSetupPage::setStatus(const QString &text)
+{
+    m_statusText = text;
+    refreshDescription();
+}
+
+void LinuxGlobalShortcutSetupPage::refreshDescription()
+{
+    m_description->setText(m_setShortcut->armed()      ? captureLead(m_combinationsAvailable)
+                           : !m_statusText.isEmpty() ? m_statusText
+                                                     : setupSchemaRow(QStringLiteral("globalShortcut")).help);
+}
+
 void LinuxGlobalShortcutSetupPage::installIntegration()
 {
     QString error;
@@ -588,9 +586,7 @@ void LinuxGlobalShortcutSetupPage::installIntegration()
 void LinuxGlobalShortcutSetupPage::applyBinding(const ShortcutBinding &binding)
 {
     // A refusal is shown, never saved: a Wayland user asking for a letter is
-    // told why rather than getting a binding that never fires. It reads in
-    // the feedback label because m_status is hidden on desktops with no
-    // shortcut service, where a single key can still be recorded.
+    // told why rather than getting a binding that never fires.
     const QString reason = m_controller.globalShortcutUnsupportedBindingReason(binding);
     if (!reason.isEmpty()) {
         showCaptureFeedback(reason);
@@ -603,8 +599,13 @@ void LinuxGlobalShortcutSetupPage::applyBinding(const ShortcutBinding &binding)
         return;
     }
     showCaptureFeedback(binding.isSingleKey() ? singleKeyTypingWarning(binding) : QString());
-    m_setShortcut->setShortcutDisplay(m_controller.globalShortcut().displayText());
-    m_status->setText(shortcutSetStatus(m_controller.globalShortcutDisplay()));
+    setStatus(shortcutSetStatus(m_controller.globalShortcutDisplay()));
+    refreshControls();
+}
+
+void LinuxGlobalShortcutSetupPage::resetShortcut()
+{
+    applyBinding(ShortcutBinding(GlobalShortcutBinder::defaultShortcut()));
 }
 
 void LinuxGlobalShortcutSetupPage::installKeyHelper()
@@ -635,7 +636,7 @@ void LinuxGlobalShortcutSetupPage::installKeyHelper()
 void LinuxGlobalShortcutSetupPage::chooseShortcut()
 {
     m_chooseShortcut->setEnabled(false);
-    m_status->setText(QStringLiteral("Waiting for your desktop…"));
+    setStatus(QStringLiteral("Waiting for your desktop…"));
     m_controller.registerGlobalShortcut();
 }
 
@@ -681,24 +682,23 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     // premature: the manual command would quote a path the install is about
     // to remove.
     const bool ready = !installRequired();
-    const bool portalVisible = ready && (!known || (supported && desktopChooser));
-    const bool combinationsAvailable = ready && known && supported && !desktopChooser;
+    const bool portal = !known || (supported && desktopChooser);
+    m_combinationsAvailable = known && supported && !desktopChooser;
     const bool manualCommand = ready && known && !supported;
-    m_portalControls->setVisible(portalVisible);
-    m_manualControls->setVisible(manualCommand);
+    settings::setCardRowVisible(m_captureControls, ready);
+    settings::setCardRowVisible(m_manualControls, manualCommand);
+    m_chooseShortcut->setVisible(portal);
     // The capture handles combinations only where the desktop registers them;
     // a single key is watched by Speecher itself, so it records whenever the
-    // step is ready. The lead names what is on offer.
-    m_setShortcut->setCombinationsAvailable(combinationsAvailable);
-    m_captureLead->setText(captureLead(combinationsAvailable, portalVisible));
-    m_captureControls->setVisible(ready && known);
+    // desktop's answer is in.
+    m_setShortcut->setCombinationsAvailable(m_combinationsAvailable);
+    m_setShortcut->setVisible(known);
     settings::setCardRowVisible(m_keyHelperControls, ready && known && m_waylandSession);
     if (m_waylandSession && ready && known) {
         refreshKeyHelper();
     }
-    m_status->setVisible(ready && (!known || supported));
     m_trayNote->setText(linuxTrayShortcutNote(QSystemTrayIcon::isSystemTrayAvailable()));
-    m_trayNote->setVisible(ready && known && supported);
+    m_trayNote->setVisible(!m_settingsCard && ready && known && supported);
     // A manual desktop shortcut can only run the toggle command, and a backend
     // that has already shown it reports no release cannot hold either. Both are
     // states we know; neither is probed for.
@@ -710,23 +710,27 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
 
     if (!known) {
         m_chooseShortcut->setEnabled(false);
-        m_status->setText(QStringLiteral("Checking your desktop…"));
+        m_resetShortcut->hide();
+        setStatus(checkingDesktopStatus());
         return;
     }
     // The portal binder's shortcut() is a placeholder; only its display text
     // carries what the desktop actually assigned.
-    m_setShortcut->setShortcutDisplay(desktopChooser
-                                          ? m_controller.globalShortcutDisplay()
-                                          : m_controller.globalShortcut().displayText());
-    if (!supported) {
-        return;
+    const QString display = desktopChooser ? m_controller.globalShortcutDisplay()
+                                           : m_controller.globalShortcut().displayText();
+    m_binding->setText(display);
+    m_binding->setVisible(!display.isEmpty());
+    m_setShortcut->setShortcutDisplay(display);
+    const QString defaultDisplay = ShortcutBinding(GlobalShortcutBinder::defaultShortcut()).displayText();
+    m_resetShortcut->setVisible(m_combinationsAvailable && display != defaultDisplay);
+    if (m_statusText == checkingDesktopStatus()) {
+        setStatus(QString());
     }
-    if (desktopChooser) {
+    if (desktopChooser && supported) {
         m_chooseShortcut->setEnabled(true);
-        const QString display = m_controller.globalShortcutDisplay();
         if (display != m_displayedShortcut) {
             m_displayedShortcut = display;
-            m_status->setText(display.isEmpty() ? QString() : shortcutSetStatus(display));
+            setStatus(display.isEmpty() ? QString() : shortcutSetStatus(display));
         }
     }
 }
@@ -747,9 +751,9 @@ void LinuxGlobalShortcutSetupPage::showRegistrationResult(bool bound,
     const QString display = m_controller.globalShortcutDisplay();
     if (bound && !display.isEmpty()) {
         m_displayedShortcut = display;
-        m_status->setText(shortcutSetStatus(display));
+        setStatus(shortcutSetStatus(display));
     } else {
-        m_status->setText(detail);
+        setStatus(detail);
     }
     const bool complete = stepComplete();
     if (m_notifiedStepComplete != complete) {

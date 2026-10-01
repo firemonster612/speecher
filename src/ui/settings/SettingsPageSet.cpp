@@ -127,11 +127,11 @@ SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
         if (descriptor.id != QStringLiteral("globalShortcut")) {
             return SchemaCustomRow{};
         }
-        auto *page = new LinuxGlobalShortcutSetupPage(*controller, parent);
-        page->hideAppMenuIntegration();
-        // Dictation renders the activationMode schema row itself.
-        page->hideActivationMode();
-        return SchemaCustomRow{page, {}, {}, true};
+        SchemaCustomRow row;
+        row.widget = new LinuxGlobalShortcutSetupPage(
+            *controller, parent, LinuxGlobalShortcutSetupPage::Placement::SettingsCard);
+        row.cardRows = true;
+        return row;
     };
 #else
     // The Qt window runs only on Linux; the other front ends draw their own
