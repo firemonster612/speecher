@@ -462,8 +462,12 @@ QList<RowOption> openAiSpeedOptions(const QString &model);
 // Where a key the settings surface takes is kept, as a row's help says it.
 QString keyStorageHelp();
 
+// One sentence naming the platform's accessibility feature and what it
+// unlocks, "Turn on desktop accessibility to learn corrections."
+QString accessibilityGateHelp(const QString &purpose);
 // The caption of the control that asks for the accessibility grant, wherever
-// a settings page offers it: gated rows and the shortcut recorder.
+// it is offered: gated rows, the shortcut recorder, and through
+// accessibilityActionCaption Home and setup.
 QString accessibilityGrantActionLabel();
 
 // What a credential status says while it is being resolved.

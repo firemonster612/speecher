@@ -137,20 +137,6 @@ QString applicationPasteRuleHint()
 #endif
 }
 
-// One sentence naming the platform's accessibility feature and what it unlocks.
-// macOS calls it the Accessibility permission; Linux desktops expose AT-SPI,
-// which the rest of the UI calls desktop accessibility.
-QString accessibilityGateHelp(const QString &purpose)
-{
-#ifdef Q_OS_MACOS
-    return QStringLiteral("Grant Accessibility permission to %1.").arg(purpose);
-#elif defined(Q_OS_WIN)
-    return QStringLiteral("UI Automation must be available to %1.").arg(purpose);
-#else
-    return QStringLiteral("Turn on desktop accessibility to %1.").arg(purpose);
-#endif
-}
-
 QString targetAccessibilityHint()
 {
     return accessibilityGateHelp(QStringLiteral("identify the target application"));
@@ -2785,6 +2771,19 @@ QString fastModeTooltip(const QString &refinementProviderId)
 QString keyStorageHelp()
 {
     return QStringLiteral("Stored in the system keychain when there is one.");
+}
+
+// macOS calls it the Accessibility permission; Linux desktops expose AT-SPI,
+// which the rest of the UI calls desktop accessibility.
+QString accessibilityGateHelp(const QString &purpose)
+{
+#ifdef Q_OS_MACOS
+    return QStringLiteral("Grant Accessibility permission to %1.").arg(purpose);
+#elif defined(Q_OS_WIN)
+    return QStringLiteral("UI Automation must be available to %1.").arg(purpose);
+#else
+    return QStringLiteral("Turn on desktop accessibility to %1.").arg(purpose);
+#endif
 }
 
 QString accessibilityGrantActionLabel()
