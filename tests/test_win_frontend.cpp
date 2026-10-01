@@ -11,6 +11,7 @@
 #include "frontend/win/SettingsWindow.h"
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SetupWindow.h"
+#include "frontend/win/TranscribePane.h"
 #include "frontend/win/TrayFlyout.h"
 #include "frontend/win/WinFrontEnd.h"
 #include "frontend/win/WinUiHost.h"
@@ -508,6 +509,23 @@ private slots:
         setup->skipForTest();
         QVERIFY(!controller->settings()->setupCompleted());
         QCOMPARE(setup->currentPageTitleForTest(), QStringLiteral("Global Shortcut"));
+    }
+
+    // Search offers each matching row with its pane, and says when nothing
+    // matches rather than offering nothing.
+    void settingsSearchSuggestsRows()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        win::TranscribePane transcribe(controller.get());
+        win::SettingsWindow window(controller.get(), &transcribe);
+        window.show();
+        QVERIFY(window.searchSuggestionsForTest(QStringLiteral("Input device"))
+                    .contains(QStringLiteral("dictation\naudioDevice")));
+        QCOMPARE(window.searchSuggestionsForTest(QStringLiteral("zzqx")),
+                 QStringList{QStringLiteral("No settings match")});
+        window.close();
     }
 
     void skippingSetupOpensTheNativeSettingsWindow()

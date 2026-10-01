@@ -960,6 +960,17 @@ void SettingsWindow::inform(const QString &title, const QString &text)
     m_native->inform(title, text);
 }
 
+QStringList SettingsWindow::searchSuggestionsForTest(const QString &query)
+{
+    QStringList suggestions;
+    for (const IInspectable &item : m_native->searchSuggestions(query)) {
+        const auto element = item.as<FrameworkElement>();
+        suggestions.append(element.Tag() ? qs(unbox_value<hstring>(element.Tag()))
+                                         : qs(element.as<TextBlock>().Text()));
+    }
+    return suggestions;
+}
+
 void SettingsWindow::setActionHook(std::function<void(const QString &)> hook)
 {
     m_native->actionHook = std::move(hook);

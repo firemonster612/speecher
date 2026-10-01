@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 
 #include <functional>
 #include <memory>
@@ -58,6 +59,9 @@ public:
 private:
     friend class ::speecher::WinFrontEndTests;
     static bool offersWhatsNew(const QString &currentPane, const QString &pendingVersion);
+    // What the search box suggests for query: each suggestion's "pane\nrow"
+    // target, or its text when it has none.
+    QStringList searchSuggestionsForTest(const QString &query);
     struct Native;
     std::unique_ptr<Native> m_native;
 };
