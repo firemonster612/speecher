@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace speecher {
@@ -370,7 +371,21 @@ struct DictationPanel::Native : QObject {
         countdown.Visibility(Visibility::Collapsed);
         content.Children().Append(countdown);
         countdownTick.setInterval(50);
+        // An error holds its countdown while the pointer is on it, so a long
+        // one can be read to the end. The tick reads the cursor rather than
+        // waiting for pointer events, which never come when the error appears
+        // under a pointer that is not moving.
         connect(&countdownTick, &QTimer::timeout, this, [this] {
+            if (pointerOverChrome()) {
+                if (problemAutoDismiss.isActive()) {
+                    pausedRemainingMs = std::max(problemAutoDismiss.remainingTime(), 1);
+                    problemAutoDismiss.stop();
+                }
+                return;
+            }
+            if (pausedRemainingMs > 0) {
+                problemAutoDismiss.start(std::exchange(pausedRemainingMs, 0));
+            }
             countdown.Value(problemAutoDismiss.remainingTime());
         });
         Grid layers;
@@ -387,24 +402,6 @@ struct DictationPanel::Native : QObject {
                 presentedGeneration = generation;
                 controller->session()->popupPresented(generation);
             });
-        });
-        // An error holds its countdown while the pointer is on it, so a long
-        // one can be read to the end.
-        chrome.PointerEntered([this](const auto &, const auto &) {
-            if (problem.isEmpty() || !problemAutoDismiss.isActive()) {
-                return;
-            }
-            pausedRemainingMs = problemAutoDismiss.remainingTime();
-            problemAutoDismiss.stop();
-            countdownTick.stop();
-        });
-        chrome.PointerExited([this](const auto &, const auto &) {
-            if (problem.isEmpty() || pausedRemainingMs <= 0) {
-                return;
-            }
-            problemAutoDismiss.start(pausedRemainingMs);
-            countdownTick.start();
-            pausedRemainingMs = 0;
         });
         // A screen reader hears an error as it arrives.
         Microsoft::UI::Xaml::Automation::AutomationProperties::SetLiveSetting(
@@ -876,6 +873,21 @@ struct DictationPanel::Native : QObject {
             reposition();
         }
         refreshBanner();
+    }
+
+    bool pointerOverChrome() const
+    {
+        POINT pointer{};
+        RECT surface{};
+        if (!chrome || !GetCursorPos(&pointer) || !GetWindowRect(window, &surface)) {
+            return false;
+        }
+        const auto bounds = chrome.TransformToVisual(nullptr).TransformBounds(
+            {0, 0, float(chrome.ActualWidth()), float(chrome.ActualHeight())});
+        const double x = (pointer.x - surface.left) / scale();
+        const double y = (pointer.y - surface.top) / scale();
+        return x >= bounds.X && x < bounds.X + bounds.Width && y >= bounds.Y
+            && y < bounds.Y + bounds.Height;
     }
 
     double scale() const
