@@ -823,7 +823,7 @@ struct SettingsWindow::Native {
         // this short would otherwise never capture.
         const QString scrollTo = qEnvironmentVariable("SPEECHER_GRAB_SCROLL");
         if (scrollTo == QStringLiteral("bottom") || scrollTo == QStringLiteral("middle")) {
-            if (const auto scroll = pageHost.Child().try_as<ScrollViewer>()) {
+            if (const auto scroll = pageScroller(pageHost.Child())) {
                 const double end = scroll.ScrollableHeight();
                 scroll.ChangeView(nullptr, scrollTo == QStringLiteral("middle") ? end * 0.6 : end,
                                   nullptr, true);

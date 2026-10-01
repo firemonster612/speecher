@@ -74,6 +74,7 @@ private:
     void retry(int index);
     void backToSetup();
     void appendSetup(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column, PaneHost &host);
+    winrt::Microsoft::UI::Xaml::Controls::StackPanel startAction(const PaneHost &host);
     void appendProcessing(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column, View &view);
     void appendResults(const winrt::Microsoft::UI::Xaml::Controls::StackPanel &column, PaneHost &host);
     void refreshQueue();

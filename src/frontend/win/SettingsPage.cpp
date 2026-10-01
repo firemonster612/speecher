@@ -534,15 +534,45 @@ ScrollViewer pageScaffold(const QString &title, const StackPanel &column)
     return scroll;
 }
 
+Grid pageWithActionBar(const ScrollViewer &scroll, const UIElement &action)
+{
+    Grid page;
+    RowDefinition content;
+    content.Height({1, GridUnitType::Star});
+    RowDefinition actions;
+    actions.Height({0, GridUnitType::Auto});
+    page.RowDefinitions().Append(content);
+    page.RowDefinitions().Append(actions);
+    page.Children().Append(scroll);
+    Border bar;
+    bar.MaxWidth(1064);
+    bar.Margin({36, 12, 36, 20});
+    bar.Child(action);
+    Grid::SetRow(bar, 1);
+    page.Children().Append(bar);
+    return page;
+}
+
+ScrollViewer pageScroller(const UIElement &page)
+{
+    if (const auto scroll = page.try_as<ScrollViewer>()) {
+        return scroll;
+    }
+    if (const auto grid = page.try_as<Grid>(); grid && grid.Children().Size() > 0) {
+        return grid.Children().GetAt(0).try_as<ScrollViewer>();
+    }
+    return nullptr;
+}
+
 void replacePage(const Border &pageHost, const UIElement &page, bool keepScroll)
 {
     double offset = 0;
-    if (auto previous = pageHost.Child().try_as<ScrollViewer>(); previous && keepScroll) {
+    if (auto previous = pageScroller(pageHost.Child()); previous && keepScroll) {
         offset = previous.VerticalOffset();
     }
     pageHost.Child(page);
     if (offset > 0) {
-        if (auto scroll = page.try_as<ScrollViewer>()) {
+        if (auto scroll = pageScroller(page)) {
             scroll.Loaded([offset](const IInspectable &sender, const auto &) {
                 sender.as<ScrollViewer>().ChangeView(nullptr, offset, nullptr, true);
             });
