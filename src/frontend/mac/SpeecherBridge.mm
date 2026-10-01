@@ -2466,6 +2466,52 @@ static void probeSpeechProvider(BridgeState *state,
     return speecher::setupChecklistLine(QString::fromNSString(stepId), QString::fromNSString(choice)).toNSString();
 }
 
+- (NSString *)setupText:(SpeecherSetupText)text
+{
+    return speecher::setupText(static_cast<speecher::SetupText>(text)).toNSString();
+}
+
+- (NSString *)setupRowLabel:(NSString *)rowId
+{
+    return speecher::setupSchemaRow(QString::fromNSString(rowId)).label.toNSString();
+}
+
+- (NSArray<RowOptionModel *> *)setupRowOptions:(NSString *)rowId
+{
+    const speecher::SettingsRow &row = speecher::setupSchemaRow(QString::fromNSString(rowId));
+    NSMutableArray<RowOptionModel *> *bridged = [NSMutableArray array];
+    if (!row.options) return bridged;
+    for (const RowOption &option : row.options(AppSettings())) {
+        RowOptionModel *model = [[RowOptionModel alloc] init];
+        model.rowOptionId = option.id.toNSString();
+        model.label = option.label.toNSString();
+        model.help = option.help.toNSString();
+        model.enabled = option.enabled;
+        [bridged addObject:model];
+    }
+    return bridged;
+}
+
+- (NSString *)setupProviderReady:(NSString *)providerLabel
+{
+    return speecher::setupProviderReady(QString::fromNSString(providerLabel)).toNSString();
+}
+
+- (NSString *)setupRefinementNotSignedIn:(NSString *)providerLabel
+{
+    return speecher::setupRefinementNotSignedIn(QString::fromNSString(providerLabel)).toNSString();
+}
+
+- (NSString *)setupLocalSpeechChoice:(NSString *)modelName
+{
+    return speecher::setupLocalSpeechChoice(QString::fromNSString(modelName)).toNSString();
+}
+
+- (NSString *)setupCliproxySpeechChoice:(NSString *)providerLabel
+{
+    return speecher::setupCliproxySpeechChoice(QString::fromNSString(providerLabel)).toNSString();
+}
+
 - (NSString *)setupPasteVerdict:(BOOL)pastes
 {
     return speecher::setupPasteVerdict(pastes).toNSString();

@@ -462,7 +462,7 @@ struct SetupWindow::Native {
                 return;
             }
             if (microphoneStatus) {
-                microphoneStatus.Text(L"Microphone input detected.");
+                microphoneStatus.Text(win::hs(setupText(SetupText::InputDetected)));
             }
             if (!microphoneDetected) {
                 microphoneDetected = true;
@@ -551,7 +551,7 @@ struct SetupWindow::Native {
         bottom.ColumnDefinitions().Append(right);
 
         skip = Button();
-        skip.Content(box_value(L"Skip setup"));
+        skip.Content(box_value(win::hs(setupText(SetupText::SkipSetup))));
         skip.VerticalAlignment(VerticalAlignment::Center);
         skip.Click([this](const auto &, const auto &) { complete(true); });
         bottom.Children().Append(skip);
@@ -690,7 +690,7 @@ struct SetupWindow::Native {
             }
         }
         speechReady.insert(id, result.ok);
-        speechMessage.insert(id, result.ok ? QStringLiteral("%1 is ready.").arg(label)
+        speechMessage.insert(id, result.ok ? setupProviderReady(label)
                                            : result.message);
     }
 
@@ -1238,7 +1238,7 @@ struct SetupWindow::Native {
             StackPanel text = rowText(strongTextBlock(options.at(index).second));
             if (local) {
                 text.Children().Append(secondaryTextBlock(
-                    QStringLiteral("Runs on this computer. No account, works offline.")));
+                    setupText(SetupText::LocalSpeechNote)));
                 localRowStatus = status;
             }
             Grid item = cardRow(local ? FrameworkElement(glyphMark(kComputerGlyph)) : brandMark(id),
@@ -1280,15 +1280,14 @@ struct SetupWindow::Native {
         signInBody.Children().Append(useCliproxy);
         ComboBox cliproxyAccount;
         cliproxyAccount.MinWidth(240);
-        StackPanel accountRow = settingRow(QStringLiteral("CLI Proxy API account"),
-                                           cliproxyAccount);
+        StackPanel accountRow = settingRow(setupText(SetupText::CliproxyAccount), cliproxyAccount);
         signInBody.Children().Append(accountRow);
         TextBox cliproxyDir;
         StackPanel dirRow;
         dirRow.Spacing(6);
-        dirRow.Children().Append(strongTextBlock(QStringLiteral("Account directory")));
-        dirRow.Children().Append(secondaryTextBlock(QStringLiteral(
-            "Where CLI Proxy API keeps its account files. Leave empty to detect it automatically.")));
+        const SettingsRow &directoryRow = setupSchemaRow(QStringLiteral("cliproxyOauthDir"));
+        dirRow.Children().Append(strongTextBlock(directoryRow.label));
+        dirRow.Children().Append(secondaryTextBlock(directoryRow.help));
         dirRow.Children().Append(cliproxyDir);
         signInBody.Children().Append(dirRow);
         Border signInCard = win::cardContainer(signInBody);
@@ -1349,7 +1348,7 @@ struct SetupWindow::Native {
         status.root.VerticalAlignment(VerticalAlignment::Top);
         TextBlock hint = secondaryTextBlock(QString());
         Button check;
-        check.Content(box_value(L"Check again"));
+        check.Content(box_value(win::hs(setupText(SetupText::CheckAgain))));
         check.VerticalAlignment(VerticalAlignment::Top);
 
         // The credential hint and Check again belong to a service that is not
@@ -1375,9 +1374,8 @@ struct SetupWindow::Native {
                 const bool downloaded = localSpeech->modelState(localChoice()).downloaded;
                 status.set(downloaded ? QString()
                            : localDownloadStarted()
-                               ? QStringLiteral("The download keeps going while you finish setup.")
-                               : QStringLiteral("Download a model to continue. It keeps going while "
-                                                "you finish setup."),
+                               ? setupText(SetupText::DownloadContinues)
+                               : setupText(SetupText::DownloadToContinue),
                            StatusTone::Neutral);
                 setShown(hint, false);
                 setShown(check, false);
@@ -1556,7 +1554,7 @@ struct SetupWindow::Native {
         microphoneLevel = ProgressBar();
         microphoneLevel.Minimum(0);
         microphoneLevel.Maximum(1);
-        microphoneStatus = textBlock(QStringLiteral("Listening for microphone input…"));
+        microphoneStatus = textBlock(setupText(SetupText::ListeningForInput));
         microphoneProblem = InfoBar();
         microphoneProblem.Title(L"Check microphone privacy");
         microphoneProblem.Message(L"Allow desktop apps to use the microphone.");
@@ -1689,8 +1687,8 @@ struct SetupWindow::Native {
                 options->push_back(option);
             }
         };
-        addGroup(QStringLiteral("Uses your sign-in"), {QStringLiteral("anthropic"), QStringLiteral("openai")});
-        addGroup(QStringLiteral("Your own models"), {kLocal, kEndpoint});
+        addGroup(setupText(SetupText::UsesYourSignIn), {QStringLiteral("anthropic"), QStringLiteral("openai")});
+        addGroup(setupText(SetupText::YourOwnModels), {kLocal, kEndpoint});
         // A registry with providers this page does not group still offers them.
         QStringList others;
         for (const ProviderDescriptor &provider : registered) {
@@ -1699,12 +1697,12 @@ struct SetupWindow::Native {
                 others.append(provider.id);
             }
         }
-        addGroup(QStringLiteral("Cleanup provider"), others);
+        addGroup(setupText(SetupText::CleanupProvider), others);
         lastRefinementProvider = saved != kNone || options->empty() ? saved : options->front().id;
 
         // None is not a provider card but a way out of all of them: checking
         // it clears the choice, unchecking it returns to the last provider.
-        CheckBox skip = wrappingCheckBox(QStringLiteral("Skip cleanup and deliver the raw transcript"));
+        CheckBox skip = wrappingCheckBox(setupText(SetupText::SkipCleanup));
         skip.IsChecked(saved == kNone);
         panel.Children().Append(skip);
 
@@ -1719,7 +1717,7 @@ struct SetupWindow::Native {
         panel.Children().Append(makeEndpointForm());
         StackPanel stats;
         panel.Children().Append(stats);
-        CheckBox fast = wrappingCheckBox(QStringLiteral("Fast mode"));
+        CheckBox fast = wrappingCheckBox(setupSchemaRow(QStringLiteral("anthropicFastMode")).label);
         panel.Children().Append(fast);
         // OpenAI's Standard, Fast or Ultrafast, in place of the Fast mode box.
         ComboBox speed;
@@ -1769,8 +1767,7 @@ struct SetupWindow::Native {
             for (const RefinementOption &option : *options) {
                 if (unready && option.id == id) {
                     warning.Message(win::hs(
-                        QStringLiteral("%1 is not signed in. Dictation will deliver the raw transcript.")
-                            .arg(option.label)));
+                        setupRefinementNotSignedIn(option.label)));
                 }
             }
             showRunner(*options);
@@ -1857,8 +1854,9 @@ struct SetupWindow::Native {
         body.Margin({16, 4, 16, 4});
         runner.card = win::cardContainer(body);
         runner.root.Children().Append(runner.card);
-        StackPanel modelText = rowText(textBlock(QStringLiteral("Model"), false));
-        modelText.Children().Append(secondaryTextBlock(QStringLiteral("A cleanup model the runner has downloaded.")));
+        const SettingsRow &runnerModel = setupSchemaRow(QStringLiteral("localRunnerModel"));
+        StackPanel modelText = rowText(textBlock(runnerModel.label, false));
+        modelText.Children().Append(secondaryTextBlock(runnerModel.help));
         runner.model = ComboBox();
         runner.model.MinWidth(240);
         AutomationProperties::SetName(runner.model, L"Cleanup model");
@@ -1871,7 +1869,7 @@ struct SetupWindow::Native {
         pullColumn.Spacing(6);
         pullColumn.VerticalAlignment(VerticalAlignment::Center);
         runner.pull = Button();
-        runner.pull.Content(box_value(L"Download with Ollama"));
+        runner.pull.Content(box_value(win::hs(setupText(SetupText::DownloadWithOllama))));
         runner.pull.HorizontalAlignment(HorizontalAlignment::Right);
         pullColumn.Children().Append(runner.pull);
         runner.pullProgress = ProgressBar();
@@ -1883,23 +1881,21 @@ struct SetupWindow::Native {
 
         runner.noRunner = StackPanel();
         runner.noRunner.Spacing(8);
-        runner.noRunner.Children().Append(secondaryTextBlock(QStringLiteral(
-            "Cleanup models run in a separate app. Install Ollama, then choose Check again and Speecher "
-            "will set up a model through it. LM Studio and llama-server work too.")));
+        runner.noRunner.Children().Append(secondaryTextBlock(setupText(SetupText::InstallRunner)));
         StackPanel buttons;
         buttons.Orientation(Orientation::Horizontal);
         buttons.Spacing(8);
         Button getOllama;
-        getOllama.Content(box_value(L"Get Ollama"));
+        getOllama.Content(box_value(win::hs(setupText(SetupText::GetOllama))));
         buttons.Children().Append(getOllama);
         Button checkAgain;
-        checkAgain.Content(box_value(L"Check again"));
+        checkAgain.Content(box_value(win::hs(setupText(SetupText::CheckAgain))));
         buttons.Children().Append(checkAgain);
         runner.noRunner.Children().Append(buttons);
         InfoBar rawWarning;
         rawWarning.Severity(InfoBarSeverity::Warning);
         rawWarning.IsClosable(false);
-        rawWarning.Message(L"Until a runner is set up, dictation delivers the raw transcript.");
+        rawWarning.Message(win::hs(setupText(SetupText::RawUntilRunner)));
         rawWarning.IsOpen(true);
         runner.noRunner.Children().Append(rawWarning);
         runner.root.Children().Append(runner.noRunner);
@@ -1942,16 +1938,16 @@ struct SetupWindow::Native {
             if (option.id == kLocal) {
                 option.status.set(detecting ? QStringLiteral("Checking…")
                                   : found   ? QStringLiteral("%1 found").arg(choice.available->name)
-                                            : QStringLiteral("No runner"),
+                                            : setupText(SetupText::NoRunner),
                                   found ? StatusTone::Positive : StatusTone::Neutral);
             }
         }
         runner.status.Text(win::hs(
-            detecting ? QStringLiteral("Looking for Ollama, LM Studio and llama-server…")
+            detecting ? setupText(SetupText::LookingForRunners)
             : found   ? QStringLiteral("%1 %2 is running on this computer.")
                           .arg(choice.available->name, choice.available->version).simplified()
             : choice.selection.runner.isEmpty()
-                ? QStringLiteral("No local runner found on this computer.")
+                ? setupText(SetupText::NoRunnerFound)
                 : QStringLiteral("%1 is unavailable. Your saved selection is unchanged.")
                       .arg(localRunnerName(choice.selection.runner))));
         setShown(runner.noRunner, !found && !detecting);
@@ -2026,20 +2022,23 @@ struct SetupWindow::Native {
             AutomationProperties::SetName(control, win::hs(label));
             appendRow(rows, cardRow(FrameworkElement{nullptr}, text, control));
         };
-        endpointForm.format = combo({{QStringLiteral("openai"), QStringLiteral("OpenAI-compatible (Chat Completions)")},
-                                     {QStringLiteral("anthropic"), QStringLiteral("Anthropic-compatible (Messages)")}},
-                                    saved.format);
+        QList<QPair<QString, QString>> formats;
+        for (const RowOption &option :
+             setupSchemaRow(QStringLiteral("refinementEndpointFormat")).options(AppSettings())) {
+            formats.append({option.id, option.label});
+        }
+        endpointForm.format = combo(formats, saved.format);
         addRow(setupSchemaRow(QStringLiteral("refinementEndpointFormat")).label, QString(), endpointForm.format);
         endpointForm.url = TextBox();
         endpointForm.url.MinWidth(280);
         endpointForm.url.PlaceholderText(L"http://localhost:8080/v1");
         endpointForm.url.Text(win::hs(saved.apiBase));
-        addRow(QStringLiteral("Server URL"), QString(), endpointForm.url);
+        addRow(setupSchemaRow(QStringLiteral("refinementEndpointUrl")).label, QString(), endpointForm.url);
         endpointForm.key = PasswordBox();
         endpointForm.key.MinWidth(280);
         endpointForm.key.PlaceholderText(L"Optional");
         endpointForm.key.Password(win::hs(saved.apiKey));
-        addRow(QStringLiteral("API key"), keyStorageHelp(), endpointForm.key);
+        addRow(setupSchemaRow(QStringLiteral("refinementEndpointApiKey")).label, keyStorageHelp(), endpointForm.key);
         StackPanel modelControls;
         modelControls.Orientation(Orientation::Horizontal);
         modelControls.Spacing(8);
@@ -2057,7 +2056,7 @@ struct SetupWindow::Native {
         Button connect;
         connect.Content(box_value(L"Connect"));
         modelControls.Children().Append(connect);
-        addRow(QStringLiteral("Model"), QStringLiteral("Connect to list the server's models, or type one."),
+        addRow(setupSchemaRow(QStringLiteral("refinementEndpointModel")).label, setupText(SetupText::EndpointModelHint),
                modelControls);
         endpointForm.status = textBlock(QString());
         endpointForm.root.Children().Append(endpointForm.status);
@@ -2391,7 +2390,7 @@ struct SetupWindow::Native {
             StackPanel text = rowText(strongTextBlock(SetupWindow::pageTitles().at(index)));
             text.Children().Append(secondaryTextBlock(gateReason(index)));
             Button go;
-            go.Content(box_value(L"Go to step"));
+            go.Content(box_value(win::hs(setupText(SetupText::GoToStep))));
             go.VerticalAlignment(VerticalAlignment::Center);
             go.Click([this, index](const auto &, const auto &) { showPage(index); });
             appendRow(rows, cardRow(toneIcon(StatusTone::Caution), text, go));
@@ -2421,8 +2420,7 @@ struct SetupWindow::Native {
             InfoBar notice;
             notice.Severity(InfoBarSeverity::Informational);
             notice.IsClosable(false);
-            notice.Message(L"You can close this window. The download keeps going, and Speecher shows a "
-                           L"notification when you can start dictating.");
+            notice.Message(win::hs(setupText(SetupText::CloseWhileDownloading)));
             notice.IsOpen(true);
             readyBody.Children().Append(notice);
         }
@@ -2430,7 +2428,7 @@ struct SetupWindow::Native {
         // The actual binding, not a hardcoded default: the shortcut step may
         // have recorded anything, a single key included.
         const QString display = controller->globalShortcutDisplay();
-        StackPanel how = card(readyBody, QStringLiteral("How to dictate"));
+        StackPanel how = card(readyBody, setupText(SetupText::HowToDictate));
         how.Children().Append(textBlock(
             setupActivationInstruction(controller->settings()->shortcutActivationMode(), display)));
         how.Children().Append(secondaryTextBlock(QStringLiteral(
@@ -2440,7 +2438,7 @@ struct SetupWindow::Native {
         const QString speechId = controller->settings()->speechProvider();
         if (localSelected()) {
             const QString label = setupChecklistLine(
-                QStringLiteral("transcription"), QStringLiteral("%1, on this computer").arg(localChoice().name));
+                QStringLiteral("transcription"), setupLocalSpeechChoice(localChoice().name));
             if (downloading.isEmpty()) {
                 appendRow(rows, readyRow(glyphMark(kComputerGlyph), label, QStringLiteral("Ready"),
                                          StatusTone::Positive));
@@ -2474,7 +2472,7 @@ struct SetupWindow::Native {
             appendRow(rows, readyRow(brandMark(speechId),
                                      setupChecklistLine(QStringLiteral("transcription"),
                                                         signIn.usingCliproxy(speechId)
-                                                            ? QStringLiteral("%1 (CLI Proxy API)").arg(label)
+                                                            ? setupCliproxySpeechChoice(label)
                                                             : label),
                                      QStringLiteral("Ready"), StatusTone::Positive));
         }

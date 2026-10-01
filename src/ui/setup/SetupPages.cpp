@@ -376,13 +376,13 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     , m_stats(new ProviderStatsBlock(this))
     , m_hint(new WrappingLabel(this))
     , m_status(new WrappingLabel(this))
-    , m_checkAgain(new QPushButton(QStringLiteral("Check again"), this))
+    , m_checkAgain(new QPushButton(setupText(SetupText::CheckAgain), this))
 {
     QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("transcription"))->intro);
 
     // Every service is on the page with its own readiness, so the choice does
     // not hide behind a dropdown the user has to open to find it.
-    QFormLayout *choices = addCard(layout, this, QStringLiteral("Transcription service"));
+    QFormLayout *choices = addCard(layout, this, setupText(SetupText::TranscriptionService));
     auto *group = new QButtonGroup(this);
     const QString savedProvider = m_settings.speechProvider();
     for (const ProviderDescriptor &provider : m_providers.speechProviders()) {
@@ -393,7 +393,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
         }
         m_options.append(addOptionRow(choices, group, provider.id, provider.label,
                                       provider.id == QStringLiteral("local")
-                                          ? QStringLiteral("Runs on this computer. No account, works offline.")
+                                          ? setupText(SetupText::LocalSpeechNote)
                                           : QString(),
                                       QStringLiteral("speechProvider")));
         m_options.last().button->setChecked(provider.id == savedProvider);
@@ -424,7 +424,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_cliproxyAccount = new QComboBox(host);
     m_cliproxyAccount->setObjectName(QStringLiteral("speechCliproxyAccount"));
     m_cliproxyAccountRow = settings::makeRow(
-        QStringLiteral("CLI Proxy API account"),
+        setupText(SetupText::CliproxyAccount),
         QStringLiteral("Refinement by the same company uses this account too."),
         m_cliproxyAccount,
         host);
@@ -432,11 +432,8 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_cliproxyDir = new QLineEdit(host);
     m_cliproxyDir->setObjectName(QStringLiteral("speechCliproxyDir"));
     m_cliproxyDir->setClearButtonEnabled(true);
-    m_cliproxyDirRow = settings::makeRow(
-        QStringLiteral("Account directory"),
-        QStringLiteral("Where CLI Proxy API keeps its account files. Leave empty to detect it automatically."),
-        m_cliproxyDir,
-        host);
+    const SettingsRow &directoryRow = setupSchemaRow(QStringLiteral("cliproxyOauthDir"));
+    m_cliproxyDirRow = settings::makeRow(directoryRow.label, directoryRow.help, m_cliproxyDir, host);
     settings::addCardRow(signIn, m_cliproxyDirRow, host);
 
     m_hint->setObjectName(QStringLiteral("speechProviderHint"));
@@ -769,11 +766,11 @@ QString SpeechProviderSetupPage::readySummary() const
     const ProviderOptionRow &option = m_options.at(index);
     if (localSelected()) {
         return setupChecklistLine(QStringLiteral("transcription"),
-                                  QStringLiteral("%1, on this computer").arg(localChoice().name));
+                                  setupLocalSpeechChoice(localChoice().name));
     }
     return setupChecklistLine(QStringLiteral("transcription"),
                               m_signIn.usingCliproxy(option.id)
-                                  ? QStringLiteral("%1 (CLI Proxy API)").arg(option.label)
+                                  ? setupCliproxySpeechChoice(option.label)
                                   : option.label);
 }
 
@@ -955,9 +952,8 @@ void SpeechProviderSetupPage::showSelectedProvider()
         const bool started = localDownloadStarted();
         setStatusColor(m_status, false);
         m_status->setText(downloaded ? QString()
-                          : started  ? QStringLiteral("The download keeps going while you finish setup.")
-                                     : QStringLiteral("Download a model to continue. It keeps going while "
-                                                      "you finish setup."));
+                          : started  ? setupText(SetupText::DownloadContinues)
+                                     : setupText(SetupText::DownloadToContinue));
         m_status->setVisible(!m_status->text().isEmpty());
         m_hint->hide();
         m_checkAgain->hide();
@@ -978,7 +974,7 @@ void SpeechProviderSetupPage::showSelectedProvider()
         return;
     }
     setStatusColor(m_status, option.ok);
-    m_status->setText(option.ok ? QStringLiteral("%1 is ready.").arg(option.label)
+    m_status->setText(option.ok ? setupProviderReady(option.label)
                                 : option.message);
     m_hint->setVisible(!option.ok);
     m_checkAgain->setVisible(!option.ok);
@@ -1147,7 +1143,7 @@ void MicrophoneSetupPage::startMeter()
         m_level->setValue(qBound(0, qRound(level * 100.0f), 100));
         if (level > 0.01f) {
             m_noInputTimer->stop();
-            m_status->setText(QStringLiteral("Microphone input detected."));
+            m_status->setText(setupText(SetupText::InputDetected));
             setInputDetected(true);
         }
     });
@@ -1157,7 +1153,7 @@ void MicrophoneSetupPage::startMeter()
         m_status->setText(error);
         return;
     }
-    m_status->setText(QStringLiteral("Listening for microphone input…"));
+    m_status->setText(setupText(SetupText::ListeningForInput));
     m_noInputTimer->start();
 }
 
@@ -1493,7 +1489,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     , m_local(local)
     , m_stats(new ProviderStatsBlock(this))
     , m_warning(new WrappingLabel(this))
-    , m_fastMode(new QCheckBox(QStringLiteral("Fast mode"), this))
+    , m_fastMode(new QCheckBox(setupSchemaRow(QStringLiteral("anthropicFastMode")).label, this))
     , m_openAiSpeedRow(new QWidget(this))
     , m_openAiSpeed(new QComboBox(m_openAiSpeedRow))
     , m_fastModeHint(new QLabel(this))
@@ -1522,8 +1518,8 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
             m_options.last().button->setChecked(provider.id == savedProvider);
         }
     };
-    addGroup(QStringLiteral("Uses your sign-in"), {QStringLiteral("anthropic"), QStringLiteral("openai")});
-    addGroup(QStringLiteral("Your own models"), {QStringLiteral("local"), QStringLiteral("endpoint")});
+    addGroup(setupText(SetupText::UsesYourSignIn), {QStringLiteral("anthropic"), QStringLiteral("openai")});
+    addGroup(setupText(SetupText::YourOwnModels), {QStringLiteral("local"), QStringLiteral("endpoint")});
     // A registry with providers this page does not group still offers them.
     const QStringList grouped{QStringLiteral("anthropic"), QStringLiteral("openai"), QStringLiteral("local"),
                         QStringLiteral("endpoint")};
@@ -1533,9 +1529,9 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
             others.append(provider.id);
         }
     }
-    addGroup(QStringLiteral("Cleanup provider"), others);
+    addGroup(setupText(SetupText::CleanupProvider), others);
 
-    m_skip = new QCheckBox(QStringLiteral("Skip cleanup and deliver the raw transcript"), this);
+    m_skip = new QCheckBox(setupText(SetupText::SkipCleanup), this);
     m_skip->setObjectName(QStringLiteral("refinementSkip"));
     m_skip->setChecked(selectedIndex() < 0);
     layout->addWidget(m_skip);
@@ -1633,9 +1629,8 @@ QWidget *RefinementSetupPage::makeLocalRunnerDetail()
     m_runnerModel = new QComboBox(host);
     m_runnerModel->setObjectName(QStringLiteral("refinementRunnerModel"));
     m_runnerModel->setMinimumContentsLength(20);
-    m_runnerModelRow = settings::makeRow(QStringLiteral("Model"),
-                                         QStringLiteral("A cleanup model the runner has downloaded."),
-                                         m_runnerModel, host);
+    const SettingsRow &runnerModel = setupSchemaRow(QStringLiteral("localRunnerModel"));
+    m_runnerModelRow = settings::makeRow(runnerModel.label, runnerModel.help, m_runnerModel, host);
     settings::addCardRow(card, m_runnerModelRow, host);
 
     m_cleanupSuggestion = new QWidget(host);
@@ -1646,7 +1641,7 @@ QWidget *RefinementSetupPage::makeLocalRunnerDetail()
     m_cleanupSuggestionText->setWordWrap(true);
     suggestion->addWidget(m_cleanupSuggestionText, 1);
     auto *pullColumn = new QVBoxLayout;
-    m_pull = new QPushButton(QStringLiteral("Download with Ollama"), m_cleanupSuggestion);
+    m_pull = new QPushButton(setupText(SetupText::DownloadWithOllama), m_cleanupSuggestion);
     m_pull->setObjectName(QStringLiteral("refinementPull"));
     pullColumn->addWidget(m_pull, 0, Qt::AlignRight);
     m_pullProgress = new QProgressBar(m_cleanupSuggestion);
@@ -1661,15 +1656,12 @@ QWidget *RefinementSetupPage::makeLocalRunnerDetail()
     auto *noRunner = new QVBoxLayout(m_noRunner);
     noRunner->setContentsMargins(0, 0, 0, 0);
     noRunner->setSpacing(settings::relatedSpacing());
-    auto *explain = makeNote(QStringLiteral("Cleanup models run in a separate app. Install Ollama, then choose "
-                                            "Check again and Speecher will set up a model through it. LM Studio "
-                                            "and llama-server work too."),
-                             m_noRunner);
+    auto *explain = makeNote(setupText(SetupText::InstallRunner), m_noRunner);
     noRunner->addWidget(explain);
     auto *buttons = new QHBoxLayout;
-    auto *getOllama = new QPushButton(QStringLiteral("Get Ollama"), m_noRunner);
+    auto *getOllama = new QPushButton(setupText(SetupText::GetOllama), m_noRunner);
     getOllama->setObjectName(QStringLiteral("refinementGetOllama"));
-    auto *checkAgain = new QPushButton(QStringLiteral("Check again"), m_noRunner);
+    auto *checkAgain = new QPushButton(setupText(SetupText::CheckAgain), m_noRunner);
     checkAgain->setObjectName(QStringLiteral("refinementRunnerCheckAgain"));
     buttons->addWidget(getOllama);
     buttons->addWidget(checkAgain);
@@ -1678,7 +1670,7 @@ QWidget *RefinementSetupPage::makeLocalRunnerDetail()
     auto *rawWarning = new InlineMessage(m_noRunner);
     rawWarning->setType(InlineMessage::Type::Warning);
     rawWarning->setCloseButtonVisible(false);
-    rawWarning->setText(QStringLiteral("Until a runner is set up, dictation delivers the raw transcript."));
+    rawWarning->setText(setupText(SetupText::RawUntilRunner));
     noRunner->addWidget(rawWarning);
     layout->addWidget(m_noRunner);
 
@@ -1717,8 +1709,7 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
 
     m_endpointFormat = new QComboBox(host);
     m_endpointFormat->setObjectName(QStringLiteral("refinementEndpointFormat"));
-    m_endpointFormat->addItem(QStringLiteral("OpenAI-compatible (Chat Completions)"), QStringLiteral("openai"));
-    m_endpointFormat->addItem(QStringLiteral("Anthropic-compatible (Messages)"), QStringLiteral("anthropic"));
+    addOptions(m_endpointFormat, setupSchemaRow(QStringLiteral("refinementEndpointFormat")).options(AppSettings()));
     settings::selectData(m_endpointFormat, saved.format);
     settings::addCardRow(
         card,
@@ -1730,14 +1721,15 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
     m_endpointUrl->setObjectName(QStringLiteral("refinementEndpointUrl"));
     m_endpointUrl->setPlaceholderText(QStringLiteral("http://localhost:8080/v1"));
     m_endpointUrl->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    settings::addCardRow(card, settings::makeRow(QStringLiteral("Server URL"), QString(), m_endpointUrl, host), host);
+    settings::addCardRow(card, settings::makeRow(setupSchemaRow(QStringLiteral("refinementEndpointUrl")).label, QString(), m_endpointUrl, host), host);
 
     m_endpointKey = new QLineEdit(saved.apiKey, host);
     m_endpointKey->setObjectName(QStringLiteral("refinementEndpointKey"));
     m_endpointKey->setEchoMode(QLineEdit::Password);
     m_endpointKey->setPlaceholderText(QStringLiteral("Optional"));
     m_endpointKey->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    settings::addCardRow(card, settings::makeRow(QStringLiteral("API key"), keyStorageHelp(), m_endpointKey, host),
+    settings::addCardRow(card, settings::makeRow(setupSchemaRow(QStringLiteral("refinementEndpointApiKey")).label, keyStorageHelp(),
+                                                 m_endpointKey, host),
                          host);
 
     auto *modelControls = new QWidget(host);
@@ -1755,8 +1747,8 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
     auto *connectButton = new QPushButton(QStringLiteral("Connect"), modelControls);
     connectButton->setObjectName(QStringLiteral("refinementEndpointConnect"));
     modelLayout->addWidget(connectButton);
-    settings::addCardRow(card, settings::makeRow(QStringLiteral("Model"),
-                                                 QStringLiteral("Connect to list the server's models, or type one."),
+    settings::addCardRow(card, settings::makeRow(setupSchemaRow(QStringLiteral("refinementEndpointModel")).label,
+                                                 setupText(SetupText::EndpointModelHint),
                                                  modelControls, host),
                          host);
     m_endpointStatus = new WrappingLabel(m_endpointDetail);
@@ -1836,14 +1828,14 @@ void RefinementSetupPage::showLocalRunner()
             setStatusColor(option.status, found);
             option.status->setText(m_local->detectingRunners() ? QStringLiteral("Checking…")
                                    : found ? QStringLiteral("%1 found").arg(choice.available->name)
-                                           : QStringLiteral("No runner"));
+                                           : setupText(SetupText::NoRunner));
         } else if (option.id == QStringLiteral("endpoint")) {
             option.status->clear();
         }
     }
     if (m_local->detectingRunners()) {
         setStatusColor(m_runnerStatus, false);
-        m_runnerStatus->setText(QStringLiteral("Looking for Ollama, LM Studio and llama-server…"));
+        m_runnerStatus->setText(setupText(SetupText::LookingForRunners));
     } else if (found) {
         const DetectedRunner &runner = *choice.available;
         setStatusColor(m_runnerStatus, true);
@@ -1851,7 +1843,7 @@ void RefinementSetupPage::showLocalRunner()
     } else {
         setStatusColor(m_runnerStatus, false);
         m_runnerStatus->setText(choice.selection.runner.isEmpty()
-            ? QStringLiteral("No local runner found on this computer.")
+            ? setupText(SetupText::NoRunnerFound)
             : QStringLiteral("%1 is unavailable. Your saved selection is unchanged.").arg(localRunnerName(choice.selection.runner)));
     }
     m_noRunner->setVisible(!found && !m_local->detectingRunners());
@@ -2064,8 +2056,7 @@ void RefinementSetupPage::showSelectedProvider()
     if (warn) {
         setStatusColor(m_warning, false);
         m_warning->setText(
-            QStringLiteral("%1 is not signed in. Dictation will deliver the raw transcript.")
-                .arg(option.label));
+            setupRefinementNotSignedIn(option.label));
     }
 }
 
@@ -2148,8 +2139,7 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
     m_downloadNotice = new InlineMessage(this);
     m_downloadNotice->setObjectName(QStringLiteral("finishDownloadNotice"));
     m_downloadNotice->setCloseButtonVisible(false);
-    m_downloadNotice->setText(QStringLiteral("You can close this window. The download keeps going, and Speecher "
-                                             "shows a notification when you can start dictating."));
+    m_downloadNotice->setText(setupText(SetupText::CloseWhileDownloading));
     m_downloadNotice->hide();
     layout->addWidget(m_downloadNotice);
     // The download finishing changes the intro and the step's row, and a
@@ -2185,7 +2175,7 @@ FinishSetupPage::FinishSetupPage(ApplicationController &controller, QWidget *par
     completedLayout->setContentsMargins(0, 0, 0, 0);
     completedLayout->setSpacing(settings::largeSpacing());
     QFormLayout *howTo = addCard(completedLayout, m_completed,
-                                 QStringLiteral("How to dictate"));
+                                 setupText(SetupText::HowToDictate));
     QWidget *howToHost = howTo->parentWidget();
     auto *instruction = new QWidget(howToHost);
     auto *instructionLayout = new QVBoxLayout(instruction);
@@ -2265,7 +2255,7 @@ void FinishSetupPage::showBlockedSteps(const QList<SetupStepStatus> &steps)
         if (step.ok) {
             continue;
         }
-        auto *goToStep = new QPushButton(QStringLiteral("Go to step"), host);
+        auto *goToStep = new QPushButton(setupText(SetupText::GoToStep), host);
         connect(goToStep, &QPushButton::clicked, this, [this, index] {
             emit stepSelected(index);
         });

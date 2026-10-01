@@ -179,6 +179,84 @@ QString setupPasteVerdict(bool pastes)
     return pastes ? setupProviderVerdict(QString(), true) : QStringLiteral("Clipboard only");
 }
 
+QString setupText(SetupText text)
+{
+    switch (text) {
+    case SetupText::SkipSetup:
+        return QStringLiteral("Skip setup");
+    case SetupText::CheckAgain:
+        return QStringLiteral("Check again");
+    case SetupText::GoToStep:
+        return QStringLiteral("Go to step");
+    case SetupText::HowToDictate:
+        return QStringLiteral("How to dictate");
+    case SetupText::TranscriptionService:
+        return QStringLiteral("Transcription service");
+    case SetupText::LocalSpeechNote:
+        return QStringLiteral("Runs on this computer. No account, works offline.");
+    case SetupText::DownloadToContinue:
+        return QStringLiteral("Download a model to continue. It keeps going while you finish setup.");
+    case SetupText::DownloadContinues:
+        return QStringLiteral("The download keeps going while you finish setup.");
+    case SetupText::CloseWhileDownloading:
+        return QStringLiteral("You can close this window. The download keeps going, and Speecher shows a "
+                              "notification when you can start dictating.");
+    case SetupText::CliproxyAccount:
+        return QStringLiteral("CLI Proxy API account");
+    case SetupText::ListeningForInput:
+        return QStringLiteral("Listening for microphone input\u2026");
+    case SetupText::InputDetected:
+        return QStringLiteral("Microphone input detected.");
+    case SetupText::UsesYourSignIn:
+        return QStringLiteral("Uses your sign-in");
+    case SetupText::YourOwnModels:
+        return QStringLiteral("Your own models");
+    case SetupText::CleanupProvider:
+        return QStringLiteral("Cleanup provider");
+    case SetupText::SkipCleanup:
+        return QStringLiteral("Skip cleanup and deliver the raw transcript");
+    case SetupText::LookingForRunners:
+        return QStringLiteral("Looking for Ollama, LM Studio and llama-server\u2026");
+    case SetupText::NoRunnerFound:
+        return QStringLiteral("No Local Runner found on this computer.");
+    case SetupText::NoRunner:
+        return QStringLiteral("No runner");
+    case SetupText::RawUntilRunner:
+        return QStringLiteral("Until a runner is set up, dictation delivers the raw transcript.");
+    case SetupText::InstallRunner:
+        return QStringLiteral("Cleanup models run in a separate app. Install Ollama, then choose Check again "
+                              "and Speecher will set up a model through it. LM Studio and llama-server work "
+                              "too.");
+    case SetupText::GetOllama:
+        return QStringLiteral("Get Ollama");
+    case SetupText::DownloadWithOllama:
+        return QStringLiteral("Download with Ollama");
+    case SetupText::EndpointModelHint:
+        return QStringLiteral("Connect to list the server's models, or type one.");
+    }
+    return {};
+}
+
+QString setupProviderReady(const QString &providerLabel)
+{
+    return QStringLiteral("%1 is ready.").arg(providerLabel);
+}
+
+QString setupRefinementNotSignedIn(const QString &providerLabel)
+{
+    return QStringLiteral("%1 is not signed in. Dictation will deliver the raw transcript.").arg(providerLabel);
+}
+
+QString setupLocalSpeechChoice(const QString &modelName)
+{
+    return QStringLiteral("%1, on this computer").arg(modelName);
+}
+
+QString setupCliproxySpeechChoice(const QString &providerLabel)
+{
+    return QStringLiteral("%1 (CLI Proxy API)").arg(providerLabel);
+}
+
 QString setupReadyIntro(bool blocked, bool downloading)
 {
     if (blocked) {

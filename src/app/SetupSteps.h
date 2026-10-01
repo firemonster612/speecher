@@ -64,6 +64,45 @@ QString setupChecklistLine(const QString &stepId, const QString &choice);
 // or Clipboard only while Accessibility is off.
 QString setupPasteVerdict(bool pastes);
 
+// The fixed wording every assistant shares: buttons, card titles, and the
+// lines the transcription, microphone and refinement steps show.
+enum class SetupText {
+    SkipSetup,
+    CheckAgain,
+    GoToStep,
+    HowToDictate,
+    TranscriptionService,
+    LocalSpeechNote,
+    DownloadToContinue,
+    DownloadContinues,
+    CloseWhileDownloading,
+    CliproxyAccount,
+    ListeningForInput,
+    InputDetected,
+    UsesYourSignIn,
+    YourOwnModels,
+    CleanupProvider,
+    SkipCleanup,
+    LookingForRunners,
+    NoRunnerFound,
+    NoRunner,
+    RawUntilRunner,
+    InstallRunner,
+    GetOllama,
+    DownloadWithOllama,
+    EndpointModelHint,
+};
+QString setupText(SetupText text);
+
+// "Claude Voice is ready."
+QString setupProviderReady(const QString &providerLabel);
+// A refinement provider whose sign-in failed, which is a warning, not a gate.
+QString setupRefinementNotSignedIn(const QString &providerLabel);
+// What the Ready checklist names for a speech choice: "Moonshine Small, on
+// this computer", or "Claude Voice (CLI Proxy API)" for a CLI Proxy API sign-in.
+QString setupLocalSpeechChoice(const QString &modelName);
+QString setupCliproxySpeechChoice(const QString &providerLabel);
+
 // The Ready step: its lead, and the heading and footer around the steps
 // still holding Finish.
 QString setupReadyIntro(bool blocked, bool downloading);

@@ -235,17 +235,17 @@ final class SetupFlowModel: ObservableObject {
                                    providerId: "local",
                                    symbol: "cpu",
                                    label: model.bridge.setupChecklistLine("transcription",
-                                                                          choice: "\(chosen.name), on this computer"),
+                                                                          choice: model.bridge.setupLocalSpeechChoice(chosen.name)),
                                    status: "Ready",
                                    ready: true))
         } else if let speech = selectedSpeechProvider {
-            let signIn = model.bridge.setupUsesCliproxy(provider: speech.id)
-                ? " (CLI Proxy API)" : ""
+            let choice = model.bridge.setupUsesCliproxy(provider: speech.id)
+                ? model.bridge.setupCliproxySpeechChoice(speech.label) : speech.label
             items.append(ReadyItem(id: "transcription",
                                    providerId: speech.id,
                                    symbol: "waveform",
                                    label: model.bridge.setupChecklistLine("transcription",
-                                                                          choice: "\(speech.label)\(signIn)"),
+                                                                          choice: choice),
                                    status: "Ready",
                                    ready: true))
         }
@@ -375,7 +375,7 @@ final class SetupFlowModel: ObservableObject {
             return model.bridge.setupTranscriptionBlocked(localSelected: false, provider: "")
         }
         guard provider.probed else { return "Checking…" }
-        return provider.ready ? "\(provider.label) is ready." : provider.message
+        return provider.ready ? model.bridge.setupProviderReady(provider.label) : provider.message
     }
 
     /// Refinement stays optional, so an unready provider is a warning rather
@@ -385,7 +385,7 @@ final class SetupFlowModel: ObservableObject {
               !Self.ownModelProviders.contains(provider.id) else {
             return ""
         }
-        return "\(provider.label) is not signed in. Dictation will deliver the raw transcript."
+        return model.bridge.setupRefinementNotSignedIn(provider.label)
     }
 
     /// A round of speech checks.
@@ -456,10 +456,10 @@ final class SetupFlowModel: ObservableObject {
 
     /// The step's own words for the chosen runner.
     var runnerStatus: String {
-        if model.local.detectingRunners { return "Looking for Ollama, LM Studio and llama-server…" }
+        if model.local.detectingRunners { return model.bridge.setupText(.lookingForRunners) }
         if let runner { return "\(runner.name) \(runner.version) is running on this computer." }
         return runnerChoice.runnerId.isEmpty
-            ? "No local runner found on this computer."
+            ? model.bridge.setupText(.noRunnerFound)
             : "\(runnerChoice.runnerName) is unavailable. Your saved selection is unchanged."
     }
 
@@ -467,7 +467,7 @@ final class SetupFlowModel: ObservableObject {
     /// rather than a sign-in verdict.
     fileprivate var runnerRowStatus: (text: String, tone: StatusLabel.Tone) {
         if model.local.detectingRunners { return ("Checking…", .pending) }
-        guard let runner else { return ("No runner", .pending) }
+        guard let runner else { return (model.bridge.setupText(.noRunner), .pending) }
         return ("\(runner.name) found", .positive)
     }
 
@@ -673,7 +673,7 @@ final class SetupFlowModel: ObservableObject {
         // step must not make the user speak again. The failure callback and a
         // device change clear it, matching the Qt page.
         refreshInputVolume()
-        meterStatus = "Listening for microphone input…"
+        meterStatus = model.bridge.setupText(.listeningForInput)
         silentMeterTimer?.invalidate()
         silentMeterTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
             DispatchQueue.main.async {
@@ -689,7 +689,7 @@ final class SetupFlowModel: ObservableObject {
                 refreshInputVolume()
             }
             if level > 0.01 {
-                meterStatus = "Microphone input detected."
+                meterStatus = model.bridge.setupText(.inputDetected)
                 microphoneInputDetected = true
             }
         }, failure: { [weak self] message in
@@ -1194,7 +1194,7 @@ struct SetupAssistantView: View {
             // in both its states: it is where the flow accounts for itself, and
             // skipping past that account is not a thing to offer there.
             if !flow.isLastStep, !flow.isReadyStep, flow.canSkip {
-                Button("Skip Setup") { flow.skip() }
+                Button(flow.model.bridge.setupText(.skipSetup)) { flow.skip() }
             }
             Spacer()
             Button("Back") { flow.back() }
@@ -1292,7 +1292,7 @@ private struct TranscriptionStep: View {
                                                 title: provider.label,
                                                 status: localRowStatus.text,
                                                 tone: localRowStatus.tone,
-                                                note: "Runs on this computer. No account, works offline.")
+                                                note: flow.model.bridge.setupText(.localSpeechNote))
                                 .tag(provider.id)
                         } else {
                             ProviderOptionLabel(providerId: provider.id,
@@ -1303,7 +1303,7 @@ private struct TranscriptionStep: View {
                         }
                     }
                 } label: {
-                    Text("Transcription service")
+                    Text(flow.model.bridge.setupText(.transcriptionService))
                 }
                 .pickerStyle(.radioGroup)
                 // The Local card explains itself; the generic facts would
@@ -1328,7 +1328,7 @@ private struct TranscriptionStep: View {
                         StatusLabel(text: flow.providerStatus, tone: statusTone)
                         Spacer(minLength: 12)
                         if !flow.providerReady {
-                            Button("Check Again") { flow.checkSpeechProviders() }
+                            Button(flow.model.bridge.setupText(.checkAgain)) { flow.checkSpeechProviders() }
                         }
                     }
                 }
@@ -1349,7 +1349,7 @@ private struct TranscriptionStep: View {
                            isOn: Binding(get: { flow.usingCliproxy },
                                          set: { flow.setUseCliproxy($0) }))
                     if flow.usingCliproxy {
-                        Picker("CLI Proxy API account",
+                        Picker(flow.model.bridge.setupText(.cliproxyAccount),
                                selection: Binding(get: { flow.cliproxyAccount },
                                                   set: { flow.chooseCliproxyAccount($0) })) {
                             ForEach(flow.cliproxyAccounts) { choice in
@@ -1360,7 +1360,7 @@ private struct TranscriptionStep: View {
                                     .selectionDisabled(!choice.enabled)
                             }
                         }
-                        TextField("Account directory",
+                        TextField(model.bridge.setupRowLabel("cliproxyOauthDir"),
                                   text: $flow.cliproxyDirectory,
                                   prompt: Text(flow.cliproxyDirectoryPlaceholder))
                             .onSubmit { flow.commitCliproxyDirectory() }
@@ -1387,8 +1387,7 @@ private struct TranscriptionStep: View {
     /// setup continues, and the ready step shows where it got to.
     private var localStatus: String? {
         guard let choice = flow.localChoice, !choice.downloaded else { return nil }
-        return choice.downloading ? "The download keeps going while you finish setup."
-                                  : "Download a model to continue. It keeps going while you finish setup."
+        return flow.model.bridge.setupText(choice.downloading ? .downloadContinues : .downloadToContinue)
     }
 
     /// Writing this binding is the person choosing, which is what stops the
@@ -1591,10 +1590,10 @@ private struct RefinementStep: View {
 
     /// The cloud providers use a sign-in; a runner here and a server are
     /// models the person runs. Each group is its own card.
-    private static let groups: [(title: String, ids: [String])] = [
-        ("Uses your sign-in", ["anthropic", "openai"]),
-        ("Your own models", ["local", "endpoint"]),
-    ]
+    private var groups: [(title: String, ids: [String])] {
+        [(model.bridge.setupText(.usesYourSignIn), ["anthropic", "openai"]),
+         (model.bridge.setupText(.yourOwnModels), ["local", "endpoint"])]
+    }
 
     var body: some View {
         // Only the selected provider's speed row: the settings window
@@ -1620,7 +1619,7 @@ private struct RefinementStep: View {
                 }
             }
             Section {
-                Toggle("Skip cleanup and deliver the raw transcript",
+                Toggle(model.bridge.setupText(.skipCleanup),
                        isOn: Binding(get: { flow.skipCleanup }, set: { flow.skipCleanup = $0 }))
                     .toggleStyle(.checkbox)
                 // Directly under the choices, so it reads as attached to the
@@ -1659,12 +1658,12 @@ private struct RefinementStep: View {
     /// The groups the registry fills, in order; a provider no group names
     /// still gets a card of its own.
     private var sections: [Group] {
-        let named = Set(Self.groups.flatMap(\.ids))
+        let named = Set(groups.flatMap(\.ids))
         let others = flow.refinementProviders.filter { !named.contains($0.id) }
-        return (Self.groups.map { group in
+        return (groups.map { group in
             Group(title: group.title,
                   rows: group.ids.compactMap { id in flow.refinementProviders.first { $0.id == id } })
-        } + [Group(title: "Cleanup provider", rows: others)]).filter { !$0.rows.isEmpty }
+        } + [Group(title: model.bridge.setupText(.cleanupProvider), rows: others)]).filter { !$0.rows.isEmpty }
     }
 
     @ViewBuilder private func option(_ row: ProviderRow) -> some View {
@@ -1705,7 +1704,7 @@ private struct LocalRunnerSections: View {
                 StatusLabel(text: flow.runnerStatus,
                             tone: model.local.detectingRunners || flow.runner == nil ? .pending : .positive)
                 Spacer(minLength: 12)
-                Button("Check Again") { flow.detectRunners() }
+                Button(flow.model.bridge.setupText(.checkAgain)) { flow.detectRunners() }
                     .disabled(model.local.detectingRunners)
             }
             if flow.runner != nil {
@@ -1720,11 +1719,10 @@ private struct LocalRunnerSections: View {
                     suggestion
                 }
             } else if !model.local.detectingRunners {
-                Text("Cleanup models run in a separate app. Install Ollama, then choose Check Again "
-                    + "and Speecher will set up a model through it. LM Studio and llama-server work too.")
+                Text(model.bridge.setupText(.installRunner))
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Get Ollama") { flow.openOllamaDownload() }
-                StatusLabel(text: "Until a runner is set up, dictation delivers the raw transcript.",
+                Button(model.bridge.setupText(.getOllama)) { flow.openOllamaDownload() }
+                StatusLabel(text: model.bridge.setupText(.rawUntilRunner),
                             tone: .warning)
             }
         }
@@ -1763,7 +1761,7 @@ private struct LocalRunnerSections: View {
             if pull.running {
                 ProgressView(value: pull.fraction).frame(width: 140)
             } else if flow.runnerChoice.offerPull {
-                Button("Download with Ollama") { flow.pullSuggestedCleanupModel() }
+                Button(model.bridge.setupText(.downloadWithOllama)) { flow.pullSuggestedCleanupModel() }
             }
         }
     }
@@ -1787,16 +1785,17 @@ private struct EndpointSections: View {
 
     var body: some View {
         Section {
-            Picker("Format", selection: Binding(get: { format }, set: {
+            Picker(model.bridge.setupRowLabel("refinementEndpointFormat"), selection: Binding(get: { format }, set: {
                 format = $0
                 edit(format: $0)
             })) {
-                Text("OpenAI-compatible (Chat Completions)").tag("openai")
-                Text("Anthropic-compatible (Messages)").tag("anthropic")
+                ForEach(model.bridge.setupRowOptions("refinementEndpointFormat"), id: \.rowOptionId) { option in
+                    Text(option.label).tag(option.rowOptionId)
+                }
             }
-            TextField("Server URL", text: $serverUrl, prompt: Text("http://localhost:8080/v1"))
+            TextField(model.bridge.setupRowLabel("refinementEndpointUrl"), text: $serverUrl, prompt: Text("http://localhost:8080/v1"))
                 .onSubmit(commitTypedFields)
-            SecureField("API key", text: $apiKey, prompt: Text("Optional"))
+            SecureField(model.bridge.setupRowLabel("refinementEndpointApiKey"), text: $apiKey, prompt: Text("Optional"))
                 .onSubmit(commitTypedFields)
             LabeledContent {
                 HStack {
@@ -1810,7 +1809,8 @@ private struct EndpointSections: View {
                     }
                 }
             } label: {
-                RowView.label("Model", help: "Connect to list the server's models, or type one.")
+                RowView.label(model.bridge.setupRowLabel("refinementEndpointModel"),
+                              help: model.bridge.setupText(.endpointModelHint))
             }
         } footer: {
             if !model.local.endpointStatus.isEmpty {
@@ -1942,7 +1942,7 @@ private struct ReadyStep: View {
             }
             // Applied when setup finishes, so a skip leaves it alone.
             Section {
-                Toggle(flow.model.row("launchAtLogin")?.label ?? "", isOn: $flow.launchAtLogin)
+                Toggle(flow.model.bridge.setupRowLabel("launchAtLogin"), isOn: $flow.launchAtLogin)
             }
         }
         .formStyle(.grouped)
@@ -1956,15 +1956,14 @@ private struct ReadyStep: View {
         Section {
             if flow.downloadingModel != nil {
                 Text(flow.model.bridge.setupReadyIntro(blocked: false, downloading: true))
-                Label("You can close this window. The download keeps going, and Speecher shows a "
-                    + "notification when you can start dictating.", systemImage: "info.circle")
+                Label(flow.model.bridge.setupText(.closeWhileDownloading), systemImage: "info.circle")
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 StatusLabel(text: flow.model.bridge.setupReadyIntro(blocked: false, downloading: false),
                             tone: .positive)
             }
         }
-        Section("How to dictate") {
+        Section(flow.model.bridge.setupText(.howToDictate)) {
             Text(flow.activationInstruction)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Speecher stays out of the way until you press it. Its menu bar "
@@ -2011,7 +2010,7 @@ private struct ReadyStep: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 12)
-                    Button("Go to Step") { flow.goTo(step: step.index) }
+                    Button(flow.model.bridge.setupText(.goToStep)) { flow.goTo(step: step.index) }
                 }
             }
         } header: {

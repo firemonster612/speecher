@@ -230,7 +230,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     pageWidget()->setPageHeader(header);
     updateStepHeader(m_items.value(0));
     if (!m_singlePage) {
-        m_skipButton = new QPushButton(QStringLiteral("Skip setup"), this);
+        m_skipButton = new QPushButton(setupText(SetupText::SkipSetup), this);
         addActionButton(m_skipButton);
         connect(m_skipButton, &QAbstractButton::clicked, this, &SetupAssistant::skipSetup);
     }
@@ -255,7 +255,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     setOption(QWizard::NoBackButtonOnStartPage);
     if (!m_singlePage) {
         setOption(QWizard::HaveCustomButton1);
-        setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
+        setButtonText(QWizard::CustomButton1, setupText(SetupText::SkipSetup));
         m_skipButton = button(QWizard::CustomButton1);
     }
     for (int index = 0; index < pageContents.size(); ++index) {

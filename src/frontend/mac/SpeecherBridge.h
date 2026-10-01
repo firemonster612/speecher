@@ -401,6 +401,34 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeText) {
     SpeecherTranscribeTextProgressName,
 };
 
+// Mirrors speecher::SetupText.
+typedef NS_ENUM(NSInteger, SpeecherSetupText) {
+    SpeecherSetupTextSkipSetup,
+    SpeecherSetupTextCheckAgain,
+    SpeecherSetupTextGoToStep,
+    SpeecherSetupTextHowToDictate,
+    SpeecherSetupTextTranscriptionService,
+    SpeecherSetupTextLocalSpeechNote,
+    SpeecherSetupTextDownloadToContinue,
+    SpeecherSetupTextDownloadContinues,
+    SpeecherSetupTextCloseWhileDownloading,
+    SpeecherSetupTextCliproxyAccount,
+    SpeecherSetupTextListeningForInput,
+    SpeecherSetupTextInputDetected,
+    SpeecherSetupTextUsesYourSignIn,
+    SpeecherSetupTextYourOwnModels,
+    SpeecherSetupTextCleanupProvider,
+    SpeecherSetupTextSkipCleanup,
+    SpeecherSetupTextLookingForRunners,
+    SpeecherSetupTextNoRunnerFound,
+    SpeecherSetupTextNoRunner,
+    SpeecherSetupTextRawUntilRunner,
+    SpeecherSetupTextInstallRunner,
+    SpeecherSetupTextGetOllama,
+    SpeecherSetupTextDownloadWithOllama,
+    SpeecherSetupTextEndpointModelHint,
+};
+
 // Mirrors speecher::TranscribeQueueState.
 typedef NS_ENUM(NSInteger, SpeecherTranscribeQueueState) {
     SpeecherTranscribeQueueStateWaiting,
@@ -858,6 +886,15 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
     NS_SWIFT_NAME(setupRefinementStatus(_:ready:));
 - (NSString *)setupChecklistLine:(NSString *)stepId choice:(NSString *)choice
     NS_SWIFT_NAME(setupChecklistLine(_:choice:));
+- (NSString *)setupText:(SpeecherSetupText)text NS_SWIFT_NAME(setupText(_:));
+// A settings row's label and choices as the Settings window words them
+// (speecher::setupSchemaRow), whether or not the row shows right now.
+- (NSString *)setupRowLabel:(NSString *)rowId NS_SWIFT_NAME(setupRowLabel(_:));
+- (NSArray<RowOptionModel *> *)setupRowOptions:(NSString *)rowId NS_SWIFT_NAME(setupRowOptions(_:));
+- (NSString *)setupProviderReady:(NSString *)providerLabel NS_SWIFT_NAME(setupProviderReady(_:));
+- (NSString *)setupRefinementNotSignedIn:(NSString *)providerLabel NS_SWIFT_NAME(setupRefinementNotSignedIn(_:));
+- (NSString *)setupLocalSpeechChoice:(NSString *)modelName NS_SWIFT_NAME(setupLocalSpeechChoice(_:));
+- (NSString *)setupCliproxySpeechChoice:(NSString *)providerLabel NS_SWIFT_NAME(setupCliproxySpeechChoice(_:));
 // The Ready step's verdict on pasting: Ready, or Clipboard only.
 - (NSString *)setupPasteVerdict:(BOOL)pastes NS_SWIFT_NAME(setupPasteVerdict(_:));
 
