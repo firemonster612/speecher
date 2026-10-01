@@ -34,8 +34,6 @@ struct DeliveryResult {
     DeliveryReceipt receipt = DeliveryReceipt::None;
     bool formatDowngraded = false;
     QString message;
-    // What a failure offers to fix it, such as the permission it lacked.
-    PopupErrorAction fix;
 };
 
 struct SpeechPrepareResult {

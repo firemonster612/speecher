@@ -744,8 +744,7 @@ void DictationSession::deliverFinal(const QString &text)
         emit popupFrozenChanged(false);
         qWarning().noquote() << "text delivery failed message=" + result.message;
         setState(DictationState::Error,
-                 m_speechWarning.isEmpty() ? result.message : result.message + QStringLiteral(" • ") + m_speechWarning,
-                 result.fix);
+                 m_speechWarning.isEmpty() ? result.message : result.message + QStringLiteral(" • ") + m_speechWarning);
     }
 }
 
