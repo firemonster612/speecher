@@ -4,7 +4,6 @@
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
 
-#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -84,14 +83,15 @@ void migrateOutputMethod(QSettings &settings)
     } else {
         return;
     }
+    // Under these methods TextDelivery never pasted: a rule that said to paste
+    // meant inserting only, or copying only. A Direct insertion or Clipboard
+    // only rule already behaved as it does under Automatic. Only methods
+    // change, so the rule that wins for a target is the same one as before.
     QList<PasteRule> rules = pasteRulesFromJson(settings.value(SettingsKeys::PasteRules).toByteArray());
-    // Without an enabled default, or with Clipboard only, nothing was inserted
-    // or pasted before either, so that stays as it is.
-    const auto global = std::find_if(rules.begin(), rules.end(), [](const PasteRule &rule) {
-        return rule.enabled && rule.scope == PasteRuleScope::Global;
-    });
-    if (global != rules.end() && global->method != PasteMethod::ClipboardOnly) {
-        global->method = paste;
+    for (PasteRule &rule : rules) {
+        if (rule.method == PasteMethod::StandardPaste || rule.method == PasteMethod::TerminalPaste) {
+            rule.method = paste;
+        }
     }
     settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
     settings.setValue(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic));

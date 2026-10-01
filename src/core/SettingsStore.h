@@ -18,8 +18,8 @@ bool migrateSettingsIdentity(QSettings &newSettings,
 // current default. Runs once, so choosing the old model again later sticks.
 void migrateRefinementModels(QSettings &settings);
 // Paste with once also offered inserting directly and copying only, which the
-// Default paste rule chooses now. A stored method of either kind becomes
-// Automatic plus a Default paste of Direct insertion or Clipboard only, so
+// paste rules choose now. A stored method of either kind becomes Automatic,
+// and every rule that pasted becomes Direct insertion or Clipboard only, so
 // dictation delivers the way it did.
 void migrateOutputMethod(QSettings &settings);
 
