@@ -416,21 +416,24 @@ UIElement TranscribePane::build(PaneHost &host, const QString &title)
     ScrollViewer scroll = pageScaffold(title, column);
     appendSteps(column, m_step, host);
     switch (m_step) {
-    case TranscribeStep::Configure:
+    case TranscribeStep::Configure: {
         appendSetup(column, host);
-        // Files dropped anywhere on the pane join the list. A transparent
-        // background makes the whole scroller hit-testable, gutters included.
-        scroll.Background(winrt::Microsoft::UI::Xaml::Media::SolidColorBrush(
+        // Files dropped anywhere on the pane join the list, the action bar
+        // included. A transparent background makes the whole page
+        // hit-testable, gutters included.
+        Grid page = pageWithActionBar(scroll, startAction(host));
+        page.Background(winrt::Microsoft::UI::Xaml::Media::SolidColorBrush(
             winrt::Microsoft::UI::Colors::Transparent()));
-        scroll.AllowDrop(true);
-        scroll.DragOver([](const IInspectable &, const DragEventArgs &args) {
+        page.AllowDrop(true);
+        page.DragOver([](const IInspectable &, const DragEventArgs &args) {
             if (args.DataView().Contains(StandardDataFormats::StorageItems())) {
                 args.AcceptedOperation(DataPackageOperation::Copy);
                 args.DragUIOverride().Caption(hs(transcribeText(TranscribeText::DropToAdd)));
             }
         });
-        scroll.Drop([this, &host](const IInspectable &, const DragEventArgs &args) { dropFiles(host, args); });
-        return pageWithActionBar(scroll, startAction(host));
+        page.Drop([this, &host](const IInspectable &, const DragEventArgs &args) { dropFiles(host, args); });
+        return page;
+    }
     case TranscribeStep::Transcribe:
         appendProcessing(column, m_views.back());
         break;
