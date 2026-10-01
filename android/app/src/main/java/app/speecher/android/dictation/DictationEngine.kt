@@ -492,8 +492,13 @@ fun createDictationEngine(
     return DictationEngine(
         microphone::capture,
         microphone::stop,
-        { selected, events ->
+        { selected, onEvent ->
             val access = token(selected).accessToken
+            val events = { event: SpeechEvent ->
+                if (event == SpeechEvent.Connected || event is SpeechEvent.Final)
+                    store.clearSessionEnded(selected.oauth)
+                onEvent(event)
+            }
             if (selected == Provider.Claude)
                 ClaudeVoiceClient(
                     webSocketTransport(endpoints.getValue(selected).speech),

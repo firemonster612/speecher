@@ -106,7 +106,8 @@ class TokenStore(context: Context) {
     }
 
     fun clearSessionEnded(provider: OAuthProvider) {
-        preferences.edit(commit = true) { remove(sessionEndedKey(provider)) }
+        val key = sessionEndedKey(provider)
+        if (preferences.contains(key)) preferences.edit(commit = true) { remove(key) }
     }
 
     private fun sessionEndedKey(provider: OAuthProvider) = "${provider.name}-session-ended"
