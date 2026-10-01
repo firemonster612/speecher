@@ -139,68 +139,61 @@ fun DictationPanel(
             return@Surface
         }
         val compact = size == PanelSize.Compact
-        // With nothing heard, the failure takes the transcript's room, centred above its buttons.
-        val failedEmpty = state is DictationState.Failed && state.transcript.isBlank()
-        Column(
-            Modifier.navigationBarsPadding()
-                .height(height)
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (compact || display.width > display.height) 8.dp else 20.dp,
-                    bottom = 12.dp,
-                )
-        ) {
+        val padding =
+            Modifier.padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = if (compact || display.width > display.height) 8.dp else 20.dp,
+                bottom = 12.dp,
+            )
+        val buttons: @Composable () -> Unit = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PanelButtons(state, layout, onCancel, onInsert, onInsertRefined, onRecover)
+            }
+        }
+        if (state is DictationState.Failed) {
+            // A failure never collapses, so its recovery stays in view. The message sits right
+            // above its buttons, and the panel grows rather than clip it at large font sizes.
+            Column(
+                Modifier.navigationBarsPadding().heightIn(min = height).then(padding),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+            ) {
+                FailureMessage(state, Modifier.fillMaxWidth().then(announced))
+                if (state.transcript.isNotBlank()) {
+                    Transcript(state, Modifier.fillMaxWidth().heightIn(max = 96.dp))
+                }
+                buttons()
+            }
+            return@Surface
+        }
+        Column(Modifier.navigationBarsPadding().height(height).then(padding)) {
             Box(
-                Modifier.fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .then(if (failedEmpty) Modifier.weight(1f) else Modifier)
-                    .then(announced),
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).then(announced),
                 contentAlignment = Alignment.Center,
             ) {
-                when (state) {
-                    is DictationState.Listening ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            LiveBars(state.level)
-                            if (state.reconnecting) {
-                                Text(
-                                    "Reconnecting…",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                if (state is DictationState.Listening) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        LiveBars(state.level)
+                        if (state.reconnecting) {
+                            Text(
+                                "Reconnecting…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                    is DictationState.Refining -> RefiningBars()
-                    is DictationState.Failed -> FailureMessage(state)
-                }
-                // A failure never collapses, so its recovery stays in view.
-                if (state !is DictationState.Failed) {
-                    IconButton(onToggleSize, Modifier.align(Alignment.CenterEnd)) {
-                        Icon(
-                            painterResource(R.drawable.ic_minimize),
-                            contentDescription = "Minimize",
-                        )
                     }
+                } else {
+                    RefiningBars()
+                }
+                IconButton(onToggleSize, Modifier.align(Alignment.CenterEnd)) {
+                    Icon(painterResource(R.drawable.ic_minimize), contentDescription = "Minimize")
                 }
             }
-            if (!failedEmpty) {
-                Transcript(
-                    state,
-                    Modifier.weight(1f)
-                        .fillMaxWidth()
-                        .padding(vertical = if (compact) 4.dp else 12.dp),
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PanelButtons(
-                    state,
-                    layout,
-                    onCancel,
-                    onInsert,
-                    onInsertRefined,
-                    onRecover,
-                )
-            }
+            Transcript(
+                state,
+                Modifier.weight(1f).fillMaxWidth().padding(vertical = if (compact) 4.dp else 12.dp),
+            )
+            buttons()
         }
     }
 }
@@ -408,9 +401,9 @@ private val FailureReason.recovery: String
         }
 
 @Composable
-private fun FailureMessage(state: DictationState.Failed) {
+private fun FailureMessage(state: DictationState.Failed, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
