@@ -189,6 +189,24 @@ public static class RestartManager {
         throw "Uninstall left files behind:`n$((Get-ChildItem $InstallDir -Recurse -Force).FullName -join "`n")"
     }
     Write-Output "Uninstall quit the running application and removed its folder"
+
+    # A folder this install did not create that still holds a file stays.
+    $Install = Start-Process $InstallerPath -ArgumentList $Arguments -Wait -PassThru
+    if ($Install.ExitCode -ne 0) {
+        throw "Second install exited with code $($Install.ExitCode)"
+    }
+    $Kept = Join-Path $InstallDir "keep\note.txt"
+    New-Item -ItemType File -Force $Kept | Out-Null
+    $Uninstaller = Join-Path $InstallDir "unins000.exe"
+    Start-Process $Uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+    $Deadline = (Get-Date).AddSeconds(10)
+    while ((Test-Path $Uninstaller) -and (Get-Date) -lt $Deadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not (Test-Path $Kept)) {
+        throw "Uninstall removed a file it did not install"
+    }
+    Write-Output "Uninstall kept a file it did not install"
 } finally {
     if ($App -and -not $App.HasExited) {
         $App | Stop-Process -Force

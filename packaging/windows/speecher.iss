@@ -152,24 +152,50 @@ begin
   Result := '';
 end;
 
-// Whether Dir or any folder under it holds a file. A junction counts as
-// content, so nothing behind one is looked at or removed.
+// Whether Dir or any folder under it holds a file. A junction, or a folder
+// that cannot be listed, counts as content, so nothing near it is removed.
 function HoldsFiles(const Dir: String): Boolean;
 var
   Find: TFindRec;
+  IsJunction: Boolean;
 begin
-  Result := False;
-  if FindFirst(Dir + '\*', Find) then
+  Result := True;
+  if not FindFirst(Dir, Find) then
+    Exit;
+  IsJunction := (Find.Attributes and FILE_ATTRIBUTE_REPARSE_POINT) <> 0;
+  FindClose(Find);
+  if IsJunction or not FindFirst(Dir + '\*', Find) then
+    Exit;
   try
+    Result := False;
     repeat
       if (Find.Name <> '.') and (Find.Name <> '..') then
         Result := ((Find.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0)
-          or ((Find.Attributes and FILE_ATTRIBUTE_REPARSE_POINT) <> 0)
           or HoldsFiles(Dir + '\' + Find.Name);
     until Result or not FindNext(Find);
   finally
     FindClose(Find);
   end;
+end;
+
+// Removes Dir and the folders under it. RemoveDir refuses a folder that is not
+// empty, so a file written since HoldsFiles looked survives.
+procedure RemoveEmptyTree(const Dir: String);
+var
+  Find: TFindRec;
+begin
+  if FindFirst(Dir + '\*', Find) then
+  try
+    repeat
+      if ((Find.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0)
+         and ((Find.Attributes and FILE_ATTRIBUTE_REPARSE_POINT) = 0)
+         and (Find.Name <> '.') and (Find.Name <> '..') then
+        RemoveEmptyTree(Dir + '\' + Find.Name);
+    until not FindNext(Find);
+  finally
+    FindClose(Find);
+  end;
+  RemoveDir(Dir);
 end;
 
 // The uninstaller has no Restart Manager step. Run under a live Speecher, it
@@ -193,7 +219,7 @@ begin
           Abort;
     usPostUninstall:
       if not HoldsFiles(ExpandConstant('{app}')) then
-        DelTree(ExpandConstant('{app}'), True, True, True);
+        RemoveEmptyTree(ExpandConstant('{app}'));
   end;
 end;
 
