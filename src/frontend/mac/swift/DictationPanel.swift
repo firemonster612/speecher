@@ -495,14 +495,6 @@ private struct ShimmerText: View {
     }
 }
 
-/// Reports the pointer entering and leaving the panel.
-private final class PanelHover: NSResponder {
-    var changed: (Bool) -> Void = { _ in }
-
-    override func mouseEntered(with event: NSEvent) { changed(true) }
-    override func mouseExited(with event: NSEvent) { changed(false) }
-}
-
 @MainActor
 final class SpeecherDictationPanel {
     private let state = DictationPanelState()
@@ -519,8 +511,7 @@ final class SpeecherDictationPanel {
     private var whatsNewAutoHide: Timer?
     /// A problem tidies itself away after the time core gives its length; the
     /// Dismiss button remains the early way out, and the pointer holds it.
-    private var problemAutoDismiss: Timer?
-    private let hover = PanelHover()
+    private var problemTick: Timer?
     /// Scratch-branch-only E2E seam: pins both notices on so the capture rig
     /// can film how they stack above the pill. A CI run has no update pending,
     /// so the stack is otherwise never on screen to photograph.
@@ -567,12 +558,6 @@ final class SpeecherDictationPanel {
                 self?.bridge.clearPendingWhatsNew()
             },
             whatsNew: model.whatsNewBanner))
-        // A tracking area of its own rather than onHover: the panel is up
-        // while another app is active, which SwiftUI's hover does not follow.
-        hover.changed = { [weak self] inside in self?.holdProblem(inside) }
-        panel.contentView?.addTrackingArea(NSTrackingArea(
-            rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: hover, userInfo: nil))
         wire()
         installE2ECaptureSeam()
         // The level arrives through the model, which is the one reader of the
@@ -671,8 +656,8 @@ final class SpeecherDictationPanel {
         bridge.popupHideRequested = { [weak self] in
             guard let self else { return }
             // A stale problem timer must not fire into whatever shows next.
-            problemAutoDismiss?.invalidate()
-            problemAutoDismiss = nil
+            problemTick?.invalidate()
+            problemTick = nil
             panel.orderOut(nil)
         }
     }
@@ -680,8 +665,8 @@ final class SpeecherDictationPanel {
     func show(generation: UInt64) {
         // A dictation starting inside a problem's five seconds must not be
         // torn down when that problem's timer fires.
-        problemAutoDismiss?.invalidate()
-        problemAutoDismiss = nil
+        problemTick?.invalidate()
+        problemTick = nil
         present()
         // The session waits out a 50ms fallback otherwise; telling it the panel
         // is up lets the microphone open as soon as the frame is on screen.
@@ -707,35 +692,39 @@ final class SpeecherDictationPanel {
         state.phase = .live
         present()
         announce(problem)
-        countDownProblem(for: seconds)
-        // A pointer already where the panel appeared sends no enter event.
-        if panel.frame.contains(NSEvent.mouseLocation) { holdProblem(true) }
-    }
-
-    private func countDownProblem(for seconds: TimeInterval) {
-        problemAutoDismiss?.invalidate()
-        problemAutoDismiss = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async { self?.autoDismissProblem() }
+        problemTick?.invalidate()
+        problemTick = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async { self?.tickProblem() }
         }
     }
 
     /// The pointer over the panel holds a problem's countdown where it is, so
-    /// the text and its button can be read; leaving lets the rest run.
-    private func holdProblem(_ inside: Bool) {
+    /// the text and its button can be read; leaving lets the rest run. The
+    /// tick reads the pointer rather than waiting for tracking events, which
+    /// never come when the problem appears under a pointer that is not moving.
+    /// invalidate() cannot recall a tick already queued, so a dictation that
+    /// started in the meantime would be torn down by the previous problem's
+    /// countdown; a problem is cleared before such a session shows, which
+    /// says so.
+    private func tickProblem() {
         guard !state.problem.isEmpty else { return }
+        holdProblem(panel.frame.contains(NSEvent.mouseLocation))
+        if state.problemPausedAt == nil, state.problemCountdown.upperBound <= Date.now {
+            dismiss()
+        }
+    }
+
+    private func holdProblem(_ inside: Bool) {
         let countdown = state.problemCountdown
         let total = countdown.upperBound.timeIntervalSince(countdown.lowerBound)
         guard total > 0 else { return }
         if inside {
             guard state.problemPausedAt == nil else { return }
-            problemAutoDismiss?.invalidate()
-            problemAutoDismiss = nil
             state.problemPausedAt = max(0, countdown.upperBound.timeIntervalSinceNow) / total
         } else if let left = state.problemPausedAt {
             let remaining = left * total
             state.problemCountdown = Date.now.addingTimeInterval(remaining - total)...Date.now.addingTimeInterval(remaining)
             state.problemPausedAt = nil
-            countDownProblem(for: remaining)
         }
     }
 
@@ -749,18 +738,9 @@ final class SpeecherDictationPanel {
                                         .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
-    /// The countdown's end. invalidate() cannot recall a closure this timer has
-    /// already queued, so a dictation that started in the meantime would be torn
-    /// down by the previous problem's countdown; a problem is cleared before
-    /// such a session shows, which says so.
-    private func autoDismissProblem() {
-        guard !state.problem.isEmpty else { return }
-        dismiss()
-    }
-
     func dismiss() {
-        problemAutoDismiss?.invalidate()
-        problemAutoDismiss = nil
+        problemTick?.invalidate()
+        problemTick = nil
         state.problem = ""
         state.problemFix = nil
         state.problemPausedAt = nil
