@@ -136,7 +136,12 @@ fun Settings(
             PageRow(SettingsPage.RefinementContext, contextSummary(settings), onOpen)
         }
         PageRow(SettingsPage.DictationPanel, panelSummary(settings), onOpen)
-        PageRow(SettingsPage.Vocabulary, count(settings.vocabulary.size, "word", "words"), onOpen)
+        PageRow(
+            SettingsPage.Vocabulary,
+            if (settings.vocabulary.isEmpty()) "No words"
+            else count(settings.vocabulary.size, "word", "words"),
+            onOpen,
+        )
 
         if (settings.refinementEnabled) {
             Section("Advanced")

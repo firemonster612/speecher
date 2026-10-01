@@ -392,8 +392,7 @@ private val DictationState.Failed.advice: String
             commitFailed -> "Tap Retry to insert it again."
             reason == FailureReason.MicrophoneDenied -> "Open Speecher and allow the microphone."
             reason == FailureReason.SignedOut ->
-                if (name == null) "Sign in again to keep dictating."
-                else "Sign in to $name again to keep dictating."
+                "Sign in to ${name ?: "your account"} to keep dictating."
             reason == FailureReason.Network -> "Check your network and try again."
             else -> "${name ?: "The provider"} returned an error. Try again."
         }

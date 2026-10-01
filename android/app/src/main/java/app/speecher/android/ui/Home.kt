@@ -3,8 +3,10 @@ package app.speecher.android.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -68,8 +70,11 @@ fun SpeecherScreen(
         }
     ) { padding ->
         Column(
+            // The keyboard shrinks the page rather than panning the window under the status bar.
             Modifier.fillMaxSize()
                 .padding(padding)
+                .consumeWindowInsets(padding)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 24.dp)
         ) {
@@ -114,6 +119,25 @@ fun Home(
             }
         }
         if (update != null) UpdateCard(update, updating, updateFailed, onUpdate)
+        ListItem(
+            headlineContent = { Text("Settings") },
+            supportingContent = {
+                // Show what dictation will actually use: if the chosen provider isn't signed in,
+                // it falls back to the connected account, so name that rather than the raw setting.
+                val transcription =
+                    resolveSignedIn(settings.transcriptionProvider, status.signedIn).label
+                val refinement = resolveSignedIn(settings.refinementProvider, status.signedIn).label
+                Text(
+                    if (status.signedIn.isEmpty()) "Not signed in"
+                    else
+                        "Transcribing with $transcription" +
+                            if (settings.refinementEnabled) ", refining with $refinement" else ""
+                )
+            },
+            trailingContent = { Chevron() },
+            modifier = Modifier.clickable(onClick = onOpenSettings),
+        )
+        Section("Status")
         AccountRow(status, onOpenSetup, onSignIn)
         StatusRow(
             "Microphone",
@@ -132,24 +156,6 @@ fun Home(
             if (status.chipEnabled) "On. Turn it off in Accessibility settings." else "Off",
             status.chipEnabled,
             if (status.chipEnabled) onOpenChipSettings else onOpenSetup,
-        )
-        ListItem(
-            headlineContent = { Text("Settings") },
-            supportingContent = {
-                // Show what dictation will actually use: if the chosen provider isn't signed in,
-                // it falls back to the connected account, so name that rather than the raw setting.
-                val transcription =
-                    resolveSignedIn(settings.transcriptionProvider, status.signedIn).label
-                val refinement = resolveSignedIn(settings.refinementProvider, status.signedIn).label
-                Text(
-                    if (status.signedIn.isEmpty()) "Not signed in"
-                    else
-                        "Transcribing with $transcription" +
-                            if (settings.refinementEnabled) ", refining with $refinement" else ""
-                )
-            },
-            trailingContent = { Chevron() },
-            modifier = Modifier.clickable(onClick = onOpenSettings),
         )
         Section("Try it")
         PracticeField(Modifier.padding(horizontal = 16.dp).fillMaxWidth())
