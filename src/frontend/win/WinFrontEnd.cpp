@@ -161,7 +161,7 @@ void WinFrontEnd::hideMainWindow()
     }
 }
 
-// "Settings…" and `speecher settings` open General on every platform.
+// "Settings…" and `speecher settings` open General.
 void WinFrontEnd::showSettingsWindow()
 {
     showMainWindow();

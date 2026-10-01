@@ -31,6 +31,11 @@ class SettingsModel;
 // needs room: a paragraph, a URL, a key.
 inline constexpr double kWideControlWidth = 320;
 
+// The Gallery's settings page column: its widest, and the gutter either side
+// of it. Whatever lines up with the cards uses both.
+inline constexpr double kPageColumnWidth = 1064;
+inline constexpr double kPageGutter = 36;
+
 inline winrt::hstring hs(const QString &text)
 {
     return winrt::hstring(reinterpret_cast<const wchar_t *>(text.utf16()),

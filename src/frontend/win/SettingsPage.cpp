@@ -46,6 +46,10 @@ using winrt::Microsoft::UI::Xaml::Markup::XamlReader;
 constexpr auto kXmlns =
     LR"(xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation")";
 
+// The least room a row's title keeps beside its control. With less, the
+// control goes below the title.
+constexpr double kMinimumTitleWidth = 150;
+
 Style lookupStyle(const wchar_t *key)
 {
     return Application::Current()
@@ -524,8 +528,8 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
 ScrollViewer pageScaffold(const QString &title, const StackPanel &column)
 {
     ScrollViewer scroll;
-    scroll.Padding({36, 0, 36, 0});
-    column.MaxWidth(1064);
+    scroll.Padding({kPageGutter, 0, kPageGutter, 0});
+    column.MaxWidth(kPageColumnWidth);
     column.Padding({0, 0, 0, 36});
     if (!title.isEmpty()) {
         column.Children().Append(styledText(title, L"SettingsPageTitleStyle"));
@@ -545,8 +549,8 @@ Grid pageWithActionBar(const ScrollViewer &scroll, const UIElement &action)
     page.RowDefinitions().Append(actions);
     page.Children().Append(scroll);
     Border bar;
-    bar.MaxWidth(1064);
-    bar.Margin({36, 12, 36, 20});
+    bar.MaxWidth(kPageColumnWidth);
+    bar.Margin({kPageGutter, 12, kPageGutter, 20});
     bar.Child(action);
     Grid::SetRow(bar, 1);
     page.Children().Append(bar);
@@ -835,6 +839,29 @@ Grid rowGrid(const RowSnapshot &row, const UIElement &control, PaneHost &host, b
         }
         Grid::SetColumn(control.as<FrameworkElement>(), 1);
         grid.Children().Append(control);
+        // As SettingsCard does on a narrow window, a control that leaves its
+        // title too little room moves below it, at the title's left edge.
+        for (int index = 0; index < 2; ++index) {
+            RowDefinition line;
+            line.Height({0, GridUnitType::Auto});
+            grid.RowDefinitions().Append(line);
+        }
+        grid.SizeChanged([content = control.as<FrameworkElement>()](const IInspectable &sender,
+                                                                   const SizeChangedEventArgs &args) {
+            const Grid layout = sender.as<Grid>();
+            const Thickness padding = layout.Padding();
+            const double titleRoom = args.NewSize().Width - padding.Left - padding.Right
+                - layout.ColumnSpacing() - content.DesiredSize().Width;
+            const bool below = titleRoom < kMinimumTitleWidth;
+            layout.RowSpacing(below ? 8 : 0);
+            Grid::SetRow(content, below ? 1 : 0);
+            Grid::SetColumn(content, below ? 0 : 1);
+            Grid::SetColumnSpan(content, below ? 2 : 1);
+            content.HorizontalAlignment(below ? HorizontalAlignment::Left : HorizontalAlignment::Right);
+            if (const auto text = content.try_as<TextBlock>()) {
+                text.TextAlignment(below ? TextAlignment::Start : TextAlignment::End);
+            }
+        });
         // As in the Settings app, the whole card flips a switch, not only the
         // switch; the transparent fill makes the empty space hit-testable.
         if (toggle && row.enabled) {
