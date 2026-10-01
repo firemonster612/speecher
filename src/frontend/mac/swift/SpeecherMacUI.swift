@@ -199,7 +199,10 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     @objc public func showDictationProblem(_ message: String, fix: SpeecherErrorAction?) {
-        model.noteRefusedStart(message, fix: fix)
+        // A refusal that passes on its own, such as files being transcribed,
+        // leaves with the popup; one that needs a fix stays on Home and in the
+        // menu bar.
+        if let fix, fix.fix != .none { model.noteRefusedStart(message, fix: fix) }
         panel.show(problem: message, fix: fix)
     }
 
