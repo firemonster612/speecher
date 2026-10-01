@@ -1,6 +1,7 @@
 #include "app/SetupSteps.h"
 
 #include "core/AppSettings.h"
+#include "core/CliToolDiscovery.h"
 #include "core/settings/SettingsSchema.h"
 
 namespace speecher {
@@ -116,11 +117,28 @@ QString setupStepCounter(int step, int total)
     return QStringLiteral("Step %1 of %2").arg(step).arg(total);
 }
 
-QString setupSignInMissing(bool localOffered)
+QString setupSignInMissing(bool localOffered, bool cliToolFound)
 {
-    return localOffered
-        ? QStringLiteral("No sign-in was found. Sign in, or choose to run on this computer.")
-        : QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found.");
+    if (localOffered) {
+        return QStringLiteral("No sign-in was found. Sign in, or choose to run on this computer.");
+    }
+    if (cliToolFound) {
+        return QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found.");
+    }
+    return QStringLiteral("This computer can't run a local speech model, and no ChatGPT, Claude, "
+                          "or CLI Proxy API sign-in was found. Please get a free ChatGPT or Claude "
+                          "account and install Claude Code or Claude Desktop, or Codex.");
+}
+
+QString setupWelcomeDeadEnd(bool signInFound, bool localUsable, bool endpointSaved,
+                            bool signInProvidersRegistered)
+{
+    if (signInFound || localUsable || endpointSaved || !signInProvidersRegistered) {
+        return {};
+    }
+    return setupSignInMissing(false,
+                              CliToolDiscovery::isClaudeCodeInstalled()
+                                  || CliToolDiscovery::isCodexInstalled());
 }
 
 QString setupTranscriptionBlocked(bool localSelected, const QString &providerLabel)

@@ -32,18 +32,22 @@ QString setupRefinementChoice(const QString &saved, const QStringList &ready, bo
 
 // One per assistant, retained across Back/Next. update returns the speech
 // provider to persist; a missing userChoice follows completed sign-in checks.
+// localUsable says whether this computer can run a model: when it can't, the
+// default path stays on the sign-ins, and a local choice does not open ready.
 class WelcomeChoice {
 public:
     QString update(const QString &provider, const QStringList &readyProviders,
-                   bool proxyAccountFound, std::optional<bool> userChoice = std::nullopt);
+                   bool proxyAccountFound, std::optional<bool> userChoice = std::nullopt,
+                   bool localUsable = true);
     // An explicit Transcription choice is no longer an automatic path write.
     void providerChosen() { m_previousProvider.reset(); }
     bool local() const { return m_local; }
-    bool ready() const { return m_local || m_signInFound; }
+    bool ready() const { return (m_local && m_localUsable) || m_signInFound; }
 private:
     std::optional<bool> m_explicit;
     std::optional<QString> m_previousProvider;
     bool m_local = false;
+    bool m_localUsable = true;
     bool m_signInFound = false;
 };
 
@@ -89,6 +93,10 @@ public:
     // engine's backends is what makes it slow.
     void probeHardware();
     bool hardwareKnown() const;
+    // Whether this computer can run a local speech model at all, on any
+    // placement. True until the hardware probe answers: a machine is not
+    // declared too small before anyone measured it.
+    bool canRunAnyModel() const;
     const HardwareSummary &hardware() const;
     // "AMD Ryzen 7 PRO 4750U, 16 threads · AMD Radeon Graphics, Vulkan · 16 GB".
     QString hardwareLine() const;

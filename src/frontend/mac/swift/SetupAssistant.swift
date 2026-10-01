@@ -196,7 +196,8 @@ final class SetupFlowModel: ObservableObject {
         // step one. A later step's re-probe can close this gate; only this
         // step's own checks move the path.
         case "welcome":
-            return localPath || signInFound || speechProviders.isEmpty
+            return (localPath && localRunnable) || signInFound || providerId == "endpoint"
+                || speechProviders.isEmpty
         case "transcription": return localSelected ? localDownloadStarted : providerReady
         case "microphone":
             return microphonePermission == .authorized && microphoneInputDetected
@@ -236,7 +237,8 @@ final class SetupFlowModel: ObservableObject {
         let bridge = model.bridge
         switch stepId {
         case "welcome":
-            return bridge.setupSignInMissing(localOffered: offersLocal)
+            return bridge.setupSignInMissing(localOffered: offersLocal && localRunnable,
+                                             cliToolFound: bridge.speechCliToolFound)
         case "transcription":
             return bridge.setupTranscriptionBlocked(localSelected: localSelected,
                                                     provider: selectedSpeechProvider?.label ?? "")
@@ -442,6 +444,23 @@ final class SetupFlowModel: ObservableObject {
 
     var offersLocal: Bool { model.bridge.localSpeechAvailable }
 
+    /// Whether the hardware can run any catalog model; optimistic until the
+    /// hardware probe answers. A too-small answer that lands after the
+    /// sign-in checks shuts the welcome gate and shows the dead-end note,
+    /// but does not re-run the automatic path; by installed capacity no
+    /// Apple Silicon Mac answers too small.
+    var localRunnable: Bool { model.bridge.localSpeechCanRun }
+
+    /// The welcome step's dead-end note; core decides when it shows and
+    /// words it.
+    var welcomeDeadEnd: String? {
+        let note = model.bridge.setupWelcomeDeadEnd(signInFound: signInFound,
+                                                    localUsable: offersLocal && localRunnable,
+                                                    endpointSaved: providerId == "endpoint",
+                                                    signInProvidersRegistered: !signInProviders.isEmpty)
+        return note.isEmpty ? nil : note
+    }
+
     var localPath: Bool { welcome.local }
 
     func pickPath(local: Bool) {
@@ -457,7 +476,8 @@ final class SetupFlowModel: ObservableObject {
         objectWillChange.send()
         let provider = welcome.update(provider: current, readyProviders: ready,
                                       proxyAccountFound: cliproxyAvailable,
-                                      choice: choice.map { NSNumber(value: $0) })
+                                      choice: choice.map { NSNumber(value: $0) },
+                                      localUsable: localRunnable)
         if provider != current {
             model.setValue(provider, for: "speechProvider")
             refreshCliproxy()
@@ -1283,6 +1303,14 @@ private struct WelcomeStep: View {
                         .frame(maxWidth: 420)
                 }
                 .frame(maxWidth: .infinity)
+            }
+            // The dead end, on either path; core words it and decides when
+            // it shows.
+            if let deadEnd = flow.welcomeDeadEnd {
+                Section {
+                    Label(deadEnd, systemImage: "exclamationmark.triangle")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             // Two ways into dictation: a sign-in the person already has, or a
             // model on this computer. The sign-in rows only matter for the first.

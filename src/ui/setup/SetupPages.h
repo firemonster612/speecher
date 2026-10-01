@@ -177,6 +177,9 @@ private:
     QWidget *m_signInDetail = nullptr;
     QWidget *m_localDetail = nullptr;
     QLabel *m_hardware = nullptr;
+    // The dead end: no sign-in, no CLI to sign in to, and this computer can't
+    // run a local speech model.
+    InlineMessage *m_deadEnd = nullptr;
     // Until the person picks a path, every round of checks sets the
     // default: the sign-in when one is found, else this computer.
     WelcomeChoice m_pathChoice;

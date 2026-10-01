@@ -35,8 +35,20 @@ QString setupWelcomeDetail();
 // "Step 2 of 9".
 QString setupStepCounter(int step, int total);
 
-// Why a state-dependent gate is shut.
-QString setupSignInMissing(bool localOffered);
+// Why a state-dependent gate is shut. localOffered means running on this
+// computer is a real way out: local speech is in the build and the hardware
+// can run a model. cliToolFound means Claude Code or Codex is installed, so
+// signing in is enough; without either, the message says to get an account
+// and install one.
+QString setupSignInMissing(bool localOffered, bool cliToolFound);
+// The welcome page's dead-end note, or empty while any way into dictation
+// remains: a found sign-in, a machine that can run a model, a configured
+// speech server, or no sign-in providers to wait for. Core also decides the
+// wording from whether Claude Code or Codex is installed: installed means
+// signing in is the missing step, otherwise the note says to get an account
+// and install one.
+QString setupWelcomeDeadEnd(bool signInFound, bool localUsable, bool endpointSaved,
+                            bool signInProvidersRegistered);
 // An empty label means no transcription service is available.
 QString setupTranscriptionBlocked(bool localSelected, const QString &providerLabel);
 enum class SetupMicrophoneProblem { NoDevice, NoAccess, Silent };

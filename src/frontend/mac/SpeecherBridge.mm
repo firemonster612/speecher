@@ -6,6 +6,7 @@
 #include "app/PlatformComposition.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
+#include "core/CliToolDiscovery.h"
 #include "core/InsightsExport.h"
 #include "core/InsightsLog.h"
 #include "core/InsightsSummary.h"
@@ -778,11 +779,13 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
                   readyProviders:(NSArray<NSString *> *)readyProviders
                proxyAccountFound:(BOOL)proxyAccountFound
                           choice:(NSNumber *)choice
+                     localUsable:(BOOL)localUsable
 {
     QStringList ready;
     for (NSString *id in readyProviders) ready.append(QString::fromNSString(id));
     const std::optional<bool> picked = choice ? std::optional<bool>(choice.boolValue) : std::nullopt;
-    return _choice.update(QString::fromNSString(provider), ready, proxyAccountFound, picked).toNSString();
+    return _choice.update(QString::fromNSString(provider), ready, proxyAccountFound, picked, localUsable)
+        .toNSString();
 }
 
 - (void)providerChosen
@@ -2456,9 +2459,19 @@ static void probeSpeechProvider(BridgeState *state,
     return speecher::setupStepCounter(int(step), int(total)).toNSString();
 }
 
-- (NSString *)setupSignInMissing:(BOOL)localOffered
+- (NSString *)setupSignInMissing:(BOOL)localOffered cliToolFound:(BOOL)cliToolFound
 {
-    return speecher::setupSignInMissing(localOffered).toNSString();
+    return speecher::setupSignInMissing(localOffered, cliToolFound).toNSString();
+}
+
+- (NSString *)setupWelcomeDeadEnd:(BOOL)signInFound
+                      localUsable:(BOOL)localUsable
+                    endpointSaved:(BOOL)endpointSaved
+        signInProvidersRegistered:(BOOL)signInProvidersRegistered
+{
+    return speecher::setupWelcomeDeadEnd(signInFound, localUsable, endpointSaved,
+                                         signInProvidersRegistered)
+        .toNSString();
 }
 
 - (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
@@ -2722,6 +2735,17 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 - (BOOL)localSpeechAvailable
 {
     return _state->controller->providerRegistry()->speechProvider(QStringLiteral("local")) != nullptr;
+}
+
+- (BOOL)localSpeechCanRun
+{
+    return _state->controller->localSetup()->canRunAnyModel();
+}
+
+- (BOOL)speechCliToolFound
+{
+    return speecher::CliToolDiscovery::isClaudeCodeInstalled()
+        || speecher::CliToolDiscovery::isCodexInstalled();
 }
 
 - (void)probeLocalHardware

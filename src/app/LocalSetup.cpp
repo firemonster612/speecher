@@ -87,15 +87,17 @@ QString setupRefinementChoice(const QString &saved, const QStringList &ready, bo
 }
 
 QString WelcomeChoice::update(const QString &provider, const QStringList &readyProviders,
-                              bool proxyAccountFound, std::optional<bool> userChoice)
+                              bool proxyAccountFound, std::optional<bool> userChoice,
+                              bool localUsable)
 {
     QStringList signIns;
     for (const auto &id : readyProviders) {
         if (isSetupSignInProvider(id)) signIns.append(id);
     }
     m_signInFound = proxyAccountFound || !signIns.isEmpty();
+    m_localUsable = localUsable;
     if (userChoice) m_explicit = userChoice;
-    const bool local = m_explicit.value_or(!m_signInFound);
+    const bool local = m_explicit.value_or(!m_signInFound && localUsable);
     const bool transition = local != m_local;
     m_local = local;
     if (!transition && !userChoice) return provider;
@@ -328,6 +330,25 @@ void LocalSetup::probeHardware()
 bool LocalSetup::hardwareKnown() const
 {
     return m_hardwareKnown;
+}
+
+bool LocalSetup::canRunAnyModel() const
+{
+    // Unknown is able: before the probe answers, and when a probe answered
+    // with nothing (no memory reading), the machine is not declared too small.
+    if (!m_hardwareKnown || m_hardware.profile.systemRamBytes == 0) {
+        return true;
+    }
+    // Capability, not the moment's memory pressure: free RAM at probe time
+    // says what fits right now, while this answer decides whether running
+    // locally is offered at all, and the probe never runs again. Judge by
+    // installed capacity, on the probe's placement or failing that the CPU.
+    const auto capacity = [](HardwareProfile profile) {
+        profile.availableRamBytes = profile.systemRamBytes;
+        return profile;
+    };
+    return anyLocalModelFits(capacity(m_hardware.profile))
+        || anyLocalModelFits(capacity(runsOnProfile(m_hardware, {QStringLiteral("cpu"), QString()})));
 }
 
 const HardwareSummary &LocalSetup::hardware() const
