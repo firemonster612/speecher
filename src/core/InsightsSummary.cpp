@@ -737,6 +737,18 @@ QString homeText(HomeText text)
         return QStringLiteral("Records");
     case HomeText::PrivacyNote:
         return QStringLiteral("Insights are stored only on this computer and are never sent to the cloud.");
+    case HomeText::ClearHistoryTitle:
+        return QStringLiteral("Clear insights history");
+    case HomeText::ClearHistoryQuestion:
+        return QStringLiteral("Delete all insights history?");
+    case HomeText::ClearHistoryBody:
+        return QStringLiteral("Your stats, streaks and records are erased from this computer. This can't be "
+                              "undone.");
+    case HomeText::ClearHistoryConfirm:
+        return QStringLiteral("Delete history");
+    case HomeText::ClearHistoryFailed:
+        return QStringLiteral("Speecher couldn't delete the insights history. Close any app that has the "
+                              "history file open, then try again.");
     }
     return {};
 }

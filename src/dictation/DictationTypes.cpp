@@ -25,8 +25,9 @@ DictationToggleAction dictationToggleAction(const QString &stateName)
     if (lowered == QStringLiteral("refining")) {
         return {QStringLiteral("Cancel refinement"), true};
     }
+    // Nothing to do while the text is on its way, so the control says why.
     if (lowered == QStringLiteral("stopping") || lowered == QStringLiteral("delivering")) {
-        return {QStringLiteral("Start dictation"), false};
+        return {dictationStatusLabel(lowered), false};
     }
     // Keyed on the state name because that is what the callers receive over
     // their state-change signals, so the compiler cannot enforce coverage:

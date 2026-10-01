@@ -59,6 +59,16 @@ constexpr int kPopupErrorMsPerCharacter = 60;
 
 } // namespace
 
+QString popupDismissCaption()
+{
+    return QStringLiteral("Dismiss");
+}
+
+QString renewingSignInText()
+{
+    return QStringLiteral("Renewing sign-in\u2026");
+}
+
 int popupErrorDismissMs(const QString &message)
 {
     return std::max<int>(kPopupErrorMinimumMs, int(message.simplified().size()) * kPopupErrorMsPerCharacter);

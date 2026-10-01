@@ -186,7 +186,7 @@ private slots:
         ApplicationController controller(false);
         SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
         SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
-        bridge.popupStatusChanged(@"Listening");
+        bridge.popupStatusChanged(@"Listening", SpeecherDictationStateListening);
         bridge.popupShowRequested(74);
         const auto settle = [] {
             const QDeadlineTimer deadline(300);
@@ -246,7 +246,7 @@ private slots:
         bridge.popupFrozenChanged(true);
         settle();
         QVERIFY(capture("frozen-preview"));
-        bridge.popupStatusChanged(@"Stopping");
+        bridge.popupStatusChanged(@"Stopping", SpeecherDictationStateStopping);
         settle();
         QCOMPARE(panel.frame.size.height, initial.size.height);
         QVERIFY(capture("transcribing"));

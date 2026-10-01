@@ -401,6 +401,18 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeText) {
     SpeecherTranscribeTextProgressName,
 };
 
+// Mirrors speecher::DictationState, so the panel decides on the state rather
+// than on the words of its label.
+typedef NS_ENUM(NSInteger, SpeecherDictationState) {
+    SpeecherDictationStateIdle,
+    SpeecherDictationStateStarting,
+    SpeecherDictationStateListening,
+    SpeecherDictationStateStopping,
+    SpeecherDictationStateRefining,
+    SpeecherDictationStateDelivering,
+    SpeecherDictationStateError,
+};
+
 // Mirrors speecher::SetupText.
 typedef NS_ENUM(NSInteger, SpeecherSetupText) {
     SpeecherSetupTextSkipSetup,
@@ -717,6 +729,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL listening;
 // The captions the menu bar panel shares with the Linux and Windows trays.
 @property (nonatomic, readonly, copy) NSString *traySettingsCaption;
+// The menu bar item's accessible name (speecher::trayToolTip).
+- (NSString *)trayToolTip:(BOOL)listening NS_SWIFT_NAME(trayToolTip(listening:));
 @property (nonatomic, readonly, copy) NSString *trayQuitCaption;
 // A level meter's accessible name, in the menu bar panel and setup.
 @property (nonatomic, readonly, copy) NSString *inputLevelLabel;
@@ -736,6 +750,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // "period", "activity", "measure", "whenYouTalk", "noHourData", "pace",
 // "speakingPace", "savedOverTyping", "youSpeaking", "typicalTyping",
 // "whereYourWordsGo", "noDictationInPeriod", "records", "privacyNote",
+// "clearHistoryQuestion", "clearHistoryBody", "clearHistoryConfirm",
+// "clearHistoryFailed",
 // "measureDictations", "measureWords", "measureAudio".
 @property (nonatomic, readonly, copy) NSDictionary<NSString *, NSString *> *homeLabels;
 - (NSString *)learnedCorrectionsCaption:(NSInteger)count NS_SWIFT_NAME(learnedCorrectionsCaption(_:));
@@ -778,7 +794,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // settings pane, so it reads these rather than the schema.
 @property (nonatomic, copy, nullable) void (^popupShowRequested)(uint64_t generation);
 @property (nonatomic, copy, nullable) void (^popupHideRequested)(void);
-@property (nonatomic, copy, nullable) void (^popupStatusChanged)(NSString *status);
+@property (nonatomic, copy, nullable) void (^popupStatusChanged)(NSString *status, SpeecherDictationState state);
 @property (nonatomic, copy, nullable) void (^popupPreviewChanged)(NSString *preview);
 @property (nonatomic, copy, nullable) void (^popupFrozenChanged)(BOOL frozen);
 @property (nonatomic, copy, nullable) void (^popupRefiningChanged)(BOOL refining);
@@ -793,6 +809,11 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // speecher::checkingCredentialsStatus() and accessibilityGrantActionLabel().
 @property (class, nonatomic, readonly, copy) NSString *checkingCredentialsStatus;
 @property (class, nonatomic, readonly, copy) NSString *accessibilityGrantActionLabel;
+// The popup's captions (speecher::popupDismissCaption, renewingSignInText,
+// and dictationStatusLabel for a state).
+@property (class, nonatomic, readonly, copy) NSString *popupDismissCaption;
+@property (class, nonatomic, readonly, copy) NSString *renewingSignInText;
++ (NSString *)statusLabelFor:(SpeecherDictationState)state NS_SWIFT_NAME(statusLabel(for:));
 // speecher::kPopupErrorWrapWidth, and popupErrorDismissMs for a message.
 @property (class, nonatomic, readonly) CGFloat popupErrorWrapWidth;
 + (NSTimeInterval)popupErrorDismissSecondsFor:(NSString *)message NS_SWIFT_NAME(popupErrorDismissSeconds(for:));

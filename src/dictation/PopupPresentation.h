@@ -49,6 +49,11 @@ QString popupErrorActionLabel(const PopupErrorAction &action);
 // sign-in, Local models for a model on this computer, Dictation for a server.
 PopupErrorAction speechSetupAction(const QString &providerId);
 
+// The popup's own captions: an error's Dismiss button, and the line shown
+// while an expired sign-in is renewed before dictation starts.
+QString popupDismissCaption();
+QString renewingSignInText();
+
 // A live preview that overflows loses words from the front, so the newest
 // words stay visible, and "… " says something came before them. Words are
 // Unicode's, so CJK text is cut between words, not only at spaces. fits

@@ -159,7 +159,7 @@ final class DictationPanelState: ObservableObject {
         case "refining": return ("sparkles", status, false)
         // Set by the OAuth refresh callback in wire(): ongoing work, not an
         // outcome, so it must not present as a finished delivery.
-        case "renewing sign-in…":
+        case SpeecherBridge.renewingSignInText.lowercased():
             return ("arrow.triangle.2.circlepath", status, false)
         default: return ("waveform", status, false)
         }
@@ -181,10 +181,10 @@ final class DictationPanelState: ObservableObject {
     var showsPreview: Bool { problem.isEmpty && !finished && !preview.isEmpty }
 
     var waitingLabel: String? {
-        if status == "Renewing sign-in…" { return status }
+        if status == SpeecherBridge.renewingSignInText { return status }
         switch phase {
-        case .transcribing: return "Transcribing…"
-        case .refining: return "Refining…"
+        case .transcribing: return SpeecherBridge.statusLabel(for: .stopping)
+        case .refining: return SpeecherBridge.statusLabel(for: .refining)
         case .live: return nil
         }
     }
@@ -303,7 +303,7 @@ struct DictationPanelView: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity)
-                    Button("Dismiss", action: dismiss)
+                    Button(SpeecherBridge.popupDismissCaption, action: dismiss)
                 } else if finished {
                     Label(state.status, systemImage: symbol)
                         .font(.body)
@@ -544,7 +544,7 @@ final class SpeecherDictationPanel {
     }
 
     private func wire() {
-        bridge.popupStatusChanged = { [weak self] status in
+        bridge.popupStatusChanged = { [weak self] status, sessionState in
             guard let self else { return }
             E2EPanelEvidence.record("status", status)
             // A live state follows any earlier receipt.
@@ -552,7 +552,7 @@ final class SpeecherDictationPanel {
             state.status = status
             // The mic is closed but the provider is still finalising, so the
             // shimmer takes the line and the stale speech preview goes away.
-            if status == "Stopping" {
+            if sessionState == .stopping {
                 state.phase = .transcribing
                 state.preview = ""
             }
@@ -591,7 +591,7 @@ final class SpeecherDictationPanel {
         }
         bridge.popupOAuthRefreshRequested = { [weak self] in
             self?.state.phase = .live
-            self?.state.status = "Renewing sign-in…"
+            self?.state.status = SpeecherBridge.renewingSignInText
             self?.state.preview = ""
             self?.syncFrameHeight()
         }
@@ -828,7 +828,7 @@ final class SpeecherDictationPanel {
     /// the bordered Dismiss button, with the gaps between them. Measured from
     /// the real controls, so a one-line problem never wraps for want of a point.
     private func problemChromeWidth(font: NSFont) -> CGFloat {
-        let dismiss = NSButton(title: "Dismiss", target: nil, action: nil)
+        let dismiss = NSButton(title: SpeecherBridge.popupDismissCaption, target: nil, action: nil)
         dismiss.bezelStyle = .push
         let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
                              accessibilityDescription: nil)?

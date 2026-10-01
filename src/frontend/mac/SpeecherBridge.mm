@@ -1776,10 +1776,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     QObject::connect(session,
                      &DictationSession::popupStatusChanged,
                      &_state->lifetime,
-                     [weakSelf](const QString &status) {
+                     [weakSelf, session](const QString &status) {
                          SpeecherBridge *bridge = weakSelf;
                          if (bridge.popupStatusChanged) {
-                             bridge.popupStatusChanged(status.toNSString());
+                             bridge.popupStatusChanged(status.toNSString(),
+                                                       static_cast<SpeecherDictationState>(session->state()));
                          }
                      });
     QObject::connect(session,
@@ -2045,6 +2046,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::dictationListeningPresentation(_state->controller->stateName());
 }
 
+- (NSString *)trayToolTip:(BOOL)listening
+{
+    return speecher::trayToolTip(listening).toNSString();
+}
+
 - (NSString *)traySettingsCaption
 {
     return speecher::traySettingsCaption().toNSString();
@@ -2116,6 +2122,10 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         @"noDictationInPeriod": speecher::homeText(speecher::HomeText::NoDictationInPeriod).toNSString(),
         @"records": speecher::homeText(speecher::HomeText::Records).toNSString(),
         @"privacyNote": speecher::homeText(speecher::HomeText::PrivacyNote).toNSString(),
+        @"clearHistoryQuestion": speecher::homeText(speecher::HomeText::ClearHistoryQuestion).toNSString(),
+        @"clearHistoryBody": speecher::homeText(speecher::HomeText::ClearHistoryBody).toNSString(),
+        @"clearHistoryConfirm": speecher::homeText(speecher::HomeText::ClearHistoryConfirm).toNSString(),
+        @"clearHistoryFailed": speecher::homeText(speecher::HomeText::ClearHistoryFailed).toNSString(),
         @"measureDictations": speecher::heatMeasureLabel(speecher::HeatMeasure::Dictations).toNSString(),
         @"measureWords": speecher::heatMeasureLabel(speecher::HeatMeasure::Words).toNSString(),
         @"measureAudio": speecher::heatMeasureLabel(speecher::HeatMeasure::Audio).toNSString(),
@@ -2234,6 +2244,23 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 + (CGFloat)popupErrorWrapWidth
 {
     return speecher::kPopupErrorWrapWidth;
+}
+
++ (NSString *)popupDismissCaption
+{
+    return speecher::popupDismissCaption().toNSString();
+}
+
++ (NSString *)renewingSignInText
+{
+    return speecher::renewingSignInText().toNSString();
+}
+
++ (NSString *)statusLabelFor:(SpeecherDictationState)state
+{
+    return speecher::dictationStatusLabel(
+               speecher::dictationStateName(static_cast<speecher::DictationState>(state)))
+        .toNSString();
 }
 
 + (NSTimeInterval)popupErrorDismissSecondsFor:(NSString *)message

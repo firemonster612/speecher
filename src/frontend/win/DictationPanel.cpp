@@ -192,7 +192,7 @@ struct DictationPanel::Native : QObject {
                 [this](bool value) { setRefining(value); });
         connect(session, &DictationSession::popupOAuthRefreshRequested, this, [this] {
             phase = Phase::Live;
-            status = QStringLiteral("Renewing sign-in…");
+            status = renewingSignInText();
             preview.clear();
             refresh();
         });
@@ -332,7 +332,7 @@ struct DictationPanel::Native : QObject {
         content.Children().Append(previewText);
 
         dismiss = Button();
-        dismiss.Content(box_value(L"Dismiss"));
+        dismiss.Content(box_value(win::hs(popupDismissCaption())));
         dismiss.Visibility(Visibility::Collapsed);
         dismiss.Click([this](const auto &, const auto &) {
             dismissProblem();
@@ -730,14 +730,14 @@ struct DictationPanel::Native : QObject {
                              : refining && !hasProblem ? QString::fromUtf16(u"\uE8A9")
                                                        : phaseGlyph(status, hasProblem))
                                 .toStdWString()));
-        const bool renewing = status == QStringLiteral("Renewing sign-in…");
+        const bool renewing = status == renewingSignInText();
         const bool waiting = !hasProblem && !finished && (phase != Phase::Live || renewing);
         const bool listening = !hasProblem && !finished && !waiting;
         const bool showPreview = !hasProblem && !finished && !preview.isEmpty();
         setShimmer(waiting);
         QString shown = hasProblem ? problem : finished ? status
-            : renewing ? status : phase == Phase::Transcribing ? QStringLiteral("Transcribing…")
-            : waiting ? QStringLiteral("Refining…") : QString();
+            : renewing ? status : phase == Phase::Transcribing ? dictationStatusLabel(QStringLiteral("stopping"))
+            : waiting ? dictationStatusLabel(QStringLiteral("refining")) : QString();
         POINT pointer{};
         GetCursorPos(&pointer);
         MONITORINFO monitor{sizeof(monitor)};

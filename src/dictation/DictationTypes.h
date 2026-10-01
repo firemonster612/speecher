@@ -20,7 +20,7 @@ QString dictationStateLabel(DictationState state, const QString &message = {});
 // What a Start/Stop control presents for a session state name, matching
 // what toggle() would actually do (DictationSession::toggleSession): it stops
 // starting and listening, cancels a refinement, and does nothing during
-// stopping and delivering.
+// stopping and delivering, when it is disabled and names the state instead.
 struct DictationToggleAction {
     QString label;
     bool enabled = true;

@@ -4,6 +4,7 @@
 #include "app/LocalSetup.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
+#include "core/InsightsSummary.h"
 #include "core/AppSettings.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
@@ -398,19 +399,18 @@ void SettingsPageSet::runPageAction(const QString &rowId)
     if (rowId == QStringLiteral("clearInsights")) {
         QMessageBox confirm(qobject_cast<QWidget *>(parent()));
         confirm.setIcon(QMessageBox::Question);
-        confirm.setWindowTitle(QStringLiteral("Clear insights history"));
-        confirm.setText(QStringLiteral("Delete all insights history?"));
-        confirm.setInformativeText(QStringLiteral("Your stats, streaks and records are erased from "
-                                                  "this computer. This can't be undone."));
-        QPushButton *remove = confirm.addButton(QStringLiteral("Delete history"),
+        confirm.setWindowTitle(homeText(HomeText::ClearHistoryTitle));
+        confirm.setText(homeText(HomeText::ClearHistoryQuestion));
+        confirm.setInformativeText(homeText(HomeText::ClearHistoryBody));
+        QPushButton *remove = confirm.addButton(homeText(HomeText::ClearHistoryConfirm),
                                                 QMessageBox::DestructiveRole);
         confirm.addButton(QMessageBox::Cancel);
         confirm.setDefaultButton(QMessageBox::Cancel);
         confirm.exec();
         if (confirm.clickedButton() == remove && !m_controller->clearInsights()) {
             QMessageBox::warning(qobject_cast<QWidget *>(parent()),
-                                 QStringLiteral("Clear insights history"),
-                                 QStringLiteral("Speecher couldn't delete the insights history."));
+                                 homeText(HomeText::ClearHistoryTitle),
+                                 homeText(HomeText::ClearHistoryFailed));
         }
         return;
     }

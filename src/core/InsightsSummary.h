@@ -250,6 +250,13 @@ enum class HomeText {
     NoDictationInPeriod,
     Records,
     PrivacyNote,
+    // Clearing the history: the confirmation, its button, and what a failure
+    // says to do next.
+    ClearHistoryTitle,
+    ClearHistoryQuestion,
+    ClearHistoryBody,
+    ClearHistoryConfirm,
+    ClearHistoryFailed,
 };
 QString homeText(HomeText text);
 // "45 min", "2 h", "2 h 5 min": the time Pace says dictation saved.

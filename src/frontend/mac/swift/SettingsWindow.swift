@@ -29,14 +29,14 @@ struct RootView: View {
         }
         .toolbar(removing: .sidebarToggle)
         .toolbar(removing: .title)
-        .confirmationDialog("Delete all insights history?",
+        .confirmationDialog(model.homeLabel("clearHistoryQuestion"),
                             isPresented: $model.confirmingClearInsights) {
-            Button("Delete history", role: .destructive) { model.clearInsights() }
+            Button(model.homeLabel("clearHistoryConfirm"), role: .destructive) { model.clearInsights() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your stats, streaks and records are erased from this computer. This can't be undone.")
+            Text(model.homeLabel("clearHistoryBody"))
         }
-        .alert("Speecher couldn't delete the insights history.",
+        .alert(model.homeLabel("clearHistoryFailed"),
                isPresented: $model.clearInsightsFailed) {
             Button("OK", role: .cancel) {}
         }

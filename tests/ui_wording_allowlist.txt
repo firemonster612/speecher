@@ -8,7 +8,6 @@
 
 
 # Known drift no open pull request clears yet: a follow-up reads these from core.
-core-string src/frontend/mac/swift/MenuBarExtra.swift Speecher is listening
 core-string src/frontend/qt/WritingProfileGrid.cpp New profile
 core-string src/frontend/win/LocalModelBrowser.cpp Speech models
 core-string src/frontend/win/SetupWindow.cpp Speech models

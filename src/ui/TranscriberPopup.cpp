@@ -1,6 +1,7 @@
 #include "ui/TranscriberPopup.h"
 
 #include "app/UpdateBanner.h"
+#include "dictation/DictationTypes.h"
 #include "platform/FallbackPopupPositioner.h"
 #include "ui/WaveformWidget.h"
 
@@ -329,7 +330,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     // the Dismiss buttons on the mac and Windows panels.
     m_errorDismiss = new ChipButton(m_previewPill);
     m_errorDismiss->setObjectName(QStringLiteral("errorDismiss"));
-    m_errorDismiss->setText(QStringLiteral("Dismiss"));
+    m_errorDismiss->setText(popupDismissCaption());
     m_errorDismiss->hide();
     connect(m_errorDismiss, &QPushButton::clicked, this, [this] {
         m_errorDismissAnimation->stop();
@@ -442,7 +443,7 @@ void TranscriberPopup::setStatus(const QString &status)
         m_phase = Phase::Transcribing;
         restoreStandardLayout();
         hidePreview();
-        m_waveform->setStatusText(QStringLiteral("Transcribing…"));
+        m_waveform->setStatusText(dictationStatusLabel(QStringLiteral("stopping")));
         m_previewPill->adjustSize();
     }
     adjustSize();
@@ -537,7 +538,7 @@ void TranscriberPopup::setRefining(bool refining)
         m_phase = Phase::Refining;
         restoreStandardLayout();
         hidePreview();
-        m_waveform->setStatusText(QStringLiteral("Refining…"));
+        m_waveform->setStatusText(dictationStatusLabel(QStringLiteral("refining")));
         return;
     }
     m_phase = Phase::Live;
@@ -563,7 +564,7 @@ void TranscriberPopup::showOAuthRefreshIndicator()
     m_phase = Phase::Live;
     restoreStandardLayout();
     hidePreview();
-    m_waveform->setStatusText(QStringLiteral("Renewing sign-in…"));
+    m_waveform->setStatusText(renewingSignInText());
     m_previewPill->adjustSize();
     adjustSize();
 }
