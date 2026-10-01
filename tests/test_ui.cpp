@@ -1075,7 +1075,10 @@ private slots:
         QDialog *dialog = shownRecordDialog(*page);
         QVERIFY(dialog);
         QCOMPARE(dialog->windowTitle(), QStringLiteral("New term"));
+        QPushButton *ok = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok);
+        QVERIFY(!ok->isEnabled());
         dialog->findChild<QLineEdit *>(QStringLiteral("term"))->setText(QStringLiteral("Deepgram"));
+        QVERIFY(ok->isEnabled());
         acceptRecordDialog(dialog);
         QCOMPARE(table->rowCount(), 2);
         AppSettings applied;

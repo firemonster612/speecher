@@ -23,9 +23,10 @@ void useMultilineEditor(QTableWidget *table, int column);
 
 // Adds a record, or edits the one at row in current(), in a dialog with a
 // field per column a person fills in; a multiline column gets a text box. The
-// dialog checks the records it would leave against the descriptor's validate,
-// keeps any problems on screen, and hands the records to apply once there are
-// none. A negative row adds.
+// dialog keeps OK off until the first text field holds something, refuses an
+// edit whose record changed or went while it was open, checks the records it
+// would leave against the descriptor's validate, keeps any problems on screen,
+// and hands the records to apply once there are none. A negative row adds.
 void openRecordDialog(QWidget *parent,
                       const CollectionDescriptor &collection,
                       const AppSettings &appSettings,
