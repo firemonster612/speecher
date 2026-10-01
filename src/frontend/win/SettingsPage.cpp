@@ -100,7 +100,8 @@ bool isWithin(DependencyObject element, const DependencyObject &ancestor)
 
 // A row is read as one unit: the control carries the row's title and
 // description, which UIA does not otherwise tie to it. A button keeps its
-// caption as its name and gets the row as its help.
+// caption as its name and gets the row as its help, and a control that
+// already has a name (a profile grid field) keeps it.
 void describeForAssistiveTech(const UIElement &control, const QString &title, const QString &description)
 {
     Control target = control.try_as<Control>();
@@ -118,6 +119,9 @@ void describeForAssistiveTech(const UIElement &control, const QString &title, co
         QStringList help{title, description};
         help.removeAll(QString());
         AutomationProperties::SetHelpText(target, hs(help.join(QStringLiteral(". "))));
+        return;
+    }
+    if (!AutomationProperties::GetName(target).empty()) {
         return;
     }
     if (!title.isEmpty()) {
