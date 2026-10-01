@@ -428,13 +428,18 @@ jobs:
           $env:SPEECHER_GRAB_SCROLL = ""
           $env:SPEECHER_GRAB_SIZE = $env:PAGES_SIZE
           $exe = (Resolve-Path build/speecher.exe).Path
+          # Every page is tried, as on macOS, so one failure shows the rest.
+          $failed = @()
           foreach ($page in $env:PAGES -split ' ') {
             $env:SPEECHER_GRAB_PAGE = $page
             $out = Join-Path (Resolve-Path pages).Path "windows-$page.png"
             $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
             if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
-              throw "speecher --grab for $page exited with code $($process.ExitCode)"
+              $failed += "$page ($($process.ExitCode))"
             }
+          }
+          if ($failed) {
+            throw "speecher --grab failed for $($failed -join ', ')"
           }
 
       - name: Show the Windows log after a failed grab
