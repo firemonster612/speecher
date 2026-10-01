@@ -47,6 +47,9 @@ public:
 
 protected:
     void accept() override;
+#ifdef SPEECHER_WITH_KASSISTANT
+    bool eventFilter(QObject *watched, QEvent *event) override;
+#endif
 
 private:
     static int pageIndex(SetupAssistantPage page);
@@ -62,6 +65,9 @@ private:
 #ifdef SPEECHER_WITH_KASSISTANT
     // The title row: the page's title, and "Step N of M" at its right.
     void updateStepHeader(KPageWidgetItem *current);
+    // Lines the title row up with the current page's centred column.
+    void alignStepHeader();
+    QWidget *m_header = nullptr;
     KTitleWidget *m_headerTitle = nullptr;
     QLabel *m_headerCounter = nullptr;
     QList<KPageWidgetItem *> m_items;

@@ -5,12 +5,14 @@
 #include "app/SetupSteps.h"
 #include "providers/ProviderRegistry.h"
 #include "core/SettingsStore.h"
+#include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
 
 #include <QAbstractButton>
+#include <QEvent>
 #include <QLabel>
 #include <QPalette>
 #include <QPushButton>
@@ -21,6 +23,7 @@
 
 #ifdef SPEECHER_WITH_KASSISTANT
 #include <KPageWidget>
+#include <QDialogButtonBox>
 #include <KPageWidgetItem>
 #include <KTitleWidget>
 #include <QHBoxLayout>
@@ -49,12 +52,10 @@ QStringList setupPageTitles()
 QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
 {
     auto *scroll = new QScrollArea(parent);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setBackgroundRole(QPalette::Window);
-    scroll->viewport()->setBackgroundRole(QPalette::Window);
+    // The column every settings page has: capped, and centred in a wide
+    // window rather than stretched across it.
+    settings::configurePageScroll(scroll, content);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setWidget(content);
     return scroll;
 }
 
@@ -207,6 +208,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         QWidget *content = pageContents.at(index);
         if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
             KPageWidgetItem *item = addPage(scrollingPage(content, this), titles.at(index));
+            content->installEventFilter(this);
             // The title row below draws the title, beside the counter.
             item->setHeaderVisible(false);
             m_items.append(item);
@@ -219,6 +221,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     // The title row carries the counter, as the other two assistants do:
     // KPageView takes a header widget in place of the title it draws.
     auto *header = new QWidget(this);
+    m_header = header;
     auto *headerLayout = new QHBoxLayout(header);
     m_headerTitle = new KTitleWidget(header);
     headerLayout->addWidget(m_headerTitle, 1);
@@ -229,6 +232,16 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     headerLayout->addWidget(m_headerCounter, 0, Qt::AlignRight | Qt::AlignVCenter);
     pageWidget()->setPageHeader(header);
     updateStepHeader(m_items.value(0));
+    // KPageDialog offers Help, and Speecher has no help pages behind it.
+    // Enter presses Next or Finish only: while a gate holds Next, no other
+    // button becomes the default in its place.
+    if (QPushButton *help = buttonBox()->button(QDialogButtonBox::Help)) {
+        help->hide();
+    }
+    backButton()->setAutoDefault(false);
+    if (QPushButton *cancel = buttonBox()->button(QDialogButtonBox::Cancel)) {
+        cancel->setAutoDefault(false);
+    }
     if (!m_singlePage) {
         m_skipButton = new QPushButton(setupText(SetupText::SkipSetup), this);
         addActionButton(m_skipButton);
@@ -335,6 +348,28 @@ void SetupAssistant::updateStepHeader(KPageWidgetItem *current)
     }
     m_headerTitle->setText(current->name());
     m_headerCounter->setText(setupStepCounter(m_items.indexOf(current) + 1, m_items.size()));
+}
+
+void SetupAssistant::alignStepHeader()
+{
+    if (!m_activePage || !m_activePage->isVisible()) {
+        return;
+    }
+    const int left = m_activePage->mapTo(this, QPoint()).x() - m_header->mapTo(this, QPoint()).x();
+    const int right = m_header->width() - left - m_activePage->width();
+    const QMargins margins = m_header->layout()->contentsMargins();
+    m_header->layout()->setContentsMargins(left + setupPageMargin(), margins.top(),
+                                           right + setupPageMargin(), margins.bottom());
+}
+
+bool SetupAssistant::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_activePage
+        && (event->type() == QEvent::Move || event->type() == QEvent::Resize
+            || event->type() == QEvent::Show)) {
+        alignStepHeader();
+    }
+    return KAssistantDialog::eventFilter(watched, event);
 }
 #endif
 
@@ -523,6 +558,9 @@ void SetupAssistant::accept()
 void SetupAssistant::updateActivePage(QWidget *page)
 {
     m_activePage = page;
+#ifdef SPEECHER_WITH_KASSISTANT
+    alignStepHeader();
+#endif
     if (m_microphonePage) {
         m_microphonePage->setActive(page == m_microphonePage);
     }

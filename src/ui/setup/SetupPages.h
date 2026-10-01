@@ -185,6 +185,7 @@ private:
     ProviderStatsBlock *m_stats;
     QLabel *m_hint;
     QLabel *m_status;
+    QLabel *m_statusGlyph = nullptr;
     QPushButton *m_checkAgain;
     QWidget *m_localSection = nullptr;
     QLabel *m_localHardware = nullptr;
@@ -251,7 +252,6 @@ private:
     // only the run that started them may satisfy the gate.
     quint64 m_meterGeneration = 0;
     bool m_active = false;
-    bool m_devicesLoaded = false;
     bool m_inputDetected = false;
 };
 
