@@ -29,13 +29,11 @@
 #include <QLabel>
 #include <QMediaDevices>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalBlocker>
-#include <QTextBlock>
-#include <QTextCursor>
-#include <QTextDocument>
 #include <QTimer>
 #include <QUrl>
 
@@ -94,6 +92,15 @@ SettingsSchema settingsSchema(ApplicationController *controller)
     return schema;
 }
 
+// Release-note headings as level four, which Qt sets bold at the body size
+// like a section header, so none of them outranks the page title.
+QString withSectionHeadings(const QString &markdown)
+{
+    static const QRegularExpression heading(QStringLiteral("^#{1,3} "),
+                                            QRegularExpression::MultilineOption);
+    return QString(markdown).replace(heading, QStringLiteral("#### "));
+}
+
 SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
                                   QWidget *parent,
                                   std::function<void()>)
@@ -114,7 +121,7 @@ SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
     notes->setWordWrap(true);
     return {notes,
             {},
-            [notes](const QVariant &value) { notes->setText(value.toString()); },
+            [notes](const QVariant &value) { notes->setText(withSectionHeadings(value.toString())); },
             true};
 }
 
