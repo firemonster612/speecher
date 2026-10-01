@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/AccessibilityPresentation.h"
 #include "app/SetupSteps.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateBanner.h"
@@ -2044,6 +2045,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (BOOL)listening
 {
     return speecher::dictationListeningPresentation(_state->controller->stateName());
+}
+
+- (NSString *)accessibilityNoticeText:(BOOL)compact
+{
+    return speecher::accessibilityNoticeText(false, compact).toNSString();
 }
 
 - (NSString *)trayToolTip:(BOOL)listening

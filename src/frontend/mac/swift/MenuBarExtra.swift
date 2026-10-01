@@ -73,12 +73,12 @@ struct AccessibilityNotice: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Label("Without Accessibility, dictation only reaches the clipboard.",
+        Label(model.bridge.accessibilityNoticeText(compact: true),
               systemImage: "exclamationmark.triangle")
             // A sentence in a Label truncates to one line unless it is told it
             // may grow downwards.
             .fixedSize(horizontal: false, vertical: true)
-        Button("Open Privacy & Security…") { model.requestAccessibility() }
+        Button(SpeecherBridge.accessibilityGrantActionLabel) { model.requestAccessibility() }
         if !model.accessibilityProblem.isEmpty {
             Text(model.accessibilityProblem)
         }

@@ -514,6 +514,7 @@ set(SPEECHER_APP_SOURCES
   src/app/ManifestUpdater.cpp
   src/app/PlatformSelection.cpp
   src/app/ProviderSetup.cpp
+  src/app/AccessibilityPresentation.cpp
   src/app/SetupSteps.cpp
   src/app/SingleInstanceIpc.cpp
   src/app/UpdateBanner.cpp
@@ -532,6 +533,7 @@ set(SPEECHER_APP_HEADERS
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
   src/app/ProviderSetup.h
+  src/app/AccessibilityPresentation.h
   src/app/SetupSteps.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateBanner.h

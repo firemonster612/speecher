@@ -732,6 +732,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL listening;
 // The captions the menu bar panel shares with the Linux and Windows trays.
 @property (nonatomic, readonly, copy) NSString *traySettingsCaption;
+// The notice while Accessibility is off (speecher::accessibilityNoticeText).
+- (NSString *)accessibilityNoticeText:(BOOL)compact NS_SWIFT_NAME(accessibilityNoticeText(compact:));
 // The menu bar item's accessible name (speecher::trayToolTip).
 - (NSString *)trayToolTip:(BOOL)listening NS_SWIFT_NAME(trayToolTip(listening:));
 @property (nonatomic, readonly, copy) NSString *trayQuitCaption;

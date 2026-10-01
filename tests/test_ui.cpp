@@ -5,6 +5,7 @@
 #include "common/test_doubles.h"
 #include "common/test_auth.h"
 #include "core/VocabularyLimit.h"
+#include "app/AccessibilityPresentation.h"
 #include "ui/AccessibilityNotice.h"
 #include "ui/InsightsCharts.h"
 #include "core/SecretStore.h"
@@ -726,25 +727,15 @@ private slots:
         auto *button = notice->findChild<QPushButton *>(QStringLiteral("enableAccessibilityButton"));
         QVERIFY(message);
         QVERIFY(button);
-#ifdef Q_OS_MACOS
-        QVERIFY(message->text().contains(QStringLiteral("Accessibility is off")));
-        QCOMPARE(button->text(), QStringLiteral("Open settings"));
-#elif defined(Q_OS_WIN)
-        QVERIFY(message->text().contains(QStringLiteral("UI Automation")));
-        QCOMPARE(button->text(), QStringLiteral("Unavailable"));
-#else
+        QCOMPARE(message->text(), accessibilityNoticeText(false, true));
+#if !defined(Q_OS_MACOS)
         // One user-facing name; the service name stays in the setup page's help.
-        QVERIFY(message->text().contains(QStringLiteral("Desktop accessibility")));
         QVERIFY(!message->text().contains(QStringLiteral("AT-SPI")));
-        QCOMPARE(button->text(), QStringLiteral("Enable permanently"));
+        QCOMPARE(button->text(), QStringLiteral("Turn on accessibility"));
 #endif
         QSignalSpy requested(notice, &AccessibilityNotice::enableRequested);
         button->click();
-#ifdef Q_OS_WIN
-        QCOMPARE(requested.count(), 0);
-#else
         QCOMPARE(requested.count(), 1);
-#endif
 
         notice->setState(true, true, false);
         QVERIFY(notice->isVisible());

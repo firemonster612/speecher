@@ -1,5 +1,6 @@
 #include "ui/setup/SetupPages.h"
 
+#include "app/AccessibilityPresentation.h"
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
 #include "app/PlatformComposition.h"
@@ -1162,11 +1163,7 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
     : QWidget(parent)
     , m_controller(controller)
     , m_status(new QLabel(this))
-#ifdef Q_OS_WIN
-    , m_enable(new QPushButton(QStringLiteral("No action needed"), this))
-#else
-    , m_enable(new QPushButton(QStringLiteral("Enable permanently"), this))
-#endif
+    , m_enable(new QPushButton(this))
 {
     QVBoxLayout *layout = makePage(
         this,
@@ -1185,17 +1182,14 @@ AccessibilitySetupPage::AccessibilitySetupPage(ApplicationController &controller
     // verdict rather than left inside one sentence about "accessibility".
     QFormLayout *card = addCard(layout, this, QString());
     QWidget *host = card->parentWidget();
-    for (const QString &capability : {QStringLiteral("Paste into the app you are using"),
-                                      QStringLiteral("Read the text around your cursor for context")}) {
+    for (const QString &capability : accessibilityCapabilities()) {
         const StatusRow row = makeStatusRow(host, nullptr, capability, false);
         settings::addCardRow(card, row.widget, host);
         m_capabilities.append(row.status);
     }
     layout->addWidget(m_status);
     layout->addWidget(m_enable, 0, Qt::AlignLeft);
-    auto *reassurance = new QLabel(
-        QStringLiteral("This only affects this app's ability to type for you. You can turn it off any time in Settings."),
-        this);
+    auto *reassurance = new QLabel(accessibilitySetupFootnote(), this);
     reassurance->setWordWrap(true);
     reassurance->setFont(settings::smallFont(reassurance->font()));
     reassurance->setForegroundRole(QPalette::PlaceholderText);
@@ -1246,23 +1240,10 @@ void AccessibilitySetupPage::updateState(bool supported, bool enabled, bool pers
     status = QStringLiteral("UI Automation is available. No permission grant is needed.");
     m_enable->hide();
 #else
-    if (!supported) {
-        status = QStringLiteral("This Speecher build does not include desktop accessibility support.");
-        m_enable->setEnabled(false);
-        m_enable->setText(QStringLiteral("Unavailable"));
-    } else if (enabled && persistent) {
-        status = QStringLiteral("Desktop accessibility is enabled permanently.");
-        m_enable->setEnabled(false);
-        m_enable->setText(QStringLiteral("Enabled"));
-    } else if (enabled) {
-        status = QStringLiteral("Desktop accessibility is enabled for this session only.");
-        m_enable->setEnabled(true);
-        m_enable->setText(QStringLiteral("Enable permanently"));
-    } else {
-        status = QStringLiteral("Accessibility is off, so Speecher can copy your dictation but not paste it or see context. Turn it on to continue.");
-        m_enable->setEnabled(true);
-        m_enable->setText(QStringLiteral("Enable permanently"));
-    }
+    status = accessibilitySetupStatus(supported, enabled, persistent);
+    const QString action = supported ? accessibilityActionCaption(enabled, persistent) : QString();
+    m_enable->setText(action);
+    m_enable->setVisible(!action.isEmpty());
     showCapabilities(enabled);
 #endif
     m_status->setText(m_lastError.isEmpty() ? status : m_lastError);
@@ -1275,8 +1256,7 @@ void AccessibilitySetupPage::showCapabilities(bool allowed)
 {
     for (QLabel *capability : m_capabilities) {
         setStatusColor(capability, allowed);
-        capability->setText(allowed ? QStringLiteral("Allowed")
-                                    : QStringLiteral("Blocked"));
+        capability->setText(accessibilityCapabilityStatus(allowed));
     }
 }
 
