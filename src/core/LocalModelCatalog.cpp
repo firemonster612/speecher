@@ -329,8 +329,17 @@ QString localModelText(LocalModelText text)
     case LocalModelText::CompareNote:
         return QStringLiteral("Word errors: clear read speech / everyday speech. Times are estimates until a "
                               "model is downloaded and tested here.");
+    case LocalModelText::DeleteModel:
+        return QStringLiteral("Delete model");
+    case LocalModelText::DeleteBody:
+        return QStringLiteral("The model file is removed from this computer. You can download it again later.");
     }
     return {};
+}
+
+QString deleteModelQuestion(const QString &modelName)
+{
+    return QStringLiteral("Delete %1?").arg(modelName);
 }
 
 QString textShowsValue(bool streams)

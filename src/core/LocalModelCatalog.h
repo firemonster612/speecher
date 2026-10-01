@@ -121,8 +121,13 @@ enum class LocalModelText {
     TooLarge,
     HideOtherModels,
     CompareNote,
+    // Deleting a downloaded model: the button and its confirmation's body.
+    DeleteModel,
+    DeleteBody,
 };
 QString localModelText(LocalModelText text);
+// The delete confirmation's question, "Delete Whisper Small?".
+QString deleteModelQuestion(const QString &modelName);
 // "As you speak" for a streaming model, else "After you stop".
 QString textShowsValue(bool streams);
 // "Download 731 MB".
