@@ -199,6 +199,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     @objc public func showDictationProblem(_ message: String, fix: SpeecherErrorAction?) {
+        model.noteRefusedStart(message, fix: fix)
         panel.show(problem: message, fix: fix)
     }
 
