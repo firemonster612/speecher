@@ -469,6 +469,10 @@ QString accessibilityGrantActionLabel();
 // What a credential status says while it is being resolved.
 QString checkingCredentialsStatus();
 
+// What a Local Runner status says while Speecher looks for one, in settings
+// and in setup.
+QString lookingForRunnersStatus();
+
 // What the Global Shortcut row says while it waits for keys, naming this
 // platform's keys.
 QString globalShortcutPrompt();

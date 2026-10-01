@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/PlatformComposition.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #include "core/InsightsSummary.h"
@@ -26,7 +27,9 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QLabel>
+#include <QMediaDevices>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -89,6 +92,15 @@ SettingsSchema settingsSchema(ApplicationController *controller)
     return schema;
 }
 
+// Release-note headings as level four, which Qt sets bold at the body size
+// like a section header, so none of them outranks the page title.
+QString withSectionHeadings(const QString &markdown)
+{
+    static const QRegularExpression heading(QStringLiteral("^#{1,3} "),
+                                            QRegularExpression::MultilineOption);
+    return QString(markdown).replace(heading, QStringLiteral("#### "));
+}
+
 SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
                                   QWidget *parent,
                                   std::function<void()>)
@@ -109,7 +121,7 @@ SchemaCustomRow whatsNewCustomRow(const SettingsRow &descriptor,
     notes->setWordWrap(true);
     return {notes,
             {},
-            [notes](const QVariant &value) { notes->setText(value.toString()); },
+            [notes](const QVariant &value) { notes->setText(withSectionHeadings(value.toString())); },
             true};
 }
 
@@ -122,11 +134,11 @@ SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
         if (descriptor.id != QStringLiteral("globalShortcut")) {
             return SchemaCustomRow{};
         }
-        auto *page = new LinuxGlobalShortcutSetupPage(*controller, parent);
-        page->hideAppMenuIntegration();
-        // Dictation renders the activationMode schema row itself.
-        page->hideActivationMode();
-        return SchemaCustomRow{page, {}, {}, true};
+        SchemaCustomRow row;
+        row.widget = new LinuxGlobalShortcutSetupPage(
+            *controller, parent, LinuxGlobalShortcutSetupPage::Placement::SettingsCard);
+        row.cardRows = true;
+        return row;
     };
 #else
     // The Qt window runs only on Linux; the other front ends draw their own
@@ -184,8 +196,10 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     for (const SettingsPane &pane : std::as_const(m_schema.panes)) {
         if (pane.layout == PaneLayout::Alternatives) {
             for (const SettingsPaneGroup &group : pane.groups) {
-                addPage(pane.id + QLatin1Char(':') + group.view, {m_schema.section(group)}, parent,
-                        customRows);
+                // The view's tab already carries its title.
+                SettingsSection section = m_schema.section(group);
+                section.title.clear();
+                addPage(pane.id + QLatin1Char(':') + group.view, {section}, parent, customRows);
             }
         } else if (!pane.groups.isEmpty()) {
             QList<SettingsSection> sections;
@@ -201,6 +215,8 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
             &ApplicationController::accessibilityStateChanged,
             this,
             &SettingsPageSet::updateAccessibilityState);
+    connect(new QMediaDevices(this), &QMediaDevices::audioInputsChanged,
+            this, &SettingsPageSet::refreshMicrophones);
     connect(controller->updateBanner(),
             &UpdateBanner::changed,
             this,
@@ -278,6 +294,7 @@ void SettingsPageSet::loadAfterShow()
         page->loadExpensiveRows(snapshot);
     }
     m_providerRows.loadSecret();
+    refreshMicrophones();
     refreshUpdateRows();
     m_controller->localSetup()->probeHardware();
     m_controller->localSetup()->detectRunners();
@@ -421,6 +438,11 @@ void SettingsPageSet::runPageAction(const QString &rowId)
             candidate->load(m_draft);
         }
         emit changed();
+        return;
+    }
+    if (rowId == QStringLiteral("refreshMicrophones")) {
+        refreshMicrophones();
+        page(QStringLiteral("dictation"))->loadExpensiveRows(m_draft);
         return;
     }
     if (rowId == QStringLiteral("checkForUpdates")) {
@@ -607,10 +629,20 @@ void SettingsPageSet::updateAccessibilityState(bool supported, bool enabled, boo
     applyCapabilities();
 }
 
+void SettingsPageSet::refreshMicrophones()
+{
+    m_audioInput = !m_controller->platform()->availableAudioInputDevices().isEmpty();
+    applyCapabilities();
+}
+
 Capabilities SettingsPageSet::capabilities() const
 {
-    return {m_targetAccessibility, m_controller->updates()->supportsAutomaticDownloads(),
-            Theme::overrideHonored()};
+    Capabilities capabilities;
+    capabilities.targetAccessibility = m_targetAccessibility;
+    capabilities.automaticUpdateDownloads = m_controller->updates()->supportsAutomaticDownloads();
+    capabilities.colorSchemeOverride = Theme::overrideHonored();
+    capabilities.audioInput = m_audioInput;
+    return capabilities;
 }
 
 void SettingsPageSet::applyCapabilities()
@@ -620,9 +652,9 @@ void SettingsPageSet::applyCapabilities()
     }
 }
 
-QStringList SettingsPageSet::searchPanes(const QString &query) const
+QList<SearchMatch> SettingsPageSet::searchSettings(const QString &query) const
 {
-    return speecher::searchPanes(m_schema, query, m_draft, capabilities());
+    return speecher::searchSettings(m_schema, query, m_draft, capabilities());
 }
 
 } // namespace speecher

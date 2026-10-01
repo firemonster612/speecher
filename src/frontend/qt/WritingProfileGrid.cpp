@@ -80,15 +80,35 @@ void appendProfileRow(QTableWidget *grid,
     grid->setItem(row, 3, new QTableWidgetItem(profileSettings.instructions));
 }
 
-// Tall enough for every profile, so adding one grows the grid rather than
-// scrolling it.
+// Tall enough for every profile, with each row as tall as its pickers, so
+// adding one grows the grid rather than scrolling it.
 void fitToRows(QTableWidget *grid)
 {
+    grid->resizeRowsToContents();
     int height = grid->horizontalHeader()->sizeHint().height() + 2 * grid->frameWidth();
     for (int row = 0; row < grid->rowCount(); ++row) {
         height += grid->rowHeight(row);
     }
     grid->setFixedHeight(height);
+}
+
+// A column whose choice the settings take away, such as the cleanup level a
+// custom system prompt replaces, keeps showing its picks but cannot change them.
+void lockColumns(QTableWidget *grid, const QList<CollectionColumn> &columns, const AppSettings &draft)
+{
+    for (int column = 0; column < columns.size(); ++column) {
+        const CollectionColumn &descriptor = columns.at(column);
+        if (!descriptor.enabled) {
+            continue;
+        }
+        const bool open = descriptor.enabled(draft);
+        for (int row = 0; row < grid->rowCount(); ++row) {
+            if (QWidget *cell = grid->cellWidget(row, column)) {
+                cell->setEnabled(open);
+                cell->setToolTip(open ? QString() : descriptor.disabledHelp);
+            }
+        }
+    }
 }
 
 void setGridSettings(QTableWidget *grid,
@@ -201,13 +221,18 @@ SchemaCustomRow makeWritingProfileGrid(const CollectionDescriptor &descriptor,
     return {
         block,
         [grid] { return QVariant::fromValue(gridSettings(grid)); },
-        [grid, remove, draft, notifyChanged = std::move(notifyChanged)](const QVariant &value) {
+        [grid, remove, draft, columns = descriptor.columns,
+         notifyChanged = std::move(notifyChanged)](const QVariant &value) {
             setGridSettings(grid, value.value<QList<WritingProfileSettings>>(), *draft, notifyChanged);
+            lockColumns(grid, columns, *draft);
             remove->setEnabled(false);
         },
         true,
         nullptr,
-        [draft](const AppSettings &settings) { *draft = settings; },
+        [grid, draft, columns = descriptor.columns](const AppSettings &settings) {
+            *draft = settings;
+            lockColumns(grid, columns, settings);
+        },
     };
 }
 

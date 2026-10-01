@@ -15,7 +15,7 @@ class QPushButton;
 class QShowEvent;
 class QSplitter;
 class QStackedWidget;
-class QTabWidget;
+class QTabBar;
 class QTimer;
 class QToolButton;
 
@@ -27,6 +27,7 @@ class ApplicationController;
 class HomePage;
 class SettingsPageSet;
 class TranscribePage;
+struct SearchMatch;
 
 class AppWindow : public QMainWindow {
     Q_OBJECT
@@ -55,6 +56,9 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    // Opens the pane a search found and brings its first matching row into
+    // view with focus.
+    void showSearchMatch(const SearchMatch &match);
     void buildPages();
     void buildSidebarShell();
     void rebuildSidebar();
@@ -74,7 +78,7 @@ private:
     TranscribePage *m_transcribe;
     // Each pane's widget in the stack, and each Alternatives pane's views by id.
     QHash<QString, QWidget *> m_paneWidgets;
-    QHash<QString, QTabWidget *> m_viewTabs;
+    QHash<QString, QTabBar *> m_viewTabs;
     QString m_query;
     // Whether the list was last built with What's New at its top.
     bool m_sidebarListsWhatsNew = false;

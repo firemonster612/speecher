@@ -216,7 +216,7 @@ QString setupText(SetupText text)
     case SetupText::SkipCleanup:
         return QStringLiteral("Skip cleanup and deliver the raw transcript");
     case SetupText::LookingForRunners:
-        return QStringLiteral("Looking for Ollama, LM Studio and llama-server\u2026");
+        return lookingForRunnersStatus();
     case SetupText::NoRunnerFound:
         return QStringLiteral("No Local Runner found on this computer.");
     case SetupText::NoRunner:
