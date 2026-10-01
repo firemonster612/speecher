@@ -437,6 +437,13 @@ jobs:
             }
           }
 
+      - name: Show the Windows log after a failed grab
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem $env:LOCALAPPDATA -Recurse -Filter speecher.log -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Output "== $($_.FullName)"; Get-Content $_.FullName -Tail 80 }
+
       - name: Upload Windows pages
         if: always()
         uses: actions/upload-artifact@v7
