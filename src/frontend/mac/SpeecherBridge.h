@@ -416,6 +416,18 @@ typedef NS_ENUM(NSInteger, SpeecherDictationState) {
     SpeecherDictationStateError,
 };
 
+// Mirrors speecher::LocalModelText.
+typedef NS_ENUM(NSInteger, SpeecherLocalModelText) {
+    SpeecherLocalModelTextUseModel,
+    SpeecherLocalModelTextTestSpeed,
+    SpeecherLocalModelTextInUse,
+    SpeecherLocalModelTextSuggested,
+    SpeecherLocalModelTextYourChoice,
+    SpeecherLocalModelTextTooLarge,
+    SpeecherLocalModelTextHideOtherModels,
+    SpeecherLocalModelTextCompareNote,
+};
+
 // Mirrors speecher::SetupText.
 typedef NS_ENUM(NSInteger, SpeecherSetupText) {
     SpeecherSetupTextSkipSetup,
@@ -594,13 +606,16 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSString *modelId;
 @property (nonatomic, readonly, copy) NSString *name;
 @property (nonatomic, readonly, copy) NSString *fileName;
-// "731 MB", as download sizes are quoted.
+// "731 MB", as download sizes are quoted, and its button, "Download 731 MB".
 @property (nonatomic, readonly, copy) NSString *sizeText;
+@property (nonatomic, readonly, copy) NSString *downloadCaption;
 // Word error rates in percent.
 @property (nonatomic, readonly) double librispeechWer;
 @property (nonatomic, readonly) double fleursWer;
-// Text appears as the person speaks rather than after they stop.
+// Text appears as the person speaks rather than after they stop, and that
+// worded (speecher::textShowsValue).
 @property (nonatomic, readonly) BOOL streams;
+@property (nonatomic, readonly, copy) NSString *textShowsText;
 @property (nonatomic, readonly, copy) NSString *licence;
 @property (nonatomic, readonly) SpeecherModelRating rating;
 // The badge's words, "Recommended" to "Not recommended".
@@ -930,6 +945,11 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (NSString *)setupChecklistLine:(NSString *)stepId choice:(NSString *)choice
     NS_SWIFT_NAME(setupChecklistLine(_:choice:));
 - (NSString *)setupText:(SpeecherSetupText)text NS_SWIFT_NAME(setupText(_:));
+// The Local models page's and the Local Model card's wording
+// (speecher::localModelText, compareModelsCaption, compareTableHeaders).
++ (NSString *)localModelText:(SpeecherLocalModelText)text NS_SWIFT_NAME(localModelText(_:));
++ (NSString *)compareModelsCaption:(NSInteger)otherModels NS_SWIFT_NAME(compareModelsCaption(_:));
+@property (class, nonatomic, readonly, copy) NSArray<NSString *> *compareTableHeaders;
 // A settings row's label and choices as the Settings window words them
 // (speecher::setupSchemaRow), whether or not the row shows right now.
 - (NSString *)setupRowLabel:(NSString *)rowId NS_SWIFT_NAME(setupRowLabel(_:));

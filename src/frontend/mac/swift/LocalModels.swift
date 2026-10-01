@@ -78,7 +78,7 @@ private struct LocalModelDetail: View {
                     Text(entry.name).font(.headline)
                     RatingBadge(entry: entry)
                 }
-                Text(entry.suggested ? "Suggested for this computer" : entry.fileName)
+                Text(entry.suggested ? SpeecherBridge.localModelText(.suggested) : entry.fileName)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -122,7 +122,7 @@ private struct LocalModelDetail: View {
                 (names.speedHere, entry.speedDetail),
                 (names.wordErrorRate, "\(LocalModelText.wer(entry.librispeechWer)) clear speech\n"
                     + "\(LocalModelText.wer(entry.fleursWer)) everyday speech"),
-                (names.textShows, entry.streams ? "As you speak" : "After you stop"),
+                (names.textShows, entry.textShowsText),
                 (names.language, "English"),
                 (names.license, entry.licence)]
     }
@@ -135,15 +135,15 @@ private struct LocalModelDetail: View {
                 Button("Cancel") { model.bridge.cancelLocalModelDownload(entry.modelId) }
             } else if entry.downloaded {
                 if entry.inUse {
-                    Text("In use").foregroundStyle(.secondary)
+                    Text(SpeecherBridge.localModelText(.inUse)).foregroundStyle(.secondary)
                 } else {
-                    Button("Use this model", action: use)
+                    Button(SpeecherBridge.localModelText(.useModel), action: use)
                 }
-                Button("Test speed") { model.bridge.testLocalModelSpeed(entry.modelId) }
+                Button(SpeecherBridge.localModelText(.testSpeed)) { model.bridge.testLocalModelSpeed(entry.modelId) }
                     .disabled(entry.speedTestRunning)
                 Button("Delete") { model.bridge.deleteLocalModel(entry.modelId) }
             } else {
-                Button(entry.tooLarge ? "Too large for this computer" : "Download \(entry.sizeText)") {
+                Button(entry.tooLarge ? SpeecherBridge.localModelText(.tooLarge) : entry.downloadCaption) {
                     model.bridge.downloadLocalModel(entry.modelId)
                 }
                 .disabled(entry.tooLarge)

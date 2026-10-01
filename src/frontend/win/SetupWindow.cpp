@@ -1070,9 +1070,7 @@ struct SetupWindow::Native {
         table.Spacing(4);
         Grid header = columnGrid();
         header.Padding({12, 0, 12, 0});
-        const QStringList titles{QStringLiteral("Model"), QStringLiteral("Download"),
-                                 QStringLiteral("Word errors"), QStringLiteral("10 s of speech"),
-                                 QStringLiteral("Text shows"), QStringLiteral("Memory")};
+        const QStringList titles = compareTableHeaders();
         for (int column = 0; column < titles.size(); ++column) {
             TextBlock title = secondaryTextBlock(titles.at(column));
             Grid::SetColumn(title, column);
@@ -1110,12 +1108,9 @@ struct SetupWindow::Native {
             card.compare.Items().Append(row);
         }
         table.Children().Append(card.compare);
-        table.Children().Append(secondaryTextBlock(QStringLiteral(
-            "Word errors: clear read speech / everyday speech. Times are estimates until a model is "
-            "downloaded and tested here.")));
+        table.Children().Append(secondaryTextBlock(localModelText(LocalModelText::CompareNote)));
         Expander compare;
-        compare.Header(box_value(win::hs(QStringLiteral("Compare %1 other models")
-                                             .arg(localModelCatalog().size() - 1))));
+        compare.Header(box_value(win::hs(compareModelsCaption(int(localModelCatalog().size()) - 1))));
         compare.HorizontalAlignment(HorizontalAlignment::Stretch);
         compare.HorizontalContentAlignment(HorizontalAlignment::Stretch);
         compare.Content(table);
@@ -1149,14 +1144,14 @@ struct SetupWindow::Native {
         const LocalModel &model = localChoice();
         const LocalSetup::ModelState state = localSpeech->modelState(model);
         card.hardware.Text(win::hs(localSpeech->hardwareLine()));
-        card.caption.Text(state.suggested ? L"Suggested for this computer" : L"Your choice");
+        card.caption.Text(win::hs(
+            localModelText(state.suggested ? LocalModelText::Suggested : LocalModelText::YourChoice)));
         card.name.Text(win::hs(model.name));
         card.rating.Child(win::ratingBadge(model.rating, themeHost));
         card.facts.Text(win::hs(state.cardFacts));
         card.download.IsEnabled(!state.tooLarge);
-        card.download.Content(box_value(win::hs(state.tooLarge ? QStringLiteral("Too large for this computer")
-                                                               : QStringLiteral("Download %1")
-                                                                     .arg(downloadSizeText(model.sizeBytes)))));
+        card.download.Content(box_value(win::hs(state.tooLarge ? localModelText(LocalModelText::TooLarge)
+                                                               : downloadCaption(model.sizeBytes))));
 
         const QList<LocalModel> &catalog = localModelCatalog();
         int selected = -1;

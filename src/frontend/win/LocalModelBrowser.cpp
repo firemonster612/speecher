@@ -231,8 +231,8 @@ StackPanel LocalModelBrowser::makeDetail()
     m_actions.Children().Append(m_progress);
     m_download = addButton(L"");
     m_cancel = addButton(L"Cancel");
-    m_use = addButton(L"Use this model");
-    m_test = addButton(L"Test speed");
+    m_use = addButton(hs(localModelText(LocalModelText::UseModel)).c_str());
+    m_test = addButton(hs(localModelText(LocalModelText::TestSpeed)).c_str());
     m_delete = addButton(L"Delete");
     detail.Children().Append(m_actions);
 
@@ -290,13 +290,13 @@ void LocalModelBrowser::showDetail()
     m_name.Text(hs(model.name));
     m_rating.Child(ratingBadge(model.rating, m_host));
     m_bestFor.Text(hs(model.bestFor));
-    m_subtitle.Text(hs(state.suggested ? QStringLiteral("Suggested for this computer") : model.fileName));
+    m_subtitle.Text(hs(state.suggested ? localModelText(LocalModelText::Suggested) : model.fileName));
     m_size.Text(hs(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes),
                                                  m_setup.fitLabel(model))));
     m_speed.Text(hs(state.speedDetail));
     m_wer.Text(hs(QStringLiteral("%1 clear speech\n%2 everyday speech")
                       .arg(werText(model.librispeechCleanWer), werText(model.fleursEnglishWer))));
-    m_textShows.Text(model.streams ? L"As you speak" : L"After you stop");
+    m_textShows.Text(hs(textShowsValue(model.streams)));
     m_licence.Text(hs(model.licence));
     QStringList notes;
     for (const QString &pro : model.pros) {
@@ -320,14 +320,13 @@ void LocalModelBrowser::showDetail()
         m_state.Text(hs(QStringLiteral("%1 of %2").arg(downloadSizeText(progress->first),
                                                         downloadSizeText(model.sizeBytes))));
     } else {
-        m_state.Text(inUse ? L"In use" : L"");
+        m_state.Text(inUse ? hs(localModelText(LocalModelText::InUse)) : hstring());
     }
     setVisible(m_state, !m_state.Text().empty());
     setVisible(m_download, !progress && !downloaded);
     m_download.IsEnabled(!state.tooLarge);
-    m_download.Content(box_value(hs(state.tooLarge ? QStringLiteral("Too large for this computer")
-                                                   : QStringLiteral("Download %1")
-                                                         .arg(downloadSizeText(model.sizeBytes)))));
+    m_download.Content(box_value(hs(state.tooLarge ? localModelText(LocalModelText::TooLarge)
+                                                   : downloadCaption(model.sizeBytes))));
     setVisible(m_use, downloaded && !inUse);
     setVisible(m_test, downloaded);
     m_test.IsEnabled(!m_setup.speedTestRunning(model.id));

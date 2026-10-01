@@ -573,9 +573,7 @@ QWidget *SpeechProviderSetupPage::makeLocalSection()
     m_compareToggle->setArrowType(Qt::RightArrow);
     layout->addWidget(m_compareToggle, 0, Qt::AlignLeft);
 
-    const QStringList headers{QStringLiteral("Model"), QStringLiteral("Download"),
-                              QStringLiteral("Word errors"), QStringLiteral("10 s of speech"),
-                              QStringLiteral("Text shows"), QStringLiteral("Memory")};
+    const QStringList headers = compareTableHeaders();
     m_compare = new QTableWidget(int(localModelCatalog().size()), int(headers.size()), m_localSection);
     m_compare->setObjectName(QStringLiteral("speechLocalCompareTable"));
     m_compare->setHorizontalHeaderLabels(headers);
@@ -591,9 +589,7 @@ QWidget *SpeechProviderSetupPage::makeLocalSection()
     m_compare->setItemDelegateForColumn(0, new BadgeDelegate(m_compare));
     m_compare->hide();
     layout->addWidget(m_compare);
-    auto *compareNote = makeNote(QStringLiteral("Word errors: clear read speech / everyday speech. Times are "
-                                                "estimates until a model is downloaded and tested here."),
-                                 m_localSection);
+    auto *compareNote = makeNote(localModelText(LocalModelText::CompareNote), m_localSection);
     compareNote->setObjectName(QStringLiteral("speechLocalCompareNote"));
     compareNote->hide();
     layout->addWidget(compareNote);
@@ -660,8 +656,7 @@ void SpeechProviderSetupPage::showLocalChoice()
     const LocalModel &model = localChoice();
     const auto state = m_local->modelState(model);
     m_localHardware->setText(m_local->hardwareLine());
-    m_localCaption->setText(state.suggested ? QStringLiteral("Suggested for this computer")
-                                            : QStringLiteral("Your choice"));
+    m_localCaption->setText(localModelText(state.suggested ? LocalModelText::Suggested : LocalModelText::YourChoice));
     m_localName->setText(model.name);
     m_localRating->setBadge(modelRatingLabel(model.rating), modelRatingTone(model.rating));
     m_localFacts->setText(state.cardFacts);
@@ -670,8 +665,8 @@ void SpeechProviderSetupPage::showLocalChoice()
     const bool downloaded = state.downloaded;
     m_localDownload->setVisible(!progress && !downloaded);
     m_localDownload->setEnabled(!state.tooLarge);
-    m_localDownload->setText(state.tooLarge ? QStringLiteral("Too large for this computer")
-                                            : QStringLiteral("Download %1").arg(downloadSizeText(model.sizeBytes)));
+    m_localDownload->setText(state.tooLarge ? localModelText(LocalModelText::TooLarge)
+                                            : downloadCaption(model.sizeBytes));
     m_localProgress->setVisible(bool(progress));
     m_localCancel->setVisible(bool(progress));
     if (progress) {
@@ -687,8 +682,8 @@ void SpeechProviderSetupPage::showLocalChoice()
     m_localState->setVisible(!m_localState->text().isEmpty());
 
     m_compareToggle->setText(m_compare->isVisible()
-                                 ? QStringLiteral("Hide other models")
-                                 : QStringLiteral("Compare %1 other models").arg(localModelCatalog().size() - 1));
+                                 ? localModelText(LocalModelText::HideOtherModels)
+                                 : compareModelsCaption(int(localModelCatalog().size()) - 1));
     for (int row = 0; row < localModelCatalog().size(); ++row) {
         const LocalModel &entry = localModelCatalog().at(row);
         const QStringList cells = m_local->modelState(entry).tableCells;

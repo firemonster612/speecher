@@ -533,7 +533,7 @@ LocalSetup::ModelState LocalSetup::modelState(const LocalModel &model, std::opti
         downloadSizeText(model.sizeBytes),
         QStringLiteral("%1% / %2%").arg(model.librispeechCleanWer).arg(model.fleursEnglishWer),
         state.speedText,
-        model.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"),
+        textShowsValue(model.streams),
         fitLabel(model),
     };
     return state;

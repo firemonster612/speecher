@@ -712,6 +712,8 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, copy) NSString *fileName;
 @property (nonatomic, copy) NSString *sizeText;
+@property (nonatomic, copy) NSString *downloadCaption;
+@property (nonatomic, copy) NSString *textShowsText;
 @property (nonatomic) double librispeechWer;
 @property (nonatomic) double fleursWer;
 @property (nonatomic) BOOL streams;
@@ -2591,6 +2593,30 @@ static void probeSpeechProvider(BridgeState *state,
     return speecher::setupText(static_cast<speecher::SetupText>(text)).toNSString();
 }
 
++ (NSString *)localModelText:(SpeecherLocalModelText)text
+{
+    // SpeecherLocalModelText mirrors speecher::LocalModelText value for value.
+    static_assert(int(SpeecherLocalModelTextUseModel) == int(speecher::LocalModelText::UseModel));
+    static_assert(int(SpeecherLocalModelTextTestSpeed) == int(speecher::LocalModelText::TestSpeed));
+    static_assert(int(SpeecherLocalModelTextInUse) == int(speecher::LocalModelText::InUse));
+    static_assert(int(SpeecherLocalModelTextSuggested) == int(speecher::LocalModelText::Suggested));
+    static_assert(int(SpeecherLocalModelTextYourChoice) == int(speecher::LocalModelText::YourChoice));
+    static_assert(int(SpeecherLocalModelTextTooLarge) == int(speecher::LocalModelText::TooLarge));
+    static_assert(int(SpeecherLocalModelTextHideOtherModels) == int(speecher::LocalModelText::HideOtherModels));
+    static_assert(int(SpeecherLocalModelTextCompareNote) == int(speecher::LocalModelText::CompareNote));
+    return speecher::localModelText(static_cast<speecher::LocalModelText>(text)).toNSString();
+}
+
++ (NSString *)compareModelsCaption:(NSInteger)otherModels
+{
+    return speecher::compareModelsCaption(int(otherModels)).toNSString();
+}
+
++ (NSArray<NSString *> *)compareTableHeaders
+{
+    return bridgedStrings(speecher::compareTableHeaders());
+}
+
 - (NSString *)setupRowLabel:(NSString *)rowId
 {
     return speecher::setupSchemaRow(QString::fromNSString(rowId)).label.toNSString();
@@ -2877,9 +2903,11 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
     info.name = model.name.toNSString();
     info.fileName = model.fileName.toNSString();
     info.sizeText = downloadSizeText(model.sizeBytes).toNSString();
+    info.downloadCaption = speecher::downloadCaption(model.sizeBytes).toNSString();
     info.librispeechWer = model.librispeechCleanWer;
     info.fleursWer = model.fleursEnglishWer;
     info.streams = model.streams;
+    info.textShowsText = speecher::textShowsValue(model.streams).toNSString();
     info.licence = model.licence.toNSString();
     info.rating = bridgedModelRating(model.rating);
     info.ratingLabel = modelRatingLabel(model.rating).toNSString();

@@ -1414,7 +1414,7 @@ private struct LocalChoiceSections: View {
         Section {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(choice.suggested ? "Suggested for this computer" : "Your choice")
+                    Text(SpeecherBridge.localModelText(choice.suggested ? .suggested : .yourChoice))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     HStack {
@@ -1433,15 +1433,14 @@ private struct LocalChoiceSections: View {
                 .foregroundStyle(.secondary)
         }
         Section {
-            DisclosureGroup(flow.compareOpen ? "Hide other models"
-                                             : "Compare \(local.models.count - 1) other models",
+            DisclosureGroup(flow.compareOpen ? SpeecherBridge.localModelText(.hideOtherModels)
+                                             : SpeecherBridge.compareModelsCaption(local.models.count - 1),
                             isExpanded: $flow.compareOpen) {
                 compareTable
             }
         } footer: {
             if flow.compareOpen {
-                Text("Word errors: clear read speech / everyday speech. Times are estimates until a "
-                    + "model is downloaded and tested here.")
+                Text(SpeecherBridge.localModelText(.compareNote))
             }
         }
     }
@@ -1455,7 +1454,7 @@ private struct LocalChoiceSections: View {
             } else if choice.downloaded {
                 StatusLabel(text: "Downloaded", tone: .positive)
             } else {
-                Button(choice.tooLarge ? "Too Large for This Computer" : "Download \(choice.sizeText)") {
+                Button(choice.tooLarge ? SpeecherBridge.localModelText(.tooLarge) : choice.downloadCaption) {
                     flow.downloadLocalChoice()
                 }
                 .disabled(choice.tooLarge)
@@ -1467,6 +1466,9 @@ private struct LocalChoiceSections: View {
     }
 
     // One selection, so a click or an arrow key names exactly one model.
+    /// The comparison's column titles, in core's order.
+    private static let headers = SpeecherBridge.compareTableHeaders
+
     private var compareTable: some View {
         Table(local.models, selection: Binding<String?>(get: { choice.modelId },
                                                         set: { if let id = $0 { flow.chooseLocalModel(id) } })) {
@@ -1474,22 +1476,22 @@ private struct LocalChoiceSections: View {
             // column takes what is left, so every value reads whole at the
             // assistant's width. Its ideal fits the longest name with its
             // badge; below that the name truncates, never the badge.
-            TableColumn("Model") { entry in
+            TableColumn(Self.headers[0]) { entry in
                 HStack {
                     Text(entry.tableCells[0]).lineLimit(1)
                     RatingBadge(entry: entry)
                 }
             }
             .width(min: 150, ideal: 250)
-            TableColumn("Download") { entry in Text(entry.tableCells[1]) }
+            TableColumn(Self.headers[1]) { entry in Text(entry.tableCells[1]) }
                 .width(58)
-            TableColumn("Word errors") { entry in Text(entry.tableCells[2]) }
+            TableColumn(Self.headers[2]) { entry in Text(entry.tableCells[2]) }
                 .width(88)
-            TableColumn("10 s of speech") { entry in Text(entry.tableCells[3]) }
+            TableColumn(Self.headers[3]) { entry in Text(entry.tableCells[3]) }
                 .width(108)
-            TableColumn("Text shows") { entry in Text(entry.tableCells[4]) }
+            TableColumn(Self.headers[4]) { entry in Text(entry.tableCells[4]) }
                 .width(84)
-            TableColumn("Memory") { entry in Text(entry.tableCells[5]) }
+            TableColumn(Self.headers[5]) { entry in Text(entry.tableCells[5]) }
                 .width(62)
         }
         .controlSize(.small)

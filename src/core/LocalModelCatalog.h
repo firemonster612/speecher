@@ -110,6 +110,29 @@ struct LocalModelFactLabels {
     QString language = QStringLiteral("Language");
     QString license = QStringLiteral("License");
 };
+// The fixed wording the Local models page and the setup assistants' Local
+// Model card share.
+enum class LocalModelText {
+    UseModel,
+    TestSpeed,
+    InUse,
+    Suggested,
+    YourChoice,
+    TooLarge,
+    HideOtherModels,
+    CompareNote,
+};
+QString localModelText(LocalModelText text);
+// "As you speak" for a streaming model, else "After you stop".
+QString textShowsValue(bool streams);
+// "Download 731 MB".
+QString downloadCaption(qint64 bytes);
+// "Compare 7 other models".
+QString compareModelsCaption(int otherModels);
+// The comparison table's columns: Model, Download, Word errors, 10 s of
+// speech, Text shows, Memory.
+QStringList compareTableHeaders();
+
 // How long 10 s of speech takes here: the Speed Test's measurement when there
 // is one, else the catalog's estimate for this kind of machine.
 QString localModelSpeedLine(const LocalModel &model,
