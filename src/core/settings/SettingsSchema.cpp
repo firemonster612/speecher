@@ -2853,6 +2853,11 @@ QString globalShortcutResetCaption(const QString &defaultShortcut)
     return QStringLiteral("Reset to %1").arg(defaultShortcut);
 }
 
+QString globalShortcutBindFailedText()
+{
+    return QStringLiteral("That shortcut could not be bound.");
+}
+
 QString noSettingsMatchText()
 {
     return QStringLiteral("No settings match");

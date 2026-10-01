@@ -117,7 +117,7 @@ void bind(PaneHost &host, const ShortcutBinding &binding)
     QString error;
     if (!host.controller->setGlobalShortcut(binding, &error)) {
         host.shortcutNotice.clear();
-        host.shortcutProblem = error.isEmpty() ? QStringLiteral("That shortcut could not be bound.") : error;
+        host.shortcutProblem = error.isEmpty() ? globalShortcutBindFailedText() : error;
     }
 }
 

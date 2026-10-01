@@ -480,6 +480,9 @@ QString globalShortcutPrompt();
 // binder's default, named by its display text.
 QString globalShortcutChangeCaption();
 QString globalShortcutResetCaption(const QString &defaultShortcut);
+// What the Global Shortcut row says when the binder refused a binding without
+// saying why.
+QString globalShortcutBindFailedText();
 
 // What settings search shows when nothing matches the query.
 QString noSettingsMatchText();

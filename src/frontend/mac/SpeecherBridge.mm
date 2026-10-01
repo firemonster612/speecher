@@ -2022,7 +2022,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     if (_state->controller->setGlobalShortcut(sequence, &error)) {
         return nil;
     }
-    return error.isEmpty() ? @"That shortcut could not be bound." : error.toNSString();
+    return error.isEmpty() ? speecher::globalShortcutBindFailedText().toNSString() : error.toNSString();
 }
 
 - (NSString *)defaultShortcutDisplay
@@ -2036,7 +2036,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     if (_state->controller->setGlobalShortcut(speecher::GlobalShortcutBinder::defaultShortcut(), &error)) {
         return nil;
     }
-    return error.isEmpty() ? @"That shortcut could not be bound." : error.toNSString();
+    return error.isEmpty() ? speecher::globalShortcutBindFailedText().toNSString() : error.toNSString();
 }
 
 - (NSString *)bindCurrentShortcut
@@ -2045,7 +2045,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     if (_state->controller->setGlobalShortcut(_state->controller->globalShortcut(), &error)) {
         return nil;
     }
-    return error.isEmpty() ? @"That shortcut could not be bound." : error.toNSString();
+    return error.isEmpty() ? speecher::globalShortcutBindFailedText().toNSString() : error.toNSString();
 }
 
 - (NSString *)currentSingleKeyCode
