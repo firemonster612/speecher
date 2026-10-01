@@ -725,7 +725,10 @@ QFrame *makeSettingsCard(QWidget *parent)
     return card;
 }
 
-QPushButton *makeButtonRow(const QString &title, const QString &description, QWidget *parent)
+QPushButton *makeButtonRow(const QString &title,
+                           const QString &description,
+                           QWidget *parent,
+                           bool dynamicDescription)
 {
     auto *row = new FormButtonRow(parent);
     auto *layout = new QHBoxLayout(row);
@@ -741,12 +744,13 @@ QPushButton *makeButtonRow(const QString &title, const QString &description, QWi
     titleLabel->setObjectName(QStringLiteral("rowTitle"));
     titleLabel->setWordWrap(true);
     textLayout->addWidget(titleLabel);
-    if (!description.isEmpty()) {
+    if (!description.isEmpty() || dynamicDescription) {
         auto *subtitle = new QLabel(description, text);
         subtitle->setObjectName(QStringLiteral("rowDescription"));
         subtitle->setWordWrap(true);
         subtitle->setForegroundRole(QPalette::PlaceholderText);
         subtitle->setFont(smallFont(subtitle->font()));
+        subtitle->setVisible(!description.isEmpty());
         textLayout->addWidget(subtitle);
     }
     auto *arrow = new QLabel(row);

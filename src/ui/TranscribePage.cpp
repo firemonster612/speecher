@@ -297,7 +297,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     // The model is set in Refinement settings, so the row opens them, with
     // the model it will use as its value.
     m_refinerModelRow = settings::makeButtonRow(transcribeText(TranscribeText::RefinerModel),
-                                                QStringLiteral(" "), refineCard);
+                                                QString(), refineCard, true);
     m_refinerModelRow->setObjectName(QStringLiteral("transcribeRefinerModel"));
     m_refinerModelRow->setToolTip(refinementModelHint());
     settings::addCardRow(refineForm, m_refinerModelRow, refineCard);
@@ -441,7 +441,6 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     m_variants = new QWidget(top);
     auto *variantLayout = new QHBoxLayout(m_variants);
     variantLayout->setContentsMargins(0, 0, 0, 0);
-    variantLayout->setSpacing(0);
     variantLayout->setSpacing(settings::largeSpacing());
     auto *variants = new QButtonGroup(this);
     for (const QString &label : {transcribeText(TranscribeText::Refined), transcribeText(TranscribeText::Raw)}) {
@@ -554,10 +553,11 @@ void TranscribePage::showDropTarget(bool dragging)
 }
 
 // Options chosen here survive leaving the page, say to change the model in
-// Refinement settings; only the model row follows the settings.
+// Refinement settings; the lists and the model row follow the settings.
 void TranscribePage::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
+    showChoices(m_controller->settings()->dictationSnapshot());
     refreshRefinementRows();
 }
 
@@ -639,23 +639,26 @@ void TranscribePage::seedOptionsFromSettings()
     m_speechSummary->setVisible(!summary.isEmpty());
 }
 
+// Refills the lists, keeping the picks that are still offered. When one is
+// gone, the profile's own cleanup level and tone take over.
 void TranscribePage::showChoices(const AppSettings &settings)
 {
-    m_cleanup->clear();
-    for (const RowOption &level : cleanupStrengths(settings.refinement.customCleanupLevels)) {
-        m_cleanup->addItem(level.label, level.id);
-    }
-    {
-        const QSignalBlocker blocker(m_profile);
-        m_profile->clear();
-        for (const RowOption &profile : writingProfileChoices(settings.refinement.writingProfiles)) {
-            m_profile->addItem(profile.label, profile.id);
+    const auto refill = [](QComboBox *combo, const QList<RowOption> &options) {
+        const QSignalBlocker blocker(combo);
+        const QString picked = combo->currentData().toString();
+        combo->clear();
+        for (const RowOption &option : options) {
+            combo->addItem(option.label, option.id);
         }
-    }
-    const QSignalBlocker blocker(m_tone);
-    m_tone->clear();
-    for (const RowOption &tone : writingTones(settings.refinement.customTones)) {
-        m_tone->addItem(tone.label, tone.id);
+        const int index = combo->findData(picked);
+        combo->setCurrentIndex(qMax(index, 0));
+        return index >= 0;
+    };
+    const bool keptProfile = refill(m_profile, writingProfileChoices(settings.refinement.writingProfiles));
+    const bool keptCleanup = refill(m_cleanup, cleanupStrengths(settings.refinement.customCleanupLevels));
+    const bool keptTone = refill(m_tone, writingTones(settings.refinement.customTones));
+    if (!keptProfile || !keptCleanup || !keptTone) {
+        applyWritingProfile();
     }
 }
 
@@ -675,7 +678,9 @@ void TranscribePage::refreshRefinementRows()
 {
     const QString provider = m_refiner->currentData().toString();
     const QString model = refinementModel(provider, m_controller->settings()->snapshot().refinement);
-    m_refinerModelRow->findChild<QLabel *>(QStringLiteral("rowDescription"))->setText(model);
+    auto *modelLabel = m_refinerModelRow->findChild<QLabel *>(QStringLiteral("rowDescription"));
+    modelLabel->setText(model);
+    modelLabel->setVisible(!model.isEmpty());
     setCardRowVisible(m_refinerModelRow, !model.isEmpty());
     for (QWidget *row : std::as_const(m_refinementDependents)) {
         row->setEnabled(provider != QStringLiteral("none"));

@@ -92,8 +92,13 @@ QLabel *makeSectionLabel(const QString &text, QWidget *parent);
 // The bold a section title is set in, on pages and in the sidebar's headers.
 QFont sectionTitleFont(const QFont &font);
 QFrame *makeSettingsCard(QWidget *parent);
-// FormButtonDelegate: the whole row is the button, with a trailing arrow.
-QPushButton *makeButtonRow(const QString &title, const QString &description, QWidget *parent);
+// FormButtonDelegate: the whole row is the button, with a trailing arrow. With
+// dynamicDescription an empty description is kept (hidden) for the caller to
+// fill in later.
+QPushButton *makeButtonRow(const QString &title,
+                           const QString &description,
+                           QWidget *parent,
+                           bool dynamicDescription = false);
 // Updates a button row's visible title and accessible name; QPushButton::text
 // is never drawn on these rows.
 void setButtonRowCaption(QPushButton *row, const QString &caption);
