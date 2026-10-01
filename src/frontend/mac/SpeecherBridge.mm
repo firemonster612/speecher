@@ -2236,9 +2236,9 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::kPopupErrorWrapWidth;
 }
 
-+ (NSTimeInterval)popupErrorDismissSeconds
++ (NSTimeInterval)popupErrorDismissSecondsFor:(NSString *)message
 {
-    return speecher::kPopupErrorDismissMs / 1000.0;
+    return speecher::popupErrorDismissMs(QString::fromNSString(message)) / 1000.0;
 }
 
 + (NSString *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font

@@ -353,7 +353,6 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
         m_errorDismissProgress,
         QByteArrayLiteral("value"),
         this);
-    m_errorDismissAnimation->setDuration(kPopupErrorDismissMs);
     m_errorDismissAnimation->setStartValue(m_errorDismissProgress->maximum());
     m_errorDismissAnimation->setEndValue(m_errorDismissProgress->minimum());
     m_errorDismissAnimation->setEasingCurve(QEasingCurve::Linear);
@@ -673,6 +672,7 @@ void TranscriberPopup::showErrorMessage(const QString &message)
     if (isVisible()) {
         m_positioner->positionBottomCenter(m_surface);
     }
+    m_errorDismissAnimation->setDuration(popupErrorDismissMs(message));
     m_errorDismissAnimation->start();
 }
 

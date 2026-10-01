@@ -638,7 +638,7 @@ final class SpeecherDictationPanel {
         // state for the next show to flash.
         state.preview = ""
         state.outcome = nil
-        let seconds = SpeecherBridge.popupErrorDismissSeconds
+        let seconds = SpeecherBridge.popupErrorDismissSeconds(for: problem)
         state.problemCountdown = Date.now...Date.now.addingTimeInterval(seconds)
         state.problem = problem
         applyPreview("")

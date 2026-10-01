@@ -187,8 +187,9 @@ bool WinFrontEnd::captureMainWindow(const QString &path)
     return m_native->settings && m_native->settings->capture(path);
 }
 
-void WinFrontEnd::showDictationError(const QString &message)
+void WinFrontEnd::showDictationError(const QString &message, const PopupErrorAction &fix)
 {
+    Q_UNUSED(fix);
     m_native->panel->showProblem(message);
 }
 

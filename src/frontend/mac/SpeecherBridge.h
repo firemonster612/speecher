@@ -793,9 +793,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // speecher::checkingCredentialsStatus() and accessibilityGrantActionLabel().
 @property (class, nonatomic, readonly, copy) NSString *checkingCredentialsStatus;
 @property (class, nonatomic, readonly, copy) NSString *accessibilityGrantActionLabel;
-// speecher::kPopupErrorWrapWidth and kPopupErrorDismissMs.
+// speecher::kPopupErrorWrapWidth, and popupErrorDismissMs for a message.
 @property (class, nonatomic, readonly) CGFloat popupErrorWrapWidth;
-@property (class, nonatomic, readonly) NSTimeInterval popupErrorDismissSeconds;
++ (NSTimeInterval)popupErrorDismissSecondsFor:(NSString *)message NS_SWIFT_NAME(popupErrorDismissSeconds(for:));
 // speecher::trimPreviewToFit against the panel's own font and width.
 + (NSString *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font
     NS_SWIFT_NAME(trimPreview(_:toWidth:font:));

@@ -241,7 +241,7 @@ void DictationSession::startSession(std::optional<OutputFormat> format)
     }
     QString providerError;
     if (!selectSpeechTranscriber(settings.speech.providerId, &providerError)) {
-        setState(DictationState::Error, providerError);
+        setState(DictationState::Error, providerError, speechSetupAction(settings.speech.providerId));
         return;
     }
     if (settings.refinement.providerId != QStringLiteral("none")) {
@@ -458,7 +458,7 @@ void DictationSession::cancelForShutdown()
     setState(DictationState::Idle);
 }
 
-void DictationSession::setState(DictationState state, const QString &message)
+void DictationSession::setState(DictationState state, const QString &message, const PopupErrorAction &fix)
 {
     if (state == DictationState::Listening) {
         m_listeningClock.start();
@@ -475,7 +475,7 @@ void DictationSession::setState(DictationState state, const QString &message)
     const QString label = dictationStateLabel(state, message);
     emit popupStatusChanged(label);
     if (state == DictationState::Error && !message.isEmpty()) {
-        emit popupErrorRequested(message);
+        emit popupErrorRequested(message, fix);
     }
     qInfo().noquote() << "state changed state=" + stateName()
                       << "messagePresent=" + QString::number(!message.isEmpty());
@@ -565,9 +565,11 @@ void DictationSession::failStartup(quint64 generation, const QString &message)
     qWarning().noquote() << "speech credentials unavailable message=" + message;
     emit previewDisplayChanged({});
     clearScreenshotContext();
+    const PopupErrorAction fix =
+        m_sessionSettings ? speechSetupAction(m_sessionSettings->speech.providerId) : PopupErrorAction();
     m_sessionSettings.reset();
     resumePausedMedia();
-    setState(DictationState::Error, message);
+    setState(DictationState::Error, message, fix);
 }
 
 void DictationSession::beginRefinement(quint64 generation)
@@ -741,8 +743,9 @@ void DictationSession::deliverFinal(const QString &text)
     } else {
         emit popupFrozenChanged(false);
         qWarning().noquote() << "text delivery failed message=" + result.message;
-        setState(DictationState::Error, m_speechWarning.isEmpty()
-            ? result.message : result.message + QStringLiteral(" • ") + m_speechWarning);
+        setState(DictationState::Error,
+                 m_speechWarning.isEmpty() ? result.message : result.message + QStringLiteral(" • ") + m_speechWarning,
+                 result.fix);
     }
 }
 

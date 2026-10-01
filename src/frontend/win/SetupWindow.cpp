@@ -1562,7 +1562,7 @@ struct SetupWindow::Native {
         microphoneProblem.IsClosable(true);
         microphoneProblem.IsOpen(false);
         Button openSettings;
-        openSettings.Content(box_value(L"Open Microphone settings"));
+        openSettings.Content(box_value(win::hs(popupErrorActionLabel({ErrorFix::MicrophonePermission}))));
         openSettings.Click([](const auto &, const auto &) {
             ShellExecuteW(nullptr, L"open", L"ms-settings:privacy-microphone",
                           nullptr, nullptr, SW_SHOWNORMAL);

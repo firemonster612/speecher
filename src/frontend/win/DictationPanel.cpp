@@ -143,7 +143,6 @@ struct DictationPanel::Native : QObject {
         connect(&barTimer, &QTimer::timeout, this, &Native::animateBars);
         // The countdown every platform shows; Dismiss stays the early way out.
         problemAutoDismiss.setSingleShot(true);
-        problemAutoDismiss.setInterval(kPopupErrorDismissMs);
         connect(&problemAutoDismiss, &QTimer::timeout, this, &Native::dismissProblem);
         whatsNewAutoHide.setSingleShot(true);
         whatsNewAutoHide.setInterval(6000);
@@ -344,7 +343,6 @@ struct DictationPanel::Native : QObject {
         // The problem's countdown, draining over the time it has left.
         countdown = ProgressBar();
         countdown.Minimum(0);
-        countdown.Maximum(kPopupErrorDismissMs);
         countdown.Margin({24, 0, 24, 12});
         countdown.Visibility(Visibility::Collapsed);
         content.Children().Append(countdown);
@@ -551,8 +549,10 @@ struct DictationPanel::Native : QObject {
         ensureWindow();
         applyTheme();
         whatsNewHidden = false;
-        problemAutoDismiss.start();
-        countdown.Value(kPopupErrorDismissMs);
+        const int dismissMs = popupErrorDismissMs(message);
+        problemAutoDismiss.start(dismissMs);
+        countdown.Maximum(dismissMs);
+        countdown.Value(dismissMs);
         countdownTick.start();
         refresh();
         reposition();

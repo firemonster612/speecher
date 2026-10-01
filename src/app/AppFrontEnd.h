@@ -1,5 +1,7 @@
 #pragma once
 
+#include "dictation/PopupPresentation.h"
+
 #include <QString>
 #include <QStringList>
 
@@ -38,8 +40,8 @@ public:
     virtual bool captureMainWindow(const QString &path) = 0;
 
     // Shows a dictation failure the controller raised itself rather than the
-    // session, which is only the refused microphone grant.
-    virtual void showDictationError(const QString &message) = 0;
+    // session, such as the refused microphone grant, with what fixes it.
+    virtual void showDictationError(const QString &message, const PopupErrorAction &fix = {}) = 0;
 
     // The system's attention sound.
     virtual void alert() = 0;

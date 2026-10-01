@@ -3,6 +3,7 @@
 #include "core/AppSettings.h"
 #include "core/OutputFormat.h"
 #include "core/Target.h"
+#include "dictation/PopupPresentation.h"
 
 #include <functional>
 #include <optional>
@@ -33,6 +34,8 @@ struct DeliveryResult {
     DeliveryReceipt receipt = DeliveryReceipt::None;
     bool formatDowngraded = false;
     QString message;
+    // What a failure offers to fix it, such as the permission it lacked.
+    PopupErrorAction fix;
 };
 
 struct SpeechPrepareResult {

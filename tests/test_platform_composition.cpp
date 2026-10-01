@@ -317,7 +317,7 @@ public:
         return true;
     }
 
-    void showDictationError(const QString &message) override
+    void showDictationError(const QString &message, const PopupErrorAction &) override
     {
         calls << QStringLiteral("showDictationError ") + message;
     }
