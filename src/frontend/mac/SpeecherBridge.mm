@@ -22,6 +22,7 @@
 // the Qt front end rather than reassembled, because the device and provider
 // lists are the same lists.
 #include "frontend/qt/SchemaSettingsPage.h"
+#include "platform/GlobalShortcutBinder.h"
 #include "providers/CustomEndpoints.h"
 #include "providers/LocalModelStore.h"
 #include "providers/OpenAiAuthProvider.h"
@@ -31,7 +32,6 @@
 #include "providers/TranscriptRefinementPrompt.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/TranscribePresentation.h"
-#include "ui/Theme.h"
 
 #include <QDebug>
 #include <QFileInfo>
@@ -270,6 +270,8 @@ struct SchemaState {
     // Choices that cost a device enumeration stay out of a snapshot until the
     // front end has painted and asked for them.
     bool expensiveReady = false;
+    // The microphones the system lists, which say whether there is one at all.
+    std::function<QList<RowOption>()> audioInputDevices;
 };
 
 struct BridgeState {
@@ -522,6 +524,8 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSArray<RowOptionModel *> *options;
 @property (nonatomic) BOOL stretch;
 @property (nonatomic) BOOL multiline;
+@property (nonatomic) BOOL enabled;
+@property (nonatomic, copy) NSString *disabledHelp;
 @end
 
 @implementation CollectionColumnModel
@@ -705,6 +709,59 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @end
 
 @implementation SidebarGroupModel
+@end
+
+@interface SettingsSearchMatch ()
+@property (nonatomic, copy) NSString *pane;
+@property (nonatomic, copy) NSArray<NSString *> *rows;
+@end
+
+@implementation SettingsSearchMatch
+@end
+
+@interface SpeecherErrorAction ()
+@property (nonatomic) SpeecherErrorFix fix;
+@property (nonatomic, copy) NSString *pageId;
+@property (nonatomic, copy) NSString *label;
+@end
+
+@implementation SpeecherErrorAction
+
+- (instancetype)initWithFix:(SpeecherErrorFix)fix pageId:(NSString *)pageId
+{
+    // SpeecherErrorFix mirrors speecher::ErrorFix value for value.
+    static_assert(int(SpeecherErrorFixNone) == int(speecher::ErrorFix::None));
+    static_assert(int(SpeecherErrorFixSettingsPage) == int(speecher::ErrorFix::SettingsPage));
+    static_assert(int(SpeecherErrorFixMicrophonePermission) == int(speecher::ErrorFix::MicrophonePermission));
+    static_assert(int(SpeecherErrorFixScreenRecordingPermission)
+                  == int(speecher::ErrorFix::ScreenRecordingPermission));
+    static_assert(int(SpeecherErrorFixAccessibilityPermission)
+                  == int(speecher::ErrorFix::AccessibilityPermission));
+    self = [super init];
+    if (self) {
+        _fix = fix;
+        _pageId = [pageId copy];
+        _label = speecher::popupErrorActionLabel({static_cast<speecher::ErrorFix>(fix),
+                                                  QString::fromNSString(pageId)})
+                     .toNSString();
+    }
+    return self;
+}
+
++ (SpeecherErrorAction *)actionWithCore:(const speecher::PopupErrorAction &)action
+{
+    return [[SpeecherErrorAction alloc] initWithFix:static_cast<SpeecherErrorFix>(action.fix)
+                                             pageId:action.pageId.toNSString()];
+}
+
+@end
+
+@interface SpeecherCredentialStatus ()
+@property (nonatomic, copy) NSString *text;
+@property (nonatomic) BOOL ready;
+@end
+
+@implementation SpeecherCredentialStatus
 @end
 
 @interface LocalModelInfo ()
@@ -1100,6 +1157,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (NSArray<RowOptionModel *> *)bridgedOptions:(const QList<RowOption> &)options;
 - (void)setTargetAccessibility:(BOOL)available;
 - (void)setLaunchAtLoginAccepted:(BOOL)accepted;
+- (void)setAudioInputDevices:(std::function<QList<RowOption>()>)devices;
 // The settings as they stand, including edits not yet committed, which is what
 // the credential row has to read the chosen auth mode from.
 - (const AppSettings &)draft;
@@ -1190,6 +1248,8 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         model.options = column.options ? [self bridgedOptions:column.options(_state->draft)] : @[];
         model.stretch = column.stretch;
         model.multiline = column.multiline;
+        model.enabled = !column.enabled || column.enabled(_state->draft);
+        model.disabledHelp = column.disabledHelp.toNSString();
         [columns addObject:model];
     }
     CollectionModel *model = [[CollectionModel alloc] init];
@@ -1215,7 +1275,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 {
     SettingsRowModel *model = [[SettingsRowModel alloc] init];
     model.rowId = row.id.toNSString();
-    model.label = row.label.toNSString();
+    model.label = (row.labelValue ? row.labelValue(_state->draft) : row.label).toNSString();
     model.help = (row.helpValue ? row.helpValue(_state->draft) : row.help).toNSString();
     model.kind = bridgedKind(row.kind);
     model.actionLabel = (row.actionLabelValue ? row.actionLabelValue(_state->draft)
@@ -1230,7 +1290,9 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.suggests = bool(row.suggestions);
     model.enabled = !row.enabled || row.enabled(_state->draft, _state->capabilities);
     model.tooltip = row.tooltip.toNSString();
-    model.disabledHelp = row.disabledHelp.toNSString();
+    model.disabledHelp = (row.disabledHelpValue ? row.disabledHelpValue(_state->draft, _state->capabilities)
+                                                : row.disabledHelp)
+                             .toNSString();
     model.disabledAction = row.disabledAction.toNSString();
     model.disabledActionLabel = row.disabledActionLabel.toNSString();
     model.groupId = row.groupId.toNSString();
@@ -1248,6 +1310,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 - (NSArray<SettingsPageModel *> *)pages
 {
+    // Asked again on every read, as the device row's own choices are, so a
+    // microphone plugged in while the window is open lifts the gate.
+    if (_state->expensiveReady && _state->audioInputDevices) {
+        _state->capabilities.audioInput = !_state->audioInputDevices().isEmpty();
+    }
     NSMutableArray<SettingsPageModel *> *pages = [NSMutableArray array];
     for (const speecher::SettingsPage &page : _state->schema.pages) {
         NSMutableArray<SettingsSectionModel *> *sections = [NSMutableArray array];
@@ -1303,10 +1370,17 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return @[page.pane.toNSString(), page.view.toNSString()];
 }
 
-- (NSArray<NSString *> *)searchPanes:(NSString *)query
+- (NSArray<SettingsSearchMatch *> *)searchSettings:(NSString *)query
 {
-    return bridgedStrings(speecher::searchPanes(_state->schema, QString::fromNSString(query),
-                                                _state->draft, _state->capabilities));
+    NSMutableArray<SettingsSearchMatch *> *matches = [NSMutableArray array];
+    for (const speecher::SearchMatch &found : speecher::searchSettings(
+             _state->schema, QString::fromNSString(query), _state->draft, _state->capabilities)) {
+        SettingsSearchMatch *match = [[SettingsSearchMatch alloc] init];
+        match.pane = found.pane.toNSString();
+        match.rows = bridgedStrings(found.rows);
+        [matches addObject:match];
+    }
+    return matches;
 }
 
 - (NSArray<SidebarGroupModel *> *)sidebarGroups
@@ -1343,9 +1417,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 {
     _state->store->applySnapshot(mergeSettingsDraft(
         _state->schema, _state->loaded, _state->draft, _state->store->snapshot()));
-    // What the Qt front end does after a save, and the reason a theme change
-    // reaches NSApp.appearance as well as Qt's own palette.
-    speecher::Theme::apply(_state->store->theme());
     _state->draft = _state->loaded = _state->store->snapshot();
 }
 
@@ -1367,6 +1438,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (void)setLaunchAtLoginAccepted:(BOOL)accepted
 {
     _state->capabilities.launchAtLoginAccepted = accepted;
+}
+
+- (void)setAudioInputDevices:(std::function<QList<RowOption>()>)devices
+{
+    _state->audioInputDevices = std::move(devices);
 }
 
 - (NSArray<NSString *> *)problemsWith:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
@@ -1521,6 +1597,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         initWithStore:controller->settings()
                schema:schema
          capabilities:capabilities];
+    [_settingsSchema setAudioInputDevices:context.audioInputDevices];
     __weak SpeecherBridge *weakSelf = self;
     BridgeState *state = _state;
     const QString credentialsPath = controller->settings()->claudeCredentialsPath();
@@ -1853,10 +1930,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     QObject::connect(session,
                      &DictationSession::popupErrorRequested,
                      &_state->lifetime,
-                     [weakSelf](const QString &message) {
+                     [weakSelf](const QString &message, const speecher::PopupErrorAction &fix) {
                          SpeecherBridge *bridge = weakSelf;
                          if (bridge.popupErrorRequested) {
-                             bridge.popupErrorRequested(message.toNSString());
+                             bridge.popupErrorRequested(message.toNSString(),
+                                                        [SpeecherErrorAction actionWithCore:fix]);
                          }
                      });
 }
@@ -1947,6 +2025,20 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return error.isEmpty() ? @"That shortcut could not be bound." : error.toNSString();
 }
 
+- (NSString *)defaultShortcutDisplay
+{
+    return speecher::ShortcutBinding(speecher::GlobalShortcutBinder::defaultShortcut()).displayText().toNSString();
+}
+
+- (NSString *)resetShortcut
+{
+    QString error;
+    if (_state->controller->setGlobalShortcut(speecher::GlobalShortcutBinder::defaultShortcut(), &error)) {
+        return nil;
+    }
+    return error.isEmpty() ? @"That shortcut could not be bound." : error.toNSString();
+}
+
 - (NSString *)bindCurrentShortcut
 {
     QString error;
@@ -2032,6 +2124,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (NSString *)statusLabel
 {
     return _state->controller->statusLabel().toNSString();
+}
+
+- (SpeecherDictationState)dictationState
+{
+    return static_cast<SpeecherDictationState>(_state->controller->session()->state());
 }
 
 - (NSString *)toggleLabel
@@ -2252,6 +2349,21 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 + (NSString *)globalShortcutPrompt
 {
     return speecher::globalShortcutPrompt().toNSString();
+}
+
++ (NSString *)globalShortcutChangeCaption
+{
+    return speecher::globalShortcutChangeCaption().toNSString();
+}
+
++ (NSString *)globalShortcutResetCaption:(NSString *)defaultShortcut
+{
+    return speecher::globalShortcutResetCaption(QString::fromNSString(defaultShortcut)).toNSString();
+}
+
++ (NSString *)noSettingsMatchText
+{
+    return speecher::noSettingsMatchText().toNSString();
 }
 
 + (CGFloat)popupErrorWrapWidth
@@ -2609,12 +2721,19 @@ static void probeSpeechProvider(BridgeState *state,
     static_assert(int(SpeecherLocalModelTextTooLarge) == int(speecher::LocalModelText::TooLarge));
     static_assert(int(SpeecherLocalModelTextHideOtherModels) == int(speecher::LocalModelText::HideOtherModels));
     static_assert(int(SpeecherLocalModelTextCompareNote) == int(speecher::LocalModelText::CompareNote));
+    static_assert(int(SpeecherLocalModelTextDeleteModel) == int(speecher::LocalModelText::DeleteModel));
+    static_assert(int(SpeecherLocalModelTextDeleteBody) == int(speecher::LocalModelText::DeleteBody));
     return speecher::localModelText(static_cast<speecher::LocalModelText>(text)).toNSString();
 }
 
 + (NSString *)compareModelsCaption:(NSInteger)otherModels
 {
     return speecher::compareModelsCaption(int(otherModels)).toNSString();
+}
+
++ (NSString *)deleteModelQuestion:(NSString *)modelName
+{
+    return speecher::deleteModelQuestion(QString::fromNSString(modelName)).toNSString();
 }
 
 + (NSArray<NSString *> *)compareTableHeaders
@@ -2847,28 +2966,33 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     return [_settingsSchema draft].refinement.openAiAuthMode == kAppSettingsKeyAuthMode;
 }
 
-- (NSString *)credentialStatus
+- (SpeecherCredentialStatus *)credentialStatus
 {
     const AppSettings &draft = [_settingsSchema draft];
     // The remote CLI Proxy fields decide which credential the status
     // describes; passing them matches the Qt call site (ProviderCustomRows).
-    return speecher::OpenAiAuthProvider(_state->controller->secretStore(),
-                                        draft.refinement.openAiAuthMode,
-                                        draft.refinement.openAiCliproxyAccount,
-                                        _state->controller->settings()->cliproxyOauthDir(),
-                                        {},
-                                        {},
-                                        draft.refinement.cliproxyBaseUrl,
-                                        draft.refinement.cliproxyApiKey)
-        .status()
-        .toNSString();
+    const speecher::OpenAiAuthProvider provider(_state->controller->secretStore(),
+                                                draft.refinement.openAiAuthMode,
+                                                draft.refinement.openAiCliproxyAccount,
+                                                _state->controller->settings()->cliproxyOauthDir(),
+                                                {},
+                                                {},
+                                                draft.refinement.cliproxyBaseUrl,
+                                                draft.refinement.cliproxyApiKey);
+    SpeecherCredentialStatus *status = [[SpeecherCredentialStatus alloc] init];
+    status.text = provider.status().toNSString();
+    status.ready = provider.resolve(false).ok;
+    return status;
 }
 
-- (NSString *)anthropicCredentialStatus
+- (SpeecherCredentialStatus *)anthropicCredentialStatus
 {
-    return speecher::mac::anthropicCredentialStatus(
-               [_settingsSchema draft], *_state->controller->settings())
-        .toNSString();
+    const speecher::mac::CredentialStatus found =
+        speecher::mac::anthropicCredentialStatus([_settingsSchema draft], *_state->controller->settings());
+    SpeecherCredentialStatus *status = [[SpeecherCredentialStatus alloc] init];
+    status.text = found.text.toNSString();
+    status.ready = found.ready;
+    return status;
 }
 
 - (NSString *)readApiKey

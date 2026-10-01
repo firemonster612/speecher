@@ -646,6 +646,11 @@ struct TranscribePane: View {
             }
             .formStyle(.grouped)
             actionBar {
+                // Beside the button it explains, while there is nothing to start.
+                if model.files.isEmpty {
+                    Text(model.text(.noFilesYet))
+                        .foregroundStyle(.secondary)
+                }
                 Button(model.startCaption) { model.start() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.files.isEmpty)
@@ -668,6 +673,13 @@ struct TranscribePane: View {
                 Text(model.text(.refiner))
                 Text(model.text(.refinerHelp))
             }
+            // Why the rows under it do nothing yet, once, rather than four
+            // silently dimmed rows.
+            if model.options.refiner == "none" {
+                Text(model.text(.needsRefiner))
+            }
+            // The Writing Profile first: it sets the Cleanup Level and Tone
+            // under it.
             Group {
                 if !model.refinementModel.isEmpty {
                     LabeledContent {
@@ -677,6 +689,12 @@ struct TranscribePane: View {
                         Text(model.refinementModelHint)
                     }
                 }
+                Picker(selection: $model.profile) {
+                    options(model.profiles)
+                } label: {
+                    Text(model.text(.writingProfile))
+                    Text(model.text(.writingProfileHelp))
+                }
                 Picker(selection: $model.options.cleanup) {
                     options(model.cleanupStrengths)
                 } label: {
@@ -684,12 +702,6 @@ struct TranscribePane: View {
                     Text(model.text(.cleanupHelp))
                 }
                 .pickerStyle(.segmented)
-                Picker(selection: $model.profile) {
-                    options(model.profiles)
-                } label: {
-                    Text(model.text(.writingProfile))
-                    Text(model.text(.writingProfileHelp))
-                }
                 Picker(selection: $model.options.tone) {
                     options(model.tones)
                 } label: {
@@ -845,13 +857,18 @@ struct TranscribePane: View {
         }
     }
 
+    /// The pane's buttons under the form, set apart from a row the form may
+    /// have scrolled halfway under them.
     private func actionBar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack {
-            Spacer()
-            content()
-            Spacer()
+        VStack(spacing: 0) {
+            Divider()
+            HStack {
+                Spacer()
+                content()
+                Spacer()
+            }
+            .scenePadding()
         }
-        .scenePadding([.horizontal, .bottom])
     }
 }
 

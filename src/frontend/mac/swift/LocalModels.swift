@@ -70,6 +70,8 @@ private struct LocalModelDetail: View {
     let entry: LocalModelInfo
     @ObservedObject var model: AppModel
     let use: () -> Void
+    /// Deleting asks first: the download is gone until it is fetched again.
+    @State private var confirmingDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -141,7 +143,17 @@ private struct LocalModelDetail: View {
                 }
                 Button(SpeecherBridge.localModelText(.testSpeed)) { model.bridge.testLocalModelSpeed(entry.modelId) }
                     .disabled(entry.speedTestRunning)
-                Button("Delete") { model.bridge.deleteLocalModel(entry.modelId) }
+                Button(SpeecherBridge.localModelText(.deleteModel)) { confirmingDelete = true }
+                    .confirmationDialog(SpeecherBridge.deleteModelQuestion(entry.name),
+                                        isPresented: $confirmingDelete) {
+                        Button(SpeecherBridge.localModelText(.deleteModel), role: .destructive) {
+                            model.bridge.deleteLocalModel(entry.modelId)
+                        }
+                        Button("Cancel", role: .cancel) {}
+                            .keyboardShortcut(.defaultAction)
+                    } message: {
+                        Text(SpeecherBridge.localModelText(.deleteBody))
+                    }
             } else {
                 Button(entry.tooLarge ? SpeecherBridge.localModelText(.tooLarge) : entry.downloadCaption) {
                     model.bridge.downloadLocalModel(entry.modelId)

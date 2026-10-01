@@ -220,19 +220,12 @@ struct CollectionRow: View {
         // The window and this view survive close/reopen, so a reopened draft
         // arrives as a generation bump rather than a fresh onAppear.
         .onChange(of: model.draftGeneration) { editor.reload(from: row) }
+        if !row.enabled {
+            GateNote(row: row, model: model)
+        }
         if !editor.problems.isEmpty {
             // Refusals are errors: the records were not saved.
-            Label {
-                VStack(alignment: .leading) {
-                    if !editor.problemsTitle.isEmpty {
-                        Text(editor.problemsTitle).bold()
-                    }
-                    ForEach(editor.problems, id: \.self) { Text($0) }
-                }
-            } icon: {
-                Image(systemName: "exclamationmark.octagon.fill")
-            }
-            .foregroundStyle(.red)
+            RefusalLabel(title: editor.problemsTitle, problems: editor.problems)
         }
     }
 
@@ -242,12 +235,13 @@ struct CollectionRow: View {
             TableColumnForEach(editor.collection.columns, id: \.columnId) { column in
                 TableColumn(column.title) { record in
                     HStack {
-                        RecordCell(editor: editor, column: column, record: record)
+                        RecordCell(editor: editor, column: column, record: record,
+                                   editable: row.enabled && column.enabled)
                         if column.stretch, let badge = badges[record.id] {
                             RecordBadge(text: badge)
                         }
                     }
-                    .help(editor.tooltip(column.columnId, record: record.id))
+                    .help(column.enabled ? editor.tooltip(column.columnId, record: record.id) : column.disabledHelp)
                 }
                 .width(min: Self.width(column).min,
                        ideal: Self.width(column).ideal,
@@ -263,6 +257,7 @@ struct CollectionRow: View {
                 } actions: {
                     if editor.canAdd {
                         Button(editor.collection.addLabel) { editor.adding = true }
+                            .disabled(!row.enabled)
                     }
                 }
             }
@@ -309,6 +304,8 @@ struct CollectionRow: View {
                     .labelStyle(.titleOnly)
             }
         }
+        // Readable while disabled: only the edits stop.
+        .disabled(!row.enabled)
         .buttonStyle(.accessoryBar)
         .labelStyle(.iconOnly)
         .sheet(isPresented: $editor.adding) {
@@ -349,8 +346,8 @@ struct AddRecordSheet: View {
                 } header: {
                     Text(editor.collection.addDialogTitle)
                 } footer: {
-                    ForEach(refusals, id: \.self) { refusal in
-                        Text(refusal)
+                    if !refusals.isEmpty {
+                        RefusalLabel(title: "", problems: refusals)
                     }
                 }
             }
@@ -379,6 +376,27 @@ struct AddRecordSheet: View {
     }
 }
 
+/// Why records were refused, the same in the table, the add sheet and an
+/// import: the records were not saved, so it reads as an error.
+struct RefusalLabel: View {
+    let title: String
+    let problems: [String]
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading) {
+                if !title.isEmpty {
+                    Text(title).bold()
+                }
+                ForEach(problems, id: \.self) { Text($0) }
+            }
+        } icon: {
+            Image(systemName: "exclamationmark.octagon.fill")
+        }
+        .foregroundStyle(.red)
+    }
+}
+
 /// A short label on a capsule after a record's name, in the accent colour, as
 /// the Local models pane shows a rating.
 struct RecordBadge: View {
@@ -401,9 +419,10 @@ struct RecordCell: View {
     @ObservedObject var editor: CollectionEditor
     let column: CollectionColumnModel
     let record: CollectionRecord
+    var editable = true
 
     var body: some View {
-        if record.locked || column.kind == .readOnly {
+        if record.locked || column.kind == .readOnly || !editable {
             Text(RecordField.display(column, record.values[column.columnId]))
         } else {
             RecordField(column: column, value: value)

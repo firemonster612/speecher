@@ -7,6 +7,7 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "frontend/mac/SpeecherBridge.h"
+#include "ui/Theme.h"
 
 #import <AppKit/AppKit.h>
 
@@ -70,6 +71,9 @@ MacFrontEnd::MacFrontEnd(ApplicationController *controller)
     : m_controller(controller)
     , m_native(std::make_unique<Native>())
 {
+    // macOS keeps appearance in System Settings and there is no Theme row
+    // here, so a theme saved on another platform must not hold the app.
+    Theme::apply(QStringLiteral("system"));
     m_native->bridge = [[SpeecherBridge alloc] initWithController:controller];
     // The schema names the commands an Action row offers; what they do belongs
     // to the front end, as it does on Qt.
@@ -214,8 +218,7 @@ bool MacFrontEnd::captureMainWindow(const QString &path)
 
 void MacFrontEnd::showDictationError(const QString &message, const PopupErrorAction &fix)
 {
-    Q_UNUSED(fix);
-    [m_native->ui showDictationProblem:message.toNSString()];
+    [m_native->ui showDictationProblem:message.toNSString() fix:[SpeecherErrorAction actionWithCore:fix]];
 }
 
 void MacFrontEnd::alert()

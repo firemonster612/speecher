@@ -18,10 +18,14 @@ QList<RowOption> customRowOptions(const QString &rowId,
                                   const AppSettings &draft,
                                   const SettingsStore &store);
 
-QString anthropicCredentialStatus(const AppSettings &draft,
-                                  const SettingsStore &store);
-
-
+// The Claude Code sign-in's status line, and whether it was found; empty in
+// CLI Proxy API mode, which has no check to report.
+struct CredentialStatus {
+    QString text;
+    bool ready = false;
+};
+CredentialStatus anthropicCredentialStatus(const AppSettings &draft,
+                                           const SettingsStore &store);
 
 } // namespace mac
 } // namespace speecher

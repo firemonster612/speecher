@@ -76,14 +76,10 @@ struct HomePane: View {
             } else {
                 tiles
                 activity
-                pair {
-                    whenYouTalk
-                    pace
-                }
-                pair {
-                    apps
-                    corrections
-                }
+                whenYouTalk
+                pace
+                apps
+                corrections
                 records
             }
         }
@@ -105,12 +101,23 @@ struct HomePane: View {
                 Label(model.status, systemImage: model.listening ? "mic.fill" : "mic")
                 Text(model.bridge.dictationShortcutHint(model.shortcut))
             }
-            // The popup shows a failure for five seconds, so the reason also
-            // stays here until the next session starts.
+            // With no shortcut the hint asks for one, and this is the way there.
+            if model.shortcut.isEmpty {
+                let openDictation = SpeecherErrorAction(fix: .settingsPage, pageId: "dictation")
+                Button(openDictation.label) { model.showPage(openDictation.pageId) }
+            }
+            // The popup shows a failure only for a while, so the reason, and
+            // what fixes it, also stay here until the next session starts.
             if !model.failureNote.isEmpty {
-                Text(model.failureNote)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                LabeledContent {
+                    if let fix = model.failureFix {
+                        Button(fix.label) { model.perform(fix) }
+                    }
+                } label: {
+                    Text(model.failureNote)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if !model.transcript.isEmpty {
                 LabeledContent {
@@ -155,7 +162,9 @@ struct HomePane: View {
     private var tiles: some View {
         Section {
             ViewThatFits(in: .horizontal) {
-                tileGrid(perRow: 4)
+                // A spacing's worth of slack, so four across gives way to two
+                // by two before a title meets the card's edge.
+                tileGrid(perRow: 4).padding(.trailing, 24)
                 tileGrid(perRow: 2)
             }
         } header: {
@@ -236,6 +245,8 @@ struct HomePane: View {
             VStack(alignment: .leading, spacing: 4) {
                 Label(text.title, systemImage: Self.symbol(forIconId: text.iconId))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: !wraps, vertical: false)
                 Text(text.unit.isEmpty ? text.value : "\(text.value) \(text.unit)")
                     .font(.title2.weight(.semibold))
                     .monospacedDigit()
@@ -284,6 +295,8 @@ struct HomePane: View {
                     }
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(insights.weekDescription)
     }
 
     // MARK: Activity
@@ -293,6 +306,11 @@ struct HomePane: View {
             ActivityHeatmap(days: insights.heatmap, monthLabels: insights.weekMonthLabels,
                             rowLabels: insights.heatmapRowLabels,
                             strengths: insights.heatStrengths, measure: measure)
+                // The days as one sentence, which VoiceOver reads instead of
+                // hundreds of unlabelled squares.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(insights.heatmapDescriptions.indices.contains(measure.rawValue)
+                                    ? insights.heatmapDescriptions[measure.rawValue] : "")
         } header: {
             HStack {
                 Text(model.homeLabel("activity"))
@@ -319,26 +337,19 @@ struct HomePane: View {
         }
     }
 
-    // MARK: Card pairs
+    // MARK: Cards
 
-    /// Two cards side by side in one section, one above the other once the
-    /// window is too narrow for both. The section is the only box.
-    private func pair<Cards: View>(@ViewBuilder _ cards: () -> Cards) -> some View {
-        Section {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 24, alignment: .top)],
-                      alignment: .leading, spacing: 16) {
-                cards()
-            }
-        }
-    }
-
+    /// One card under its own section header, as every other card on Home is.
     private func card<Content: View>(_ title: String,
                                      @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading) {
-            Text(title).font(.headline)
-            content()
+        Section {
+            VStack(alignment: .leading) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } header: {
+            Text(title)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var whenYouTalk: some View {
@@ -350,6 +361,8 @@ struct HomePane: View {
                 Text(insights.personaText).bold()
                 Text(insights.peakText).foregroundStyle(.secondary)
                 HourChart(counts: counts, labels: labels, tips: insights.hourTips, peak: peak)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(insights.hourChartDescription)
             } else {
                 Text(model.homeLabel("noHourData"))
             }

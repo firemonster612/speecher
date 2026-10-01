@@ -23,9 +23,9 @@ struct RootView: View {
         // On the split view rather than on a column: search covers the whole
         // window, and the sidebar is where a settings app puts the field.
         .searchable(text: $query, placement: .sidebar, prompt: "Search")
-        // Return opens the first hit.
+        // Return opens the first hit at the row that matched.
         .onSubmit(of: .search) {
-            if let first = model.searchPanes(query).first { model.showPage(first.id) }
+            if let first = model.search(query).first { model.showPage(first.pane.id, row: first.row) }
         }
         .toolbar(removing: .sidebarToggle)
         .toolbar(removing: .title)
@@ -38,9 +38,17 @@ struct RootView: View {
         }
         .alert(model.homeLabel("clearHistoryFailed"),
                isPresented: $model.clearInsightsFailed) {
-            Button("OK", role: .cancel) {}
+            // ui-lint: allow core-string (deleting the history again, not the update banner's retry)
+            Button("Try again") { model.clearInsights() }
+                .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) {}
         }
     }
+
+    /// The banner, the title and the pane share one column, as wide as a
+    /// grouped form's cards go, so their edges line up however wide the
+    /// window is.
+    private static let columnWidth: CGFloat = 742
 
     @ViewBuilder private var detail: some View {
         if let pane = model.pane(withId: model.pane) {
@@ -63,11 +71,17 @@ struct RootView: View {
                         .font(.title2.weight(.semibold))
                 }
                 .scenePadding([.top, .horizontal])
+                // Content scrolls under the title, so the two are kept apart
+                // rather than the content being cut off at a glyph.
+                Divider()
+                    .padding(.top, 8)
                 PaneView(pane: pane, model: model)
                     // A fresh view per pane, so state one pane keeps, such as
                     // Vocabulary's chosen view, does not carry over to the next.
                     .id(pane.id)
             }
+            .frame(maxWidth: Self.columnWidth)
+            .frame(maxWidth: .infinity)
         }
     }
 }
@@ -161,9 +175,15 @@ struct SidebarList: View {
 
     var body: some View {
         // Every pick goes through showPage, so choosing What's New here is the
-        // same as any other way of opening it.
+        // same as any other way of opening it. A search hit opens at the row
+        // that matched.
         List(selection: Binding<String>(get: { model.pane },
-                                        set: { if $0 != model.pane { model.showPage($0) } })) {
+                                        set: { pick in
+                                            guard pick != model.pane else { return }
+                                            let row = query.isEmpty ? nil
+                                                : model.search(query).first(where: { $0.pane.id == pick })?.row
+                                            model.showPage(pick, row: row)
+                                        })) {
             if query.isEmpty {
                 // Each titled group under the native section header; the top
                 // group has none, and What's New leads it while pending or open.
@@ -185,11 +205,16 @@ struct SidebarList: View {
                 }
             } else {
                 // A search shows its hits as one flat list, not under the groups
-                // they came from.
-                ForEach(model.searchPanes(query)) { row($0) }
+                // they came from, and opens each at the row that matched.
+                ForEach(model.search(query)) { row($0.pane) }
             }
         }
         .listStyle(.sidebar)
+        .overlay {
+            if !query.isEmpty, model.search(query).isEmpty {
+                ContentUnavailableView(SpeecherBridge.noSettingsMatchText, systemImage: "magnifyingglass")
+            }
+        }
     }
 
     /// Icon plus label, and no colour of our own: sidebar icons take the accent
@@ -211,7 +236,8 @@ final class SpeecherSettingsWindow {
     init(model: AppModel) {
         self.model = model
         // No miniaturize: a settings window is quick to reopen with ⌘, so it has
-        // no business in the Dock. It remains resizable for the table panes.
+        // no business in the Dock. It remains resizable, and zooms, for the
+        // table panes.
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 620),
                           styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                           backing: .buffered,
@@ -228,7 +254,6 @@ final class SpeecherSettingsWindow {
         window.titlebarSeparatorStyle = .none
         window.toolbar = NSToolbar()
         window.toolbarStyle = .unified
-        window.standardWindowButton(.zoomButton)?.isEnabled = false
         // A controller rather than a bare hosting view: NavigationSplitView
         // becomes an NSSplitViewController, which needs a parent view
         // controller to install its sidebar item into.

@@ -144,7 +144,7 @@ private slots:
         SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
         SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
 
-        [ui showDictationProblem:@"The microphone stopped"];
+        [ui showDictationProblem:@"The microphone stopped" fix:nil];
         QVERIFY(ui.dictationPanelVisible);
 
         [ui dismissDictationPanel];
@@ -269,6 +269,7 @@ private slots:
 
         // Receipts carry their outcome's symbol; a problem wraps at the shared
         // width and grows taller, with its countdown beneath.
+        SpeecherErrorAction *noFix = [[SpeecherErrorAction alloc] initWithFix:SpeecherErrorFixNone pageId:@""];
         QVERIFY(bridge.popupMessageRequested);
         bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted);
         settle();
@@ -276,19 +277,21 @@ private slots:
         bridge.popupMessageRequested(@"Copied", SpeecherPopupOutcomeCopied);
         settle();
         QVERIFY(capture("receipt-copied"));
-        bridge.popupErrorRequested(@"Microphone unavailable");
+        bridge.popupErrorRequested(@"Microphone unavailable", noFix);
         settle();
         const CGFloat shortError = panel.frame.size.height;
         QVERIFY(capture("error-short"));
         bridge.popupErrorRequested(@"The transcription service rejected the request: the API key "
                                    @"is invalid or has expired. Check the key on the Accounts "
-                                   @"page, then try again.");
+                                   @"page, then try again.",
+                                   noFix);
         settle();
         QVERIFY(panel.frame.size.height > shortError);
         QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
         QVERIFY(capture("error-long"));
         bridge.popupErrorRequested(@"Could not reach https://example.com/"
-                                   @"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+                                   @"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                                   noFix);
         settle();
         QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
         QVERIFY(capture("error-unbroken"));
@@ -445,7 +448,8 @@ private slots:
                                               credentialsPath);
         SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
 
-        QVERIFY(bridge.anthropicCredentialStatus.length > 0);
+        QVERIFY(bridge.anthropicCredentialStatus.text.length > 0);
+        QVERIFY(!bridge.anthropicCredentialStatus.ready);
         __block bool credentialsChanged = false;
         bridge.anthropicCredentialsChanged = ^{ credentialsChanged = true; };
         QFile credentials(credentialsPath);
@@ -456,10 +460,11 @@ private slots:
         credentials.close();
 
         QTRY_VERIFY_WITH_TIMEOUT(credentialsChanged, 2000);
-        QCOMPARE(QString::fromNSString(bridge.anthropicCredentialStatus),
+        QCOMPARE(QString::fromNSString(bridge.anthropicCredentialStatus.text),
                  QStringLiteral("Signed in with Claude Code"));
+        QVERIFY(bridge.anthropicCredentialStatus.ready);
         [bridge.settingsSchema setValue:@"cliproxy" forRowId:@"anthropicAuthMode"];
-        QCOMPARE(bridge.anthropicCredentialStatus.length, NSUInteger(0));
+        QCOMPARE(bridge.anthropicCredentialStatus.text.length, NSUInteger(0));
     }
 
     // A Carbon hotkey is consumed system-wide and never reaches a recorder's

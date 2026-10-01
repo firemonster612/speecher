@@ -132,6 +132,9 @@ final class SetupFlowModel: ObservableObject {
     // Accessibility. The grant recorded on first sight of the page decides
     // whether finishing must relaunch: a grant that pre-dated this run does not.
     @Published var accessibilityProblem = ""
+    /// The grant was asked for on this run and macOS has not given it, which
+    /// is when the way to Privacy & Security by hand is worth offering.
+    @Published var accessibilityAsked = false
     private var initialGrant: Bool?
     private var accessibilityPoll: Timer?
 
@@ -662,9 +665,10 @@ final class SetupFlowModel: ObservableObject {
     }
 
     func openMicrophoneSettings() {
-        let pane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-        NSWorkspace.shared.open(URL(string: pane)!)
+        if let url = Self.microphoneSettings.systemSettingsURL { NSWorkspace.shared.open(url) }
     }
+
+    static var microphoneSettings: SpeecherErrorAction { SpeecherErrorAction(fix: .microphonePermission, pageId: "") }
 
     func startMeter() {
         meterRunning = true
@@ -753,6 +757,7 @@ final class SetupFlowModel: ObservableObject {
 
     func requestAccessibility() {
         accessibilityProblem = model.bridge.requestAccessibilityGrant() ?? ""
+        accessibilityAsked = true
     }
 
     var accessibilityStatus: String {
@@ -823,9 +828,12 @@ final class SetupFlowModel: ObservableObject {
         stopAccessibilityPoll()
         model.bridge.completeSetup()
         if accessibilityGrantAppearedDuringSetup {
+            // The restart is not optional, so its one button says what it does.
             let alert = NSAlert()
             alert.messageText = "Accessibility granted"
-            alert.informativeText = "Speecher will now restart to apply the Accessibility grant."
+            alert.informativeText = "Speecher restarts to apply the Accessibility grant."
+            // ui-lint: allow core-string (the setup relaunch, not the update banner's install)
+            alert.addButton(withTitle: "Restart now")
             alert.runModal()
             onFinished = {}
             closeWindow()
@@ -1551,13 +1559,13 @@ private struct MicrophoneStep: View {
                 .foregroundStyle(.green)
         case .notDetermined:
             LabeledContent {
-                Button("Allow Microphone Access") { flow.requestMicrophoneAccess() }
+                Button("Allow microphone access") { flow.requestMicrophoneAccess() }
             } label: {
                 Text("macOS has not been asked yet. Speecher only records while you dictate.")
             }
         default:
             LabeledContent {
-                Button("Open Microphone Settings") { flow.openMicrophoneSettings() }
+                Button(SetupFlowModel.microphoneSettings.label) { flow.openMicrophoneSettings() }
             } label: {
                 Text("Microphone access is off, so Speecher records silence. Turn Speecher on "
                     + "under Privacy & Security > Microphone, then come back to this page.")
@@ -1578,6 +1586,13 @@ private struct AccessibilityStep: View {
                                                                 : AnyShapeStyle(.primary))
                 if !model.accessibilityEnabled {
                     Button(SpeecherBridge.accessibilityGrantActionLabel) { flow.requestAccessibility() }
+                    if flow.accessibilityAsked {
+                        Button("Open Privacy & Security") {
+                            if let url = SpeecherErrorAction(fix: .accessibilityPermission, pageId: "").systemSettingsURL {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1859,37 +1874,17 @@ private struct EndpointSections: View {
 private struct ShortcutStep: View {
     @ObservedObject var flow: SetupFlowModel
     @ObservedObject var model: AppModel
-    @StateObject private var recorder = ShortcutRecorder()
-    /// A key the recorder caught but could not bind (a media key); shown in
-    /// the footer while the recorder stays armed.
-    @State private var captureProblem = ""
 
     var body: some View {
         Form {
+            // The same row the Dictation pane shows, so the key, Change and
+            // Reset read alike in both places.
             Section {
-                // The key itself reads as a fact on its own row; the button
-                // below is what changes it.
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: "keyboard")
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text(model.row("globalShortcut")?.label ?? "")
-                    Spacer(minLength: 12)
-                    Text(model.shortcut)
-                        .fontWeight(.semibold)
-                }
-                LabeledContent {
-                    Button(caption) { record() }
-                } label: {
-                    Text("Press a key combination, or a single key such as "
-                         + "Right Option or F13.")
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
-                    Button(SpeecherBridge.accessibilityGrantActionLabel) { flow.requestAccessibility() }
-                }
+                ShortcutRecorderRow(model: model)
             } footer: {
-                Text(footnote)
+                if flow.shortcutRegistered {
+                    Text("Shortcut registered. " + flow.activationInstruction)
+                }
             }
             Section {
                 if let row = model.row("activationMode") {
@@ -1898,37 +1893,8 @@ private struct ShortcutStep: View {
             }
         }
         .formStyle(.grouped)
-        .onDisappear { recorder.stop() }
-    }
-
-    private func record() {
-        captureProblem = ""
-        recorder.record(suspending: model, combination: { characters, flags in
-            model.bindShortcut(characters: characters, modifierFlags: flags)
-        }, singleKey: { keyCode in
-            if model.bindSingleKey(macKeyCode: keyCode) { return true }
-            captureProblem = "That key cannot be a dictation key."
-            return false
-        })
-    }
-
-    private var caption: String {
-        recorder.recording ? "Press a Key…" : "Set Shortcut"
-    }
-
-    private var footnote: String {
-        if recorder.recording {
-            if !captureProblem.isEmpty {
-                return captureProblem + " Try another, or press Escape to keep the current one."
-            }
-            return "Press the keys you want — a bare modifier like Right Option works — "
-                + "or Escape to keep the current one."
-        }
-        if !model.shortcutProblem.isEmpty {
-            return "Could not register the shortcut: \(model.shortcutProblem). Record a different one."
-        }
-        if !model.shortcutWarning.isEmpty { return model.shortcutWarning }
-        return "Shortcut registered. " + flow.activationInstruction
+        // Leaving the step ends a recording still in progress.
+        .onDisappear { model.stopShortcutRecording() }
     }
 }
 
