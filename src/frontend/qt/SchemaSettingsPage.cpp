@@ -25,6 +25,9 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <memory>
+#include <optional>
+
 namespace speecher {
 
 namespace {
@@ -233,6 +236,8 @@ void SchemaSettingsPage::addGateNotice(const SettingsRow &descriptor, QVBoxLayou
     holderLayout->setContentsMargins(0, 0, 0, settings::groupGap());
     auto *message = new InlineMessage(holder);
     message->setObjectName(QStringLiteral("gateNote"));
+    // A closed gate stops settings from working, as on Home's notice.
+    message->setType(InlineMessage::Type::Warning);
     message->label()->setObjectName(QStringLiteral("gateNoteText"));
     message->setCloseButtonVisible(false);
     auto *action = new QPushButton(descriptor.disabledActionLabel, message);
@@ -426,8 +431,31 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
     case RowKind::Toggle: {
         auto *check = new QCheckBox(card);
         connect(check, &QCheckBox::toggled, this, announce);
-        row.value = [check] { return check->isChecked(); };
-        row.setValue = [check](const QVariant &value) { check->setChecked(value.toBool()); };
+        // While its gate is closed the setting does nothing, so the box shows
+        // unticked; the stored value is held for saving and for reopening.
+        auto held = std::make_shared<std::optional<bool>>();
+        row.value = [check, held] { return held->value_or(check->isChecked()); };
+        row.setValue = [check, held](const QVariant &value) {
+            if (held->has_value()) {
+                *held = value.toBool();
+            } else {
+                check->setChecked(value.toBool());
+            }
+        };
+        row.setEditable = [check, held](bool editable) {
+            check->setEnabled(editable);
+            if (editable != held->has_value()) {
+                return;
+            }
+            const QSignalBlocker blocker(check);
+            if (editable) {
+                check->setChecked(held->value());
+                held->reset();
+            } else {
+                *held = check->isChecked();
+                check->setChecked(false);
+            }
+        };
         return check;
     }
     case RowKind::Number: {
@@ -595,7 +623,7 @@ void SchemaSettingsPage::refresh()
     refreshRows();
 }
 
-void SchemaSettingsPage::revealRow(const QString &rowId)
+void SchemaSettingsPage::revealRow(const QString &rowId, bool focusControl)
 {
     for (const Row &row : std::as_const(m_rows)) {
         if (row.descriptor.id != rowId) {
@@ -603,11 +631,11 @@ void SchemaSettingsPage::revealRow(const QString &rowId)
         }
         // A page just brought forward lays itself out on the next pass.
         QTimer::singleShot(0, this, [this, frame = QPointer<QWidget>(row.frame),
-                                     control = QPointer<QWidget>(row.control)] {
+                                     control = QPointer<QWidget>(row.control), focusControl] {
             if (frame) {
                 ensureWidgetVisible(frame);
             }
-            if (control) {
+            if (control && focusControl) {
                 control->setFocus(Qt::OtherFocusReason);
             }
         });

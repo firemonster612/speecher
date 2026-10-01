@@ -779,6 +779,31 @@ private slots:
         QVERIFY(!notice->isVisible());
     }
 
+    void gatedCheckBoxShowsUntickedAndKeepsItsValue()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("corrections"), *platform, providers);
+        auto *learn = page->findChild<QCheckBox *>(QStringLiteral("correctionLearningControl"));
+        QVERIFY(learn);
+        AppSettings settings;
+        settings.correctionLearningEnabled = true;
+        page->load(settings);
+
+        page->setCapabilities({false});
+        QVERIFY(!learn->isEnabled());
+        QVERIFY(!learn->isChecked());
+        AppSettings draft;
+        draft.correctionLearningEnabled = false;
+        page->appendToDraft(draft);
+        QVERIFY(draft.correctionLearningEnabled);
+
+        page->setCapabilities({true});
+        QVERIFY(learn->isEnabled());
+        QVERIFY(learn->isChecked());
+    }
+
     void targetAwareSettingsDisableWithoutAtSpi()
     {
         SettingsStore settings;
