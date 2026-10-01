@@ -53,6 +53,11 @@ using winrt::Microsoft::UI::Xaml::Input::FocusManager;
 using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
+// The open pane (280), the page's gutters (2 x 36) and the widest row: a
+// 320 control beside a title of about 150, in a card's padding and spacing.
+// Narrower, the rows have no room left.
+constexpr int kMinimumWidth = 880;
+constexpr int kMinimumHeight = 480;
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
 const QString kHomePane = QStringLiteral("home");
 // The Transcribe pane keeps its batch across the window; entering and leaving
@@ -338,12 +343,11 @@ struct SettingsWindow::Native {
         window.SetTitleBar(titleBar);
         applyTheme();
         restoreGeometry();
-        // Below this the pane is a menu button and the rows have no room left.
         if (const auto presenter =
                 window.AppWindow().Presenter().try_as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>()) {
             const double scale = GetDpiForWindow(windowHandle()) / 96.0;
-            presenter.PreferredMinimumWidth(int(640 * scale));
-            presenter.PreferredMinimumHeight(int(480 * scale));
+            presenter.PreferredMinimumWidth(int(kMinimumWidth * scale));
+            presenter.PreferredMinimumHeight(int(kMinimumHeight * scale));
         }
         // Back from the Windows privacy page the microphone note sends people
         // to, the Input device row asks again. Other activations do not
@@ -428,11 +432,8 @@ struct SettingsWindow::Native {
         const int availableHeight = area.bottom - area.top;
         // A partial intersection can still leave the titlebar off-screen.
         // Bound the entire window, including the scaled default on small screens.
-        width = std::clamp(width,
-                           std::min(GetSystemMetricsForDpi(SM_CXMINTRACK, dpi), availableWidth),
-                           availableWidth);
-        height = std::clamp(height,
-                            std::min(GetSystemMetricsForDpi(SM_CYMINTRACK, dpi), availableHeight),
+        width = std::clamp(width, std::min(int(kMinimumWidth * dpi / 96.0), availableWidth), availableWidth);
+        height = std::clamp(height, std::min(int(kMinimumHeight * dpi / 96.0), availableHeight),
                             availableHeight);
         const int x = std::clamp(int(origin.x), int(area.left), int(area.right) - width);
         const int y = std::clamp(int(origin.y), int(area.top), int(area.bottom) - height);
