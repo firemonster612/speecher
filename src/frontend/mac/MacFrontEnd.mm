@@ -212,8 +212,9 @@ bool MacFrontEnd::captureMainWindow(const QString &path)
                             : [m_native->ui captureSettingsToPath:path.toNSString()];
 }
 
-void MacFrontEnd::showDictationError(const QString &message)
+void MacFrontEnd::showDictationError(const QString &message, const PopupErrorAction &fix)
 {
+    Q_UNUSED(fix);
     [m_native->ui showDictationProblem:message.toNSString()];
 }
 

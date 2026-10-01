@@ -30,22 +30,11 @@ QString setupProviderChoice(const QString &saved, const QStringList &ready, bool
 QString setupRefinementChoice(const QString &saved, const QStringList &ready, bool runnerFound,
                               bool explicitlyChosen);
 
-// One per assistant, retained across Back/Next. update returns the speech
-// provider to persist; a missing userChoice follows completed sign-in checks.
-class WelcomeChoice {
-public:
-    QString update(const QString &provider, const QStringList &readyProviders,
-                   bool proxyAccountFound, std::optional<bool> userChoice = std::nullopt);
-    // An explicit Transcription choice is no longer an automatic path write.
-    void providerChosen() { m_previousProvider.reset(); }
-    bool local() const { return m_local; }
-    bool ready() const { return m_local || m_signInFound; }
-private:
-    std::optional<bool> m_explicit;
-    std::optional<QString> m_previousProvider;
-    bool m_local = false;
-    bool m_signInFound = false;
-};
+// Speech is required: an unready default sign-in with no ready one to move to
+// gives way to a Local Model, where the build offers one, unless a CLI Proxy
+// API account could sign it in. Asked once the provider checks have answered.
+QString setupSpeechChoice(const QString &saved, const QStringList &ready, bool localOffered,
+                          bool proxyAccountFound, bool explicitlyChosen);
 
 struct RunnerChoice {
     LocalRunnerSettings selection;

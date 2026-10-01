@@ -248,6 +248,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/OutputMethod.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
+  src/core/ReleaseNotesPresentation.cpp
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
@@ -279,6 +280,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/OutputMethod.h
   src/core/OutputFormat.h
   src/core/PasteRules.h
+  src/core/ReleaseNotesPresentation.h
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
@@ -512,6 +514,7 @@ set(SPEECHER_APP_SOURCES
   src/app/ManifestUpdater.cpp
   src/app/PlatformSelection.cpp
   src/app/ProviderSetup.cpp
+  src/app/AccessibilityPresentation.cpp
   src/app/SetupSteps.cpp
   src/app/SingleInstanceIpc.cpp
   src/app/UpdateBanner.cpp
@@ -530,6 +533,7 @@ set(SPEECHER_APP_HEADERS
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
   src/app/ProviderSetup.h
+  src/app/AccessibilityPresentation.h
   src/app/SetupSteps.h
   src/app/SingleInstanceIpc.h
   src/app/UpdateBanner.h

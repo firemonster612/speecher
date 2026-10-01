@@ -143,7 +143,6 @@ struct DictationPanel::Native : QObject {
         connect(&barTimer, &QTimer::timeout, this, &Native::animateBars);
         // The countdown every platform shows; Dismiss stays the early way out.
         problemAutoDismiss.setSingleShot(true);
-        problemAutoDismiss.setInterval(kPopupErrorDismissMs);
         connect(&problemAutoDismiss, &QTimer::timeout, this, &Native::dismissProblem);
         whatsNewAutoHide.setSingleShot(true);
         whatsNewAutoHide.setInterval(6000);
@@ -193,7 +192,7 @@ struct DictationPanel::Native : QObject {
                 [this](bool value) { setRefining(value); });
         connect(session, &DictationSession::popupOAuthRefreshRequested, this, [this] {
             phase = Phase::Live;
-            status = QStringLiteral("Renewing sign-in…");
+            status = renewingSignInText();
             preview.clear();
             refresh();
         });
@@ -333,7 +332,7 @@ struct DictationPanel::Native : QObject {
         content.Children().Append(previewText);
 
         dismiss = Button();
-        dismiss.Content(box_value(L"Dismiss"));
+        dismiss.Content(box_value(win::hs(popupDismissCaption())));
         dismiss.Visibility(Visibility::Collapsed);
         dismiss.Click([this](const auto &, const auto &) {
             dismissProblem();
@@ -344,7 +343,6 @@ struct DictationPanel::Native : QObject {
         // The problem's countdown, draining over the time it has left.
         countdown = ProgressBar();
         countdown.Minimum(0);
-        countdown.Maximum(kPopupErrorDismissMs);
         countdown.Margin({24, 0, 24, 12});
         countdown.Visibility(Visibility::Collapsed);
         content.Children().Append(countdown);
@@ -551,8 +549,10 @@ struct DictationPanel::Native : QObject {
         ensureWindow();
         applyTheme();
         whatsNewHidden = false;
-        problemAutoDismiss.start();
-        countdown.Value(kPopupErrorDismissMs);
+        const int dismissMs = popupErrorDismissMs(message);
+        problemAutoDismiss.start(dismissMs);
+        countdown.Maximum(dismissMs);
+        countdown.Value(dismissMs);
         countdownTick.start();
         refresh();
         reposition();
@@ -730,14 +730,14 @@ struct DictationPanel::Native : QObject {
                              : refining && !hasProblem ? QString::fromUtf16(u"\uE8A9")
                                                        : phaseGlyph(status, hasProblem))
                                 .toStdWString()));
-        const bool renewing = status == QStringLiteral("Renewing sign-in…");
+        const bool renewing = status == renewingSignInText();
         const bool waiting = !hasProblem && !finished && (phase != Phase::Live || renewing);
         const bool listening = !hasProblem && !finished && !waiting;
         const bool showPreview = !hasProblem && !finished && !preview.isEmpty();
         setShimmer(waiting);
         QString shown = hasProblem ? problem : finished ? status
-            : renewing ? status : phase == Phase::Transcribing ? QStringLiteral("Transcribing…")
-            : waiting ? QStringLiteral("Refining…") : QString();
+            : renewing ? status : phase == Phase::Transcribing ? dictationStatusLabel(QStringLiteral("stopping"))
+            : waiting ? dictationStatusLabel(QStringLiteral("refining")) : QString();
         POINT pointer{};
         GetCursorPos(&pointer);
         MONITORINFO monitor{sizeof(monitor)};

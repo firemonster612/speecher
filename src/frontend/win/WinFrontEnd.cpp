@@ -3,6 +3,7 @@
 #include "app/ApplicationController.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
+#include "core/InsightsSummary.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "frontend/win/DictationPanel.h"
@@ -187,8 +188,9 @@ bool WinFrontEnd::captureMainWindow(const QString &path)
     return m_native->settings && m_native->settings->capture(path);
 }
 
-void WinFrontEnd::showDictationError(const QString &message)
+void WinFrontEnd::showDictationError(const QString &message, const PopupErrorAction &fix)
 {
+    Q_UNUSED(fix);
     m_native->panel->showProblem(message);
 }
 
@@ -250,13 +252,12 @@ void WinFrontEnd::actionTriggered(const QString &rowId)
         m_controller->showSetupAssistant();
     } else if (rowId == QStringLiteral("clearInsights")) {
         m_native->settingsWindow()->confirm(
-            QStringLiteral("Delete all insights history?"),
-            QStringLiteral("Your stats, streaks and records are erased from this computer. "
-                           "This can't be undone."),
-            QStringLiteral("Delete history"),
+            homeText(HomeText::ClearHistoryQuestion),
+            homeText(HomeText::ClearHistoryBody),
+            homeText(HomeText::ClearHistoryConfirm),
             [controller = m_controller, window = m_native->settingsWindow()] {
                 if (!controller->clearInsights()) {
-                    window->inform(QStringLiteral("Speecher couldn't delete the insights history."));
+                    window->inform(homeText(HomeText::ClearHistoryFailed));
                 }
             });
     } else if (rowId == QStringLiteral("checkForUpdates")) {

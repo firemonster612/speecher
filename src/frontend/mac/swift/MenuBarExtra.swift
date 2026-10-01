@@ -73,12 +73,12 @@ struct AccessibilityNotice: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Label("Without Accessibility, dictation only reaches the clipboard.",
+        Label(model.bridge.accessibilityNoticeText(compact: true),
               systemImage: "exclamationmark.triangle")
             // A sentence in a Label truncates to one line unless it is told it
             // may grow downwards.
             .fixedSize(horizontal: false, vertical: true)
-        Button("Open Privacy & Security…") { model.requestAccessibility() }
+        Button(SpeecherBridge.accessibilityGrantActionLabel) { model.requestAccessibility() }
         if !model.accessibilityProblem.isEmpty {
             Text(model.accessibilityProblem)
         }
@@ -124,15 +124,15 @@ final class SpeecherMenuBarExtra: NSObject {
         guard let button = item.button else { return }
         if listening {
             button.image = NSImage(systemSymbolName: "mic.fill",
-                                   accessibilityDescription: "Speecher is listening")
+                                   accessibilityDescription: model.bridge.trayToolTip(listening: true))
         } else {
             // A status item with no image is invisible, so a bundle resource
             // that fails to load must fall back to a symbol, never to nothing.
             let image = Bundle.main.image(forResource: "speecher-menubar")
-                ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "Speecher")
+                ?? NSImage(systemSymbolName: "mic", accessibilityDescription: model.bridge.trayToolTip(listening: false))
             image?.size = Self.idleIconSize
             button.image = image
-            button.image?.accessibilityDescription = "Speecher"
+            button.image?.accessibilityDescription = model.bridge.trayToolTip(listening: false)
         }
         button.image?.isTemplate = true
     }

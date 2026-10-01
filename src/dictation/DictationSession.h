@@ -92,13 +92,13 @@ signals:
     void popupListeningIndicatorRequested();
     // A delivery's receipt, and which kind of outcome it reports.
     void popupMessageRequested(const QString &message, PopupOutcome outcome);
-    void popupErrorRequested(const QString &message);
+    void popupErrorRequested(const QString &message, const speecher::PopupErrorAction &fix);
 
 private:
     static int s_popupPaintFallbackMs;
     static int s_stableAttemptMs;
 
-    void setState(DictationState state, const QString &message = {});
+    void setState(DictationState state, const QString &message = {}, const PopupErrorAction &fix = {});
     void continueStartupAfterPopup(quint64 generation);
     void prepareProviders(quint64 generation);
     void finishStartupPreparation(const StartupPreparationResult &result);

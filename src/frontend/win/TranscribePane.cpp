@@ -448,8 +448,9 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
         RowSnapshot snapshot;
         snapshot.label = label;
         snapshot.help = help;
-        // rowGrid shows disabledHelp in place of help on a disabled row.
-        snapshot.disabledHelp = help;
+        // rowGrid shows disabledHelp in place of help on a disabled row; only
+        // the refinement rows are ever disabled.
+        snapshot.disabledHelp = transcribeText(TranscribeText::NeedsRefiner);
         snapshot.enabled = enabled;
         return rowGrid(snapshot, control, host, follows);
     };
@@ -465,7 +466,7 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
     const QString chooseCaption = chooseFilesCaption(!m_files.isEmpty());
     Button browse;
     browse.Content(glyph(kGlyphOpenFile));
-    ToolTipService::SetToolTip(browse, box_value(hs(chooseCaption)));
+    ToolTipService::SetToolTip(browse, box_value(hs(chooseCaption + QLatin1Char('\n') + mediaFilesTooltip())));
     Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(browse, hs(chooseCaption));
     browse.Click([this, &host](const auto &, const auto &) { chooseFiles(host); });
     files.Children().Append(

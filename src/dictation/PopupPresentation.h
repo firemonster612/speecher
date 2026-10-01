@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QMetaType>
 #include <QString>
 
 #include <functional>
@@ -22,8 +23,36 @@ enum class PopupOutcome {
 // capsule grows taller rather than wider.
 inline constexpr int kPopupErrorWrapWidth = 520;
 
-// An error dismisses itself after this long, with a countdown bar beneath it.
-inline constexpr int kPopupErrorDismissMs = 5000;
+// An error dismisses itself after popupErrorDismissMs, with a countdown bar
+// beneath it: never sooner than this, and longer for a longer message so it
+// can be read.
+inline constexpr int kPopupErrorMinimumMs = 8000;
+int popupErrorDismissMs(const QString &message);
+
+// The one thing an error can offer to fix it: a settings page, or the
+// system's permission panel for what was refused.
+enum class ErrorFix {
+    None,
+    SettingsPage,
+    MicrophonePermission,
+    ScreenRecordingPermission,
+    AccessibilityPermission,
+};
+struct PopupErrorAction {
+    ErrorFix fix = ErrorFix::None;
+    // The settings page to open, for SettingsPage.
+    QString pageId;
+};
+// The button that offers it, "Open Accounts"; empty for None.
+QString popupErrorActionLabel(const PopupErrorAction &action);
+// Where a speech service that cannot start is set up: Accounts for a
+// sign-in, Local models for a model on this computer, Dictation for a server.
+PopupErrorAction speechSetupAction(const QString &providerId);
+
+// The popup's own captions: an error's Dismiss button, and the line shown
+// while an expired sign-in is renewed before dictation starts.
+QString popupDismissCaption();
+QString renewingSignInText();
 
 // A live preview that overflows loses words from the front, so the newest
 // words stay visible, and "… " says something came before them. Words are
@@ -33,3 +62,5 @@ inline constexpr int kPopupErrorDismissMs = 5000;
 QString trimPreviewToFit(const QString &preview, const std::function<bool(const QString &)> &fits);
 
 } // namespace speecher
+
+Q_DECLARE_METATYPE(speecher::PopupErrorAction)

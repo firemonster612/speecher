@@ -96,6 +96,12 @@ enum class TranscribeText {
     TranscribeMore,
     // The accessible name of the waveform progress meter.
     ProgressName,
+    // Beside the disabled Transcribe button while no file is listed.
+    NoFilesYet,
+    // On the refinement rows while no provider is chosen.
+    NeedsRefiner,
+    // What a drag over the window says it will do.
+    DropToAdd,
 };
 QString transcribeText(TranscribeText text);
 
@@ -115,9 +121,10 @@ QString percentLabel(qreal progress);
 // "42 percent" for 0.42: the progress meter's value, as a screen reader says it.
 QString percentSpoken(qreal progress);
 
-// Under the file chooser while no files are listed: what may be dropped or
-// chosen, every extension from transcribableExtensions().
+// Under the file chooser while no files are listed, and its tooltip naming
+// every extension from transcribableExtensions().
 QString mediaFilesHint();
+QString mediaFilesTooltip();
 
 // "3 min 7 s", or "42 s" under a minute.
 QString durationLabel(qint64 ms);
@@ -127,7 +134,7 @@ QString audioFileDetail(qint64 bytes, qint64 durationMs);
 
 // The model a refinement provider is set to use, or empty for none.
 QString refinementModel(const QString &providerId, const RefinementSettings &settings);
-// The help under that model on the Configure step: where to change it.
+// The help under that model on the Configure step: where it is set.
 QString refinementModelHint();
 // Whether a batch with these options refines its transcripts, which is when
 // the results offer the raw text beside the refined one.

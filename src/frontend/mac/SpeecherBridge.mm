@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/AccessibilityPresentation.h"
 #include "app/SetupSteps.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateBanner.h"
@@ -711,6 +712,8 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, copy) NSString *fileName;
 @property (nonatomic, copy) NSString *sizeText;
+@property (nonatomic, copy) NSString *downloadCaption;
+@property (nonatomic, copy) NSString *textShowsText;
 @property (nonatomic) double librispeechWer;
 @property (nonatomic) double fleursWer;
 @property (nonatomic) BOOL streams;
@@ -768,32 +771,6 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @end
 
 @implementation LocalRunnerChoice
-@end
-
-@implementation SetupWelcomeChoice {
-    speecher::WelcomeChoice _choice;
-}
-
-- (NSString *)updateWithProvider:(NSString *)provider
-                  readyProviders:(NSArray<NSString *> *)readyProviders
-               proxyAccountFound:(BOOL)proxyAccountFound
-                          choice:(NSNumber *)choice
-{
-    QStringList ready;
-    for (NSString *id in readyProviders) ready.append(QString::fromNSString(id));
-    const std::optional<bool> picked = choice ? std::optional<bool>(choice.boolValue) : std::nullopt;
-    return _choice.update(QString::fromNSString(provider), ready, proxyAccountFound, picked).toNSString();
-}
-
-- (void)providerChosen
-{
-    _choice.providerChosen();
-}
-
-- (BOOL)local
-{
-    return _choice.local();
-}
 @end
 
 @interface LocalModelFactNames ()
@@ -863,9 +840,20 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) NSInteger dictationsLevel;
 @property (nonatomic) NSInteger wordsLevel;
 @property (nonatomic) NSInteger audioLevel;
+@property (nonatomic, copy) NSArray<NSString *> *tips;
 @end
 
 @implementation SpeecherInsightsDayModel
+@end
+
+@interface SpeecherInsightRecordModel ()
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSString *detail;
+@property (nonatomic, copy) NSString *value;
+@property (nonatomic) BOOL milestoneBar;
+@end
+
+@implementation SpeecherInsightRecordModel
 @end
 
 @interface SpeecherInsightsAppModel ()
@@ -895,10 +883,6 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) NSInteger recordCount;
 @property (nonatomic) NSInteger words;
 @property (nonatomic) NSInteger dictations;
-@property (nonatomic) NSInteger currentStreak;
-@property (nonatomic) NSInteger bestStreak;
-@property (nonatomic, copy) NSString *bestStreakEnd;
-@property (nonatomic) BOOL bestStreakEndsToday;
 @property (nonatomic, copy) NSArray<NSNumber *> *weekActivity;
 @property (nonatomic) NSInteger todayIndex;
 @property (nonatomic, copy) NSArray<NSString *> *weekLetters;
@@ -921,22 +905,15 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) BOOL hasHourData;
 @property (nonatomic) NSInteger wordsPerMinute;
 @property (nonatomic) NSInteger typingWordsPerMinute;
-@property (nonatomic) NSInteger minutesSavedVersusTyping;
+@property (nonatomic, copy) NSString *minutesSavedText;
 @property (nonatomic, copy) NSString *speedupText;
 @property (nonatomic, copy) NSArray<SpeecherInsightsAppModel *> *apps;
 @property (nonatomic) NSInteger allTimeWords;
 @property (nonatomic) NSInteger nextMilestone;
-@property (nonatomic, copy) NSString *milestoneText;
-@property (nonatomic, copy) NSString *longestDuration;
-@property (nonatomic) NSInteger longestWords;
-@property (nonatomic, copy) NSString *longestApp;
-@property (nonatomic, copy) NSString *longestDay;
-@property (nonatomic, copy) NSString *busiestDay;
-@property (nonatomic) NSInteger busiestDayDictations;
-@property (nonatomic, copy) NSString *wordiestDay;
-@property (nonatomic) NSInteger wordiestDayWords;
-@property (nonatomic, copy, nullable) NSDate *firstDictation;
-@property (nonatomic) NSInteger firstDictationDaysAgo;
+@property (nonatomic, copy) NSArray<SpeecherInsightRecordModel *> *records;
+@property (nonatomic, copy) NSArray<NSString *> *heatmapDescriptions;
+@property (nonatomic, copy) NSString *hourChartDescription;
+@property (nonatomic, copy) NSString *weekDescription;
 @end
 
 @implementation SpeecherInsightsModel
@@ -964,11 +941,9 @@ NSDate *bridgedDate(const QDate &date)
     return date.startOfDay().toNSDate();
 }
 
-// The day as the page words it, or empty for a day the summary does not have.
-NSString *bridgedRelativeDay(const QDate &date, const QDate &today)
-{
-    return date.isValid() ? speecher::relativeDay(date, today).toNSString() : @"";
-}
+// The heatmap's measures in the order the bridge lists them.
+constexpr std::array<speecher::HeatMeasure, 3> kHeatMeasures{
+    speecher::HeatMeasure::Dictations, speecher::HeatMeasure::Words, speecher::HeatMeasure::Audio};
 
 // Each measure's levels are worked out up front, so switching the measure
 // only picks another column.
@@ -987,6 +962,12 @@ NSArray<SpeecherInsightsDayModel *> *bridgedHeatmap(const QList<speecher::Heatma
         model.dictationsLevel = dictations.level(day);
         model.wordsLevel = words.level(day);
         model.audioLevel = audio.level(day);
+        NSMutableArray<NSString *> *tips = [NSMutableArray array];
+        for (const speecher::HeatMeasure measure : kHeatMeasures) {
+            const speecher::ChartTip tip = speecher::heatmapDayTip(day, measure);
+            [tips addObject:(tip.title + u'\n' + tip.detail).toNSString()];
+        }
+        model.tips = tips;
         [bridged addObject:model];
     }
     return bridged;
@@ -1036,10 +1017,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.words = summary.words;
     model.dictations = summary.dictations;
 
-    model.currentStreak = summary.currentStreak;
-    model.bestStreak = summary.bestStreak;
-    model.bestStreakEnd = bridgedRelativeDay(summary.bestStreakEnd, today);
-    model.bestStreakEndsToday = summary.bestStreakEndsToday;
     NSMutableArray<NSNumber *> *week = [NSMutableArray array];
     NSMutableArray<NSString *> *letters = [NSMutableArray array];
     for (int day = 0; day < 7; ++day) {
@@ -1076,7 +1053,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
     model.wordsPerMinute = summary.wordsPerMinute;
     model.typingWordsPerMinute = summary.typingWordsPerMinute;
-    model.minutesSavedVersusTyping = summary.minutesSavedVersusTyping;
+    model.minutesSavedText = speecher::minutesText(summary.minutesSavedVersusTyping).toNSString();
     model.speedupText = summary.speedupText.toNSString();
 
     NSMutableArray<SpeecherInsightsAppModel *> *apps = [NSMutableArray array];
@@ -1092,19 +1069,23 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
     model.allTimeWords = summary.allTimeWords;
     model.nextMilestone = summary.nextMilestone;
-    model.milestoneText = speecher::milestoneText(summary).toNSString();
-    model.longestDuration = speecher::clockText(summary.longest.audioMs).toNSString();
-    model.longestWords = summary.longest.words;
-    model.longestApp = summary.longest.appName.toNSString();
-    model.longestDay = bridgedRelativeDay(summary.longest.date, today);
-    model.busiestDay = bridgedRelativeDay(summary.busiestDay.date, today);
-    model.busiestDayDictations = summary.busiestDay.dictations;
-    model.wordiestDay = bridgedRelativeDay(summary.wordiestDay.date, today);
-    model.wordiestDayWords = summary.wordiestDay.words;
-    model.firstDictation =
-        summary.firstDictation.isValid() ? bridgedDate(summary.firstDictation) : nil;
-    model.firstDictationDaysAgo =
-        summary.firstDictation.isValid() ? summary.firstDictation.daysTo(today) : 0;
+    NSMutableArray<SpeecherInsightRecordModel *> *records = [NSMutableArray array];
+    for (const speecher::InsightRecordText &text : speecher::insightRecords(summary, today)) {
+        SpeecherInsightRecordModel *record = [[SpeecherInsightRecordModel alloc] init];
+        record.title = text.title.toNSString();
+        record.detail = text.detail.toNSString();
+        record.value = text.value.toNSString();
+        record.milestoneBar = text.milestoneBar;
+        [records addObject:record];
+    }
+    model.records = records;
+    NSMutableArray<NSString *> *descriptions = [NSMutableArray array];
+    for (const speecher::HeatMeasure measure : kHeatMeasures) {
+        [descriptions addObject:speecher::heatmapDescription(summary, measure).toNSString()];
+    }
+    model.heatmapDescriptions = descriptions;
+    model.hourChartDescription = speecher::hourChartDescription(summary).toNSString();
+    model.weekDescription = speecher::weekDescription(summary).toNSString();
     return model;
 }
 
@@ -1798,10 +1779,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     QObject::connect(session,
                      &DictationSession::popupStatusChanged,
                      &_state->lifetime,
-                     [weakSelf](const QString &status) {
+                     [weakSelf, session](const QString &status) {
                          SpeecherBridge *bridge = weakSelf;
                          if (bridge.popupStatusChanged) {
-                             bridge.popupStatusChanged(status.toNSString());
+                             bridge.popupStatusChanged(status.toNSString(),
+                                                       static_cast<SpeecherDictationState>(session->state()));
                          }
                      });
     QObject::connect(session,
@@ -2067,6 +2049,16 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::dictationListeningPresentation(_state->controller->stateName());
 }
 
+- (NSString *)accessibilityNoticeText:(BOOL)compact
+{
+    return speecher::accessibilityNoticeText(false, compact).toNSString();
+}
+
+- (NSString *)trayToolTip:(BOOL)listening
+{
+    return speecher::trayToolTip(listening).toNSString();
+}
+
 - (NSString *)traySettingsCaption
 {
     return speecher::traySettingsCaption().toNSString();
@@ -2116,10 +2108,64 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         @"saveFailed": share.saveFailed.toNSString(),
         @"saveTitle": share.saveTitle.toNSString(),
         @"correctionsTitle": speecher::learnedCorrectionsTitle().toNSString(),
-        @"reviewCorrections": speecher::reviewLearnedCorrectionsCaption().toNSString(),
         @"legendLess": speecher::heatLegendLessText().toNSString(),
         @"legendMore": speecher::heatLegendMoreText().toNSString(),
+        @"insightsOffTitle": speecher::homeText(speecher::HomeText::InsightsOffTitle).toNSString(),
+        @"insightsOffBody": speecher::homeText(speecher::HomeText::InsightsOffBody).toNSString(),
+        @"noInsightsTitle": speecher::homeText(speecher::HomeText::NoInsightsTitle).toNSString(),
+        @"noInsightsBody": speecher::homeText(speecher::HomeText::NoInsightsBody).toNSString(),
+        @"insightsSettings": speecher::homeText(speecher::HomeText::InsightsSettings).toNSString(),
+        @"yourDictation": speecher::homeText(speecher::HomeText::YourDictation).toNSString(),
+        @"period": speecher::homeText(speecher::HomeText::Period).toNSString(),
+        @"activity": speecher::homeText(speecher::HomeText::Activity).toNSString(),
+        @"measure": speecher::homeText(speecher::HomeText::Measure).toNSString(),
+        @"whenYouTalk": speecher::homeText(speecher::HomeText::WhenYouTalk).toNSString(),
+        @"noHourData": speecher::homeText(speecher::HomeText::NoHourData).toNSString(),
+        @"pace": speecher::homeText(speecher::HomeText::Pace).toNSString(),
+        @"speakingPace": speecher::homeText(speecher::HomeText::SpeakingPace).toNSString(),
+        @"savedOverTyping": speecher::homeText(speecher::HomeText::SavedOverTyping).toNSString(),
+        @"youSpeaking": speecher::homeText(speecher::HomeText::YouSpeaking).toNSString(),
+        @"typicalTyping": speecher::homeText(speecher::HomeText::TypicalTyping).toNSString(),
+        @"whereYourWordsGo": speecher::homeText(speecher::HomeText::WhereYourWordsGo).toNSString(),
+        @"noDictationInPeriod": speecher::homeText(speecher::HomeText::NoDictationInPeriod).toNSString(),
+        @"records": speecher::homeText(speecher::HomeText::Records).toNSString(),
+        @"privacyNote": speecher::homeText(speecher::HomeText::PrivacyNote).toNSString(),
+        @"clearHistoryQuestion": speecher::homeText(speecher::HomeText::ClearHistoryQuestion).toNSString(),
+        @"clearHistoryBody": speecher::homeText(speecher::HomeText::ClearHistoryBody).toNSString(),
+        @"clearHistoryConfirm": speecher::homeText(speecher::HomeText::ClearHistoryConfirm).toNSString(),
+        @"clearHistoryFailed": speecher::homeText(speecher::HomeText::ClearHistoryFailed).toNSString(),
+        @"measureDictations": speecher::heatMeasureLabel(speecher::HeatMeasure::Dictations).toNSString(),
+        @"measureWords": speecher::heatMeasureLabel(speecher::HeatMeasure::Words).toNSString(),
+        @"measureAudio": speecher::heatMeasureLabel(speecher::HeatMeasure::Audio).toNSString(),
     };
+}
+
+- (NSString *)learnedCorrectionsNote
+{
+    const ApplicationController &controller = *_state->controller;
+    const bool accessibility = !controller.accessibilitySupported() || controller.accessibilityEnabled();
+    return speecher::learnedCorrectionsNote(int(controller.settings()->learnedCorrections().size()),
+                                            controller.settings()->snapshot().correctionLearningEnabled,
+                                            accessibility)
+        .toNSString();
+}
+
+- (NSString *)learnedCorrectionsAction
+{
+    const ApplicationController &controller = *_state->controller;
+    return speecher::learnedCorrectionsAction(int(controller.settings()->learnedCorrections().size()),
+                                              controller.settings()->snapshot().correctionLearningEnabled)
+        .toNSString();
+}
+
+- (NSString *)insightsRangeLabel:(SpeecherInsightsRange)range
+{
+    return speecher::insightsRangeLabel(coreInsightsRange(range)).toNSString();
+}
+
+- (NSString *)dictationShortcutHint:(NSString *)shortcut
+{
+    return speecher::dictationShortcutHint(QString::fromNSString(shortcut)).toNSString();
 }
 
 - (NSString *)learnedCorrectionsCaption:(NSInteger)count
@@ -2213,9 +2259,34 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::kPopupErrorWrapWidth;
 }
 
-+ (NSTimeInterval)popupErrorDismissSeconds
++ (NSString *)popupDismissCaption
 {
-    return speecher::kPopupErrorDismissMs / 1000.0;
+    return speecher::popupDismissCaption().toNSString();
+}
+
++ (NSString *)renewingSignInText
+{
+    return speecher::renewingSignInText().toNSString();
+}
+
++ (NSString *)statusLabelFor:(SpeecherDictationState)state
+{
+    // SpeecherDictationState mirrors speecher::DictationState value for value.
+    static_assert(int(SpeecherDictationStateIdle) == int(speecher::DictationState::Idle));
+    static_assert(int(SpeecherDictationStateStarting) == int(speecher::DictationState::Starting));
+    static_assert(int(SpeecherDictationStateListening) == int(speecher::DictationState::Listening));
+    static_assert(int(SpeecherDictationStateStopping) == int(speecher::DictationState::Stopping));
+    static_assert(int(SpeecherDictationStateRefining) == int(speecher::DictationState::Refining));
+    static_assert(int(SpeecherDictationStateDelivering) == int(speecher::DictationState::Delivering));
+    static_assert(int(SpeecherDictationStateError) == int(speecher::DictationState::Error));
+    return speecher::dictationStatusLabel(
+               speecher::dictationStateName(static_cast<speecher::DictationState>(state)))
+        .toNSString();
+}
+
++ (NSTimeInterval)popupErrorDismissSecondsFor:(NSString *)message
+{
+    return speecher::popupErrorDismissMs(QString::fromNSString(message)) / 1000.0;
 }
 
 + (NSString *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font
@@ -2403,13 +2474,15 @@ static void probeSpeechProvider(BridgeState *state,
     return refiner && refiner->prepare(refinement).ok;
 }
 
-- (NSString *)setupProviderChoiceForSaved:(NSString *)saved
-                           readyProviders:(NSArray<NSString *> *)readyProviders
-                         explicitlyChosen:(BOOL)explicitlyChosen
+- (NSString *)setupSpeechChoiceForSaved:(NSString *)saved
+                         readyProviders:(NSArray<NSString *> *)readyProviders
+                           localOffered:(BOOL)localOffered
+                      proxyAccountFound:(BOOL)proxyAccountFound
 {
     QStringList ready;
     for (NSString *id in readyProviders) ready.append(QString::fromNSString(id));
-    return speecher::setupProviderChoice(QString::fromNSString(saved), ready, explicitlyChosen).toNSString();
+    return speecher::setupSpeechChoice(QString::fromNSString(saved), ready, localOffered, proxyAccountFound,
+                                       false).toNSString();
 }
 
 - (nullable NSString *)setupRefinementChoiceForSaved:(NSString *)saved
@@ -2429,11 +2502,6 @@ static void probeSpeechProvider(BridgeState *state,
     return speecher::offersSetupSpeechProvider(QString::fromNSString(providerId), QString::fromNSString(saved), localAvailable);
 }
 
-- (BOOL)isSetupSignInProvider:(NSString *)providerId
-{
-    return speecher::isSetupSignInProvider(QString::fromNSString(providerId));
-}
-
 - (NSArray<SpeecherSetupStep *> *)setupSteps
 {
     NSMutableArray<SpeecherSetupStep *> *steps = [NSMutableArray array];
@@ -2449,21 +2517,14 @@ static void probeSpeechProvider(BridgeState *state,
 }
 
 - (NSString *)setupWindowTitle { return speecher::setupWindowTitle().toNSString(); }
-- (NSString *)setupWelcomeDetail { return speecher::setupWelcomeDetail().toNSString(); }
 - (NSString *)audioDeviceDefaultLabel { return speecher::audioDeviceDefaultLabel().toNSString(); }
 - (NSString *)setupSilentMicrophoneHint { return speecher::setupSilentMicrophoneHint().toNSString(); }
-- (NSString *)setupProfilesNote { return speecher::setupProfilesNote().toNSString(); }
 - (NSString *)setupBlockedHeading { return speecher::setupBlockedHeading().toNSString(); }
 - (NSString *)setupBlockedFooter { return speecher::setupBlockedFooter().toNSString(); }
 
 - (NSString *)setupStepCounter:(NSInteger)step of:(NSInteger)total
 {
     return speecher::setupStepCounter(int(step), int(total)).toNSString();
-}
-
-- (NSString *)setupSignInMissing:(BOOL)localOffered
-{
-    return speecher::setupSignInMissing(localOffered).toNSString();
 }
 
 - (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
@@ -2505,6 +2566,106 @@ static void probeSpeechProvider(BridgeState *state,
 - (NSString *)setupChecklistLine:(NSString *)stepId choice:(NSString *)choice
 {
     return speecher::setupChecklistLine(QString::fromNSString(stepId), QString::fromNSString(choice)).toNSString();
+}
+
+- (NSString *)setupText:(SpeecherSetupText)text
+{
+    // SpeecherSetupText mirrors speecher::SetupText value for value.
+    static_assert(int(SpeecherSetupTextSkipSetup) == int(speecher::SetupText::SkipSetup));
+    static_assert(int(SpeecherSetupTextCheckAgain) == int(speecher::SetupText::CheckAgain));
+    static_assert(int(SpeecherSetupTextGoToStep) == int(speecher::SetupText::GoToStep));
+    static_assert(int(SpeecherSetupTextHowToDictate) == int(speecher::SetupText::HowToDictate));
+    static_assert(int(SpeecherSetupTextTranscriptionService) == int(speecher::SetupText::TranscriptionService));
+    static_assert(int(SpeecherSetupTextLocalSpeechNote) == int(speecher::SetupText::LocalSpeechNote));
+    static_assert(int(SpeecherSetupTextDownloadToContinue) == int(speecher::SetupText::DownloadToContinue));
+    static_assert(int(SpeecherSetupTextDownloadContinues) == int(speecher::SetupText::DownloadContinues));
+    static_assert(int(SpeecherSetupTextCloseWhileDownloading) == int(speecher::SetupText::CloseWhileDownloading));
+    static_assert(int(SpeecherSetupTextCliproxyAccount) == int(speecher::SetupText::CliproxyAccount));
+    static_assert(int(SpeecherSetupTextListeningForInput) == int(speecher::SetupText::ListeningForInput));
+    static_assert(int(SpeecherSetupTextInputDetected) == int(speecher::SetupText::InputDetected));
+    static_assert(int(SpeecherSetupTextUsesYourSignIn) == int(speecher::SetupText::UsesYourSignIn));
+    static_assert(int(SpeecherSetupTextYourOwnModels) == int(speecher::SetupText::YourOwnModels));
+    static_assert(int(SpeecherSetupTextCleanupProvider) == int(speecher::SetupText::CleanupProvider));
+    static_assert(int(SpeecherSetupTextSkipCleanup) == int(speecher::SetupText::SkipCleanup));
+    static_assert(int(SpeecherSetupTextLookingForRunners) == int(speecher::SetupText::LookingForRunners));
+    static_assert(int(SpeecherSetupTextNoRunnerFound) == int(speecher::SetupText::NoRunnerFound));
+    static_assert(int(SpeecherSetupTextNoRunner) == int(speecher::SetupText::NoRunner));
+    static_assert(int(SpeecherSetupTextRawUntilRunner) == int(speecher::SetupText::RawUntilRunner));
+    static_assert(int(SpeecherSetupTextInstallRunner) == int(speecher::SetupText::InstallRunner));
+    static_assert(int(SpeecherSetupTextGetOllama) == int(speecher::SetupText::GetOllama));
+    static_assert(int(SpeecherSetupTextDownloadWithOllama) == int(speecher::SetupText::DownloadWithOllama));
+    static_assert(int(SpeecherSetupTextEndpointModelHint) == int(speecher::SetupText::EndpointModelHint));
+    return speecher::setupText(static_cast<speecher::SetupText>(text)).toNSString();
+}
+
++ (NSString *)localModelText:(SpeecherLocalModelText)text
+{
+    // SpeecherLocalModelText mirrors speecher::LocalModelText value for value.
+    static_assert(int(SpeecherLocalModelTextUseModel) == int(speecher::LocalModelText::UseModel));
+    static_assert(int(SpeecherLocalModelTextTestSpeed) == int(speecher::LocalModelText::TestSpeed));
+    static_assert(int(SpeecherLocalModelTextInUse) == int(speecher::LocalModelText::InUse));
+    static_assert(int(SpeecherLocalModelTextSuggested) == int(speecher::LocalModelText::Suggested));
+    static_assert(int(SpeecherLocalModelTextYourChoice) == int(speecher::LocalModelText::YourChoice));
+    static_assert(int(SpeecherLocalModelTextTooLarge) == int(speecher::LocalModelText::TooLarge));
+    static_assert(int(SpeecherLocalModelTextHideOtherModels) == int(speecher::LocalModelText::HideOtherModels));
+    static_assert(int(SpeecherLocalModelTextCompareNote) == int(speecher::LocalModelText::CompareNote));
+    return speecher::localModelText(static_cast<speecher::LocalModelText>(text)).toNSString();
+}
+
++ (NSString *)compareModelsCaption:(NSInteger)otherModels
+{
+    return speecher::compareModelsCaption(int(otherModels)).toNSString();
+}
+
++ (NSArray<NSString *> *)compareTableHeaders
+{
+    return bridgedStrings(speecher::compareTableHeaders());
+}
+
+- (NSString *)setupRowLabel:(NSString *)rowId
+{
+    return speecher::setupSchemaRow(QString::fromNSString(rowId)).label.toNSString();
+}
+
+- (NSArray<RowOptionModel *> *)setupRowOptions:(NSString *)rowId
+{
+    const speecher::SettingsRow &row = speecher::setupSchemaRow(QString::fromNSString(rowId));
+    NSMutableArray<RowOptionModel *> *bridged = [NSMutableArray array];
+    if (!row.options) return bridged;
+    for (const RowOption &option : row.options(AppSettings())) {
+        RowOptionModel *model = [[RowOptionModel alloc] init];
+        model.rowOptionId = option.id.toNSString();
+        model.label = option.label.toNSString();
+        model.help = option.help.toNSString();
+        model.enabled = option.enabled;
+        [bridged addObject:model];
+    }
+    return bridged;
+}
+
+- (NSString *)setupProviderReady:(NSString *)providerLabel
+{
+    return speecher::setupProviderReady(QString::fromNSString(providerLabel)).toNSString();
+}
+
+- (NSString *)setupRefinementNotSignedIn:(NSString *)providerLabel
+{
+    return speecher::setupRefinementNotSignedIn(QString::fromNSString(providerLabel)).toNSString();
+}
+
+- (NSString *)setupLocalSpeechChoice:(NSString *)modelName
+{
+    return speecher::setupLocalSpeechChoice(QString::fromNSString(modelName)).toNSString();
+}
+
+- (NSString *)setupCliproxySpeechChoice:(NSString *)providerLabel
+{
+    return speecher::setupCliproxySpeechChoice(QString::fromNSString(providerLabel)).toNSString();
+}
+
+- (NSString *)setupPasteVerdict:(BOOL)pastes
+{
+    return speecher::setupPasteVerdict(pastes).toNSString();
 }
 
 - (NSString *)ownModelRefinementSummary
@@ -2747,9 +2908,11 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
     info.name = model.name.toNSString();
     info.fileName = model.fileName.toNSString();
     info.sizeText = downloadSizeText(model.sizeBytes).toNSString();
+    info.downloadCaption = speecher::downloadCaption(model.sizeBytes).toNSString();
     info.librispeechWer = model.librispeechCleanWer;
     info.fleursWer = model.fleursEnglishWer;
     info.streams = model.streams;
+    info.textShowsText = speecher::textShowsValue(model.streams).toNSString();
     info.licence = model.licence.toNSString();
     info.rating = bridgedModelRating(model.rating);
     info.ratingLabel = modelRatingLabel(model.rating).toNSString();
@@ -2980,6 +3143,11 @@ static std::optional<QString> optionalString(NSString *value)
     return speecher::mediaFilesHint().toNSString();
 }
 
+- (NSString *)mediaFilesTooltip
+{
+    return speecher::mediaFilesTooltip().toNSString();
+}
+
 - (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
 {
     NSMutableArray<NSString *> *audio = [NSMutableArray array];
@@ -3077,6 +3245,9 @@ static std::optional<QString> optionalString(NSString *value)
     static_assert(int(SpeecherTranscribeTextRetrying) == int(speecher::TranscribeText::Retrying));
     static_assert(int(SpeecherTranscribeTextTranscribeMore) == int(speecher::TranscribeText::TranscribeMore));
     static_assert(int(SpeecherTranscribeTextProgressName) == int(speecher::TranscribeText::ProgressName));
+    static_assert(int(SpeecherTranscribeTextNoFilesYet) == int(speecher::TranscribeText::NoFilesYet));
+    static_assert(int(SpeecherTranscribeTextNeedsRefiner) == int(speecher::TranscribeText::NeedsRefiner));
+    static_assert(int(SpeecherTranscribeTextDropToAdd) == int(speecher::TranscribeText::DropToAdd));
     return speecher::transcribeText(static_cast<speecher::TranscribeText>(text)).toNSString();
 }
 

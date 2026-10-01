@@ -9,18 +9,19 @@ QList<SetupStepInfo> setupSteps()
 {
     QList<SetupStepInfo> steps{
         {QStringLiteral("welcome"),
-         QStringLiteral("Welcome to Speecher"),
-         QStringLiteral("Speecher records a short dictation, turns it into text, and sends it to the "
-                        "app you were using."),
+         QStringLiteral("Welcome"),
+         QStringLiteral("Speecher records a short dictation, turns it into text and sends it to the app "
+                        "you were using. This assistant checks everything dictation needs: your speech "
+                        "service, microphone, how text reaches your apps and a Global Shortcut."),
          QString()},
         {QStringLiteral("transcription"),
          QStringLiteral("Transcription"),
-         QStringLiteral("Choose the service Speecher uses to turn speech into a raw transcript."),
+         QStringLiteral("Choose the service that turns your speech into text."),
          QString()},
         {QStringLiteral("microphone"),
          QStringLiteral("Microphone"),
-         QStringLiteral("Choose the input Speecher should record. Speak normally; setup continues "
-                        "once the level moves."),
+         QStringLiteral("Choose the microphone Speecher should record, then speak to check that the "
+                        "level moves."),
          QString()},
     };
 #if defined(Q_OS_MACOS)
@@ -28,8 +29,9 @@ QList<SetupStepInfo> setupSteps()
                   QStringLiteral("Accessibility"),
                   QStringLiteral("Speecher pastes your dictation into the frontmost app with a "
                                  "synthetic Cmd+V. macOS calls that controlling your computer, so it "
-                                 "needs Accessibility permission."),
-                  QStringLiteral("Accessibility is off, so Speecher cannot paste your dictation.")});
+                                 "needs Accessibility permission. Without it, dictation still reaches "
+                                 "your clipboard."),
+                  QStringLiteral("Accessibility is off, so dictation only reaches your clipboard.")});
 #elif !defined(Q_OS_WIN)
     steps.append({QStringLiteral("accessibility"),
                   QStringLiteral("Accessibility"),
@@ -38,35 +40,20 @@ QList<SetupStepInfo> setupSteps()
                                  "context. On Linux both work through the desktop accessibility "
                                  "service (AT-SPI); it also lets Speecher learn your corrections."),
                   QStringLiteral("Accessibility is off, so Speecher cannot paste or read context.")});
-#endif
     steps.append({QStringLiteral("delivery"),
                   QStringLiteral("Text delivery"),
-#if defined(Q_OS_MACOS)
-                  QStringLiteral("Speecher puts the finished text on your clipboard and pastes it "
-                                 "into the frontmost app with Cmd+V. The paste needs the "
-                                 "Accessibility permission from the previous step; without it the "
-                                 "text still reaches your clipboard."),
-#elif defined(Q_OS_WIN)
-                  QStringLiteral("Speecher puts the finished text on your clipboard and pastes it "
-                                 "into the frontmost app with Ctrl+V. Nothing extra needs to be "
-                                 "installed."),
-#else
                   QStringLiteral("To type for you, Speecher installs a small virtual keyboard. Your "
                                  "computer will ask for your administrator password once; Speecher "
                                  "itself never runs privileged."),
-#endif
                   QStringLiteral("The virtual keyboard is not set up, so Speecher cannot type into "
                                  "other apps.")});
+#endif
     steps.append({QStringLiteral("refinement"),
                   QStringLiteral("Refinement"),
-                  QStringLiteral("Refinement can clean up a raw transcript after dictation. Choose a "
-                                 "provider, or skip cleanup."),
-                  QString()});
-    steps.append({QStringLiteral("profiles"),
-                  QStringLiteral("Writing profiles"),
-                  QStringLiteral("Speecher picks a Writing Profile from the app you dictate into. "
-                                 "Choose the fallback profile and how much cleanup and tone "
-                                 "adjustment each one gets."),
+                  QStringLiteral("Refinement can clean up your dictation before it is delivered. Choose "
+                                 "a provider, or skip cleanup. Writing Profiles adjust cleanup for each "
+                                 "app; change them later on the %1 page.")
+                      .arg(paneTitleForRow(QStringLiteral("defaultWritingProfile"))),
                   QString()});
     steps.append({QStringLiteral("shortcut"),
                   QStringLiteral("Global Shortcut"),
@@ -78,12 +65,6 @@ QList<SetupStepInfo> setupSteps()
                       .arg(QStringLiteral("Alt")),
 #endif
                   QStringLiteral("No shortcut is set, so there is no way to start dictating.")});
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-    steps.append({QStringLiteral("login"),
-                  QStringLiteral("Start at login"),
-                  QStringLiteral("Dictation only works while Speecher is running."),
-                  QString()});
-#endif
     steps.append({QStringLiteral("ready"), QStringLiteral("Ready to dictate"), QString(), QString()});
     return steps;
 }
@@ -104,23 +85,9 @@ QString setupWindowTitle()
     return QStringLiteral("Speecher Setup Assistant");
 }
 
-QString setupWelcomeDetail()
-{
-    return QStringLiteral("This assistant checks everything dictation needs: your speech service, "
-                          "microphone, and how text reaches your apps. It ends by setting up a "
-                          "Global Shortcut.");
-}
-
 QString setupStepCounter(int step, int total)
 {
     return QStringLiteral("Step %1 of %2").arg(step).arg(total);
-}
-
-QString setupSignInMissing(bool localOffered)
-{
-    return localOffered
-        ? QStringLiteral("No sign-in was found. Sign in, or choose to run on this computer.")
-        : QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found.");
 }
 
 QString setupTranscriptionBlocked(bool localSelected, const QString &providerLabel)
@@ -207,10 +174,87 @@ QString setupChecklistLine(const QString &stepId, const QString &choice)
     return QStringLiteral("%1 \u2014 %2").arg(step ? step->title : stepId, choice);
 }
 
-QString setupProfilesNote()
+QString setupPasteVerdict(bool pastes)
 {
-    return QStringLiteral("The fallback profile is used when Speecher does not recognize the app "
-                          "you are dictating into. Every profile can be changed later in Settings.");
+    return pastes ? setupProviderVerdict(QString(), true) : QStringLiteral("Clipboard only");
+}
+
+QString setupText(SetupText text)
+{
+    switch (text) {
+    case SetupText::SkipSetup:
+        return QStringLiteral("Skip setup");
+    case SetupText::CheckAgain:
+        return QStringLiteral("Check again");
+    case SetupText::GoToStep:
+        return QStringLiteral("Go to step");
+    case SetupText::HowToDictate:
+        return QStringLiteral("How to dictate");
+    case SetupText::TranscriptionService:
+        return QStringLiteral("Transcription service");
+    case SetupText::LocalSpeechNote:
+        return QStringLiteral("Runs on this computer. No account, works offline.");
+    case SetupText::DownloadToContinue:
+        return QStringLiteral("Download a model to continue. It keeps going while you finish setup.");
+    case SetupText::DownloadContinues:
+        return QStringLiteral("The download keeps going while you finish setup.");
+    case SetupText::CloseWhileDownloading:
+        return QStringLiteral("You can close this window. The download keeps going, and Speecher shows a "
+                              "notification when you can start dictating.");
+    case SetupText::CliproxyAccount:
+        return QStringLiteral("CLI Proxy API account");
+    case SetupText::ListeningForInput:
+        return QStringLiteral("Listening for microphone input\u2026");
+    case SetupText::InputDetected:
+        return QStringLiteral("Microphone input detected.");
+    case SetupText::UsesYourSignIn:
+        return QStringLiteral("Uses your sign-in");
+    case SetupText::YourOwnModels:
+        return QStringLiteral("Your own models");
+    case SetupText::CleanupProvider:
+        return QStringLiteral("Cleanup provider");
+    case SetupText::SkipCleanup:
+        return QStringLiteral("Skip cleanup and deliver the raw transcript");
+    case SetupText::LookingForRunners:
+        return QStringLiteral("Looking for Ollama, LM Studio and llama-server\u2026");
+    case SetupText::NoRunnerFound:
+        return QStringLiteral("No Local Runner found on this computer.");
+    case SetupText::NoRunner:
+        return QStringLiteral("No runner");
+    case SetupText::RawUntilRunner:
+        return QStringLiteral("Until a runner is set up, dictation delivers the raw transcript.");
+    case SetupText::InstallRunner:
+        return QStringLiteral("Cleanup models run in a separate app. Install Ollama, then choose Check again "
+                              "and Speecher will set up a model through it. LM Studio and llama-server work "
+                              "too.");
+    case SetupText::GetOllama:
+        return QStringLiteral("Get Ollama");
+    case SetupText::DownloadWithOllama:
+        return QStringLiteral("Download with Ollama");
+    case SetupText::EndpointModelHint:
+        return QStringLiteral("Connect to list the server's models, or type one.");
+    }
+    return {};
+}
+
+QString setupProviderReady(const QString &providerLabel)
+{
+    return QStringLiteral("%1 is ready.").arg(providerLabel);
+}
+
+QString setupRefinementNotSignedIn(const QString &providerLabel)
+{
+    return QStringLiteral("%1 is not signed in. Dictation will deliver the raw transcript.").arg(providerLabel);
+}
+
+QString setupLocalSpeechChoice(const QString &modelName)
+{
+    return QStringLiteral("%1, on this computer").arg(modelName);
+}
+
+QString setupCliproxySpeechChoice(const QString &providerLabel)
+{
+    return QStringLiteral("%1 (CLI Proxy API)").arg(providerLabel);
 }
 
 QString setupReadyIntro(bool blocked, bool downloading)

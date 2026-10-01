@@ -309,6 +309,51 @@ QString wordErrorRateSources()
     return QStringLiteral("Clear speech: LibriSpeech test-clean. Everyday speech: FLEURS English.");
 }
 
+QString localModelText(LocalModelText text)
+{
+    switch (text) {
+    case LocalModelText::UseModel:
+        return QStringLiteral("Use this model");
+    case LocalModelText::TestSpeed:
+        return QStringLiteral("Test speed");
+    case LocalModelText::InUse:
+        return QStringLiteral("In use");
+    case LocalModelText::Suggested:
+        return QStringLiteral("Suggested for this computer");
+    case LocalModelText::YourChoice:
+        return QStringLiteral("Your choice");
+    case LocalModelText::TooLarge:
+        return QStringLiteral("Too large for this computer");
+    case LocalModelText::HideOtherModels:
+        return QStringLiteral("Hide other models");
+    case LocalModelText::CompareNote:
+        return QStringLiteral("Word errors: clear read speech / everyday speech. Times are estimates until a "
+                              "model is downloaded and tested here.");
+    }
+    return {};
+}
+
+QString textShowsValue(bool streams)
+{
+    return streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop");
+}
+
+QString downloadCaption(qint64 bytes)
+{
+    return QStringLiteral("Download %1").arg(downloadSizeText(bytes));
+}
+
+QString compareModelsCaption(int otherModels)
+{
+    return QStringLiteral("Compare %1 other models").arg(otherModels);
+}
+
+QStringList compareTableHeaders()
+{
+    return {QStringLiteral("Model"), QStringLiteral("Download"), QStringLiteral("Word errors"),
+            QStringLiteral("10 s of speech"), QStringLiteral("Text shows"), QStringLiteral("Memory")};
+}
+
 QString localModelSpeedLine(const LocalModel &model,
                             const HardwareProfile &hardware,
                             std::optional<double> measuredSeconds)

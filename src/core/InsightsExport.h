@@ -37,8 +37,8 @@ InsightsShareLabels insightsShareLabels();
 
 // The shared image's heading and the line under its figures.
 QString insightsImageTitle();
-// "Last 30 days".
-QString insightsImagePeriod(InsightsRange range);
+// "Last 30 days": the period picker's choice and the image's period line.
+QString insightsRangeLabel(InsightsRange range);
 // "About half of Hamlet · 142 words per minute"; empty with no audio.
 QString insightsImagePaceLine(const InsightsSummary &summary);
 

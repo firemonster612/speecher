@@ -107,79 +107,10 @@ struct ProviderOptionRow {
     quint64 generation = 0;
 };
 
-class WelcomeSetupPage final : public QWidget, public SetupStep {
-    Q_OBJECT
-
+// The first step: what Speecher does and what the assistant checks.
+class WelcomeSetupPage final : public QWidget {
 public:
-    // With local set, running speech on this computer is offered as a second
-    // path beside the sign-ins.
-    WelcomeSetupPage(SettingsStore &settings,
-                     ProviderRegistry &providers,
-                     LocalSetup *local = nullptr,
-                     QWidget *parent = nullptr);
-
-    QString blockedReason() const override;
-
-    // Next waits for a sign-in to be found, unless the person chose to run
-    // on this computer.
-    bool ready() const { return m_ready; }
-    // Re-run the probe while the page is off screen, so a sign-in that lapsed
-    // mid-wizard closes the gate before Finish commits.
-    void recheck();
-    void preserveSpeechChoice() { m_pathChoice.providerChosen(); }
-
-signals:
-    void readyChanged();
-    // Every provider in this round has answered. The assistant waits for it
-    // before probing the same providers again from another page.
-    void checkFinished();
-    // Running on this computer was chosen, by the person or as the default.
-    void localPathChosen();
-    void pathProviderChanged(const QString &provider);
-
-protected:
-    void showEvent(QShowEvent *event) override;
-
-private:
-    void choosePath(std::optional<bool> local = std::nullopt);
-    void showSignInPathStatus();
-
-    struct CredentialRow {
-        QString providerId;
-        QLabel *status = nullptr;
-        QLabel *hint = nullptr;
-        bool found = false;
-    };
-
-    void checkCredentials();
-    void showCredential(int index, bool found);
-    void showCliproxyCredential(bool found);
-    void updateReady();
-    void setReady(bool ready);
-
-    SettingsStore &m_settings;
-    ProviderRegistry &m_providers;
-    ProviderSignIn m_signIn;
-    QList<CredentialRow> m_rows;
-    // Accounts saved by CLI Proxy API can power dictation too, so they open
-    // the gate like a provider CLI sign-in does.
-    QLabel *m_cliproxyStatus = nullptr;
-    QLabel *m_cliproxyHint = nullptr;
-    QLineEdit *m_cliproxyDir = nullptr;
-    bool m_cliproxyFound = false;
-    quint64 m_checkGeneration = 0;
-    int m_checksOutstanding = 0;
-    bool m_ready = false;
-    LocalSetup *m_local;
-    QRadioButton *m_signInPath = nullptr;
-    QRadioButton *m_localPath = nullptr;
-    QLabel *m_signInPathStatus = nullptr;
-    QWidget *m_signInDetail = nullptr;
-    QWidget *m_localDetail = nullptr;
-    QLabel *m_hardware = nullptr;
-    // Until the person picks a path, every round of checks sets the
-    // default: the sign-in when one is found, else this computer.
-    WelcomeChoice m_pathChoice;
+    explicit WelcomeSetupPage(QWidget *parent = nullptr);
 };
 
 class SpeechProviderSetupPage final : public QWidget, public SetupStep {
@@ -202,11 +133,11 @@ public:
 
     // The setup assistant holds Next until the chosen service checked out.
     bool ready() const { return m_ready; }
-    // Re-run the probes while the page is off screen; see WelcomeSetupPage.
+    // Re-run the probes while the page is off screen, so a sign-in that lapsed
+    // mid-wizard closes the gate before Finish commits.
     void recheck();
 
 signals:
-    void providerChosen();
     void readyChanged();
 
 protected:
@@ -465,25 +396,6 @@ private:
     int m_pendingProbes = 0;
     bool m_autoSelectDone = false;
     bool m_userSelected = false;
-};
-
-class WritingProfilesSetupPage final : public QWidget {
-public:
-    explicit WritingProfilesSetupPage(SettingsStore &settings,
-                                      QWidget *parent = nullptr);
-
-private:
-    struct ProfileControls {
-        QString profile;
-        QComboBox *cleanup;
-        QComboBox *tone;
-    };
-
-    void saveProfiles();
-
-    SettingsStore &m_settings;
-    QComboBox *m_defaultProfile;
-    QList<ProfileControls> m_profiles;
 };
 
 class FinishSetupPage final : public QWidget {

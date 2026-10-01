@@ -307,8 +307,9 @@ bool QtFrontEnd::clickGrabButtons(QWidget *window)
     return true;
 }
 
-void QtFrontEnd::showDictationError(const QString &message)
+void QtFrontEnd::showDictationError(const QString &message, const PopupErrorAction &fix)
 {
+    Q_UNUSED(fix);
     m_popup->showPopup(0);
     m_popup->showErrorMessage(message);
 }

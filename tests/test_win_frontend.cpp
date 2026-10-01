@@ -599,14 +599,11 @@ private slots:
     void setupPageOrderAndCopyMatchTheWindowsFlow()
     {
         QCOMPARE(SetupWindow::pageTitles(),
-                 QStringList({QStringLiteral("Welcome to Speecher"),
+                 QStringList({QStringLiteral("Welcome"),
                               QStringLiteral("Transcription"),
                               QStringLiteral("Microphone"),
-                              QStringLiteral("Text delivery"),
                               QStringLiteral("Refinement"),
-                              QStringLiteral("Writing profiles"),
                               QStringLiteral("Global Shortcut"),
-                              QStringLiteral("Start at login"),
                               QStringLiteral("Ready to dictate")}));
         // No mention of desktop accessibility: this wizard has no such page.
         QVERIFY(!SetupWindow::welcomeCopyForTest().join(u' ').contains(QStringLiteral("ccessibility")));

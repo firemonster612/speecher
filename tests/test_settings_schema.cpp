@@ -5,6 +5,7 @@
 #include "core/BindingProcessor.h"
 #include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
+#include "core/ReleaseNotesPresentation.h"
 #include "core/settings/SettingsSchema.h"
 #include "transcribe/TranscribePresentation.h"
 
@@ -342,6 +343,14 @@ private slots:
         QCOMPARE(compareBaseVersions(QStringLiteral("0.2.9+g1"), QStringLiteral("0.2.9")),
                  0);
         QVERIFY(compareBaseVersions(QString(), QStringLiteral("0.1.0")) < 0);
+    }
+
+    void releaseNotesShowOnlyThisPlatformsBullets()
+    {
+        const QString notes = QStringLiteral("## Added\n\n- A shared change that wraps\n  onto a second line.\n"
+                                             "- Linux: the tray.\n\n## Fixed\n\n- Windows: a fix.");
+        QCOMPARE(releaseNotesForPlatform(notes, QStringLiteral("macOS")),
+                 QStringLiteral("## Added\n\n- A shared change that wraps onto a second line."));
     }
 
     void whatsNewPageSelectsLiveRowsInTheVersionRange()
@@ -1470,7 +1479,7 @@ private slots:
         QCOMPARE(paneTitle(QStringLiteral("localModels")), QStringLiteral("Local models"));
         QCOMPARE(paneTitleForRow(QStringLiteral("openAiModel")), QStringLiteral("Refinement"));
         QCOMPARE(paneTitleForRow(QStringLiteral("openAiCliproxyAccount")), QStringLiteral("Accounts"));
-        QCOMPARE(refinementModelHint(), QStringLiteral("Change it on the Refinement page"));
+        QCOMPARE(refinementModelHint(), QStringLiteral("Set in Refinement settings"));
 
         SchemaContext context = fakeContext();
         context.speechProviders.append({QStringLiteral("local"), QStringLiteral("Local model")});

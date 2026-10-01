@@ -255,6 +255,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     // Its caption follows the list; see refreshFileList.
     QPushButton *choose = settings::makeButtonRow(QString(), mediaFilesHint(), m_filesCard);
     choose->setObjectName(QStringLiteral("transcribeChooseFiles"));
+    choose->setToolTip(mediaFilesTooltip());
     settings::addCardRow(settings::cardFormLayout(m_filesCard), choose, m_filesCard);
     connect(choose, &QPushButton::clicked, this, [this] {
         addFiles(QFileDialog::getOpenFileNames(

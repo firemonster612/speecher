@@ -33,8 +33,8 @@ fresh_reset() {
   # Sparkle's first-run prompt lives in the bundle-id domain and would steal
   # key status from the assistant.
   defaults write "$BUNDLE_ID" SUEnableAutomaticChecks -bool false
-  # The Welcome gate also opens on CLI Proxy API accounts; point the lookup at
-  # an empty directory so a runner's real accounts cannot satisfy the gate.
+  # A CLI Proxy API account keeps Transcription on a sign-in; point the lookup
+  # at an empty directory so a runner's real accounts cannot affect the walk.
   defaults write "$DOMAIN" cliproxy.oauthDir "$(mktemp -d)"
   unset SPEECHER_E2E_STUB SPEECHER_E2E_SKIP_MIC_GATE SPEECHER_E2E_REAL_AUDIO
   launchctl unsetenv SPEECHER_E2E_STUB >/dev/null 2>&1 || true
@@ -122,11 +122,10 @@ import ImageIO
 import Vision
 
 let pages = [
-    ("welcome", "Welcome to Speecher"), ("transcription", "Transcription"),
+    ("welcome", "Welcome"), ("transcription", "Transcription"),
     ("microphone", "Microphone"), ("accessibility", "Accessibility"),
-    ("delivery", "Text delivery"), ("refinement", "Refinement"),
-    ("profiles", "Writing profiles"), ("shortcut", "Global Shortcut"),
-    ("login", "Start at login"), ("ready", "Ready to dictate"),
+    ("refinement", "Refinement"), ("shortcut", "Global Shortcut"),
+    ("ready", "Ready to dictate"),
 ]
 let reached = min(Int(CommandLine.arguments[2]) ?? pages.count, pages.count)
 for (index, page) in pages.prefix(reached).enumerated() {
@@ -146,7 +145,7 @@ for (index, page) in pages.prefix(reached).enumerated() {
     let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
         .joined(separator: " ")
     print("\(filename): \(image.width)x\(image.height), \(data.count) bytes\n\(text)")
-    guard text.contains(page.1), text.contains("Step \(index + 1) of 10") else {
+    guard text.contains(page.1), text.contains("Step \(index + 1) of \(pages.count)") else {
         print("FAIL: \(filename) does not show its expected title and step number")
         exit(1)
     }
@@ -195,8 +194,8 @@ if ! seed_setup_tcc; then
 fi
 
 # S1: Continue is disabled while the current step's gate is unsatisfied. This
-# runner has no provider sign-in, so the walk must stop on the welcome step
-# rather than clicking through to a Finish that could never work.
+# runner has no provider sign-in, so the walk must stop on the transcription
+# step rather than clicking through to a Finish that could never work.
 # That is the whole of the coverage here: walking the rest of the wizard — the
 # later steps, Skip Setup, and what Finish writes — needs a runner signed in to
 # ChatGPT or Claude, which CI has not got. Until it does, this is a gate check.
@@ -209,12 +208,14 @@ elif ! wait_for_assistant; then
 else
   errors=()
   wait_for_page_capture 1 welcome || errors+=("the welcome step was never captured")
+  click_button Continue >/dev/null 2>&1 || true
+  wait_for_page_capture 2 transcription || errors+=("Continue did not leave the welcome step")
   # The click is allowed to land on a disabled control; what matters is that
   # the assistant does not move on.
   click_button Continue >/dev/null 2>&1 || true
   sleep 2
-  if wait_for_page_capture 2 transcription; then
-    errors+=("Continue advanced past the welcome step with no provider signed in")
+  if wait_for_page_capture 3 microphone; then
+    errors+=("Continue advanced past the transcription step with no provider signed in")
   fi
   setup_completed && errors+=("app.setupCompleted was written without finishing")
   kill -0 "$APP_PID" 2>/dev/null || errors+=("the app quit while the gate held")
@@ -224,16 +225,16 @@ else
   # step's gate reads a real registration; the default is stored by then.
   [[ -n "$(stored_shortcut)" ]] \
     || errors+=("opening the assistant registered no shortcut")
-  check_page_captures 1 || errors+=("page rendering checks failed; see page-checks.out")
+  check_page_captures 2 || errors+=("page rendering checks failed; see page-checks.out")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
-    pass_case "The welcome step rendered and held Continue with no provider signed in."
+    pass_case "The transcription step rendered and held Continue with no provider signed in."
   fi
 fi
 
-# S2: Skip Setup is hidden until every gate passes, so an unsatisfied welcome
-# step must not offer it. When it is offered, skipping registers the shortcut
+# S2: Skip Setup is hidden until every gate passes, so the welcome step must
+# not offer it while a later step is unsatisfied. When it is offered, skipping registers the shortcut
 # exactly as Finish would — that half needs a signed-in runner to observe.
 fresh_reset
 case_begin S2
@@ -250,12 +251,12 @@ else
   # offered. Anything but exactly two is a failure: three means Skip leaked
   # past a shut gate, and any other value means the probe read the wrong group.
   [[ "$nav_buttons" == "2" ]] \
-    || errors+=("expected 2 navigation buttons (Back, Continue) on a gated welcome step, found ${nav_buttons:-none}")
+    || errors+=("expected 2 navigation buttons (Back, Continue) on the welcome step, found ${nav_buttons:-none}")
   setup_completed && errors+=("app.setupCompleted was written without skipping or finishing")
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
-    pass_case "Skip Setup stayed hidden on a welcome step whose gate is unsatisfied."
+    pass_case "Skip Setup stayed hidden on the welcome step while a later gate is unsatisfied."
   fi
 fi
 

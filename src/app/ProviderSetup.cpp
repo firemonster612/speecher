@@ -69,10 +69,10 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     registry.registerSpeechProvider(
         {QStringLiteral("claude"),
          QStringLiteral("Claude Voice"),
-         QStringLiteral("Install Claude Code from claude.com/code and sign in — the desktop app or the claude CLI (/login) both work."),
+         QStringLiteral("Install Claude Code from claude.com/code and sign in, in the desktop app or "
+                        "with /login in the claude CLI."),
          false,
-         QStringLiteral("Deepgram Nova 3: words appear live as you speak. "
-                        "About 60 languages, automatic punctuation and numerals."),
+         QStringLiteral("Deepgram Nova 3. About 60 languages, automatic punctuation and numerals."),
          {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
           {QStringLiteral("Engine"), QStringLiteral("Deepgram Nova 3")},
           {QStringLiteral("Languages"), QStringLiteral("About 60")},
@@ -87,8 +87,7 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
          QStringLiteral("ChatGPT Codex"),
          QStringLiteral("Sign in with ChatGPT in the ChatGPT app, or install the Codex CLI and run codex login."),
          false,
-         QStringLiteral("GPT Live Transcribe: very accurate; text arrives a phrase "
-                        "at a time after short pauses. Around 100 languages."),
+         QStringLiteral("GPT Live Transcribe. Very accurate, around 100 languages."),
          {{QStringLiteral("Score"), QStringLiteral("9 / 10")},
           {QStringLiteral("Engine"), QStringLiteral("GPT Live Transcribe")},
           {QStringLiteral("Languages"), QStringLiteral("Around 100")},
@@ -101,7 +100,7 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
     registry.registerSpeechProvider(
         {QStringLiteral("local"),
-         QStringLiteral("Local model"),
+         QStringLiteral("Local Model"),
          QStringLiteral("Download a model on the %1 page. It runs on this computer, with no account.")
              .arg(paneTitle(QStringLiteral("localModels"))),
          false,
@@ -129,28 +128,29 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
         [](QObject *parent) { return new AnthropicTranscriptRefiner(parent); });
     registry.registerSpeechProvider(
         {QStringLiteral("endpoint"),
-         QStringLiteral("Custom endpoint"),
-         QStringLiteral("Set your server's URL in Settings. Any server with an OpenAI-style "
-                        "audio transcriptions API works, including whisper.cpp and Speaches."),
+         QStringLiteral("Custom Endpoint"),
+         QStringLiteral("Set your server's URL on the %1 page. Any server with an OpenAI-style "
+                        "audio transcriptions API works, including whisper.cpp and Speaches.")
+             .arg(paneTitleForRow(QStringLiteral("speechEndpointUrl"))),
          false,
-         QStringLiteral("A server you run: text appears after you stop. "
-                        "Speed, accuracy and languages depend on the server and its model."),
+         QStringLiteral("A server you run. Speed, accuracy and languages depend on the server "
+                        "and its model."),
          {{QStringLiteral("Engine"), QStringLiteral("Your server's model")},
           {QStringLiteral("Speed"), QStringLiteral("Text appears after you stop")},
           {QStringLiteral("Formatting"), QStringLiteral("Whatever the server returns")}}},
         [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
     registry.registerRefinementProvider(
-        {QStringLiteral("endpoint"), QStringLiteral("Custom endpoint"),
+        {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint"),
          QStringLiteral("A server you run, or CLI Proxy API, with an OpenAI- or Anthropic-compatible API."),
          false, QString(),
          {{QStringLiteral("Model"), QStringLiteral("Any model your server offers")},
           {QStringLiteral("Speed"), QStringLiteral("Depends on the server and model")}}},
         [](QObject *parent) { return new EndpointTranscriptRefiner(parent); });
     registry.registerRefinementProvider(
-        {QStringLiteral("local"), QStringLiteral("Local model"),
+        {QStringLiteral("local"), QStringLiteral("Local Runner"),
          QStringLiteral("Runs on this computer through Ollama, LM Studio or llama-server."),
          false, QString(),
-         {{QStringLiteral("Model"), QStringLiteral("A cleanup model in your local runner")},
+         {{QStringLiteral("Model"), QStringLiteral("A cleanup model in your Local Runner")},
           {QStringLiteral("Speed"), QStringLiteral("Depends on this computer")},
           {QStringLiteral("Privacy"), QStringLiteral("The transcript stays on this computer")}}},
         [](QObject *parent) { return new LocalRunnerRefiner(parent); });

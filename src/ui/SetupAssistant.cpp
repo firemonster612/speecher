@@ -131,19 +131,11 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         LocalSetup *localSpeech = controller->providerRegistry()->speechProvider(QStringLiteral("local"))
             ? controller->localSetup()
             : nullptr;
-        m_welcomePage = new WelcomeSetupPage(*controller->settings(),
-                                             *controller->providerRegistry(),
-                                             localSpeech,
-                                             this);
+        m_welcomePage = new WelcomeSetupPage(this);
         m_speechProviderPage = new SpeechProviderSetupPage(*controller->settings(),
                                                            *controller->providerRegistry(),
                                                            localSpeech,
                                                            this);
-        connect(m_speechProviderPage, &SpeechProviderSetupPage::providerChosen,
-                m_welcomePage, &WelcomeSetupPage::preserveSpeechChoice);
-        connect(m_welcomePage, &WelcomeSetupPage::pathProviderChanged, this, [this](const QString &provider) {
-            m_speechProviderPage->chooseProvider(provider);
-        });
         m_microphonePage = new MicrophoneSetupPage(*controller->settings(),
                                                    *controller->platform(),
                                                    this);
@@ -153,18 +145,12 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
                                              *controller->providerRegistry(),
                                              controller->localSetup(),
                                              this);
-        m_profilesPage = new WritingProfilesSetupPage(*controller->settings(), this);
         m_finishPage = new FinishSetupPage(*controller, this);
     }
     // Every step with something checkable holds Next until it is done, and
     // Skip setup only exists once all of them are: skipping through an unset
     // microphone or provider produced installs that never worked. Refinement
-    // and writing profiles stay open, since their defaults are valid answers.
-    if (m_welcomePage) {
-        addGate(m_welcomePage, [this] { return m_welcomePage->ready(); });
-        connect(m_welcomePage, &WelcomeSetupPage::readyChanged,
-                this, [this] { applyGates(); });
-    }
+    // stays open, since its default is a valid answer.
     if (m_speechProviderPage) {
         addGate(m_speechProviderPage, [this] { return m_speechProviderPage->ready(); });
         connect(m_speechProviderPage, &SpeechProviderSetupPage::readyChanged,
@@ -206,7 +192,6 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         accessibility,
         m_deliveryPage,
         refinement,
-        m_profilesPage,
     };
 #ifdef Q_OS_LINUX
     pageContents.append(m_globalShortcutPage);
@@ -245,7 +230,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     pageWidget()->setPageHeader(header);
     updateStepHeader(m_items.value(0));
     if (!m_singlePage) {
-        m_skipButton = new QPushButton(QStringLiteral("Skip setup"), this);
+        m_skipButton = new QPushButton(setupText(SetupText::SkipSetup), this);
         addActionButton(m_skipButton);
         connect(m_skipButton, &QAbstractButton::clicked, this, &SetupAssistant::skipSetup);
     }
@@ -270,7 +255,7 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     setOption(QWizard::NoBackButtonOnStartPage);
     if (!m_singlePage) {
         setOption(QWizard::HaveCustomButton1);
-        setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
+        setButtonText(QWizard::CustomButton1, setupText(SetupText::SkipSetup));
         m_skipButton = button(QWizard::CustomButton1);
     }
     for (int index = 0; index < pageContents.size(); ++index) {
@@ -461,29 +446,9 @@ bool SetupAssistant::earlierGatesComplete(QWidget *content) const
 // so this only ever updates the gates for the next press of Finish.
 void SetupAssistant::recheckCredentialsInBackground()
 {
-    if (!m_welcomePage) {
-        if (m_speechProviderPage) {
-            m_speechProviderPage->recheck();
-        }
-        return;
-    }
-    // Both pages probe the same provider objects, and a provider's credential
-    // refresh holds a lock for a second. Run at the same time, one round
-    // reports a lock failure the other caused and the gate closes on a
-    // conflict rather than on the credentials, so the speech round waits.
     if (m_speechProviderPage) {
-        connect(
-            m_welcomePage,
-            &WelcomeSetupPage::checkFinished,
-            this,
-            [this] {
-                if (m_speechProviderPage) {
-                    m_speechProviderPage->recheck();
-                }
-            },
-            Qt::SingleShotConnection);
+        m_speechProviderPage->recheck();
     }
-    m_welcomePage->recheck();
 }
 
 QWidget *SetupAssistant::firstIncompletePage() const

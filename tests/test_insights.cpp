@@ -413,6 +413,32 @@ private slots:
         QCOMPARE(summary.firstDictation, QDate(2026, 9, 1));
     }
 
+    void recordsLeaveOutTheStreakRunningNow()
+    {
+        const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100), recordOn(kToday, 50)};
+        const QList<InsightRecordText> rows =
+            insightRecords(summarize(records, InsightsRange::Last7Days, kToday), kToday);
+        QStringList titles;
+        for (const InsightRecordText &row : rows) {
+            titles << row.title;
+        }
+        QCOMPARE(titles, (QStringList{QStringLiteral("Next milestone: 1,000 words"),
+                                      QStringLiteral("Longest dictation"), QStringLiteral("Busiest day"),
+                                      QStringLiteral("Wordiest day"), QStringLiteral("First dictation")}));
+        QVERIFY(rows.first().milestoneBar);
+        QCOMPARE(rows.last().value, QStringLiteral("1 day ago"));
+    }
+
+    void learnedCorrectionsSayHowLearningStands()
+    {
+        QCOMPARE(learnedCorrectionsNote(0, true, true),
+                 QStringLiteral("Fix a dictated word the same way twice and it appears here."));
+        QCOMPARE(learnedCorrectionsAction(0, true), QString());
+        QCOMPARE(learnedCorrectionsNote(3, false, false), QStringLiteral("Learning is off."));
+        QCOMPARE(learnedCorrectionsAction(3, false), QStringLiteral("Turn on learning"));
+        QCOMPARE(learnedCorrectionsAction(3, true), QStringLiteral("Review learned corrections"));
+    }
+
     void everyMilestonePassed()
     {
         const InsightsSummary summary =

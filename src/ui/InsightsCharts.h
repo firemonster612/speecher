@@ -61,7 +61,6 @@ private:
     Geometry layOutYear(int width) const;
     Geometry layOutWeek() const;
     Geometry layOutLegend() const;
-    QString describe(const HeatmapDay &day) const;
     QColor levelColor(int level) const;
 
     Shape m_shape;

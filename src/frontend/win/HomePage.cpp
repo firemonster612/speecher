@@ -73,19 +73,6 @@ QString number(int value)
     return QLocale().toString(value);
 }
 
-QString duration(qint64 seconds)
-{
-    if (seconds < 60) {
-        return QStringLiteral("%1s").arg(seconds);
-    }
-    const qint64 minutes = (seconds + 30) / 60;
-    if (minutes < 60) {
-        return QStringLiteral("%1 min").arg(minutes);
-    }
-    return minutes % 60 ? QStringLiteral("%1 h %2 min").arg(minutes / 60).arg(minutes % 60)
-                        : QStringLiteral("%1 h").arg(minutes / 60);
-}
-
 // Home's chart colours, built from the system accent in code. As brushes in
 // styles.xaml they took their colour from a ThemeResource inside a theme
 // dictionary fetched in code, which drew nothing. The accent is Dark1 on Light
@@ -138,14 +125,6 @@ IconElement tileIcon(const QString &iconId)
     return icon;
 }
 
-QString capitalized(QString text)
-{
-    if (!text.isEmpty()) {
-        text[0] = text.at(0).toUpper();
-    }
-    return text;
-}
-
 TextBlock secondaryCaption(const QString &text, const PaneHost &host)
 {
     return secondaryTextBlock(text, L"SettingsCardDescriptionStyle", host);
@@ -177,14 +156,14 @@ Grid titledHeader(const UIElement &title, const UIElement &picker)
 }
 
 // Items as labels; a choice stores the index and rebuilds the page.
-ComboBox indexPicker(std::initializer_list<const wchar_t *> labels,
+ComboBox indexPicker(const QStringList &labels,
                      int selected,
                      std::function<void(int)> choose)
 {
     ComboBox combo;
-    for (const wchar_t *label : labels) {
+    for (const QString &label : labels) {
         ComboBoxItem item;
-        item.Content(box_value(label));
+        item.Content(box_value(hs(label)));
         combo.Items().Append(item);
     }
     combo.SelectedIndex(selected);
@@ -343,11 +322,7 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
     status.Spacing(2);
     status.Children().Append(styledTextBlock(controller->statusLabel(), L"BodyStrongTextBlockStyle"));
     const QString shortcut = controller->globalShortcutDisplay();
-    status.Children().Append(secondaryCaption(
-        shortcut.isEmpty()
-            ? QStringLiteral("Set a Global Shortcut to dictate from anywhere.")
-            : QStringLiteral("Press %1 anywhere to dictate into the app you're using.").arg(shortcut),
-        host));
+    status.Children().Append(secondaryCaption(dictationShortcutHint(shortcut), host));
     // The popup shows a failure for five seconds and cannot take focus, so the
     // reason also stays here until the next session starts.
     const QString failure =
@@ -571,24 +546,6 @@ Border heatCell(int level, const Brush &accent, const Brush &empty)
     return cell;
 }
 
-QString describeDay(const HeatmapDay &day, HeatMeasure measure)
-{
-    if (day.dictations == 0) {
-        return QStringLiteral("No dictation");
-    }
-    const QString dictations = dictationCountText(day.dictations);
-    const QString words = wordCountText(day.words);
-    switch (measure) {
-    case HeatMeasure::Words:
-        return QStringLiteral("%1 from %2").arg(words, dictations);
-    case HeatMeasure::Audio:
-        return QStringLiteral("%1 of audio").arg(duration((day.audioMs + 500) / 1000));
-    case HeatMeasure::Dictations:
-        break;
-    }
-    return QStringLiteral("%1, %2").arg(dictations, words);
-}
-
 // GitHub's layout for the latest `weeksShown` weeks: a column per
 // Monday-first week, Mon/Wed/Fri on the left, month names over the week each
 // month starts in.
@@ -616,7 +573,6 @@ Grid heatmapWeeks(const QList<HeatmapDay> &days, int weeksShown, HeatMeasure mea
         grid.RowDefinitions().Append(definition);
     }
 
-    const QLocale locale;
     // Row 1 is Monday. Two rows tall, so the caption is not clipped to a cell.
     const std::array<QString, 7> rowLabels = heatmapRowLabels();
     for (int row = 0; row < 7; ++row) {
@@ -641,8 +597,8 @@ Grid heatmapWeeks(const QList<HeatmapDay> &days, int weeksShown, HeatMeasure mea
     for (int index = first * 7; index < days.size(); ++index) {
         const HeatmapDay &day = days.at(index);
         Grid cell = hoverableCell(heatCell(scale.level(day), accent, empty));
-        setImmediateTip(cell, describeDay(day, measure) + QLatin1Char('\n')
-                                  + locale.toString(day.date, QStringLiteral("ddd, MMM d, yyyy")));
+        const ChartTip tip = heatmapDayTip(day, measure);
+        setImmediateTip(cell, tip.title + QLatin1Char('\n') + tip.detail);
         Grid::SetColumn(cell, index / 7 - first + 1);
         Grid::SetRow(cell, index % 7 + 1);
         grid.Children().Append(cell);
@@ -680,8 +636,9 @@ UIElement activityCard(const InsightsSummary &summary, PaneHost &host,
     StackPanel body = cardBody();
     body.Spacing(12);
     body.Children().Append(titledHeader(
-        styledTextBlock(QStringLiteral("Activity"), L"BodyStrongTextBlockStyle"),
-        indexPicker({L"Dictations", L"Words", L"Minutes of audio"},
+        styledTextBlock(homeText(HomeText::Activity), L"BodyStrongTextBlockStyle"),
+        indexPicker({heatMeasureLabel(HeatMeasure::Dictations), heatMeasureLabel(HeatMeasure::Words),
+                     heatMeasureLabel(HeatMeasure::Audio)},
                     host.homeMeasure,
                     [&host](int index) {
                         host.homeMeasure = index;
@@ -751,10 +708,9 @@ UIElement hourChart(const InsightsSummary &summary, const PaneHost &host, const 
 UIElement hoursCard(const InsightsSummary &summary, const PaneHost &host, const Brush &accent)
 {
     StackPanel body = cardBody();
-    body.Children().Append(styledTextBlock(QStringLiteral("When you talk"), L"BodyStrongTextBlockStyle"));
+    body.Children().Append(styledTextBlock(homeText(HomeText::WhenYouTalk), L"BodyStrongTextBlockStyle"));
     if (!summary.hasHourData) {
-        body.Children().Append(secondaryCaption(
-            QStringLiteral("After a few days of dictation this shows the hours you talk most."), host));
+        body.Children().Append(secondaryCaption(homeText(HomeText::NoHourData), host));
         return cardContainer(body);
     }
     body.Children().Append(styledTextBlock(personaText(summary), L"BodyStrongTextBlockStyle"));
@@ -767,7 +723,7 @@ UIElement emptyPeriodCard(const QString &title, const PaneHost &host)
 {
     StackPanel body = cardBody();
     body.Children().Append(styledTextBlock(title, L"BodyStrongTextBlockStyle"));
-    body.Children().Append(secondaryCaption(QStringLiteral("No dictation in this period."), host));
+    body.Children().Append(secondaryCaption(homeText(HomeText::NoDictationInPeriod), host));
     return cardContainer(body);
 }
 
@@ -783,23 +739,23 @@ StackPanel figure(const QString &value, const QString &caption, const PaneHost &
 UIElement paceCard(const InsightsSummary &summary, const PaneHost &host)
 {
     if (summary.dictations == 0) {
-        return emptyPeriodCard(QStringLiteral("Pace"), host);
+        return emptyPeriodCard(homeText(HomeText::Pace), host);
     }
     StackPanel body = cardBody();
-    body.Children().Append(styledTextBlock(QStringLiteral("Pace"), L"BodyStrongTextBlockStyle"));
+    body.Children().Append(styledTextBlock(homeText(HomeText::Pace), L"BodyStrongTextBlockStyle"));
     StackPanel figures;
     figures.Orientation(Orientation::Horizontal);
     figures.Spacing(32);
     figures.Children().Append(figure(QStringLiteral("%1 wpm").arg(summary.wordsPerMinute),
-                                     QStringLiteral("Your speaking pace"), host));
-    figures.Children().Append(figure(duration(qint64(summary.minutesSavedVersusTyping) * 60),
-                                     QStringLiteral("Saved over typing"), host));
+                                     homeText(HomeText::SpeakingPace), host));
+    figures.Children().Append(figure(minutesText(summary.minutesSavedVersusTyping),
+                                     homeText(HomeText::SavedOverTyping), host));
     body.Children().Append(figures);
     const double scale = std::max(summary.wordsPerMinute, 160);
     body.Children().Append(barTable(
-        {{styledTextBlock(QStringLiteral("You, speaking"), L"SettingsCardBodyStyle"),
+        {{styledTextBlock(homeText(HomeText::YouSpeaking), L"SettingsCardBodyStyle"),
           double(summary.wordsPerMinute), scale, number(summary.wordsPerMinute), {}},
-         {styledTextBlock(QStringLiteral("Typical typing"), L"SettingsCardBodyStyle"),
+         {styledTextBlock(homeText(HomeText::TypicalTyping), L"SettingsCardBodyStyle"),
           double(summary.typingWordsPerMinute), scale, number(summary.typingWordsPerMinute), {}}},
         host));
     body.Children().Append(secondaryCaption(summary.speedupText, host));
@@ -809,10 +765,10 @@ UIElement paceCard(const InsightsSummary &summary, const PaneHost &host)
 UIElement appsCard(const InsightsSummary &summary, const PaneHost &host, const Brush &accent)
 {
     if (summary.apps.isEmpty()) {
-        return emptyPeriodCard(QStringLiteral("Where your words go"), host);
+        return emptyPeriodCard(homeText(HomeText::WhereYourWordsGo), host);
     }
     StackPanel body = cardBody();
-    body.Children().Append(styledTextBlock(QStringLiteral("Where your words go"), L"BodyStrongTextBlockStyle"));
+    body.Children().Append(styledTextBlock(homeText(HomeText::WhereYourWordsGo), L"BodyStrongTextBlockStyle"));
     std::vector<BarEntry> entries;
     for (const AppShare &app : summary.apps) {
         StackPanel name;
@@ -840,13 +796,18 @@ UIElement correctionsCard(PaneHost &host)
     StackPanel body = cardBody();
     body.Children().Append(styledTextBlock(learnedCorrectionsTitle(), L"BodyStrongTextBlockStyle"));
     const int learned = static_cast<int>(host.controller->settings()->learnedCorrections().size());
+    const bool learning = host.controller->settings()->snapshot().correctionLearningEnabled;
+    const bool accessibility =
+        !host.controller->accessibilitySupported() || host.controller->accessibilityEnabled();
     body.Children().Append(figure(number(learned), learnedCorrectionsCaption(learned), host));
-    body.Children().Append(secondaryCaption(
-        QStringLiteral("Speecher learned these from edits you made after dictating."), host));
-    Button open;
-    open.Content(box_value(hs(reviewLearnedCorrectionsCaption())));
-    open.Click([&host](const auto &, const auto &) { host.showPage(kCorrectionsPage); });
-    body.Children().Append(open);
+    body.Children().Append(secondaryCaption(learnedCorrectionsNote(learned, learning, accessibility), host));
+    const QString action = learnedCorrectionsAction(learned, learning);
+    if (!action.isEmpty()) {
+        Button open;
+        open.Content(box_value(hs(action)));
+        open.Click([&host](const auto &, const auto &) { host.showPage(kCorrectionsPage); });
+        body.Children().Append(open);
+    }
     return cardContainer(body);
 }
 
@@ -862,40 +823,18 @@ UIElement recordsCard(const InsightsSummary &summary, const QDate &today, PaneHo
     const auto value = [&host](const QString &text) {
         return secondaryTextBlock(text, L"SettingsInfoTextStyle", host);
     };
-    if (summary.nextMilestone > 0) {
-        ProgressBar progress;
-        progress.Width(160);
-        progress.Minimum(0);
-        progress.Maximum(summary.nextMilestone);
-        progress.Value(summary.allTimeWords);
-        append(QStringLiteral("Next milestone: %1 words").arg(number(summary.nextMilestone)),
-               milestoneText(summary), progress);
-    } else {
-        append(QStringLiteral("Every milestone passed"), milestoneText(summary),
-               value(wordCountText(summary.allTimeWords)));
+    for (const InsightRecordText &record : insightRecords(summary, today)) {
+        if (record.milestoneBar) {
+            ProgressBar progress;
+            progress.Width(160);
+            progress.Minimum(0);
+            progress.Maximum(summary.nextMilestone);
+            progress.Value(summary.allTimeWords);
+            append(record.title, record.detail, progress);
+        } else {
+            append(record.title, record.detail, value(record.value));
+        }
     }
-    append(QStringLiteral("Longest streak"),
-           summary.bestStreakEndsToday
-               ? QStringLiteral("That's the one you're on")
-               : QStringLiteral("Ended %1").arg(relativeDay(summary.bestStreakEnd, today)),
-           value(dayCountText(summary.bestStreak)));
-    append(QStringLiteral("Longest dictation"),
-           QStringLiteral("%1 words into %2, %3")
-               .arg(number(summary.longest.words), summary.longest.appName,
-                    relativeDay(summary.longest.date, today)),
-           value(clockText(summary.longest.audioMs)));
-    append(QStringLiteral("Busiest day"),
-           capitalized(relativeDay(summary.busiestDay.date, today)),
-           value(dictationCountText(summary.busiestDay.dictations)));
-    append(QStringLiteral("Wordiest day"),
-           capitalized(relativeDay(summary.wordiestDay.date, today)),
-           value(wordCountText(summary.wordiestDay.words)));
-    const int daysSinceFirst = static_cast<int>(summary.firstDictation.daysTo(today));
-    append(QStringLiteral("First dictation"),
-           QLocale().toString(summary.firstDictation, QStringLiteral("MMM d, yyyy")),
-           value(daysSinceFirst == 0
-                     ? QStringLiteral("Today")
-                     : QStringLiteral("%1 ago").arg(dayCountText(daysSinceFirst))));
     return cardContainer(rows);
 }
 
@@ -924,12 +863,11 @@ UIElement privacyFooter(PaneHost &host)
     }
     lock.VerticalAlignment(VerticalAlignment::Center);
     footer.Children().Append(lock);
-    TextBlock text = secondaryCaption(
-        QStringLiteral("Insights are stored only on this computer and are never sent to the cloud."), host);
+    TextBlock text = secondaryCaption(homeText(HomeText::PrivacyNote), host);
     Grid::SetColumn(text, 1);
     footer.Children().Append(text);
     HyperlinkButton settings;
-    settings.Content(box_value(L"Insights settings"));
+    settings.Content(box_value(hs(homeText(HomeText::InsightsSettings))));
     settings.Padding({0, 2, 0, 0});
     settings.Click([&host](const auto &, const auto &) { host.showPage(kGeneralPage); });
     Grid::SetRow(settings, 1);
@@ -1041,24 +979,17 @@ UIElement buildHomePage(PaneHost &host)
 
     const QList<DictationRecord> &records = controller->insightsLog()->records();
     if (!controller->settings()->insightsEnabled()) {
-        StackPanel off = notice(
-            QStringLiteral("Insights are off"),
-            QStringLiteral("Speecher isn't recording new dictation. History you already have "
-                           "stays on this computer until you clear it in Insights settings."),
-            host);
+        StackPanel off = notice(homeText(HomeText::InsightsOffTitle), homeText(HomeText::InsightsOffBody), host);
         Button settings;
-        settings.Content(box_value(L"Insights settings…"));
+        settings.Content(box_value(hs(homeText(HomeText::InsightsSettings))));
         settings.Click([&host](const auto &, const auto &) { host.showPage(kGeneralPage); });
         off.Children().Append(settings);
         cards.Children().Append(cardContainer(off));
         return scroll;
     }
     if (records.isEmpty()) {
-        cards.Children().Append(cardContainer(notice(
-            QStringLiteral("No insights yet"),
-            QStringLiteral("Your stats appear here after your next dictation. They're stored "
-                           "only on this computer and never sent to the cloud."),
-            host)));
+        cards.Children().Append(cardContainer(
+            notice(homeText(HomeText::NoInsightsTitle), homeText(HomeText::NoInsightsBody), host)));
         return scroll;
     }
 
@@ -1073,7 +1004,11 @@ UIElement buildHomePage(PaneHost &host)
     StackPanel pickers;
     pickers.Orientation(Orientation::Horizontal);
     pickers.Spacing(8);
-    pickers.Children().Append(indexPicker({L"Last 7 days", L"Last 30 days", L"This year", L"All time"},
+    QStringList ranges;
+    for (const InsightsRange range : kRanges) {
+        ranges.append(insightsRangeLabel(range));
+    }
+    pickers.Children().Append(indexPicker(ranges,
                                           rangeIndex,
                                           [&host](int index) {
                                               host.homeRange = kRanges.at(index);
@@ -1081,7 +1016,7 @@ UIElement buildHomePage(PaneHost &host)
                                           }));
     pickers.Children().Append(shareButton(host, summary, host.homeRange, today));
     column.Children().Append(titledHeader(
-        styledTextBlock(QStringLiteral("Your dictation"), L"SettingsSectionHeaderStyle"), pickers));
+        styledTextBlock(homeText(HomeText::YourDictation), L"SettingsSectionHeaderStyle"), pickers));
 
     StackPanel insights;
     insights.Spacing(4);
@@ -1091,7 +1026,7 @@ UIElement buildHomePage(PaneHost &host)
     insights.Children().Append(adaptiveRow({appsCard(summary, host, accent), correctionsCard(host)}, 320));
     column.Children().Append(insights);
 
-    column.Children().Append(styledTextBlock(QStringLiteral("Records"), L"SettingsSectionHeaderStyle"));
+    column.Children().Append(styledTextBlock(homeText(HomeText::Records), L"SettingsSectionHeaderStyle"));
     column.Children().Append(recordsCard(summary, today, host));
     column.Children().Append(privacyFooter(host));
     return scroll;
