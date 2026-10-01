@@ -53,7 +53,7 @@ YdotoolSetupStatus YdotoolSetup::evaluate(const YdotoolProbeFacts &facts)
     if (!facts.ydotoolInstalled || !facts.ydotooldInstalled) {
         return {YdotoolSetupState::NotInstalled,
                 QStringLiteral("Not installed"),
-                QStringLiteral("ydotool or ydotoold is missing."),
+                QStringLiteral("A required package is missing. Set up installs it."),
                 facts.speecherManagedSetupInstalled};
     }
     if (!facts.uinputExists || !facts.uinputReadWrite) {
