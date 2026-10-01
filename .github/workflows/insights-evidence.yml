@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PAGES: home general dictation refinement vocabulary output accounts transcribe
+  PAGES: home general dictation refinement writingProfiles vocabulary output accounts transcribe
   # Every platform grabs $PAGES at this window content size, WxH in logical pixels.
   PAGES_SIZE: 900x640
 
