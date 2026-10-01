@@ -961,6 +961,14 @@ bool SettingsWindow::isVisible() const
     return handle && IsWindowVisible(handle);
 }
 
+void SettingsWindow::recheckMicrophonesOnReturn()
+{
+    // A window opened later enumerates the devices anyway.
+    if (m_native->window) {
+        m_native->microphoneSettingsOpened = true;
+    }
+}
+
 bool SettingsWindow::capture(const QString &path)
 {
     return m_native->capture(path);

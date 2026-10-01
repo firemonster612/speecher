@@ -35,6 +35,9 @@ public:
     // Closes the window, as its close button does.
     void close();
     bool isVisible() const;
+    // For the Windows microphone privacy page opened from the dictation popup:
+    // back from it, the Input device row asks again, as after its own button.
+    void recheckMicrophonesOnReturn();
 
     // Saves a picture of the window for --grab. SPEECHER_GRAB_PAGE names the
     // page id to show before the grab, as on every front end.

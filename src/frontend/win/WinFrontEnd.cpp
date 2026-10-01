@@ -111,6 +111,9 @@ WinFrontEnd::WinFrontEnd(ApplicationController *controller,
     });
     connect(m_native->panel.get(), &DictationPanel::fixRequested, this, [this](const PopupErrorAction &fix) {
         if (fix.fix == ErrorFix::MicrophonePermission) {
+            if (m_native->settings) {
+                m_native->settings->recheckMicrophonesOnReturn();
+            }
             win::openMicrophonePrivacySettings();
             return;
         }
