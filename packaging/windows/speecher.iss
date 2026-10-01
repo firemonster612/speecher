@@ -97,6 +97,28 @@ Filename: "{app}\speecher.exe"; Description: "Launch Speecher"; Flags: nowait po
 Filename: "{app}\speecher.exe"; Parameters: "{code:RestartArguments}"; Flags: nowait skipifnotsilent; Check: ShouldLaunchSpeecher
 
 [Code]
+// The uninstaller has no Restart Manager step. Run under a live Speecher, it
+// cannot delete the locked files, so the folder stays behind with Speecher
+// still running from it, and the next install has to close it. Ask it to
+// quit first and give it up to ten seconds to exit.
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+  Waited: Integer;
+begin
+  if CheckForMutexes('SpeecherRunning') then
+  begin
+    Exec(ExpandConstant('{app}\speecher.exe'), 'quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Waited := 0;
+    while CheckForMutexes('SpeecherRunning') and (Waited < 40) do
+    begin
+      Sleep(250);
+      Waited := Waited + 1;
+    end;
+  end;
+  Result := True;
+end;
+
 function ShouldLaunchSpeecher(): Boolean;
 begin
   Result := ExpandConstant('{param:VERIFYINSTALL|0}') <> '1';

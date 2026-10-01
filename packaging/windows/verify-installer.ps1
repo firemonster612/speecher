@@ -105,6 +105,35 @@ try {
         throw "Installed application exited during startup with code $($App.ExitCode) (missing runtime dependency?)"
     }
     Write-Output "Installed application launched and stayed alive without Qt on PATH"
+
+    # Installing over the running app: Setup asks it to close through Restart
+    # Manager, without forcing. If Speecher ignores that, Setup waits on
+    # "Closing applications" and then cannot replace its files.
+    $Reinstall = Start-Process $InstallerPath -ArgumentList $Arguments -Wait -PassThru
+    if ($Reinstall.ExitCode -ne 0) {
+        throw "Reinstall over the running application exited with code $($Reinstall.ExitCode)"
+    }
+    if (-not $App.WaitForExit(10000)) {
+        throw "Setup could not close the running application"
+    }
+    Write-Output "Setup closed the running application"
+
+    # Uninstalling under the running app must quit it rather than leave its
+    # locked files, and the folder, behind.
+    $App = Start-Process $Exe -ArgumentList "--show-settings" -PassThru
+    Start-Sleep -Seconds 8
+    Start-Process (Join-Path $InstallDir "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+    if (-not $App.WaitForExit(10000)) {
+        throw "Uninstall left the application running"
+    }
+    $Deadline = (Get-Date).AddSeconds(10)
+    while ((Test-Path $InstallDir) -and (Get-Date) -lt $Deadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    if (Test-Path $InstallDir) {
+        throw "Uninstall left files behind:`n$((Get-ChildItem $InstallDir -Recurse -Force).FullName -join "`n")"
+    }
+    Write-Output "Uninstall quit the running application and removed its folder"
 } finally {
     if ($App -and -not $App.HasExited) {
         $App | Stop-Process -Force

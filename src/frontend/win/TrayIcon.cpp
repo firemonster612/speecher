@@ -282,6 +282,16 @@ struct TrayIcon::Native {
             updateIcon();
             return 1;
         }
+        // This hidden window is the one top-level window Speecher always has,
+        // so it is where Restart Manager (an installer closing the app) and
+        // sign-out ask the process to close. Left to DefWindowProc, WM_CLOSE
+        // destroys only this window and the process stays, so Setup waits on
+        // it forever. Queued: the sender is blocked until this returns.
+        if ((message == WM_ENDSESSION && wParam) || message == WM_CLOSE) {
+            QMetaObject::invokeMethod(controller, &ApplicationController::quitApplication,
+                                      Qt::QueuedConnection);
+            return message == WM_CLOSE ? 1 : 0;
+        }
         if (message != trayMessage) {
             return 0;
         }
