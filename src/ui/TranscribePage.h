@@ -54,6 +54,9 @@ private:
     // Offers the built-in and custom cleanup levels and tones in the settings.
     void showChoices(const AppSettings &settings);
     void applyWritingProfile();
+    WritingProfileSettings pickedProfile(const RefinementSettings &refinement) const;
+    void applyProfileCleanup();
+    void applyProfileTone();
     void refreshRefinementRows();
     void refreshOutputRows();
     void refreshFileList();

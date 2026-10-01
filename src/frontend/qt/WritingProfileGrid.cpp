@@ -164,8 +164,7 @@ SchemaCustomRow makeWritingProfileGrid(const CollectionDescriptor &descriptor,
     auto draft = std::make_shared<AppSettings>();
     // Quiet until the first edit, as in a collection editor, so the new
     // profile's id comes from the name it is given.
-    QObject::connect(add, &QPushButton::clicked, grid,
-                     [grid, draft, notifyChanged] {
+    QObject::connect(add, &QPushButton::clicked, grid, [grid, draft, notifyChanged] {
         {
             const QSignalBlocker blocker(grid);
             appendProfileRow(grid, {QString()}, QStringLiteral("New profile"), *draft, notifyChanged);

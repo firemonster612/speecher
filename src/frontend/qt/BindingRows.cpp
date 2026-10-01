@@ -166,6 +166,8 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
             refreshList();
         },
         true,
+        nullptr,
+        [this](const AppSettings &settings) { m_settings = settings; },
     };
 }
 
@@ -248,7 +250,7 @@ void BindingRows::refreshList()
 
 void BindingRows::editRecord(int row)
 {
-    openRecordDialog(m_list, m_collection, AppSettings(), row, [this] { return m_records; },
+    openRecordDialog(m_list, m_collection, m_settings, row, [this] { return m_records; },
                      [this](const QList<QVariantMap> &records) {
                          m_records = records;
                          refreshList();

@@ -19,6 +19,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
@@ -238,10 +239,18 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
 
     connect(m_table, &QTableWidget::itemChanged, this, [this] { m_notifyChanged(); });
     connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] { updateButtons(); });
-    connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int column) {
-        // A double-click on a toggle is two clicks on its box.
+    // Return, Enter and a double-click activate a row, or a single click where
+    // the style activates on one. A toggle's cell is its box instead.
+    connect(m_table, &QTableWidget::cellActivated, this, [this](int row, int column) {
         if (m_collection.columns.at(column).kind != ColumnKind::Toggle) {
             editRecord(row);
+        }
+    });
+    auto *editShortcut = new QShortcut(QKeySequence(Qt::Key_F2), m_table);
+    editShortcut->setContext(Qt::WidgetShortcut);
+    connect(editShortcut, &QShortcut::activated, this, [this] {
+        if (m_table->currentRow() >= 0) {
+            editRecord(m_table->currentRow());
         }
     });
     if (m_add) {
@@ -595,6 +604,14 @@ void openRecordDialog(QWidget *parent,
     layout->addWidget(problems);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
     layout->addWidget(buttons);
+    // The first text field names the record, so there is nothing to keep
+    // until it holds something.
+    if (auto *name = qobject_cast<QLineEdit *>(firstText)) {
+        QPushButton *ok = buttons->button(QDialogButtonBox::Ok);
+        const auto requireName = [ok, name] { ok->setEnabled(!name->text().trimmed().isEmpty()); };
+        requireName();
+        QObject::connect(name, &QLineEdit::textChanged, ok, requireName);
+    }
 
     QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     QObject::connect(buttons, &QDialogButtonBox::accepted, dialog,
@@ -603,19 +620,26 @@ void openRecordDialog(QWidget *parent,
         for (const auto &read : readers) {
             read(record);
         }
+        const auto refuse = [problems](const QString &message) {
+            problems->setText(message);
+            problems->show();
+        };
         // Found again rather than taken by index: the records may have been
-        // reloaded while the dialog was open.
+        // reloaded while the dialog was open, and one that changed or went
+        // must not come back as a second copy.
         QList<QVariantMap> records = current();
-        const qsizetype index = row < 0 ? -1 : records.indexOf(original);
-        if (index < 0) {
+        if (row < 0) {
             records.append(record);
-        } else {
+        } else if (const qsizetype index = records.indexOf(original); index >= 0) {
             records[index] = record;
+        } else {
+            refuse(QStringLiteral("%1 changed while this dialog was open. Cancel and edit it again.")
+                       .arg(recordName(collection, original)));
+            return;
         }
         const QStringList refused = collection.validate ? collection.validate(records) : QStringList();
         if (!refused.isEmpty()) {
-            problems->setText(refused.join(QLatin1Char('\n')));
-            problems->show();
+            refuse(refused.join(QLatin1Char('\n')));
             return;
         }
         apply(records);
