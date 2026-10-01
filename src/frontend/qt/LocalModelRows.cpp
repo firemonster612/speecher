@@ -10,6 +10,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -175,7 +176,8 @@ private:
         m_use = addButton(actions, QStringLiteral("localModelUse"), this, localModelText(LocalModelText::UseModel));
         m_test = addButton(actions, QStringLiteral("localModelTestSpeed"), this,
                            localModelText(LocalModelText::TestSpeed));
-        m_delete = addButton(actions, QStringLiteral("localModelDelete"), this, QStringLiteral("Delete"));
+        m_delete = addButton(actions, QStringLiteral("localModelDelete"), this,
+                             localModelText(LocalModelText::DeleteModel));
 
         connect(m_download, &QPushButton::clicked, this, [this] { m_setup.download(selected()); });
         connect(m_cancel, &QPushButton::clicked, this, [this] { m_setup.cancelDownload(selected().id); });
@@ -185,8 +187,25 @@ private:
             m_notifyChanged();
         });
         connect(m_test, &QPushButton::clicked, this, [this] { m_setup.runSpeedTest(selected().id); });
-        connect(m_delete, &QPushButton::clicked, this, [this] { m_setup.removeModel(selected()); });
+        connect(m_delete, &QPushButton::clicked, this, [this] { confirmDelete(); });
         return actions;
+    }
+
+    // A model can take a gigabyte to download again, so deleting one asks
+    // first, with Cancel as the default.
+    void confirmDelete()
+    {
+        const LocalModel &model = selected();
+        QMessageBox confirm(QMessageBox::Question, localModelText(LocalModelText::DeleteModel),
+                            deleteModelQuestion(model.name), QMessageBox::Cancel, this);
+        confirm.setInformativeText(localModelText(LocalModelText::DeleteBody));
+        QPushButton *remove = confirm.addButton(localModelText(LocalModelText::DeleteModel),
+                                                QMessageBox::DestructiveRole);
+        confirm.setDefaultButton(QMessageBox::Cancel);
+        confirm.exec();
+        if (confirm.clickedButton() == remove) {
+            m_setup.removeModel(model);
+        }
     }
 
     QPushButton *addButton(QHBoxLayout *layout, const QString &name, QWidget *parent,
