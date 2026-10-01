@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <utility>
 
 #include <windows.h>
 #include <shellapi.h>
@@ -476,19 +475,19 @@ struct SettingsWindow::Native {
         }
         sidebarUpdating = true;
         navigation.MenuItems().Clear();
-        sidebarItems.clear();
+        IInspectable selected{nullptr};
         const SettingsSchema &schema = model.schema();
-        const auto append = [this, &schema](const QString &id) {
+        const auto append = [this, &selected, &schema](const QString &id) {
             const SettingsPane *pane = schema.pane(id);
             NavigationViewItem item = sidebarItem(id, pane->title, glyphForIconId(pane->iconId));
-            sidebarItems.insert(id, item);
+            if (id == currentPane) {
+                selected = item;
+            }
             navigation.MenuItems().Append(item);
         };
         // What's New leads the untitled top group only while pending or
         // selected; each titled group sits under a NavigationViewItemHeader.
-        sidebarOffersWhatsNew =
-            SettingsWindow::offersWhatsNew(currentPane, controller->pendingWhatsNewVersion());
-        if (sidebarOffersWhatsNew) {
+        if (SettingsWindow::offersWhatsNew(currentPane, controller->pendingWhatsNewVersion())) {
             append(kWhatsNewPane);
         }
         for (const SidebarGroup &group : schema.sidebarGroups) {
@@ -501,24 +500,7 @@ struct SettingsWindow::Native {
                 append(id);
             }
         }
-        navigation.SelectedItem(sidebarItems.value(currentPane));
-        sidebarUpdating = false;
-    }
-
-    // Moves the selection to the current pane, rebuilding the items only when
-    // What's New comes or goes.
-    void selectSidebarItem()
-    {
-        if (!navigation) {
-            return;
-        }
-        if (SettingsWindow::offersWhatsNew(currentPane, controller->pendingWhatsNewVersion())
-            != sidebarOffersWhatsNew) {
-            rebuildSidebar();
-            return;
-        }
-        sidebarUpdating = true;
-        navigation.SelectedItem(sidebarItems.value(currentPane));
+        navigation.SelectedItem(selected);
         sidebarUpdating = false;
     }
 
@@ -529,7 +511,9 @@ struct SettingsWindow::Native {
         // pane opens at its top, not at the scroll offset of this one.
         if (id != currentPane) {
             host.localModels.reset();
-            scrollToTop = true;
+            if (pageHost) {
+                pageHost.Child(nullptr);
+            }
         }
         if (id == kTranscribePane) {
             transcribe->enter();
@@ -540,7 +524,7 @@ struct SettingsWindow::Native {
         if (titleBar) {
             titleBar.IsBackButtonVisible(id == kWhatsNewPane);
         }
-        selectSidebarItem();
+        rebuildSidebar();
         rebuildPage();
     }
 
@@ -624,7 +608,7 @@ struct SettingsWindow::Native {
         }
         host.revealRow = rowId;
         if (paneId == currentPane) {
-            scrollToTop = true;
+            pageHost.Child(nullptr);
             rebuildPage();
         } else {
             selectPane(paneId);
@@ -725,7 +709,7 @@ struct SettingsWindow::Native {
                        << QString::fromWCharArray(error.message().c_str());
             return;
         }
-        replacePage(pageHost, page, !std::exchange(scrollToTop, false));
+        replacePage(pageHost, page);
     }
 
     void loadApiKey()
@@ -908,12 +892,6 @@ struct SettingsWindow::Native {
     QString currentPane;
     QString whatsNewReturnPane;
     bool sidebarUpdating = false;
-    // The sidebar's items by pane id, and whether What's New is among them.
-    QHash<QString, IInspectable> sidebarItems;
-    bool sidebarOffersWhatsNew = false;
-    // The next build is another pane, or a search's row, not a rebuild of
-    // the page on screen.
-    bool scrollToTop = false;
     bool rebuildQueued = false;
     bool liveRebuildPending = false;
 

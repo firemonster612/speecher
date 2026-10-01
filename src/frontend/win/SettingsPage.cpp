@@ -530,10 +530,10 @@ ScrollViewer pageScaffold(const QString &title, const StackPanel &column)
     return scroll;
 }
 
-void replacePage(const Border &pageHost, const UIElement &page, bool keepScroll)
+void replacePage(const Border &pageHost, const UIElement &page)
 {
     double offset = 0;
-    if (auto previous = pageHost.Child().try_as<ScrollViewer>(); previous && keepScroll) {
+    if (auto previous = pageHost.Child().try_as<ScrollViewer>()) {
         offset = previous.VerticalOffset();
     }
     pageHost.Child(page);
