@@ -339,13 +339,13 @@ bool SettingsPageSet::save(bool showValidationErrors,
                            QStringLiteral("Paste rules not saved"),
                            pasteRuleProblems);
     }
-    SchemaSettingsPage *refinement = page(QStringLiteral("refinement"));
-    const QStringList refinementProblems = refinement->validate();
-    if (!refinementProblems.isEmpty()) {
+    SchemaSettingsPage *writingProfiles = page(QStringLiteral("writingProfiles"));
+    const QStringList choiceProblems = writingProfiles->validate();
+    if (!choiceProblems.isEmpty()) {
         return refuseAloud(SaveFailure::InvalidTonesOrCleanupLevels,
-                           refinement,
+                           writingProfiles,
                            QStringLiteral("Tones and cleanup levels not saved"),
-                           refinementProblems);
+                           choiceProblems);
     }
 
     settings->applySnapshot(mergeSettingsDraft(m_schema, m_loaded, m_draft, settings->snapshot()));
