@@ -639,8 +639,8 @@ void TranscribePage::seedOptionsFromSettings()
     m_speechSummary->setVisible(!summary.isEmpty());
 }
 
-// Refills the lists, keeping the picks that are still offered. When one is
-// gone, the profile's own cleanup level and tone take over.
+// Refills the lists, keeping the picks that are still offered. A pick that is
+// gone takes the profile's own; both do when the profile is gone.
 void TranscribePage::showChoices(const AppSettings &settings)
 {
     const auto refill = [](QComboBox *combo, const QList<RowOption> &options) {
@@ -657,21 +657,38 @@ void TranscribePage::showChoices(const AppSettings &settings)
     const bool keptProfile = refill(m_profile, writingProfileChoices(settings.refinement.writingProfiles));
     const bool keptCleanup = refill(m_cleanup, cleanupStrengths(settings.refinement.customCleanupLevels));
     const bool keptTone = refill(m_tone, writingTones(settings.refinement.customTones));
-    if (!keptProfile || !keptCleanup || !keptTone) {
-        applyWritingProfile();
+    if (!keptProfile || !keptCleanup) {
+        applyProfileCleanup();
+    }
+    if (!keptProfile || !keptTone) {
+        applyProfileTone();
     }
 }
 
 // A profile brings its own cleanup strength and tone, as it does for dictation.
 void TranscribePage::applyWritingProfile()
 {
+    applyProfileCleanup();
+    applyProfileTone();
+}
+
+WritingProfileSettings TranscribePage::pickedProfile(const RefinementSettings &refinement) const
+{
+    return writingProfileSettingsFor(refinement.writingProfiles,
+                                     writingProfileFromName(m_profile->currentData().toString()));
+}
+
+void TranscribePage::applyProfileCleanup()
+{
     const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
-    const WritingProfileSettings profile = writingProfileSettingsFor(
-        refinement.writingProfiles, writingProfileFromName(m_profile->currentData().toString()));
     // A stored strength this build does not know falls back to the middle one.
-    settings::selectData(m_cleanup,
-                         offeredCleanupLevel(profile.cleanupStrength, refinement.customCleanupLevels));
-    settings::selectData(m_tone, profile.tone);
+    settings::selectData(m_cleanup, offeredCleanupLevel(pickedProfile(refinement).cleanupStrength,
+                                                        refinement.customCleanupLevels));
+}
+
+void TranscribePage::applyProfileTone()
+{
+    settings::selectData(m_tone, pickedProfile(m_controller->settings()->snapshot().refinement).tone);
 }
 
 void TranscribePage::refreshRefinementRows()
