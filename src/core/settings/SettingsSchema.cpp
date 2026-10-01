@@ -739,7 +739,8 @@ QString releaseNotesMarkdown(const SchemaContext &context)
     const QDir directory(QStringLiteral(":/releases"));
     for (const QString &fileName : directory.entryList({QStringLiteral("*.md")}, QDir::Files)) {
         QFile file(directory.filePath(fileName));
-        if (file.open(QIODevice::ReadOnly)) {
+        // Text mode: a Windows checkout gives the bundled notes CRLF line ends.
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
             notes.append({QFileInfo(fileName).completeBaseName(),
                           releaseNotesForThisPlatform(QString::fromUtf8(file.readAll()))});
         }

@@ -320,11 +320,7 @@ UIElement releaseNotes(const RowSnapshot &row)
     StackPanel notes;
     notes.Padding({16, 16, 16, 16});
     notes.Spacing(8);
-    // A Windows checkout gives the bundled notes CRLF line ends, which would
-    // hide every paragraph break below.
-    QString markdown = row.value.toString();
-    markdown.remove(QLatin1Char('\r'));
-    const QStringList blocks = markdown.split(QStringLiteral("\n\n"));
+    const QStringList blocks = row.value.toString().split(QStringLiteral("\n\n"));
     for (const QString &block : blocks) {
         if (block.trimmed() == QStringLiteral("---")) {
             static const hstring divider = hstring(
