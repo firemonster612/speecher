@@ -2837,6 +2837,21 @@ QString globalShortcutPrompt()
 #endif
 }
 
+QString globalShortcutChangeCaption()
+{
+    return QStringLiteral("Change…");
+}
+
+QString globalShortcutResetCaption(const QString &defaultShortcut)
+{
+    return QStringLiteral("Reset to %1").arg(defaultShortcut);
+}
+
+QString noSettingsMatchText()
+{
+    return QStringLiteral("No settings match");
+}
+
 const SettingsPage &SettingsSchema::page(const QString &id) const
 {
     for (const SettingsPage &candidate : pages) {
