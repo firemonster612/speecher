@@ -28,6 +28,7 @@
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.Storage.Pickers.h>
 #include <winrt/Windows.UI.ViewManagement.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
@@ -50,6 +51,7 @@ using namespace winrt;
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
+using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
 using winrt::Microsoft::UI::Xaml::Media::Brush;
 using winrt::Microsoft::UI::Xaml::Media::SolidColorBrush;
 namespace Pickers = winrt::Windows::Storage::Pickers;
@@ -337,6 +339,7 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
     const DictationToggleAction toggleAction = dictationToggleAction(controller->stateName());
     Button toggle;
     toggle.Content(box_value(hs(toggleAction.label)));
+    toggle.Style(Application::Current().Resources().Lookup(box_value(L"AccentButtonStyle")).as<Style>());
     toggle.IsEnabled(toggleAction.enabled);
     toggle.VerticalAlignment(VerticalAlignment::Center);
     toggle.Click([controller](const auto &, const auto &) { controller->toggle(); });
@@ -399,8 +402,9 @@ StackPanel notice(const QString &title, const QString &text, const PaneHost &hos
 }
 
 // A tile's icon and title, its figure, and the lines under it; the first
-// line's tip becomes its tooltip.
-StackPanel statTile(const InsightTileText &text, const PaneHost &host)
+// line's tip becomes its tooltip. chartHelp describes a chart drawn under the
+// tile to assistive tech, on the title, since the chart's marks have no text.
+StackPanel statTile(const InsightTileText &text, const QString &chartHelp, const PaneHost &host)
 {
     StackPanel tile = cardBody();
     tile.Spacing(4);
@@ -413,7 +417,11 @@ StackPanel statTile(const InsightTileText &text, const PaneHost &host)
     }
     icon.VerticalAlignment(VerticalAlignment::Center);
     title.Children().Append(icon);
-    title.Children().Append(secondaryCaption(text.title, host));
+    TextBlock caption = secondaryCaption(text.title, host);
+    if (!chartHelp.isEmpty()) {
+        AutomationProperties::SetHelpText(caption, hs(chartHelp));
+    }
+    title.Children().Append(caption);
     tile.Children().Append(title);
     tile.Children().Append(styledTextBlock(
         text.unit.isEmpty() ? text.value : text.value + QLatin1Char(' ') + text.unit,
@@ -480,7 +488,7 @@ UIElement statTiles(const InsightsSummary &summary, const QDate &today, const Pa
 {
     std::vector<UIElement> tiles;
     for (const InsightTileText &text : insightTiles(summary, today)) {
-        StackPanel tile = statTile(text, host);
+        StackPanel tile = statTile(text, text.showsWeek ? weekDescription(summary) : QString(), host);
         if (text.showsWeek) {
             tile.Children().Append(weekDots(summary, accent, empty, host));
         }
@@ -635,8 +643,12 @@ UIElement activityCard(const InsightsSummary &summary, PaneHost &host,
 {
     StackPanel body = cardBody();
     body.Spacing(12);
+    // The heatmap's cells have no text, so its title carries what it shows.
+    TextBlock title = styledTextBlock(homeText(HomeText::Activity), L"BodyStrongTextBlockStyle");
+    AutomationProperties::SetHelpText(
+        title, hs(heatmapDescription(summary, static_cast<HeatMeasure>(host.homeMeasure))));
     body.Children().Append(titledHeader(
-        styledTextBlock(homeText(HomeText::Activity), L"BodyStrongTextBlockStyle"),
+        title,
         indexPicker({heatMeasureLabel(HeatMeasure::Dictations), heatMeasureLabel(HeatMeasure::Words),
                      heatMeasureLabel(HeatMeasure::Audio)},
                     host.homeMeasure,
@@ -708,13 +720,16 @@ UIElement hourChart(const InsightsSummary &summary, const PaneHost &host, const 
 UIElement hoursCard(const InsightsSummary &summary, const PaneHost &host, const Brush &accent)
 {
     StackPanel body = cardBody();
-    body.Children().Append(styledTextBlock(homeText(HomeText::WhenYouTalk), L"BodyStrongTextBlockStyle"));
+    TextBlock title = styledTextBlock(homeText(HomeText::WhenYouTalk), L"BodyStrongTextBlockStyle");
+    body.Children().Append(title);
     if (!summary.hasHourData) {
         body.Children().Append(secondaryCaption(homeText(HomeText::NoHourData), host));
         return cardContainer(body);
     }
     body.Children().Append(styledTextBlock(personaText(summary), L"BodyStrongTextBlockStyle"));
     body.Children().Append(secondaryCaption(peakText(summary), host));
+    // The bars have no text, so the card's title carries what they show.
+    AutomationProperties::SetHelpText(title, hs(hourChartDescription(summary)));
     body.Children().Append(hourChart(summary, host, accent));
     return cardContainer(body);
 }
@@ -799,7 +814,10 @@ UIElement correctionsCard(PaneHost &host)
     const bool learning = host.controller->settings()->snapshot().correctionLearningEnabled;
     const bool accessibility =
         !host.controller->accessibilitySupported() || host.controller->accessibilityEnabled();
-    body.Children().Append(figure(number(learned), learnedCorrectionsCaption(learned), host));
+    // None learned yet: the note says why, and a 0 would only repeat it.
+    if (learned > 0) {
+        body.Children().Append(figure(number(learned), learnedCorrectionsCaption(learned), host));
+    }
     body.Children().Append(secondaryCaption(learnedCorrectionsNote(learned, learning, accessibility), host));
     const QString action = learnedCorrectionsAction(learned, learning);
     if (!action.isEmpty()) {

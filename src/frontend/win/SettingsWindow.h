@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 
 #include <functional>
 #include <memory>
@@ -45,8 +46,9 @@ public:
                  const QString &text,
                  const QString &confirmLabel,
                  std::function<void()> confirmed);
-    // Tells the person something in a ContentDialog with an OK button.
-    void inform(const QString &title);
+    // Tells the person something in a ContentDialog: what happened as its
+    // title, what to do as its body, and a Close button.
+    void inform(const QString &title, const QString &text);
 
     // What Action rows run. The window handles whatsNew itself and forwards
     // everything (whatsNew included) here; W4's front end wires the rest.
@@ -57,6 +59,9 @@ public:
 private:
     friend class ::speecher::WinFrontEndTests;
     static bool offersWhatsNew(const QString &currentPane, const QString &pendingVersion);
+    // What the search box suggests for query: each suggestion's "pane\nrow"
+    // target, or its text when it has none.
+    QStringList searchSuggestionsForTest(const QString &query);
     struct Native;
     std::unique_ptr<Native> m_native;
 };

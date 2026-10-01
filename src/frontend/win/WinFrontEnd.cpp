@@ -7,6 +7,7 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "frontend/win/DictationPanel.h"
+#include "frontend/win/SettingsPage.h"
 #include "frontend/win/SettingsWindow.h"
 #include "frontend/win/SetupWindow.h"
 #include "frontend/win/TranscribePane.h"
@@ -75,6 +76,10 @@ struct WinFrontEnd::Native {
     {
         if (!transcribeWindow) {
             transcribeWindow = std::make_unique<win::TranscribeWindow>(controller, transcribe.get());
+            transcribeWindow->setPageOpener([this](const QString &pageId) {
+                frontEnd->showMainWindow();
+                settingsWindow()->showPage(pageId);
+            });
         }
         return transcribeWindow.get();
     }
@@ -103,6 +108,14 @@ WinFrontEnd::WinFrontEnd(ApplicationController *controller,
     connect(m_native->panel.get(), &DictationPanel::whatsNewRequested, this, [this] {
         showMainWindow();
         m_native->settingsWindow()->showWhatsNew();
+    });
+    connect(m_native->panel.get(), &DictationPanel::fixRequested, this, [this](const PopupErrorAction &fix) {
+        if (fix.fix == ErrorFix::MicrophonePermission) {
+            win::openMicrophonePrivacySettings();
+            return;
+        }
+        showMainWindow();
+        m_native->settingsWindow()->showPage(fix.pageId);
     });
     // On-screen windows only, never the microphone: an update restart must not
     // reopen a recording the new process was never asked for. The restart
@@ -190,8 +203,7 @@ bool WinFrontEnd::captureMainWindow(const QString &path)
 
 void WinFrontEnd::showDictationError(const QString &message, const PopupErrorAction &fix)
 {
-    Q_UNUSED(fix);
-    m_native->panel->showProblem(message);
+    m_native->panel->showProblem(message, fix);
 }
 
 void WinFrontEnd::alert()
@@ -257,13 +269,16 @@ void WinFrontEnd::actionTriggered(const QString &rowId)
             homeText(HomeText::ClearHistoryConfirm),
             [controller = m_controller, window = m_native->settingsWindow()] {
                 if (!controller->clearInsights()) {
-                    window->inform(homeText(HomeText::ClearHistoryFailed));
+                    window->inform(homeText(HomeText::ClearHistoryTitle),
+                                   homeText(HomeText::ClearHistoryFailed));
                 }
             });
     } else if (rowId == QStringLiteral("checkForUpdates")) {
         m_controller->updateBanner()->runCheckRow(m_controller->settings()->updateChannel());
     } else if (rowId == QStringLiteral("whatsNew")) {
         m_controller->clearPendingWhatsNew();
+    } else if (rowId == QStringLiteral("openMicrophoneSettings")) {
+        win::openMicrophonePrivacySettings();
     }
     // Windows UI Automation has no consent switch, so enableAccessibility is
     // deliberately a no-op.

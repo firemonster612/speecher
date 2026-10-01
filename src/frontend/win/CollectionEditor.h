@@ -48,7 +48,6 @@ private:
     QList<int> selectedIndexes() const;
 
     QString m_rowId;
-    QString m_rowLabel;
     CollectionSnapshot m_collection;
     PaneHost &m_host;
     QList<Record> m_records;
@@ -61,11 +60,14 @@ private:
     QString m_lastProblemsTitle;
 
     winrt::Microsoft::UI::Xaml::Controls::Border m_card{nullptr};
+    winrt::Microsoft::UI::Xaml::Controls::Grid m_header{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::ListView m_list{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::InfoBar m_problems{nullptr};
-    // What the editor says while it holds no records; null when the
-    // descriptor has nothing to say.
-    winrt::Microsoft::UI::Xaml::Controls::TextBlock m_empty{nullptr};
+    // What the editor says in place of the header and list while it holds no
+    // records; null when the descriptor has nothing to say.
+    winrt::Microsoft::UI::Xaml::Controls::StackPanel m_empty{nullptr};
+    // Accented while the editor is empty, as its one next step.
+    winrt::Microsoft::UI::Xaml::Controls::Button m_addButton{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::Button m_deleteButton{nullptr};
     QList<QPair<QString, winrt::Microsoft::UI::Xaml::Controls::Button>> m_actionButtons;
 };

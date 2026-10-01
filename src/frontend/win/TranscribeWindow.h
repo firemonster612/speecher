@@ -2,6 +2,7 @@
 
 #include <QString>
 
+#include <functional>
 #include <memory>
 
 namespace speecher {
@@ -27,6 +28,9 @@ public:
     void applyTheme();
     // Shows the window and saves a picture of it for --grab.
     bool capture(const QString &path);
+    // How a link on the pane opens a settings page, which this window has
+    // no sidebar for.
+    void setPageOpener(std::function<void(const QString &pageId)> open);
 
 private:
     struct Native;

@@ -34,6 +34,7 @@ private:
     winrt::Microsoft::UI::Xaml::UIElement listItem(const LocalModel &model);
     winrt::Microsoft::UI::Xaml::Controls::StackPanel makeDetail();
     winrt::Microsoft::UI::Xaml::Controls::Button addButton(const wchar_t *text);
+    void confirmDelete();
     const LocalModel &selected() const;
     // What LocalSetup reports about this model against the settings on screen.
     LocalSetup::ModelState state(const LocalModel &model) const;

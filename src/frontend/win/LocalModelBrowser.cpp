@@ -145,12 +145,10 @@ UIElement LocalModelBrowser::listItem(const LocalModel &model)
     title.Children().Append(name);
     title.Children().Append(ratingBadge(model.rating, m_host));
     text.Children().Append(title);
-    // Size and error rate only, so the list stays as narrow as its names and
-    // badges; the fit is in the facts.
-    text.Children().Append(secondaryTextBlock(QStringLiteral("%1 · %2 WER")
-                                                  .arg(downloadSizeText(model.sizeBytes),
-                                                       werText(model.librispeechCleanWer)),
-                                              L"SettingsCardDescriptionStyle", m_host));
+    // The size only, so the list stays as narrow as its names and badges; the
+    // error rates and the fit are in the facts.
+    text.Children().Append(
+        secondaryTextBlock(downloadSizeText(model.sizeBytes), L"SettingsCardDescriptionStyle", m_host));
     Grid::SetColumn(text, 1);
     item.Children().Append(text);
     AutomationProperties::SetName(item, hs(QStringLiteral("%1, %2").arg(model.name, modelRatingLabel(model.rating))));
@@ -220,7 +218,6 @@ StackPanel LocalModelBrowser::makeDetail()
     m_actions = StackPanel();
     m_actions.Orientation(Orientation::Horizontal);
     m_actions.Spacing(8);
-    m_actions.Margin({0, 12, 0, 0});
     m_state = styledTextBlock(QString(), L"SettingsCardBodyStyle");
     m_state.VerticalAlignment(VerticalAlignment::Center);
     m_actions.Children().Append(m_state);
@@ -233,8 +230,23 @@ StackPanel LocalModelBrowser::makeDetail()
     m_cancel = addButton(L"Cancel");
     m_use = addButton(hs(localModelText(LocalModelText::UseModel)).c_str());
     m_test = addButton(hs(localModelText(LocalModelText::TestSpeed)).c_str());
-    m_delete = addButton(L"Delete");
-    detail.Children().Append(m_actions);
+    // Delete stands apart at the row's far end, away from the safe actions.
+    m_delete = Button();
+    m_delete.Content(box_value(hs(localModelText(LocalModelText::DeleteModel))));
+    m_delete.VerticalAlignment(VerticalAlignment::Center);
+    Grid actionRow;
+    actionRow.ColumnSpacing(8);
+    actionRow.Margin({0, 12, 0, 0});
+    ColumnDefinition safeColumn;
+    safeColumn.Width({1, GridUnitType::Star});
+    ColumnDefinition deleteColumn;
+    deleteColumn.Width({0, GridUnitType::Auto});
+    actionRow.ColumnDefinitions().Append(safeColumn);
+    actionRow.ColumnDefinitions().Append(deleteColumn);
+    actionRow.Children().Append(m_actions);
+    Grid::SetColumn(m_delete, 1);
+    actionRow.Children().Append(m_delete);
+    detail.Children().Append(actionRow);
 
     const auto on = [weak = weak_from_this()](const Button &button, auto run) {
         button.Click([weak, run](const auto &, const auto &) {
@@ -249,7 +261,7 @@ StackPanel LocalModelBrowser::makeDetail()
         setValueAndCommit(self.m_host, self.m_rowId, self.selected().id);
     });
     on(m_test, [](LocalModelBrowser &self) { self.m_setup.runSpeedTest(self.selected().id); });
-    on(m_delete, [](LocalModelBrowser &self) { self.m_setup.removeModel(self.selected()); });
+    on(m_delete, [](LocalModelBrowser &self) { self.confirmDelete(); });
     return detail;
 }
 
@@ -259,6 +271,34 @@ Button LocalModelBrowser::addButton(const wchar_t *text)
     button.Content(box_value(text));
     m_actions.Children().Append(button);
     return button;
+}
+
+// The file is gigabytes and gone once deleted, so the person confirms, with
+// Cancel the default.
+void LocalModelBrowser::confirmDelete()
+{
+    const LocalModel model = selected();
+    ContentDialog dialog;
+    dialog.XamlRoot(m_host.xamlRoot());
+    // The dialog opens in the popup layer, outside the window's RequestedTheme.
+    if (m_host.effectiveTheme) {
+        dialog.RequestedTheme(m_host.effectiveTheme());
+    }
+    dialog.Title(box_value(hs(deleteModelQuestion(model.name))));
+    dialog.Content(box_value(hs(localModelText(LocalModelText::DeleteBody))));
+    dialog.PrimaryButtonText(hs(localModelText(LocalModelText::DeleteModel)));
+    dialog.CloseButtonText(L"Cancel");
+    dialog.DefaultButton(ContentDialogButton::Close);
+    dialog.Closed([weak = weak_from_this(), model](const ContentDialog &,
+                                                    const ContentDialogClosedEventArgs &args) {
+        if (args.Result() != ContentDialogResult::Primary) {
+            return;
+        }
+        if (auto self = weak.lock()) {
+            self->m_setup.removeModel(model);
+        }
+    });
+    dialog.ShowAsync();
 }
 
 const LocalModel &LocalModelBrowser::selected() const
