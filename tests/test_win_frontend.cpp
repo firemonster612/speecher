@@ -322,8 +322,9 @@ private slots:
         }
         frontEnd->showDictationError(QStringLiteral("The microphone stopped"));
         QVERIFY(frontEnd->panelVisibleForTest());
-        // The Qt popup's five-second countdown; Dismiss stays the early exit.
-        QTRY_VERIFY_WITH_TIMEOUT(!frontEnd->panelVisibleForTest(), 7000);
+        // The eight-second countdown every platform shows for a short error;
+        // Dismiss stays the early exit.
+        QTRY_VERIFY_WITH_TIMEOUT(!frontEnd->panelVisibleForTest(), 10000);
     }
 
     void panelEvidenceGrabsForDocumentation()
@@ -384,7 +385,8 @@ private slots:
         panel->dismissForTest();
         frontEnd->showDictationError(QStringLiteral(
             "The transcription service rejected the request: the API key is invalid or has "
-            "expired. Check the key on the Accounts page, then try again."));
+            "expired. Check the key on the Accounts page, then try again."),
+            {ErrorFix::SettingsPage, QStringLiteral("accounts")});
         QTest::qWait(1500);
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-error-long.png")));
         panel->dismissForTest();
@@ -411,7 +413,7 @@ private slots:
     }
 
     // The flyout is as tall as what it holds, so a three-line transcript
-    // leaves Settings and Quit inside it.
+    // leaves Settings inside it.
     void trayFlyoutGrowsWithItsTranscript()
     {
         if (!nativeUiAvailable()) {
@@ -432,7 +434,7 @@ private slots:
         QTest::qWait(150);
         const QRect grown = flyout->geometryForTest();
         QVERIFY2(grown.height() > empty.height(), "the flyout kept its height for a transcript");
-        QVERIFY(grown.contains(flyout->quitGeometryForTest()));
+        QVERIFY(grown.contains(flyout->settingsGeometryForTest()));
 
         const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
         if (!grabDir.isEmpty()) {

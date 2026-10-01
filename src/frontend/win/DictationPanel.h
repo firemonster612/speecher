@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include "dictation/PopupPresentation.h"
+
 #include <QObject>
 #include <QRect>
 #include <QString>
@@ -19,10 +21,14 @@ public:
     explicit DictationPanel(ApplicationController *controller, QObject *parent = nullptr);
     ~DictationPanel() override;
 
-    void showProblem(const QString &message);
+    // An error with the countdown every platform shows, and a button for its
+    // fix where this platform has one.
+    void showProblem(const QString &message, const PopupErrorAction &fix = {});
 
 signals:
     void whatsNewRequested();
+    // The error's fix button was pressed.
+    void fixRequested(const PopupErrorAction &fix);
 
 private:
     friend class WinFrontEndTests;
