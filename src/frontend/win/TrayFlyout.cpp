@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationTypes.h"
 #include "frontend/win/SettingsPage.h"
 
@@ -237,7 +238,7 @@ struct TrayFlyout::Native {
                                     .toStdWString()));
         copy.Visibility(lastTranscript.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
         const QString shortcutText = controller->globalShortcutDisplay();
-        shortcut.Text(hstring((shortcutText.isEmpty() ? QStringLiteral("None") : shortcutText)
+        shortcut.Text(hstring((shortcutText.isEmpty() ? globalShortcutUnsetText() : shortcutText)
                                   .toStdWString()));
         if (IsWindowVisible(window)) {
             place();
