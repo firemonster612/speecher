@@ -71,7 +71,8 @@ class MainActivity : ComponentActivity() {
     private var settingsPage by mutableStateOf<SettingsPage?>(null)
     // The provider whose "Before you sign in" steps are up. The browser only opens from there.
     private var signInSteps by mutableStateOf<Provider?>(null)
-    // The Settings page a sign-in started from, to go back to once it succeeds or is left.
+    // The Settings page a sign-in started from, to go back to once it succeeds or is left. Saved
+    // with the activity, so recreating it while the browser is up keeps it.
     private var signInFrom: SettingsPage? = null
 
     private val microphone =
@@ -93,6 +94,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         signInAfterPrompt =
             savedInstanceState?.getString(SIGN_IN_AFTER_PROMPT)?.let(Provider::valueOf)
+        signInFrom = savedInstanceState?.getString(SIGN_IN_FROM)?.let(SettingsPage::valueOf)
         settings = settingsStore.load()
         refresh()
         signIn.restore(status.working)
@@ -218,6 +220,7 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(SIGN_IN_AFTER_PROMPT, signInAfterPrompt?.name)
+        outState.putString(SIGN_IN_FROM, signInFrom?.name)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -245,8 +248,9 @@ class MainActivity : ComponentActivity() {
         signInSteps = provider
     }
 
+    // Only from the Settings list the sign-in left the user on; anywhere else they have moved on.
     private fun returnFromSignIn() {
-        signInFrom?.let { settingsPage = it }
+        if (page == Page.Settings && settingsPage == null) settingsPage = signInFrom
         signInFrom = null
     }
 
@@ -371,5 +375,6 @@ class MainActivity : ComponentActivity() {
 }
 
 private const val SIGN_IN_AFTER_PROMPT = "sign-in-after-prompt"
+private const val SIGN_IN_FROM = "sign-in-from"
 
 private fun emptyStatus() = SetupStatus(emptySet(), false, false, false)
