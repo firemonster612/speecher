@@ -152,26 +152,24 @@ begin
   Result := '';
 end;
 
-// Removes Dir and every folder under it that holds no files. RemoveDir only
-// removes empty folders, and junctions are not followed.
-procedure RemoveEmptyDirs(const Dir: String);
-const
-  ReparsePoint = $400;
+// Whether Dir or any folder under it holds a file. A junction counts as
+// content, so nothing behind one is looked at or removed.
+function HoldsFiles(const Dir: String): Boolean;
 var
   Find: TFindRec;
 begin
+  Result := False;
   if FindFirst(Dir + '\*', Find) then
   try
     repeat
-      if ((Find.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0)
-         and ((Find.Attributes and ReparsePoint) = 0)
-         and (Find.Name <> '.') and (Find.Name <> '..') then
-        RemoveEmptyDirs(Dir + '\' + Find.Name);
-    until not FindNext(Find);
+      if (Find.Name <> '.') and (Find.Name <> '..') then
+        Result := ((Find.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0)
+          or ((Find.Attributes and FILE_ATTRIBUTE_REPARSE_POINT) <> 0)
+          or HoldsFiles(Dir + '\' + Find.Name);
+    until Result or not FindNext(Find);
   finally
     FindClose(Find);
   end;
-  RemoveDir(Dir);
 end;
 
 // The uninstaller has no Restart Manager step. Run under a live Speecher, it
@@ -182,7 +180,9 @@ end;
 //
 // Folders an earlier interrupted uninstall left behind were not created by
 // this install, so Inno does not remove them and the install folder outlives
-// the uninstall. Afterwards, remove whatever is left empty.
+// the uninstall. Afterwards, if no file is left anywhere under the install
+// folder, remove it; a folder that still holds anything, such as a shared one
+// typed in as the destination, is left alone.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   case CurUninstallStep of
@@ -192,7 +192,8 @@ begin
                               mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
           Abort;
     usPostUninstall:
-      RemoveEmptyDirs(ExpandConstant('{app}'));
+      if not HoldsFiles(ExpandConstant('{app}')) then
+        DelTree(ExpandConstant('{app}'), True, True, True);
   end;
 end;
 
