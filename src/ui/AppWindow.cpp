@@ -261,7 +261,7 @@ void AppWindow::showPage(const QString &pageId)
     selectPane(page.pane);
 }
 
-void AppWindow::showSearchMatch(const SearchMatch &match)
+void AppWindow::showSearchMatch(const SearchMatch &match, bool focusRow)
 {
     showPage(match.pane);
     if (match.rows.isEmpty()) {
@@ -279,7 +279,7 @@ void AppWindow::showSearchMatch(const SearchMatch &match)
         }
     }
     if (SchemaSettingsPage *page = m_pages->page(pageId)) {
-        page->revealRow(rowId);
+        page->revealRow(rowId, focusRow);
     }
 }
 
@@ -768,24 +768,35 @@ void AppWindow::buildSidebarShell()
 #endif
     // Every pick goes through showPage, so choosing What's New in the list is
     // the same as any other way of opening it.
-    connect(m_navigation, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
+    // A search hit opens at the row that matched. Moving through the hits
+    // only scrolls to it; a click or Enter also focuses its control.
+    const auto openSearchHit = [this](QListWidgetItem *item, bool focusRow) {
         const QString pane = item ? item->data(kPaneRole).toString() : QString();
-        if (pane.isEmpty()) {
-            return;
+        if (pane.isEmpty() || m_query.isEmpty()) {
+            return false;
         }
-        // A search hit opens at the row that matched.
-        if (!m_query.isEmpty()) {
-            for (const SearchMatch &match : m_pages->searchSettings(m_query)) {
-                if (match.pane == pane) {
-                    showSearchMatch(match);
-                    return;
-                }
+        for (const SearchMatch &match : m_pages->searchSettings(m_query)) {
+            if (match.pane == pane) {
+                showSearchMatch(match, focusRow);
+                return true;
             }
         }
-        if (pane != currentPane()) {
-            showPage(pane);
-        }
-    });
+        return false;
+    };
+    connect(m_navigation, &QListWidget::currentItemChanged, this,
+            [this, openSearchHit](QListWidgetItem *item) {
+                if (openSearchHit(item, false)) {
+                    return;
+                }
+                const QString pane = item ? item->data(kPaneRole).toString() : QString();
+                if (!pane.isEmpty() && pane != currentPane()) {
+                    showPage(pane);
+                }
+            });
+    for (auto commit : {&QListWidget::itemClicked, &QListWidget::itemActivated}) {
+        connect(m_navigation, commit, this,
+                [openSearchHit](QListWidgetItem *item) { openSearchHit(item, true); });
+    }
     connect(m_stack, &QStackedWidget::currentChanged, this, [this] {
         const QString pane = currentPane();
         m_pageTitle->setText(paneTitle(pane));
@@ -803,7 +814,7 @@ void AppWindow::buildSidebarShell()
     connect(search, &QLineEdit::returnPressed, this, [this] {
         const QList<SearchMatch> hits = m_pages->searchSettings(m_query);
         if (!hits.isEmpty()) {
-            showSearchMatch(hits.first());
+            showSearchMatch(hits.first(), true);
         }
     });
     auto *find = new QShortcut(QKeySequence::Find, this);

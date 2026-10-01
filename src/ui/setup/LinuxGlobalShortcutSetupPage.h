@@ -122,6 +122,7 @@ private:
     void installIntegration();
     void applyBinding(const ShortcutBinding &binding);
     void resetShortcut();
+    void clearShortcut();
     void chooseShortcut();
     void installKeyHelper();
     void refresh();
@@ -146,6 +147,7 @@ private:
     ShortcutCaptureButton *m_setShortcut = nullptr;
     QPushButton *m_chooseShortcut = nullptr;
     QPushButton *m_resetShortcut = nullptr;
+    QPushButton *m_clearShortcut = nullptr;
     QLabel *m_binding = nullptr;
     QLabel *m_description = nullptr;
     QString m_statusText;

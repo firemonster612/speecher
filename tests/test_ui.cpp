@@ -779,6 +779,31 @@ private slots:
         QVERIFY(!notice->isVisible());
     }
 
+    void gatedCheckBoxShowsUntickedAndKeepsItsValue()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("corrections"), *platform, providers);
+        auto *learn = page->findChild<QCheckBox *>(QStringLiteral("correctionLearningControl"));
+        QVERIFY(learn);
+        AppSettings settings;
+        settings.correctionLearningEnabled = true;
+        page->load(settings);
+
+        page->setCapabilities({false});
+        QVERIFY(!learn->isEnabled());
+        QVERIFY(!learn->isChecked());
+        AppSettings draft;
+        draft.correctionLearningEnabled = false;
+        page->appendToDraft(draft);
+        QVERIFY(draft.correctionLearningEnabled);
+
+        page->setCapabilities({true});
+        QVERIFY(learn->isEnabled());
+        QVERIFY(learn->isChecked());
+    }
+
     void targetAwareSettingsDisableWithoutAtSpi()
     {
         SettingsStore settings;
@@ -1598,6 +1623,30 @@ private slots:
         QCOMPARE(snapshot.speech.providerId, QStringLiteral("claude"));
         settings.applySnapshot(snapshot);
         QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
+    }
+
+    void speechProviderSetupShowsAnEndpointProblemAsTheStatus()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("endpoint"));
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint"), QString()},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {
+                    false, QStringLiteral("Set the speech endpoint's server URL in Settings.")};
+                return provider;
+            });
+
+        SpeechProviderSetupPage setup(settings, providers);
+        setup.show();
+        auto *status = setup.findChild<QLabel *>(QStringLiteral("speechProviderStatus"));
+        QVERIFY(status);
+        QTRY_COMPARE(status->text(),
+                     QStringLiteral("Set the speech endpoint's server URL in Settings."));
+        QCOMPARE(status->toolTip(), QString());
     }
 
     void completionStatusDurationLoadsAndSaves()

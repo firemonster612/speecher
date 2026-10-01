@@ -53,7 +53,17 @@ SchemaCustomRowFactory ProviderCustomRows::factory()
             m_anthropicAuthStatus->setObjectName(QStringLiteral("anthropicAuthStatus"));
             m_anthropicAuthStatus->setForegroundRole(QPalette::WindowText);
             m_anthropicAuthStatus->setWordWrap(true);
-            return SchemaCustomRow{m_anthropicAuthStatus, {}, {}};
+            // A failed check reads as the row's description, which has room
+            // for the path and the command that fixes it.
+            m_anthropicAuthProblem = new QLabel(parent);
+            m_anthropicAuthProblem->setObjectName(QStringLiteral("anthropicAuthProblem"));
+            m_anthropicAuthProblem->setWordWrap(true);
+            m_anthropicAuthProblem->setForegroundRole(QPalette::PlaceholderText);
+            m_anthropicAuthProblem->setFont(settings::smallFont(m_anthropicAuthProblem->font()));
+            m_anthropicAuthProblem->hide();
+            SchemaCustomRow row{m_anthropicAuthStatus, {}, {}};
+            row.detail = m_anthropicAuthProblem;
+            return row;
         }
         if (descriptor.id == QStringLiteral("cliproxyOauthDir")) {
             SchemaCustomRow row = makeCliproxyOauthDirRow(parent, std::move(notifyChanged));
@@ -459,7 +469,9 @@ void ProviderCustomRows::updateAnthropicAuthControl()
     const ClaudeCredentialResult credentials =
         ClaudeCredentials::load(m_settings.claudeCredentialsPath(), false);
     m_anthropicAuthStatus->setText(credentials.ok ? QStringLiteral("Signed in with Claude Code")
-                                                  : credentials.error);
+                                                  : QString());
+    m_anthropicAuthProblem->setText(credentials.ok ? QString() : credentials.error);
+    m_anthropicAuthProblem->setVisible(!credentials.ok);
 }
 
 } // namespace speecher

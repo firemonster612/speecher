@@ -98,8 +98,13 @@ ShortcutCaptureButton::ShortcutCaptureButton(QWidget *parent)
     connect(this, &QPushButton::clicked, this, [this] { setArmed(!m_armed); });
 }
 
+// Where the desktop registers no combinations the button can only record a
+// single key, and says so beside the desktop's own Choose shortcut.
 QString ShortcutCaptureButton::idleText() const
 {
+    if (!m_combinationsAvailable) {
+        return QStringLiteral("Set single key");
+    }
     return m_display.isEmpty() ? QStringLiteral("Set shortcut") : globalShortcutChangeCaption();
 }
 
@@ -114,6 +119,9 @@ void ShortcutCaptureButton::setShortcutDisplay(const QString &display)
 void ShortcutCaptureButton::setCombinationsAvailable(bool available)
 {
     m_combinationsAvailable = available;
+    if (!m_armed) {
+        setText(idleText());
+    }
 }
 
 void ShortcutCaptureButton::setArmed(bool armed)
@@ -326,6 +334,9 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
         trailing);
     m_resetShortcut->setObjectName(QStringLiteral("resetGlobalShortcut"));
     buttons->addWidget(m_resetShortcut);
+    m_clearShortcut = new QPushButton(QStringLiteral("Clear"), trailing);
+    m_clearShortcut->setObjectName(QStringLiteral("clearGlobalShortcut"));
+    buttons->addWidget(m_clearShortcut);
     m_captureControls = settings::makeRow(shortcutRow.label, shortcutRow.help, trailing, rowHost);
     m_captureControls->setObjectName(QStringLiteral("shortcutCapture"));
     m_description = m_captureControls->findChild<QLabel *>(QStringLiteral("rowDescription"));
@@ -383,43 +394,31 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     manualLayout->addLayout(commandRow);
     settings::addCardRow(rows, m_manualControls, rowHost);
 
+    // The shortcut and its behaviour are set together on the setup step. In
+    // settings the General page's own activationMode row edits the setting.
+    const SettingsRow &modeRow = setupSchemaRow(QStringLiteral("activationMode"));
+    m_activationMode = new QComboBox(rowHost);
+    m_activationMode->setObjectName(QStringLiteral("activationMode"));
+    for (const RowOption &option : modeRow.options(m_controller.settings()->dictationSnapshot())) {
+        m_activationMode->addItem(option.label, option.id);
+        m_activationMode->setItemData(m_activationMode->count() - 1, option.help, Qt::ToolTipRole);
+    }
+    m_activationModeRow = settings::makeRow(modeRow.label, modeRow.help, m_activationMode, rowHost);
+    m_activationModeRow->setToolTip(modeRow.tooltip);
+    // Reads under the mode's description, where push-to-talk is on offer,
+    // because that is the promise it corrects.
+    auto *modeText = m_activationModeRow->findChild<QWidget *>(QStringLiteral("rowLabelCell"));
+    m_holdUnavailableNote = guidanceLabel(linuxHoldToTalkUnavailableNote(), modeText);
+    m_holdUnavailableNote->setObjectName(QStringLiteral("holdToTalkUnavailable"));
+    modeText->layout()->addWidget(m_holdUnavailableNote);
+    settings::addCardRow(rows, m_activationModeRow, rowHost);
+    settings::setCardRowVisible(m_activationModeRow, !m_settingsCard);
+
     // Not shown on manual-command desktops: their command starts Speecher by
     // itself, so "only while running" would be wrong there.
     m_trayNote = guidanceLabel(QString(), this);
     m_trayNote->setObjectName(QStringLiteral("globalShortcutTrayNote"));
     layout->addWidget(m_trayNote);
-
-    // The shortcut and its behaviour are set together. This is a native combo
-    // bound to the same shortcuts/activationMode setting the General page's
-    // schema row edits; the wizard page cannot host a SchemaSettingsPage row
-    // (that renders a whole settings pane), so it shares the setting rather
-    // than keeping a second copy of the value.
-    m_activationModeRow = new QWidget(this);
-    auto *modeRow = m_activationModeRow;
-    auto *modeLayout = new QVBoxLayout(modeRow);
-    modeLayout->setContentsMargins(0, 0, 0, 0);
-    modeLayout->addWidget(guidanceLabel(setupSchemaRow(QStringLiteral("activationMode")).label, modeRow));
-    m_activationMode = new QComboBox(modeRow);
-    m_activationMode->setObjectName(QStringLiteral("activationMode"));
-    const auto addMode = [this](ShortcutActivationMode mode, const QString &label) {
-        m_activationMode->addItem(label, shortcutActivationModeName(mode));
-    };
-    // The wording is the activationMode schema row's, so the wizard and the
-    // General page describe each mode identically.
-    addMode(ShortcutActivationMode::PushToTalk,
-            QStringLiteral("Push to talk — dictate only while the key is held"));
-    addMode(ShortcutActivationMode::Toggle,
-            QStringLiteral("Toggle — one press starts, the next press stops"));
-    addMode(ShortcutActivationMode::Hybrid,
-            QStringLiteral("Hybrid — a tap toggles; holding dictates until release"));
-    modeLayout->addWidget(m_activationMode, 0, Qt::AlignLeft);
-    // Reads under the mode picker, where push-to-talk is on offer, because that
-    // is the promise it corrects.
-    m_holdUnavailableNote = guidanceLabel(linuxHoldToTalkUnavailableNote(), modeRow);
-    m_holdUnavailableNote->setObjectName(QStringLiteral("holdToTalkUnavailable"));
-    modeLayout->addWidget(m_holdUnavailableNote);
-    layout->addWidget(modeRow);
-    modeRow->setVisible(!m_settingsCard);
 
     if (!m_settingsCard) {
         layout->addStretch();
@@ -460,6 +459,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     });
     connect(m_chooseShortcut, &QPushButton::clicked, this, [this] { chooseShortcut(); });
     connect(m_resetShortcut, &QPushButton::clicked, this, [this] { resetShortcut(); });
+    connect(m_clearShortcut, &QPushButton::clicked, this, [this] { clearShortcut(); });
     connect(copy, &QToolButton::clicked, this, [this, copy] {
         QGuiApplication::clipboard()->setText(m_command->text().remove(QChar(0x200B)));
         copy->setIcon(QIcon::fromTheme(
@@ -608,6 +608,19 @@ void LinuxGlobalShortcutSetupPage::resetShortcut()
     applyBinding(ShortcutBinding(GlobalShortcutBinder::defaultShortcut()));
 }
 
+// Without combinations to reset to, the single key Speecher watches can only
+// be let go; the desktop's own shortcut is the desktop's to change. Removal
+// always lets the single key go, and the desktop registration it also drops
+// was already given up when the single key took over, so its answer is moot.
+void LinuxGlobalShortcutSetupPage::clearShortcut()
+{
+    m_controller.removeGlobalShortcutRegistration();
+    showCaptureFeedback(QString());
+    m_displayedShortcut.clear();
+    setStatus(QString());
+    refresh();
+}
+
 void LinuxGlobalShortcutSetupPage::installKeyHelper()
 {
     m_keyHelperButton->setEnabled(false);
@@ -711,6 +724,7 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     if (!known) {
         m_chooseShortcut->setEnabled(false);
         m_resetShortcut->hide();
+        m_clearShortcut->hide();
         setStatus(checkingDesktopStatus());
         return;
     }
@@ -718,11 +732,15 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     // carries what the desktop actually assigned.
     const QString display = desktopChooser ? m_controller.globalShortcutDisplay()
                                            : m_controller.globalShortcut().displayText();
-    m_binding->setText(display);
-    m_binding->setVisible(!display.isEmpty());
+    // A manual desktop's own shortcut is out of Speecher's sight, so only
+    // where the binding is Speecher's to know does an empty one read as such.
+    m_binding->setText(display.isEmpty() ? QStringLiteral("Not set") : display);
+    m_binding->setForegroundRole(display.isEmpty() ? QPalette::PlaceholderText : QPalette::WindowText);
+    m_binding->setVisible(!display.isEmpty() || supported);
     m_setShortcut->setShortcutDisplay(display);
     const QString defaultDisplay = ShortcutBinding(GlobalShortcutBinder::defaultShortcut()).displayText();
     m_resetShortcut->setVisible(m_combinationsAvailable && display != defaultDisplay);
+    m_clearShortcut->setVisible(!m_combinationsAvailable && m_controller.globalShortcut().isSingleKey());
     if (m_statusText == checkingDesktopStatus()) {
         setStatus(QString());
     }

@@ -1373,6 +1373,25 @@ private slots:
                      "Row 2 duplicates the normalized spoken phrase from row 1.")});
     }
 
+    void saveReportsInvalidTones()
+    {
+        ApplicationController controller(true);
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        SettingsPageSet::SaveOutcome outcome;
+        pages.load();
+
+        AppSettings withBlankTone = controller.settings()->snapshot();
+        withBlankTone.refinement.customTones = {
+            {QStringLiteral("pirate"), QStringLiteral("Pirate"), QString()},
+        };
+        pages.page(QStringLiteral("writingProfiles"))->load(withBlankTone);
+
+        QVERIFY(!pages.save(false, true, &outcome));
+        QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::InvalidTonesOrCleanupLevels);
+        QCOMPARE(outcome.messages, QStringList{QStringLiteral("Every tone needs an instruction.")});
+    }
+
 private:
     // Earlier tests can leave windows behind; a test counts only what it opens.
     static QSet<QWidget *> visibleWindows()
