@@ -291,7 +291,6 @@ typedef NS_ENUM(NSInteger, SpeecherErrorFix) {
     SpeecherErrorFixNone,
     SpeecherErrorFixSettingsPage,
     SpeecherErrorFixMicrophonePermission,
-    SpeecherErrorFixScreenRecordingPermission,
     SpeecherErrorFixAccessibilityPermission,
 };
 

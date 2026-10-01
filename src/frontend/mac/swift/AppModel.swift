@@ -580,7 +580,6 @@ extension SpeecherErrorAction {
         let panel: String
         switch fix {
         case .microphonePermission: panel = "Privacy_Microphone"
-        case .screenRecordingPermission: panel = "Privacy_ScreenCapture"
         case .accessibilityPermission: panel = "Privacy_Accessibility"
         default: return nil
         }

@@ -35,7 +35,6 @@ enum class ErrorFix {
     None,
     SettingsPage,
     MicrophonePermission,
-    ScreenRecordingPermission,
     AccessibilityPermission,
 };
 struct PopupErrorAction {

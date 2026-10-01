@@ -88,9 +88,6 @@ QString popupErrorActionLabel(const PopupErrorAction &action)
     case ErrorFix::MicrophonePermission:
         // ui-lint: allow title-case: Microphone is the name of the system's privacy pane.
         return QStringLiteral("Open Microphone settings");
-    case ErrorFix::ScreenRecordingPermission:
-        // ui-lint: allow title-case: Screen Recording is the name of the system's privacy pane.
-        return QStringLiteral("Open Screen Recording settings");
     case ErrorFix::AccessibilityPermission:
         return accessibilityGrantActionLabel();
     }

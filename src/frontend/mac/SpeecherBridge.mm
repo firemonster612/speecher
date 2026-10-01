@@ -734,8 +734,6 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
     static_assert(int(SpeecherErrorFixNone) == int(speecher::ErrorFix::None));
     static_assert(int(SpeecherErrorFixSettingsPage) == int(speecher::ErrorFix::SettingsPage));
     static_assert(int(SpeecherErrorFixMicrophonePermission) == int(speecher::ErrorFix::MicrophonePermission));
-    static_assert(int(SpeecherErrorFixScreenRecordingPermission)
-                  == int(speecher::ErrorFix::ScreenRecordingPermission));
     static_assert(int(SpeecherErrorFixAccessibilityPermission)
                   == int(speecher::ErrorFix::AccessibilityPermission));
     self = [super init];
