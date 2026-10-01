@@ -115,9 +115,11 @@ inline bool gone(const std::weak_ptr<bool> &weak)
 }
 
 // Shows page in pageHost at the scroll offset of the page it replaces, so a
-// rebuild does not jump back to the top.
+// rebuild does not jump back to the top; a page that is not a rebuild of the
+// one before passes keepScroll false and opens at its top.
 void replacePage(const winrt::Microsoft::UI::Xaml::Controls::Border &pageHost,
-                 const winrt::Microsoft::UI::Xaml::UIElement &page);
+                 const winrt::Microsoft::UI::Xaml::UIElement &page,
+                 bool keepScroll = true);
 
 // Saves a window's client pixels for --grab through PrintWindow, which
 // composes the swap chain content DWM holds; RenderTargetBitmap misses the
