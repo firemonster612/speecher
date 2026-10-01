@@ -34,6 +34,7 @@
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Microsoft.UI.Xaml.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
@@ -568,6 +569,10 @@ struct SettingsWindow::Native {
             if (!paneTitle.isEmpty()) {
                 item.Children().Append(secondaryTextBlock(paneTitle, L"SettingsCardDescriptionStyle", host));
             }
+            QStringList name{title, paneTitle};
+            name.removeAll(QString());
+            winrt::Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(
+                item, hs(name.join(QStringLiteral(", "))));
             items.Append(item);
         };
         for (const SearchMatch &match : model.search(query)) {
