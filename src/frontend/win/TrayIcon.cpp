@@ -292,8 +292,8 @@ struct TrayIcon::Native {
                                       Qt::QueuedConnection);
             return 0; // Falls through to DefWindowProc, which also returns 0.
         }
-        // A plain close request, such as taskkill without /F. DefWindowProc
-        // would destroy only this window and leave Speecher running.
+        // Asked to close, DefWindowProc would destroy this window and leave
+        // Speecher running with no tray icon. Quit instead.
         if (message == WM_CLOSE) {
             QMetaObject::invokeMethod(controller, &ApplicationController::quitApplication,
                                       Qt::QueuedConnection);
