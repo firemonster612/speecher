@@ -210,16 +210,18 @@ class SettingsStore(private val context: Context) {
 
     /**
      * Keeps what settings from an earlier release meant, once. That release ran the extra
-     * transcription pass unless it was turned off, so a signed-in user who never saved keeps it. It
-     * also placed the chip by the corner of a 52 x 36 dp window, now 56 x 48 dp with the same pill
-     * centred, so a saved offset moves up and left by half the difference to keep the pill put.
+     * transcription pass unless it was turned off, so an install updated from it that never saved
+     * keeps it. It also placed the chip by the corner of a 52 x 36 dp window, now 56 x 48 dp with
+     * the same pill centred, so a saved offset moves up and left by half the difference to keep the
+     * pill put.
      */
     private fun upgrade() {
         if (preferences.getInt("version", 1) >= VERSION) return
         val density = context.resources.displayMetrics.density
         preferences.edit(commit = true) {
-            val signedIn = TokenStore(context).signedIn().isNotEmpty()
-            if (signedIn && !preferences.contains("transcribePass"))
+            val install = context.packageManager.getPackageInfo(context.packageName, 0)
+            val updated = install.firstInstallTime != install.lastUpdateTime
+            if (updated && !preferences.contains("transcribePass"))
                 putBoolean("transcribePass", true)
             if (preferences.contains("chipOffsetX") && preferences.contains("chipOffsetY")) {
                 putInt(
