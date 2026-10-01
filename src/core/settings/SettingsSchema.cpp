@@ -1037,7 +1037,7 @@ SettingsPage generalPage(const SchemaContext &context)
                            QStringLiteral("Delete every recorded dictation from this computer."),
                            QStringLiteral("Clear insights history…")),
              }},
-            {QStringLiteral("Global Shortcut"), QString(), std::move(shortcutRows)},
+            {QStringLiteral("Shortcut"), QString(), std::move(shortcutRows)},
             {QStringLiteral("While dictating"),
              QString(),
              {
@@ -3054,7 +3054,7 @@ const QList<PaneSpec> &paneSpecs()
         {"whatsNew", "What's New", "whatsNew", PaneLayout::Sections,
          {{"whatsNew", ""}, {"whatsNew", "Try the new settings"}}},
         {"dictation", "Dictation", "microphone", PaneLayout::Sections,
-         {{"general", "Global Shortcut"},
+         {{"general", "Shortcut"},
           {"general", "While dictating"},
           {"audio", "Transcription"},
           {"audio", "Microphone"},

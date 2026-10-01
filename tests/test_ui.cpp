@@ -2013,13 +2013,14 @@ private slots:
         page->show();
         QCoreApplication::processEvents();
 
-        // The card is titled "Global Shortcut" and holds only this block, so the
-        // block's own header stays hidden and its body lines up with row titles.
+        // The card is titled "Shortcut", so the block keeps its own "Global
+        // Shortcut" heading, and the heading and body line up with row titles.
         auto *heading = page->findChild<QLabel *>(QStringLiteral("subsectionLabel"));
         auto *body = page->findChild<QLabel *>(QStringLiteral("shortcutBody"));
         QVERIFY(heading);
         QVERIFY(body);
-        QVERIFY(!heading->isVisibleTo(page.get()));
+        QVERIFY(heading->isVisibleTo(page.get()));
+        QCOMPARE(heading->mapTo(page.get(), QPoint()).x(), body->mapTo(page.get(), QPoint()).x());
         QLabel *rowTitle = nullptr;
         for (QLabel *candidate : page->findChildren<QLabel *>(QStringLiteral("rowTitle"))) {
             if (candidate->isVisibleTo(page.get())) {
