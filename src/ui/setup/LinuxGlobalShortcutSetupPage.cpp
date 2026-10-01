@@ -5,6 +5,7 @@
 #include "app/ApplicationController.h"
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsSchema.h"
 #include "platform/KeywatchSetup.h"
 #include "platform/LinuxDesktopIntegration.h"
 #include "ui/settings/SettingsPageSupport.h"
@@ -80,8 +81,7 @@ bool isModifierKey(int key)
 QString captureLead(bool combinationsAvailable, bool followsPortal)
 {
     if (combinationsAvailable) {
-        return QStringLiteral(
-            "Press a key combination, or a single key such as Right Alt or F13.");
+        return globalShortcutPrompt();
     }
     return followsPortal
         ? QStringLiteral("Or press a single key, such as Right Alt or F13, to use on its own.")

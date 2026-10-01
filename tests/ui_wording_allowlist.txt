@@ -31,8 +31,6 @@ core-string src/frontend/win/SetupWindow.cpp Anthropic-compatible (Messages)
 core-string src/frontend/win/SetupWindow.cpp CLI Proxy API
 core-string src/frontend/win/SetupWindow.cpp CLI Proxy API account
 core-string src/frontend/win/SetupWindow.cpp Check again
-core-string src/frontend/win/SetupWindow.cpp Fast mode
-core-string src/frontend/win/SetupWindow.cpp HTML and plain text
 core-string src/frontend/win/SetupWindow.cpp Looking for Ollama, LM Studio and llama-server…
 core-string src/frontend/win/SetupWindow.cpp OpenAI-compatible (Chat Completions)
 core-string src/frontend/win/SetupWindow.cpp Plain text
@@ -53,8 +51,6 @@ core-string src/ui/setup/SetupPages.cpp Anthropic-compatible (Messages)
 core-string src/ui/setup/SetupPages.cpp CLI Proxy API
 core-string src/ui/setup/SetupPages.cpp CLI Proxy API account
 core-string src/ui/setup/SetupPages.cpp Check again
-core-string src/ui/setup/SetupPages.cpp Fast mode
-core-string src/ui/setup/SetupPages.cpp HTML and plain text
 core-string src/ui/setup/SetupPages.cpp Looking for Ollama, LM Studio and llama-server…
 core-string src/ui/setup/SetupPages.cpp OpenAI-compatible (Chat Completions)
 core-string src/ui/setup/SetupPages.cpp Plain text

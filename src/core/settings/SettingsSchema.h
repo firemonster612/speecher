@@ -55,6 +55,12 @@ struct CollectionColumn {
     std::function<QString(const QVariantMap &)> recordTooltip;
     // Text columns only: the value may hold several lines, such as a snippet.
     bool multiline = false;
+    // A column whose cells only mean something in some settings, such as the
+    // cleanup level a custom system prompt replaces. Absent means always.
+    // While it says no, the cells show but cannot be edited, and disabledHelp
+    // says why.
+    std::function<bool(const AppSettings &)> enabled;
+    QString disabledHelp;
 };
 
 // Records a collection can be filled from a file with. Core owns the parse; the
@@ -130,6 +136,9 @@ struct Capabilities {
     // This computer took the last launch-at-login change. Assumed until one is
     // refused, which is the only thing the caution beside the toggle reports.
     bool launchAtLoginAccepted = true;
+    // The system lists at least one microphone. Assumed until the front end's
+    // device list comes back empty.
+    bool audioInput = true;
 };
 
 struct SettingsRow {
@@ -140,6 +149,9 @@ struct SettingsRow {
     // release-note discovery or should not appear as something new.
     QString sinceVersion;
     QString label;
+    // Replaces label when what the row holds depends on the settings, such as
+    // a sign-in status that becomes an API key field.
+    std::function<QString(const AppSettings &)> labelValue;
     QString help;
     std::function<QString(const AppSettings &)> helpValue;
     RowKind kind = RowKind::Info;
@@ -158,6 +170,9 @@ struct SettingsRow {
     // Replaces tooltip while enabled says no. A front end shows it beside the
     // disabled control, not only on hover.
     QString disabledHelp;
+    // Replaces disabledHelp where the schema can tell which gate is closed, so
+    // a row held by more than one names only that one.
+    std::function<QString(const AppSettings &, const Capabilities &)> disabledHelpValue;
     // An action a front end can run to lift the gate, with the caption of the
     // control that runs it. Empty when nothing in the app can.
     QString disabledAction;
@@ -179,6 +194,8 @@ struct SettingsRow {
     QString placeholder;
     // Text rows only: the value may hold several lines.
     bool multiline = false;
+    // A Collection row that is not enabled stays readable: its records show
+    // and scroll, and only editing, adding and deleting stop.
     std::function<bool(const AppSettings &, const Capabilities &)> enabled;
     // A row that is only worth showing sometimes, such as a caution about the
     // model currently chosen. Absent means always.
@@ -289,6 +306,15 @@ PageId resolvePage(const SettingsSchema &schema, const QString &request);
 // query matches every pane in a group.
 QStringList searchPanes(const SettingsSchema &schema, const QString &query, const AppSettings &settings,
                         const Capabilities &capabilities);
+// One pane searchPanes finds, with the visible rows whose label or help
+// mention the query, in reading order. Empty rows means the pane matched by
+// its title or a group's title or footnote.
+struct SearchMatch {
+    QString pane;
+    QStringList rows;
+};
+QList<SearchMatch> searchSettings(const SettingsSchema &schema, const QString &query, const AppSettings &settings,
+                                  const Capabilities &capabilities);
 
 // What help and error text calls a page, so a sentence that sends someone to
 // one names a page that exists. These read the arrangement every build shares.
@@ -320,7 +346,7 @@ struct LocalGpu {
 // Actions a front end runs for these rows, by row id:
 // - speechEndpointTest: LocalSetup::checkSpeechEndpoint(draft.speech.endpoint)
 // - refinementEndpointTest: LocalSetup::checkRefinementEndpoint(draft.refinement)
-// - localRunnerDetect, localModelsRunner: LocalSetup::detectRunners()
+// - localRunnerDetect: LocalSetup::detectRunners()
 // - localModelFolder: open LocalModelStore::directory() in the file manager
 // - speechLocalModelDownload: show the Local models page (a front-end job)
 struct LiveFacts {
@@ -356,7 +382,7 @@ struct SchemaContext {
     QList<RefinementProvider> refinementProviders;
     std::function<QList<RowOption>()> audioInputDevices;
     // This build can set up a virtual keyboard, so the Output page carries the
-    // Advanced section that drives it.
+    // row that drives it.
     bool virtualKeyboardSetup = false;
     QString currentVersion;
     QString lastSeenVersion;
@@ -442,6 +468,10 @@ QString accessibilityGrantActionLabel();
 
 // What a credential status says while it is being resolved.
 QString checkingCredentialsStatus();
+
+// What the Global Shortcut row says while it waits for keys, naming this
+// platform's keys.
+QString globalShortcutPrompt();
 
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device

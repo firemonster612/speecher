@@ -114,6 +114,7 @@ static void migrateSettings()
         qWarning().noquote() << error;
     }
     migrateRefinementModels(newSettings);
+    migrateOutputMethod(newSettings);
 }
 
 static QStringList commandLineArguments(int argc, char **argv)

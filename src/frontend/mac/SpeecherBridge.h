@@ -763,6 +763,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // speecher::checkingCredentialsStatus() and accessibilityGrantActionLabel().
 @property (class, nonatomic, readonly, copy) NSString *checkingCredentialsStatus;
 @property (class, nonatomic, readonly, copy) NSString *accessibilityGrantActionLabel;
+// speecher::globalShortcutPrompt().
+@property (class, nonatomic, readonly, copy) NSString *globalShortcutPrompt;
 // speecher::kPopupErrorWrapWidth and kPopupErrorDismissMs.
 @property (class, nonatomic, readonly) CGFloat popupErrorWrapWidth;
 @property (class, nonatomic, readonly) NSTimeInterval popupErrorDismissSeconds;

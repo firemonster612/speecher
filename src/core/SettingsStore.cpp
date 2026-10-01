@@ -1,4 +1,5 @@
 #include "core/SettingsStore.h"
+#include "core/OutputMethod.h"
 #include "core/SecretStore.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/SettingsKeys.h"
@@ -68,6 +69,32 @@ void migrateRefinementModels(QSettings &settings)
     replace(SettingsKeys::AnthropicModel, QStringLiteral("claude-sonnet-5"),
             QStringLiteral("claude-sonnet-5-5"));
     settings.setValue(SettingsKeys::RefinementModelMigrationVersion, currentMigrationVersion);
+}
+
+void migrateOutputMethod(QSettings &settings)
+{
+    const QString method = OutputMethod::normalized(settings.value(SettingsKeys::OutputMethod).toString());
+    PasteMethod paste;
+    if (method == QString::fromLatin1(OutputMethod::DirectInsert)) {
+        paste = PasteMethod::DirectInsert;
+    } else if (method == QString::fromLatin1(OutputMethod::WlCopy)
+               || method == QString::fromLatin1(OutputMethod::QtClipboard)) {
+        paste = PasteMethod::ClipboardOnly;
+    } else {
+        return;
+    }
+    // Under these methods TextDelivery never pasted: a rule that said to paste
+    // meant inserting only, or copying only. A Direct insertion or Clipboard
+    // only rule already behaved as it does under Automatic. Only methods
+    // change, so the rule that wins for a target is the same one as before.
+    QList<PasteRule> rules = pasteRulesFromJson(settings.value(SettingsKeys::PasteRules).toByteArray());
+    for (PasteRule &rule : rules) {
+        if (rule.method == PasteMethod::StandardPaste || rule.method == PasteMethod::TerminalPaste) {
+            rule.method = paste;
+        }
+    }
+    settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
+    settings.setValue(SettingsKeys::OutputMethod, QString::fromLatin1(OutputMethod::Automatic));
 }
 
 SettingsStore::SettingsStore(QObject *parent)

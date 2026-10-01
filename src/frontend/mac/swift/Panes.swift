@@ -78,6 +78,7 @@ struct Pane: Identifiable {
         case "whatsNew": return "sparkles"
         case "microphone": return "mic"
         case "refinement": return "text.cursor"
+        case "writingProfiles": return "textformat"
         case "localModels": return "cpu"
         case "transcribe": return "waveform"
         case "output": return "arrow.right.doc.on.clipboard"

@@ -440,20 +440,11 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     if (row.id == QStringLiteral("openAiAuth")) {
         return credentialField(host);
     }
-    if (row.id == QStringLiteral("anthropicAuthMode")) {
-        StackPanel panel;
-        panel.Spacing(4);
-        ComboBox combo = choiceComboBox(row, host);
-        combo.HorizontalAlignment(HorizontalAlignment::Right);
-        panel.Children().Append(combo);
-        const QString status = host.model->anthropicCredentialStatus();
-        if (!status.isEmpty()) {
-            TextBlock text = secondaryText(status, host);
-            text.HorizontalAlignment(HorizontalAlignment::Right);
-            text.TextAlignment(TextAlignment::End);
-            panel.Children().Append(text);
-        }
-        return panel;
+    if (row.id == QStringLiteral("anthropicAuth")) {
+        TextBlock text = secondaryText(host.model->anthropicCredentialStatus(), host);
+        text.HorizontalAlignment(HorizontalAlignment::Right);
+        text.TextAlignment(TextAlignment::End);
+        return text;
     }
     // The fallback the mac renderer uses: a picker when the row supplied
     // choices, a text field when it holds text, nothing otherwise.

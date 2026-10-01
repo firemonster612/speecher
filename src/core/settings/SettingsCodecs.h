@@ -6,6 +6,10 @@
 
 namespace speecher {
 
+// How output/pasteRules is stored. Nothing stored reads as defaultPasteRules().
+QList<PasteRule> pasteRulesFromJson(const QByteArray &encoded);
+QByteArray pasteRulesToJson(const QList<PasteRule> &rules);
+
 class SettingsCodecs {
 public:
     SettingsCodecs();

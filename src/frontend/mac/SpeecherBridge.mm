@@ -2203,6 +2203,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::accessibilityGrantActionLabel().toNSString();
 }
 
++ (NSString *)globalShortcutPrompt
+{
+    return speecher::globalShortcutPrompt().toNSString();
+}
+
 + (CGFloat)popupErrorWrapWidth
 {
     return speecher::kPopupErrorWrapWidth;

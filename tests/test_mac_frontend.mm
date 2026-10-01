@@ -376,18 +376,23 @@ private slots:
         QVERIFY(refreshed.enabled);
     }
 
-    void outputMethodsOfferAccessibilityInsertion()
+    // Paste with picks how to paste; inserting directly is a Default paste choice.
+    void defaultPasteOffersAccessibilityInsertion()
     {
         ApplicationController controller(false);
         SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
-        SettingsRowModel *row = settingsRow(bridge.settingsSchema, @"outputMethod");
-        QVERIFY(row);
-
-        bool found = false;
-        for (RowOptionModel *option in row.options) {
-            found = found || [option.rowOptionId isEqualToString:@"direct_insert"];
-        }
-        QVERIFY(found);
+        const auto offersInsertion = [](SettingsRowModel *row) {
+            bool found = false;
+            for (RowOptionModel *option in row.options) {
+                found = found || [option.rowOptionId isEqualToString:@"direct_insert"];
+            }
+            return found;
+        };
+        SettingsRowModel *method = settingsRow(bridge.settingsSchema, @"outputMethod");
+        SettingsRowModel *defaultPaste = settingsRow(bridge.settingsSchema, @"globalPasteRule");
+        QVERIFY(method && defaultPaste);
+        QVERIFY(!offersInsertion(method));
+        QVERIFY(offersInsertion(defaultPaste));
     }
 
     void automaticDownloadsAppearForSparkle()
