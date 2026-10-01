@@ -25,7 +25,7 @@ inline constexpr int kPopupErrorWrapWidth = 520;
 
 // An error dismisses itself after popupErrorDismissMs, with a countdown bar
 // beneath it: never sooner than this, and longer for a longer message so it
-// can be read.
+// can be read, up to 30 seconds.
 inline constexpr int kPopupErrorMinimumMs = 8000;
 int popupErrorDismissMs(const QString &message);
 
