@@ -345,10 +345,11 @@ struct SettingsWindow::Native {
             presenter.PreferredMinimumHeight(int(480 * scale));
         }
         // Back from the Windows privacy page the microphone note sends people
-        // to, the Input device row asks again.
+        // to, the Input device row asks again. Other activations do not
+        // enumerate devices.
         window.Activated([this](const auto &, const WindowActivatedEventArgs &args) {
             if (args.WindowActivationState() != WindowActivationState::Deactivated
-                && model.refreshAudioInput()) {
+                && std::exchange(microphoneSettingsOpened, false) && model.refreshAudioInput()) {
                 queueRebuild();
             }
         });
@@ -625,6 +626,8 @@ struct SettingsWindow::Native {
             showWhatsNew();
         } else if (id == QStringLiteral("speechLocalModelDownload")) {
             host.showPage(QStringLiteral("localModels"));
+        } else if (id == QStringLiteral("openMicrophoneSettings")) {
+            microphoneSettingsOpened = true;
         } else if (id == QStringLiteral("resetCustomSystemPrompt")) {
             setValueAndCommit(host, QStringLiteral("customSystemPrompt"),
                               builtInDictationSystemPrompt());
@@ -896,6 +899,9 @@ struct SettingsWindow::Native {
     bool scrollToTop = false;
     bool rebuildQueued = false;
     bool liveRebuildPending = false;
+    // The Input device row sent the person to the privacy page; the next
+    // activation asks for devices again.
+    bool microphoneSettingsOpened = false;
 
     std::function<void()> bannerCloseAction;
 };
