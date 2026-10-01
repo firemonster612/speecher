@@ -17,6 +17,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -70,6 +71,8 @@ class MainActivity : ComponentActivity() {
     private var settingsPage by mutableStateOf<SettingsPage?>(null)
     // The provider whose "Before you sign in" steps are up. The browser only opens from there.
     private var signInSteps by mutableStateOf<Provider?>(null)
+    // The Settings page a sign-in started from, to go back to once it succeeds or is left.
+    private var signInFrom: SettingsPage? = null
 
     private val microphone =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
@@ -92,7 +95,7 @@ class MainActivity : ComponentActivity() {
             savedInstanceState?.getString(SIGN_IN_AFTER_PROMPT)?.let(Provider::valueOf)
         settings = settingsStore.load()
         refresh()
-        signIn.restore()
+        signIn.restore(status.working)
         page = if (status.complete && signIn.activeProvider == null) Page.Home else Page.Setup
         if (savedInstanceState == null) handleSignInIntent(intent)
         setContent {
@@ -101,8 +104,16 @@ class MainActivity : ComponentActivity() {
                     SignInStepsSheet(
                         provider,
                         onOpen = { openSignIn(provider) },
-                        onDismiss = { signInSteps = null },
+                        onDismiss = {
+                            signInSteps = null
+                            returnFromSignIn()
+                        },
                     )
+                }
+                // A failed attempt leaves the list up, since its Accounts section holds the error.
+                LaunchedEffect(signIn.activeProvider) {
+                    if (signIn.activeProvider != null) return@LaunchedEffect
+                    if (signIn.error == null) returnFromSignIn() else signInFrom = null
                 }
                 BackHandler(page != Page.Home, ::back)
                 when (page) {
@@ -223,11 +234,20 @@ class MainActivity : ComponentActivity() {
         signInFromSettings(provider)
     }
 
-    /** Signs in from the Settings list, whose Accounts section shows the paste fallback. */
+    /**
+     * Signs in from the Settings list, whose Accounts section shows the paste fallback, and comes
+     * back to the page it was asked from.
+     */
     private fun signInFromSettings(provider: Provider) {
+        signInFrom = settingsPage.takeIf { page == Page.Settings }
         page = Page.Settings
         settingsPage = null
         signInSteps = provider
+    }
+
+    private fun returnFromSignIn() {
+        signInFrom?.let { settingsPage = it }
+        signInFrom = null
     }
 
     private fun back() {

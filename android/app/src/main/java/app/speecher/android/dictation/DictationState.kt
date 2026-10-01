@@ -326,4 +326,8 @@ data class SetupStatus(
 ) {
     val complete: Boolean
         get() = signedIn.isNotEmpty() && microphoneGranted && keyboardEnabled && chipEnabled
+
+    /** The signed-in providers whose sign-in still works. */
+    val working: Set<Provider>
+        get() = signedIn - sessionEnded
 }

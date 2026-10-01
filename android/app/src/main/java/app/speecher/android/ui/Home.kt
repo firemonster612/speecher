@@ -101,6 +101,10 @@ fun Home(
     updateFailed: Boolean = false,
     onUpdate: () -> Unit = {},
 ) {
+    // What dictation will actually use: if the chosen provider isn't signed in, it falls back to
+    // the connected account, so name that rather than the raw setting.
+    val transcription = resolveSignedIn(settings.transcriptionProvider, status.signedIn)
+    val refinement = resolveSignedIn(settings.refinementProvider, status.signedIn)
     Column(modifier) {
         Row(
             Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
@@ -110,9 +114,11 @@ fun Home(
             Column(Modifier.padding(start = 16.dp)) {
                 Text("Speecher", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    if (status.complete)
-                        "Ready. Tap the dictation button on your keyboard to dictate."
-                    else "Finish setup to start dictating.",
+                    when {
+                        !status.complete -> "Finish setup to start dictating."
+                        transcription in status.sessionEnded -> "Sign in again to start dictating."
+                        else -> "Ready. Tap the dictation button on your keyboard to dictate."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -122,16 +128,13 @@ fun Home(
         ListItem(
             headlineContent = { Text("Settings") },
             supportingContent = {
-                // Show what dictation will actually use: if the chosen provider isn't signed in,
-                // it falls back to the connected account, so name that rather than the raw setting.
-                val transcription =
-                    resolveSignedIn(settings.transcriptionProvider, status.signedIn).label
-                val refinement = resolveSignedIn(settings.refinementProvider, status.signedIn).label
                 Text(
                     if (status.signedIn.isEmpty()) "Not signed in"
                     else
-                        "Transcribing with $transcription" +
-                            if (settings.refinementEnabled) ", refining with $refinement" else ""
+                        "Transcribing with ${transcription.accountLabel(status.sessionEnded)}" +
+                            if (settings.refinementEnabled)
+                                ", refining with ${refinement.accountLabel(status.sessionEnded)}"
+                            else ""
                 )
             },
             trailingContent = { Chevron() },

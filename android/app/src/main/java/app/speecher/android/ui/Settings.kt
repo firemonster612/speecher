@@ -116,22 +116,28 @@ fun Settings(
                     )
                 },
                 trailingContent = {
-                    when {
-                        ended -> TextButton({ onSignIn(provider) }) { Text("Sign in again") }
-                        isSignedIn -> TextButton({ onSignOut(provider) }) { Text("Sign out") }
-                        else -> TextButton({ onSignIn(provider) }) { Text("Sign in") }
+                    Row {
+                        if (ended) TextButton({ onSignIn(provider) }) { Text("Sign in again") }
+                        if (isSignedIn) TextButton({ onSignOut(provider) }) { Text("Sign out") }
+                        else TextButton({ onSignIn(provider) }) { Text("Sign in") }
                     }
                 },
                 colors = rowColors(),
             )
         }
-        if (signingIn != null && signingIn !in signedIn) {
-            PasteCode(signingIn, onPasteCode, Modifier.padding(horizontal = 16.dp))
-        }
+        signingIn?.let { PasteCode(it, onPasteCode, Modifier.padding(horizontal = 16.dp)) }
 
         Section("Dictation")
-        PageRow(SettingsPage.Transcription, transcriptionSummary(settings, signedIn), onOpen)
-        PageRow(SettingsPage.Refinement, refinementSummary(settings, signedIn), onOpen)
+        PageRow(
+            SettingsPage.Transcription,
+            transcriptionSummary(settings, signedIn, sessionEnded),
+            onOpen,
+        )
+        PageRow(
+            SettingsPage.Refinement,
+            refinementSummary(settings, signedIn, sessionEnded),
+            onOpen,
+        )
         if (settings.refinementEnabled) {
             PageRow(SettingsPage.RefinementContext, contextSummary(settings), onOpen)
         }
@@ -210,14 +216,27 @@ private fun count(n: Int, one: String, many: String) = if (n == 1) "1 $one" else
 private fun shownProvider(preferred: Provider, signedIn: Set<Provider>): Provider? =
     resolveSignedIn(preferred, signedIn).takeIf { it in signedIn }
 
-private fun transcriptionSummary(settings: SpeecherSettings, signedIn: Set<Provider>): String =
-    shownProvider(settings.transcriptionProvider, signedIn)?.label ?: "Not signed in"
+/** The provider's name, marked when its session ended, for the summaries that name an account. */
+internal fun Provider.accountLabel(sessionEnded: Set<Provider>): String =
+    if (this in sessionEnded) "$label (session ended)" else label
 
-private fun refinementSummary(settings: SpeecherSettings, signedIn: Set<Provider>): String {
+private fun transcriptionSummary(
+    settings: SpeecherSettings,
+    signedIn: Set<Provider>,
+    sessionEnded: Set<Provider>,
+): String =
+    shownProvider(settings.transcriptionProvider, signedIn)?.accountLabel(sessionEnded)
+        ?: "Not signed in"
+
+private fun refinementSummary(
+    settings: SpeecherSettings,
+    signedIn: Set<Provider>,
+    sessionEnded: Set<Provider>,
+): String {
     if (!settings.refinementEnabled) return "Off"
     val provider = shownProvider(settings.refinementProvider, signedIn) ?: return "Not signed in"
     val model = settings.refinement(provider).model
-    return "${provider.label}, ${provider.refinementModels[model] ?: model}"
+    return "${provider.accountLabel(sessionEnded)}, ${provider.refinementModels[model] ?: model}"
 }
 
 private fun contextSummary(settings: SpeecherSettings): String {

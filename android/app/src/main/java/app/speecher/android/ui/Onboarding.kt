@@ -163,7 +163,7 @@ private fun SignInStep(
                     }
                 }
             }
-            if (signingIn != null && signingIn !in signedIn) PasteCode(signingIn, onPasteCode)
+            signingIn?.let { PasteCode(it, onPasteCode) }
         }
     }
 }
