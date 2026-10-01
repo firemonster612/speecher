@@ -539,6 +539,17 @@ private slots:
                                              {12, QStringLiteral("Aug")}, {17, QStringLiteral("Sep")}}));
     }
 
+    void heatmapCaptionCountsOnlyTheWeeksDrawn()
+    {
+        // The latest two weeks start on Monday, Sep 14; the 13th is outside.
+        const InsightsSummary summary = summarize(
+            {recordOn(kToday), recordOn(kToday.addDays(-10)), recordOn(kToday.addDays(-13)),
+             recordOn(kToday.addDays(-200))},
+            InsightsRange::AllTime, kToday);
+        QCOMPARE(heatmapSpanText(summary, 2), QStringLiteral("2 days with dictation in the last 2 weeks"));
+        QCOMPARE(heatmapSpanText(summary, 53), QStringLiteral("4 days with dictation in the last year"));
+    }
+
     void shareTextListsThePeriodsNumbers()
     {
         const QList<DictationRecord> records{recordOn(kToday.addDays(-1), 100, 60000),

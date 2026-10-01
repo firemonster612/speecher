@@ -625,6 +625,20 @@ QString activeDaysLastYearText(int days)
     return QStringLiteral("%1 with dictation in the last year").arg(dayCountText(days));
 }
 
+QString heatmapSpanText(const InsightsSummary &summary, int drawnWeeks)
+{
+    if (drawnWeeks >= kHeatmapWeeks || summary.heatmap.isEmpty()) {
+        return activeDaysLastYearText(summary.activeDaysLastYear);
+    }
+    const QDate today = summary.heatmap.last().date;
+    const QDate firstMonday = today.addDays(-(today.dayOfWeek() - 1) - (drawnWeeks - 1) * 7);
+    const int active = int(std::count_if(summary.heatmap.cbegin(), summary.heatmap.cend(),
+                                         [&firstMonday](const HeatmapDay &day) {
+                                             return day.date >= firstMonday && day.dictations > 0;
+                                         }));
+    return QStringLiteral("%1 with dictation in the last %2 weeks").arg(dayCountText(active)).arg(drawnWeeks);
+}
+
 QString heatLegendLessText()
 {
     return QStringLiteral("Less");

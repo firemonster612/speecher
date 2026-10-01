@@ -421,7 +421,7 @@ private slots:
         QCOMPARE(values.first(), QStringLiteral("90"));
         QVERIFY(page.findChild<QWidget *>(QStringLiteral("activityHeatmap")));
         const QList<QAction *> share =
-            page.findChild<QToolButton *>(QStringLiteral("shareInsights"))->menu()->actions();
+            page.findChild<QPushButton *>(QStringLiteral("shareInsights"))->menu()->actions();
         share.at(0)->trigger();
         QVERIFY(!QGuiApplication::clipboard()->image().isNull());
         share.at(1)->trigger();
