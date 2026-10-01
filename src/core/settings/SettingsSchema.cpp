@@ -1964,13 +1964,16 @@ QList<RowOption> outputMethodOptions()
 // What Automatic does, which differs per platform.
 QString automaticOutputMethodHelp()
 {
+    const QString limits = QStringLiteral(" Default paste and the paste rules can limit it to inserting "
+                                          "or copying.");
 #ifdef Q_OS_MACOS
-    return QStringLiteral("Automatic inserts text directly where it can, then pastes with Cmd+V.");
+    return QStringLiteral("Automatic inserts text directly where it can, then pastes with Cmd+V.") + limits;
 #elif defined(Q_OS_WIN)
-    return QStringLiteral("Automatic inserts text directly where it can, then pastes with Ctrl+V.");
+    return QStringLiteral("Automatic inserts text directly where it can, then pastes with Ctrl+V.") + limits;
 #else
     return QStringLiteral("Automatic inserts text directly where it can, then pastes with the "
-                          "virtual keyboard.");
+                          "virtual keyboard once it is set up.")
+        + limits;
 #endif
 }
 
