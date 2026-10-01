@@ -94,7 +94,7 @@ QString EndpointSpeechTranscriber::id() const
 
 QString EndpointSpeechTranscriber::label() const
 {
-    return QStringLiteral("Custom endpoint");
+    return QStringLiteral("Custom Endpoint");
 }
 
 bool EndpointSpeechTranscriber::requiresRefresh(const SpeechSettings &) const

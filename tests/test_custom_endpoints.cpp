@@ -556,7 +556,7 @@ private slots:
         refiner.refine(QStringLiteral("x"), {}, context, settings);
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
         const QString message = failed.first().first().toString();
-        QVERIFY2(message.startsWith(QStringLiteral("Custom endpoint refinement")), qPrintable(message));
+        QVERIFY2(message.startsWith(QStringLiteral("Custom Endpoint refinement")), qPrintable(message));
         QVERIFY(!message.contains(QStringLiteral("Anthropic")));
     }
 

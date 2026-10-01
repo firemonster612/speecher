@@ -468,7 +468,7 @@ SettingsRow connectionTestRow(QString id, std::function<QString(const LiveFacts 
 QString runnersSummary(const LiveFacts &live)
 {
     if (live.detectingRunners) {
-        return QStringLiteral("Looking for Ollama, LM Studio and llama-server…");
+        return lookingForRunnersStatus();
     }
     if (live.runners.isEmpty()) {
         return QStringLiteral("No Ollama, LM Studio or llama-server is running on this computer.");
@@ -594,7 +594,7 @@ QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
     runner.helpValue = [facts](const AppSettings &) {
         const LiveFacts live = facts();
         if (live.detectingRunners) {
-            return QStringLiteral("Looking for Ollama, LM Studio and llama-server…");
+            return lookingForRunnersStatus();
         }
         return live.runners.isEmpty()
             ? QStringLiteral("None found. Install Ollama, LM Studio or llama-server; until one runs, "
@@ -879,7 +879,7 @@ SettingsPage generalPage(const SchemaContext &context)
     appRows.append(actionRow(QStringLiteral("runSetup"),
                              QStringLiteral("Setup assistant"),
                              QStringLiteral("Go through the first-run steps again."),
-                             QStringLiteral("Run setup assistant…")));
+                             QStringLiteral("Run setup assistant")));
 
     // The recorder, which every front end draws with its own key capture.
     QList<SettingsRow> shortcutRows{customRow(
@@ -2816,6 +2816,11 @@ QString accessibilityGrantActionLabel()
 #else
     return QStringLiteral("Enable desktop accessibility");
 #endif
+}
+
+QString lookingForRunnersStatus()
+{
+    return QStringLiteral("Looking for Ollama, LM Studio and llama-server…");
 }
 
 QString checkingCredentialsStatus()

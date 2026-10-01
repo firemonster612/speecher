@@ -26,7 +26,7 @@ QString EndpointTranscriptRefiner::id() const
 
 QString EndpointTranscriptRefiner::label() const
 {
-    return QStringLiteral("Custom endpoint");
+    return QStringLiteral("Custom Endpoint");
 }
 
 bool EndpointTranscriptRefiner::requiresRefresh(const RefinementSettings &) const
