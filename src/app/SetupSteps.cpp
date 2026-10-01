@@ -50,10 +50,10 @@ QList<SetupStepInfo> setupSteps()
 #endif
     steps.append({QStringLiteral("refinement"),
                   QStringLiteral("Refinement"),
-                  QStringLiteral("Refinement can clean up your dictation before it is delivered. Choose "
-                                 "a provider, or skip cleanup. Writing Profiles adjust cleanup for each "
-                                 "app; change them later on the %1 page.")
-                      .arg(paneTitleForRow(QStringLiteral("defaultWritingProfile"))),
+                  refinementIntro()
+                      + QStringLiteral(" Choose a provider, or skip cleanup. Change how each app is "
+                                       "cleaned up later on the %1 page.")
+                            .arg(paneTitleForRow(QStringLiteral("defaultWritingProfile"))),
                   QString()});
     steps.append({QStringLiteral("shortcut"),
                   QStringLiteral("Global Shortcut"),

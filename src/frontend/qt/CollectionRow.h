@@ -27,12 +27,16 @@ void useMultilineEditor(QTableWidget *table, int column);
 // edit whose record changed or went while it was open, checks the records it
 // would leave against the descriptor's validate, keeps any problems on screen,
 // and hands the records to apply once there are none. A negative row adds.
+// With remove, the dialog also offers the collection's delete command; a
+// removalNotice is shown beside a second Delete before remove runs.
 void openRecordDialog(QWidget *parent,
                       const CollectionDescriptor &collection,
                       const AppSettings &appSettings,
                       qsizetype row,
                       std::function<QList<QVariantMap>()> current,
-                      std::function<void(const QList<QVariantMap> &)> apply);
+                      std::function<void(const QList<QVariantMap> &)> apply,
+                      std::function<void()> remove = {},
+                      const QString &removalNotice = {});
 
 // Asks for a file, parses it the way the descriptor says, and merges what it
 // holds into the records already there. Returns nothing when the reader

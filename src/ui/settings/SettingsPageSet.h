@@ -66,7 +66,8 @@ private:
     void addPage(const QString &id,
                  const QList<SettingsSection> &sections,
                  QWidget *parent,
-                 const SchemaCustomRowFactory &customRows);
+                 const SchemaCustomRowFactory &customRows,
+                 const QString &intro);
     // Keeps the replacements list where it was while its rows are rebuilt.
     void preserveScroll(QScrollArea *scroll);
     void updateAccessibilityState(bool supported, bool enabled, bool persistent);

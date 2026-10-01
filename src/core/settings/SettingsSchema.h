@@ -55,6 +55,11 @@ struct CollectionColumn {
     std::function<QString(const QVariantMap &)> recordTooltip;
     // Text columns only: the value may hold several lines, such as a snippet.
     bool multiline = false;
+    // Text columns only: an example shown in an empty field.
+    QString placeholder;
+    // Filled in where a record is added or edited, but left out of the table:
+    // a detail that would crowd it, such as what a cleanup level builds on.
+    bool dialogOnly = false;
 };
 
 // Records a collection can be filled from a file with. Core owns the parse; the
@@ -135,6 +140,15 @@ struct Capabilities {
     bool audioInput = true;
 };
 
+// An expert setting kept off the page: the card shows a button row in its
+// place, titled and described as here, that opens the setting in a dialog of
+// the same title.
+struct RowDialog {
+    QString title;
+    // The button row's description, which says what the setting holds now.
+    std::function<QString(const AppSettings &)> summary;
+};
+
 struct SettingsRow {
     // Stable across front ends: a renderer uses it to name its control, and a
     // Custom or Action row is recognised by it.
@@ -176,6 +190,9 @@ struct SettingsRow {
     QString groupId;
     // Collection metadata, also available on Custom rows with native table rendering.
     CollectionDescriptor collection;
+    // Set on a row shown in a dialog rather than on the page. Adjacent rows
+    // with the same dialog title share one dialog and one button row.
+    RowDialog dialog;
     std::function<QVariant(const AppSettings &)> value;
     std::function<void(AppSettings &, const QVariant &)> apply;
     std::function<QList<RowOption>(const AppSettings &)> options;
@@ -252,6 +269,8 @@ struct SettingsPane {
     QString iconId;
     PaneLayout layout = PaneLayout::Sections;
     QList<SettingsPaneGroup> groups;
+    // One line under the page title saying what the page is for, or empty.
+    QString intro;
 };
 
 // One titled run of the sidebar, as System Settings groups its pages under a
@@ -389,9 +408,15 @@ struct SchemaContext {
     QString builtInSystemPrompt;
 };
 
-// The built-in cleanup levels, then the custom ones.
+// What refinement does, in one sentence: the Refinement page's intro and the
+// setup assistant's Refinement step open with it.
+QString refinementIntro();
+
+// The built-in cleanup levels, then the custom ones. Each option's help says
+// what the level does, for a front end to show under the chosen one.
 QList<RowOption> cleanupStrengths(const QList<CustomCleanupLevel> &custom);
-// No tone override and the built-in tones, then the custom ones.
+// No tone and the built-in tones, then the custom ones, each with
+// its instruction as help.
 QList<RowOption> writingTones(const QList<CustomTone> &custom);
 // The id when it is offered, otherwise what a profile whose choice was deleted
 // falls back to: no tone override, or Medium.
@@ -403,6 +428,13 @@ QString offeredCleanupLevel(const QString &id, const QList<CustomCleanupLevel> &
 QString customChoiceId(const QString &name, const QStringList &taken);
 // The built-in profiles, then the custom ones `profiles` holds.
 QList<RowOption> writingProfileChoices(const QList<WritingProfileSettings> &profiles);
+// What a profile does, in a sentence or two: its cleanup and tone, and
+// whether it adds instructions of its own. "Medium cleanup, no tone."
+QString writingProfileChoiceSummary(const AppSettings &settings, const QString &profileId);
+// The same, then where Speecher uses it: the apps the recognition rules map
+// to it, and whether it is the fallback. The profile's row on the Writing
+// Profiles page reads this.
+QString writingProfileSummary(const AppSettings &settings, const QString &profileId);
 // Each named profile without an id, one just added, gets customChoiceId of
 // its name.
 QList<WritingProfileSettings> withCustomProfileIds(QList<WritingProfileSettings> profiles);

@@ -199,14 +199,14 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
                 // The view's tab already carries its title.
                 SettingsSection section = m_schema.section(group);
                 section.title.clear();
-                addPage(pane.id + QLatin1Char(':') + group.view, {section}, parent, customRows);
+                addPage(pane.id + QLatin1Char(':') + group.view, {section}, parent, customRows, pane.intro);
             }
         } else if (!pane.groups.isEmpty()) {
             QList<SettingsSection> sections;
             for (const SettingsPaneGroup &group : pane.groups) {
                 sections.append(m_schema.section(group));
             }
-            addPage(pane.id, sections, parent, customRows);
+            addPage(pane.id, sections, parent, customRows, pane.intro);
         }
     }
     preserveScroll(page(QStringLiteral("vocabulary:replacements")));
@@ -247,9 +247,10 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
 void SettingsPageSet::addPage(const QString &id,
                               const QList<SettingsSection> &sections,
                               QWidget *parent,
-                              const SchemaCustomRowFactory &customRows)
+                              const SchemaCustomRowFactory &customRows,
+                              const QString &intro)
 {
-    auto *page = new SchemaSettingsPage(sections, parent, customRows);
+    auto *page = new SchemaSettingsPage(sections, parent, customRows, intro);
     page->setObjectName(id);
     connect(page, &SchemaSettingsPage::changed, this, [this, page] {
         page->appendToDraft(m_draft);

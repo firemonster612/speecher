@@ -191,7 +191,7 @@ void SettingsCodecs::setSpeechProvider(const QString &value)
 
 bool SettingsCodecs::codexFinalRetranscribe() const
 {
-    return value(SettingsKeys::CodexFinalRetranscribe, false).toBool();
+    return value(SettingsKeys::CodexFinalRetranscribe, true).toBool();
 }
 
 void SettingsCodecs::setCodexFinalRetranscribe(bool value)

@@ -2,7 +2,7 @@
 
 #include "app/PlatformComposition.h"
 #include "frontend/qt/CollectionRow.h"
-#include "frontend/qt/WritingProfileGrid.h"
+#include "frontend/qt/WritingProfileList.h"
 #include "providers/ProviderRegistry.h"
 #include "providers/TranscriptRefinementPrompt.h"
 #include "ui/InlineMessage.h"
@@ -11,6 +11,8 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -94,7 +96,7 @@ SchemaCustomRow builtInRow(const SettingsRow &descriptor,
         return makeCollectionRow(descriptor, parent, std::move(notifyChanged));
     }
     if (descriptor.id == QStringLiteral("writingProfileBehavior")) {
-        return makeWritingProfileGrid(descriptor.collection, parent, std::move(notifyChanged));
+        return makeWritingProfileList(descriptor.collection, parent, std::move(notifyChanged));
     }
     qFatal("the Qt front end has no widget for settings row %s", qPrintable(descriptor.id));
 }
@@ -126,12 +128,25 @@ SchemaContext qtSchemaContext(const PlatformComposition &platform,
 
 SchemaSettingsPage::SchemaSettingsPage(const QList<SettingsSection> &sections,
                                        QWidget *parent,
-                                       SchemaCustomRowFactory customRows)
+                                       SchemaCustomRowFactory customRows,
+                                       const QString &intro)
     : QScrollArea(parent)
     , m_customRows(std::move(customRows))
 {
     auto *pageLayout = settings::makeSettingsPage(this);
     pageLayout->setSpacing(0);
+    if (!intro.isEmpty()) {
+        // In a holder, as a section's note is in its column: a wrapping label
+        // laid straight into the page keeps the height of its narrowest width.
+        auto *holder = new QWidget(this);
+        auto *holderLayout = new QVBoxLayout(holder);
+        holderLayout->setContentsMargins(settings::gridUnit(), 0, settings::gridUnit(), settings::groupGap());
+        auto *label = new QLabel(intro, holder);
+        label->setObjectName(QStringLiteral("pageIntro"));
+        label->setWordWrap(true);
+        holderLayout->addWidget(label);
+        pageLayout->addWidget(settings::centerColumn(holder, this));
+    }
     for (const SettingsSection &section : sections) {
         for (const SettingsRow &row : section.rows) {
             addGateNotice(row, pageLayout);
@@ -172,12 +187,21 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
     columnLayout->addWidget(card);
     QWidget *form = settings::cardFormLayout(card)->parentWidget();
     QString previousGroup;
+    QString previousDialog;
+    QWidget *dialogForm = nullptr;
     for (const SettingsRow &descriptor : section.rows) {
         // Rows of a group share one gate, so the first of them says why.
         const bool repeatsGroup = !descriptor.groupId.isEmpty() && descriptor.groupId == previousGroup;
         previousGroup = descriptor.groupId;
-        addRow(descriptor, form,
+        if (descriptor.dialog.title != previousDialog) {
+            previousDialog = descriptor.dialog.title;
+            dialogForm = previousDialog.isEmpty() ? nullptr : addDialog(descriptor.dialog, form);
+        }
+        addRow(descriptor, dialogForm ? dialogForm : form,
                descriptor.enabled && descriptor.disabledAction.isEmpty() && !repeatsGroup);
+        if (dialogForm) {
+            m_rows.last().opener = m_dialogs.last().button;
+        }
     }
     // The card's title already names its leading block, so that block's own
     // heading stays hidden; its description still explains it.
@@ -202,6 +226,27 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
     entry.card = card;
     entry.rowEnd = m_rows.size();
     m_sections.append(entry);
+}
+
+QWidget *SchemaSettingsPage::addDialog(const RowDialog &dialog, QWidget *cardForm)
+{
+    QPushButton *opener = settings::makeButtonRow(dialog.title, QString(), cardForm, true);
+    opener->setObjectName(QStringLiteral("dialogRow"));
+    settings::addCardRow(qobject_cast<QFormLayout *>(cardForm->layout()), opener, cardForm);
+    m_dialogs.append({opener, dialog.summary});
+
+    auto *window = new QDialog(this);
+    window->setObjectName(QStringLiteral("settingsDialog"));
+    window->setWindowTitle(dialog.title);
+    window->setMinimumWidth(settings::cardMaximumWidth());
+    auto *layout = new QVBoxLayout(window);
+    QFrame *card = settings::makeSettingsCard(window);
+    layout->addWidget(card, 1);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, window);
+    connect(buttons, &QDialogButtonBox::rejected, window, &QDialog::reject);
+    layout->addWidget(buttons);
+    connect(opener, &QPushButton::clicked, window, &QDialog::open);
+    return settings::cardFormLayout(card)->parentWidget();
 }
 
 SchemaCustomRow SchemaSettingsPage::supplyRow(const SettingsRow &descriptor,
@@ -630,8 +675,11 @@ void SchemaSettingsPage::revealRow(const QString &rowId, bool focusControl)
             continue;
         }
         // A page just brought forward lays itself out on the next pass.
-        QTimer::singleShot(0, this, [this, frame = QPointer<QWidget>(row.frame),
-                                     control = QPointer<QWidget>(row.control), focusControl] {
+        // A row kept in a dialog is found at the button row that opens it.
+        QWidget *target = row.opener ? row.opener : row.frame;
+        QTimer::singleShot(0, this, [this, frame = QPointer<QWidget>(target),
+                                     control = QPointer<QWidget>(row.opener ? row.opener : row.control),
+                                     focusControl] {
             if (frame) {
                 ensureWidgetVisible(frame);
             }
@@ -710,6 +758,13 @@ void SchemaSettingsPage::refreshRows()
                 noticeText.insert(row.descriptor.disabledAction, reason);
             }
         }
+    }
+    for (const DialogOpener &dialog : std::as_const(m_dialogs)) {
+        const QString summary = dialog.summary ? dialog.summary(draft) : QString();
+        auto *description = dialog.button->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        description->setText(summary);
+        description->setVisible(!summary.isEmpty());
+        dialog.button->setAccessibleDescription(summary);
     }
     for (const GateNotice &notice : std::as_const(m_gateNotices)) {
         const QString text = noticeText.value(notice.action);

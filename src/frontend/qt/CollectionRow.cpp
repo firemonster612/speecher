@@ -75,11 +75,12 @@ QString optionLabel(const CollectionColumn &column, const QString &id, const App
     return id;
 }
 
-// What a record's dialog is titled after: its first text column, which names it.
+// What a record's dialog is titled after: its first text column, which names
+// it, read-only or not.
 QString recordName(const CollectionDescriptor &collection, const QVariantMap &record)
 {
     for (const CollectionColumn &column : collection.columns) {
-        if (column.kind == ColumnKind::Text) {
+        if (column.kind == ColumnKind::Text || column.kind == ColumnKind::ReadOnly) {
             return record.value(column.id).toString();
         }
     }
@@ -121,6 +122,8 @@ private:
     void updateButtons();
 
     CollectionDescriptor m_collection;
+    // The columns the table shows; the record dialog fills in every column.
+    QList<CollectionColumn> m_columns;
     AppSettings m_settings;
     QTableWidget *m_table;
     QPushButton *m_add = nullptr;
@@ -171,18 +174,19 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     }
 
     QStringList titles;
-    titles.reserve(m_collection.columns.size());
     for (const CollectionColumn &column : m_collection.columns) {
-        titles.append(column.title);
+        if (!column.dialogOnly) {
+            m_columns.append(column);
+            titles.append(column.title);
+        }
     }
     m_table->setObjectName(descriptor.id);
     m_table->setColumnCount(titles.size());
     m_table->setHorizontalHeaderLabels(titles);
-    for (int column = 0; column < m_collection.columns.size(); ++column) {
+    for (int column = 0; column < m_columns.size(); ++column) {
         m_table->horizontalHeader()->setSectionResizeMode(
             column,
-            m_collection.columns.at(column).stretch ? QHeaderView::Stretch
-                                                    : QHeaderView::ResizeToContents);
+            m_columns.at(column).stretch ? QHeaderView::Stretch : QHeaderView::ResizeToContents);
     }
     m_table->verticalHeader()->hide();
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -196,7 +200,9 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
         m_empty = new QLabel(m_table->viewport());
         m_empty->setObjectName(QStringLiteral("collectionEmpty"));
         m_empty->setTextFormat(Qt::PlainText);
-        m_empty->setText(m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp);
+        m_empty->setText(m_collection.emptyHelp.isEmpty()
+                             ? m_collection.emptyTitle
+                             : m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp);
         m_empty->setAlignment(Qt::AlignCenter);
         m_empty->setWordWrap(true);
         m_empty->setForegroundRole(QPalette::PlaceholderText);
@@ -204,8 +210,8 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
         emptyLayout->addWidget(m_empty);
     }
     if (m_collection.badges) {
-        for (int column = 0; column < m_collection.columns.size(); ++column) {
-            if (m_collection.columns.at(column).stretch) {
+        for (int column = 0; column < m_columns.size(); ++column) {
+            if (m_columns.at(column).stretch) {
                 m_table->setItemDelegateForColumn(column, new BadgeDelegate(m_table));
             }
         }
@@ -242,7 +248,7 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     // Return, Enter and a double-click activate a row, or a single click where
     // the style activates on one. A toggle's cell is its box instead.
     connect(m_table, &QTableWidget::cellActivated, this, [this](int row, int column) {
-        if (m_collection.columns.at(column).kind != ColumnKind::Toggle) {
+        if (m_columns.at(column).kind != ColumnKind::Toggle) {
             editRecord(row);
         }
     });
@@ -326,8 +332,8 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
     auto *carrier = new QTableWidgetItem;
     carrier->setData(Qt::UserRole, record);
     m_table->setVerticalHeaderItem(row, carrier);
-    for (int index = 0; index < m_collection.columns.size(); ++index) {
-        const CollectionColumn &column = m_collection.columns.at(index);
+    for (int index = 0; index < m_columns.size(); ++index) {
+        const CollectionColumn &column = m_columns.at(index);
         const QVariant value = record.value(column.id);
         const QString tooltip =
             column.recordTooltip ? column.recordTooltip(record) : column.tooltip;
@@ -368,8 +374,8 @@ QList<QVariantMap> CollectionEditor::records() const
         // Start from what the row arrived with, so the keys no column shows
         // survive an edit to the ones that do.
         QVariantMap record = rowRecord(m_table, row);
-        for (int index = 0; index < m_collection.columns.size(); ++index) {
-            const CollectionColumn &column = m_collection.columns.at(index);
+        for (int index = 0; index < m_columns.size(); ++index) {
+            const CollectionColumn &column = m_columns.at(index);
             if (column.kind == ColumnKind::Choice) {
                 if (const auto *combo = qobject_cast<QComboBox *>(m_table->cellWidget(row, index))) {
                     record.insert(column.id, combo->currentData().toString());
@@ -422,9 +428,9 @@ void CollectionEditor::refresh(const AppSettings &settings)
     if (!m_collection.badges) {
         return;
     }
-    const auto stretch = std::find_if(m_collection.columns.cbegin(), m_collection.columns.cend(),
+    const auto stretch = std::find_if(m_columns.cbegin(), m_columns.cend(),
                                       [](const CollectionColumn &column) { return column.stretch; });
-    const int column = int(stretch - m_collection.columns.cbegin());
+    const int column = int(stretch - m_columns.cbegin());
     const QStringList badges = m_collection.badges(lockedRecords() + records(), settings);
     // Item data, not text, so it is no edit: nothing announces a change.
     const QSignalBlocker blocker(m_table);
@@ -535,7 +541,9 @@ void openRecordDialog(QWidget *parent,
                       const AppSettings &appSettings,
                       qsizetype row,
                       std::function<QList<QVariantMap>()> current,
-                      std::function<void(const QList<QVariantMap> &)> apply)
+                      std::function<void(const QList<QVariantMap> &)> apply,
+                      std::function<void()> remove,
+                      const QString &removalNotice)
 {
     const QVariantMap original = row < 0 ? collection.blankRecord : current().at(row);
     auto *dialog = new QDialog(parent);
@@ -563,17 +571,43 @@ void openRecordDialog(QWidget *parent,
             field = box;
         } else if (column.kind == ColumnKind::Choice) {
             auto *combo = new QComboBox(dialog);
-            for (const RowOption &option : column.options(appSettings)) {
+            const QList<RowOption> options = column.options(appSettings);
+            for (const RowOption &option : options) {
                 combo->addItem(option.label, option.id);
             }
             settings::selectData(combo, value.toString());
-            form->addRow(column.title, combo);
+            // What the chosen option does, under it, where the options say.
+            if (std::any_of(options.cbegin(), options.cend(),
+                            [](const RowOption &option) { return !option.help.isEmpty(); })) {
+                // The help takes the field's width; the combo keeps its own.
+                auto *choice = new QWidget(dialog);
+                choice->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+                auto *choiceLayout = new QVBoxLayout(choice);
+                choiceLayout->setContentsMargins(0, 0, 0, 0);
+                choiceLayout->setSpacing(settings::tightSpacing());
+                auto *help = new QLabel(choice);
+                help->setObjectName(column.id + QStringLiteral("Help"));
+                help->setWordWrap(true);
+                help->setForegroundRole(QPalette::PlaceholderText);
+                help->setFont(settings::smallFont(help->font()));
+                const auto showHelp = [combo, help, options] {
+                    help->setText(options.value(combo->currentIndex()).help);
+                };
+                showHelp();
+                QObject::connect(combo, &QComboBox::currentIndexChanged, help, showHelp);
+                choiceLayout->addWidget(combo, 0, Qt::AlignLeft);
+                choiceLayout->addWidget(help);
+                form->addRow(column.title, choice);
+            } else {
+                form->addRow(column.title, combo);
+            }
             readers.append([combo, id = column.id](QVariantMap &record) {
                 record.insert(id, combo->currentData().toString());
             });
             field = combo;
         } else if (column.kind == ColumnKind::Text && column.multiline) {
             auto *edit = new QPlainTextEdit(value.toString(), dialog);
+            edit->setPlaceholderText(column.placeholder);
             // Return starts a new line, so Tab is what moves on.
             edit->setTabChangesFocus(true);
             form->addRow(column.title, edit);
@@ -583,6 +617,7 @@ void openRecordDialog(QWidget *parent,
             field = edit;
         } else if (column.kind == ColumnKind::Text) {
             auto *edit = new QLineEdit(value.toString(), dialog);
+            edit->setPlaceholderText(column.placeholder);
             form->addRow(column.title, edit);
             readers.append([edit, id = column.id](QVariantMap &record) {
                 record.insert(id, edit->text().trimmed());
@@ -603,6 +638,33 @@ void openRecordDialog(QWidget *parent,
     problems->hide();
     layout->addWidget(problems);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
+    if (remove) {
+        // What deleting changes is said beside the button that does it, not
+        // in a second dialog.
+        auto *caution = new InlineMessage(dialog);
+        caution->setType(InlineMessage::Type::Warning);
+        caution->setCloseButtonVisible(false);
+        caution->setText(removalNotice);
+        auto *confirm = new QPushButton(collection.deleteLabel, caution);
+        confirm->setObjectName(QStringLiteral("confirmDeleteRecord"));
+        caution->addAction(confirm);
+        caution->hide();
+        layout->insertWidget(layout->indexOf(problems), caution);
+        const auto removeAndClose = [dialog, remove] {
+            remove();
+            dialog->accept();
+        };
+        QObject::connect(confirm, &QPushButton::clicked, dialog, removeAndClose);
+        QPushButton *deleteButton = buttons->addButton(collection.deleteLabel, QDialogButtonBox::DestructiveRole);
+        deleteButton->setObjectName(QStringLiteral("deleteRecord"));
+        QObject::connect(deleteButton, &QPushButton::clicked, dialog, [caution, removalNotice, removeAndClose] {
+            if (removalNotice.isEmpty()) {
+                removeAndClose();
+            } else {
+                caution->show();
+            }
+        });
+    }
     layout->addWidget(buttons);
     // The first text field names the record, so there is nothing to keep
     // until it holds something.

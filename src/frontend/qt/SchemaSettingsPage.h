@@ -8,6 +8,7 @@
 
 class QVBoxLayout;
 class QLabel;
+class QPushButton;
 
 namespace speecher {
 
@@ -55,14 +56,16 @@ using SchemaCustomRowFactory = std::function<
 
 // Renders a pane's sections as the Qt front end's settings page, and drives
 // load, appendToDraft and hasChanges from the descriptors rather than from a
-// hand-written line per field. The window header carries the page title.
+// hand-written line per field. The window header carries the page title; an
+// intro, when there is one, is the first line under it.
 class SchemaSettingsPage : public QScrollArea {
     Q_OBJECT
 
 public:
     explicit SchemaSettingsPage(const QList<SettingsSection> &sections,
                                 QWidget *parent = nullptr,
-                                SchemaCustomRowFactory customRows = {});
+                                SchemaCustomRowFactory customRows = {},
+                                const QString &intro = {});
 
     void load(const AppSettings &settings);
     // Empty when every collection on the page is consistent.
@@ -96,6 +99,15 @@ private:
         std::function<void(const QVariant &)> setValue;
         std::function<void(const AppSettings &)> refresh;
         std::function<void(bool)> setEditable;
+        // The button row that opens the dialog this row is shown in, if any.
+        QPushButton *opener = nullptr;
+    };
+
+    // A button row standing in for rows shown in a dialog, and what its
+    // description says about them.
+    struct DialogOpener {
+        QPushButton *button = nullptr;
+        std::function<QString(const AppSettings &)> summary;
     };
 
     // One message at the top of the page for every gate an action can lift,
@@ -117,6 +129,8 @@ private:
     };
 
     void addSection(const SettingsSection &section, QVBoxLayout *pageLayout);
+    // Adds the button row to the card and returns the form of its dialog's card.
+    QWidget *addDialog(const RowDialog &dialog, QWidget *cardForm);
     void addRow(const SettingsRow &descriptor, QWidget *host, bool explainsGate);
     void addGateNotice(const SettingsRow &descriptor, QVBoxLayout *pageLayout);
     SchemaCustomRow supplyRow(const SettingsRow &descriptor,
@@ -130,6 +144,7 @@ private:
     QList<Row> m_rows;
     QList<Section> m_sections;
     QList<GateNotice> m_gateNotices;
+    QList<DialogOpener> m_dialogs;
     Capabilities m_capabilities;
     AppSettings m_loaded;
     bool m_expensiveRowsLoaded = false;
