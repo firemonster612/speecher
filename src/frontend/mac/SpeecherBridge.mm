@@ -527,8 +527,6 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSArray<RowOptionModel *> *options;
 @property (nonatomic) BOOL stretch;
 @property (nonatomic) BOOL multiline;
-@property (nonatomic) BOOL enabled;
-@property (nonatomic, copy) NSString *disabledHelp;
 @end
 
 @implementation CollectionColumnModel
@@ -1252,8 +1250,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         model.options = column.options ? [self bridgedOptions:column.options(_state->draft)] : @[];
         model.stretch = column.stretch;
         model.multiline = column.multiline;
-        model.enabled = !column.enabled || column.enabled(_state->draft);
-        model.disabledHelp = column.disabledHelp.toNSString();
         [columns addObject:model];
     }
     CollectionModel *model = [[CollectionModel alloc] init];

@@ -236,12 +236,12 @@ struct CollectionRow: View {
                 TableColumn(column.title) { record in
                     HStack {
                         RecordCell(editor: editor, column: column, record: record,
-                                   editable: row.enabled && column.enabled)
+                                   editable: row.enabled)
                         if column.stretch, let badge = badges[record.id] {
                             RecordBadge(text: badge)
                         }
                     }
-                    .help(column.enabled ? editor.tooltip(column.columnId, record: record.id) : column.disabledHelp)
+                    .help(editor.tooltip(column.columnId, record: record.id))
                 }
                 .width(min: Self.width(column).min,
                        ideal: Self.width(column).ideal,

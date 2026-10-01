@@ -493,11 +493,6 @@ struct WritingProfileRows: View {
     }
 
     var body: some View {
-        // A column the settings make meaningless, such as the Cleanup Level a
-        // custom system prompt replaces, says so once above the profiles.
-        ForEach(choices.filter { !$0.enabled && !$0.disabledHelp.isEmpty }, id: \.columnId) { column in
-            Text(column.disabledHelp)
-        }
         ForEach(Array(records.enumerated()), id: \.offset) { index, record in
             VStack(alignment: .leading) {
                 LabeledContent(record["profile"] as? String ?? "") {
@@ -511,8 +506,6 @@ struct WritingProfileRows: View {
                                 }
                             }
                             .fixedSize()
-                            .disabled(!column.enabled)
-                            .help(column.enabled ? "" : column.disabledHelp)
                         }
                         if isCustom(index) {
                             Button(row.collection?.deleteLabel ?? "") { delete(index) }

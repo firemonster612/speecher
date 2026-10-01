@@ -1224,12 +1224,11 @@ private slots:
         QVERIFY(!instructions.enabled(settings, {}));
         QVERIFY(!prompt.enabled(settings, {}));
 
-        // A custom prompt still skips a profile at None and still adds a custom
-        // level's instructions, so both stay editable while it is on.
+        // A custom prompt still adds a custom level's instructions, so custom
+        // levels stay editable while it is on.
         settings.refinement.providerId = QStringLiteral("openai");
         settings.refinement.customSystemPromptEnabled = true;
         QVERIFY(schema.row(QStringLiteral("customCleanupLevels"))->enabled(settings, {}));
-        QVERIFY(!schema.row(QStringLiteral("writingProfileBehavior"))->collection.columns.at(1).enabled);
     }
 
     void customChoiceIdsAreSlugsOfTheName()

@@ -92,25 +92,6 @@ void fitToRows(QTableWidget *grid)
     grid->setFixedHeight(height);
 }
 
-// A column whose choice the settings take away, such as the cleanup level a
-// custom system prompt replaces, keeps showing its picks but cannot change them.
-void lockColumns(QTableWidget *grid, const QList<CollectionColumn> &columns, const AppSettings &draft)
-{
-    for (int column = 0; column < columns.size(); ++column) {
-        const CollectionColumn &descriptor = columns.at(column);
-        if (!descriptor.enabled) {
-            continue;
-        }
-        const bool open = descriptor.enabled(draft);
-        for (int row = 0; row < grid->rowCount(); ++row) {
-            if (QWidget *cell = grid->cellWidget(row, column)) {
-                cell->setEnabled(open);
-                cell->setToolTip(open ? QString() : descriptor.disabledHelp);
-            }
-        }
-    }
-}
-
 void setGridSettings(QTableWidget *grid,
                      const QList<WritingProfileSettings> &settings,
                      const AppSettings &draft,
@@ -184,11 +165,10 @@ SchemaCustomRow makeWritingProfileGrid(const CollectionDescriptor &descriptor,
     // Quiet until the first edit, as in a collection editor, so the new
     // profile's id comes from the name it is given.
     QObject::connect(add, &QPushButton::clicked, grid,
-                     [grid, draft, notifyChanged, columns = descriptor.columns] {
+                     [grid, draft, notifyChanged] {
         {
             const QSignalBlocker blocker(grid);
             appendProfileRow(grid, {QString()}, QStringLiteral("New profile"), *draft, notifyChanged);
-            lockColumns(grid, columns, *draft);
             fitToRows(grid);
         }
         const int row = grid->rowCount() - 1;
@@ -223,18 +203,13 @@ SchemaCustomRow makeWritingProfileGrid(const CollectionDescriptor &descriptor,
     return {
         block,
         [grid] { return QVariant::fromValue(gridSettings(grid)); },
-        [grid, remove, draft, columns = descriptor.columns,
-         notifyChanged = std::move(notifyChanged)](const QVariant &value) {
+        [grid, remove, draft, notifyChanged = std::move(notifyChanged)](const QVariant &value) {
             setGridSettings(grid, value.value<QList<WritingProfileSettings>>(), *draft, notifyChanged);
-            lockColumns(grid, columns, *draft);
             remove->setEnabled(false);
         },
         true,
         nullptr,
-        [grid, draft, columns = descriptor.columns](const AppSettings &settings) {
-            *draft = settings;
-            lockColumns(grid, columns, settings);
-        },
+        [draft](const AppSettings &settings) { *draft = settings; },
     };
 }
 

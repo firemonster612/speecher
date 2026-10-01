@@ -256,9 +256,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
                                   column.kind,
                                   column.options ? column.options(m_draft) : QList<RowOption>(),
                                   column.stretch,
-                                  column.multiline,
-                                  !column.enabled || column.enabled(m_draft),
-                                  column.disabledHelp});
+                                  column.multiline});
         }
         table.lockedRecordCount = collection->lockedRecordCount ? collection->lockedRecordCount() : 0;
         table.blankRecord = collection->blankRecord;

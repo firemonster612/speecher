@@ -54,10 +54,6 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly) BOOL stretch;
 // Text columns only: the value may hold several lines.
 @property (nonatomic, readonly) BOOL multiline;
-// The cells only mean something in some settings; while this says no they
-// show but cannot be edited, and disabledHelp says why.
-@property (nonatomic, readonly) BOOL enabled;
-@property (nonatomic, readonly, copy) NSString *disabledHelp;
 @end
 
 // A table of records with typed columns. Everything about it that does not

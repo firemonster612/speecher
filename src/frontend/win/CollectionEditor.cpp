@@ -170,13 +170,6 @@ void CollectionEditor::build()
     });
     toolbar.Children().Append(m_deleteButton);
     content.Children().Append(toolbar);
-    // A locked column says why above the list, not only on hover.
-    for (const CollectionColumnSnapshot &column : m_collection.columns) {
-        if (!column.enabled && !column.disabledHelp.isEmpty()) {
-            content.Children().Append(
-                secondaryTextBlock(column.disabledHelp, L"SettingsCardDescriptionStyle", m_host));
-        }
-    }
 
     // The header row, aligned with the cells by sharing their column table.
     m_header = columnGrid(m_collection.columns);
@@ -281,7 +274,6 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
                 self->save();
             }
         });
-        box.IsEnabled(column.enabled);
         cell = box;
     } else if (column.kind == ColumnKind::Choice) {
         ComboBox combo;
@@ -298,7 +290,6 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
             combo.Items().Append(item);
         }
         combo.SelectedIndex(selected);
-        combo.IsEnabled(column.enabled);
         combo.SelectionChanged([weak = weak_from_this(), columnId = column.id, recordIndex](
                                    const IInspectable &sender, const auto &) {
             const auto item = sender.as<ComboBox>().SelectedItem();
@@ -318,7 +309,6 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
         // momentarily duplicates another one has to survive being typed.
         TextBox box;
         box.Text(hs(value.toString()));
-        box.IsEnabled(column.enabled);
         if (column.multiline) {
             makeMultiline(box);
         }

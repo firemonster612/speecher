@@ -27,10 +27,6 @@ struct CollectionColumnSnapshot {
     bool stretch = false;
     // Text columns only: the value may hold several lines.
     bool multiline = false;
-    // While false the cells show but cannot be edited, and disabledHelp says
-    // why.
-    bool enabled = true;
-    QString disabledHelp;
 };
 
 struct CollectionSnapshot {

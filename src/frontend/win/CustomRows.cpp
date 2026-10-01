@@ -202,12 +202,6 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
             } else if (column.id == kProfileColumn) {
                 profileTitle = column.title;
             }
-            // A locked column says why above the profiles, not only on hover.
-            if (!column.enabled && !column.disabledHelp.isEmpty()) {
-                TextBlock note = secondaryText(column.disabledHelp, host);
-                note.Margin({16, 12, 16, 0});
-                rows.Children().Append(note);
-            }
         }
     }
     for (qsizetype index = 0; index < records.size(); ++index) {
@@ -230,10 +224,6 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
             }
             combo.SelectedIndex(selected);
             nameProfileField(combo, profile, column.title);
-            // The row's own gate is gatedFullWidthCard's ContentControl, whose
-            // IsEnabled(false) propagates down the tree; a column can be
-            // locked on its own.
-            combo.IsEnabled(column.enabled);
             combo.SelectionChanged([rowId = row.id, records, index, columnId = column.id, &host](
                                        const IInspectable &sender, const auto &) {
                 const auto item = sender.as<ComboBox>().SelectedItem();

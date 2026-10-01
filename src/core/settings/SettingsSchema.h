@@ -55,12 +55,6 @@ struct CollectionColumn {
     std::function<QString(const QVariantMap &)> recordTooltip;
     // Text columns only: the value may hold several lines, such as a snippet.
     bool multiline = false;
-    // A column whose cells only mean something in some settings, such as the
-    // cleanup level a custom system prompt replaces. Absent means always.
-    // While it says no, the cells show but cannot be edited, and disabledHelp
-    // says why.
-    std::function<bool(const AppSettings &)> enabled;
-    QString disabledHelp;
 };
 
 // Records a collection can be filled from a file with. Core owns the parse; the
