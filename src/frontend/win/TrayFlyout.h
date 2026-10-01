@@ -19,10 +19,10 @@ public:
     void show(const tagRECT &iconRect);
     void hide();
 
-    // For tests: the window and the Quit button, in screen pixels (empty while
-    // hidden), and the window's pixels.
+    // For tests: the window and its last button, Settings, in screen pixels
+    // (empty while hidden), and the window's pixels.
     QRect geometryForTest() const;
-    QRect quitGeometryForTest() const;
+    QRect settingsGeometryForTest() const;
     bool saveGrabForTest(const QString &path) const;
 
 private:
