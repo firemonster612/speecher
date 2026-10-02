@@ -132,9 +132,7 @@ unset SPEECHER_E2E_PANEL_BANNERS SPEECHER_E2E_PANEL_CAPTURE_DIR
 defaults write "$DOMAIN" stt.provider claude
 case_begin DICTATION-PANE
 # The grab picks its page by page id; the window itself always opens on Home.
-# Transcription sits below the runner screen's fold, under Shortcut and While
-# dictating, so the grab scrolls to the service row.
-DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" SPEECHER_GRAB_PAGE=dictation SPEECHER_GRAB_ROW=speechProvider \
+DYLD_FRAMEWORK_PATH="${QT_ROOT_DIR:-}/lib" SPEECHER_GRAB_PAGE=dictation \
   "$APP_BIN" --grab "$CASE_DIR/dictation-pane.png" >"$CASE_DIR/grab.out" 2>&1
 pane_text="$(swift - "$CASE_DIR/dictation-pane.png" <<'SWIFT'
 import Foundation

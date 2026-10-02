@@ -355,14 +355,12 @@ final class SpeecherSettingsWindow {
     //
     // SPEECHER_GRAB_PAGE names the page to show first, as a page id on every
     // front end; unset leaves the window as it is, unknown shows Home.
-    // SPEECHER_GRAB_ROW names a row of that page to scroll to, as search does.
     func capture(toPath path: String) -> Bool {
-        let environment = ProcessInfo.processInfo.environment
-        let request = environment["SPEECHER_GRAB_PAGE"] ?? ""
+        let request = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"] ?? ""
         // Again here: showing the window fitted it to the screen, and the
         // backing store has no such limit.
         let resized = applyRequestedSize()
-        if !request.isEmpty { model.showPage(request, row: environment["SPEECHER_GRAB_ROW"]) }
+        if !request.isEmpty { model.showPage(request) }
         if resized || !request.isEmpty {
             // Let SwiftUI render the pane before the backing store is read.
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.5))
