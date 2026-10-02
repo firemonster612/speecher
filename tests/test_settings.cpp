@@ -634,6 +634,7 @@ private slots:
         QCOMPARE(draft.refinement.customSystemPrompt, QString());
 
         draft.refinement.writingProfiles[1].instructions = QStringLiteral("Sign off with Best,\nEnzo");
+        draft.refinement.writingProfiles[1].outputLanguage = QStringLiteral("Spanish");
         draft.refinement.additionalInstructions = QStringLiteral("Spell it Speecher.");
         draft.refinement.customSystemPromptEnabled = true;
         draft.refinement.customSystemPrompt = QStringLiteral("Clean up my dictation.");
@@ -642,6 +643,8 @@ private slots:
         const AppSettings loaded = SettingsStore().snapshot();
         QCOMPARE(writingProfileSettingsFor(loaded.refinement.writingProfiles, WritingProfile::Email).instructions,
                  QStringLiteral("Sign off with Best,\nEnzo"));
+        QCOMPARE(writingProfileSettingsFor(loaded.refinement.writingProfiles, WritingProfile::Email).outputLanguage,
+                 QStringLiteral("Spanish"));
         QCOMPARE(loaded.refinement.additionalInstructions, QStringLiteral("Spell it Speecher."));
         QCOMPARE(loaded.refinement.customSystemPromptEnabled, true);
         QCOMPARE(loaded.refinement.customSystemPrompt, QStringLiteral("Clean up my dictation."));

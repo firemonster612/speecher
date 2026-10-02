@@ -1220,7 +1220,8 @@ private slots:
             return ids;
         }();
         QCOMPARE(gridColumns, (QStringList{QStringLiteral("profile"), QStringLiteral("cleanup"),
-                                           QStringLiteral("tone"), QStringLiteral("instructions*")}));
+                                           QStringLiteral("tone"), QStringLiteral("instructions*"),
+                                           QStringLiteral("outputLanguage")}));
 
         AppSettings settings;
         QCOMPARE(instructions.dialog.summary(settings), QStringLiteral("None"));
@@ -1306,11 +1307,13 @@ private slots:
         records.append({{QStringLiteral("profile"), QStringLiteral(" Stand up ")},
                         {QStringLiteral("cleanup"), QStringLiteral("light_cleanup")},
                         {QStringLiteral("tone"), QStringLiteral("none")},
+                        {QStringLiteral("outputLanguage"), QStringLiteral(" Spanish ")},
                         {QStringLiteral("instructions"), QString()}});
         grid.apply(settings, records);
         QCOMPARE(settings.refinement.writingProfiles.last(),
                  (WritingProfileSettings{QStringLiteral("custom_stand_up"), QStringLiteral("light_cleanup"),
-                                         QStringLiteral("none"), QString(), QStringLiteral("Stand up")}));
+                                         QStringLiteral("none"), QString(), QStringLiteral("Stand up"),
+                                         QStringLiteral("Spanish")}));
 
         const auto ids = [](const QList<RowOption> &options) {
             QStringList ids;

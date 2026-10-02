@@ -355,7 +355,8 @@ void TranscribePane::applyWritingProfile()
     const WritingProfileSettings profile =
         writingProfileSettingsFor(refinement.writingProfiles, writingProfileFromName(m_profile));
     // A stored strength this build does not know falls back to the middle one.
-    m_cleanup = offeredCleanupLevel(profile.cleanupStrength, refinement.customCleanupLevels);
+    m_cleanup = offeredCleanupLevel(refinedCleanupLevel(profile.cleanupStrength, profile.outputLanguage),
+                                    refinement.customCleanupLevels);
     m_tone = profile.tone;
 }
 

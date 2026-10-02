@@ -91,6 +91,7 @@ void TranscriptPipeline::fillUserInstructions(RefinementContext &context,
 {
     context.additionalInstructions = refinement.additionalInstructions;
     context.profileInstructions = profile.instructions;
+    context.outputLanguage = profile.outputLanguage;
     context.customSystemPrompt =
         refinement.customSystemPromptEnabled ? refinement.customSystemPrompt : QString();
 }
@@ -128,7 +129,11 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
     const WritingProfileSettings profileSettings = writingProfileSettingsFor(
         refinement.writingProfiles,
         resolved);
-    refinement.style = profileSettings.cleanupStrength;
+    // A selection edit keeps the selection's language, so translating gives
+    // it no reason to refine.
+    refinement.style = target.hasSelection()
+        ? profileSettings.cleanupStrength
+        : refinedCleanupLevel(profileSettings.cleanupStrength, profileSettings.outputLanguage);
     refinement.tone = profileSettings.tone;
     return refinement;
 }

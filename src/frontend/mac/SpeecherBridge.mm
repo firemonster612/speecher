@@ -3272,7 +3272,7 @@ static std::optional<QString> optionalString(NSString *value)
     options.speechProviderId = settings.speech.providerId.toNSString();
     options.applyVocabulary = YES;
     options.refinementProviderId = settings.refinement.providerId.toNSString();
-    options.cleanupStrength = chosen.cleanupStrength.toNSString();
+    options.cleanupStrength = speecher::refinedCleanupLevel(chosen.cleanupStrength, chosen.outputLanguage).toNSString();
     options.tone = chosen.tone.toNSString();
     options.writingProfile = chosen.profile.toNSString();
     options.destination = SpeecherTranscriptDestinationBesideInput;

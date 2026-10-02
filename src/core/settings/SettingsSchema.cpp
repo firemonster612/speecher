@@ -1536,7 +1536,8 @@ SettingsPage writingProfilesPage(const SchemaContext &context)
     profileBehavior.id = QStringLiteral("writingProfileBehavior");
     profileBehavior.label = QStringLiteral("Profile behavior");
     profileBehavior.help = QStringLiteral(
-        "Choose a Cleanup Level, a Tone and optional instructions for each profile.");
+        "Choose a Cleanup Level, a Tone and optional instructions for each profile. An output "
+        "language translates what you say, with at least Light cleanup.");
     profileBehavior.kind = RowKind::Custom;
     profileBehavior.collection = writingProfileGrid();
     profileBehavior.value = [](const AppSettings &settings) {
@@ -3428,15 +3429,20 @@ QString writingProfileChoiceSummary(const AppSettings &settings, const QString &
         return std::find_if(options.cbegin(), options.cend(),
                             [&id](const RowOption &option) { return option.id == id; })->label;
     };
+    const QString language = profile.outputLanguage.trimmed();
+    const QString refinedLevel = refinedCleanupLevel(level, language);
     // A profile set to None is not refined, so its tone and instructions do nothing.
-    if (level == QStringLiteral("none")) {
+    if (refinedLevel == QStringLiteral("none")) {
         return QStringLiteral("No cleanup.");
     }
-    QString summary = QStringLiteral("%1 cleanup, ").arg(label(cleanupStrengths(refinement.customCleanupLevels), level))
+    QString summary = QStringLiteral("%1 cleanup, ").arg(label(cleanupStrengths(refinement.customCleanupLevels), refinedLevel))
         + (tone == QStringLiteral("none") ? QStringLiteral("no tone.")
                                           : QStringLiteral("%1 tone.").arg(label(writingTones(refinement.customTones), tone)));
     if (!profile.instructions.trimmed().isEmpty()) {
         summary += QStringLiteral(" Has its own instructions.");
+    }
+    if (!language.isEmpty()) {
+        summary += QStringLiteral(" Writes in %1.").arg(language);
     }
     return summary;
 }
@@ -3506,6 +3512,12 @@ CollectionDescriptor writingProfileGrid()
     const QString kCleanupColumn = QStringLiteral("cleanup");
     const QString kToneColumn = QStringLiteral("tone");
     const QString kInstructionsColumn = QStringLiteral("instructions");
+    const QString kOutputLanguageColumn = QStringLiteral("outputLanguage");
+    CollectionColumn instructions{kInstructionsColumn, QStringLiteral("Instructions"), ColumnKind::Text, {}, true};
+    instructions.multiline = true;
+    instructions.placeholder = QStringLiteral("Keep it short and sign off with my first name.");
+    CollectionColumn outputLanguage{kOutputLanguageColumn, QStringLiteral("Output language"), ColumnKind::Text};
+    outputLanguage.placeholder = QStringLiteral("Same as spoken");
     CollectionDescriptor grid;
     grid.identityColumn = kProfileIdKey;
     grid.columns = {
@@ -3521,10 +3533,11 @@ CollectionDescriptor writingProfileGrid()
          QStringLiteral("Tone"),
          ColumnKind::Choice,
          [](const AppSettings &settings) { return writingTones(settings.refinement.customTones); }},
-        {kInstructionsColumn, QStringLiteral("Instructions"), ColumnKind::Text, {}, true},
+        instructions,
+        // After the instructions: a record dialog takes its first one-line
+        // text field for the record's name and requires it.
+        outputLanguage,
     };
-    grid.columns.last().multiline = true;
-    grid.columns.last().placeholder = QStringLiteral("Keep it short and sign off with my first name.");
     // The built-ins always exist, so the stored list only says what each of
     // them was set to; the custom profiles follow in stored order.
     grid.records = [=](const AppSettings &settings) {
@@ -3536,6 +3549,7 @@ CollectionDescriptor writingProfileGrid()
                             {kProfileIdKey, profile.id},
                             {kCleanupColumn, chosen.cleanupStrength},
                             {kToneColumn, chosen.tone},
+                            {kOutputLanguageColumn, chosen.outputLanguage},
                             {kInstructionsColumn, chosen.instructions}});
         }
         return records;
@@ -3550,13 +3564,15 @@ CollectionDescriptor writingProfileGrid()
                              record.value(kCleanupColumn).toString(),
                              record.value(kToneColumn).toString(),
                              record.value(kInstructionsColumn).toString(),
-                             isBuiltInWritingProfile(id) ? QString() : record.value(kProfileColumn).toString()});
+                             isBuiltInWritingProfile(id) ? QString() : record.value(kProfileColumn).toString(),
+                             record.value(kOutputLanguageColumn).toString().trimmed()});
         }
         settings.refinement.writingProfiles = withCustomProfileIds(profiles);
     };
     grid.blankRecord = {{kProfileColumn, QStringLiteral("New profile")},
                         {kCleanupColumn, QStringLiteral("balanced")},
                         {kToneColumn, QStringLiteral("none")},
+                        {kOutputLanguageColumn, QString()},
                         {kInstructionsColumn, QString()}};
     grid.lockedRecordCount = [] { return int(defaultWritingProfileSettings().size()); };
     grid.addLabel = QStringLiteral("Add profile");
