@@ -127,8 +127,10 @@ public:
     QSize configuredSize;
 };
 
-// Points the audio seam at two seconds of a loud square wave, so a
-// microphone level can be read without a sound server. Unset on scope exit.
+#ifdef Q_OS_LINUX
+// Points the audio seam, which only LinuxComposition reads, at two seconds of
+// a loud square wave, so the real row can be driven without a sound server.
+// Unset on scope exit.
 auto feedMicrophoneFromTone(const QTemporaryDir &dir)
 {
     const QString path = dir.filePath(QStringLiteral("tone.wav"));
@@ -144,6 +146,7 @@ auto feedMicrophoneFromTone(const QTemporaryDir &dir)
     qputenv("SPEECHER_AUDIO_WAV", path.toUtf8());
     return qScopeGuard([] { qunsetenv("SPEECHER_AUDIO_WAV"); });
 }
+#endif
 
 } // namespace
 
@@ -2401,25 +2404,28 @@ private slots:
 
     // The test owns the microphone only while it runs: stopping it, a
     // Dictation Session starting and a saved change of device each close the
-    // device, and running it never starts a session.
+    // device; running it never starts a session, and none starts while
+    // dictating.
     void microphoneTestClosesTheDeviceWhenItEnds()
     {
-        QTemporaryDir dir;
-        const auto unsetSeam = feedMicrophoneFromTone(dir);
         ApplicationController controller(true);
         const QString savedDevice = controller.settings()->audioInputDeviceId();
         const auto restoreDevice = qScopeGuard([&] { controller.settings()->setAudioInputDeviceId(savedDevice); });
-        MicrophoneTest test(controller);
-        const auto deviceClosed = [&test] {
+        QPointer<FakeAudioInput> input;
+        MicrophoneTest test(controller, nullptr, [&input](QObject *parent) {
+            input = new FakeAudioInput(parent);
+            return input.data();
+        });
+        const auto deviceClosed = [&input] {
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-            return test.findChildren<AudioInput *>().isEmpty();
+            return input.isNull();
         };
 
         QSignalSpy levels(&test, &MicrophoneTest::levelChanged);
         test.start(savedDevice);
         QCOMPARE(test.state(), MicrophoneTestState::Running);
-        QTRY_VERIFY(std::any_of(levels.cbegin(), levels.cend(),
-                                [](const QList<QVariant> &level) { return level.first().toFloat() > 0.4f; }));
+        emit input->levelChanged(0.5f);
+        QCOMPARE(levels.size(), 1);
         QCOMPARE(controller.stateName(), QStringLiteral("idle"));
         test.stop();
         QCOMPARE(test.state(), MicrophoneTestState::Stopped);
@@ -2430,7 +2436,6 @@ private slots:
         QCOMPARE(test.state(), MicrophoneTestState::Stopped);
         QVERIFY(deviceClosed());
 
-        // No test while dictating.
         QVERIFY(!test.canToggle());
         test.start(savedDevice);
         QCOMPARE(test.state(), MicrophoneTestState::Stopped);
@@ -2441,6 +2446,28 @@ private slots:
         controller.settings()->setAudioInputDeviceId(savedDevice + QStringLiteral("-other"));
         QCOMPARE(test.state(), MicrophoneTestState::Stopped);
         QVERIFY(deviceClosed());
+    }
+
+    // A device unplugged while it opens fails inside the input's start(),
+    // which then gives up with a timeout. The test reports the real reason,
+    // once.
+    void microphoneTestReportsAFailureWhileStartingOnce()
+    {
+        ApplicationController controller(true);
+        MicrophoneTest test(controller, nullptr, [](QObject *parent) {
+            auto *input = new FakeAudioInput(parent);
+            input->startError = QStringLiteral("produced no audio");
+            input->onStart = [input] {
+                input->emitFailure(QStringLiteral("unplugged"));
+                input->startResult = false;
+            };
+            return input;
+        });
+        QSignalSpy failures(&test, &MicrophoneTest::failed);
+        test.start(QString());
+        QCOMPARE(test.state(), MicrophoneTestState::Stopped);
+        QCOMPARE(failures.size(), 1);
+        QCOMPARE(failures.first().first().toString(), QStringLiteral("unplugged"));
     }
 
     // Opening a device can wait in a nested event loop, where a stop or the
@@ -2489,6 +2516,7 @@ private slots:
         QVERIFY(input.isNull());
     }
 
+#ifdef Q_OS_LINUX
     // Leaving the page or closing the window hides the row, and choosing
     // another device on the page stops the test before the page saves.
     void microphoneTestRowStopsWhenItHidesOrTheDeviceMoves()
@@ -2518,6 +2546,7 @@ private slots:
         row.refresh(draft);
         QCOMPARE(button->text(), microphoneTestCaption(MicrophoneTestState::Stopped));
     }
+#endif
 
     // The waveform's level mapping is Wispr Flow's: an adaptive noise floor,
     // 150ms window means, then per-frame smoothing, scaled by 5 and floored at

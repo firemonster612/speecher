@@ -499,6 +499,16 @@ UIElement microphoneTestElement(const RowSnapshot &row, PaneHost &host)
 
 } // namespace
 
+void endMicrophoneTest(PaneHost &host)
+{
+    if (!host.microphoneTest) {
+        return;
+    }
+    host.microphoneTest->stop();
+    host.microphoneTest->disconnect();
+    host.microphoneTest.reset();
+}
+
 bool customRowIsFullWidth(const QString &rowId)
 {
     return rowId == QStringLiteral("writingProfileBehavior")

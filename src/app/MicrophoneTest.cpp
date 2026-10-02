@@ -43,14 +43,18 @@ MicrophoneTest::MicrophoneTest(ApplicationController &controller,
 
 MicrophoneTest::~MicrophoneTest()
 {
-    if (m_state == MicrophoneTestState::Starting) {
-        // The input's start() is still on the stack below; start() frees the
-        // input once it returns and finds this test gone.
-        disconnect(m_input, nullptr, this, nullptr);
-        m_input->setParent(nullptr);
+    // Releases the input without a word: whatever listens to changed may be
+    // halfway destroyed itself.
+    if (!m_input) {
         return;
     }
-    closeDevice();
+    disconnect(m_input, nullptr, this, nullptr);
+    m_input->setParent(nullptr);
+    // While Starting, the input's start() is still on the stack below, and
+    // start() frees the input once it returns and finds this test gone.
+    if (m_state != MicrophoneTestState::Starting) {
+        m_input->deleteLater();
+    }
 }
 
 bool MicrophoneTest::canToggle() const
@@ -68,6 +72,12 @@ void MicrophoneTest::start(const QString &deviceId)
     input->useDevice(deviceId);
     connect(input, &AudioInput::levelChanged, this, &MicrophoneTest::levelChanged);
     connect(input, &AudioInput::failed, this, [this](const QString &message) {
+        // While Starting, start() reports it once the input's start() returns.
+        if (m_state == MicrophoneTestState::Starting) {
+            m_startFailure = message;
+            m_stopRequested = true;
+            return;
+        }
         stop();
         emit failed(message);
     });
@@ -84,10 +94,12 @@ void MicrophoneTest::start(const QString &deviceId)
         return;
     }
     const bool stopRequested = std::exchange(m_stopRequested, false);
+    // The input's own reason beats the timeout its start() then gives.
+    const QString failure = std::exchange(m_startFailure, QString());
     if (!started || stopRequested) {
         closeDevice();
-        if (!started) {
-            emit failed(error);
+        if (!failure.isEmpty() || !started) {
+            emit failed(failure.isEmpty() ? error : failure);
         }
         return;
     }

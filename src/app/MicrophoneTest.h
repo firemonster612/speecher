@@ -61,6 +61,8 @@ private:
     // A stop that arrived while the input's start() was still waiting for
     // the device: closing it then would free the input under its own call.
     bool m_stopRequested = false;
+    // Why the input failed while Starting, reported once start() returns.
+    QString m_startFailure;
 };
 
 } // namespace speecher

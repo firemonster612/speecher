@@ -445,13 +445,6 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeText) {
 
 // Mirrors speecher::DictationState, so the panel decides on the state rather
 // than on the words of its label.
-// Mirrors speecher::MicrophoneTestState.
-typedef NS_ENUM(NSInteger, SpeecherMicrophoneTestState) {
-    SpeecherMicrophoneTestStateStopped,
-    SpeecherMicrophoneTestStateStarting,
-    SpeecherMicrophoneTestStateRunning,
-};
-
 typedef NS_ENUM(NSInteger, SpeecherDictationState) {
     SpeecherDictationStateIdle,
     SpeecherDictationStateStarting,
@@ -460,6 +453,13 @@ typedef NS_ENUM(NSInteger, SpeecherDictationState) {
     SpeecherDictationStateRefining,
     SpeecherDictationStateDelivering,
     SpeecherDictationStateError,
+};
+
+// Mirrors speecher::MicrophoneTestState.
+typedef NS_ENUM(NSInteger, SpeecherMicrophoneTestState) {
+    SpeecherMicrophoneTestStateStopped,
+    SpeecherMicrophoneTestStateStarting,
+    SpeecherMicrophoneTestStateRunning,
 };
 
 // Mirrors speecher::LocalModelText.
