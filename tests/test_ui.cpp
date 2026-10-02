@@ -20,6 +20,8 @@
 #include <QTemporaryDir>
 #include <QFile>
 #include <QTcpServer>
+#include "app/MicrophoneTest.h"
+#include "frontend/qt/MicrophoneTestRow.h"
 #include "frontend/qt/OutputCustomRows.h"
 #ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetupFlow.h"
@@ -122,6 +124,24 @@ public:
 
     QSize configuredSize;
 };
+
+// Points the audio seam at two seconds of a loud square wave, so a
+// microphone level can be read without a sound server. Unset on scope exit.
+auto feedMicrophoneFromTone(const QTemporaryDir &dir)
+{
+    const QString path = dir.filePath(QStringLiteral("tone.wav"));
+    QByteArray samples;
+    for (int i = 0; i < 32000; ++i) {
+        const qint16 sample = (i / 20) % 2 ? 16000 : -16000;
+        samples.append(reinterpret_cast<const char *>(&sample), sizeof sample);
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(test::wavBytes(samples, 16000, 1)) < 0) {
+        qFatal("cannot write %s", qPrintable(path));
+    }
+    qputenv("SPEECHER_AUDIO_WAV", path.toUtf8());
+    return qScopeGuard([] { qunsetenv("SPEECHER_AUDIO_WAV"); });
+}
 
 } // namespace
 
@@ -1829,8 +1849,15 @@ private slots:
         QVERIFY(!checkAgain->isHidden());
 
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        // The Test microphone row needs a controller, which this page lacks.
+        const auto standInMicrophoneTest = [](const SettingsRow &descriptor, QWidget *parent,
+                                              std::function<void()>) {
+            return descriptor.id == QStringLiteral("microphoneTest")
+                ? SchemaCustomRow{new QWidget(parent), {}, {}}
+                : SchemaCustomRow{};
+        };
         const std::unique_ptr<SchemaSettingsPage> audio =
-            schemaPage(QStringLiteral("audio"), *platform, providers);
+            schemaPage(QStringLiteral("audio"), *platform, providers, standInMicrophoneTest);
         AppSettings snapshot = settings.snapshot();
         audio->load(snapshot);
         auto *settingsChoice = audio->findChild<QComboBox *>(QStringLiteral("speechProvider"));
@@ -2369,6 +2396,62 @@ private slots:
         QVERIFY(status->minimumHeight() < longStatusHeight);
     }
 #endif
+
+    // The test owns the microphone only while it runs: stopping it, a
+    // Dictation Session starting and a saved change of device each close the
+    // device, and running it never starts a session.
+    void microphoneTestClosesTheDeviceWhenItEnds()
+    {
+        QTemporaryDir dir;
+        const auto unsetSeam = feedMicrophoneFromTone(dir);
+        ApplicationController controller(true);
+        const QString savedDevice = controller.settings()->audioInputDeviceId();
+        const auto restoreDevice = qScopeGuard([&] { controller.settings()->setAudioInputDeviceId(savedDevice); });
+        MicrophoneTest test(controller);
+        const auto deviceClosed = [&test] {
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            return test.findChildren<AudioInput *>().isEmpty();
+        };
+
+        QSignalSpy levels(&test, &MicrophoneTest::levelChanged);
+        test.start();
+        QVERIFY(test.running());
+        QTRY_VERIFY(std::any_of(levels.cbegin(), levels.cend(),
+                                [](const QList<QVariant> &level) { return level.first().toFloat() > 0.4f; }));
+        QCOMPARE(controller.stateName(), QStringLiteral("idle"));
+        test.stop();
+        QVERIFY(!test.running());
+        QVERIFY(deviceClosed());
+
+        test.start();
+        emit controller.stateChanged(QStringLiteral("starting"));
+        QVERIFY(!test.running());
+        QVERIFY(deviceClosed());
+
+        test.start();
+        controller.settings()->setAudioInputDeviceId(savedDevice + QStringLiteral("-other"));
+        QVERIFY(!test.running());
+        QVERIFY(deviceClosed());
+    }
+
+    // Leaving the page or closing the window hides the row.
+    void microphoneTestRowStopsWhenItHides()
+    {
+        QTemporaryDir dir;
+        const auto unsetSeam = feedMicrophoneFromTone(dir);
+        ApplicationController controller(true);
+        SettingsRow descriptor;
+        descriptor.id = QStringLiteral("microphoneTest");
+        QWidget page;
+        QVERIFY(microphoneTestRow(controller)(descriptor, &page, {}).widget);
+        page.show();
+        auto *button = page.findChild<QPushButton *>(QStringLiteral("microphoneTest"));
+
+        button->click();
+        QCOMPARE(button->text(), microphoneTestCaption(true));
+        page.hide();
+        QCOMPARE(button->text(), microphoneTestCaption(false));
+    }
 
     // The waveform's level mapping is Wispr Flow's: an adaptive noise floor,
     // 150ms window means, then per-frame smoothing, scaled by 5 and floored at

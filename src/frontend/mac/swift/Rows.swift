@@ -97,6 +97,8 @@ struct RowView: View {
             LocalModelBrowser(row: row, model: model)
         } else if row.rowId == "globalShortcut" {
             ShortcutRecorderRow(model: model)
+        } else if row.rowId == "microphoneTest" {
+            microphoneTest
         } else if row.rowId == "openAiAuth" {
             LabeledContent { CredentialField(model: model) } label: { label }
         } else if row.rowId == "anthropicAuth" {
@@ -111,6 +113,28 @@ struct RowView: View {
             } label: { label }
         } else {
             picker
+        }
+    }
+
+    /// The input device's live level in a stock progress bar, beside the
+    /// button that starts and stops the test. A failure to open the device
+    /// takes the description's place.
+    private var microphoneTest: some View {
+        LabeledContent {
+            HStack {
+                ProgressView(value: min(max(model.microphoneTestLevel, 0), 1))
+                    .accessibilityLabel(model.bridge.inputLevelLabel)
+                Button(SpeecherBridge.microphoneTestCaption(running: model.microphoneTesting)) {
+                    if model.microphoneTesting {
+                        model.stopMicrophoneTest()
+                    } else {
+                        model.startMicrophoneTest()
+                    }
+                }
+            }
+        } label: {
+            Self.label(row.label, help: model.microphoneTestProblem.isEmpty ? description
+                                                                              : model.microphoneTestProblem)
         }
     }
 

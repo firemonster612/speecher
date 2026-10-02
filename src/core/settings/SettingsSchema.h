@@ -537,6 +537,9 @@ QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices,
                                     const QString &selectedDeviceId);
 // The system-default entry's label.
 QString audioDeviceDefaultLabel();
+// The caption of the button on the Test microphone row, which says what a
+// click does now.
+QString microphoneTestCaption(bool running);
 
 // The Local models page's Acceleration choice: Automatic, the CPU, then each
 // GPU backend that reaches a card here, with a disabled placeholder for a

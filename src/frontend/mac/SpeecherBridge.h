@@ -1094,11 +1094,14 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
     NS_SWIFT_NAME(setSetupCliproxyDirectory(_:));
 
 // A live microphone meter over the input device the settings name. Levels and
-// failures arrive on the main thread until the meter is stopped.
+// failures arrive on the main thread until the meter is stopped. The setup
+// assistant's microphone step and the Test microphone row share it.
 - (void)startMicrophoneMeterOnLevel:(void (^)(float level))onLevel
                             failure:(void (^)(NSString *message))onFailure
     NS_SWIFT_NAME(startMicrophoneMeter(onLevel:failure:));
 - (void)stopMicrophoneMeter;
+// The Test microphone row's button (speecher::microphoneTestCaption).
++ (NSString *)microphoneTestCaption:(BOOL)running NS_SWIFT_NAME(microphoneTestCaption(running:));
 // The system input volume of the default microphone, 0 to 1, or -1 when macOS
 // does not say.
 - (float)microphoneInputVolume;

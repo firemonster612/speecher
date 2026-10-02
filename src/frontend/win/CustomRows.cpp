@@ -1,16 +1,20 @@
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/ShortcutRecorder.h"
 
+#include "app/MicrophoneTest.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
+#include "dictation/DictationTypes.h"
 #include "frontend/win/LocalModelBrowser.h"
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "providers/ClaudeCredentials.h"
 #include "providers/ProviderSignIn.h"
 
+#include <QPointer>
 #include <QRegularExpression>
 
+#include <algorithm>
 #include <optional>
 
 #pragma push_macro("GetCurrentTime")
@@ -427,6 +431,72 @@ QString anthropicCredentialStatus(const AppSettings &draft, const SettingsStore 
     return credentials.ok ? QStringLiteral("Signed in with Claude Code") : credentials.error;
 }
 
+namespace {
+
+// The Test microphone row: the input device's live level beside the button
+// that starts and stops the test, and under them why the device would not
+// open. A setting written or another page shown rebuilds the pane, and closing
+// the window takes it down; each unloads this element, which ends its test,
+// so the microphone never stays open behind the row.
+UIElement microphoneTestElement(const RowSnapshot &row, PaneHost &host)
+{
+    ProgressBar level;
+    level.Minimum(0);
+    level.Maximum(1);
+    level.Width(160);
+    level.VerticalAlignment(VerticalAlignment::Center);
+    Automation::AutomationProperties::SetName(level, hs(inputLevelLabel()));
+    Button button;
+    button.Content(box_value(hs(microphoneTestCaption(false))));
+    // Not a Control, so the row cannot close the gate on it; the button can.
+    button.IsEnabled(row.enabled);
+    StackPanel controls;
+    controls.Orientation(Orientation::Horizontal);
+    controls.Spacing(8);
+    controls.Children().Append(level);
+    controls.Children().Append(button);
+    TextBlock problem = secondaryText(QString(), host);
+    problem.TextWrapping(TextWrapping::Wrap);
+    problem.Visibility(Visibility::Collapsed);
+    StackPanel element;
+    element.Spacing(4);
+    element.Children().Append(controls);
+    element.Children().Append(problem);
+
+    const QPointer<MicrophoneTest> test = new MicrophoneTest(*host.controller, host.controller);
+    QObject::connect(test, &MicrophoneTest::levelChanged, test, [level](float value) {
+        level.Value(std::clamp(value, 0.0f, 1.0f));
+    });
+    QObject::connect(test, &MicrophoneTest::runningChanged, test, [level, button, problem](bool running) {
+        button.Content(box_value(hs(microphoneTestCaption(running))));
+        level.Value(0);
+        problem.Visibility(Visibility::Collapsed);
+    });
+    QObject::connect(test, &MicrophoneTest::failed, test, [problem](const QString &message) {
+        problem.Text(hs(message));
+        problem.Visibility(Visibility::Visible);
+    });
+    button.Click([test](const auto &, const auto &) {
+        if (!test) {
+            return;
+        }
+        if (test->running()) {
+            test->stop();
+        } else {
+            test->start();
+        }
+    });
+    element.Unloaded([test](const auto &, const auto &) {
+        if (test) {
+            test->stop();
+            test->deleteLater();
+        }
+    });
+    return element;
+}
+
+} // namespace
+
 bool customRowIsFullWidth(const QString &rowId)
 {
     return rowId == QStringLiteral("writingProfileBehavior")
@@ -454,6 +524,9 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     }
     if (row.id == QStringLiteral("openAiAuth")) {
         return credentialField(host);
+    }
+    if (row.id == QStringLiteral("microphoneTest")) {
+        return microphoneTestElement(row, host);
     }
     if (row.id == QStringLiteral("anthropicAuth")) {
         return secondaryText(host.model->anthropicCredentialStatus(), host);

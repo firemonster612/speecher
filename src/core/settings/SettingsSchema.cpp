@@ -1181,6 +1181,14 @@ SettingsPage audioPage(const SchemaContext &context)
     device.disabledActionLabel = QStringLiteral("Check again");
 #endif
 
+    // Each front end draws the level as its native meter beside a button
+    // captioned by microphoneTestCaption().
+    SettingsRow microphoneTest = customRow(
+        QStringLiteral("microphoneTest"),
+        QStringLiteral("Test microphone"),
+        QStringLiteral("Speak and watch the level to check that the input device hears you."));
+    microphoneTest.enabled = device.enabled;
+
     SettingsRow captureMode = choiceRow(
         QStringLiteral("captureMode"),
         QStringLiteral("Keep microphone open"),
@@ -1227,6 +1235,7 @@ SettingsPage audioPage(const SchemaContext &context)
              QString(),
              {
                  std::move(device),
+                 std::move(microphoneTest),
                  std::move(captureMode),
                  numberRow(QStringLiteral("readinessTimeoutMs"),
                            QStringLiteral("Wait for microphone"),
@@ -2911,6 +2920,11 @@ QList<RowOption> localGraphicsCardOptions(const QList<LocalGpu> &gpus, const Loc
 QString audioDeviceDefaultLabel()
 {
     return QStringLiteral("System default");
+}
+
+QString microphoneTestCaption(bool running)
+{
+    return running ? QStringLiteral("Stop test") : QStringLiteral("Start test");
 }
 
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QString &selectedDeviceId)

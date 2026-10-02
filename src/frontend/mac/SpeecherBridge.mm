@@ -2943,6 +2943,11 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     }
 }
 
++ (NSString *)microphoneTestCaption:(BOOL)running
+{
+    return speecher::microphoneTestCaption(running).toNSString();
+}
+
 - (void)stopMicrophoneMeter
 {
     self.setupMeterLevel = nil;
