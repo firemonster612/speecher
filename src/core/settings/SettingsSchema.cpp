@@ -176,6 +176,7 @@ void gateOnTargetAccessibility(SettingsRow &row, const QString &help)
                 return capabilities.targetAccessibility;
             },
             help);
+    row.sharedGate = QStringLiteral("targetAccessibility");
     // Nothing in the app can make UI Automation available, so Windows offers
     // no action beside the note.
 #ifndef Q_OS_WIN

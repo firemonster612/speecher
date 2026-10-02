@@ -2240,6 +2240,10 @@ private slots:
             const QList<QLabel *> helpLabels = rowWidget->findChildren<QLabel *>(
                 QStringLiteral("rowDescription"));
             for (QLabel *help : helpLabels) {
+                // A hidden description is out of the layout and keeps a stale size.
+                if (!help->isVisibleTo(page.get())) {
+                    continue;
+                }
                 QVERIFY2(help->height() >= help->heightForWidth(help->width()),
                          qPrintable(help->text()));
                 for (int nextRow = row + 1; nextRow < form->rowCount(); ++nextRow) {

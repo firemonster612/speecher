@@ -101,6 +101,13 @@ SchemaCustomRow builtInRow(const SettingsRow &descriptor,
     qFatal("the Qt front end has no widget for settings row %s", qPrintable(descriptor.id));
 }
 
+// The page notice that explains a row's gate: the gate many rows share, or
+// else the action that lifts it. Empty when the row explains its own gate.
+QString gateNoticeKey(const SettingsRow &descriptor)
+{
+    return descriptor.sharedGate.isEmpty() ? descriptor.disabledAction : descriptor.sharedGate;
+}
+
 } // namespace
 
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
@@ -198,7 +205,7 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
             dialogForm = previousDialog.isEmpty() ? nullptr : addDialog(descriptor.dialog, form);
         }
         addRow(descriptor, dialogForm ? dialogForm : form,
-               descriptor.enabled && descriptor.disabledAction.isEmpty() && !repeatsGroup);
+               descriptor.enabled && gateNoticeKey(descriptor).isEmpty() && !repeatsGroup);
         if (dialogForm) {
             m_rows.last().opener = m_dialogs.last().button;
         }
@@ -264,15 +271,17 @@ SchemaCustomRow SchemaSettingsPage::supplyRow(const SettingsRow &descriptor,
 
 // A disabled control with a hover tooltip does not explain itself: disabled
 // widgets do not always receive hover, and nothing says how to fix it. A gate
-// that an action can lift is explained once, at the top of the page, with the
-// action beside it; any other gate is explained in the row's description.
+// that many rows share or an action can lift is explained once, at the top of
+// the page, with any action beside it; any other gate is explained in the
+// row's description.
 void SchemaSettingsPage::addGateNotice(const SettingsRow &descriptor, QVBoxLayout *pageLayout)
 {
-    if (descriptor.disabledAction.isEmpty()) {
+    const QString key = gateNoticeKey(descriptor);
+    if (key.isEmpty()) {
         return;
     }
     for (const GateNotice &notice : std::as_const(m_gateNotices)) {
-        if (notice.action == descriptor.disabledAction) {
+        if (notice.key == key) {
             return;
         }
     }
@@ -285,16 +294,18 @@ void SchemaSettingsPage::addGateNotice(const SettingsRow &descriptor, QVBoxLayou
     message->setType(InlineMessage::Type::Warning);
     message->label()->setObjectName(QStringLiteral("gateNoteText"));
     message->setCloseButtonVisible(false);
-    auto *action = new QPushButton(descriptor.disabledActionLabel, message);
-    action->setObjectName(QStringLiteral("gateAction"));
-    connect(action, &QPushButton::clicked, this, [this, id = descriptor.disabledAction] {
-        emit actionTriggered(id);
-    });
-    message->addAction(action);
+    if (!descriptor.disabledAction.isEmpty()) {
+        auto *action = new QPushButton(descriptor.disabledActionLabel, message);
+        action->setObjectName(QStringLiteral("gateAction"));
+        connect(action, &QPushButton::clicked, this, [this, id = descriptor.disabledAction] {
+            emit actionTriggered(id);
+        });
+        message->addAction(action);
+    }
     holderLayout->addWidget(message);
     holder->hide();
     pageLayout->addWidget(settings::centerColumn(holder, this));
-    m_gateNotices.append({descriptor.disabledAction, holder, message});
+    m_gateNotices.append({key, holder, message});
 }
 
 void SchemaSettingsPage::addRow(const SettingsRow &descriptor, QWidget *host, bool explainsGate)
@@ -701,7 +712,7 @@ void SchemaSettingsPage::refreshRows()
     // sit under a card this same pass is about to show or hide, and Qt's
     // isVisible()/isVisibleTo() would see that ancestor's stale state.
     QList<bool> shown(m_rows.size(), true);
-    // What each page notice says: the first closed gate its action lifts.
+    // What each page notice says: the first closed gate it explains.
     QHash<QString, QString> noticeText;
     for (int index = 0; index < m_rows.size(); ++index) {
         const Row &row = m_rows.at(index);
@@ -753,9 +764,9 @@ void SchemaSettingsPage::refreshRows()
                 }
             }
             row.control->setToolTip(live ? row.descriptor.tooltip : reason);
-            if (!live && shown[index] && !row.descriptor.disabledAction.isEmpty()
-                && !noticeText.contains(row.descriptor.disabledAction)) {
-                noticeText.insert(row.descriptor.disabledAction, reason);
+            const QString noticeKey = gateNoticeKey(row.descriptor);
+            if (!live && shown[index] && !noticeKey.isEmpty() && !noticeText.contains(noticeKey)) {
+                noticeText.insert(noticeKey, reason);
             }
         }
     }
@@ -767,7 +778,7 @@ void SchemaSettingsPage::refreshRows()
         dialog.button->setAccessibleDescription(summary);
     }
     for (const GateNotice &notice : std::as_const(m_gateNotices)) {
-        const QString text = noticeText.value(notice.action);
+        const QString text = noticeText.value(notice.key);
         notice.message->setText(text);
         notice.holder->setVisible(!text.isEmpty());
     }

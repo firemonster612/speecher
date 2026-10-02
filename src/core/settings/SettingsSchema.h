@@ -185,6 +185,10 @@ struct SettingsRow {
     // control that runs it. Empty when nothing in the app can.
     QString disabledAction;
     QString disabledActionLabel;
+    // Names a gate that many rows share, such as desktop accessibility, so a
+    // front end can explain it once for the page rather than on every row,
+    // whether or not an action can lift it.
+    QString sharedGate;
     // Rows that name the same group render inside one container and are enabled
     // or disabled together, so they must all declare the same gate.
     QString groupId;

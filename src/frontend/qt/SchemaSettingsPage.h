@@ -91,8 +91,8 @@ private:
         QWidget *control = nullptr;
         QLabel *title = nullptr;
         QLabel *description = nullptr;
-        // While the gate is closed the description says why, unless the page
-        // notice for the gate's action does, or an earlier row of the same
+        // While the gate is closed the description says why, unless a page
+        // notice does, or an earlier row of the same
         // group already says it.
         bool explainsGate = false;
         std::function<QVariant()> value;
@@ -110,10 +110,11 @@ private:
         std::function<QString(const AppSettings &)> summary;
     };
 
-    // One message at the top of the page for every gate an action can lift,
-    // such as desktop accessibility, however many rows it holds.
+    // One message at the top of the page for every gate that many rows share
+    // or an action can lift, such as desktop accessibility, however many rows
+    // it holds.
     struct GateNotice {
-        QString action;
+        QString key;
         QWidget *holder = nullptr;
         InlineMessage *message = nullptr;
     };
