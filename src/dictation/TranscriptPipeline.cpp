@@ -3,6 +3,8 @@
 #include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
 
+#include <QDateTime>
+#include <QLocale>
 #include <QSet>
 
 namespace speecher {
@@ -26,6 +28,20 @@ QList<BindingRule> withoutNoBindPhrases(const QList<BindingRule> &rules,
         }
     }
     return filtered;
+}
+
+// A Snippet's {date} and {time} become today's date and the current time in
+// the locale's short format. Any other text in braces stays as written.
+QList<BindingRule> withVariablesFilled(QList<BindingRule> rules)
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    const QString date = QLocale().toString(now.date(), QLocale::ShortFormat);
+    const QString time = QLocale().toString(now.time(), QLocale::ShortFormat);
+    for (BindingRule &rule : rules) {
+        rule.replacement.replace(QStringLiteral("{date}"), date)
+            .replace(QStringLiteral("{time}"), time);
+    }
+    return rules;
 }
 
 // Every stored term in priority order, not the speech request's capped list:
@@ -142,7 +158,10 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     const bool hasNoBindDirective = BindingProcessor::hasExplicitNoBindDirective(rawTranscript);
     result.noBindPhrases = BindingProcessor::explicitNoBindPhrases(rawTranscript, bindings);
     result.allowPostRefinementBindings = !hasNoBindDirective || !result.noBindPhrases.isEmpty();
-    result.activeBindingRules = withoutNoBindPhrases(bindings, result.noBindPhrases);
+    // Filled once here, so the expansion before refinement, the one after it
+    // and the placeholder restore all insert the same text.
+    result.activeBindingRules =
+        withVariablesFilled(withoutNoBindPhrases(bindings, result.noBindPhrases));
     result.bindingResult = BindingProcessor::process(rawTranscript, result.activeBindingRules);
     result.editsSelection = target.hasSelection();
     result.deliveryFallback = result.editsSelection

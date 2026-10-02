@@ -2353,7 +2353,8 @@ SettingsPage bindingsPage()
     SettingsRow rules = collectionRow(QStringLiteral("bindingRules"),
                                       QString(),
                                       QStringLiteral("Replace a spoken phrase with exact text, including "
-                                                     "multi-line snippets."),
+                                                     "multi-line snippets. {date} and {time} in the text "
+                                                     "become today's date and the current time."),
                                       std::move(replacements));
     rules.tooltip = QStringLiteral("Matching ignores case and treats punctuation as spaces.");
 
