@@ -14,12 +14,12 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QShortcut>
 #include <QSignalBlocker>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
@@ -120,6 +120,7 @@ private:
     void runAction(const QString &actionId);
     QList<int> selectedEditableRows() const;
     void updateButtons();
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
     CollectionDescriptor m_collection;
     // The columns the table shows; the record dialog fills in every column.
@@ -245,20 +246,15 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
 
     connect(m_table, &QTableWidget::itemChanged, this, [this] { m_notifyChanged(); });
     connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] { updateButtons(); });
-    // Return, Enter and a double-click activate a row, or a single click where
-    // the style activates on one. A toggle's cell is its box instead.
+    // A double-click activates a row, or a single click where the style
+    // activates on one. A toggle's cell is its box instead.
     connect(m_table, &QTableWidget::cellActivated, this, [this](int row, int column) {
         if (m_columns.at(column).kind != ColumnKind::Toggle) {
             editRecord(row);
         }
     });
-    auto *editShortcut = new QShortcut(QKeySequence(Qt::Key_F2), m_table);
-    editShortcut->setContext(Qt::WidgetShortcut);
-    connect(editShortcut, &QShortcut::activated, this, [this] {
-        if (m_table->currentRow() >= 0) {
-            editRecord(m_table->currentRow());
-        }
-    });
+    // Return, Enter and F2 open a row through eventFilter.
+    m_table->installEventFilter(this);
     if (m_add) {
         connect(m_add, &QPushButton::clicked, this, [this] { editRecord(-1); });
     }
@@ -312,6 +308,21 @@ void CollectionEditor::editRecord(int row)
                          showRecords(lockedRecords() + records);
                          m_notifyChanged();
                      });
+}
+
+// macOS's item views take Return as an edit key rather than activation, so
+// the keys that open a row are handled here, ahead of the view.
+bool CollectionEditor::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched != m_table || event->type() != QEvent::KeyPress || m_table->currentRow() < 0) {
+        return QWidget::eventFilter(watched, event);
+    }
+    const int key = static_cast<QKeyEvent *>(event)->key();
+    if (key != Qt::Key_Return && key != Qt::Key_Enter && key != Qt::Key_F2) {
+        return QWidget::eventFilter(watched, event);
+    }
+    editRecord(m_table->currentRow());
+    return true;
 }
 
 void CollectionEditor::importRecords()

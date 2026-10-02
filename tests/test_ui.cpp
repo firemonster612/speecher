@@ -1105,6 +1105,7 @@ private slots:
         QDialog *dialog = shownRecordDialog(*page);
         QVERIFY(dialog);
         QCOMPARE(dialog->windowTitle(), QStringLiteral("Speecher"));
+        QCOMPARE(page->findChildren<QDialog *>(QStringLiteral("collectionRecordDialog")).size(), 1);
     }
 
     void aToneIsAddedAndEditedInItsDialog()
