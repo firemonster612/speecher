@@ -26,6 +26,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QLocale>
+#include <QMenu>
 #include <QMimeData>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -483,6 +484,9 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     m_summary->setObjectName(QStringLiteral("transcribeSummary"));
     m_summary->setWordWrap(true);
     topLayout->addWidget(m_summary);
+    m_subtitlesNote = dimLabel(QString(), top);
+    m_subtitlesNote->setWordWrap(true);
+    topLayout->addWidget(m_subtitlesNote);
     m_problem = new InlineMessage(top);
     m_problem->setObjectName(QStringLiteral("transcribeProblem"));
     m_problem->setType(InlineMessage::Type::Error);
@@ -969,8 +973,14 @@ void TranscribePage::showResults()
                 QTimer::singleShot(1500, copy, [copy] { copy->setText(transcribeText(TranscribeText::Copy)); });
             });
             QToolButton *exportButton = textButton(transcribeText(TranscribeText::Export), headRow);
-            connect(exportButton, &QToolButton::clicked, this,
-                    [this, path = result.path, text] { exportOne(path, text); });
+            exportButton->setPopupMode(QToolButton::InstantPopup);
+            auto *formats = new QMenu(exportButton);
+            for (TranscriptFormat format : {TranscriptFormat::Text, TranscriptFormat::Srt, TranscriptFormat::WebVtt}) {
+                QAction *action = formats->addAction(transcriptFormatCaption(format));
+                action->setEnabled(canExportAs(result, format));
+                connect(action, &QAction::triggered, this, [this, result, format] { exportOne(result, format); });
+            }
+            exportButton->setMenu(formats);
             head->addWidget(copy);
             head->addWidget(exportButton);
         }
@@ -979,6 +989,8 @@ void TranscribePage::showResults()
 
     m_resultsHeader->setText(resultsTitle(int(batchResults.size())));
     m_summary->setText(m_model->summary());
+    m_subtitlesNote->setText(m_model->subtitlesNote());
+    m_subtitlesNote->setVisible(!m_subtitlesNote->text().isEmpty());
     applyResultsWidth();
 }
 
@@ -1028,15 +1040,16 @@ void TranscribePage::exportAll()
     m_model->setProblem(errors.join(QLatin1Char('\n')));
 }
 
-void TranscribePage::exportOne(const QString &audioPath, const QString &text)
+void TranscribePage::exportOne(const TranscribeFileResult &result, TranscriptFormat format)
 {
-    const QFileInfo audio(audioPath);
+    const QFileInfo audio(result.path);
+    const QString extension = transcriptFileExtension(format);
     const QString path = QFileDialog::getSaveFileName(
         this, transcribeText(TranscribeText::ExportDialogTitle),
-        audio.dir().filePath(audio.completeBaseName() + QStringLiteral("-transcribed.txt")),
-        transcribeText(TranscribeText::TextFiles) + QStringLiteral(" (*.txt)"));
+        audio.dir().filePath(audio.completeBaseName() + QStringLiteral("-transcribed.") + extension),
+        QStringLiteral("%1 (*.%2)").arg(transcriptFormatFileType(format), extension));
     if (!path.isEmpty()) {
-        m_model->setProblem(writeText(path, text));
+        m_model->setProblem(writeText(path, exportedTranscript(result, format, showingRaw())));
     }
 }
 

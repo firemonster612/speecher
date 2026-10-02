@@ -56,6 +56,7 @@ public:
     const QList<TranscribeFileResult> &results() const;
     const TranscribeOptions &batchOptions() const;
     QString summary() const;
+    QString subtitlesNote() const;
     // Runs one failed file again with the batch's choices.
     void retry(int index);
     // The result row a retry is running for, or -1.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "dictation/DictationPorts.h"
 
 #include <QByteArray>
 #include <QList>
@@ -67,6 +68,10 @@ public:
     // Audio is 16 kHz mono signed 16-bit PCM. A call that fails without
     // setting error was aborted.
     std::optional<QString> transcribe(const QByteArray &pcm16, QString *error);
+    // When each part of the last transcribe() result was spoken; empty when
+    // the model gives no timings, and always for a streaming model, whose
+    // final text comes from committed text its raw rows may not match.
+    QList<TranscriptSegment> segments() const;
 
     bool beginStream(QString *error);
     bool feed(const QByteArray &pcm16, StreamText *text, QString *error);
@@ -87,6 +92,7 @@ private:
     QString m_modelPath;
     LocalRunsOn m_runsOn;
     bool m_streams = false;
+    bool m_timesSegments = false;
 };
 
 } // namespace speecher

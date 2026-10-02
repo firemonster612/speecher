@@ -325,7 +325,11 @@ void LocalSpeechTranscriber::finish(quint64 attemptId)
         }
         return;
     }
-    reportEnd(attemptId, [this, attemptId, text = *transcript] {
+    const QList<TranscriptSegment> segments = m_engine.segments();
+    reportEnd(attemptId, [this, attemptId, text = *transcript, segments] {
+        if (!segments.isEmpty()) {
+            emit attemptSegments(attemptId, segments);
+        }
         emit attemptTranscript(attemptId, text);
         emit attemptCompleted(attemptId);
     });

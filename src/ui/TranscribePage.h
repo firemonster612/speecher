@@ -69,7 +69,7 @@ private:
     // narrow for them beside it.
     void applyResultsWidth();
     void exportAll();
-    void exportOne(const QString &audioPath, const QString &text);
+    void exportOne(const TranscribeFileResult &result, TranscriptFormat format);
     bool showingRaw() const;
     TranscribeOptions options() const;
 
@@ -118,6 +118,7 @@ private:
     // Results
     QLabel *m_resultsHeader;
     QLabel *m_summary;
+    QLabel *m_subtitlesNote;
     InlineMessage *m_problem;
     QWidget *m_variants;
     QAbstractButton *m_showRefined = nullptr;

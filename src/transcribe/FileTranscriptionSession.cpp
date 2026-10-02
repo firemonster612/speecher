@@ -274,6 +274,17 @@ void FileTranscriptionSession::prepareProviders()
                                                     : m_attemptBaseText + QLatin1Char(' ') + text);
                 }
             });
+    connect(m_transcriber, &SpeechTranscriber::attemptSegments, this,
+            [this](quint64 attemptId, const QList<TranscriptSegment> &segments) {
+                if (attemptId != m_attemptId) {
+                    return;
+                }
+                for (TranscriptSegment segment : segments) {
+                    segment.startMs += m_attemptStartMs;
+                    segment.endMs += m_attemptStartMs;
+                    m_current.segments.append(segment);
+                }
+            });
     connect(m_transcriber, &SpeechTranscriber::attemptCompleted,
             this, &FileTranscriptionSession::handleAttemptCompleted);
     connect(m_transcriber, &SpeechTranscriber::failed,
@@ -303,6 +314,7 @@ void FileTranscriptionSession::beginStreaming()
 {
     m_reconnectsLeft = kReconnectsPerFile;
     m_attemptBaseText.clear();
+    m_attemptStartMs = 0;
     m_attemptClock.start();
     m_transcriber->startAttempt(++m_attemptId, m_batchSettings.speech);
     m_sendTimer.start();
@@ -337,6 +349,7 @@ void FileTranscriptionSession::startNextAttempt()
         m_transcript->commitFinal(partial);
     }
     m_attemptBaseText = m_transcript->text();
+    m_attemptStartMs = m_sent * 1000 / kBytesPerSecond;
     m_attemptClock.start();
     m_transcriber->startAttempt(++m_attemptId, m_batchSettings.speech);
 }

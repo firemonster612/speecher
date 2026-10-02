@@ -787,6 +787,7 @@ private slots:
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
         QSignalSpy runsOn(&transcriber, &LocalSpeechTranscriber::runsOnChanged);
+        QSignalSpy timings(&transcriber, &SpeechTranscriber::attemptSegments);
 
         SpeechSettings settings;
         settings.local.modelId = modelId;
@@ -817,6 +818,18 @@ private slots:
                 << "ms after the last of" << pcm.size() / 32 << "ms of audio";
         QVERIFY(text.contains(QStringLiteral("tempest"), Qt::CaseInsensitive));
         QVERIFY(text.contains(QStringLiteral("security everywhere"), Qt::CaseInsensitive));
+        // Models that time their segments do so within the clip, in order.
+        if (!timings.isEmpty()) {
+            const auto segments = timings.first().at(1).value<QList<TranscriptSegment>>();
+            qInfo() << segments.size() << "timed segments";
+            qint64 previousEndMs = 0;
+            for (const TranscriptSegment &segment : segments) {
+                qInfo() << segment.startMs << segment.endMs << segment.text;
+                QVERIFY(segment.startMs >= previousEndMs - 1 && segment.startMs <= segment.endMs);
+                previousEndMs = segment.endMs;
+            }
+            QVERIFY(previousEndMs <= pcm.size() / 32 + 1000);
+        }
 
         QSignalSpy speed(&transcriber, &LocalSpeechTranscriber::speedTestFinished);
         // SPEECHER_TEST_LOCAL_RUNS_ON picks where the Speed Test runs, as the

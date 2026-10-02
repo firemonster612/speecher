@@ -178,6 +178,16 @@ signals:
     void failed(const QString &message);
 };
 
+// A stretch of the Raw Transcript and when it was spoken, in milliseconds from
+// the start of the attempt's audio.
+struct TranscriptSegment {
+    qint64 startMs = 0;
+    qint64 endMs = 0;
+    QString text;
+
+    bool operator==(const TranscriptSegment &) const = default;
+};
+
 class SpeechTranscriber : public QObject {
     Q_OBJECT
 
@@ -204,6 +214,9 @@ signals:
     // finals, emitted before attemptCompleted by providers that retranscribe
     // the buffered audio in one pass at the end.
     void attemptTranscript(quint64 attemptId, const QString &text);
+    // Optional: when each part of that whole-attempt transcript was spoken,
+    // emitted just before it by providers whose service returns timings.
+    void attemptSegments(quint64 attemptId, const QList<speecher::TranscriptSegment> &segments);
     void attemptCompleted(quint64 attemptId);
     void failed(const speecher::SpeechFailure &failure);
 };

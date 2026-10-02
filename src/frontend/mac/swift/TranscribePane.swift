@@ -213,6 +213,10 @@ final class TranscriptionModel: ObservableObject {
 
     /// The pane's fixed wording, from core.
     func text(_ text: SpeecherTranscribeText) -> String { bridge.text(text) }
+    func formatCaption(_ format: SpeecherTranscriptFormat) -> String { bridge.formatCaption(format) }
+    func canExport(_ result: SpeecherTranscriptResult, as format: SpeecherTranscriptFormat) -> Bool {
+        bridge.canExport(result, as: format)
+    }
     var startCaption: String { bridge.startCaption(fileCount: files.count) }
     var chooseFilesCaption: String { bridge.chooseFilesCaption(anyListed: !files.isEmpty) }
     var resultsTitle: String { bridge.resultsTitle(count: results.count) }
@@ -488,16 +492,23 @@ final class TranscriptionModel: ObservableObject {
         flashCopied("all")
     }
 
-    func export(_ result: SpeecherTranscriptResult) {
+    var subtitlesNote: String {
+        guard let labels = batchLabels else { return "" }
+        return bridge.subtitlesNote(results: results, labels: labels)
+    }
+
+    func export(_ result: SpeecherTranscriptResult, as format: SpeecherTranscriptFormat) {
         let audio = URL(fileURLWithPath: result.path)
+        let fileExtension = bridge.fileExtension(format)
         let panel = NSSavePanel()
         panel.title = text(.exportDialogTitle)
-        panel.allowedContentTypes = [.plainText]
+        panel.allowedContentTypes = [UTType(filenameExtension: fileExtension) ?? .plainText]
         panel.directoryURL = audio.deletingLastPathComponent()
-        panel.nameFieldStringValue = audio.deletingPathExtension().lastPathComponent + "-transcribed.txt"
+        panel.nameFieldStringValue = audio.deletingPathExtension().lastPathComponent + "-transcribed." + fileExtension
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try (shownText(result) + "\n").write(to: url, atomically: true, encoding: .utf8)
+            let contents = bridge.exportedTranscript(result, format: format, raw: showingRaw)
+            try (contents + "\n").write(to: url, atomically: true, encoding: .utf8)
             exportProblem = ""
         } catch {
             exportProblem = bridge.transcriptSaveError(path: url.path, reason: error.localizedDescription)
@@ -802,6 +813,10 @@ struct TranscribePane: View {
                     }
                     Text(model.summary)
                         .foregroundStyle(.secondary)
+                    if !model.subtitlesNote.isEmpty {
+                        Text(model.subtitlesNote)
+                            .foregroundStyle(.secondary)
+                    }
                     if !model.exportProblem.isEmpty {
                         Label(model.exportProblem, systemImage: "exclamationmark.octagon.fill")
                             .foregroundStyle(.red)
@@ -840,7 +855,14 @@ struct TranscribePane: View {
                             .disabled(model.retrying != nil)
                     } else {
                         Button(model.text(model.copied == result.path ? .copied : .copy)) { model.copy(result) }
-                        Button(model.text(.export)) { model.export(result) }
+                        Menu(model.text(.export)) {
+                            ForEach([SpeecherTranscriptFormat.text, .srt, .webVtt], id: \.self) { format in
+                                Button(model.formatCaption(format)) { model.export(result, as: format) }
+                                    .disabled(!model.canExport(result, as: format))
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
                     }
                 }
             } label: {

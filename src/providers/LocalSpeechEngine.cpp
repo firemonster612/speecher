@@ -208,8 +208,9 @@ bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn
     transcribe_set_abort_callback(m_session, &LocalSpeechEngine::abortRequested, this);
     transcribe_capabilities capabilities;
     transcribe_capabilities_init(&capabilities);
-    m_streams = transcribe_model_get_capabilities(m_model, &capabilities) == TRANSCRIBE_OK
-        && capabilities.supports_streaming;
+    const bool knowsCapabilities = transcribe_model_get_capabilities(m_model, &capabilities) == TRANSCRIBE_OK;
+    m_streams = knowsCapabilities && capabilities.supports_streaming;
+    m_timesSegments = knowsCapabilities && capabilities.max_timestamp_kind >= TRANSCRIBE_TIMESTAMPS_SEGMENT;
     m_modelPath = modelPath;
     m_runsOn = runsOn;
     return true;
@@ -224,6 +225,7 @@ void LocalSpeechEngine::unload()
     m_modelPath.clear();
     m_runsOn = {};
     m_streams = false;
+    m_timesSegments = false;
 }
 
 bool LocalSpeechEngine::isLoaded(const QString &modelPath, const LocalRunsOn &runsOn) const
@@ -258,7 +260,8 @@ std::optional<QString> LocalSpeechEngine::transcribe(const QByteArray &pcm16, QS
     transcribe_stream_reset(m_session);
     transcribe_run_params params;
     transcribe_run_params_init(&params);
-    params.timestamps = TRANSCRIBE_TIMESTAMPS_NONE;
+    // Asking a model for finer timings than it has fails the run.
+    params.timestamps = m_timesSegments ? TRANSCRIBE_TIMESTAMPS_SEGMENT : TRANSCRIBE_TIMESTAMPS_NONE;
     params.language = language;
     const transcribe_status status = transcribe_run(m_session, pcm.data(), int(pcm.size()), &params);
     if (status == TRANSCRIBE_ERR_ABORTED) {
@@ -268,6 +271,24 @@ std::optional<QString> LocalSpeechEngine::transcribe(const QByteArray &pcm16, QS
         return std::nullopt;
     }
     return QString::fromUtf8(transcribe_full_text(m_session)).trimmed();
+}
+
+QList<TranscriptSegment> LocalSpeechEngine::segments() const
+{
+    QList<TranscriptSegment> result;
+    if (m_streams || transcribe_returned_timestamp_kind(m_session) < TRANSCRIBE_TIMESTAMPS_SEGMENT) {
+        return result;
+    }
+    for (int index = 0; index < transcribe_n_segments(m_session); ++index) {
+        transcribe_segment segment;
+        transcribe_segment_init(&segment);
+        transcribe_get_segment(m_session, index, &segment);
+        const QString text = QString::fromUtf8(segment.text).trimmed();
+        if (!text.isEmpty()) {
+            result.append({segment.t0_ms, segment.t1_ms, text});
+        }
+    }
+    return result;
 }
 
 bool LocalSpeechEngine::beginStream(QString *error)

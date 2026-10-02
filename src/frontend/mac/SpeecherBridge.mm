@@ -483,6 +483,8 @@ static speecher::TranscribeOptions coreTranscribeOptions(SpeecherTranscribeOptio
 @property (nonatomic, copy) NSString *savedPath;
 @property (nonatomic, copy) NSString *error;
 @property (nonatomic) BOOL failed;
+// Swift never reads these; they go back to core with the result.
+@property (nonatomic) QList<speecher::TranscriptSegment> segments;
 @end
 
 @implementation SpeecherTranscriptResult
@@ -496,6 +498,7 @@ static speecher::TranscribeFileResult coreTranscriptResult(SpeecherTranscriptRes
     core.refined = QString::fromNSString(result.refined);
     core.savedPath = QString::fromNSString(result.savedPath);
     core.error = QString::fromNSString(result.error);
+    core.segments = result.segments;
     return core;
 }
 
@@ -517,6 +520,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
     bridged.savedPath = result.savedPath.toNSString();
     bridged.error = result.error.toNSString();
     bridged.failed = result.failed();
+    bridged.segments = result.segments;
     return bridged;
 }
 
@@ -3499,6 +3503,37 @@ static std::optional<QString> optionalString(NSString *value)
     return speecher::allTranscripts(coreTranscriptResults(results), raw).toNSString();
 }
 
+static speecher::TranscriptFormat coreTranscriptFormat(SpeecherTranscriptFormat format)
+{
+    static_assert(int(SpeecherTranscriptFormatText) == int(speecher::TranscriptFormat::Text));
+    static_assert(int(SpeecherTranscriptFormatSrt) == int(speecher::TranscriptFormat::Srt));
+    static_assert(int(SpeecherTranscriptFormatWebVtt) == int(speecher::TranscriptFormat::WebVtt));
+    return static_cast<speecher::TranscriptFormat>(format);
+}
+
+- (NSString *)transcriptFormatCaption:(SpeecherTranscriptFormat)format
+{
+    return speecher::transcriptFormatCaption(coreTranscriptFormat(format)).toNSString();
+}
+
+- (NSString *)transcriptFileExtension:(SpeecherTranscriptFormat)format
+{
+    return speecher::transcriptFileExtension(coreTranscriptFormat(format)).toNSString();
+}
+
+- (BOOL)canExport:(SpeecherTranscriptResult *)result as:(SpeecherTranscriptFormat)format
+{
+    return speecher::canExportAs(coreTranscriptResult(result), coreTranscriptFormat(format));
+}
+
+- (NSString *)exportedTranscript:(SpeecherTranscriptResult *)result
+                          format:(SpeecherTranscriptFormat)format
+                             raw:(BOOL)raw
+{
+    return speecher::exportedTranscript(coreTranscriptResult(result), coreTranscriptFormat(format), raw)
+        .toNSString();
+}
+
 - (NSString *)processingTitleForBatch:(NSArray<NSString *> *)batch current:(NSInteger)current
 {
     QStringList paths;
@@ -3546,6 +3581,12 @@ static std::optional<QString> optionalString(NSString *value)
     return speecher::batchSummary(coreTranscriptResults(results), int(batchSize), cancelled, durations,
                                   coreTranscribeOptions(options), labels.labels)
         .toNSString();
+}
+
+- (NSString *)subtitlesNoteForResults:(NSArray<SpeecherTranscriptResult *> *)results
+                               labels:(SpeecherTranscribeBatchLabels *)labels
+{
+    return speecher::subtitlesNote(coreTranscriptResults(results), labels.labels).toNSString();
 }
 
 @end
