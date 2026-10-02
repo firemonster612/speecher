@@ -329,7 +329,7 @@ else
     cp "$CASE_DIR/pages/step-6-shortcut.png" "$CASE_DIR/shortcut-refused.png"
     expect_text "$CASE_DIR/shortcut-refused.png" "Step 6 of 7" \
       || errors+=("the shortcut step does not carry its counter on the title row")
-    expect_text "$CASE_DIR/shortcut-refused.png" "Could not register" \
+    expect_text "$CASE_DIR/shortcut-refused.png" "already owns" \
       || errors+=("the shortcut step does not say why the shortcut was refused")
     click_button Continue || true
     sleep 1
