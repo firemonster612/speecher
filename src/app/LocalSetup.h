@@ -31,8 +31,9 @@ QString setupRefinementChoice(const QString &saved, const QStringList &ready, bo
                               bool explicitlyChosen);
 
 // Speech is required: an unready default sign-in with no ready one to move to
-// gives way to a Local Model, where the build offers one, unless a CLI Proxy
-// API account could sign it in. Asked once the provider checks have answered.
+// gives way to a Local Model, where the build offers one and this computer can
+// run it (LocalSetup::canRunAnyModel), unless a CLI Proxy API account could
+// sign it in. Asked once the provider checks have answered.
 QString setupSpeechChoice(const QString &saved, const QStringList &ready, bool localOffered,
                           bool proxyAccountFound, bool explicitlyChosen);
 
@@ -78,6 +79,10 @@ public:
     // engine's backends is what makes it slow.
     void probeHardware();
     bool hardwareKnown() const;
+    // Whether this computer can run a local speech model at all, on any
+    // placement. True until the hardware probe answers: a machine is not
+    // declared too small before anyone measured it.
+    bool canRunAnyModel() const;
     const HardwareSummary &hardware() const;
     // "AMD Ryzen 7 PRO 4750U, 16 threads · AMD Radeon Graphics, Vulkan · 16 GB".
     QString hardwareLine() const;

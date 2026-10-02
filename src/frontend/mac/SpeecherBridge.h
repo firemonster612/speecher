@@ -983,6 +983,13 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSString *setupBlockedHeading;
 @property (nonatomic, readonly, copy) NSString *setupBlockedFooter;
 - (NSString *)setupStepCounter:(NSInteger)step of:(NSInteger)total NS_SWIFT_NAME(setupStepCounter(_:of:));
+// The Transcription step's dead-end note, or empty while any way into
+// dictation remains; core decides when it shows and words it.
+- (NSString *)setupTranscriptionDeadEnd:(BOOL)signInFound
+                            localUsable:(BOOL)localUsable
+                          endpointSaved:(BOOL)endpointSaved
+              signInProvidersRegistered:(BOOL)signInProvidersRegistered
+    NS_SWIFT_NAME(setupTranscriptionDeadEnd(signInFound:localUsable:endpointSaved:signInProvidersRegistered:));
 - (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
     NS_SWIFT_NAME(setupTranscriptionBlocked(localSelected:provider:));
 - (NSString *)setupMicrophoneBlocked:(BOOL)accessGranted NS_SWIFT_NAME(setupMicrophoneBlocked(accessGranted:));
@@ -1050,6 +1057,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
     NS_SWIFT_NAME(setupRefinementChoice(saved:readyProviders:));
 - (BOOL)offersSetupSpeechProvider:(NSString *)providerId saved:(NSString *)saved localAvailable:(BOOL)localAvailable
     NS_SWIFT_NAME(offersSetupSpeechProvider(_:saved:localAvailable:));
+- (BOOL)isSetupSignInProvider:(NSString *)providerId NS_SWIFT_NAME(isSetupSignInProvider(_:));
 // "Ollama with gemma4:e4b" or "qwen3 on your server"; empty for other providers.
 @property (nonatomic, readonly, copy) NSString *ownModelRefinementSummary;
 
@@ -1124,6 +1132,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // download, a Speed Test or a pull outlives the window that started it.
 // Whether this build can run speech on this computer at all.
 @property (nonatomic, readonly) BOOL localSpeechAvailable;
+// Whether the hardware can run any catalog model. Optimistically YES until
+// the hardware probe answers.
+@property (nonatomic, readonly) BOOL localSpeechCanRun;
 // Anything below changed. rowsChanged says the settings rows that report it,
 // and the settings LocalSetup writes, changed too; it is NO for a download or
 // pull's progress alone. Arrives on the main thread, often while one runs.

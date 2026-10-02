@@ -75,6 +75,10 @@ enum class ModelFit {
 
 ModelFit modelFit(const LocalModel &model, const HardwareProfile &hardware);
 
+// Whether this machine can run speech locally at all: true while any catalog
+// model is at worst a tight fit.
+bool anyLocalModelFits(const HardwareProfile &hardware);
+
 struct SpeedEstimate {
     double secondsFor10sSpeech = 0;
     // False when the machine is not the one the catalog measured on.

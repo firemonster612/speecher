@@ -34,6 +34,15 @@ QString setupWindowTitle();
 // "Step 2 of 9".
 QString setupStepCounter(int step, int total);
 
+// The Transcription step's dead-end note, or empty while any way into
+// dictation remains: a found sign-in, a machine that can run a model, a
+// configured speech server, or no sign-in providers to wait for. While it
+// shows, it is the step's only verdict and the step holds Continue. Core also
+// decides the wording from whether Claude Code or Codex is installed:
+// installed means signing in is the missing step, otherwise the note says to
+// get an account and install one.
+QString setupTranscriptionDeadEnd(bool signInFound, bool localUsable, bool endpointSaved,
+                                  bool signInProvidersRegistered);
 // Why a state-dependent gate is shut. An empty label means no transcription
 // service is available.
 QString setupTranscriptionBlocked(bool localSelected, const QString &providerLabel);

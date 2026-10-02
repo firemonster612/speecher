@@ -97,6 +97,132 @@ Filename: "{app}\speecher.exe"; Description: "Launch Speecher"; Flags: nowait po
 Filename: "{app}\speecher.exe"; Parameters: "{code:RestartArguments}"; Flags: nowait skipifnotsilent; Check: ShouldLaunchSpeecher
 
 [Code]
+var
+  Wmi: Variant;
+
+// Whether speecher.exe from this install folder is running. WMI rather than
+// a marker the app sets, so it also finds releases older than any marker. If
+// WMI is unavailable this answers no, which is how Setup behaved before.
+function SpeecherRunning(): Boolean;
+var
+  Path: String;
+  Locator, Processes: Variant;
+begin
+  Path := ExpandConstant('{app}\speecher.exe');
+  StringChangeEx(Path, '\', '\\', True);
+  StringChangeEx(Path, '''', '\''', True);
+  try
+    if VarIsEmpty(Wmi) then
+    begin
+      Locator := CreateOleObject('WbemScripting.SWbemLocator');
+      Wmi := Locator.ConnectServer('.', 'root\CIMV2');
+    end;
+    Processes := Wmi.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE ExecutablePath = ''' + Path + '''');
+    Result := Processes.Count > 0;
+  except
+    Result := False;
+  end;
+end;
+
+// Asks the running Speecher to quit and waits up to ten seconds for it.
+function QuitSpeecher(): Boolean;
+var
+  ResultCode: Integer;
+  Waited: Integer;
+begin
+  Exec(ExpandConstant('{app}\speecher.exe'), 'quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Waited := 0;
+  while SpeecherRunning() and (Waited < 40) do
+  begin
+    Sleep(250);
+    Waited := Waited + 1;
+  end;
+  Result := not SpeecherRunning();
+end;
+
+// Quit a running Speecher before Setup's files-in-use check. Releases before
+// the tray window answered Restart Manager ignore its close request, so Setup
+// would wait on them and then fail. This quits Speecher whatever is chosen on
+// the Preparing page: leaving it running only ever ended in a half-replaced
+// install. Anything still running falls through to Restart Manager.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  if SpeecherRunning() then
+    QuitSpeecher();
+  Result := '';
+end;
+
+// Whether Dir or any folder under it holds a file. A junction, or a folder
+// that cannot be listed, counts as content, so nothing near it is removed.
+function HoldsFiles(const Dir: String): Boolean;
+var
+  Find: TFindRec;
+  IsJunction: Boolean;
+begin
+  Result := True;
+  if not FindFirst(Dir, Find) then
+    Exit;
+  IsJunction := (Find.Attributes and FILE_ATTRIBUTE_REPARSE_POINT) <> 0;
+  FindClose(Find);
+  if IsJunction or not FindFirst(Dir + '\*', Find) then
+    Exit;
+  try
+    Result := False;
+    repeat
+      if (Find.Name <> '.') and (Find.Name <> '..') then
+        Result := ((Find.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0)
+          or HoldsFiles(Dir + '\' + Find.Name);
+    until Result or not FindNext(Find);
+  finally
+    FindClose(Find);
+  end;
+end;
+
+// Removes Dir and the folders under it. RemoveDir refuses a folder that is not
+// empty, so a file written since HoldsFiles looked survives.
+procedure RemoveEmptyTree(const Dir: String);
+var
+  Find: TFindRec;
+begin
+  if FindFirst(Dir + '\*', Find) then
+  try
+    repeat
+      if ((Find.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0)
+         and ((Find.Attributes and FILE_ATTRIBUTE_REPARSE_POINT) = 0)
+         and (Find.Name <> '.') and (Find.Name <> '..') then
+        RemoveEmptyTree(Dir + '\' + Find.Name);
+    until not FindNext(Find);
+  finally
+    FindClose(Find);
+  end;
+  RemoveDir(Dir);
+end;
+
+// The uninstaller has no Restart Manager step. Run under a live Speecher, it
+// cannot delete the locked files, so the folder stays behind with Speecher
+// still running from it. Once the person has confirmed, quit Speecher; if it
+// is still running, stop before anything is removed rather than leave half an
+// install.
+//
+// Folders an earlier interrupted uninstall left behind were not created by
+// this install, so Inno does not remove them and the install folder outlives
+// the uninstall. Afterwards, if no file is left anywhere under the install
+// folder, remove it; a folder that still holds anything, such as a shared one
+// typed in as the destination, is left alone.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  case CurUninstallStep of
+    usUninstall:
+      while SpeecherRunning() and not QuitSpeecher() do
+        if SuppressibleMsgBox('Speecher is still running. Quit it from its tray icon, then click Retry.',
+                              mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
+          Abort;
+    usPostUninstall:
+      if not HoldsFiles(ExpandConstant('{app}')) then
+        RemoveEmptyTree(ExpandConstant('{app}'));
+  end;
+end;
+
 function ShouldLaunchSpeecher(): Boolean;
 begin
   Result := ExpandConstant('{param:VERIFYINSTALL|0}') <> '1';

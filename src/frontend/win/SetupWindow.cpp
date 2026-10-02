@@ -653,6 +653,9 @@ struct SetupWindow::Native {
     {
         const QString id = setupSteps().at(index).id;
         if (id == QStringLiteral("transcription")) {
+            if (!speechDeadEnd().isEmpty()) {
+                return false;
+            }
             // A Local Model counts once its download has started: it keeps
             // going while setup continues.
             if (localSelected()) {
@@ -982,7 +985,8 @@ struct SetupWindow::Native {
                 signIns.append(option.first);
             }
         }
-        const QString chosen = setupSpeechChoice(saved, ready, localSpeech != nullptr,
+        const QString chosen = setupSpeechChoice(saved, ready,
+                                                 localSpeech && localSpeech->canRunAnyModel(),
                                                  signIn.anyUsableAccount(signIns), false);
         for (int index = 0; index < options.size(); ++index) {
             if (options.at(index).first != chosen || chosen == saved) {
@@ -995,6 +999,25 @@ struct SetupWindow::Native {
             selectProgrammatically(choices, programmaticSpeechIndex, index);
             return;
         }
+    }
+
+    // The Transcription step's dead-end note, or empty while anything can
+    // still transcribe. An unanswered sign-in check is not a missing sign-in,
+    // and canRunAnyModel stays optimistic until the hardware probe answers.
+    QString speechDeadEnd() const
+    {
+        QStringList signIns;
+        bool signInFound = false;
+        for (const ProviderDescriptor &provider : controller->providerRegistry()->speechProviders()) {
+            if (isSetupSignInProvider(provider.id)) {
+                signIns.append(provider.id);
+                signInFound = signInFound || speechReady.value(provider.id, true);
+            }
+        }
+        return setupTranscriptionDeadEnd(signInFound || signIn.anyUsableAccount(signIns),
+                                         localSpeech && localSpeech->canRunAnyModel(),
+                                         controller->settings()->speechProvider() == kEndpoint,
+                                         !signIns.isEmpty());
     }
 
     bool localSelected() const
@@ -1225,6 +1248,12 @@ struct SetupWindow::Native {
     void showTranscription()
     {
         StackPanel panel = page(QStringLiteral("transcription"));
+        // Core words the dead end and decides when it shows.
+        InfoBar deadEnd;
+        deadEnd.Severity(InfoBarSeverity::Warning);
+        deadEnd.IsClosable(false);
+        deadEnd.IsOpen(false);
+        panel.Children().Append(deadEnd);
         QList<QPair<QString, QString>> options;
         for (const ProviderDescriptor &provider : controller->providerRegistry()->speechProviders()) {
             // The Local card is only a choice where the assistant can set it
@@ -1363,7 +1392,7 @@ struct SetupWindow::Native {
 
         // The credential hint and Check again belong to a service that is not
         // signed in; a ready one needs neither.
-        const auto describeSelected = [this, choices, options, stats, status, hint, check,
+        const auto describeProvider = [this, choices, options, stats, status, hint, check,
                                        accuracy, updateSignInVisibility] {
             const int index = choices.SelectedIndex();
             if (index < 0 || index >= options.size()) {
@@ -1409,6 +1438,17 @@ struct SetupWindow::Native {
                                                          : Visibility::Collapsed;
             hint.Visibility(unready);
             check.Visibility(unready);
+        };
+        const auto describeSelected = [this, describeProvider, deadEnd, status] {
+            describeProvider();
+            const QString note = speechDeadEnd();
+            deadEnd.Message(win::hs(note));
+            deadEnd.IsOpen(!note.isEmpty());
+            // The note is the verdict; the status line would report the same
+            // missing sign-in a second time.
+            if (!note.isEmpty()) {
+                setShown(status.root, false);
+            }
         };
         transcriptionRefresh = describeSelected;
         choices.SelectionChanged([this, choices, options, describeSelected,
@@ -2224,6 +2264,9 @@ struct SetupWindow::Native {
     {
         const SetupStepInfo &step = setupSteps().at(index);
         if (step.id == QStringLiteral("transcription")) {
+            if (const QString note = speechDeadEnd(); !note.isEmpty()) {
+                return note;
+            }
             return setupTranscriptionBlocked(
                 localSelected(),
                 providerLabel(controller->providerRegistry()->speechProviders(),

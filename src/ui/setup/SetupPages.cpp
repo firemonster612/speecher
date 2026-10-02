@@ -381,6 +381,14 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
 {
     QVBoxLayout *layout = makePage(this, findSetupStep(QStringLiteral("transcription"))->intro);
 
+    // Core words the dead end and decides when it shows.
+    m_deadEnd = new InlineMessage(this);
+    m_deadEnd->setObjectName(QStringLiteral("speechDeadEnd"));
+    m_deadEnd->setType(InlineMessage::Type::Warning);
+    m_deadEnd->setCloseButtonVisible(false);
+    m_deadEnd->hide();
+    layout->addWidget(m_deadEnd);
+
     // Every service is on the page with its own readiness, so the choice does
     // not hide behind a dropdown the user has to open to find it.
     QFormLayout *choices = addCard(layout, this, setupText(SetupText::TranscriptionService));
@@ -758,6 +766,9 @@ int SpeechProviderSetupPage::selectedIndex() const
 
 QString SpeechProviderSetupPage::blockedReason() const
 {
+    if (const QString note = deadEnd(); !note.isEmpty()) {
+        return note;
+    }
     const int index = selectedIndex();
     return setupTranscriptionBlocked(localSelected(), index < 0 ? QString() : m_options.at(index).label);
 }
@@ -938,10 +949,48 @@ void SpeechProviderSetupPage::finishProbe(int index,
     }
 }
 
+QString SpeechProviderSetupPage::deadEnd() const
+{
+    QStringList signIns;
+    bool signInFound = false;
+    bool endpointSaved = false;
+    for (const ProviderOptionRow &option : m_options) {
+        // Endpoint is only on the page when the person saved one.
+        endpointSaved = endpointSaved || option.id == QStringLiteral("endpoint");
+        if (!isSetupSignInProvider(option.id)) {
+            continue;
+        }
+        signIns.append(option.id);
+        // A check that has not answered is not a missing sign-in yet.
+        signInFound = signInFound || option.ok || !option.probed;
+    }
+    // canRunAnyModel stays optimistic until the hardware probe answers.
+    return setupTranscriptionDeadEnd(signInFound || m_signIn.anyUsableAccount(signIns),
+                                     m_local && m_local->canRunAnyModel(), endpointSaved,
+                                     !signIns.isEmpty());
+}
+
 void SpeechProviderSetupPage::showSelectedProvider()
+{
+    showProviderStatus();
+    const QString note = deadEnd();
+    m_deadEnd->setText(note);
+    m_deadEnd->setVisible(!note.isEmpty());
+    if (note.isEmpty()) {
+        return;
+    }
+    // The note is the verdict; a status line under it would report the same
+    // missing sign-in a second time.
+    m_statusGlyph->hide();
+    m_status->hide();
+    setReady(false);
+}
+
+void SpeechProviderSetupPage::showProviderStatus()
 {
     const int index = selectedIndex();
     if (index < 0) {
+        m_status->show();
         setStatusColor(m_status, false);
         m_status->setText(setupTranscriptionBlocked(false, QString()));
         m_status->setToolTip(QString());
@@ -1011,7 +1060,8 @@ void SpeechProviderSetupPage::autoSelectReadyProvider()
         if (option.ok) ready.append(option.id);
         if (isSetupSignInProvider(option.id)) signIns.append(option.id);
     }
-    const auto chosen = setupSpeechChoice(m_options.at(index).id, ready, m_local != nullptr,
+    const auto chosen = setupSpeechChoice(m_options.at(index).id, ready,
+                                          m_local && m_local->canRunAnyModel(),
                                           m_signIn.anyUsableAccount(signIns), m_userSelected);
     for (const auto &option : m_options) {
         if (option.id == chosen) option.button->setChecked(true);

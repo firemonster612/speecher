@@ -1,6 +1,7 @@
 #include "app/SetupSteps.h"
 
 #include "core/AppSettings.h"
+#include "core/CliToolDiscovery.h"
 #include "core/settings/SettingsSchema.h"
 
 namespace speecher {
@@ -88,6 +89,20 @@ QString setupWindowTitle()
 QString setupStepCounter(int step, int total)
 {
     return QStringLiteral("Step %1 of %2").arg(step).arg(total);
+}
+
+QString setupTranscriptionDeadEnd(bool signInFound, bool localUsable, bool endpointSaved,
+                                  bool signInProvidersRegistered)
+{
+    if (signInFound || localUsable || endpointSaved || !signInProvidersRegistered) {
+        return {};
+    }
+    if (CliToolDiscovery::isClaudeCodeInstalled() || CliToolDiscovery::isCodexInstalled()) {
+        return QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found.");
+    }
+    return QStringLiteral("This computer can't run a local speech model, and no ChatGPT, Claude, "
+                          "or CLI Proxy API sign-in was found. Please get a free ChatGPT or Claude "
+                          "account and install Claude Code or Claude Desktop, or Codex.");
 }
 
 QString setupTranscriptionBlocked(bool localSelected, const QString &providerLabel)

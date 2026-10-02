@@ -2623,6 +2623,11 @@ static void probeSpeechProvider(BridgeState *state,
     return speecher::offersSetupSpeechProvider(QString::fromNSString(providerId), QString::fromNSString(saved), localAvailable);
 }
 
+- (BOOL)isSetupSignInProvider:(NSString *)providerId
+{
+    return speecher::isSetupSignInProvider(QString::fromNSString(providerId));
+}
+
 - (NSArray<SpeecherSetupStep *> *)setupSteps
 {
     NSMutableArray<SpeecherSetupStep *> *steps = [NSMutableArray array];
@@ -2646,6 +2651,16 @@ static void probeSpeechProvider(BridgeState *state,
 - (NSString *)setupStepCounter:(NSInteger)step of:(NSInteger)total
 {
     return speecher::setupStepCounter(int(step), int(total)).toNSString();
+}
+
+- (NSString *)setupTranscriptionDeadEnd:(BOOL)signInFound
+                            localUsable:(BOOL)localUsable
+                          endpointSaved:(BOOL)endpointSaved
+              signInProvidersRegistered:(BOOL)signInProvidersRegistered
+{
+    return speecher::setupTranscriptionDeadEnd(signInFound, localUsable, endpointSaved,
+                                               signInProvidersRegistered)
+        .toNSString();
 }
 
 - (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
@@ -3022,6 +3037,11 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 - (BOOL)localSpeechAvailable
 {
     return _state->controller->providerRegistry()->speechProvider(QStringLiteral("local")) != nullptr;
+}
+
+- (BOOL)localSpeechCanRun
+{
+    return _state->controller->localSetup()->canRunAnyModel();
 }
 
 - (void)probeLocalHardware

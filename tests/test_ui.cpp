@@ -4,6 +4,8 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
 #include "common/test_auth.h"
+#include "common/test_local_setup.h"
+#include "app/SetupSteps.h"
 #include "core/VocabularyLimit.h"
 #include "app/AccessibilityPresentation.h"
 #include "ui/AccessibilityNotice.h"
@@ -1349,6 +1351,76 @@ private slots:
         QVERIFY(here);
         QVERIFY(here->isChecked());
         QCOMPARE(settings.speechProvider(), QStringLiteral("local"));
+    }
+
+    void theTranscriptionPageNamesTheDeadEndWhenNothingCanTranscribe()
+    {
+        qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
+        const auto cleanup = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CLAUDE_INSTALLED");
+            qunsetenv("SPEECHER_TEST_CODEX_INSTALLED");
+        });
+        SettingsStore settings;
+        settings.raw().clear();
+        QTemporaryDir emptyCliproxyDir;
+        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), emptyCliproxyDir.path());
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
+                return provider;
+            });
+        for (const char *id : {"local", "endpoint"}) {
+            providers.registerSpeechProvider({id, id, {}},
+                [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        }
+        QTemporaryDir models;
+        LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, store);
+
+        SpeechProviderSetupPage setup(settings, providers, &local);
+        setup.show();
+        auto *deadEnd = setup.findChild<InlineMessage *>(QStringLiteral("speechDeadEnd"));
+        auto *status = setup.findChild<QLabel *>(QStringLiteral("speechProviderStatus"));
+        QVERIFY(deadEnd && status);
+        // Until the hardware answers, this computer is still a way out.
+        QVERIFY(!deadEnd->isVisibleTo(&setup));
+
+        // The hardware answers that no model fits. With nothing installed to
+        // sign in to, the note says to get an account and install Claude Code
+        // or Codex, and it replaces the status line rather than repeating it.
+        HardwareSummary tiny;
+        tiny.profile.systemRamBytes = 2ull * 1000 * 1000 * 1000;
+        tiny.profile.availableRamBytes = 2ull * 1000 * 1000 * 1000;
+        LocalSetupTestAccess::setHardware(local, tiny);
+        QVERIFY(deadEnd->isVisibleTo(&setup));
+        QVERIFY(!status->isVisibleTo(&setup));
+        QVERIFY(!setup.ready());
+        QVERIFY(deadEnd->label()->text().startsWith(
+            QStringLiteral("This computer can't run a local speech model")));
+        QCOMPARE(setup.blockedReason(), deadEnd->label()->text());
+
+        // Codex appears on this machine: signing in is the missing step.
+        qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
+        setup.recheck();
+        QCOMPARE(deadEnd->label()->text(),
+                 QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found."));
+        QVERIFY(!setup.ready());
+
+        // A machine known to be too small never defaults to this computer.
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        SpeechProviderSetupPage reopened(settings, providers, &local);
+        reopened.show();
+        QVERIFY(reopened.findChild<QRadioButton *>(QStringLiteral("speechProviderOption_claude"))->isChecked());
+
+        // A speech server the person already configured is a way out.
+        settings.setSpeechProvider(QStringLiteral("endpoint"));
+        SpeechProviderSetupPage withServer(settings, providers, &local);
+        withServer.show();
+        QVERIFY(!withServer.findChild<InlineMessage *>(QStringLiteral("speechDeadEnd"))->isVisibleTo(&withServer));
     }
 
     void theLocalModelCardHoldsNextUntilADownloadStarts()

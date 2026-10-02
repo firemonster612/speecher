@@ -12,6 +12,17 @@ $OriginalPlatform = $env:QT_QPA_PLATFORM
 $OriginalGrabPage = $env:SPEECHER_GRAB_PAGE
 $App = $null
 
+# Starts the installed app and fails unless it is still running after startup.
+function Start-Speecher([string]$Argument) {
+    $Process = Start-Process $Exe -ArgumentList $Argument -PassThru
+    Start-Sleep -Seconds 8
+    $Process.Refresh()
+    if ($Process.HasExited) {
+        throw "Application started with $Argument exited during startup with code $($Process.ExitCode)"
+    }
+    return $Process
+}
+
 try {
     $Arguments = @(
         "/VERYSILENT",
@@ -105,6 +116,97 @@ try {
         throw "Installed application exited during startup with code $($App.ExitCode) (missing runtime dependency?)"
     }
     Write-Output "Installed application launched and stayed alive without Qt on PATH"
+    $App | Stop-Process -Force
+    $App.WaitForExit()
+
+    # Restart Manager closing the running app without forcing, the way Setup
+    # does when it replaces files in use. Only the tray window answers it;
+    # before it did, Speecher stayed running here even with a window open.
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class RestartManager {
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmStartSession(out uint session, int flags, StringBuilder key);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmEndSession(uint session);
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmRegisterResources(uint session, uint fileCount, string[] files,
+                                          uint appCount, IntPtr apps, uint serviceCount, string[] services);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmShutdown(uint session, uint flags, IntPtr progress);
+
+    public static int Shutdown(string path) {
+        uint session;
+        int error = RmStartSession(out session, 0, new StringBuilder(33));
+        if (error != 0) {
+            return error;
+        }
+        try {
+            error = RmRegisterResources(session, 1, new[] { path }, 0, IntPtr.Zero, 0, null);
+            return error != 0 ? error : RmShutdown(session, 0, IntPtr.Zero);
+        } finally {
+            RmEndSession(session);
+        }
+    }
+}
+"@
+    $App = Start-Speecher "--daemon"
+    $Shutdown = [RestartManager]::Shutdown($Exe)
+    if ($Shutdown -ne 0 -or -not $App.WaitForExit(10000)) {
+        throw "Restart Manager could not close the running application (error $Shutdown)"
+    }
+    Write-Output "Restart Manager closed the running application"
+
+    # Installing over the running app: Setup asks it to quit before replacing
+    # its files.
+    $App = Start-Speecher "--show-settings"
+    $Reinstall = Start-Process $InstallerPath -ArgumentList $Arguments -Wait -PassThru
+    if ($Reinstall.ExitCode -ne 0) {
+        throw "Reinstall over the running application exited with code $($Reinstall.ExitCode)"
+    }
+    if (-not $App.WaitForExit(10000)) {
+        throw "Setup could not close the running application"
+    }
+    Write-Output "Setup closed the running application"
+
+    # Uninstalling under the running app must quit it rather than leave its
+    # locked files, and the folder, behind. The empty folders stand in for
+    # what an earlier interrupted uninstall leaves, which this install did
+    # not create.
+    New-Item -ItemType Directory -Force (Join-Path $InstallDir "leftover\nested") | Out-Null
+    $App = Start-Speecher "--show-settings"
+    Start-Process (Join-Path $InstallDir "unins000.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+    if (-not $App.WaitForExit(10000)) {
+        throw "Uninstall left the application running"
+    }
+    $Deadline = (Get-Date).AddSeconds(10)
+    while ((Test-Path $InstallDir) -and (Get-Date) -lt $Deadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    if (Test-Path $InstallDir) {
+        throw "Uninstall left files behind:`n$((Get-ChildItem $InstallDir -Recurse -Force).FullName -join "`n")"
+    }
+    Write-Output "Uninstall quit the running application and removed its folder"
+
+    # A folder this install did not create that still holds a file stays.
+    $Install = Start-Process $InstallerPath -ArgumentList $Arguments -Wait -PassThru
+    if ($Install.ExitCode -ne 0) {
+        throw "Second install exited with code $($Install.ExitCode)"
+    }
+    $Kept = Join-Path $InstallDir "keep\note.txt"
+    New-Item -ItemType File -Force $Kept | Out-Null
+    $Uninstaller = Join-Path $InstallDir "unins000.exe"
+    Start-Process $Uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+    $Deadline = (Get-Date).AddSeconds(10)
+    while ((Test-Path $Uninstaller) -and (Get-Date) -lt $Deadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not (Test-Path $Kept)) {
+        throw "Uninstall removed a file it did not install"
+    }
+    Write-Output "Uninstall kept a file it did not install"
 } finally {
     if ($App -and -not $App.HasExited) {
         $App | Stop-Process -Force

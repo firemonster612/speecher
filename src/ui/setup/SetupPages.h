@@ -149,6 +149,9 @@ private:
     void probeProvider(int index, quint64 generation);
     void finishProbe(int index, quint64 generation, const SpeechPrepareResult &result);
     void showSelectedProvider();
+    void showProviderStatus();
+    // The dead-end note, or empty while anything on this page can transcribe.
+    QString deadEnd() const;
     void autoSelectReadyProvider();
     void updateSignInControls();
     void populateCliproxyAccounts();
@@ -168,6 +171,9 @@ private:
     LocalSetup *m_local;
     ProviderSignIn m_signIn;
     QList<ProviderOptionRow> m_options;
+    // No sign-in, no CLI to sign in to, and this computer can't run a local
+    // speech model.
+    InlineMessage *m_deadEnd = nullptr;
     // Where the selected service's sign-in comes from, so someone whose only
     // account lives in CLI Proxy API can finish setup without visiting
     // Settings first.

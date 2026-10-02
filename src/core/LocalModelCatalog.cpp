@@ -224,6 +224,13 @@ ModelFit modelFit(const LocalModel &model, const HardwareProfile &hardware)
     return need <= budget ? ModelFit::Tight : ModelFit::TooLarge;
 }
 
+bool anyLocalModelFits(const HardwareProfile &hardware)
+{
+    return std::any_of(catalog.cbegin(), catalog.cend(), [&hardware](const LocalModel &model) {
+        return modelFit(model, hardware) != ModelFit::TooLarge;
+    });
+}
+
 std::optional<SpeedEstimate> estimatedSpeed(const LocalModel &model, const HardwareProfile &hardware)
 {
     const bool apple = hardware.accelerator == HardwareProfile::Accelerator::AppleSilicon;

@@ -178,7 +178,8 @@ final class SetupFlowModel: ObservableObject {
             return true
         }
         switch stepId {
-        case "transcription": return localSelected ? localDownloadStarted : providerReady
+        case "transcription":
+            return transcriptionDeadEnd == nil && (localSelected ? localDownloadStarted : providerReady)
         case "microphone":
             return microphonePermission == .authorized && microphoneInputDetected
         // Accessibility is not a gate: without it dictation still reaches the
@@ -218,7 +219,8 @@ final class SetupFlowModel: ObservableObject {
         let bridge = model.bridge
         switch stepId {
         case "transcription":
-            return bridge.setupTranscriptionBlocked(localSelected: localSelected,
+            return transcriptionDeadEnd
+                ?? bridge.setupTranscriptionBlocked(localSelected: localSelected,
                                                     provider: selectedSpeechProvider?.label ?? "")
         case "microphone":
             return bridge.setupMicrophoneBlocked(accessGranted: microphonePermission == .authorized)
@@ -410,6 +412,23 @@ final class SetupFlowModel: ObservableObject {
 
     var offersLocal: Bool { model.bridge.localSpeechAvailable }
 
+    /// Whether the hardware can run any catalog model; optimistic until the
+    /// hardware probe answers.
+    var localRunnable: Bool { model.bridge.localSpeechCanRun }
+
+    /// The transcription step's dead-end note; core decides when it shows and
+    /// words it. A sign-in check that has not answered is not a missing
+    /// sign-in yet.
+    var transcriptionDeadEnd: String? {
+        let signIns = speechProviders.filter { model.bridge.isSetupSignInProvider($0.id) }
+        let note = model.bridge.setupTranscriptionDeadEnd(
+            signInFound: signIns.contains { $0.ready || !$0.probed } || cliproxyAvailable,
+            localUsable: offersLocal && localRunnable,
+            endpointSaved: savedSpeechProvider == "endpoint",
+            signInProvidersRegistered: !signIns.isEmpty)
+        return note.isEmpty ? nil : note
+    }
+
     var localSelected: Bool { offersLocal && providerId == "local" }
 
     /// The model the Local card shows, which is the one dictation will use.
@@ -597,7 +616,7 @@ final class SetupFlowModel: ObservableObject {
         let chosen = model.bridge.setupSpeechChoice(
             saved: providerId,
             readyProviders: speechProviders.filter(\.ready).map(\.id),
-            localOffered: offersLocal,
+            localOffered: offersLocal && localRunnable,
             proxyAccountFound: cliproxyAvailable)
         if chosen != providerId {
             model.setValue(chosen, for: "speechProvider")
@@ -1288,6 +1307,13 @@ private struct TranscriptionStep: View {
 
     var body: some View {
         Form {
+            // Core words the dead end and decides when it shows.
+            if let deadEnd = flow.transcriptionDeadEnd {
+                Section {
+                    Label(deadEnd, systemImage: "exclamationmark.triangle")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Section {
                 // Every service is on the step with its own readiness, rather
                 // than hidden behind a pop-up button that has to be opened to
@@ -1326,14 +1352,18 @@ private struct TranscriptionStep: View {
                     RowView(row: row, model: model)
                 }
                 // The verdict and the way to ask again sit on one row, so a
-                // held Continue and its remedy are read together.
+                // held Continue and its remedy are read together. The dead-end
+                // note is the verdict while it shows; a status line would
+                // report the same missing sign-in a second time.
                 if flow.localSelected {
-                    if let line = localStatus {
+                    if let line = localStatus, flow.transcriptionDeadEnd == nil {
                         Text(line).foregroundStyle(.secondary)
                     }
                 } else if !flow.providerStatus.isEmpty {
                     HStack(alignment: .firstTextBaseline) {
-                        StatusLabel(text: flow.providerStatus, tone: statusTone)
+                        if flow.transcriptionDeadEnd == nil {
+                            StatusLabel(text: flow.providerStatus, tone: statusTone)
+                        }
                         Spacer(minLength: 12)
                         if !flow.providerReady {
                             Button(flow.model.bridge.setupText(.checkAgain)) { flow.checkSpeechProviders() }
