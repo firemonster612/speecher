@@ -180,6 +180,7 @@ bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeO
     m_batchSettings = m_settings->snapshot();
     m_batchSettings.speech.providerId = options.speechProviderId;
     m_batchSettings.refinement.providerId = options.refinementProviderId;
+    m_batchSettings.speech.timedSegments = true;
     if (!options.applyVocabulary) {
         m_batchSettings.speech.vocabulary.clear();
         m_batchSettings.vocabulary.clear();
@@ -280,6 +281,11 @@ void FileTranscriptionSession::prepareProviders()
                     return;
                 }
                 for (TranscriptSegment segment : segments) {
+                    // A segment with no length or no words cannot be a cue.
+                    segment.text = segment.text.trimmed();
+                    if (segment.endMs <= segment.startMs || segment.text.isEmpty()) {
+                        continue;
+                    }
                     segment.startMs += m_attemptStartMs;
                     segment.endMs += m_attemptStartMs;
                     m_current.segments.append(segment);

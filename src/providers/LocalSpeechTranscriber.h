@@ -70,7 +70,7 @@ private:
     // Worker thread only.
     bool ensureLoaded(const QString &modelPath, const LocalRunsOn &runsOn, QString *error);
     void announceRunsOn();
-    void begin(quint64 attemptId, const QString &modelPath, const LocalRunsOn &runsOn);
+    void begin(quint64 attemptId, const QString &modelPath, const LocalRunsOn &runsOn, bool timed);
     void feedPending();
     void finish(quint64 attemptId);
     bool attemptRunning(quint64 attemptId) const;
@@ -98,6 +98,8 @@ private:
     LocalSpeechEngine m_engine;
     quint64 m_workerAttempt = 0;
     bool m_workerAttemptFailed = false;
+    // Whether the attempt asked for segment timings.
+    bool m_workerAttemptTimed = false;
     QByteArray m_batchPcm;
     qsizetype m_emittedCommittedChars = 0;
 };

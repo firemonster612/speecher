@@ -957,11 +957,15 @@ void TranscribePane::appendResults(const StackPanel &column, PaneHost &host)
             buttons.Children().Append(retryButton);
         } else {
             buttons.Children().Append(copyButton(transcribeText(TranscribeText::Copy), text));
-            DropDownButton exportButton;
+            // The button exports text, as it always has; its arrow offers subtitles.
+            SplitButton exportButton;
             exportButton.Content(box_value(hs(transcribeText(TranscribeText::Export))));
+            exportButton.Click([this, &host, result](const auto &, const auto &) {
+                exportOne(host, result, TranscriptFormat::Text);
+            });
             MenuFlyout formats;
             formats.Placement(Primitives::FlyoutPlacementMode::BottomEdgeAlignedRight);
-            for (TranscriptFormat format : {TranscriptFormat::Text, TranscriptFormat::Srt, TranscriptFormat::WebVtt}) {
+            for (TranscriptFormat format : {TranscriptFormat::Srt, TranscriptFormat::WebVtt}) {
                 MenuFlyoutItem item;
                 item.Text(hs(transcriptFormatCaption(format)));
                 item.IsEnabled(canExportAs(result, format));

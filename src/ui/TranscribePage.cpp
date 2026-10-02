@@ -973,9 +973,12 @@ void TranscribePage::showResults()
                 QTimer::singleShot(1500, copy, [copy] { copy->setText(transcribeText(TranscribeText::Copy)); });
             });
             QToolButton *exportButton = textButton(transcribeText(TranscribeText::Export), headRow);
-            exportButton->setPopupMode(QToolButton::InstantPopup);
+            // The button exports text, as it always has; its arrow offers subtitles.
+            exportButton->setPopupMode(QToolButton::MenuButtonPopup);
+            connect(exportButton, &QToolButton::clicked, this,
+                    [this, result] { exportOne(result, TranscriptFormat::Text); });
             auto *formats = new QMenu(exportButton);
-            for (TranscriptFormat format : {TranscriptFormat::Text, TranscriptFormat::Srt, TranscriptFormat::WebVtt}) {
+            for (TranscriptFormat format : {TranscriptFormat::Srt, TranscriptFormat::WebVtt}) {
                 QAction *action = formats->addAction(transcriptFormatCaption(format));
                 action->setEnabled(canExportAs(result, format));
                 connect(action, &QAction::triggered, this, [this, result, format] { exportOne(result, format); });

@@ -818,7 +818,18 @@ private slots:
                 << "ms after the last of" << pcm.size() / 32 << "ms of audio";
         QVERIFY(text.contains(QStringLiteral("tempest"), Qt::CaseInsensitive));
         QVERIFY(text.contains(QStringLiteral("security everywhere"), Qt::CaseInsensitive));
-        // Models that time their segments do so within the clip, in order.
+        // Dictation never asks for timings, which slow a model and can change
+        // its text.
+        QVERIFY(timings.isEmpty());
+
+        // Transcribe does; models that time their segments do so within the
+        // clip, in order.
+        settings.timedSegments = true;
+        transcriber.startAttempt(2, settings);
+        transcriber.sendAudio(2, pcm);
+        transcriber.finishInput(2);
+        QVERIFY(completed.wait(120000));
+        QCOMPARE(failed.size(), 0);
         if (!timings.isEmpty()) {
             const auto segments = timings.first().at(1).value<QList<TranscriptSegment>>();
             qInfo() << segments.size() << "timed segments";

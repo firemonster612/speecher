@@ -855,11 +855,14 @@ struct TranscribePane: View {
                             .disabled(model.retrying != nil)
                     } else {
                         Button(model.text(model.copied == result.path ? .copied : .copy)) { model.copy(result) }
+                        // The button exports text, as it always has; its arrow offers subtitles.
                         Menu(model.text(.export)) {
-                            ForEach([SpeecherTranscriptFormat.text, .srt, .webVtt], id: \.self) { format in
+                            ForEach([SpeecherTranscriptFormat.srt, .webVtt], id: \.self) { format in
                                 Button(model.formatCaption(format)) { model.export(result, as: format) }
                                     .disabled(!model.canExport(result, as: format))
                             }
+                        } primaryAction: {
+                            model.export(result, as: .text)
                         }
                         .menuStyle(.borderlessButton)
                         .fixedSize()

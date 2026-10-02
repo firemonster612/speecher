@@ -101,8 +101,8 @@ void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSetting
         });
         return;
     }
-    onWorker([this, attemptId, modelPath, runsOn = settings.local.runsOn] {
-        begin(attemptId, modelPath, runsOn);
+    onWorker([this, attemptId, modelPath, runsOn = settings.local.runsOn, timed = settings.timedSegments] {
+        begin(attemptId, modelPath, runsOn, timed);
     });
 }
 
@@ -248,13 +248,14 @@ void LocalSpeechTranscriber::failAttempt(quint64 attemptId, const QString &messa
     });
 }
 
-void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, const LocalRunsOn &runsOn)
+void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, const LocalRunsOn &runsOn, bool timed)
 {
     if (attemptId != m_liveAttempt.load()) {
         return;
     }
     m_workerAttempt = attemptId;
     m_workerAttemptFailed = false;
+    m_workerAttemptTimed = timed;
     m_batchPcm.clear();
     m_emittedCommittedChars = 0;
     QString error;
@@ -315,9 +316,17 @@ void LocalSpeechTranscriber::finish(quint64 attemptId)
     }
     QString error;
     // The final text can revise what streamed, so it replaces all of it.
-    const std::optional<QString> transcript = m_engine.streams()
-        ? m_engine.finalize(&error)
-        : m_engine.transcribe(m_batchPcm, &error);
+    // A stream's final text comes from its committed text, which its raw
+    // rows may not match, so only a one-pass run is timed.
+    QList<TranscriptSegment> segments;
+    std::optional<QString> transcript;
+    if (m_engine.streams()) {
+        transcript = m_engine.finalize(&error);
+    } else if (m_workerAttemptTimed) {
+        transcript = m_engine.transcribeTimed(m_batchPcm, &segments, &error);
+    } else {
+        transcript = m_engine.transcribe(m_batchPcm, &error);
+    }
     m_batchPcm.clear();
     if (!transcript) {
         if (!error.isEmpty()) {
@@ -325,7 +334,6 @@ void LocalSpeechTranscriber::finish(quint64 attemptId)
         }
         return;
     }
-    const QList<TranscriptSegment> segments = m_engine.segments();
     reportEnd(attemptId, [this, attemptId, text = *transcript, segments] {
         if (!segments.isEmpty()) {
             emit attemptSegments(attemptId, segments);

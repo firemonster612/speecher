@@ -192,6 +192,10 @@ struct SpeechSettings {
     QString codexCliproxyAccount;
     LocalSpeechSettings local;
     SpeechEndpointSettings endpoint;
+    // Never stored. Transcribe sets it so a provider that can time its
+    // transcript does; dictation leaves it off, because asking a model for
+    // timings slows it and can change the text it returns.
+    bool timedSegments = false;
 };
 
 struct AudioCaptureSettings {

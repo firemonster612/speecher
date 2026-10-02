@@ -182,7 +182,7 @@ QString transcribeText(TranscribeText text)
     case TranscribeText::ExportAll:
         return QStringLiteral("Export all\u2026");
     case TranscribeText::Export:
-        return QStringLiteral("Export");
+        return QStringLiteral("Export…");
     case TranscribeText::ExportAllDialogTitle:
         return QStringLiteral("Export transcripts to");
     case TranscribeText::ExportDialogTitle:
@@ -328,7 +328,7 @@ QString transcriptFormatCaption(TranscriptFormat format)
     case TranscriptFormat::WebVtt:
         return QStringLiteral("WebVTT subtitles\u2026");
     }
-    return QStringLiteral("Text\u2026");
+    return transcribeText(TranscribeText::Export);
 }
 
 QString transcriptFormatFileType(TranscriptFormat format)
@@ -362,9 +362,14 @@ QString subtitlesNote(const QList<TranscribeFileResult> &results, const Transcri
     const bool timed = std::any_of(results.cbegin(), results.cend(), [](const TranscribeFileResult &result) {
         return canExportAs(result, TranscriptFormat::Srt);
     });
-    return timed ? QStringLiteral("Subtitles use the Raw Transcript, since refinement rewrites the words its "
-                                  "timings belong to.")
-                 : QStringLiteral("Subtitles need timings, and %1 returned none.").arg(labels.speech);
+    if (!timed) {
+        return QStringLiteral("Subtitles need timings, and %1 returned none.").arg(labels.speech);
+    }
+    // labels.refinement is empty when the batch did not refine.
+    return labels.refinement.isEmpty()
+        ? QStringLiteral("Subtitles come from the Raw Transcript.")
+        : QStringLiteral("Subtitles come from the Raw Transcript, since refinement rewrites the words its "
+                         "timings belong to.");
 }
 
 QString allTranscripts(const QList<TranscribeFileResult> &results, bool raw)

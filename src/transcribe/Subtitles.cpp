@@ -9,6 +9,8 @@ namespace {
 
 // Two lines of 42 characters, the usual limit for one subtitle on screen.
 constexpr qsizetype kMaxCueChars = 84;
+// Shorter than this, a cue flashes past before it can be read.
+constexpr qint64 kMinCueMs = 500;
 
 // text cut after each of marks that a space follows.
 QStringList splitAfter(const QString &text, QStringView marks)
@@ -26,18 +28,42 @@ QStringList splitAfter(const QString &text, QStringView marks)
     return pieces;
 }
 
-// One segment's cue texts: the segment whole when it fits, otherwise its
-// sentences, a sentence still too long cut at its commas, and the pieces
-// joined back together while they fit.
+// The places a too-long piece may break, most preferred first: after a
+// sentence end, after a clause mark, then between words.
+enum class Break { Sentence, Clause, Word, None };
+
+QStringList splitAt(const QString &text, Break at)
+{
+    switch (at) {
+    case Break::Sentence:
+        return splitAfter(text, u".?!\u2026");
+    case Break::Clause:
+        return splitAfter(text, u",;:");
+    case Break::Word:
+        return text.split(QLatin1Char(' '));
+    case Break::None:
+        break;
+    }
+    return {text};
+}
+
+// text's pieces at the first break that brings each within the limit.
+void appendPieces(const QString &text, Break at, QStringList *pieces)
+{
+    if (text.size() <= kMaxCueChars || at == Break::None) {
+        *pieces << text;
+        return;
+    }
+    for (const QString &part : splitAt(text, at)) {
+        appendPieces(part, Break(int(at) + 1), pieces);
+    }
+}
+
+// One segment's cue texts: its pieces, joined back together while they fit.
 QStringList cueTexts(const QString &text)
 {
-    if (text.size() <= kMaxCueChars) {
-        return {text};
-    }
     QStringList pieces;
-    for (const QString &sentence : splitAfter(text, u".?!…")) {
-        pieces << (sentence.size() <= kMaxCueChars ? QStringList{sentence} : splitAfter(sentence, u",;:"));
-    }
+    appendPieces(text, Break::Sentence, &pieces);
     QStringList cues;
     for (const QString &piece : std::as_const(pieces)) {
         if (!cues.isEmpty() && cues.last().size() + 1 + piece.size() <= kMaxCueChars) {
@@ -50,25 +76,29 @@ QStringList cueTexts(const QString &text)
 }
 
 // Each piece of a split segment gets the share of its time that its share of
-// the text is.
+// the text is. A cue shorter than the minimum is lengthened to it, which can
+// overlap the next cue a little; both formats allow that.
 QList<TranscriptSegment> cues(const QList<TranscriptSegment> &segments)
 {
     QList<TranscriptSegment> result;
     for (const TranscriptSegment &segment : segments) {
-        if (segment.text.isEmpty()) {
+        // A blank line would end the cue early in both formats.
+        const QString text = segment.text.simplified();
+        if (text.isEmpty()) {
             continue;
         }
-        const QStringList texts = cueTexts(segment.text);
+        const QStringList texts = cueTexts(text);
         qsizetype total = 0;
-        for (const QString &text : texts) {
-            total += text.size();
+        for (const QString &piece : texts) {
+            total += piece.size();
         }
         const qint64 duration = std::max<qint64>(0, segment.endMs - segment.startMs);
         qsizetype before = 0;
-        for (const QString &text : texts) {
+        for (const QString &piece : texts) {
             const qint64 startMs = segment.startMs + duration * before / total;
-            before += text.size();
-            result.append({startMs, segment.startMs + duration * before / total, text});
+            before += piece.size();
+            const qint64 endMs = segment.startMs + duration * before / total;
+            result.append({startMs, std::max(endMs, startMs + kMinCueMs), piece});
         }
     }
     return result;

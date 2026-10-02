@@ -144,7 +144,8 @@ bool refinesTranscripts(const TranscribeOptions &options);
 QString shownTranscript(const TranscribeFileResult &result, bool raw);
 // A result's second line: why it failed, or its length and word count.
 QString resultMeta(const TranscribeFileResult &result, qint64 durationMs, bool raw);
-// A choice in a transcript's Export menu, and its file type in the save dialog.
+// What exports a transcript in a format: Export… itself for text, and the
+// subtitle choices in its menu. Then the format's file type in the save dialog.
 QString transcriptFormatCaption(TranscriptFormat format);
 QString transcriptFormatFileType(TranscriptFormat format);
 // Whether a finished transcript exports in that format: text always,

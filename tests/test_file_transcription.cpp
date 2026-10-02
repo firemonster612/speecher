@@ -43,6 +43,7 @@ struct Script {
     int attempts = 0;
     qsizetype bytes = 0;
     QStringList vocabulary;
+    bool timedSegments = false;
     // Sent with each finished input, timed from the start of its attempt.
     QList<TranscriptSegment> segments;
 };
@@ -66,6 +67,7 @@ public:
     {
         ++m_script->attempts;
         m_script->vocabulary = settings.vocabulary;
+        m_script->timedSegments = settings.timedSegments;
         m_bytes = 0;
     }
 
@@ -291,14 +293,17 @@ private slots:
         QVERIFY(results.first().error.isEmpty());
     }
 
+    // Transcribe asks for timings, and keeps the segments that can be cues.
     // The first stream ends after one 100 ms chunk, so the second attempt's
     // audio starts 100 ms into the file.
-    void timesSegmentsFromTheStartOfTheFile()
+    void timesUsableSegmentsFromTheStartOfTheFile()
     {
         DictationSession::setStableAttemptMs(0);
         const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
         m_script.expireFirstStream = true;
-        m_script.segments = {{0, 200, QStringLiteral("heard")}};
+        m_script.segments = {{0, 200, QStringLiteral("heard")},
+                             {300, 300, QStringLiteral("no length")},
+                             {400, 500, QStringLiteral(" ")}};
         const QString audio = m_dir.filePath(QStringLiteral("timed.wav"));
         writeWav(audio);
         SettingsStore settings;
@@ -309,6 +314,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
 
         const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
+        QVERIFY(m_script.timedSegments);
         QCOMPARE(results.first().segments, QList<TranscriptSegment>({{100, 300, QStringLiteral("heard")}}));
     }
 
@@ -333,6 +339,28 @@ private slots:
                                 "5\n00:00:19,600 --> 00:00:22,400\nand a third clause to end it"));
     }
 
+    // 10 nine-letter words: 8 fit in 84 characters, and the cue's share of
+    // the 9.8 s is 79 of the 98 characters.
+    void splitsUnpunctuatedTextBetweenWords()
+    {
+        const QString words = QStringList(10, QStringLiteral("abcdefghi")).join(QLatin1Char(' '));
+        QCOMPARE(subtitleFile({{0, 9800, words}}, TranscriptFormat::Srt),
+                 QStringLiteral("1\n00:00:00,000 --> 00:00:07,900\n"
+                                "abcdefghi abcdefghi abcdefghi abcdefghi abcdefghi abcdefghi abcdefghi abcdefghi\n\n"
+                                "2\n00:00:07,900 --> 00:00:09,800\nabcdefghi abcdefghi"));
+    }
+
+    // A blink-length cue is held for half a second, and a blank line inside
+    // a segment would end its cue early.
+    void keepsCuesReadable()
+    {
+        QCOMPARE(subtitleFile({{1000, 1200, QStringLiteral("Yes.")},
+                               {2000, 4000, QStringLiteral("first line\n\nsecond line")}},
+                              TranscriptFormat::Srt),
+                 QStringLiteral("1\n00:00:01,000 --> 00:00:01,500\nYes.\n\n"
+                                "2\n00:00:02,000 --> 00:00:04,000\nfirst line second line"));
+    }
+
     void writesWebVttWithItsHeaderAndEscapes()
     {
         QCOMPARE(subtitleFile({{3723456, 3724000, QStringLiteral("a < b & c")}}, TranscriptFormat::WebVtt),
@@ -354,6 +382,28 @@ private slots:
         QCOMPARE(exportedTranscript(result, TranscriptFormat::Srt, false),
                  QStringLiteral("1\n00:00:00,000 --> 00:00:01,000\nheard words"));
         QCOMPARE(exportedTranscript(result, TranscriptFormat::Text, false), QStringLiteral("Refined words."));
+
+        result.refined.clear();
+        QVERIFY(!canExportAs(result, TranscriptFormat::Text));
+        QVERIFY(!canExportAs(result, TranscriptFormat::Srt));
+    }
+
+    // Refinement is the reason given only when the batch refined.
+    void subtitlesNoteGivesTheReasonThatApplies()
+    {
+        TranscribeFileResult timed;
+        timed.raw = timed.refined = QStringLiteral("heard");
+        timed.segments = {{0, 1000, QStringLiteral("heard")}};
+        TranscribeBatchLabels labels{QStringLiteral("Local Model"), {}};
+        const QString unrefined = subtitlesNote({timed}, labels);
+        QVERIFY(unrefined.contains(QStringLiteral("Raw Transcript")));
+        QVERIFY(!unrefined.contains(QStringLiteral("refinement")));
+
+        labels.refinement = QStringLiteral("OpenAI");
+        QVERIFY(subtitlesNote({timed}, labels).contains(QStringLiteral("refinement")));
+
+        timed.segments.clear();
+        QVERIFY(subtitlesNote({timed}, labels).contains(QStringLiteral("Local Model")));
     }
 
     void aFailedFileDoesNotStopTheBatch()
