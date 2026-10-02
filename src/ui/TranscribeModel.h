@@ -54,7 +54,8 @@ public:
 
     // Its results.
     const QList<TranscribeFileResult> &results() const;
-    const TranscribeOptions &batchOptions() const;
+    // Whether the batch refines, so its results offer the raw text too.
+    bool batchRefines() const;
     QString summary() const;
     // Runs one failed file again with the batch's choices.
     void retry(int index);
@@ -95,6 +96,7 @@ private:
     QStringList m_batch;
     TranscribeOptions m_batchOptions;
     TranscribeBatchLabels m_batchLabels;
+    bool m_batchRefines = false;
     int m_current = -1;
     QString m_currentPath;
     TranscribePhase m_phase = TranscribePhase::Reading;

@@ -137,8 +137,9 @@ QString refinementModel(const QString &providerId, const RefinementSettings &set
 // The help under that model on the Configure step: where it is set.
 QString refinementModelHint();
 // Whether a batch with these options refines its transcripts, which is when
-// the results offer the raw text beside the refined one.
-bool refinesTranscripts(const TranscribeOptions &options);
+// the results offer the raw text beside the refined one. The settings say
+// whether the batch's profile translates, which refines even at None.
+bool refinesTranscripts(const TranscribeOptions &options, const RefinementSettings &settings);
 // The raw transcript when asked for or when no refined one came back.
 QString shownTranscript(const TranscribeFileResult &result, bool raw);
 // A result's second line: why it failed, or its length and word count.

@@ -615,7 +615,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
     }
 
     // Translating needs refinement, so a profile set to None that has an
-    // output language refines at Light; a selection edit stays at None.
+    // output language refines at Light, a selection edit too.
     void aProfileThatTranslatesRefinesEvenAtNone()
     {
         AppSettings settings;
@@ -633,7 +633,7 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         selection.selectionStart = 0;
         selection.selectionEnd = 4;
         QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("shorter"), settings, selection).refinementSettings.style,
-                 QStringLiteral("none"));
+                 QStringLiteral("light_cleanup"));
     }
 
     void transcriptPipelineScopesLearnedCorrectionsAndPreservesUserBindingPrecedence()

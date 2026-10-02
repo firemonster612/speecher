@@ -402,7 +402,8 @@ private slots:
         const QString rule = QStringLiteral(
             "Rule: output_language.\n"
             "Write the refined text in Spanish. When the dictation was spoken in another language, "
-            "translate it and apply the other rules to the translation. Keep literal technical text, "
+            "translate it and apply the other rules to the translation. This rule overrides the rules "
+            "that preserve the original wording. Keep literal technical text, "
             "names, and binding placeholders unchanged.\n\nUser instructions.");
         QVERIFY(dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context).contains(rule));
         QVERIFY(compactRefinementSystemPrompt(QStringLiteral("light_cleanup"), context).contains(rule));

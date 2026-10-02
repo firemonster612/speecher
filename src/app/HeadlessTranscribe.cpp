@@ -36,8 +36,7 @@ TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options, const
     resolved.writingProfile = options.writingProfile.value_or(settings.refinement.defaultWritingProfile);
     const WritingProfileSettings profile = writingProfileSettingsFor(
         settings.refinement.writingProfiles, writingProfileFromName(resolved.writingProfile));
-    resolved.cleanupStrength =
-        options.cleanupStrength.value_or(refinedCleanupLevel(profile.cleanupStrength, profile.outputLanguage));
+    resolved.cleanupStrength = options.cleanupStrength.value_or(profile.cleanupStrength);
     resolved.tone = options.tone.value_or(profile.tone);
     resolved.destination = options.destination;
     resolved.folder = options.folder;
@@ -90,7 +89,7 @@ int runHeadlessTranscribe(const QStringList &files,
         return finish(2, QStringLiteral("Unknown refinement provider: %1 (see speecher --help)")
                              .arg(resolved.refinementProviderId));
     }
-    const bool refines = refinesTranscripts(resolved);
+    const bool refines = refinesTranscripts(resolved, settings->snapshot().refinement);
     // Saving happens here rather than in the session, so --raw can save what
     // it prints.
     TranscribeOptions sessionOptions = resolved;

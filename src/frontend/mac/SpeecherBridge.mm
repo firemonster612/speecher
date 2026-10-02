@@ -3481,7 +3481,8 @@ static std::optional<QString> optionalString(NSString *value)
 
 - (BOOL)refinesTranscripts:(SpeecherTranscribeOptions *)options
 {
-    return speecher::refinesTranscripts(coreTranscribeOptions(options));
+    return speecher::refinesTranscripts(coreTranscribeOptions(options),
+                                        _state->controller->settings()->snapshot().refinement);
 }
 
 - (NSString *)shownTranscript:(SpeecherTranscriptResult *)result raw:(BOOL)raw

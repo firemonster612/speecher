@@ -342,9 +342,8 @@ static void appendUserInstructions(QStringList &parts, const RefinementContext &
 }
 
 // The profile's output language, from the user's own settings. Nothing when
-// it is blank, so a prompt without one is exactly the built-in one. Selection
-// editing leaves it out: the revised selection keeps its own language unless
-// the spoken instructions ask for another.
+// it is blank, so a prompt without one is exactly the built-in one. The
+// selection-editing prompt does not include it.
 static void appendOutputLanguageRule(QStringList &parts, const RefinementContext &context)
 {
     const QString language = context.outputLanguage.trimmed();
@@ -352,7 +351,7 @@ static void appendOutputLanguageRule(QStringList &parts, const RefinementContext
         return;
     }
     parts << QStringLiteral("Rule: output_language.\n"
-                            "Write the refined text in %1. When the dictation was spoken in another language, translate it and apply the other rules to the translation. Keep literal technical text, names, and binding placeholders unchanged.")
+                            "Write the refined text in %1. When the dictation was spoken in another language, translate it and apply the other rules to the translation. This rule overrides the rules that preserve the original wording. Keep literal technical text, names, and binding placeholders unchanged.")
                  .arg(language);
 }
 

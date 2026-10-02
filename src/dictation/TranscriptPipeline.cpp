@@ -129,11 +129,7 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
     const WritingProfileSettings profileSettings = writingProfileSettingsFor(
         refinement.writingProfiles,
         resolved);
-    // A selection edit keeps the selection's language, so translating gives
-    // it no reason to refine.
-    refinement.style = target.hasSelection()
-        ? profileSettings.cleanupStrength
-        : refinedCleanupLevel(profileSettings.cleanupStrength, profileSettings.outputLanguage);
+    refinement.style = refinedCleanupLevel(profileSettings.cleanupStrength, profileSettings.outputLanguage);
     refinement.tone = profileSettings.tone;
     return refinement;
 }

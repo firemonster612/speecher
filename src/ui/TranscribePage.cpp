@@ -604,7 +604,7 @@ void TranscribePage::showStep()
         break;
     case TranscribeStep::Export:
         m_progressTimer.stop();
-        m_variants->setVisible(refinesTranscripts(m_model->batchOptions()));
+        m_variants->setVisible(m_model->batchRefines());
         m_showRefined->setChecked(true);
         m_problem->setText(m_model->problem());
         m_problem->setVisible(!m_model->problem().isEmpty());

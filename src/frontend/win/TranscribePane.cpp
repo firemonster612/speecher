@@ -378,8 +378,9 @@ void TranscribePane::startBatch()
 {
     m_batch = m_files;
     m_batchOptions = options();
-    m_batchLabels = batchLabels(m_batchOptions, *m_controller->providerRegistry(),
-                                m_controller->settings()->snapshot().refinement);
+    const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
+    m_batchLabels = batchLabels(m_batchOptions, *m_controller->providerRegistry(), refinement);
+    m_batchRefines = refinesTranscripts(m_batchOptions, refinement);
     m_results.clear();
     m_cancelled = false;
     m_current = -1;
@@ -733,7 +734,7 @@ void TranscribePane::showProgress()
 {
     const qreal progress = m_fileFinished
         ? 1.0
-        : m_progress.advance(overallFileProgress(m_fractionSent, m_phase, refinesTranscripts(m_batchOptions),
+        : m_progress.advance(overallFileProgress(m_fractionSent, m_phase, m_batchRefines,
                                                  m_phaseClock.elapsed()));
     for (const View &view : m_views) {
         if (view.progressBar) {
@@ -854,7 +855,7 @@ void TranscribePane::appendResults(const StackPanel &column, PaneHost &host)
     top.Padding({16, 16, 16, 16});
     top.Spacing(8);
     Grid toolbar = lineGrid();
-    if (refinesTranscripts(m_batchOptions)) {
+    if (m_batchRefines) {
         const QList<RowOption> versions{{QStringLiteral("refined"), transcribeText(TranscribeText::Refined)},
                                         {QStringLiteral("raw"), transcribeText(TranscribeText::Raw)}};
         toolbar.Children().Append(selectorBar(versions, m_showRaw ? QStringLiteral("raw") : QStringLiteral("refined"),

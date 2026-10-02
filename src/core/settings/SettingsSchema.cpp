@@ -1572,7 +1572,7 @@ SettingsPage writingProfilesPage(const SchemaContext &context)
         QStringLiteral("Use a custom system prompt"),
         QStringLiteral("Replaces the built-in rules with your prompt. Each profile's tone and "
                        "instructions still apply, and so do the instructions of a Cleanup Level "
-                       "you added. A profile set to None is not refined."),
+                       "you added. A profile set to None is not refined unless it translates."),
         [](const AppSettings &settings) { return settings.refinement.customSystemPromptEnabled; },
         [](AppSettings &settings, bool value) { settings.refinement.customSystemPromptEnabled = value; });
     gateOnRefinementProvider(customPromptEnabled);
@@ -3310,7 +3310,7 @@ QString refinementIntro()
 QList<RowOption> cleanupStrengths(const QList<CustomCleanupLevel> &custom)
 {
     QList<RowOption> options{
-        {QStringLiteral("none"), QStringLiteral("None"), QStringLiteral("Pastes your words as spoken.")},
+        {QStringLiteral("none"), QStringLiteral("None"), QStringLiteral("Pastes your words as spoken, unless the profile translates.")},
         {QStringLiteral("light_cleanup"), QStringLiteral("Light"),
          QStringLiteral("Fixes punctuation, capitals and clear mistakes, and keeps your wording.")},
         {QStringLiteral("balanced"), QStringLiteral("Medium"),
@@ -3431,7 +3431,8 @@ QString writingProfileChoiceSummary(const AppSettings &settings, const QString &
     };
     const QString language = profile.outputLanguage.trimmed();
     const QString refinedLevel = refinedCleanupLevel(level, language);
-    // A profile set to None is not refined, so its tone and instructions do nothing.
+    // A profile set to None without an output language is not refined, so its
+    // tone and instructions do nothing.
     if (refinedLevel == QStringLiteral("none")) {
         return QStringLiteral("No cleanup.");
     }
