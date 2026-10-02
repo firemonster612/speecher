@@ -75,7 +75,11 @@ QStringList refinementVocabulary(const AppSettings &settings)
 
 QList<BindingRule> activeBindings(const AppSettings &settings, const Target &target)
 {
-    QList<BindingRule> rules = settings.bindings;
+    // Only the user's own rules: a Learned Correction's text is what the user
+    // typed, braces and all. prepare reads these rules once, so the expansion
+    // before refinement, the one after it and the placeholder restore all
+    // insert the same date and time.
+    QList<BindingRule> rules = withVariablesFilled(settings.bindings);
     QSet<QString> claimedPhrases;
     for (const BindingRule &rule : settings.bindings) {
         claimedPhrases.insert(BindingProcessor::normalizedPhrase(rule.phrase));
@@ -158,10 +162,7 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     const bool hasNoBindDirective = BindingProcessor::hasExplicitNoBindDirective(rawTranscript);
     result.noBindPhrases = BindingProcessor::explicitNoBindPhrases(rawTranscript, bindings);
     result.allowPostRefinementBindings = !hasNoBindDirective || !result.noBindPhrases.isEmpty();
-    // Filled once here, so the expansion before refinement, the one after it
-    // and the placeholder restore all insert the same text.
-    result.activeBindingRules =
-        withVariablesFilled(withoutNoBindPhrases(bindings, result.noBindPhrases));
+    result.activeBindingRules = withoutNoBindPhrases(bindings, result.noBindPhrases);
     result.bindingResult = BindingProcessor::process(rawTranscript, result.activeBindingRules);
     result.editsSelection = target.hasSelection();
     result.deliveryFallback = result.editsSelection

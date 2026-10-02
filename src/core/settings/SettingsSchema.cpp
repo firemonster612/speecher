@@ -2325,6 +2325,7 @@ SettingsPage bindingsPage()
          true},
     };
     replacements.columns.last().multiline = true;
+    replacements.columns.last().placeholder = QStringLiteral("Sent on {date} at {time}");
     replacements.records = [](const AppSettings &settings) {
         return bindingRecords(settings.bindings);
     };

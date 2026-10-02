@@ -679,6 +679,15 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  std::optional<QString>(QStringLiteral("Thanks. ") + expansion));
         QCOMPARE(TranscriptPipeline::restoreRefinedResult(pipeline, QStringLiteral("Sign off.")),
                  std::optional<QString>(expansion + QStringLiteral(".")));
+
+        // A Learned Correction is not a Snippet: its braces stay as typed.
+        settings.learnedCorrections = {
+            {QStringLiteral("0"), QStringLiteral("stamp"), QStringLiteral("{date}"),
+             QString(), 1, 0.98, true, 1, 1},
+        };
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("stamp"), settings, Target{})
+                     .bindingResult.boundText,
+                 QStringLiteral("{date}"));
     }
 
     void applicationMatrixClassifiesWritingProfiles()
