@@ -19,6 +19,9 @@ struct IpcResponse {
     bool ok = false;
     QString state;
     QString message;
+    // The Writing Profile id a toggle or start request carried, echoed so a
+    // client can tell an instance that predates --profile, which ignores it.
+    QString writingProfile;
 };
 
 enum class IpcCommandResult {

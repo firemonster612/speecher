@@ -358,6 +358,7 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
             response->ok = object.value(QStringLiteral("ok")).toBool();
             response->state = object.value(QStringLiteral("state")).toString();
             response->message = object.value(QStringLiteral("message")).toString();
+            response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
         }
         return IpcCommandResult::Sent;
     }
@@ -372,11 +373,14 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
     if (!socket || socket->state() != QLocalSocket::ConnectedState) {
         return;
     }
-    const QJsonObject object{
+    QJsonObject object{
         {QStringLiteral("ok"), response.ok},
         {QStringLiteral("state"), response.state},
         {QStringLiteral("message"), response.message.isEmpty() ? QJsonValue() : QJsonValue(response.message)},
     };
+    if (!response.writingProfile.isEmpty()) {
+        object.insert(QStringLiteral("writingProfile"), response.writingProfile);
+    }
     QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     responseBytes.append('\n');
     socket->write(responseBytes);

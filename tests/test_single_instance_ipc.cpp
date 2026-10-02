@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "app/CommandLine.h"
 #include "app/SingleInstanceIpc.h"
 #include "platform/PopupPositioner.h"
 #include "platform/PopupSurface.h"
@@ -311,6 +312,45 @@ private slots:
         delete client;
         QCOMPARE(commands.first().at(1).toString(), QStringLiteral("html"));
         QCOMPARE(commands.first().at(4).toString(), QStringLiteral("ai_coding"));
+    }
+
+    void theCommandLineFailsWhenTheInstanceIgnoresTheProfile_data()
+    {
+        QTest::addColumn<bool>("echoes");
+        QTest::newRow("current instance") << true;
+        QTest::newRow("instance older than --profile") << false;
+    }
+
+    void theCommandLineFailsWhenTheInstanceIgnoresTheProfile()
+    {
+        QFETCH(bool, echoes);
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [echoes](const QString &, const QString &, QLocalSocket *socket, const QStringList &,
+                         const QString &writingProfile) {
+                    IpcResponse reply{true, QStringLiteral("starting"), {}};
+                    if (echoes) {
+                        reply.writingProfile = writingProfile;
+                    }
+                    SingleInstanceIpc::writeResponse(socket, reply);
+                });
+        CommandLineDecision decision;
+        decision.mode = LaunchMode::RunCli;
+        decision.ipcCommand = QStringLiteral("toggle");
+        decision.sessionOverrides.writingProfile = QStringLiteral("work");
+
+        int exitCode = -1;
+        QThread *client = QThread::create([&exitCode, &decision, platform] {
+            exitCode = runCliCommand(decision, platform);
+        });
+        client->start();
+        QTRY_VERIFY(client->isFinished());
+        delete client;
+        QCOMPARE(exitCode, echoes ? 0 : 1);
     }
 
     void singleInstanceIpcExpiresIncompleteRequests()

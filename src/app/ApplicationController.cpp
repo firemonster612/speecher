@@ -911,9 +911,15 @@ void ApplicationController::handleIpcCommand(const QString &command,
         }
         overrides.writingProfile = writingProfile;
     }
+    // toggle and start echo the profile they read; see IpcResponse::writingProfile.
+    const auto acknowledge = [this, socket, &writingProfile] {
+        IpcResponse reply = response();
+        reply.writingProfile = writingProfile;
+        SingleInstanceIpc::writeResponse(socket, reply);
+    };
     if (command == QStringLiteral("toggle")) {
         if (!ensureSetupCompleted()) {
-            SingleInstanceIpc::writeResponse(socket, response());
+            acknowledge();
             return;
         }
         if (sessionActive() || m_microphoneStartPending) {
@@ -921,14 +927,14 @@ void ApplicationController::handleIpcCommand(const QString &command,
         } else {
             startWithMicrophone([this, overrides] { m_session->toggleWith(overrides); });
         }
-        SingleInstanceIpc::writeResponse(socket, response());
+        acknowledge();
     } else if (command == QStringLiteral("start")) {
         if (!ensureSetupCompleted()) {
-            SingleInstanceIpc::writeResponse(socket, response());
+            acknowledge();
             return;
         }
         startWithMicrophone([this, overrides] { m_session->startListeningWith(overrides); });
-        SingleInstanceIpc::writeResponse(socket, response());
+        acknowledge();
     } else if (command == QStringLiteral("stop")) {
         stopListening();
         SingleInstanceIpc::writeResponse(socket, response());

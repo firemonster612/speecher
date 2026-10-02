@@ -137,11 +137,6 @@ const CliNames kCleanupNames{{QStringLiteral("none"), QStringLiteral("none")},
                              {QStringLiteral("light_cleanup"), QStringLiteral("light")},
                              {QStringLiteral("balanced"), QStringLiteral("medium")},
                              {QStringLiteral("strong_polish"), QStringLiteral("high")}};
-const CliNames kProfileNames{{WritingProfile::Work, QStringLiteral("work")},
-                             {WritingProfile::Email, QStringLiteral("email")},
-                             {WritingProfile::Personal, QStringLiteral("personal")},
-                             {WritingProfile::AiCoding, QStringLiteral("ai-coding")},
-                             {WritingProfile::Other, QStringLiteral("other")}};
 const CliNames kToneNames{{QStringLiteral("none"), QStringLiteral("none")},
                           {QStringLiteral("formal"), QStringLiteral("formal")},
                           {QStringLiteral("casual"), QStringLiteral("casual")},
@@ -149,8 +144,8 @@ const CliNames kToneNames{{QStringLiteral("none"), QStringLiteral("none")},
                           {QStringLiteral("excited"), QStringLiteral("excited")},
                           {QStringLiteral("gen_z"), QStringLiteral("gen-z")}};
 
-// The built-in names, then each custom tone, level or profile the settings
-// hold, by its id without custom_ and with - for _.
+// The built-in names, then each custom tone or level the settings hold, by
+// its id without custom_ and with - for _.
 CliNames withCustomNames(CliNames names, const QList<RowOption> &options)
 {
     for (const RowOption &option : options) {
@@ -165,11 +160,6 @@ CliNames withCustomNames(CliNames names, const QList<RowOption> &options)
 CliNames cleanupNames()
 {
     return withCustomNames(kCleanupNames, cleanupStrengths(SettingsCodecs().customCleanupLevels()));
-}
-
-CliNames profileNames()
-{
-    return withCustomNames(kProfileNames, writingProfileChoices(SettingsCodecs().writingProfileSettings()));
 }
 
 CliNames toneNames()
@@ -196,6 +186,62 @@ QStringList providerIds(const QList<ProviderDescriptor> &providers)
     return ids;
 }
 
+QList<RowOption> writingProfiles()
+{
+    return writingProfileChoices(SettingsCodecs().writingProfileSettings());
+}
+
+// The profiles' current names, for --help and errors. A name with a space is
+// quoted, as a shell needs it.
+QString writingProfileNames(const QList<RowOption> &profiles)
+{
+    QStringList names;
+    for (const RowOption &profile : profiles) {
+        names << (profile.label.contains(QLatin1Char(' ')) ? QStringLiteral("\"%1\"").arg(profile.label)
+                                                           : profile.label);
+    }
+    return names.join(QStringLiteral(", "));
+}
+
+// The id of the Writing Profile a command-line value names: a profile's
+// current name in any case, or that name with - between words. Failing that,
+// an exact id, which is how a command hands the profile to the daemon it
+// starts. Sets error when the value names no profile or more than one.
+std::optional<QString> writingProfileNamed(const QString &value, QString *error)
+{
+    const QList<RowOption> profiles = writingProfiles();
+    const QString wanted = value.trimmed().toLower();
+    QList<RowOption> matches;
+    for (const RowOption &profile : profiles) {
+        const QString name = profile.label.simplified().toLower();
+        if (!name.isEmpty()
+            && (wanted == name || wanted == QString(name).replace(QLatin1Char(' '), QLatin1Char('-')))) {
+            matches << profile;
+        }
+    }
+    if (matches.size() == 1) {
+        return matches.first().id;
+    }
+    if (matches.size() > 1) {
+        QStringList described;
+        for (const RowOption &match : std::as_const(matches)) {
+            described << QStringLiteral("%1 (%2)").arg(match.label,
+                                                       isBuiltInWritingProfile(match.id) ? QStringLiteral("built-in")
+                                                                                         : QStringLiteral("custom"));
+        }
+        *error = QStringLiteral("Writing profile %1 matches more than one profile: %2. Rename one of them.")
+                     .arg(value, described.join(QStringLiteral(", ")));
+        return std::nullopt;
+    }
+    for (const RowOption &profile : profiles) {
+        if (profile.id == value) {
+            return profile.id;
+        }
+    }
+    *error = QStringLiteral("Unknown writing profile: %1 (expected %2)").arg(value, writingProfileNames(profiles));
+    return std::nullopt;
+}
+
 // Lists the providers from the registry the app builds; registering creates
 // no provider, so this is cheap and needs no credentials.
 QString helpText()
@@ -207,7 +253,7 @@ QString helpText()
         .arg(providerIds(registry.speechProviders()).join(separator),
              providerIds(registry.refinementProviders()).join(separator),
              cliNames(cleanupNames()).join(separator),
-             cliNames(profileNames()).join(separator),
+             writingProfileNames(writingProfiles()),
              cliNames(toneNames()).join(separator));
 }
 
@@ -224,18 +270,11 @@ std::optional<QString> requestedWritingProfile(const QStringList &arguments, QSt
     if (optionIndex < 0) {
         return std::nullopt;
     }
-    const CliNames names = profileNames();
-    const QString expected = cliNames(names).join(QStringLiteral(", "));
     if (optionIndex + 1 >= arguments.size()) {
-        *error = QStringLiteral("--profile requires one of %1").arg(expected);
+        *error = QStringLiteral("--profile requires one of %1").arg(writingProfileNames(writingProfiles()));
         return std::nullopt;
     }
-    const QString value = arguments.at(optionIndex + 1);
-    const std::optional<QString> id = storedId(names, value.trimmed());
-    if (!id) {
-        *error = QStringLiteral("Unknown writing profile: %1 (expected %2)").arg(value, expected);
-    }
-    return id;
+    return writingProfileNamed(arguments.at(optionIndex + 1), error);
 }
 
 // The options that hand a session's overrides to the daemon a command starts.
@@ -246,11 +285,7 @@ QStringList sessionOverrideArguments(const SessionOverrides &overrides)
         arguments << QStringLiteral("--format") << outputFormatName(*overrides.outputFormat);
     }
     if (overrides.writingProfile) {
-        for (const auto &[id, name] : profileNames()) {
-            if (id == *overrides.writingProfile) {
-                arguments << QStringLiteral("--profile") << name;
-            }
-        }
+        arguments << QStringLiteral("--profile") << *overrides.writingProfile;
     }
     return arguments;
 }
@@ -320,7 +355,12 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         } else if (argument == QStringLiteral("--cleanup")) {
             error = choice(cleanupNames(), &options.cleanupStrength);
         } else if (argument == QStringLiteral("--profile")) {
-            error = choice(profileNames(), &options.writingProfile);
+            const std::optional<QString> given = value();
+            if (!given) {
+                error = QStringLiteral("--profile requires a value");
+            } else {
+                options.writingProfile = writingProfileNamed(*given, &error);
+            }
         } else if (argument == QStringLiteral("--tone")) {
             error = choice(toneNames(), &options.tone);
         } else if (argument == QStringLiteral("--output")) {
@@ -463,11 +503,16 @@ QStringList argumentsWithoutStartupActions(const QStringList &arguments)
     static const QStringList startupActions{QStringLiteral("--start-listening"),
                                             QStringLiteral("--show-settings"),
                                             QStringLiteral("--show-setup")};
+    // The session overrides only go with --start-listening, and a deleted
+    // profile would make the relaunch refuse to start.
+    static const QStringList startupOptions{QStringLiteral("--format"), QStringLiteral("--profile")};
     QStringList kept;
     kept.reserve(arguments.size());
-    for (const QString &argument : arguments) {
-        if (!startupActions.contains(argument)) {
-            kept << argument;
+    for (qsizetype index = 0; index < arguments.size(); ++index) {
+        if (startupOptions.contains(arguments.at(index))) {
+            ++index;
+        } else if (!startupActions.contains(arguments.at(index))) {
+            kept << arguments.at(index);
         }
     }
     return kept;
@@ -496,6 +541,12 @@ int runCliCommand(const CommandLineDecision &decision,
                                                                               platform,
                                                                               &ipcError);
     if (ipcResult == IpcCommandResult::Sent) {
+        const std::optional<QString> &profile = decision.sessionOverrides.writingProfile;
+        if (response.ok && profile && response.writingProfile != *profile) {
+            std::cerr << "The running Speecher is older and ignored --profile. Quit it with `speecher quit` and "
+                         "run the command again.\n";
+            return 1;
+        }
         std::cout << response.state.toStdString() << "\n";
         return response.ok ? 0 : 1;
     }
