@@ -124,6 +124,8 @@ Speecher also has separate `start` and `stop` commands, for press-and-hold on de
 
 Add `--format html` or `--format plain` to `toggle` or `start` when you want a shortcut that overrides the saved output format for one dictation.
 
+Add `--profile <name>` to `toggle` or `start` to use one Writing Profile for that dictation, whichever app you dictate into: `work`, `email`, `personal`, `ai-coding`, `other`, or one of your own profiles by its name in lower case with `-` between words (`speecher toggle --profile stand-up` for a profile named "Stand up"). `speecher --help` lists the names your settings offer. The two options combine, and neither changes your settings.
+
 ## Build
 
 ```sh

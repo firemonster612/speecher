@@ -167,7 +167,8 @@ public slots:
     void handleIpcCommand(const QString &command,
                           const QString &outputFormat,
                           QLocalSocket *socket,
-                          const QStringList &files = {});
+                          const QStringList &files = {},
+                          const QString &writingProfile = {});
 
 signals:
     void stateChanged(const QString &stateName);

@@ -799,6 +799,48 @@ private slots:
         settings.raw().clear();
     }
 
+    void toggleAndStartTakeAWritingProfile()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
+                                                 QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
+        settings.applySnapshot(draft);
+        const auto parse = [](const QStringList &arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {});
+        };
+
+        const CommandLineDecision toggle = parse({QStringLiteral("toggle"), QStringLiteral("--profile"),
+                                                  QStringLiteral("Email")});
+        QCOMPARE(toggle.mode, LaunchMode::RunCli);
+        QCOMPARE(toggle.sessionOverrides.writingProfile, std::optional(WritingProfile::Email));
+        const CommandLineDecision start = parse({QStringLiteral("start"), QStringLiteral("--profile"),
+                                                 QStringLiteral("AI-Coding"), QStringLiteral("--format"),
+                                                 QStringLiteral("html")});
+        QCOMPARE(start.sessionOverrides.writingProfile, std::optional(WritingProfile::AiCoding));
+        QCOMPARE(start.sessionOverrides.outputFormat, std::optional(OutputFormat::Html));
+        QCOMPARE(parse({QStringLiteral("toggle"), QStringLiteral("--profile"), QStringLiteral("stand-up")})
+                     .sessionOverrides.writingProfile,
+                 std::optional(QStringLiteral("custom_stand_up")));
+        // What toggle and start pass on to the daemon they start.
+        QCOMPARE(parse({QStringLiteral("--daemon"), QStringLiteral("--start-listening"), QStringLiteral("--profile"),
+                        QStringLiteral("work")})
+                     .sessionOverrides.writingProfile,
+                 std::optional(WritingProfile::Work));
+
+        for (const QStringList &mistake : {QStringList{QStringLiteral("toggle"), QStringLiteral("--profile"),
+                                                       QStringLiteral("poetry")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--profile")},
+                                           QStringList{QStringLiteral("status"), QStringLiteral("--profile"),
+                                                       QStringLiteral("work")}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
+        settings.raw().clear();
+    }
+
     void quitIsAClientCommand()
     {
         const CommandLineDecision decision = parseCommandLine(

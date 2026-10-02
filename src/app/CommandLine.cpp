@@ -62,13 +62,11 @@ QString requestedOption(const QStringList &arguments, const QString &name, QStri
     return {};
 }
 
-bool startDetachedListening(const SingleInstancePlatform *platform, std::optional<OutputFormat> outputFormat)
+bool startDetachedListening(const SingleInstancePlatform *platform, const QStringList &overrideArguments)
 {
-    QStringList arguments{QStringLiteral("--daemon"), QStringLiteral("--start-listening")};
-    if (outputFormat) {
-        arguments << QStringLiteral("--format") << outputFormatName(*outputFormat);
-    }
-    return QProcess::startDetached(platform->detachedExecutablePath(), arguments);
+    return QProcess::startDetached(platform->detachedExecutablePath(),
+                                   QStringList{QStringLiteral("--daemon"), QStringLiteral("--start-listening")}
+                                       + overrideArguments);
 }
 
 bool startDetachedSettings(const SingleInstancePlatform *platform)
@@ -124,6 +122,7 @@ Transcribe without a window, printing the results:
 
 Options:
   --format plain|html      output format for toggle and start
+  --profile <name>         writing profile for toggle and start: %4
   --daemon                 run without a window
   --version                print the version
   --help                   print this help
@@ -217,6 +216,43 @@ std::optional<QString> storedId(const CliNames &choices, const QString &name)
 {
     const qsizetype index = cliNames(choices).indexOf(name.toLower());
     return index < 0 ? std::nullopt : std::optional(choices.at(index).first);
+}
+
+std::optional<QString> requestedWritingProfile(const QStringList &arguments, QString *error)
+{
+    const qsizetype optionIndex = arguments.indexOf(QStringLiteral("--profile"));
+    if (optionIndex < 0) {
+        return std::nullopt;
+    }
+    const CliNames names = profileNames();
+    const QString expected = cliNames(names).join(QStringLiteral(", "));
+    if (optionIndex + 1 >= arguments.size()) {
+        *error = QStringLiteral("--profile requires one of %1").arg(expected);
+        return std::nullopt;
+    }
+    const QString value = arguments.at(optionIndex + 1);
+    const std::optional<QString> id = storedId(names, value.trimmed());
+    if (!id) {
+        *error = QStringLiteral("Unknown writing profile: %1 (expected %2)").arg(value, expected);
+    }
+    return id;
+}
+
+// The options that hand a session's overrides to the daemon a command starts.
+QStringList sessionOverrideArguments(const SessionOverrides &overrides)
+{
+    QStringList arguments;
+    if (overrides.outputFormat) {
+        arguments << QStringLiteral("--format") << outputFormatName(*overrides.outputFormat);
+    }
+    if (overrides.writingProfile) {
+        for (const auto &[id, name] : profileNames()) {
+            if (id == *overrides.writingProfile) {
+                arguments << QStringLiteral("--profile") << name;
+            }
+        }
+    }
+    return arguments;
 }
 
 // Reads `speecher transcribe`'s arguments. Returns an error message for a
@@ -362,17 +398,28 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     decision.showSettings = arguments.contains(QStringLiteral("--show-settings"));
     decision.showSetup = arguments.contains(QStringLiteral("--show-setup"));
 
-    QString formatError;
-    decision.outputFormat = requestedOutputFormat(arguments, &formatError);
-    if (!formatError.isEmpty()) {
-        std::cerr << formatError.toStdString() << "\n";
+    QString overrideError;
+    SessionOverrides &overrides = decision.sessionOverrides;
+    overrides.outputFormat = requestedOutputFormat(arguments, &overrideError);
+    // transcribe reads its own --profile.
+    if (overrideError.isEmpty() && verb != QStringLiteral("transcribe")) {
+        overrides.writingProfile = requestedWritingProfile(arguments, &overrideError);
+    }
+    if (!overrideError.isEmpty()) {
+        std::cerr << overrideError.toStdString() << "\n";
         return {LaunchMode::Exit, 2};
     }
 
     if (isCliCommand) {
-        if (decision.outputFormat && verb != QStringLiteral("toggle") && verb != QStringLiteral("start")) {
-            std::cerr << "--format can only be used with toggle or start\n";
-            return {LaunchMode::Exit, 2};
+        if (verb != QStringLiteral("toggle") && verb != QStringLiteral("start")) {
+            if (overrides.outputFormat) {
+                std::cerr << "--format can only be used with toggle or start\n";
+                return {LaunchMode::Exit, 2};
+            }
+            if (overrides.writingProfile) {
+                std::cerr << "--profile can only be used with toggle or start\n";
+                return {LaunchMode::Exit, 2};
+            }
         }
         decision.mode = LaunchMode::RunCli;
         decision.ipcCommand = verb == QStringLiteral("settings")
@@ -443,7 +490,7 @@ int runCliCommand(const CommandLineDecision &decision,
     IpcResponse response;
     QString ipcError;
     const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(command,
-                                                                              decision.outputFormat,
+                                                                              decision.sessionOverrides,
                                                                               &response,
                                                                               2500,
                                                                               platform,
@@ -466,7 +513,7 @@ int runCliCommand(const CommandLineDecision &decision,
         ? startDetachedSettings(platform.get())
         : command == QStringLiteral("showSetup")
             ? startDetachedSetup(platform.get())
-            : startDetachedListening(platform.get(), decision.outputFormat);
+            : startDetachedListening(platform.get(), sessionOverrideArguments(decision.sessionOverrides));
     if (!started) {
         std::cerr << "Could not start speecher daemon\n";
         return 1;

@@ -49,8 +49,8 @@ public:
     QString lastFailure() const;
     QString lastTranscript() const;
     SessionResponse response(bool ok = true, const QString &message = {}) const;
-    void toggleWithFormat(OutputFormat format);
-    void startListeningWithFormat(OutputFormat format);
+    void toggleWith(const SessionOverrides &overrides);
+    void startListeningWith(const SessionOverrides &overrides);
     void setScreenshotContextProvider(ScreenshotContextProvider *provider);
 
 public slots:
@@ -118,8 +118,8 @@ private:
     bool selectTranscriptRefiner(const QString &providerId, QString *error);
     void connectSpeechTranscriber(SpeechTranscriber *transcriber);
     void connectTranscriptRefiner(TranscriptRefiner *refiner);
-    void toggleSession(std::optional<OutputFormat> format);
-    void startSession(std::optional<OutputFormat> format);
+    void toggleSession(const SessionOverrides &overrides);
+    void startSession(const SessionOverrides &overrides);
     SettingsStore *m_settings = nullptr;
     AudioInput *m_audio = nullptr;
     MediaController *m_mediaController = nullptr;

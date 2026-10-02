@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/HeadlessTranscribe.h"
-#include "core/OutputFormat.h"
+#include "dictation/DictationTypes.h"
 
 #include <QString>
 #include <QStringList>
@@ -31,7 +31,8 @@ struct CommandLineDecision {
     int exitCode = 0;
     // RunCli: the IPC command to send.
     QString ipcCommand;
-    std::optional<OutputFormat> outputFormat;
+    // --format and --profile, for toggle, start and a daemon's --start-listening.
+    SessionOverrides sessionOverrides;
     bool startListening = false;
     bool showSettings = false;
     bool showSetup = false;

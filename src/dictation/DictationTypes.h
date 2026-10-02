@@ -1,8 +1,20 @@
 #pragma once
 
+#include "core/OutputFormat.h"
+
 #include <QString>
 
+#include <optional>
+
 namespace speecher {
+
+// What `toggle` and `start` on the command line change for one Dictation
+// Session. Nothing is saved.
+struct SessionOverrides {
+    std::optional<OutputFormat> outputFormat;
+    // A Writing Profile id.
+    std::optional<QString> writingProfile;
+};
 
 enum class DictationState {
     Idle,

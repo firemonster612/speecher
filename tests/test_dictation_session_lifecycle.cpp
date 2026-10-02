@@ -455,7 +455,7 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
-        session.toggleWithFormat(OutputFormat::Html);
+        session.toggleWith({OutputFormat::Html, std::nullopt});
         QCOMPARE(int(session.state()), int(DictationState::Starting));
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         QCOMPARE(speech->startCalls, 1);
@@ -591,7 +591,7 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
 
-        session.startListeningWithFormat(OutputFormat::Html);
+        session.startListeningWith({OutputFormat::Html, std::nullopt});
         QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
         speech->emitFinalText(QStringLiteral("<hello>"));
         session.stopListening();
@@ -693,6 +693,44 @@ private slots:
             QCOMPARE(record.appName, QStringLiteral("Kate"));
             QVERIFY(record.audioMs > 0);
         }
+    }
+
+    void aForcedWritingProfileHoldsForTheWholeSession()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        AppSettings draft = settings.snapshot();
+        draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
+                                                 QStringLiteral("none"), QString(), QStringLiteral("Stand up")});
+        settings.applySnapshot(draft);
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto targetProvider = std::make_unique<FakeTargetProvider>();
+        targetProvider->target.applicationId = QStringLiteral("org.kde.kate");
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(
+            &settings, audio.get(), media.get(), targetProvider.get(), delivery.get(), &registry);
+        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+
+        session.startListeningWith({std::nullopt, QStringLiteral("custom_stand_up")});
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        // Deleting the profile mid-session leaves this session's copy alone.
+        draft = settings.snapshot();
+        draft.refinement.writingProfiles = defaultWritingProfileSettings();
+        settings.applySnapshot(draft);
+        speech->emitFinalText(QStringLiteral("Stand up notes"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+
+        QCOMPARE(recorded.count(), 1);
+        const auto record = recorded.first().first().value<DictationRecord>();
+        QCOMPARE(record.profile, QStringLiteral("custom_stand_up"));
+        QCOMPARE(record.profileName, QStringLiteral("Stand up"));
     }
 
     void selectionEditRecordsTheSpokenInstruction()
