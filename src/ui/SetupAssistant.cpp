@@ -110,7 +110,6 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     resize(720, 640);
     setMinimumSize(620, 460);
 
-    const int requestedPageIndex = pageIndex(page);
 #ifdef Q_OS_LINUX
     if (!m_singlePage || page == SetupAssistantPage::GlobalShortcut) {
         m_globalShortcutPage = new LinuxGlobalShortcutSetupPage(*controller, this);
@@ -141,7 +140,11 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
                                                    *controller->platform(),
                                                    this);
         accessibility = new AccessibilitySetupPage(*controller, this);
-        m_deliveryPage = new TextDeliverySetupPage(*controller->settings(), this);
+        // Text delivery is a step only where there is a virtual keyboard to
+        // install.
+        if (findSetupStep(QStringLiteral("delivery"))) {
+            m_deliveryPage = new TextDeliverySetupPage(*controller->settings(), this);
+        }
         refinement = new RefinementSetupPage(*controller->settings(),
                                              *controller->providerRegistry(),
                                              controller->localSetup(),
@@ -186,36 +189,36 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         addGate(m_finishPage, [this] { return earlierGatesComplete(m_finishPage); });
     }
 
-    QList<QWidget *> pageContents{
-        m_welcomePage,
-        m_speechProviderPage,
-        m_microphonePage,
-        accessibility,
-        m_deliveryPage,
-        refinement,
-    };
+    // Core decides which steps this platform has; each page joins under its
+    // step's title. A single-page run built only its own page, and a step
+    // with no page here (the Global Shortcut off Linux) is left out.
+    const QHash<QString, QWidget *> stepPages{
+        {QStringLiteral("welcome"), m_welcomePage},
+        {QStringLiteral("transcription"), m_speechProviderPage},
+        {QStringLiteral("microphone"), m_microphonePage},
+        {QStringLiteral("accessibility"), accessibility},
+        {QStringLiteral("delivery"), m_deliveryPage},
+        {QStringLiteral("refinement"), refinement},
 #ifdef Q_OS_LINUX
-    pageContents.append(m_globalShortcutPage);
+        {QStringLiteral("shortcut"), m_globalShortcutPage},
 #endif
-    pageContents.append(m_finishPage);
-    Q_ASSERT(pageContents.size() == setupSteps().size());
-    if (!m_singlePage) {
-        m_lastPage = pageContents.last();
+        {QStringLiteral("ready"), m_finishPage},
+    };
+    for (const SetupStepInfo &step : setupSteps()) {
+        if (QWidget *content = stepPages.value(step.id)) {
+            m_steps.append({step.title, content});
+        }
     }
-    const QStringList titles = setupPageTitles();
+    m_lastPage = m_finishPage;
 #ifdef SPEECHER_WITH_KASSISTANT
-    for (int index = 0; index < pageContents.size(); ++index) {
-        QWidget *content = pageContents.at(index);
-        if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
-            KPageWidgetItem *item = addPage(scrollingPage(content, this), titles.at(index));
-            content->installEventFilter(this);
-            // The title row below draws the title, beside the counter.
-            item->setHeaderVisible(false);
-            m_items.append(item);
-            if (m_gates.contains(content)) {
-                m_gateItems.insert(content, item);
-            }
-            m_steps.append({titles.at(index), content});
+    for (const Step &step : std::as_const(m_steps)) {
+        KPageWidgetItem *item = addPage(scrollingPage(step.content, this), step.title);
+        step.content->installEventFilter(this);
+        // The title row below draws the title, beside the counter.
+        item->setHeaderVisible(false);
+        m_items.append(item);
+        if (m_gates.contains(step.content)) {
+            m_gateItems.insert(step.content, item);
         }
     }
     // The title row carries the counter, as the other two assistants do:
@@ -271,22 +274,18 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         setButtonText(QWizard::CustomButton1, setupText(SetupText::SkipSetup));
         m_skipButton = button(QWizard::CustomButton1);
     }
-    for (int index = 0; index < pageContents.size(); ++index) {
-        QWidget *content = pageContents.at(index);
-        if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
-            QWizardPage *page = nullptr;
-            if (m_gates.contains(content)) {
-                auto *gated = new GatedWizardPage;
-                gated->gate = m_gates.value(content);
-                m_gatePages.insert(content, gated);
-                page = gated;
-            } else {
-                page = new QWizardPage;
-            }
-            const int id = addPage(wizardPage(page, scrollingPage(content, this), titles.at(index)));
-            m_pageContents.insert(id, content);
-            m_steps.append({titles.at(index), content});
+    for (const Step &step : std::as_const(m_steps)) {
+        QWizardPage *page = nullptr;
+        if (m_gates.contains(step.content)) {
+            auto *gated = new GatedWizardPage;
+            gated->gate = m_gates.value(step.content);
+            m_gatePages.insert(step.content, gated);
+            page = gated;
+        } else {
+            page = new QWizardPage;
         }
+        const int id = addPage(wizardPage(page, scrollingPage(step.content, this), step.title));
+        m_pageContents.insert(id, step.content);
     }
     connect(this, &QWizard::customButtonClicked, this, [this](int button) {
         if (button == QWizard::CustomButton1) {
@@ -545,7 +544,7 @@ void SetupAssistant::accept()
         return;
     }
     if (!m_skipping) {
-        m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());
+        m_finishPage->setSignInRequired(m_deliveryPage && m_deliveryPage->needsSignIn());
     }
     m_controller->completeSetup();
 #ifdef SPEECHER_WITH_KASSISTANT
@@ -570,7 +569,7 @@ void SetupAssistant::updateActivePage(QWidget *page)
         m_skipButton->setVisible(page != m_lastPage && gatesComplete());
     }
     if (page == m_finishPage && m_finishPage) {
-        m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());
+        m_finishPage->setSignInRequired(m_deliveryPage && m_deliveryPage->needsSignIn());
     }
 }
 
