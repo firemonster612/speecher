@@ -230,6 +230,11 @@ void QtAudioInput::warmUp()
     syncWarmSource();
 }
 
+void QtAudioInput::useDevice(const QString &deviceId)
+{
+    m_captureSettings.deviceId = deviceId;
+}
+
 bool QtAudioInput::start(QString *error)
 {
     if (m_captureActive) {

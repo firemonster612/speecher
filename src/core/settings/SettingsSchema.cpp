@@ -2922,9 +2922,17 @@ QString audioDeviceDefaultLabel()
     return QStringLiteral("System default");
 }
 
-QString microphoneTestCaption(bool running)
+QString microphoneTestCaption(MicrophoneTestState state)
 {
-    return running ? QStringLiteral("Stop test") : QStringLiteral("Start test");
+    switch (state) {
+    case MicrophoneTestState::Stopped:
+        return QStringLiteral("Start test");
+    case MicrophoneTestState::Starting:
+        return QStringLiteral("Starting\u2026");
+    case MicrophoneTestState::Running:
+        return QStringLiteral("Stop test");
+    }
+    return QStringLiteral("Start test");
 }
 
 QList<RowOption> audioDeviceOptions(const QList<RowOption> &devices, const QString &selectedDeviceId)

@@ -1,6 +1,7 @@
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/ShortcutRecorder.h"
 
+#include "app/ApplicationController.h"
 #include "app/MicrophoneTest.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
@@ -11,7 +12,6 @@
 #include "providers/ClaudeCredentials.h"
 #include "providers/ProviderSignIn.h"
 
-#include <QPointer>
 #include <QRegularExpression>
 
 #include <algorithm>
@@ -435,11 +435,17 @@ namespace {
 
 // The Test microphone row: the input device's live level beside the button
 // that starts and stops the test, and under them why the device would not
-// open. A setting written or another page shown rebuilds the pane, and closing
-// the window takes it down; each unloads this element, which ends its test,
-// so the microphone never stays open behind the row.
+// open. The test lives on the host, so a rebuild of the pane redraws it
+// rather than ending it; the window ends it on a pane change and on close.
 UIElement microphoneTestElement(const RowSnapshot &row, PaneHost &host)
 {
+    if (!host.microphoneTest) {
+        host.microphoneTest = std::make_shared<MicrophoneTest>(*host.controller);
+    }
+    MicrophoneTest *test = host.microphoneTest.get();
+    // Only the newest drawing of the row listens.
+    test->disconnect();
+
     ProgressBar level;
     level.Minimum(0);
     level.Maximum(1);
@@ -447,9 +453,6 @@ UIElement microphoneTestElement(const RowSnapshot &row, PaneHost &host)
     level.VerticalAlignment(VerticalAlignment::Center);
     Automation::AutomationProperties::SetName(level, hs(inputLevelLabel()));
     Button button;
-    button.Content(box_value(hs(microphoneTestCaption(false))));
-    // Not a Control, so the row cannot close the gate on it; the button can.
-    button.IsEnabled(row.enabled);
     StackPanel controls;
     controls.Orientation(Orientation::Horizontal);
     controls.Spacing(8);
@@ -463,33 +466,32 @@ UIElement microphoneTestElement(const RowSnapshot &row, PaneHost &host)
     element.Children().Append(controls);
     element.Children().Append(problem);
 
-    const QPointer<MicrophoneTest> test = new MicrophoneTest(*host.controller, host.controller);
+    // Not a Control, so the row cannot close its gate on this element; the
+    // button takes the gate along with the test's own state.
+    const auto follow = [test, level, button, problem, gateOpen = row.enabled] {
+        button.Content(box_value(hs(microphoneTestCaption(test->state()))));
+        button.IsEnabled(gateOpen && test->canToggle());
+        if (test->state() != MicrophoneTestState::Running) {
+            level.Value(0);
+        }
+        if (test->state() == MicrophoneTestState::Starting) {
+            problem.Visibility(Visibility::Collapsed);
+        }
+    };
+    follow();
+    QObject::connect(test, &MicrophoneTest::changed, test, follow);
     QObject::connect(test, &MicrophoneTest::levelChanged, test, [level](float value) {
         level.Value(std::clamp(value, 0.0f, 1.0f));
-    });
-    QObject::connect(test, &MicrophoneTest::runningChanged, test, [level, button, problem](bool running) {
-        button.Content(box_value(hs(microphoneTestCaption(running))));
-        level.Value(0);
-        problem.Visibility(Visibility::Collapsed);
     });
     QObject::connect(test, &MicrophoneTest::failed, test, [problem](const QString &message) {
         problem.Text(hs(message));
         problem.Visibility(Visibility::Visible);
     });
-    button.Click([test](const auto &, const auto &) {
-        if (!test) {
-            return;
-        }
-        if (test->running()) {
-            test->stop();
-        } else {
-            test->start();
-        }
-    });
-    element.Unloaded([test](const auto &, const auto &) {
-        if (test) {
-            test->stop();
-            test->deleteLater();
+    // The device row saves as it is chosen, so the saved device is the one shown.
+    button.Click([weak = std::weak_ptr<MicrophoneTest>(host.microphoneTest),
+                  controller = host.controller](const auto &, const auto &) {
+        if (const auto test = weak.lock()) {
+            test->toggle(controller->settings()->audioInputDeviceId());
         }
     });
     return element;

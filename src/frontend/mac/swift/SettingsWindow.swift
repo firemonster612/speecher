@@ -311,7 +311,7 @@ final class SpeecherSettingsWindow {
         ) { [weak model] _ in
             MainActor.assumeIsolated {
                 model?.stopShortcutRecording()
-                model?.stopMicrophoneTest()
+                model?.bridge.stopMicrophoneTest()
             }
         }
     }

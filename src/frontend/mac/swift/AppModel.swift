@@ -55,10 +55,11 @@ final class AppModel: ObservableObject {
     // retained collection editors can reload from the fresh snapshot.
     @Published private(set) var draftGeneration = 0
     @Published private(set) var shortcut: String
-    /// The Test microphone row's test. Kept here rather than in the row, which
-    /// a Form drops when it scrolls off: the test ends on a pane change, a
-    /// window close, a Dictation Session starting or another Input device.
-    @Published private(set) var microphoneTesting = false
+    /// The Test microphone row's test, which the bridge runs. Mirrored here
+    /// rather than in the row, which a Form drops when it scrolls off; the
+    /// window ends the test on a pane change and on close.
+    @Published private(set) var microphoneTestCaption: String
+    @Published private(set) var microphoneTestEnabled: Bool
     @Published private(set) var microphoneTestLevel: Float = 0
     /// Why the device would not open, until the next test starts.
     @Published private(set) var microphoneTestProblem = ""
@@ -75,7 +76,7 @@ final class AppModel: ObservableObject {
         didSet {
             guard pane != oldValue else { return }
             activeShortcutRecorder?.stop()
-            stopMicrophoneTest()
+            bridge.stopMicrophoneTest()
             if pane != "whatsNew", !Self.screenshotRun {
                 UserDefaults.standard.set(pane, forKey: Self.lastPaneKey)
             }
@@ -154,6 +155,8 @@ final class AppModel: ObservableObject {
         failureNote = bridge.failureNote
         local = bridge.localSetupState
         shortcut = bridge.shortcutDisplay
+        microphoneTestCaption = bridge.microphoneTestCaption
+        microphoneTestEnabled = bridge.microphoneTestEnabled
         accessibilityEnabled = bridge.accessibilityEnabled
         whatsNewPending = bridge.whatsNewPending
         update = bridge.updateBanner
@@ -169,7 +172,22 @@ final class AppModel: ObservableObject {
             listening = self.bridge.listening
             toggleLabel = self.bridge.toggleLabel
             toggleEnabled = self.bridge.toggleEnabled
-            if listening { stopMicrophoneTest() }
+        }
+        bridge.microphoneTestChanged = { [weak self] in
+            guard let self else { return }
+            microphoneTestCaption = self.bridge.microphoneTestCaption
+            microphoneTestEnabled = self.bridge.microphoneTestEnabled
+            switch self.bridge.microphoneTestState {
+            case .starting: microphoneTestProblem = ""
+            case .running: break
+            default: microphoneTestLevel = 0
+            }
+        }
+        bridge.microphoneTestLevelChanged = { [weak self] level in
+            self?.microphoneTestLevel = level
+        }
+        bridge.microphoneTestFailed = { [weak self] message in
+            self?.microphoneTestProblem = message
         }
         bridge.audioLevelChanged = { [weak self] level in
             self?.level = level
@@ -450,9 +468,6 @@ final class AppModel: ObservableObject {
         bridge.settingsSchema.setValue(value, forRowId: rowId)
         bridge.settingsSchema.commit()
         pages = bridge.settingsSchema.pages
-        if rowId == "audioDevice" {
-            stopMicrophoneTest()
-        }
         if rowId == "anthropicAuthMode" {
             anthropicCredentialStatus = bridge.anthropicCredentialStatus
         }
@@ -509,28 +524,6 @@ final class AppModel: ObservableObject {
     /// Ends the recording in progress, if any, and restores the hotkey.
     func stopShortcutRecording() {
         activeShortcutRecorder?.stop()
-    }
-
-    func startMicrophoneTest() {
-        microphoneTestProblem = ""
-        microphoneTesting = true
-        bridge.startMicrophoneMeter(onLevel: { [weak self] level in
-            self?.microphoneTestLevel = level
-        }, failure: { [weak self] message in
-            // A turn later: stopping releases the block that is running.
-            DispatchQueue.main.async {
-                self?.stopMicrophoneTest()
-                self?.microphoneTestProblem = message
-            }
-        })
-    }
-
-    /// Closes the microphone the test opened, if one is open.
-    func stopMicrophoneTest() {
-        guard microphoneTesting else { return }
-        microphoneTesting = false
-        microphoneTestLevel = 0
-        bridge.stopMicrophoneMeter()
     }
 
     func bindShortcut(characters: String, modifierFlags: NSEvent.ModifierFlags) {

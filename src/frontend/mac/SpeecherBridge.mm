@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "app/MicrophoneTest.h"
 #include "app/AccessibilityPresentation.h"
 #include "app/SetupSteps.h"
 #include "app/PlatformComposition.h"
@@ -286,6 +287,8 @@ struct BridgeState {
     // stop: an input object kept past the assistant can hold the capture
     // source open alongside dictation's own.
     speecher::AudioInput *setupMeter = nullptr;
+    // The Test microphone row's test, a child of lifetime.
+    speecher::MicrophoneTest *microphoneTest = nullptr;
     // A round of provider checks that a newer round replaced answers to
     // nobody. Speech supersession is per provider — probes claim their slot
     // with a fresh number from checkRound, so re-probing one changed sign-in
@@ -1640,6 +1643,34 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                              bridge.statusChanged(status.toNSString());
                          }
                      });
+    _state->microphoneTest = new speecher::MicrophoneTest(*controller, &_state->lifetime);
+    QObject::connect(_state->microphoneTest,
+                     &speecher::MicrophoneTest::changed,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.microphoneTestChanged) {
+                             bridge.microphoneTestChanged();
+                         }
+                     });
+    QObject::connect(_state->microphoneTest,
+                     &speecher::MicrophoneTest::levelChanged,
+                     &_state->lifetime,
+                     [weakSelf](float level) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.microphoneTestLevelChanged) {
+                             bridge.microphoneTestLevelChanged(level);
+                         }
+                     });
+    QObject::connect(_state->microphoneTest,
+                     &speecher::MicrophoneTest::failed,
+                     &_state->lifetime,
+                     [weakSelf](const QString &message) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.microphoneTestFailed) {
+                             bridge.microphoneTestFailed(message.toNSString());
+                         }
+                     });
     QObject::connect(controller,
                      &ApplicationController::audioLevelChanged,
                      &_state->lifetime,
@@ -2943,9 +2974,31 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     }
 }
 
-+ (NSString *)microphoneTestCaption:(BOOL)running
+- (SpeecherMicrophoneTestState)microphoneTestState
 {
-    return speecher::microphoneTestCaption(running).toNSString();
+    return static_cast<SpeecherMicrophoneTestState>(_state->microphoneTest->state());
+}
+
+- (NSString *)microphoneTestCaption
+{
+    return speecher::microphoneTestCaption(_state->microphoneTest->state()).toNSString();
+}
+
+- (BOOL)microphoneTestEnabled
+{
+    return _state->microphoneTest->canToggle();
+}
+
+- (void)toggleMicrophoneTest
+{
+    // Settings on macOS save as they are made, so the saved device is the
+    // one the row shows.
+    _state->microphoneTest->toggle(_state->controller->settings()->audioInputDeviceId());
+}
+
+- (void)stopMicrophoneTest
+{
+    _state->microphoneTest->stop();
 }
 
 - (void)stopMicrophoneMeter

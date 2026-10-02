@@ -124,13 +124,8 @@ struct RowView: View {
             HStack {
                 ProgressView(value: min(max(model.microphoneTestLevel, 0), 1))
                     .accessibilityLabel(model.bridge.inputLevelLabel)
-                Button(SpeecherBridge.microphoneTestCaption(running: model.microphoneTesting)) {
-                    if model.microphoneTesting {
-                        model.stopMicrophoneTest()
-                    } else {
-                        model.startMicrophoneTest()
-                    }
-                }
+                Button(model.microphoneTestCaption) { model.bridge.toggleMicrophoneTest() }
+                    .disabled(!model.microphoneTestEnabled)
             }
         } label: {
             Self.label(row.label, help: model.microphoneTestProblem.isEmpty ? description

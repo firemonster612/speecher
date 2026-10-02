@@ -6,19 +6,33 @@
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 
+#include <QPointer>
+
 #include <utility>
 
 namespace speecher {
 
-MicrophoneTest::MicrophoneTest(ApplicationController &controller, QObject *parent)
+MicrophoneTest::MicrophoneTest(ApplicationController &controller,
+                               QObject *parent,
+                               InputFactory createInput)
     : QObject(parent)
-    , m_controller(controller)
+    , m_createInput(std::move(createInput))
+    , m_dictationListening(dictationListeningPresentation(controller.stateName()))
 {
+    if (!m_createInput) {
+        m_createInput = [&controller](QObject *owner) {
+            return controller.platform()->createAudioInput(controller.settings(), owner);
+        };
+    }
     connect(&controller, &ApplicationController::stateChanged, this, [this](const QString &state) {
-        if (dictationListeningPresentation(state)) {
+        m_dictationListening = dictationListeningPresentation(state);
+        if (m_dictationListening) {
             stop();
         }
+        emit changed();
     });
+    // A backstop for front ends whose device choice is saved as it is made;
+    // the Linux page also stops the test when its unsaved choice moves.
     connect(controller.settings(), &SettingsStore::audioCaptureSettingsChanged, this,
             [this](const AudioCaptureSettings &settings) {
         if (settings.deviceId != m_deviceId) {
@@ -29,32 +43,85 @@ MicrophoneTest::MicrophoneTest(ApplicationController &controller, QObject *paren
 
 MicrophoneTest::~MicrophoneTest()
 {
-    stop();
-}
-
-void MicrophoneTest::start()
-{
-    if (m_input) {
+    if (m_state == MicrophoneTestState::Starting) {
+        // The input's start() is still on the stack below; start() frees the
+        // input once it returns and finds this test gone.
+        disconnect(m_input, nullptr, this, nullptr);
+        m_input->setParent(nullptr);
         return;
     }
-    SettingsStore *settings = m_controller.settings();
-    m_deviceId = settings->audioInputDeviceId();
-    m_input = m_controller.platform()->createAudioInput(settings, this);
-    connect(m_input, &AudioInput::levelChanged, this, &MicrophoneTest::levelChanged);
-    connect(m_input, &AudioInput::failed, this, [this](const QString &message) {
+    closeDevice();
+}
+
+bool MicrophoneTest::canToggle() const
+{
+    return m_state != MicrophoneTestState::Starting && !m_dictationListening;
+}
+
+void MicrophoneTest::start(const QString &deviceId)
+{
+    if (m_state != MicrophoneTestState::Stopped || !canToggle()) {
+        return;
+    }
+    m_deviceId = deviceId;
+    AudioInput *input = m_createInput(this);
+    input->useDevice(deviceId);
+    connect(input, &AudioInput::levelChanged, this, &MicrophoneTest::levelChanged);
+    connect(input, &AudioInput::failed, this, [this](const QString &message) {
         stop();
         emit failed(message);
     });
+    m_input = input;
+    setState(MicrophoneTestState::Starting);
+
+    // The input's start() can wait for the device in a nested event loop, in
+    // which anything may stop or destroy this test.
+    const QPointer<MicrophoneTest> alive(this);
     QString error;
-    if (!m_input->start(&error)) {
-        stop();
-        emit failed(error);
+    const bool started = input->start(&error);
+    if (!alive) {
+        input->deleteLater();
         return;
     }
-    emit runningChanged(true);
+    const bool stopRequested = std::exchange(m_stopRequested, false);
+    if (!started || stopRequested) {
+        closeDevice();
+        if (!started) {
+            emit failed(error);
+        }
+        return;
+    }
+    setState(MicrophoneTestState::Running);
 }
 
 void MicrophoneTest::stop()
+{
+    if (m_state == MicrophoneTestState::Starting) {
+        m_stopRequested = true;
+        return;
+    }
+    closeDevice();
+}
+
+void MicrophoneTest::toggle(const QString &deviceId)
+{
+    if (m_state == MicrophoneTestState::Stopped) {
+        start(deviceId);
+    } else {
+        stop();
+    }
+}
+
+void MicrophoneTest::setState(MicrophoneTestState state)
+{
+    if (m_state == state) {
+        return;
+    }
+    m_state = state;
+    emit changed();
+}
+
+void MicrophoneTest::closeDevice()
 {
     if (!m_input) {
         return;
@@ -65,7 +132,7 @@ void MicrophoneTest::stop()
     // microphone open between dictations reopens the device to stay warm.
     // Later, because a stop can arrive from inside the input's own signal.
     input->deleteLater();
-    emit runningChanged(false);
+    setState(MicrophoneTestState::Stopped);
 }
 
 } // namespace speecher

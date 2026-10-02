@@ -82,6 +82,10 @@ class AudioInput : public QObject {
 public:
     using QObject::QObject;
     virtual void warmUp() {}
+    // Records from this device rather than the one the settings name, for an
+    // input started once and then thrown away. Inputs that read no device,
+    // such as a file standing in for the microphone, ignore it.
+    virtual void useDevice(const QString &deviceId) { Q_UNUSED(deviceId) }
     virtual bool start(QString *error = nullptr) = 0;
     virtual void stop() = 0;
     virtual bool isActive() const = 0;
