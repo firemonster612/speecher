@@ -205,7 +205,7 @@ std::optional<CleanupModel> suggestedCleanupModel(CleanupHardware hardware)
 
 LocalRunnerRefiner::LocalRunnerRefiner(QObject *parent)
     : TranscriptRefiner(parent)
-    , m_chat(new ChatCompletionsRefiner(QStringLiteral("Local model"),
+    , m_chat(new ChatCompletionsRefiner(label(),
                                         ChatCompletionsRefiner::Audience::SmallLocalModel, this))
 {
     connect(m_chat, &ChatCompletionsRefiner::delta, this, &TranscriptRefiner::delta);
@@ -220,7 +220,7 @@ QString LocalRunnerRefiner::id() const
 
 QString LocalRunnerRefiner::label() const
 {
-    return QStringLiteral("Local model");
+    return QStringLiteral("Local Runner");
 }
 
 bool LocalRunnerRefiner::requiresRefresh(const RefinementSettings &) const

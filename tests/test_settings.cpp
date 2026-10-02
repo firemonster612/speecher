@@ -131,6 +131,66 @@ private slots:
                  QStringLiteral("claude-sonnet-5"));
     }
 
+    // Paste with no longer offers inserting directly or copying only. Under
+    // either, a rule that said to paste only inserted, or only copied, so those
+    // rules take that method now.
+    void outputMethodMigrationMovesPastingRulesToTheOldMethod()
+    {
+        using Scope = PasteRuleScope;
+        using Method = PasteMethod;
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QSettings settings(dir.filePath(QStringLiteral("settings.ini")), QSettings::IniFormat);
+        const QList<PasteRule> stored{
+            {Scope::Category, QStringLiteral("terminal"), Method::TerminalPaste, true},
+            {Scope::Category, QStringLiteral("browser"), Method::ClipboardOnly, true},
+            {Scope::Application, QStringLiteral("org.kde.kate"), Method::StandardPaste, false},
+            {Scope::Application, QStringLiteral("org.kde.konsole"), Method::DirectInsert, true},
+            {Scope::Global, QString(), Method::StandardPaste, true},
+        };
+        const auto migrated = [&settings, &stored](const QString &method) {
+            settings.setValue(QStringLiteral("output/method"), method);
+            settings.setValue(QStringLiteral("output/pasteRules"), pasteRulesToJson(stored));
+            migrateOutputMethod(settings);
+            return pasteRulesFromJson(settings.value(QStringLiteral("output/pasteRules")).toByteArray());
+        };
+
+        QCOMPARE(migrated(QStringLiteral("direct_insert")),
+                 (QList<PasteRule>{
+                     {Scope::Category, QStringLiteral("terminal"), Method::DirectInsert, true},
+                     {Scope::Category, QStringLiteral("browser"), Method::ClipboardOnly, true},
+                     {Scope::Application, QStringLiteral("org.kde.kate"), Method::DirectInsert, false},
+                     {Scope::Application, QStringLiteral("org.kde.konsole"), Method::DirectInsert, true},
+                     {Scope::Global, QString(), Method::DirectInsert, true},
+                 }));
+        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("automatic"));
+
+        const QList<PasteRule> copyOnly{
+            {Scope::Category, QStringLiteral("terminal"), Method::ClipboardOnly, true},
+            {Scope::Category, QStringLiteral("browser"), Method::ClipboardOnly, true},
+            {Scope::Application, QStringLiteral("org.kde.kate"), Method::ClipboardOnly, false},
+            {Scope::Application, QStringLiteral("org.kde.konsole"), Method::DirectInsert, true},
+            {Scope::Global, QString(), Method::ClipboardOnly, true},
+        };
+        QCOMPARE(migrated(QStringLiteral("qt-clipboard")), copyOnly);
+        QCOMPARE(migrated(QStringLiteral("wl-copy")), copyOnly);
+        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("automatic"));
+
+        // Nothing stored means the default rules, which migrate the same way.
+        settings.remove(QStringLiteral("output/pasteRules"));
+        settings.setValue(QStringLiteral("output/method"), QStringLiteral("direct_insert"));
+        migrateOutputMethod(settings);
+        QCOMPARE(pasteRulesFromJson(settings.value(QStringLiteral("output/pasteRules")).toByteArray()),
+                 (QList<PasteRule>{
+                     {Scope::Category, QStringLiteral("terminal"), Method::DirectInsert, true},
+                     {Scope::Global, QString(), Method::DirectInsert, true},
+                 }));
+
+        // Automatic and keyboard paste are left alone.
+        QCOMPARE(migrated(QStringLiteral("ydotool")), stored);
+        QCOMPARE(settings.value(QStringLiteral("output/method")).toString(), QStringLiteral("ydotool"));
+    }
+
     // Old installs hold QKeySequence text under shortcuts/toggleDictation, so
     // that form must keep reading as a combination while a single key gets its
     // own prefix.
@@ -265,6 +325,10 @@ private slots:
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("oauth"));
         QCOMPARE(settings.anthropicEffort(), QStringLiteral("low"));
         QCOMPARE(settings.anthropicFastMode(), true);
+        // The Codex accuracy pass is on until someone turns it off.
+        QCOMPARE(settings.codexFinalRetranscribe(), true);
+        settings.setCodexFinalRetranscribe(false);
+        QCOMPARE(settings.codexFinalRetranscribe(), false);
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
         QCOMPARE(settings.pasteRules(), defaultPasteRules());

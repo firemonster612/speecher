@@ -152,6 +152,13 @@ class SignIn(context: Context) : AutoCloseable {
         }
     }
 
+    /** Forgets the attempt, so one that ended, however it ended, isn't restored after a restart. */
+    fun clearPending() {
+        attempt = null
+        provider = null
+        pending.edit(commit = true) { clear() }
+    }
+
     private fun restoredPending(): OAuthAttempt? {
         val verifier = pending.getString("verifier", null) ?: return null
         val state = pending.getString("state", null) ?: return null
@@ -253,15 +260,16 @@ class SignInViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * After the app was killed mid-sign-in, bring back the paste field for the pending provider.
+     * After the app was killed mid-sign-in, bring back the paste field for the pending provider. An
+     * attempt for an account in [working] is one an earlier release left behind, so it is dropped.
      */
-    fun restore() {
-        if (activeProvider == null) {
-            activeProvider =
-                signIn.pendingProvider?.let { pending ->
-                    Provider.entries.firstOrNull { it.oauth == pending }
-                }
-        }
+    fun restore(working: Set<Provider>) {
+        if (activeProvider != null) return
+        val pending =
+            signIn.pendingProvider?.let { pending ->
+                Provider.entries.firstOrNull { it.oauth == pending }
+            }
+        if (pending in working) signIn.clearPending() else activeProvider = pending
     }
 
     fun paste(pasted: String) {
@@ -275,6 +283,7 @@ class SignInViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun finish(result: Result<OAuthTokens>) {
         SignInListenerService.stop(getApplication())
+        signIn.clearPending()
         error = result.exceptionOrNull()?.let(::signInErrorMessage)
         activeProvider = null
     }

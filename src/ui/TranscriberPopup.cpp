@@ -1,6 +1,7 @@
 #include "ui/TranscriberPopup.h"
 
 #include "app/UpdateBanner.h"
+#include "dictation/DictationTypes.h"
 #include "platform/FallbackPopupPositioner.h"
 #include "ui/WaveformWidget.h"
 
@@ -196,6 +197,11 @@ public:
     QSize sizeHint() const override
     {
         const QSize label = fontMetrics().size(Qt::TextSingleLine, text());
+        if (text().isEmpty() && !icon().isNull()) {
+            // An icon-only chip is a circle around the icon.
+            const int side = label.height() + 2 * kVerticalPadding;
+            return QSize(side, side);
+        }
         return QSize(label.width() + 2 * kHorizontalPadding,
                      label.height() + 2 * kVerticalPadding);
     }
@@ -225,6 +231,15 @@ protected:
         const QRectF capsule = QRectF(rect()).adjusted(inset, inset, -inset, -inset);
         painter.drawRoundedRect(capsule, capsule.height() / 2.0, capsule.height() / 2.0);
 
+        if (text().isEmpty() && !icon().isNull()) {
+            // Selected mode: the icon theme recolours it for the Highlight fill.
+            const int extent = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
+            QRect iconRect(0, 0, extent, extent);
+            iconRect.moveCenter(rect().center());
+            icon().paint(&painter, iconRect, Qt::AlignCenter,
+                         isEnabled() ? QIcon::Selected : QIcon::Disabled);
+            return;
+        }
         painter.setPen(p.color(isEnabled() ? QPalette::HighlightedText
                                            : QPalette::PlaceholderText));
         painter.drawText(rect(), Qt::AlignCenter, text());
@@ -327,9 +342,19 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     previewRow->addWidget(m_preview, 1);
     // An error's explicit way out, beside the auto-dismiss countdown, matching
     // the Dismiss buttons on the mac and Windows panels.
+    m_errorAction = new ChipButton(m_previewPill);
+    m_errorAction->setObjectName(QStringLiteral("errorAction"));
+    m_errorAction->hide();
+    connect(m_errorAction, &QPushButton::clicked, this, [this] {
+        m_errorDismissAnimation->stop();
+        hide();
+        emit errorActionRequested();
+        emit errorDismissed();
+    });
+    previewRow->addWidget(m_errorAction, 0, Qt::AlignVCenter);
     m_errorDismiss = new ChipButton(m_previewPill);
     m_errorDismiss->setObjectName(QStringLiteral("errorDismiss"));
-    m_errorDismiss->setText(QStringLiteral("Dismiss"));
+    m_errorDismiss->setText(popupDismissCaption());
     m_errorDismiss->hide();
     connect(m_errorDismiss, &QPushButton::clicked, this, [this] {
         m_errorDismissAnimation->stop();
@@ -337,6 +362,9 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
         emit errorDismissed();
     });
     previewRow->addWidget(m_errorDismiss, 0, Qt::AlignVCenter);
+    // The countdown waits while the pointer rests on the capsule, so an
+    // error being read does not disappear under it.
+    m_previewPill->installEventFilter(this);
     m_pillLayout->addLayout(previewRow, 1);
     m_pillLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
     static_cast<PillFrame *>(m_previewPill)->setContourWidgets(m_preview, m_waveform);
@@ -353,7 +381,6 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
         m_errorDismissProgress,
         QByteArrayLiteral("value"),
         this);
-    m_errorDismissAnimation->setDuration(kPopupErrorDismissMs);
     m_errorDismissAnimation->setStartValue(m_errorDismissProgress->maximum());
     m_errorDismissAnimation->setEndValue(m_errorDismissProgress->minimum());
     m_errorDismissAnimation->setEasingCurve(QEasingCurve::Linear);
@@ -387,7 +414,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_whatsNewAction->setObjectName(QStringLiteral("whatsNewAction"));
     m_whatsNewDismiss = new ChipButton(m_whatsNewRow);
     m_whatsNewDismiss->setObjectName(QStringLiteral("whatsNewDismiss"));
-    m_whatsNewDismiss->setText(QStringLiteral("✕"));
+    m_whatsNewDismiss->setIcon(QIcon::fromTheme(QStringLiteral("window-close")));
     m_whatsNewRow->layout()->addWidget(m_whatsNewAction);
     m_whatsNewRow->layout()->addWidget(m_whatsNewDismiss);
     connect(m_whatsNewAction, &QPushButton::clicked, this, &TranscriberPopup::whatsNewRequested);
@@ -407,11 +434,28 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
 
     m_updateBanner = makeBanner("updateBanner", m_updateBannerText);
     m_updateBannerText->setObjectName(QStringLiteral("updateBannerText"));
+    // A failed update says so with the warning sign, not only in words.
+    m_updateBannerIcon = new QLabel(m_updateBanner);
+    m_updateBannerIcon->setObjectName(QStringLiteral("updateBannerIcon"));
+    m_updateBannerIcon->setPixmap(QIcon::fromTheme(QStringLiteral("dialog-warning"))
+                                      .pixmap(iconSize, iconSize));
+    m_updateBannerIcon->hide();
+    static_cast<QHBoxLayout *>(m_updateBanner->layout())->insertWidget(0, m_updateBannerIcon);
     m_updateBannerAction = new ChipButton(m_updateBanner);
     m_updateBannerAction->setObjectName(QStringLiteral("updateBannerAction"));
-    m_updateBanner->layout()->addWidget(m_updateBannerAction);
+    m_updateBannerLater = new ChipButton(m_updateBanner);
+    m_updateBannerLater->setObjectName(QStringLiteral("updateBannerLater"));
+    m_updateBannerDismiss = new ChipButton(m_updateBanner);
+    m_updateBannerDismiss->setObjectName(QStringLiteral("updateBannerDismiss"));
+    for (QPushButton *chip : {m_updateBannerAction, m_updateBannerLater, m_updateBannerDismiss}) {
+        m_updateBanner->layout()->addWidget(chip);
+    }
     connect(m_updateBannerAction, &QPushButton::clicked,
             this, &TranscriberPopup::updateRequested);
+    connect(m_updateBannerLater, &QPushButton::clicked,
+            this, &TranscriberPopup::updateLaterRequested);
+    connect(m_updateBannerDismiss, &QPushButton::clicked,
+            this, &TranscriberPopup::updateDismissRequested);
     // No settings prompts here: the overlay cannot take focus and shows while
     // the user is speaking. Desktop accessibility is offered on the Dictation
     // page and in the setup assistant.
@@ -434,16 +478,16 @@ QSize TranscriberPopup::sizeHint() const
     return QSize(width, pillHeight + 4 + bannerHeight(m_updateBanner) + bannerHeight(m_whatsNewRow));
 }
 
-void TranscriberPopup::setStatus(const QString &status)
+void TranscriberPopup::setSessionState(DictationState state)
 {
-    // "Stopping" is the one state whose label drives this popup: the mic is
+    // Stopping is the one state that drives this popup directly: the mic is
     // closed but the provider is still finalising, so the waveform gives way
     // to a shimmering "Transcribing…" and the stale speech preview goes away.
-    if (status == QStringLiteral("Stopping")) {
+    if (state == DictationState::Stopping) {
         m_phase = Phase::Transcribing;
         restoreStandardLayout();
         hidePreview();
-        m_waveform->setStatusText(QStringLiteral("Transcribing…"));
+        m_waveform->setStatusText(dictationStatusLabel(dictationStateName(state)));
         m_previewPill->adjustSize();
     }
     adjustSize();
@@ -538,7 +582,7 @@ void TranscriberPopup::setRefining(bool refining)
         m_phase = Phase::Refining;
         restoreStandardLayout();
         hidePreview();
-        m_waveform->setStatusText(QStringLiteral("Refining…"));
+        m_waveform->setStatusText(dictationStatusLabel(QStringLiteral("refining")));
         return;
     }
     m_phase = Phase::Live;
@@ -564,7 +608,7 @@ void TranscriberPopup::showOAuthRefreshIndicator()
     m_phase = Phase::Live;
     restoreStandardLayout();
     hidePreview();
-    m_waveform->setStatusText(QStringLiteral("Renewing sign-in…"));
+    m_waveform->setStatusText(renewingSignInText());
     m_previewPill->adjustSize();
     adjustSize();
 }
@@ -628,7 +672,7 @@ void TranscriberPopup::showMessage(const QString &message, PopupOutcome outcome)
     adjustSize();
 }
 
-void TranscriberPopup::showErrorMessage(const QString &message)
+void TranscriberPopup::showErrorMessage(const QString &message, const QString &actionLabel)
 {
     m_phase = Phase::Live;
     m_errorDismissAnimation->stop();
@@ -651,6 +695,8 @@ void TranscriberPopup::showErrorMessage(const QString &message)
     m_preview->setVisible(true);
     m_errorIcon->setVisible(true);
     m_errorDismiss->setVisible(true);
+    m_errorAction->setText(actionLabel);
+    m_errorAction->setVisible(!actionLabel.isEmpty());
     m_previewPill->setVisible(true);
     // previewRow is centred in what is left after the bar and its air, so the
     // same amount above it puts the text on the capsule's optical centre.
@@ -673,7 +719,11 @@ void TranscriberPopup::showErrorMessage(const QString &message)
     if (isVisible()) {
         m_positioner->positionBottomCenter(m_surface);
     }
+    m_errorDismissAnimation->setDuration(popupErrorDismissMs(message));
     m_errorDismissAnimation->start();
+    if (m_previewPill->underMouse()) {
+        m_errorDismissAnimation->pause();
+    }
 }
 
 void TranscriberPopup::showPopup(quint64 generation)
@@ -719,12 +769,21 @@ void TranscriberPopup::setWhatsNewBanner(const WhatsNewBannerModel &banner, bool
 void TranscriberPopup::setUpdateBanner(const UpdateBannerModel &banner)
 {
     const bool visibilityChanged = m_updateBanner->isHidden() == banner.visible;
+    const bool error = banner.tone == UpdateBannerModel::Tone::Error;
     const bool textChanged = m_updateBannerText->text() != banner.text
-        || m_updateBannerAction->text() != banner.action;
+        || m_updateBannerAction->text() != banner.action
+        || m_updateBannerLater->text() != banner.later
+        || m_updateBannerDismiss->text() != banner.dismiss
+        || m_updateBannerIcon->isHidden() == error;
     m_updateBannerText->setText(banner.text);
+    m_updateBannerIcon->setVisible(error);
     m_updateBannerAction->setText(banner.action);
     m_updateBannerAction->setVisible(!banner.action.isEmpty());
     m_updateBannerAction->setEnabled(banner.actionEnabled);
+    m_updateBannerLater->setText(banner.later);
+    m_updateBannerLater->setVisible(!banner.later.isEmpty());
+    m_updateBannerDismiss->setText(banner.dismiss);
+    m_updateBannerDismiss->setVisible(!banner.dismiss.isEmpty());
     m_updateBanner->setVisible(banner.visible);
     if (!visibilityChanged && !textChanged) {
         return;
@@ -739,6 +798,20 @@ void TranscriberPopup::changeEvent(QEvent *event)
         applyTheme();
     }
     QWidget::changeEvent(event);
+}
+
+bool TranscriberPopup::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_previewPill) {
+        if (event->type() == QEvent::Enter
+            && m_errorDismissAnimation->state() == QAbstractAnimation::Running) {
+            m_errorDismissAnimation->pause();
+        } else if (event->type() == QEvent::Leave
+                   && m_errorDismissAnimation->state() == QAbstractAnimation::Paused) {
+            m_errorDismissAnimation->resume();
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void TranscriberPopup::hideEvent(QHideEvent *event)
@@ -784,6 +857,7 @@ void TranscriberPopup::restoreStandardLayout()
     m_errorDismissAnimation->stop();
     m_errorDismissProgress->hide();
     m_errorDismiss->hide();
+    m_errorAction->hide();
     m_errorIcon->hide();
     m_waveform->show();
     m_preview->setWordWrap(false);

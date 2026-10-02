@@ -55,6 +55,11 @@ struct CollectionColumn {
     std::function<QString(const QVariantMap &)> recordTooltip;
     // Text columns only: the value may hold several lines, such as a snippet.
     bool multiline = false;
+    // Text columns only: an example shown in an empty field.
+    QString placeholder;
+    // Filled in where a record is added or edited, but left out of the table:
+    // a detail that would crowd it, such as what a cleanup level builds on.
+    bool dialogOnly = false;
 };
 
 // Records a collection can be filled from a file with. Core owns the parse; the
@@ -130,6 +135,18 @@ struct Capabilities {
     // This computer took the last launch-at-login change. Assumed until one is
     // refused, which is the only thing the caution beside the toggle reports.
     bool launchAtLoginAccepted = true;
+    // The system lists at least one microphone. Assumed until the front end's
+    // device list comes back empty.
+    bool audioInput = true;
+};
+
+// An expert setting kept off the page: the card shows a button row in its
+// place, titled and described as here, that opens the setting in a dialog of
+// the same title.
+struct RowDialog {
+    QString title;
+    // The button row's description, which says what the setting holds now.
+    std::function<QString(const AppSettings &)> summary;
 };
 
 struct SettingsRow {
@@ -140,6 +157,9 @@ struct SettingsRow {
     // release-note discovery or should not appear as something new.
     QString sinceVersion;
     QString label;
+    // Replaces label when what the row holds depends on the settings, such as
+    // a sign-in status that becomes an API key field.
+    std::function<QString(const AppSettings &)> labelValue;
     QString help;
     std::function<QString(const AppSettings &)> helpValue;
     RowKind kind = RowKind::Info;
@@ -158,15 +178,25 @@ struct SettingsRow {
     // Replaces tooltip while enabled says no. A front end shows it beside the
     // disabled control, not only on hover.
     QString disabledHelp;
+    // Replaces disabledHelp where the schema can tell which gate is closed, so
+    // a row held by more than one names only that one.
+    std::function<QString(const AppSettings &, const Capabilities &)> disabledHelpValue;
     // An action a front end can run to lift the gate, with the caption of the
     // control that runs it. Empty when nothing in the app can.
     QString disabledAction;
     QString disabledActionLabel;
+    // Names a gate that many rows share, such as desktop accessibility, so a
+    // front end can explain it once for the page rather than on every row,
+    // whether or not an action can lift it.
+    QString sharedGate;
     // Rows that name the same group render inside one container and are enabled
     // or disabled together, so they must all declare the same gate.
     QString groupId;
     // Collection metadata, also available on Custom rows with native table rendering.
     CollectionDescriptor collection;
+    // Set on a row shown in a dialog rather than on the page. Adjacent rows
+    // with the same dialog title share one dialog and one button row.
+    RowDialog dialog;
     std::function<QVariant(const AppSettings &)> value;
     std::function<void(AppSettings &, const QVariant &)> apply;
     std::function<QList<RowOption>(const AppSettings &)> options;
@@ -179,6 +209,8 @@ struct SettingsRow {
     QString placeholder;
     // Text rows only: the value may hold several lines.
     bool multiline = false;
+    // A Collection row that is not enabled stays readable: its records show
+    // and scroll, and only editing, adding and deleting stop.
     std::function<bool(const AppSettings &, const Capabilities &)> enabled;
     // A row that is only worth showing sometimes, such as a caution about the
     // model currently chosen. Absent means always.
@@ -241,6 +273,8 @@ struct SettingsPane {
     QString iconId;
     PaneLayout layout = PaneLayout::Sections;
     QList<SettingsPaneGroup> groups;
+    // One line under the page title saying what the page is for, or empty.
+    QString intro;
 };
 
 // One titled run of the sidebar, as System Settings groups its pages under a
@@ -289,6 +323,15 @@ PageId resolvePage(const SettingsSchema &schema, const QString &request);
 // query matches every pane in a group.
 QStringList searchPanes(const SettingsSchema &schema, const QString &query, const AppSettings &settings,
                         const Capabilities &capabilities);
+// One pane searchPanes finds, with the visible rows whose label or help
+// mention the query, in reading order. Empty rows means the pane matched by
+// its title or a group's title or footnote.
+struct SearchMatch {
+    QString pane;
+    QStringList rows;
+};
+QList<SearchMatch> searchSettings(const SettingsSchema &schema, const QString &query, const AppSettings &settings,
+                                  const Capabilities &capabilities);
 
 // What help and error text calls a page, so a sentence that sends someone to
 // one names a page that exists. These read the arrangement every build shares.
@@ -320,7 +363,7 @@ struct LocalGpu {
 // Actions a front end runs for these rows, by row id:
 // - speechEndpointTest: LocalSetup::checkSpeechEndpoint(draft.speech.endpoint)
 // - refinementEndpointTest: LocalSetup::checkRefinementEndpoint(draft.refinement)
-// - localRunnerDetect, localModelsRunner: LocalSetup::detectRunners()
+// - localRunnerDetect: LocalSetup::detectRunners()
 // - localModelFolder: open LocalModelStore::directory() in the file manager
 // - speechLocalModelDownload: show the Local models page (a front-end job)
 struct LiveFacts {
@@ -356,7 +399,7 @@ struct SchemaContext {
     QList<RefinementProvider> refinementProviders;
     std::function<QList<RowOption>()> audioInputDevices;
     // This build can set up a virtual keyboard, so the Output page carries the
-    // Advanced section that drives it.
+    // row that drives it.
     bool virtualKeyboardSetup = false;
     QString currentVersion;
     QString lastSeenVersion;
@@ -369,9 +412,15 @@ struct SchemaContext {
     QString builtInSystemPrompt;
 };
 
-// The built-in cleanup levels, then the custom ones.
+// What refinement does, in one sentence: the Refinement page's intro and the
+// setup assistant's Refinement step open with it.
+QString refinementIntro();
+
+// The built-in cleanup levels, then the custom ones. Each option's help says
+// what the level does, for a front end to show under the chosen one.
 QList<RowOption> cleanupStrengths(const QList<CustomCleanupLevel> &custom);
-// No tone override and the built-in tones, then the custom ones.
+// No tone and the built-in tones, then the custom ones, each with
+// its instruction as help.
 QList<RowOption> writingTones(const QList<CustomTone> &custom);
 // The id when it is offered, otherwise what a profile whose choice was deleted
 // falls back to: no tone override, or Medium.
@@ -383,6 +432,13 @@ QString offeredCleanupLevel(const QString &id, const QList<CustomCleanupLevel> &
 QString customChoiceId(const QString &name, const QStringList &taken);
 // The built-in profiles, then the custom ones `profiles` holds.
 QList<RowOption> writingProfileChoices(const QList<WritingProfileSettings> &profiles);
+// What a profile does, in a sentence or two: its cleanup and tone, and
+// whether it adds instructions of its own. "Medium cleanup, no tone."
+QString writingProfileChoiceSummary(const AppSettings &settings, const QString &profileId);
+// The same, then where Speecher uses it: the apps the recognition rules map
+// to it, and whether it is the fallback. The profile's row on the Writing
+// Profiles page reads this.
+QString writingProfileSummary(const AppSettings &settings, const QString &profileId);
 // Each named profile without an id, one just added, gets customChoiceId of
 // its name.
 QList<WritingProfileSettings> withCustomProfileIds(QList<WritingProfileSettings> profiles);
@@ -436,12 +492,43 @@ QList<RowOption> openAiSpeedOptions(const QString &model);
 // Where a key the settings surface takes is kept, as a row's help says it.
 QString keyStorageHelp();
 
+// One sentence naming the platform's accessibility feature and what it
+// unlocks, "Turn on desktop accessibility to learn corrections."
+QString accessibilityGateHelp(const QString &purpose);
 // The caption of the control that asks for the accessibility grant, wherever
-// a settings page offers it: gated rows and the shortcut recorder.
+// it is offered: gated rows, the shortcut recorder, and through
+// accessibilityActionCaption Home and setup.
 QString accessibilityGrantActionLabel();
 
 // What a credential status says while it is being resolved.
 QString checkingCredentialsStatus();
+
+// What a Local Runner status says while Speecher looks for one, in settings
+// and in setup.
+QString lookingForRunnersStatus();
+
+// What the Global Shortcut row says while it waits for keys, naming this
+// platform's keys.
+QString globalShortcutPrompt();
+// The Global Shortcut row's buttons: record a new binding, and go back to the
+// binder's default, named by its display text.
+QString globalShortcutChangeCaption();
+QString globalShortcutResetCaption(const QString &defaultShortcut);
+// What the Global Shortcut row shows in place of an empty binding.
+QString globalShortcutUnsetText();
+// Setup's shortcut step: record the first binding, record a single key where
+// the desktop registers no combinations, let the desktop pick one, and remove
+// the binding.
+QString globalShortcutSetCaption();
+QString globalShortcutSingleKeyCaption();
+QString globalShortcutChooseCaption();
+QString globalShortcutClearCaption();
+// What the Global Shortcut row says when the binder refused a binding without
+// saying why.
+QString globalShortcutBindFailedText();
+
+// What settings search shows when nothing matches the query.
+QString noSettingsMatchText();
 
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device

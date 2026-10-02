@@ -10,6 +10,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -172,9 +173,11 @@ private:
         actions->addStretch();
         m_download = addButton(actions, QStringLiteral("localModelDownload"), this);
         m_cancel = addButton(actions, QStringLiteral("localModelCancel"), this, QStringLiteral("Cancel"));
-        m_use = addButton(actions, QStringLiteral("localModelUse"), this, QStringLiteral("Use this model"));
-        m_test = addButton(actions, QStringLiteral("localModelTestSpeed"), this, QStringLiteral("Test speed"));
-        m_delete = addButton(actions, QStringLiteral("localModelDelete"), this, QStringLiteral("Delete"));
+        m_use = addButton(actions, QStringLiteral("localModelUse"), this, localModelText(LocalModelText::UseModel));
+        m_test = addButton(actions, QStringLiteral("localModelTestSpeed"), this,
+                           localModelText(LocalModelText::TestSpeed));
+        m_delete = addButton(actions, QStringLiteral("localModelDelete"), this,
+                             localModelText(LocalModelText::DeleteModel));
 
         connect(m_download, &QPushButton::clicked, this, [this] { m_setup.download(selected()); });
         connect(m_cancel, &QPushButton::clicked, this, [this] { m_setup.cancelDownload(selected().id); });
@@ -184,8 +187,25 @@ private:
             m_notifyChanged();
         });
         connect(m_test, &QPushButton::clicked, this, [this] { m_setup.runSpeedTest(selected().id); });
-        connect(m_delete, &QPushButton::clicked, this, [this] { m_setup.removeModel(selected()); });
+        connect(m_delete, &QPushButton::clicked, this, [this] { confirmDelete(); });
         return actions;
+    }
+
+    // A model can take a gigabyte to download again, so deleting one asks
+    // first, with Cancel as the default.
+    void confirmDelete()
+    {
+        const LocalModel &model = selected();
+        QMessageBox confirm(QMessageBox::Question, localModelText(LocalModelText::DeleteModel),
+                            deleteModelQuestion(model.name), QMessageBox::Cancel, this);
+        confirm.setInformativeText(localModelText(LocalModelText::DeleteBody));
+        QPushButton *remove = confirm.addButton(localModelText(LocalModelText::DeleteModel),
+                                                QMessageBox::DestructiveRole);
+        confirm.setDefaultButton(QMessageBox::Cancel);
+        confirm.exec();
+        if (confirm.clickedButton() == remove) {
+            m_setup.removeModel(model);
+        }
     }
 
     QPushButton *addButton(QHBoxLayout *layout, const QString &name, QWidget *parent,
@@ -247,13 +267,13 @@ private:
         m_rating->setBadge(modelRatingLabel(model.rating), modelRatingTone(model.rating));
         m_bestFor->setText(model.bestFor);
         m_subtitle->setText(model.id == suggested && m_setup.hardwareKnown()
-                                ? QStringLiteral("Suggested for this computer")
+                                ? localModelText(LocalModelText::Suggested)
                                 : model.fileName);
         m_size->setText(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes), m_setup.fitLabel(model)));
         m_speed->setText(state.speedDetail);
         m_wer->setText(QStringLiteral("%1 clear speech\n%2 everyday speech")
                            .arg(werLine(model.librispeechCleanWer), werLine(model.fleursEnglishWer)));
-        m_textShows->setText(model.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"));
+        m_textShows->setText(textShowsValue(model.streams));
         m_language->setText(QStringLiteral("English"));
         m_licence->setText(model.licence);
         QStringList notes;
@@ -278,14 +298,12 @@ private:
             m_state->setText(QStringLiteral("%1 of %2").arg(downloadSizeText(progress->first),
                                                             downloadSizeText(model.sizeBytes)));
         } else {
-            m_state->setText(inUse ? QStringLiteral("In use") : QString());
+            m_state->setText(inUse ? localModelText(LocalModelText::InUse) : QString());
         }
         m_state->setVisible(!m_state->text().isEmpty());
         m_download->setVisible(!progress && !downloaded);
         m_download->setEnabled(!tooLarge);
-        m_download->setText(tooLarge
-                                ? QStringLiteral("Too large for this computer")
-                                : QStringLiteral("Download %1").arg(downloadSizeText(model.sizeBytes)));
+        m_download->setText(tooLarge ? localModelText(LocalModelText::TooLarge) : downloadCaption(model.sizeBytes));
         m_use->setVisible(downloaded && !inUse);
         m_test->setVisible(downloaded);
         m_test->setEnabled(!m_setup.speedTestRunning(model.id));

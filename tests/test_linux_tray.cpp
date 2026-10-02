@@ -130,7 +130,7 @@ private slots:
         QtFrontEnd frontEnd(&controller);
         auto *tray = frontEnd.findChild<LinuxTrayIcon *>();
         QSignalSpy shown(tray, &LinuxTrayIcon::messageShown);
-        emit controller.session()->popupErrorRequested(QStringLiteral("The microphone stopped."));
+        emit controller.session()->popupErrorRequested(QStringLiteral("The microphone stopped."), {});
         QVERIFY(shown.isEmpty());
     }
 

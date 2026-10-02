@@ -13,7 +13,7 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.dictation.PanelSize
 
-private val PanelSize.label: String
+internal val PanelSize.label: String
     get() =
         when (this) {
             PanelSize.Full -> "Full"

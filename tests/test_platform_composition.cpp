@@ -106,6 +106,12 @@ public:
         registerCount += 1;
     }
 
+    bool removeRegistration(QString *) override
+    {
+        publishShortcut({});
+        return true;
+    }
+
     void suspend() override { suspendCount += 1; }
 
     QString resume() override
@@ -317,7 +323,7 @@ public:
         return true;
     }
 
-    void showDictationError(const QString &message) override
+    void showDictationError(const QString &message, const PopupErrorAction &) override
     {
         calls << QStringLiteral("showDictationError ") + message;
     }
@@ -818,13 +824,12 @@ private slots:
 
         const QStringList titles = assistant.pageTitles();
         QCOMPARE(titles,
-                 QStringList({QStringLiteral("Welcome to Speecher"),
+                 QStringList({QStringLiteral("Welcome"),
                               QStringLiteral("Transcription"),
                               QStringLiteral("Microphone"),
                               QStringLiteral("Accessibility"),
                               QStringLiteral("Text delivery"),
                               QStringLiteral("Refinement"),
-                              QStringLiteral("Writing profiles"),
                               QStringLiteral("Global Shortcut"),
                               QStringLiteral("Ready to dictate")}));
         QVERIFY(titles.indexOf(QStringLiteral("Global Shortcut"))
@@ -841,7 +846,7 @@ private slots:
         bool mentionsShortcut = false;
         for (const QLabel *label : welcome->findChildren<QLabel *>()) {
             mentionsShortcut = mentionsShortcut
-                || label->text().contains(QStringLiteral("ends by setting up a Global Shortcut"));
+                || label->text().contains(QStringLiteral("and a Global Shortcut"));
         }
         QVERIFY(mentionsShortcut);
 
@@ -913,21 +918,9 @@ private slots:
         ApplicationController controller(true, platform);
         controller.settings()->setSetupCompleted(false);
         SetupAssistant assistant(&controller);
-        auto *welcome = assistant.findChild<WelcomeSetupPage *>();
         auto *transcription = assistant.findChild<SpeechProviderSetupPage *>();
-        QVERIFY(welcome && transcription);
-        QSignalSpy checked(welcome, &WelcomeSetupPage::checkFinished);
+        QVERIFY(transcription);
         assistant.show();
-        QTRY_VERIFY(!checked.isEmpty());
-        // With no sign-in, a build with speech on this computer takes that
-        // path on Welcome, so the first unfinished step is Transcription,
-        // where no model has been downloaded. Choosing it here does what the
-        // sign-in checks do on their own. Without local speech, no sign-in
-        // holds Welcome itself.
-        auto *localPath = welcome->findChild<QAbstractButton *>(QStringLiteral("welcomePathLocal"));
-        const bool localSpeech = localPath != nullptr;
-        if (localSpeech) localPath->click();
-        else if (welcome->ready()) QSKIP("A sign-in on this computer opens Welcome.");
 
         // Walked with Next, as a person would: QWizard goes back only through
         // pages it visited.
@@ -944,8 +937,10 @@ private slots:
 
         QVERIFY(!controller.settings()->setupCompleted());
         QVERIFY(assistant.isVisible());
-        QCOMPARE(welcome->isVisible(), !localSpeech);
-        QCOMPARE(transcription->isVisible(), localSpeech);
+        // With no sign-in and no downloaded model, Transcription is the
+        // first unfinished step.
+        if (transcription->ready()) QSKIP("A sign-in on this computer opens Transcription.");
+        QVERIFY(transcription->isVisible());
     }
 
     void globalShortcutSinglePageOnlyShowsTheShortcutPage()
@@ -975,49 +970,52 @@ private slots:
         LinuxGlobalShortcutSetupPage page(controller);
 
         auto *capture = page.findChild<QPushButton *>(QStringLiteral("globalShortcutCapture"));
-        QVERIFY(capture);
-        // Idle, the button names the bound combination rather than a generic
-        // label.
-        QCOMPARE(capture->text(), initial.toString(QKeySequence::NativeText));
-        bool hasGuidance = false;
-        for (const QLabel *label : page.findChildren<QLabel *>()) {
-            hasGuidance = hasGuidance
-                || label->text() == QStringLiteral(
-                    "Press a key combination, or a single key such as Right Alt or F13.");
-        }
-        QVERIFY(hasGuidance);
+        auto *binding = page.findChild<QLabel *>(QStringLiteral("globalShortcutBinding"));
+        auto *description = page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"));
+        auto *reset = page.findChild<QPushButton *>(QStringLiteral("resetGlobalShortcut"));
+        QVERIFY(capture && binding && description && reset);
+        // Idle, the row shows the bound combination beside a button that says
+        // what pressing it does.
+        QCOMPARE(binding->text(), initial.toString(QKeySequence::NativeText));
+        QCOMPARE(capture->text(), QStringLiteral("Change…"));
+        QCOMPARE(description->text(), QStringLiteral("Start or stop dictation from anywhere."));
+        QVERIFY(reset->isHidden());
 
         page.show();
         capture->click();
-        QCOMPARE(capture->text(), QStringLiteral("Press a key or key combination…"));
+        QCOMPARE(capture->text(), QStringLiteral("Cancel"));
+        QCOMPARE(description->text(),
+                 QStringLiteral("Press a key combination, or a single key such as Right Alt or F13."));
         // Recording must not fire the bound shortcut.
         QCOMPARE(platform->binder->suspendCount, 1);
         const QKeySequence chosen(Qt::CTRL | Qt::ALT | Qt::Key_Space);
         QTest::keyClick(capture, Qt::Key_Space, Qt::ControlModifier | Qt::AltModifier);
         QCOMPARE(controller.globalShortcut().combination(), chosen);
         QCOMPARE(platform->binder->resumeCount, 1);
-        QCOMPARE(capture->text(), QStringLiteral("Ctrl+Alt+Space"));
-
-        bool hasStatus = false;
-        for (QLabel *label : page.findChildren<QLabel *>()) {
-            hasStatus = hasStatus
-                || label->text() == QStringLiteral("Shortcut set to Ctrl+Alt+Space. Try it now.");
-        }
-        QVERIFY(hasStatus);
+        QCOMPARE(binding->text(), QStringLiteral("Ctrl+Alt+Space"));
+        QCOMPARE(description->text(), QStringLiteral("Shortcut set to Ctrl+Alt+Space. Try it now."));
 
         // Escape abandons the capture and keeps the bound combination.
         capture->click();
         QTest::keyClick(capture, Qt::Key_Escape);
         QCOMPARE(controller.globalShortcut().combination(), chosen);
-        QCOMPARE(capture->text(), QStringLiteral("Ctrl+Alt+Space"));
+        QCOMPARE(capture->text(), QStringLiteral("Change…"));
 
         platform->binder->setShortcutError = QStringLiteral("That shortcut is already in use.");
         capture->click();
         QTest::keyClick(capture, Qt::Key_D, Qt::ControlModifier);
         QCOMPARE(page.findChild<QLabel *>(QStringLiteral("shortcutCaptureFeedback"))->text(),
                  QStringLiteral("That shortcut is already in use."));
-        // The failed capture leaves the button naming what is still bound.
-        QCOMPARE(capture->text(), QStringLiteral("Ctrl+Alt+Space"));
+        // The failed capture leaves the row naming what is still bound.
+        QCOMPARE(binding->text(), QStringLiteral("Ctrl+Alt+Space"));
+
+        // Reset goes back to the default, and then has nothing left to do.
+        platform->binder->setShortcutError.clear();
+        QVERIFY(!reset->isHidden());
+        QCOMPARE(reset->text(), QStringLiteral("Reset to Meta+Alt+D"));
+        reset->click();
+        QCOMPARE(controller.globalShortcut().combination(), initial);
+        QVERIFY(reset->isHidden());
     }
 
     void globalShortcutPageWaitsForPortalSupportAndShowsItsResult()
@@ -1033,13 +1031,6 @@ private slots:
         auto *status = page.findChild<QLabel *>(QStringLiteral("globalShortcutStatus"));
         QVERIFY(portal);
         QVERIFY(!portal->isHidden());
-        bool hasGuidance = false;
-        for (const QLabel *label : portal->findChildren<QLabel *>()) {
-            hasGuidance = hasGuidance
-                || label->text() == QStringLiteral(
-                    "Your desktop will ask you to pick a key combination.");
-        }
-        QVERIFY(hasGuidance);
         QVERIFY(status);
         QCOMPARE(status->text(), QStringLiteral("Checking your desktop…"));
 
@@ -1063,6 +1054,28 @@ private slots:
         platform->binder->publishRegistrationResult(true, result);
         QCOMPARE(status->text(),
                  QStringLiteral("Shortcut set to Ctrl+Alt+Space. Try it now."));
+    }
+
+    void globalShortcutPageClearsASingleKeyOnPortalDesktops()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->binder->desktopChooser = true;
+        platform->binder->publishShortcut(ShortcutBinding::singleKey(QStringLiteral("F13")));
+        LinuxGlobalShortcutSetupPage page(controller);
+
+        auto *capture = page.findChild<QPushButton *>(QStringLiteral("globalShortcutCapture"));
+        auto *binding = page.findChild<QLabel *>(QStringLiteral("globalShortcutBinding"));
+        auto *clear = page.findChild<QPushButton *>(QStringLiteral("clearGlobalShortcut"));
+        QVERIFY(capture && binding && clear);
+        // Beside the desktop's Choose shortcut, the capture names what it records.
+        QCOMPARE(capture->text(), QStringLiteral("Set single key"));
+        QVERIFY(!clear->isHidden());
+
+        clear->click();
+        QVERIFY(!controller.globalShortcut().isSingleKey());
+        QCOMPARE(binding->text(), QStringLiteral("Not set"));
+        QVERIFY(clear->isHidden());
     }
 
     void globalShortcutPageKeepsPortalFailureAfterRestoringTheOldShortcut()
@@ -1281,13 +1294,11 @@ private slots:
         auto *captureBlock = page.findChild<QWidget *>(QStringLiteral("shortcutCapture"));
         QVERIFY(captureBlock);
         QVERIFY(!captureBlock->isHidden());
-        bool hasSingleKeyLead = false;
-        for (const QLabel *label : captureBlock->findChildren<QLabel *>()) {
-            hasSingleKeyLead = hasSingleKeyLead
-                || label->text() == QStringLiteral(
-                    "Press a single key, such as Right Alt or F13, to use on its own.");
-        }
-        QVERIFY(hasSingleKeyLead);
+        // While it waits, the row says only a single key can be recorded.
+        page.show();
+        page.findChild<QPushButton *>(QStringLiteral("globalShortcutCapture"))->click();
+        QCOMPARE(captureBlock->findChild<QLabel *>(QStringLiteral("globalShortcutStatus"))->text(),
+                 QStringLiteral("Press a single key, such as Right Alt or F13, to use on its own."));
         QCOMPARE(page.findChildren<QGroupBox *>().size(), 0);
 
         bool hasInstruction = false;

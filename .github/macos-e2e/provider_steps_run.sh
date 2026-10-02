@@ -9,7 +9,7 @@ TCC_SEED="$(dirname "$0")/tcc_seed.py"
 ASSISTANT_WINDOW='Speecher Setup Assistant'
 USER_TCC_DB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
 SYSTEM_TCC_DB='/Library/Application Support/com.apple.TCC/TCC.db'
-STEP_IDS=(welcome transcription microphone accessibility delivery refinement profiles shortcut login ready)
+STEP_IDS=(welcome transcription microphone accessibility refinement shortcut ready)
 
 seed_setup_tcc() {
   python3 "$TCC_SEED" "$USER_TCC_DB" \
@@ -215,14 +215,14 @@ else
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-claude.png"
     expect_text "$CASE_DIR/transcription-claude.png" "Deepgram Nova 3" \
       || errors+=("the transcription step does not show the Claude Voice stats")
-    for (( step = 2; step < 6; step++ )); do
+    for (( step = 2; step < 5; step++ )); do
       click_button Continue || errors+=("Continue failed on step $step")
       sleep 0.5
     done
-    wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
+    wait_for_page_capture 5 refinement || errors+=("could not reach the refinement step")
   fi
   if (( ${#errors[@]} == 0 )); then
-    cp "$CASE_DIR/pages/step-6-refinement.png" "$CASE_DIR/refinement-default.png"
+    cp "$CASE_DIR/pages/step-5-refinement.png" "$CASE_DIR/refinement-default.png"
     expect_no_text "$CASE_DIR/refinement-default.png" "Default model" \
       || errors+=("the refinement step kept an unready default sign-in instead of None")
   fi
@@ -247,14 +247,14 @@ else
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-codex.png"
     expect_text "$CASE_DIR/transcription-codex.png" "GPT Live Transcribe" \
       || errors+=("the transcription step does not show the ChatGPT Codex stats")
-    for (( step = 2; step < 6; step++ )); do
+    for (( step = 2; step < 5; step++ )); do
       click_button Continue || errors+=("Continue failed on step $step")
       sleep 0.5
     done
-    wait_for_page_capture 6 refinement || errors+=("could not reach the refinement step")
+    wait_for_page_capture 5 refinement || errors+=("could not reach the refinement step")
   fi
   if (( ${#errors[@]} == 0 )); then
-    cp "$CASE_DIR/pages/step-6-refinement.png" "$CASE_DIR/refinement-anthropic.png"
+    cp "$CASE_DIR/pages/step-5-refinement.png" "$CASE_DIR/refinement-anthropic.png"
     expect_text "$CASE_DIR/refinement-anthropic.png" "Claude Opus" \
       || errors+=("the refinement step does not show the Anthropic stats")
   fi
@@ -298,11 +298,11 @@ else
     if ! launch_setup || ! wait_for_assistant; then
       errors+=("the assistant did not relaunch with refinement seeded to None")
     else
-      walk_to_step 6 || errors+=("could not reach the refinement step with None seeded")
+      walk_to_step 5 || errors+=("could not reach the refinement step with None seeded")
     fi
   fi
   if (( ${#errors[@]} == 0 )); then
-    cp "$CASE_DIR/pages/step-6-refinement.png" "$CASE_DIR/refinement-picked-none.png"
+    cp "$CASE_DIR/pages/step-5-refinement.png" "$CASE_DIR/refinement-picked-none.png"
     expect_no_text "$CASE_DIR/refinement-picked-none.png" "Default model" \
       || errors+=("None still shows a stats block")
   fi
@@ -323,17 +323,17 @@ if ! REFUSE_SHORTCUT=1 launch_setup || ! wait_for_assistant; then
   fail_case "The setup assistant did not appear with registration refused."
 else
   errors=()
-  walk_to_step 8 || errors+=("could not reach the Global Shortcut step")
+  walk_to_step 6 || errors+=("could not reach the Global Shortcut step")
   if (( ${#errors[@]} == 0 )); then
     sleep 1
-    cp "$CASE_DIR/pages/step-8-shortcut.png" "$CASE_DIR/shortcut-refused.png"
-    expect_text "$CASE_DIR/shortcut-refused.png" "Step 8 of 10" \
+    cp "$CASE_DIR/pages/step-6-shortcut.png" "$CASE_DIR/shortcut-refused.png"
+    expect_text "$CASE_DIR/shortcut-refused.png" "Step 6 of 7" \
       || errors+=("the shortcut step does not carry its counter on the title row")
-    expect_text "$CASE_DIR/shortcut-refused.png" "Could not register" \
+    expect_text "$CASE_DIR/shortcut-refused.png" "already owns" \
       || errors+=("the shortcut step does not say why the shortcut was refused")
     click_button Continue || true
     sleep 1
-    [[ -s "$CASE_DIR/pages/step-9-login.png" ]] \
+    [[ -s "$CASE_DIR/pages/step-7-ready.png" ]] \
       && errors+=("Continue left the Global Shortcut step with no shortcut registered")
   fi
   if (( ${#errors[@]} )); then

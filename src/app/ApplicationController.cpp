@@ -676,8 +676,10 @@ void ApplicationController::startWithMicrophone(std::function<void()> start)
         if (granted) {
             start();
         } else if (m_frontEnd) {
-            m_frontEnd->showDictationError(QStringLiteral(
-                "Microphone access is off. Allow Speecher under Privacy & Security > Microphone, then try again."));
+            m_frontEnd->showDictationError(
+                QStringLiteral("Microphone access is off. Allow Speecher under Privacy & Security > "
+                               "Microphone, then try again."),
+                {ErrorFix::MicrophonePermission});
         }
     });
 }

@@ -7,6 +7,7 @@
 #include "common/test_local_setup.h"
 #include "app/SetupSteps.h"
 #include "core/VocabularyLimit.h"
+#include "app/AccessibilityPresentation.h"
 #include "ui/AccessibilityNotice.h"
 #include "ui/InlineMessage.h"
 #include "ui/InsightsCharts.h"
@@ -31,6 +32,7 @@
 
 #include <QApplication>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QGroupBox>
 
 #include <algorithm>
@@ -38,9 +40,11 @@
 #include <QLabel>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QRegularExpression>
 #include <QFontMetrics>
 #include <QFormLayout>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QRadioButton>
@@ -67,6 +71,23 @@ std::unique_ptr<SchemaSettingsPage> schemaPage(const QString &id,
     const SettingsSchema schema =
         buildSettingsSchema(qtSchemaContext(platform, providers));
     return std::make_unique<SchemaSettingsPage>(schema.page(id).sections, nullptr, std::move(customRows));
+}
+
+// The record dialog a collection editor has open. A closed one lingers until
+// the event loop deletes it, so only a shown one counts.
+QDialog *shownRecordDialog(const QWidget &page)
+{
+    for (QDialog *dialog : page.findChildren<QDialog *>(QStringLiteral("collectionRecordDialog"))) {
+        if (dialog->isVisible()) {
+            return dialog;
+        }
+    }
+    return nullptr;
+}
+
+void acceptRecordDialog(QDialog *dialog)
+{
+    dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
 }
 
 QStringList sectionLabels(const QWidget &page, const QWidget *except = nullptr)
@@ -244,7 +265,7 @@ private slots:
             QVERIFY(popup.sizeHint().height() >= pill->height() + 4);
         };
 
-        popup.setStatus(QStringLiteral("Stopping"));
+        popup.setSessionState(DictationState::Stopping);
         verifyContained();
         popup.showMessage(QStringLiteral("Input sent"), PopupOutcome::Inserted);
         verifyContained();
@@ -354,7 +375,7 @@ private slots:
         popup.setPreview(QStringLiteral("the very last words"));
         verifyAnchored();
         // Words go away for "Transcribing…" and the popup shrinks back.
-        popup.setStatus(QStringLiteral("Stopping"));
+        popup.setSessionState(DictationState::Stopping);
         verifyAnchored();
         // The refinement preview grows it again over the "Refining…" strip.
         popup.setRefining(true);
@@ -384,6 +405,37 @@ private slots:
         popup.showPopup(0);
         popup.setPreview(QStringLiteral("words again"));
         QVERIFY(dismiss->isHidden());
+    }
+
+    void popupErrorOffersItsFixAndWaitsWhileHovered()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        popup.showPopup(0);
+        popup.showErrorMessage(QStringLiteral("Claude Voice is not signed in."),
+                               QStringLiteral("Open Accounts"));
+        auto *action = popup.findChild<QPushButton *>(QStringLiteral("errorAction"));
+        auto *pill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *countdown = popup.findChild<QPropertyAnimation *>();
+        QVERIFY(action && pill && countdown);
+        QVERIFY(!action->isHidden());
+        QCOMPARE(action->text(), QStringLiteral("Open Accounts"));
+
+        QEnterEvent enter(QPointF(1, 1), QPointF(1, 1), QPointF(1, 1));
+        QCoreApplication::sendEvent(pill, &enter);
+        QCOMPARE(countdown->state(), QAbstractAnimation::Paused);
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(pill, &leave);
+        QCOMPARE(countdown->state(), QAbstractAnimation::Running);
+
+        QSignalSpy requested(&popup, &TranscriberPopup::errorActionRequested);
+        action->click();
+        QCOMPARE(requested.count(), 1);
+        QVERIFY(popup.isHidden());
+
+        // An error without a fix shows no button.
+        popup.showPopup(0);
+        popup.showErrorMessage(QStringLiteral("Microphone unavailable"));
+        QVERIFY(action->isHidden());
     }
 
     void popupDoesNotCarryAnErrorIntoTheNextDictation()
@@ -729,25 +781,15 @@ private slots:
         auto *button = notice->findChild<QPushButton *>(QStringLiteral("enableAccessibilityButton"));
         QVERIFY(message);
         QVERIFY(button);
-#ifdef Q_OS_MACOS
-        QVERIFY(message->text().contains(QStringLiteral("Accessibility is off")));
-        QCOMPARE(button->text(), QStringLiteral("Open settings"));
-#elif defined(Q_OS_WIN)
-        QVERIFY(message->text().contains(QStringLiteral("UI Automation")));
-        QCOMPARE(button->text(), QStringLiteral("Unavailable"));
-#else
+        QCOMPARE(message->text(), accessibilityNoticeText(false, true));
+#if !defined(Q_OS_MACOS)
         // One user-facing name; the service name stays in the setup page's help.
-        QVERIFY(message->text().contains(QStringLiteral("Desktop accessibility")));
         QVERIFY(!message->text().contains(QStringLiteral("AT-SPI")));
-        QCOMPARE(button->text(), QStringLiteral("Enable permanently"));
+        QCOMPARE(button->text(), QStringLiteral("Enable desktop accessibility"));
 #endif
         QSignalSpy requested(notice, &AccessibilityNotice::enableRequested);
         button->click();
-#ifdef Q_OS_WIN
-        QCOMPARE(requested.count(), 0);
-#else
         QCOMPARE(requested.count(), 1);
-#endif
 
         notice->setState(true, true, false);
         QVERIFY(notice->isVisible());
@@ -758,6 +800,31 @@ private slots:
 
         notice->setState(true, true, true);
         QVERIFY(!notice->isVisible());
+    }
+
+    void gatedCheckBoxShowsUntickedAndKeepsItsValue()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("corrections"), *platform, providers);
+        auto *learn = page->findChild<QCheckBox *>(QStringLiteral("correctionLearningControl"));
+        QVERIFY(learn);
+        AppSettings settings;
+        settings.correctionLearningEnabled = true;
+        page->load(settings);
+
+        page->setCapabilities({false});
+        QVERIFY(!learn->isEnabled());
+        QVERIFY(!learn->isChecked());
+        AppSettings draft;
+        draft.correctionLearningEnabled = false;
+        page->appendToDraft(draft);
+        QVERIFY(draft.correctionLearningEnabled);
+
+        page->setCapabilities({true});
+        QVERIFY(learn->isEnabled());
+        QVERIFY(learn->isChecked());
     }
 
     void targetAwareSettingsDisableWithoutAtSpi()
@@ -777,6 +844,8 @@ private slots:
         const std::unique_ptr<SchemaSettingsPage> page =
             schemaPage(QStringLiteral("refinement"), *platform, providers);
         SchemaSettingsPage &refinement = *page;
+        const std::unique_ptr<SchemaSettingsPage> profilesPage =
+            schemaPage(QStringLiteral("writingProfiles"), *platform, providers);
         const std::unique_ptr<SchemaSettingsPage> correctionsPage =
             schemaPage(QStringLiteral("corrections"), *platform, providers);
         SchemaSettingsPage &corrections = *correctionsPage;
@@ -786,16 +855,20 @@ private slots:
         AppSettings refining = settings.snapshot();
         refining.refinement.providerId = QStringLiteral("openai");
         refinement.load(refining);
-        auto *profileSettings = refinement.findChild<QTableWidget *>(QStringLiteral("vocabInput"));
-        QVERIFY(profileSettings);
-        QCOMPARE(profileSettings->rowCount(), 5);
+        profilesPage->load(refining);
+        QCOMPARE(profilesPage->findChildren<QPushButton *>(QRegularExpression(QStringLiteral("^writingProfile_"))).size(),
+                 5);
 
         output.setCapabilities({false});
         refinement.setCapabilities({false});
         corrections.setCapabilities({false});
 
-        QVERIFY(!output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
-        QVERIFY(!output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        auto *terminalRule = output.findChild<QWidget *>(QStringLiteral("categoryPasteRule_terminal"));
+        QVERIFY(terminalRule);
+        QVERIFY(!terminalRule->isEnabled());
+        // A gated collection stays readable; only adding to it stops.
+        QVERIFY(output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        QVERIFY(!output.findChild<QPushButton *>(QStringLiteral("addAppRecognitionRules"))->isEnabled());
         QVERIFY(!refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(!corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
 
@@ -828,9 +901,8 @@ private slots:
             auto *action = note->findChild<QPushButton *>(QStringLiteral("gateAction"));
             QCOMPARE(action ? action->text() : QString(), gateAction);
         }
-        // One note per gated group: the category paste rules, the app paste
-        // rules and the app recognition rules.
-        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 3);
+        // One note for the page, however many rows the gate holds.
+        QCOMPARE(output.findChildren<QWidget *>(QStringLiteral("gateNote")).size(), 1);
 #ifndef Q_OS_WIN
         QSignalSpy triggered(&output, &SchemaSettingsPage::actionTriggered);
         output.findChild<QPushButton *>(QStringLiteral("gateAction"))->click();
@@ -841,11 +913,10 @@ private slots:
         output.setCapabilities({true});
         refinement.setCapabilities({true});
         corrections.setCapabilities({true});
-        // A row that is usable says what it does; one that is not says why.
-        QVERIFY(correctionLearning->toolTip().contains(QStringLiteral("repeated")));
-        QVERIFY(!correctionLearning->toolTip().contains(QStringLiteral("only high-confidence")));
-        QVERIFY(output.findChild<QWidget *>(QStringLiteral("targetPasteControls"))->isEnabled());
-        QVERIFY(output.findChild<QTableWidget *>(QStringLiteral("appRecognitionRules"))->isEnabled());
+        // A row that is usable drops the note that said why it was not.
+        QVERIFY(correctionLearning->toolTip().isEmpty());
+        QVERIFY(terminalRule->isEnabled());
+        QVERIFY(output.findChild<QPushButton *>(QStringLiteral("addAppRecognitionRules"))->isEnabled());
         QVERIFY(refinement.findChild<QWidget *>(QStringLiteral("targetContextControl"))->isEnabled());
         QVERIFY(corrections.findChild<QWidget *>(QStringLiteral("correctionLearningControl"))->isEnabled());
         for (SchemaSettingsPage *page : {&output, &refinement, &corrections}) {
@@ -863,7 +934,8 @@ private slots:
                 for (const SettingsPaneGroup &group : pane.groups) {
                     const QString id = pane.id + QLatin1Char(':') + group.view;
                     QVERIFY2(pages.page(id), qPrintable(id));
-                    QCOMPARE(sectionLabels(*pages.page(id)), QStringList{group.title});
+                    // The view's tab carries its title, so no header repeats it.
+                    QCOMPARE(sectionLabels(*pages.page(id)), QStringList{});
                 }
                 continue;
             }
@@ -901,7 +973,8 @@ private slots:
         }
     }
 
-    void outputMethodsOfferAccessibilityInsertion()
+    // Paste with picks how to paste; inserting directly is a Default paste choice.
+    void defaultPasteOffersAccessibilityInsertion()
     {
         SettingsStore settings;
         ProviderRegistry providers;
@@ -912,7 +985,10 @@ private slots:
 
         auto *method = page->findChild<QComboBox *>(QStringLiteral("outputMethod"));
         QVERIFY(method);
-        QVERIFY(method->findData(QStringLiteral("direct_insert")) >= 0);
+        QCOMPARE(method->findData(QStringLiteral("direct_insert")), -1);
+        auto *defaultPaste = page->findChild<QComboBox *>(QStringLiteral("globalPasteRule"));
+        QVERIFY(defaultPaste);
+        QVERIFY(defaultPaste->findData(QStringLiteral("direct_insert")) >= 0);
         // Choices describe what happens, not which tool does it.
         for (int index = 0; index < method->count(); ++index) {
             const QString text = method->itemText(index);
@@ -984,8 +1060,7 @@ private slots:
         settings.vocabulary = {{QStringLiteral("Speecher")}};
         page->load(settings);
         // SettingsPageSet reloads every page from the round-tripped draft on
-        // each change; a blank vocabulary record does not survive that trip,
-        // so a reload straight after Add would take the new row back.
+        // each change.
         AppSettings draft = settings;
         connect(page.get(), &SchemaSettingsPage::changed, page.get(), [&draft, &page] {
             page->appendToDraft(draft);
@@ -999,14 +1074,143 @@ private slots:
         QCOMPARE(table->rowCount(), 1);
 
         add->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("New term"));
+        QPushButton *ok = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok);
+        QVERIFY(!ok->isEnabled());
+        dialog->findChild<QLineEdit *>(QStringLiteral("term"))->setText(QStringLiteral("Deepgram"));
+        QVERIFY(ok->isEnabled());
+        acceptRecordDialog(dialog);
         QCOMPARE(table->rowCount(), 2);
-        QCOMPARE(table->currentColumn(), 1);
-
-        // Typing the term is the change that reaches the settings.
-        table->item(table->currentRow(), 1)->setText(QStringLiteral("Deepgram"));
         AppSettings applied;
         page->appendToDraft(applied);
         QCOMPARE(applied.vocabulary.size(), 2);
+    }
+
+    void returnOnARecordOpensItsDialog()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
+        AppSettings settings;
+        settings.vocabulary = {{QStringLiteral("Speecher")}};
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
+        QVERIFY(table);
+        table->setCurrentCell(0, 1);
+        QTest::keyClick(table, Qt::Key_Return);
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Speecher"));
+        QCOMPARE(page->findChildren<QDialog *>(QStringLiteral("collectionRecordDialog")).size(), 1);
+    }
+
+    void aToneIsAddedAndEditedInItsDialog()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("writingProfiles"), *platform, providers);
+        AppSettings settings;
+        settings.refinement.providerId = QStringLiteral("openai");
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("customTones"));
+        auto *add = page->findChild<QPushButton *>(QStringLiteral("addCustomTones"));
+        QVERIFY(table && add);
+        // Only the person's own tones are listed.
+        const int builtIns = 0;
+        QCOMPARE(table->rowCount(), builtIns);
+
+        add->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        dialog->findChild<QLineEdit *>(QStringLiteral("name"))->setText(QStringLiteral("Terse"));
+        // Refused, the dialog stays open and says why.
+        acceptRecordDialog(dialog);
+        QVERIFY(dialog->isVisible());
+        QCOMPARE(dialog->findChild<InlineMessage *>()->label()->text(),
+                 QStringLiteral("Every tone needs an instruction."));
+        QCOMPARE(table->rowCount(), builtIns);
+
+        auto *instruction = dialog->findChild<QPlainTextEdit *>(QStringLiteral("instruction"));
+        QVERIFY(instruction);
+        instruction->setPlainText(QStringLiteral("Short sentences.\nNo filler."));
+        acceptRecordDialog(dialog);
+        QVERIFY(!dialog->isVisible());
+        QCOMPARE(table->rowCount(), builtIns + 1);
+
+        emit table->cellActivated(builtIns, 1);
+        dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Terse"));
+        dialog->findChild<QPlainTextEdit *>(QStringLiteral("instruction"))
+            ->setPlainText(QStringLiteral("Short sentences."));
+        acceptRecordDialog(dialog);
+
+        AppSettings applied;
+        page->appendToDraft(applied);
+        QCOMPARE(applied.refinement.customTones.size(), 1);
+        QCOMPARE(applied.refinement.customTones.first().name, QStringLiteral("Terse"));
+        QCOMPARE(applied.refinement.customTones.first().instruction, QStringLiteral("Short sentences."));
+    }
+
+    // A profile's row opens it in the record dialog, where each choice says
+    // what it does; a profile the person added is named and deleted there.
+    void aProfileIsEditedInItsDialog()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("writingProfiles"), *platform, providers);
+        AppSettings settings;
+        settings.refinement.providerId = QStringLiteral("openai");
+        page->load(settings);
+        const auto profiles = [&page] {
+            AppSettings draft;
+            page->appendToDraft(draft);
+            return draft.refinement.writingProfiles;
+        };
+
+        auto *email = page->findChild<QPushButton *>(QStringLiteral("writingProfile_email"));
+        QVERIFY(email);
+        email->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Email"));
+        // A built-in profile keeps its name.
+        QVERIFY(!dialog->findChild<QLineEdit *>(QStringLiteral("profile")));
+        QVERIFY(!dialog->findChild<QPushButton *>(QStringLiteral("deleteRecord")));
+        auto *cleanup = dialog->findChild<QComboBox *>(QStringLiteral("cleanup"));
+        auto *cleanupHelp = dialog->findChild<QLabel *>(QStringLiteral("cleanupHelp"));
+        QVERIFY(cleanup && cleanupHelp);
+        QCOMPARE(cleanupHelp->text(), QStringLiteral("Also removes filler words and false starts, and adds paragraphs."));
+        settings::selectData(cleanup, QStringLiteral("strong_polish"));
+        QCOMPARE(cleanupHelp->text(), QStringLiteral("Also rewrites for clarity, flow and organization, keeping the facts."));
+        acceptRecordDialog(dialog);
+        QCOMPARE(writingProfileSettingsFor(profiles(), QStringLiteral("email")).cleanupStrength,
+                 QStringLiteral("strong_polish"));
+        QVERIFY(email->findChild<QLabel *>(QStringLiteral("rowDescription"))->text().startsWith(
+            QStringLiteral("High cleanup, no tone.")));
+
+        page->findChild<QPushButton *>(QStringLiteral("addWritingProfile"))->click();
+        dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("New profile"));
+        dialog->findChild<QLineEdit *>(QStringLiteral("profile"))->setText(QStringLiteral("Notes"));
+        acceptRecordDialog(dialog);
+        QCOMPARE(profiles().last().profile, QStringLiteral("custom_notes"));
+
+        page->findChild<QPushButton *>(QStringLiteral("writingProfile_custom_notes"))->click();
+        dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        dialog->findChild<QPushButton *>(QStringLiteral("deleteRecord"))->click();
+        QVERIFY(!dialog->isVisible());
+        QVERIFY(!page->findChild<QPushButton *>(QStringLiteral("writingProfile_custom_notes")));
+        QCOMPARE(profiles().size(), 5);
     }
 
     void undoingADeletedCorrectionPutsBackEverythingItKnew()
@@ -1028,13 +1232,14 @@ private slots:
         auto *remove = page->findChild<QPushButton *>(QStringLiteral("deleteLearnedCorrections"));
         auto *undo = page->findChild<QPushButton *>(QStringLiteral("undoDeleteLearnedCorrections"));
         QVERIFY(table && remove && undo);
-        QVERIFY(!undo->isEnabled());
+        // Undo shows only while there is something to undo.
+        QVERIFY(undo->isHidden());
 
         // The second row, so an undo that put it back first would reorder them.
         table->setCurrentCell(1, 0);
         remove->click();
         QCOMPARE(table->rowCount(), 1);
-        QVERIFY(undo->isEnabled());
+        QVERIFY(!undo->isHidden());
 
         undo->click();
         QCOMPARE(table->rowCount(), 2);
@@ -1044,23 +1249,24 @@ private slots:
 
         // Reloading commits whatever Delete took.
         page->load(settings);
-        QVERIFY(!undo->isEnabled());
+        QVERIFY(undo->isHidden());
     }
 
     void theHaikuCautionComesAndGoesWithTheModel()
     {
-        SettingsStore settings;
-        SecretStore secrets(&settings);
         ProviderRegistry providers;
+        providers.registerRefinementProvider(
+            {QStringLiteral("anthropic"), QStringLiteral("Fake Anthropic")},
+            [](QObject *) -> TranscriptRefiner * { return nullptr; });
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        ProviderCustomRows providerRows(settings, secrets);
         const std::unique_ptr<SchemaSettingsPage> page =
-            schemaPage(QStringLiteral("providers"), *platform, providers, providerRows.factory());
+            schemaPage(QStringLiteral("refinement"), *platform, providers);
         auto *caution = page->findChild<QLabel *>(QStringLiteral("anthropicModelCaution"));
         auto *model = page->findChild<QComboBox *>(QStringLiteral("anthropicModel"));
         QVERIFY(caution && model);
 
         AppSettings snapshot;
+        snapshot.refinement.providerId = QStringLiteral("anthropic");
         page->load(snapshot);
         QVERIFY(!caution->isVisibleTo(page.get()));
 
@@ -1120,115 +1326,7 @@ private slots:
         QVERIFY(setup.ready());
     }
 
-    void theWelcomePageHoldsNextUntilOneSignInIsFound()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        // The machine running the tests may have real CLI Proxy API accounts,
-        // which would open the gate this test holds shut.
-        QTemporaryDir emptyCliproxyDir;
-        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), emptyCliproxyDir.path());
-
-        ProviderRegistry providers;
-        providers.registerSpeechProvider(
-            {QStringLiteral("claude"), QStringLiteral("Claude Voice"),
-             QStringLiteral("Install Claude Code from claude.com/code, run claude in a terminal, and use /login.")},
-            [](QObject *parent) {
-                auto *provider = new FakeSpeechTranscriber(parent);
-                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
-                return provider;
-            });
-
-        WelcomeSetupPage welcome(settings, providers);
-        welcome.show();
-        auto *status = welcome.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialStatus_claude"));
-        auto *hint = welcome.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialHint_claude"));
-        QVERIFY(status && hint);
-        QCOMPARE(status->text(), QStringLiteral("Not found"));
-        QVERIFY(hint->text().contains(QStringLiteral("claude.com/code")));
-        QVERIFY(!welcome.ready());
-
-        ProviderRegistry signedIn;
-        signedIn.registerSpeechProvider(
-            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
-            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
-        WelcomeSetupPage found(settings, signedIn);
-        found.show();
-        auto *foundStatus = found.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialStatus_claude"));
-        QVERIFY(foundStatus);
-        QCOMPARE(foundStatus->text(), QStringLiteral("Sign-in found"));
-        QVERIFY(found.ready());
-    }
-
-    void theWelcomePageReprobesWhenItIsShownAgain()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        QTemporaryDir emptyCliproxyDir;
-        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), emptyCliproxyDir.path());
-
-        ProviderRegistry providers;
-        providers.registerSpeechProvider(
-            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
-            [](QObject *parent) {
-                auto *provider = new FakeSpeechTranscriber(parent);
-                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
-                return provider;
-            });
-
-        WelcomeSetupPage welcome(settings, providers);
-        welcome.show();
-        auto *status = welcome.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialStatus_claude"));
-        QVERIFY(status);
-        QCOMPARE(status->text(), QStringLiteral("Not found"));
-        QVERIFY(!welcome.ready());
-
-        // The user signs in from a terminal while the assistant sits open.
-        auto *provider = static_cast<FakeSpeechTranscriber *>(
-            providers.speechProvider(QStringLiteral("claude")));
-        QVERIFY(provider);
-        provider->prepareResult = {true, QString()};
-
-        welcome.hide();
-        welcome.show();
-        QCOMPARE(status->text(), QStringLiteral("Sign-in found"));
-        QVERIFY(welcome.ready());
-    }
-
-    void theWelcomePageAcceptsACliProxyAccountAlone()
-    {
-        SettingsStore settings;
-        settings.raw().clear();
-        QTemporaryDir dir;
-        settings.raw().setValue(QStringLiteral("cliproxy/oauthDir"), dir.path());
-        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("claude-a@example.com.json"),
-                                     QStringLiteral("claude"), QStringLiteral("token"),
-                                     QDateTime::currentDateTimeUtc().addSecs(3600)));
-
-        // The provider CLI itself is not signed in; only CLI Proxy API is.
-        ProviderRegistry providers;
-        providers.registerSpeechProvider(
-            {QStringLiteral("claude"), QStringLiteral("Claude Voice"), QString()},
-            [](QObject *parent) {
-                auto *provider = new FakeSpeechTranscriber(parent);
-                provider->prepareResult = {false, QStringLiteral("Sign-in required")};
-                return provider;
-            });
-
-        WelcomeSetupPage welcome(settings, providers);
-        welcome.show();
-        auto *status = welcome.findChild<QLabel *>(
-            QStringLiteral("welcomeCredentialStatus_cliproxy"));
-        QVERIFY(status);
-        QCOMPARE(status->text(), QStringLiteral("Accounts found"));
-        QVERIFY(welcome.ready());
-    }
-
-    void theWelcomePageOffersThisComputerWhenNoSignInIsFound()
+    void theTranscriptionPageChoosesThisComputerWhenNoSignInIsFound()
     {
         SettingsStore settings;
         settings.raw().clear();
@@ -1242,35 +1340,21 @@ private slots:
                 provider->prepareResult = {false, QStringLiteral("Sign-in required")};
                 return provider;
             });
-        // A ready local provider is not a sign-in.
-        providers.registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local model"), QString()},
+        providers.registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local Model"), QString()},
             [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
         QTemporaryDir models;
         LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
         LocalSetup local(settings, providers, store);
 
-        WelcomeSetupPage welcome(settings, providers, &local);
-        QSignalSpy localChosen(&welcome, &WelcomeSetupPage::localPathChosen);
-        welcome.show();
-        auto *signIn = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathSignIn"));
-        auto *here = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathLocal"));
-        auto *status = welcome.findChild<QLabel *>(QStringLiteral("welcomePathSignInStatus"));
-        QVERIFY(signIn && here && status);
-        // Nothing to sign in with, so this computer is the default and Next
-        // is open.
+        SpeechProviderSetupPage setup(settings, providers, &local);
+        setup.show();
+        auto *here = setup.findChild<QRadioButton *>(QStringLiteral("speechProviderOption_local"));
+        QVERIFY(here);
         QVERIFY(here->isChecked());
-        QCOMPARE(status->text(), QStringLiteral("None found"));
-        QVERIFY(welcome.ready());
-        QCOMPARE(localChosen.size(), 1);
-
-        // The sign-in path waits for a sign-in.
-        signIn->click();
-        QVERIFY(!welcome.ready());
-        here->click();
-        QVERIFY(welcome.ready());
+        QCOMPARE(settings.speechProvider(), QStringLiteral("local"));
     }
 
-    void theWelcomePageNamesTheDeadEndWhenNothingCanTranscribe()
+    void theTranscriptionPageNamesTheDeadEndWhenNothingCanTranscribe()
     {
         qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
@@ -1290,57 +1374,54 @@ private slots:
                 provider->prepareResult = {false, QStringLiteral("Sign-in required")};
                 return provider;
             });
-        providers.registerSpeechProvider({QStringLiteral("local"), QStringLiteral("Local model"), QString()},
-            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        for (const char *id : {"local", "endpoint"}) {
+            providers.registerSpeechProvider({id, id, {}},
+                [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        }
         QTemporaryDir models;
         LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
         LocalSetup local(settings, providers, store);
 
-        WelcomeSetupPage welcome(settings, providers, &local);
-        welcome.show();
-        auto *deadEnd = welcome.findChild<InlineMessage *>(QStringLiteral("welcomeDeadEnd"));
-        auto *signIn = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathSignIn"));
-        auto *here = welcome.findChild<QRadioButton *>(QStringLiteral("welcomePathLocal"));
-        QVERIFY(deadEnd && signIn && here);
+        SpeechProviderSetupPage setup(settings, providers, &local);
+        setup.show();
+        auto *deadEnd = setup.findChild<InlineMessage *>(QStringLiteral("speechDeadEnd"));
+        auto *status = setup.findChild<QLabel *>(QStringLiteral("speechProviderStatus"));
+        QVERIFY(deadEnd && status);
         // Until the hardware answers, this computer is still a way out.
-        QVERIFY(!deadEnd->isVisibleTo(&welcome));
-        QVERIFY(here->isChecked());
-        QVERIFY(welcome.ready());
+        QVERIFY(!deadEnd->isVisibleTo(&setup));
 
-        // The hardware answers that no model fits: the default falls back to
-        // the sign-in path, and with nothing installed to sign in to the page
-        // says to get an account and install Claude Code or Codex.
+        // The hardware answers that no model fits. With nothing installed to
+        // sign in to, the note says to get an account and install Claude Code
+        // or Codex, and it replaces the status line rather than repeating it.
         HardwareSummary tiny;
         tiny.profile.systemRamBytes = 2ull * 1000 * 1000 * 1000;
         tiny.profile.availableRamBytes = 2ull * 1000 * 1000 * 1000;
         LocalSetupTestAccess::setHardware(local, tiny);
-        QVERIFY(signIn->isChecked());
-        QVERIFY(deadEnd->isVisibleTo(&welcome));
-        QVERIFY(!welcome.ready());
-        QCOMPARE(deadEnd->label()->text(), setupSignInMissing(false, false));
-        QCOMPARE(welcome.blockedReason(), setupSignInMissing(false, false));
+        QVERIFY(deadEnd->isVisibleTo(&setup));
+        QVERIFY(!status->isVisibleTo(&setup));
+        QVERIFY(!setup.ready());
+        QVERIFY(deadEnd->label()->text().startsWith(
+            QStringLiteral("This computer can't run a local speech model")));
+        QCOMPARE(setup.blockedReason(), deadEnd->label()->text());
 
-        // Choosing this computer anyway keeps the note and the shut gate.
-        here->click();
-        QVERIFY(deadEnd->isVisibleTo(&welcome));
-        QVERIFY(!welcome.ready());
-        signIn->click();
-
-        // Codex appears on this machine: installing was the missing step, so
-        // the note becomes the plain missing-sign-in line.
+        // Codex appears on this machine: signing in is the missing step.
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
-        welcome.recheck();
-        QVERIFY(deadEnd->isVisibleTo(&welcome));
-        QCOMPARE(deadEnd->label()->text(), setupSignInMissing(false, true));
-        QVERIFY(!welcome.ready());
-        QCOMPARE(welcome.blockedReason(), setupSignInMissing(false, true));
+        setup.recheck();
+        QCOMPARE(deadEnd->label()->text(),
+                 QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found."));
+        QVERIFY(!setup.ready());
 
-        // A speech server the person already configured is a way out: the
-        // Transcription step gates on its readiness, not this page.
+        // A machine known to be too small never defaults to this computer.
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        SpeechProviderSetupPage reopened(settings, providers, &local);
+        reopened.show();
+        QVERIFY(reopened.findChild<QRadioButton *>(QStringLiteral("speechProviderOption_claude"))->isChecked());
+
+        // A speech server the person already configured is a way out.
         settings.setSpeechProvider(QStringLiteral("endpoint"));
-        welcome.recheck();
-        QVERIFY(!deadEnd->isVisibleTo(&welcome));
-        QVERIFY(welcome.ready());
+        SpeechProviderSetupPage withServer(settings, providers, &local);
+        withServer.show();
+        QVERIFY(!withServer.findChild<InlineMessage *>(QStringLiteral("speechDeadEnd"))->isVisibleTo(&withServer));
     }
 
     void theLocalModelCardHoldsNextUntilADownloadStarts()
@@ -1627,16 +1708,9 @@ private slots:
         QVERIFY(!account->isVisibleTo(&setup));
         QVERIFY(!directory->isVisibleTo(&setup));
 
-        // Opt in through the row caption, which toggles the box without ever
-        // emitting clicked; the page must react to that path too.
-        QLabel *caption = nullptr;
-        for (QLabel *label : setup.findChildren<QLabel *>(QStringLiteral("rowTitle"))) {
-            if (label->buddy() == useCliproxy) {
-                caption = label;
-            }
-        }
-        QVERIFY(caption);
-        QTest::mouseClick(caption, Qt::LeftButton);
+        // Opt in without emitting clicked, as a keyboard toggle can; the page
+        // must react to that path too.
+        useCliproxy->toggle();
         QVERIFY(useCliproxy->isChecked());
         QCOMPARE(settings.anthropicAuthMode(), QStringLiteral("cliproxy"));
         QVERIFY(account->isVisibleTo(&setup));
@@ -1771,15 +1845,42 @@ private slots:
         QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
     }
 
-    void outputCompletionStatusDurationLoadsAndSaves()
+    void speechProviderSetupShowsAnEndpointProblemAsTheStatus()
     {
-        SettingsStore store;
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("endpoint"));
+        ProviderRegistry providers;
+        providers.registerSpeechProvider(
+            {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint"), QString()},
+            [](QObject *parent) {
+                auto *provider = new FakeSpeechTranscriber(parent);
+                provider->prepareResult = {
+                    false, QStringLiteral("Set the speech endpoint's server URL in Settings.")};
+                return provider;
+            });
+
+        SpeechProviderSetupPage setup(settings, providers);
+        setup.show();
+        auto *status = setup.findChild<QLabel *>(QStringLiteral("speechProviderStatus"));
+        QVERIFY(status);
+        QTRY_COMPARE(status->text(),
+                     QStringLiteral("Set the speech endpoint's server URL in Settings."));
+        QCOMPARE(status->toolTip(), QString());
+    }
+
+    void completionStatusDurationLoadsAndSaves()
+    {
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
-        OutputCustomRows outputRows(store);
-        const std::unique_ptr<SchemaSettingsPage> output =
-            schemaPage(QStringLiteral("output"), *platform, providers, outputRows.factory());
-        SchemaSettingsPage &page = *output;
+        const SettingsSchema schema = buildSettingsSchema(qtSchemaContext(*platform, providers));
+        SchemaSettingsPage page(
+            {schema.section(*std::find_if(schema.pane(QStringLiteral("dictation"))->groups.cbegin(),
+                                          schema.pane(QStringLiteral("dictation"))->groups.cend(),
+                                          [](const SettingsPaneGroup &group) {
+                                              return group.rows.contains(QStringLiteral("completionStatusDuration"));
+                                          }))},
+            nullptr);
         AppSettings settings;
         settings.output.completionStatusDurationMs = 1200;
         page.load(settings);
@@ -1997,15 +2098,17 @@ private slots:
         QCOMPARE(table->rowCount(), builtInAppRecognitionRules().size() + 1);
 
         add->click();
-        QCOMPARE(table->rowCount(), builtInAppRecognitionRules().size() + 2);
-        const int row = table->rowCount() - 1;
-        table->item(row, 0)->setText(QStringLiteral("com.acme.shell"));
-        auto *category = qobject_cast<QComboBox *>(table->cellWidget(row, 1));
-        auto *profile = qobject_cast<QComboBox *>(table->cellWidget(row, 2));
+        QDialog *dialog = shownRecordDialog(page);
+        QVERIFY(dialog);
+        dialog->findChild<QLineEdit *>(QStringLiteral("match"))->setText(QStringLiteral("com.acme.shell"));
+        auto *category = dialog->findChild<QComboBox *>(QStringLiteral("category"));
+        auto *profile = dialog->findChild<QComboBox *>(QStringLiteral("profile"));
         QVERIFY(category);
         QVERIFY(profile);
         category->setCurrentIndex(category->findData(QStringLiteral("terminal")));
         profile->setCurrentIndex(profile->findData(QStringLiteral("work")));
+        acceptRecordDialog(dialog);
+        QCOMPARE(table->rowCount(), builtInAppRecognitionRules().size() + 2);
 
         page.appendToDraft(settings);
         QCOMPARE(settings.appRecognitionRules.size(), 2);
@@ -2044,27 +2147,23 @@ private slots:
         QVERIFY(control->mapTo(describedRow, QPoint(control->width(), 0)).x()
                 >= describedRow->width() - settings::rowPadding().right() - 1);
 
-        // A check box row reads as one sentence: the sentence is the row's
-        // title, the box carries no text of its own, and clicking the words
-        // toggles it.
+        // A check box row is FormCheckDelegate: the box carries the label and
+        // the description reads under it, past the indicator.
         auto *checkBox = new QCheckBox(&parent);
-        const QString sentence = QStringLiteral(
-            "Download the update in the background and install it the next time Speecher "
-            "restarts, without asking first.");
         QFrame *checkBoxRow = settings::makeRow(
-            QStringLiteral("Updates"), sentence, checkBox, &parent);
-        QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription")));
-        auto *caption = checkBoxRow->findChild<QLabel *>(QStringLiteral("rowTitle"));
-        QVERIFY(caption);
-        QVERIFY(checkBox->text().isEmpty());
-        QCOMPARE(checkBox->accessibleName(), sentence);
-        QCOMPARE(caption->text(), sentence);
-        QVERIFY(caption->wordWrap());
-        parent.show();
+            QStringLiteral("Install updates automatically"), description, checkBox, &parent);
+        QCOMPARE(checkBox->text(), QStringLiteral("Install updates automatically"));
+        auto *checkBoxDescription = checkBoxRow->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QVERIFY(checkBoxDescription);
+        QCOMPARE(checkBoxDescription->text(), description);
+        QVERIFY(!checkBoxRow->findChild<QLabel *>(QStringLiteral("rowTitle")));
+        checkBoxRow->show();
+        checkBoxRow->resize(600, checkBoxRow->sizeHint().height());
+        checkBoxRow->layout()->activate();
         QCoreApplication::processEvents();
-        QVERIFY(!checkBox->isChecked());
-        QTest::mouseClick(caption, Qt::LeftButton);
-        QVERIFY(checkBox->isChecked());
+        QVERIFY(checkBoxDescription->mapTo(checkBoxRow, QPoint()).y()
+                > checkBox->mapTo(checkBoxRow, QPoint()).y());
+        QVERIFY(checkBoxDescription->contentsMargins().left() > 0);
     }
 
     void settingsCardsFitANarrowPaneWithoutClipping()
@@ -2141,6 +2240,10 @@ private slots:
             const QList<QLabel *> helpLabels = rowWidget->findChildren<QLabel *>(
                 QStringLiteral("rowDescription"));
             for (QLabel *help : helpLabels) {
+                // A hidden description is out of the layout and keeps a stale size.
+                if (!help->isVisibleTo(page.get())) {
+                    continue;
+                }
                 QVERIFY2(help->height() >= help->heightForWidth(help->width()),
                          qPrintable(help->text()));
                 for (int nextRow = row + 1; nextRow < form->rowCount(); ++nextRow) {
@@ -2185,13 +2288,14 @@ private slots:
         page->show();
         QCoreApplication::processEvents();
 
-        // The card is titled "Global Shortcut" and holds only this block, so the
-        // block's own header stays hidden and its body lines up with row titles.
+        // The card is titled "Shortcut", so the block keeps its own "Global
+        // Shortcut" heading, and the heading and body line up with row titles.
         auto *heading = page->findChild<QLabel *>(QStringLiteral("subsectionLabel"));
         auto *body = page->findChild<QLabel *>(QStringLiteral("shortcutBody"));
         QVERIFY(heading);
         QVERIFY(body);
-        QVERIFY(!heading->isVisibleTo(page.get()));
+        QVERIFY(heading->isVisibleTo(page.get()));
+        QCOMPARE(heading->mapTo(page.get(), QPoint()).x(), body->mapTo(page.get(), QPoint()).x());
         QLabel *rowTitle = nullptr;
         for (QLabel *candidate : page->findChildren<QLabel *>(QStringLiteral("rowTitle"))) {
             if (candidate->isVisibleTo(page.get())) {

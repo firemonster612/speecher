@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/SettingsStore.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationTypes.h"
 #include "frontend/win/SettingsPage.h"
 
@@ -16,6 +17,7 @@
 #include <winrt/Microsoft.UI.Content.h>
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
@@ -42,6 +44,7 @@ using namespace Microsoft::UI::Xaml::Media;
 // DIPs, as the XAML content measures them; place() scales by the target
 // monitor's DPI before sizing the HWND and the island. The height is the
 // content's own, so a long transcript never pushes Settings off the bottom.
+// Quit is on the icon's right-click menu, away from the everyday actions.
 constexpr int flyoutWidth = 300;
 // The Segoe Fluent Icons microphone, plain while idle and with sound waves
 // (MicOn) while listening.
@@ -129,7 +132,7 @@ struct TrayFlyout::Native {
         StackPanel root;
         root.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
         root.Padding({20, 20, 20, 20});
-        root.Spacing(10);
+        root.Spacing(12);
         root.KeyDown([this](const auto &, const Input::KeyRoutedEventArgs &event) {
             if (event.Key() == Windows::System::VirtualKey::Escape) {
                 hide();
@@ -140,7 +143,7 @@ struct TrayFlyout::Native {
         // A grid, not a horizontal stack, so the heading's star column gives
         // a receipt or an error a width to wrap at and Measure its height.
         Grid heading;
-        heading.ColumnSpacing(10);
+        heading.ColumnSpacing(12);
         ColumnDefinition glyphColumn;
         glyphColumn.Width({0, GridUnitType::Auto});
         ColumnDefinition textColumn;
@@ -164,6 +167,7 @@ struct TrayFlyout::Native {
         level = ProgressBar();
         level.Minimum(0);
         level.Maximum(1);
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(level, win::hs(inputLevelLabel()));
         root.Children().Append(level);
 
         toggle = textButton(QString());
@@ -180,7 +184,7 @@ struct TrayFlyout::Native {
         transcript.TextWrapping(TextWrapping::Wrap);
         transcript.TextTrimming(TextTrimming::CharacterEllipsis);
         transcript.MaxLines(3);
-        transcript.Opacity(0.72);
+        win::followSecondaryForeground(transcript);
         root.Children().Append(transcript);
 
         copy = textButton(copyTranscriptCaption());
@@ -198,24 +202,17 @@ struct TrayFlyout::Native {
                                 .Lookup(box_value(L"BodyStrongTextBlockStyle"))
                                 .as<Style>());
         shortcut = TextBlock();
-        shortcut.Opacity(0.72);
+        win::followSecondaryForeground(shortcut);
         shortcutRow.Children().Append(shortcutLabel);
         shortcutRow.Children().Append(shortcut);
         root.Children().Append(shortcutRow);
 
-        Button settings = textButton(traySettingsCaption());
+        settings = textButton(traySettingsCaption());
         settings.Click([this](const auto &, const auto &) {
             hide();
             controller->showSettingsWindow();
         });
         root.Children().Append(settings);
-
-        quit = textButton(trayQuitCaption());
-        quit.Click([this](const auto &, const auto &) {
-            hide();
-            controller->quitApplication();
-        });
-        root.Children().Append(quit);
 
         source.Content(root);
         source.SystemBackdrop(DesktopAcrylicBackdrop());
@@ -241,7 +238,7 @@ struct TrayFlyout::Native {
                                     .toStdWString()));
         copy.Visibility(lastTranscript.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
         const QString shortcutText = controller->globalShortcutDisplay();
-        shortcut.Text(hstring((shortcutText.isEmpty() ? QStringLiteral("None") : shortcutText)
+        shortcut.Text(hstring((shortcutText.isEmpty() ? globalShortcutUnsetText() : shortcutText)
                                   .toStdWString()));
         if (IsWindowVisible(window)) {
             place();
@@ -301,7 +298,7 @@ struct TrayFlyout::Native {
     TextBlock transcript{nullptr};
     Button copy{nullptr};
     TextBlock shortcut{nullptr};
-    Button quit{nullptr};
+    Button settings{nullptr};
     RECT anchor{};
 };
 
@@ -333,17 +330,17 @@ QRect TrayFlyout::geometryForTest() const
     return QRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
 }
 
-QRect TrayFlyout::quitGeometryForTest() const
+QRect TrayFlyout::settingsGeometryForTest() const
 {
     const QRect window = geometryForTest();
     if (window.isEmpty()) {
         return {};
     }
     const double scale = GetDpiForWindow(m_native->window) / 96.0;
-    const auto origin = m_native->quit.TransformToVisual(nullptr).TransformPoint({0, 0});
+    const auto origin = m_native->settings.TransformToVisual(nullptr).TransformPoint({0, 0});
     return QRect(window.left() + qRound(origin.X * scale), window.top() + qRound(origin.Y * scale),
-                 qRound(m_native->quit.ActualWidth() * scale),
-                 qRound(m_native->quit.ActualHeight() * scale));
+                 qRound(m_native->settings.ActualWidth() * scale),
+                 qRound(m_native->settings.ActualHeight() * scale));
 }
 
 bool TrayFlyout::saveGrabForTest(const QString &path) const

@@ -21,9 +21,11 @@
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Automation.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
+#include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
@@ -37,6 +39,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace speecher {
@@ -66,6 +69,8 @@ constexpr int bottomMargin = 28;
 constexpr int bannerGap = 12;
 // A problem's padding, warning glyph, Dismiss button and the gaps between.
 constexpr int problemChromeWidth = 150;
+// A button's padding and border around its caption, and the gap before it.
+constexpr int buttonChromeWidth = 36;
 // The countdown bar under a problem and its margin.
 constexpr int problemBarHeight = 16;
 constexpr auto windowClassName = L"SpeecherDictationPanel";
@@ -106,6 +111,13 @@ QString outcomeGlyph(PopupOutcome outcome)
     return QString::fromUtf16(u"\uE946");
 }
 
+// Whether Windows has somewhere to send a fix to: a settings page, or the
+// microphone's privacy page. The other panels belong to other systems.
+bool fixAvailable(const PopupErrorAction &fix)
+{
+    return fix.fix == ErrorFix::SettingsPage || fix.fix == ErrorFix::MicrophonePermission;
+}
+
 QString phaseGlyph(const QString &status, bool problem)
 {
     if (problem) {
@@ -143,7 +155,6 @@ struct DictationPanel::Native : QObject {
         connect(&barTimer, &QTimer::timeout, this, &Native::animateBars);
         // The countdown every platform shows; Dismiss stays the early way out.
         problemAutoDismiss.setSingleShot(true);
-        problemAutoDismiss.setInterval(kPopupErrorDismissMs);
         connect(&problemAutoDismiss, &QTimer::timeout, this, &Native::dismissProblem);
         whatsNewAutoHide.setSingleShot(true);
         whatsNewAutoHide.setInterval(6000);
@@ -193,7 +204,7 @@ struct DictationPanel::Native : QObject {
                 [this](bool value) { setRefining(value); });
         connect(session, &DictationSession::popupOAuthRefreshRequested, this, [this] {
             phase = Phase::Live;
-            status = QStringLiteral("Renewing sign-in…");
+            status = renewingSignInText();
             preview.clear();
             refresh();
         });
@@ -332,8 +343,20 @@ struct DictationPanel::Native : QObject {
         previewText.Margin({24, previewTopPadding, 24, 0});
         content.Children().Append(previewText);
 
+        // The error's one fix, ahead of Dismiss as the way forward.
+        fixButton = Button();
+        fixButton.Style(Application::Current().Resources()
+                            .Lookup(box_value(hstring(L"AccentButtonStyle")))
+                            .as<Microsoft::UI::Xaml::Style>());
+        fixButton.Visibility(Visibility::Collapsed);
+        fixButton.Click([this](const auto &, const auto &) {
+            const PopupErrorAction chosen = fix;
+            dismissProblem();
+            emit panel->fixRequested(chosen);
+        });
+        row.Children().Append(fixButton);
         dismiss = Button();
-        dismiss.Content(box_value(L"Dismiss"));
+        dismiss.Content(box_value(win::hs(popupDismissCaption())));
         dismiss.Visibility(Visibility::Collapsed);
         dismiss.Click([this](const auto &, const auto &) {
             dismissProblem();
@@ -344,12 +367,25 @@ struct DictationPanel::Native : QObject {
         // The problem's countdown, draining over the time it has left.
         countdown = ProgressBar();
         countdown.Minimum(0);
-        countdown.Maximum(kPopupErrorDismissMs);
         countdown.Margin({24, 0, 24, 12});
         countdown.Visibility(Visibility::Collapsed);
         content.Children().Append(countdown);
         countdownTick.setInterval(50);
+        // An error holds its countdown while the pointer is on it, so a long
+        // one can be read to the end. The tick reads the cursor rather than
+        // waiting for pointer events, which never come when the error appears
+        // under a pointer that is not moving.
         connect(&countdownTick, &QTimer::timeout, this, [this] {
+            if (pointerOverChrome()) {
+                if (problemAutoDismiss.isActive()) {
+                    pausedRemainingMs = std::max(problemAutoDismiss.remainingTime(), 1);
+                    problemAutoDismiss.stop();
+                }
+                return;
+            }
+            if (pausedRemainingMs > 0) {
+                problemAutoDismiss.start(std::exchange(pausedRemainingMs, 0));
+            }
             countdown.Value(problemAutoDismiss.remainingTime());
         });
         Grid layers;
@@ -367,6 +403,9 @@ struct DictationPanel::Native : QObject {
                 controller->session()->popupPresented(generation);
             });
         });
+        // A screen reader hears an error as it arrives.
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetLiveSetting(
+            text, Microsoft::UI::Xaml::Automation::Peers::AutomationLiveSetting::Assertive);
         chrome.HorizontalAlignment(HorizontalAlignment::Center);
         chrome.VerticalAlignment(VerticalAlignment::Bottom);
         Grid surface;
@@ -514,6 +553,7 @@ struct DictationPanel::Native : QObject {
         // down when that problem's timer fires.
         problemAutoDismiss.stop();
         countdownTick.stop();
+        pausedRemainingMs = 0;
         problem.clear();
         // The previous dictation's words are spent; the session's clearing
         // preview can be dropped by the frozen guard, so clear here too.
@@ -543,20 +583,29 @@ struct DictationPanel::Native : QObject {
         }
     }
 
-    void showProblem(const QString &message)
+    void showProblem(const QString &message, const PopupErrorAction &errorFix)
     {
         preview.clear();
         problem = message;
+        fix = fixAvailable(errorFix) ? errorFix : PopupErrorAction{};
         pendingGeneration = 0;
         ensureWindow();
         applyTheme();
         whatsNewHidden = false;
-        problemAutoDismiss.start();
-        countdown.Value(kPopupErrorDismissMs);
+        const int dismissMs = popupErrorDismissMs(message);
+        pausedRemainingMs = 0;
+        problemAutoDismiss.start(dismissMs);
+        countdown.Maximum(dismissMs);
+        countdown.Value(dismissMs);
         countdownTick.start();
+        fixButton.Content(box_value(win::hs(popupErrorActionLabel(fix))));
         refresh();
         reposition();
         ShowWindow(window, SW_SHOWNOACTIVATE);
+        if (const auto peer = Microsoft::UI::Xaml::Automation::Peers::FrameworkElementAutomationPeer::
+                CreatePeerForElement(text)) {
+            peer.RaiseAutomationEvent(Microsoft::UI::Xaml::Automation::Peers::AutomationEvents::LiveRegionChanged);
+        }
         refreshBanner();
         if (!controller->pendingWhatsNewVersion().isEmpty()) {
             whatsNewAutoHide.start();
@@ -568,6 +617,7 @@ struct DictationPanel::Native : QObject {
         whatsNewAutoHide.stop();
         problemAutoDismiss.stop();
         countdownTick.stop();
+        pausedRemainingMs = 0;
         barTimer.stop();
         setShimmer(false);
         if (banner) {
@@ -730,25 +780,28 @@ struct DictationPanel::Native : QObject {
                              : refining && !hasProblem ? QString::fromUtf16(u"\uE8A9")
                                                        : phaseGlyph(status, hasProblem))
                                 .toStdWString()));
-        const bool renewing = status == QStringLiteral("Renewing sign-in…");
+        const bool renewing = status == renewingSignInText();
         const bool waiting = !hasProblem && !finished && (phase != Phase::Live || renewing);
         const bool listening = !hasProblem && !finished && !waiting;
         const bool showPreview = !hasProblem && !finished && !preview.isEmpty();
         setShimmer(waiting);
         QString shown = hasProblem ? problem : finished ? status
-            : renewing ? status : phase == Phase::Transcribing ? QStringLiteral("Transcribing…")
-            : waiting ? QStringLiteral("Refining…") : QString();
+            : renewing ? status : phase == Phase::Transcribing ? dictationStatusLabel(QStringLiteral("stopping"))
+            : waiting ? dictationStatusLabel(QStringLiteral("refining")) : QString();
         POINT pointer{};
         GetCursorPos(&pointer);
         MONITORINFO monitor{sizeof(monitor)};
         GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
         const int screenWidth =
             int((monitor.rcWork.right - monitor.rcWork.left) / scale()) - screenEdgeMargin;
+        const bool offersFix = hasProblem && fix.fix != ErrorFix::None;
+        const int chromeWidth = problemChromeWidth
+            + (offersFix ? measuredTextWidth(popupErrorActionLabel(fix)) + buttonChromeWidth : 0);
         // A problem wraps at the width every platform shares and grows taller.
         const int maximumWidth = hasProblem
-            ? std::min(kPopupErrorWrapWidth + problemChromeWidth, screenWidth)
+            ? std::min(kPopupErrorWrapWidth + chromeWidth, screenWidth)
             : std::max(panelWidth, screenWidth);
-        int wantedWidth = hasProblem ? std::clamp(measuredTextWidth(shown) + problemChromeWidth,
+        int wantedWidth = hasProblem ? std::clamp(measuredTextWidth(shown) + chromeWidth,
                                                   panelWidth, maximumWidth)
             : finished ? std::clamp(measuredTextWidth(shown) + 68, panelWidth, maximumWidth)
             : waiting ? std::max(panelWidth, measuredTextWidth(shown) + 32) : panelWidth;
@@ -769,7 +822,7 @@ struct DictationPanel::Native : QObject {
         content.Padding({0, 0, 0, showPreview ? double(previewBottomPadding) : 0.0});
         text.Text(hstring(shown.toStdWString()));
         text.Visibility(listening ? Visibility::Collapsed : Visibility::Visible);
-        text.Width(hasProblem ? wantedWidth - problemChromeWidth
+        text.Width(hasProblem ? wantedWidth - chromeWidth
                    : finished ? wantedWidth - 68 : wantedWidth);
         text.TextWrapping(hasProblem ? TextWrapping::Wrap : TextWrapping::NoWrap);
         text.MaxLines(hasProblem ? 0 : 1);
@@ -785,6 +838,7 @@ struct DictationPanel::Native : QObject {
             barTimer.stop();
         }
         dismiss.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
+        fixButton.Visibility(offersFix ? Visibility::Visible : Visibility::Collapsed);
         countdown.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
         // Measure the native font so both the contour and strip clear its ink.
         probe.Text(L"Ag");
@@ -792,7 +846,7 @@ struct DictationPanel::Native : QObject {
         const int lineHeight = int(std::ceil(probe.DesiredSize().Height));
         int problemHeight = 0;
         if (hasProblem) {
-            text.Measure({float(wantedWidth - problemChromeWidth),
+            text.Measure({float(wantedWidth - chromeWidth),
                           std::numeric_limits<float>::infinity()});
             problemHeight = std::max(panelHeight - problemBarHeight,
                                      int(std::ceil(text.DesiredSize().Height)) + 2 * previewTopPadding);
@@ -819,6 +873,21 @@ struct DictationPanel::Native : QObject {
             reposition();
         }
         refreshBanner();
+    }
+
+    bool pointerOverChrome() const
+    {
+        POINT pointer{};
+        RECT surface{};
+        if (!chrome || !GetCursorPos(&pointer) || !GetWindowRect(window, &surface)) {
+            return false;
+        }
+        const auto bounds = chrome.TransformToVisual(nullptr).TransformBounds(
+            {0, 0, float(chrome.ActualWidth()), float(chrome.ActualHeight())});
+        const double x = (pointer.x - surface.left) / scale();
+        const double y = (pointer.y - surface.top) / scale();
+        return x >= bounds.X && x < bounds.X + bounds.Width && y >= bounds.Y
+            && y < bounds.Y + bounds.Height;
     }
 
     double scale() const
@@ -1038,8 +1107,12 @@ struct DictationPanel::Native : QObject {
     float barPhase = 0.0f;
     QTimer problemAutoDismiss;
     QTimer countdownTick;
+    // What the countdown had left when the pointer arrived; 0 while it runs.
+    int pausedRemainingMs = 0;
     ProgressBar countdown{nullptr};
+    Button fixButton{nullptr};
     Button dismiss{nullptr};
+    PopupErrorAction fix;
     QString status;
     QString preview;
     QString problem;
@@ -1069,9 +1142,9 @@ DictationPanel::DictationPanel(ApplicationController *controller, QObject *paren
 
 DictationPanel::~DictationPanel() = default;
 
-void DictationPanel::showProblem(const QString &message)
+void DictationPanel::showProblem(const QString &message, const PopupErrorAction &fix)
 {
-    m_native->showProblem(message);
+    m_native->showProblem(message, fix);
 }
 
 void DictationPanel::showForTest(quint64 generation)

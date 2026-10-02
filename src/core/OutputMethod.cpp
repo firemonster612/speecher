@@ -34,36 +34,21 @@ QString normalized(const QString &method)
     return isValid(method) ? method : QString::fromLatin1(Automatic);
 }
 
-// What each method does for the person choosing it. The tools that do it
-// (ydotool, wl-copy, the Qt clipboard) are not the choice being made.
+// What each method does for the person choosing it, read after "Paste with".
+// The tools that do it (ydotool, wl-copy, the Qt clipboard) are not the choice
+// being made. Inserting directly and copying only are Default paste choices,
+// which migrateOutputMethod moves older stored methods to.
 QString label(const QString &method)
 {
     const QString value = normalized(method);
     if (value == QString::fromLatin1(Ydotool)) {
-        return QStringLiteral("Paste with the virtual keyboard");
+        return QStringLiteral("Virtual keyboard only");
     }
-    // Each platform's name for the feature, as the paste rules name it.
-    if (value == QString::fromLatin1(DirectInsert)) {
-#ifdef Q_OS_MACOS
-        return QStringLiteral("Insert into the text field (Accessibility)");
-#elif defined(Q_OS_WIN)
-        return QStringLiteral("Insert into the text field (UI Automation)");
-#else
-        return QStringLiteral("Insert into the text field (desktop accessibility)");
-#endif
-    }
-    if (value == QString::fromLatin1(WlCopy)) {
-        return QStringLiteral("Copy to the clipboard only");
-    }
-    // The paste rules' own words, "Standard paste (Ctrl+V)".
     if (value == QString::fromLatin1(MacPaste)) {
-        return QStringLiteral("Standard paste (Cmd+V)");
+        return QStringLiteral("Cmd+V only");
     }
     if (value == QString::fromLatin1(WinPaste)) {
-        return QStringLiteral("Standard paste (Ctrl+V)");
-    }
-    if (value == QString::fromLatin1(QtClipboard)) {
-        return QStringLiteral("Copy to the clipboard only (plain text)");
+        return QStringLiteral("Ctrl+V only");
     }
     return QStringLiteral("Automatic");
 }

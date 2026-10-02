@@ -5,12 +5,14 @@
 #include "app/SetupSteps.h"
 #include "providers/ProviderRegistry.h"
 #include "core/SettingsStore.h"
+#include "ui/settings/SettingsPageSupport.h"
 #include "ui/setup/SetupPages.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
 
 #include <QAbstractButton>
+#include <QEvent>
 #include <QLabel>
 #include <QPalette>
 #include <QPushButton>
@@ -21,6 +23,7 @@
 
 #ifdef SPEECHER_WITH_KASSISTANT
 #include <KPageWidget>
+#include <QDialogButtonBox>
 #include <KPageWidgetItem>
 #include <KTitleWidget>
 #include <QHBoxLayout>
@@ -49,12 +52,10 @@ QStringList setupPageTitles()
 QScrollArea *scrollingPage(QWidget *content, QWidget *parent)
 {
     auto *scroll = new QScrollArea(parent);
-    scroll->setWidgetResizable(true);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->setBackgroundRole(QPalette::Window);
-    scroll->viewport()->setBackgroundRole(QPalette::Window);
+    // The column every settings page has: capped, and centred in a wide
+    // window rather than stretched across it.
+    settings::configurePageScroll(scroll, content);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setWidget(content);
     return scroll;
 }
 
@@ -109,7 +110,6 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     resize(720, 640);
     setMinimumSize(620, 460);
 
-    const int requestedPageIndex = pageIndex(page);
 #ifdef Q_OS_LINUX
     if (!m_singlePage || page == SetupAssistantPage::GlobalShortcut) {
         m_globalShortcutPage = new LinuxGlobalShortcutSetupPage(*controller, this);
@@ -131,40 +131,30 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         LocalSetup *localSpeech = controller->providerRegistry()->speechProvider(QStringLiteral("local"))
             ? controller->localSetup()
             : nullptr;
-        m_welcomePage = new WelcomeSetupPage(*controller->settings(),
-                                             *controller->providerRegistry(),
-                                             localSpeech,
-                                             this);
+        m_welcomePage = new WelcomeSetupPage(this);
         m_speechProviderPage = new SpeechProviderSetupPage(*controller->settings(),
                                                            *controller->providerRegistry(),
                                                            localSpeech,
                                                            this);
-        connect(m_speechProviderPage, &SpeechProviderSetupPage::providerChosen,
-                m_welcomePage, &WelcomeSetupPage::preserveSpeechChoice);
-        connect(m_welcomePage, &WelcomeSetupPage::pathProviderChanged, this, [this](const QString &provider) {
-            m_speechProviderPage->chooseProvider(provider);
-        });
         m_microphonePage = new MicrophoneSetupPage(*controller->settings(),
                                                    *controller->platform(),
                                                    this);
         accessibility = new AccessibilitySetupPage(*controller, this);
-        m_deliveryPage = new TextDeliverySetupPage(*controller->settings(), this);
+        // Text delivery is a step only where there is a virtual keyboard to
+        // install.
+        if (findSetupStep(QStringLiteral("delivery"))) {
+            m_deliveryPage = new TextDeliverySetupPage(*controller->settings(), this);
+        }
         refinement = new RefinementSetupPage(*controller->settings(),
                                              *controller->providerRegistry(),
                                              controller->localSetup(),
                                              this);
-        m_profilesPage = new WritingProfilesSetupPage(*controller->settings(), this);
         m_finishPage = new FinishSetupPage(*controller, this);
     }
     // Every step with something checkable holds Next until it is done, and
     // Skip setup only exists once all of them are: skipping through an unset
     // microphone or provider produced installs that never worked. Refinement
-    // and writing profiles stay open, since their defaults are valid answers.
-    if (m_welcomePage) {
-        addGate(m_welcomePage, [this] { return m_welcomePage->ready(); });
-        connect(m_welcomePage, &WelcomeSetupPage::readyChanged,
-                this, [this] { applyGates(); });
-    }
+    // stays open, since its default is a valid answer.
     if (m_speechProviderPage) {
         addGate(m_speechProviderPage, [this] { return m_speechProviderPage->ready(); });
         connect(m_speechProviderPage, &SpeechProviderSetupPage::readyChanged,
@@ -199,41 +189,42 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
         addGate(m_finishPage, [this] { return earlierGatesComplete(m_finishPage); });
     }
 
-    QList<QWidget *> pageContents{
-        m_welcomePage,
-        m_speechProviderPage,
-        m_microphonePage,
-        accessibility,
-        m_deliveryPage,
-        refinement,
-        m_profilesPage,
-    };
+    // Core decides which steps this platform has; each page joins under its
+    // step's title. A single-page run built only its own page, and a step
+    // with no page here (the Global Shortcut off Linux) is left out.
+    const QHash<QString, QWidget *> stepPages{
+        {QStringLiteral("welcome"), m_welcomePage},
+        {QStringLiteral("transcription"), m_speechProviderPage},
+        {QStringLiteral("microphone"), m_microphonePage},
+        {QStringLiteral("accessibility"), accessibility},
+        {QStringLiteral("delivery"), m_deliveryPage},
+        {QStringLiteral("refinement"), refinement},
 #ifdef Q_OS_LINUX
-    pageContents.append(m_globalShortcutPage);
+        {QStringLiteral("shortcut"), m_globalShortcutPage},
 #endif
-    pageContents.append(m_finishPage);
-    Q_ASSERT(pageContents.size() == setupSteps().size());
-    if (!m_singlePage) {
-        m_lastPage = pageContents.last();
+        {QStringLiteral("ready"), m_finishPage},
+    };
+    for (const SetupStepInfo &step : setupSteps()) {
+        if (QWidget *content = stepPages.value(step.id)) {
+            m_steps.append({step.title, content});
+        }
     }
-    const QStringList titles = setupPageTitles();
+    m_lastPage = m_finishPage;
 #ifdef SPEECHER_WITH_KASSISTANT
-    for (int index = 0; index < pageContents.size(); ++index) {
-        QWidget *content = pageContents.at(index);
-        if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
-            KPageWidgetItem *item = addPage(scrollingPage(content, this), titles.at(index));
-            // The title row below draws the title, beside the counter.
-            item->setHeaderVisible(false);
-            m_items.append(item);
-            if (m_gates.contains(content)) {
-                m_gateItems.insert(content, item);
-            }
-            m_steps.append({titles.at(index), content});
+    for (const Step &step : std::as_const(m_steps)) {
+        KPageWidgetItem *item = addPage(scrollingPage(step.content, this), step.title);
+        step.content->installEventFilter(this);
+        // The title row below draws the title, beside the counter.
+        item->setHeaderVisible(false);
+        m_items.append(item);
+        if (m_gates.contains(step.content)) {
+            m_gateItems.insert(step.content, item);
         }
     }
     // The title row carries the counter, as the other two assistants do:
     // KPageView takes a header widget in place of the title it draws.
     auto *header = new QWidget(this);
+    m_header = header;
     auto *headerLayout = new QHBoxLayout(header);
     m_headerTitle = new KTitleWidget(header);
     headerLayout->addWidget(m_headerTitle, 1);
@@ -244,8 +235,18 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     headerLayout->addWidget(m_headerCounter, 0, Qt::AlignRight | Qt::AlignVCenter);
     pageWidget()->setPageHeader(header);
     updateStepHeader(m_items.value(0));
+    // KPageDialog offers Help, and Speecher has no help pages behind it.
+    // Enter presses Next or Finish only: while a gate holds Next, no other
+    // button becomes the default in its place.
+    if (QPushButton *help = buttonBox()->button(QDialogButtonBox::Help)) {
+        help->hide();
+    }
+    backButton()->setAutoDefault(false);
+    if (QPushButton *cancel = buttonBox()->button(QDialogButtonBox::Cancel)) {
+        cancel->setAutoDefault(false);
+    }
     if (!m_singlePage) {
-        m_skipButton = new QPushButton(QStringLiteral("Skip setup"), this);
+        m_skipButton = new QPushButton(setupText(SetupText::SkipSetup), this);
         addActionButton(m_skipButton);
         connect(m_skipButton, &QAbstractButton::clicked, this, &SetupAssistant::skipSetup);
     }
@@ -270,25 +271,21 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     setOption(QWizard::NoBackButtonOnStartPage);
     if (!m_singlePage) {
         setOption(QWizard::HaveCustomButton1);
-        setButtonText(QWizard::CustomButton1, QStringLiteral("Skip setup"));
+        setButtonText(QWizard::CustomButton1, setupText(SetupText::SkipSetup));
         m_skipButton = button(QWizard::CustomButton1);
     }
-    for (int index = 0; index < pageContents.size(); ++index) {
-        QWidget *content = pageContents.at(index);
-        if (content && (requestedPageIndex < 0 || requestedPageIndex == index)) {
-            QWizardPage *page = nullptr;
-            if (m_gates.contains(content)) {
-                auto *gated = new GatedWizardPage;
-                gated->gate = m_gates.value(content);
-                m_gatePages.insert(content, gated);
-                page = gated;
-            } else {
-                page = new QWizardPage;
-            }
-            const int id = addPage(wizardPage(page, scrollingPage(content, this), titles.at(index)));
-            m_pageContents.insert(id, content);
-            m_steps.append({titles.at(index), content});
+    for (const Step &step : std::as_const(m_steps)) {
+        QWizardPage *page = nullptr;
+        if (m_gates.contains(step.content)) {
+            auto *gated = new GatedWizardPage;
+            gated->gate = m_gates.value(step.content);
+            m_gatePages.insert(step.content, gated);
+            page = gated;
+        } else {
+            page = new QWizardPage;
         }
+        const int id = addPage(wizardPage(page, scrollingPage(step.content, this), step.title));
+        m_pageContents.insert(id, step.content);
     }
     connect(this, &QWizard::customButtonClicked, this, [this](int button) {
         if (button == QWizard::CustomButton1) {
@@ -350,6 +347,28 @@ void SetupAssistant::updateStepHeader(KPageWidgetItem *current)
     }
     m_headerTitle->setText(current->name());
     m_headerCounter->setText(setupStepCounter(m_items.indexOf(current) + 1, m_items.size()));
+}
+
+void SetupAssistant::alignStepHeader()
+{
+    if (!m_activePage || !m_activePage->isVisible()) {
+        return;
+    }
+    const int left = m_activePage->mapTo(this, QPoint()).x() - m_header->mapTo(this, QPoint()).x();
+    const int right = m_header->width() - left - m_activePage->width();
+    const QMargins margins = m_header->layout()->contentsMargins();
+    m_header->layout()->setContentsMargins(left + setupPageMargin(), margins.top(),
+                                           right + setupPageMargin(), margins.bottom());
+}
+
+bool SetupAssistant::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_activePage
+        && (event->type() == QEvent::Move || event->type() == QEvent::Resize
+            || event->type() == QEvent::Show)) {
+        alignStepHeader();
+    }
+    return KAssistantDialog::eventFilter(watched, event);
 }
 #endif
 
@@ -461,29 +480,9 @@ bool SetupAssistant::earlierGatesComplete(QWidget *content) const
 // so this only ever updates the gates for the next press of Finish.
 void SetupAssistant::recheckCredentialsInBackground()
 {
-    if (!m_welcomePage) {
-        if (m_speechProviderPage) {
-            m_speechProviderPage->recheck();
-        }
-        return;
-    }
-    // Both pages probe the same provider objects, and a provider's credential
-    // refresh holds a lock for a second. Run at the same time, one round
-    // reports a lock failure the other caused and the gate closes on a
-    // conflict rather than on the credentials, so the speech round waits.
     if (m_speechProviderPage) {
-        connect(
-            m_welcomePage,
-            &WelcomeSetupPage::checkFinished,
-            this,
-            [this] {
-                if (m_speechProviderPage) {
-                    m_speechProviderPage->recheck();
-                }
-            },
-            Qt::SingleShotConnection);
+        m_speechProviderPage->recheck();
     }
-    m_welcomePage->recheck();
 }
 
 QWidget *SetupAssistant::firstIncompletePage() const
@@ -545,7 +544,7 @@ void SetupAssistant::accept()
         return;
     }
     if (!m_skipping) {
-        m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());
+        m_finishPage->setSignInRequired(m_deliveryPage && m_deliveryPage->needsSignIn());
     }
     m_controller->completeSetup();
 #ifdef SPEECHER_WITH_KASSISTANT
@@ -558,6 +557,9 @@ void SetupAssistant::accept()
 void SetupAssistant::updateActivePage(QWidget *page)
 {
     m_activePage = page;
+#ifdef SPEECHER_WITH_KASSISTANT
+    alignStepHeader();
+#endif
     if (m_microphonePage) {
         m_microphonePage->setActive(page == m_microphonePage);
     }
@@ -567,7 +569,7 @@ void SetupAssistant::updateActivePage(QWidget *page)
         m_skipButton->setVisible(page != m_lastPage && gatesComplete());
     }
     if (page == m_finishPage && m_finishPage) {
-        m_finishPage->setSignInRequired(m_deliveryPage->needsSignIn());
+        m_finishPage->setSignInRequired(m_deliveryPage && m_deliveryPage->needsSignIn());
     }
 }
 

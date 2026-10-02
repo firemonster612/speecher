@@ -69,7 +69,7 @@ QString LocalSpeechTranscriber::id() const
 
 QString LocalSpeechTranscriber::label() const
 {
-    return QStringLiteral("Local model");
+    return QStringLiteral("Local Model");
 }
 
 bool LocalSpeechTranscriber::requiresRefresh(const SpeechSettings &) const

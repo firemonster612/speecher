@@ -37,6 +37,8 @@ private:
     QString replacement(const QVariantMap &record) const;
 
     CollectionDescriptor m_collection;
+    // The page's draft, which a choice column's options come from.
+    AppSettings m_settings;
     QListWidget *m_list = nullptr;
     QLabel *m_empty = nullptr;
     QPushButton *m_undoDelete = nullptr;

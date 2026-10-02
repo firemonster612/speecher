@@ -100,7 +100,6 @@ QString displayText(const CollectionColumnSnapshot &column, const QVariant &valu
 
 CollectionEditor::CollectionEditor(const RowSnapshot &row, PaneHost &host)
     : m_rowId(row.id)
-    , m_rowLabel(row.label)
     , m_collection(*row.collection)
     , m_host(host)
 {
@@ -130,15 +129,16 @@ void CollectionEditor::build()
     StackPanel toolbar;
     toolbar.Orientation(Orientation::Horizontal);
     toolbar.Spacing(8);
+    m_addButton = nullptr;
     if (!m_collection.addLabel.isEmpty()) {
-        Button add;
-        add.Content(box_value(hs(m_collection.addLabel)));
-        add.Click([weak = weak_from_this()](const auto &, const auto &) {
+        m_addButton = Button();
+        m_addButton.Content(box_value(hs(m_collection.addLabel)));
+        m_addButton.Click([weak = weak_from_this()](const auto &, const auto &) {
             if (auto self = weak.lock()) {
                 self->openAddDialog();
             }
         });
-        toolbar.Children().Append(add);
+        toolbar.Children().Append(m_addButton);
     }
     if (!m_collection.importLabel.isEmpty()) {
         Button import;
@@ -172,20 +172,22 @@ void CollectionEditor::build()
     content.Children().Append(toolbar);
 
     // The header row, aligned with the cells by sharing their column table.
-    Grid header = columnGrid(m_collection.columns);
-    header.Padding({12, 0, 12, 0});
+    m_header = columnGrid(m_collection.columns);
+    m_header.Padding({12, 0, 12, 0});
     for (qsizetype index = 0; index < m_collection.columns.size(); ++index) {
         TextBlock title = cellText(m_collection.columns.at(index).title,
                                    L"SettingsCardDescriptionStyle",
                                    &m_host);
         Grid::SetColumn(title, static_cast<int32_t>(index));
-        header.Children().Append(title);
+        m_header.Children().Append(title);
     }
-    content.Children().Append(header);
+    content.Children().Append(m_header);
 
     m_list = ListView();
     m_list.SelectionMode(ListViewSelectionMode::Extended);
-    m_list.Height(m_collection.minimumHeight);
+    // As tall as its records, up to the descriptor's height, past which the
+    // list scrolls.
+    m_list.MaxHeight(m_collection.minimumHeight);
     // The cells lay themselves out; the container must hand them the row's
     // full width rather than centre-left them.
     Style container(xaml_typename<ListViewItem>());
@@ -200,21 +202,19 @@ void CollectionEditor::build()
             self->updateToolbar();
         }
     });
-    // The empty state sits in the list's own cell, centred over the blank
-    // list rather than under it.
-    Grid listArea;
-    listArea.Children().Append(m_list);
+    content.Children().Append(m_list);
+    // The empty state stands in for the header and the list: what goes here,
+    // with the accented Add above it as the way to start.
+    m_empty = nullptr;
     if (!m_collection.emptyTitle.isEmpty()) {
-        m_empty = secondaryTextBlock(m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp,
-                                     L"SettingsCardDescriptionStyle",
-                                     m_host);
-        m_empty.HorizontalAlignment(HorizontalAlignment::Center);
-        m_empty.VerticalAlignment(VerticalAlignment::Center);
-        m_empty.TextAlignment(TextAlignment::Center);
-        m_empty.IsHitTestVisible(false);
-        listArea.Children().Append(m_empty);
+        m_empty = StackPanel();
+        m_empty.Spacing(2);
+        m_empty.Padding({0, 4, 0, 4});
+        m_empty.Children().Append(styledTextBlock(m_collection.emptyTitle, L"BodyStrongTextBlockStyle"));
+        m_empty.Children().Append(
+            secondaryTextBlock(m_collection.emptyHelp, L"SettingsCardDescriptionStyle", m_host));
+        content.Children().Append(m_empty);
     }
-    content.Children().Append(listArea);
 
     m_problems = InfoBar();
     m_problems.Severity(InfoBarSeverity::Error);
@@ -375,7 +375,17 @@ QList<int> CollectionEditor::selectedIndexes() const
 void CollectionEditor::updateToolbar()
 {
     if (m_empty) {
-        m_empty.Visibility(m_records.isEmpty() ? Visibility::Visible : Visibility::Collapsed);
+        const bool empty = m_records.isEmpty();
+        m_empty.Visibility(empty ? Visibility::Visible : Visibility::Collapsed);
+        m_header.Visibility(empty ? Visibility::Collapsed : Visibility::Visible);
+        m_list.Visibility(empty ? Visibility::Collapsed : Visibility::Visible);
+        if (m_addButton) {
+            m_addButton.Style(empty ? Application::Current()
+                                          .Resources()
+                                          .Lookup(box_value(L"AccentButtonStyle"))
+                                          .as<Style>()
+                                    : Style{nullptr});
+        }
     }
     bool removable = false;
     for (int index : selectedIndexes()) {
@@ -572,9 +582,7 @@ winrt::fire_and_forget CollectionEditor::importFromFile()
         self->save();
     } catch (const winrt::hresult_error &error) {
         if (auto self = weak.lock()) {
-            self->showProblems({QStringLiteral("Could not import %1: %2")
-                                    .arg(self->m_rowLabel, qs(error.message()))},
-                               self->m_collection.importFailureTitle);
+            self->showProblems({qs(error.message())}, self->m_collection.importFailureTitle);
         }
     }
 }

@@ -23,33 +23,28 @@ struct SetupStepInfo {
 };
 
 // The steps this build's assistant walks, in order. Accessibility is not a
-// step on Windows, and Start at login is not one on Linux. Ready is last.
+// step on Windows, and Text delivery is one only on Linux, where it installs
+// the virtual keyboard. Ready is last.
 QList<SetupStepInfo> setupSteps();
 // Null for a step this platform does not have.
 const SetupStepInfo *findSetupStep(const QString &id);
 
 // The assistant window's title.
 QString setupWindowTitle();
-// The welcome step's second paragraph.
-QString setupWelcomeDetail();
 // "Step 2 of 9".
 QString setupStepCounter(int step, int total);
 
-// Why a state-dependent gate is shut. localOffered means running on this
-// computer is a real way out: local speech is in the build and the hardware
-// can run a model. cliToolFound means Claude Code or Codex is installed, so
-// signing in is enough; without either, the message says to get an account
-// and install one.
-QString setupSignInMissing(bool localOffered, bool cliToolFound);
-// The welcome page's dead-end note, or empty while any way into dictation
-// remains: a found sign-in, a machine that can run a model, a configured
-// speech server, or no sign-in providers to wait for. Core also decides the
-// wording from whether Claude Code or Codex is installed: installed means
-// signing in is the missing step, otherwise the note says to get an account
-// and install one.
-QString setupWelcomeDeadEnd(bool signInFound, bool localUsable, bool endpointSaved,
-                            bool signInProvidersRegistered);
-// An empty label means no transcription service is available.
+// The Transcription step's dead-end note, or empty while any way into
+// dictation remains: a found sign-in, a machine that can run a model, a
+// configured speech server, or no sign-in providers to wait for. While it
+// shows, it is the step's only verdict and the step holds Continue. Core also
+// decides the wording from whether Claude Code or Codex is installed:
+// installed means signing in is the missing step, otherwise the note says to
+// get an account and install one.
+QString setupTranscriptionDeadEnd(bool signInFound, bool localUsable, bool endpointSaved,
+                                  bool signInProvidersRegistered);
+// Why a state-dependent gate is shut. An empty label means no transcription
+// service is available.
 QString setupTranscriptionBlocked(bool localSelected, const QString &providerLabel);
 enum class SetupMicrophoneProblem { NoDevice, NoAccess, Silent };
 QString setupMicrophoneBlocked(SetupMicrophoneProblem problem);
@@ -72,11 +67,50 @@ QString setupProviderVerdict(const QString &providerId, bool ready);
 // no probe has answered, otherwise the provider's verdict.
 QString setupRefinementStatus(const QString &providerId, std::optional<bool> ready);
 
-// One line of the Ready step's checklist: "Text delivery — clipboard".
+// One line of the Ready step's checklist: "Microphone — Built-in".
 QString setupChecklistLine(const QString &stepId, const QString &choice);
+// The verdict on that line for pasting, which is not a gate on macOS: Ready,
+// or Clipboard only while Accessibility is off.
+QString setupPasteVerdict(bool pastes);
 
-// Under the writing profiles.
-QString setupProfilesNote();
+// The fixed wording every assistant shares: buttons, card titles, and the
+// lines the transcription, microphone and refinement steps show.
+enum class SetupText {
+    SkipSetup,
+    CheckAgain,
+    GoToStep,
+    HowToDictate,
+    TranscriptionService,
+    LocalSpeechNote,
+    DownloadToContinue,
+    DownloadContinues,
+    CloseWhileDownloading,
+    CliproxyAccount,
+    ListeningForInput,
+    InputDetected,
+    UsesYourSignIn,
+    YourOwnModels,
+    CleanupProvider,
+    SkipCleanup,
+    LookingForRunners,
+    NoRunnerFound,
+    NoRunner,
+    RawUntilRunner,
+    InstallRunner,
+    GetOllama,
+    DownloadWithOllama,
+    EndpointModelHint,
+};
+QString setupText(SetupText text);
+
+// "Claude Voice is ready."
+QString setupProviderReady(const QString &providerLabel);
+// A refinement provider whose sign-in failed, which is a warning, not a gate.
+QString setupRefinementNotSignedIn(const QString &providerLabel);
+// What the Ready checklist names for a speech choice: "Moonshine Small, on
+// this computer", or "Claude Voice (CLI Proxy API)" for a CLI Proxy API sign-in.
+QString setupLocalSpeechChoice(const QString &modelName);
+QString setupCliproxySpeechChoice(const QString &providerLabel);
 
 // The Ready step: its lead, and the heading and footer around the steps
 // still holding Finish.

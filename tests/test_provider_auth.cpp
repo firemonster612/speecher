@@ -1187,6 +1187,18 @@ private slots:
         QVERIFY(unparsable.error.contains(QStringLiteral("expiry")));
     }
 
+    void openAiAuthStatusSaysWhetherTheSignInIsReady()
+    {
+        const OpenAiAuthStatus missing = OpenAiAuthProvider(nullptr, QStringLiteral("settings")).status();
+        QCOMPARE(missing.text, QStringLiteral("Settings API key not found"));
+        QVERIFY(!missing.ready);
+
+        const OpenAiAuthStatus saved =
+            OpenAiAuthProvider(nullptr, QStringLiteral("settings"), {}, {}, QStringLiteral("sk-test"), {}).status();
+        QCOMPARE(saved.text, QStringLiteral("Signed in"));
+        QVERIFY(saved.ready);
+    }
+
     void openAiAuthProviderCliproxyMode()
     {
         QTemporaryDir dir;

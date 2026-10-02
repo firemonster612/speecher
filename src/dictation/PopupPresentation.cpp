@@ -1,7 +1,11 @@
 #include "dictation/PopupPresentation.h"
 
+#include "core/settings/SettingsSchema.h"
+
 #include <QList>
 #include <QTextBoundaryFinder>
+
+#include <algorithm>
 
 namespace speecher {
 
@@ -50,7 +54,56 @@ QString longestFittingTail(const QString &text, const QList<qsizetype> &starts,
     return {};
 }
 
+// About how long a reader needs per character, past the minimum.
+constexpr int kPopupErrorMsPerCharacter = 60;
+// A server's whole error body should not hold the popup for minutes.
+constexpr int kPopupErrorMaximumMs = 30000;
+
 } // namespace
+
+QString popupDismissCaption()
+{
+    return QStringLiteral("Dismiss");
+}
+
+QString renewingSignInText()
+{
+    return QStringLiteral("Renewing sign-in\u2026");
+}
+
+int popupErrorDismissMs(const QString &message)
+{
+    return std::clamp(int(message.simplified().size()) * kPopupErrorMsPerCharacter,
+                      kPopupErrorMinimumMs,
+                      kPopupErrorMaximumMs);
+}
+
+QString popupErrorActionLabel(const PopupErrorAction &action)
+{
+    switch (action.fix) {
+    case ErrorFix::None:
+        break;
+    case ErrorFix::SettingsPage:
+        return QStringLiteral("Open %1").arg(paneTitle(action.pageId));
+    case ErrorFix::MicrophonePermission:
+        // ui-lint: allow title-case: Microphone is the name of the system's privacy pane.
+        return QStringLiteral("Open Microphone settings");
+    case ErrorFix::AccessibilityPermission:
+        return accessibilityGrantActionLabel();
+    }
+    return {};
+}
+
+PopupErrorAction speechSetupAction(const QString &providerId)
+{
+    if (providerId == QStringLiteral("local")) {
+        return {ErrorFix::SettingsPage, QStringLiteral("localModels")};
+    }
+    if (providerId == QStringLiteral("endpoint")) {
+        return {ErrorFix::SettingsPage, QStringLiteral("dictation")};
+    }
+    return {ErrorFix::SettingsPage, QStringLiteral("accounts")};
+}
 
 QString trimPreviewToFit(const QString &preview, const std::function<bool(const QString &)> &fits)
 {

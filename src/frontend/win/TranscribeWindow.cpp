@@ -223,6 +223,11 @@ void TranscribeWindow::show()
     m_native->show();
 }
 
+void TranscribeWindow::setPageOpener(std::function<void(const QString &pageId)> open)
+{
+    m_native->host.showPage = std::move(open);
+}
+
 void TranscribeWindow::applyTheme()
 {
     m_native->applyTheme();

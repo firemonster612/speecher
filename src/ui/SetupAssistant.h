@@ -33,7 +33,6 @@ class WelcomeSetupPage;
 class LinuxGlobalShortcutSetupPage;
 #endif
 class TextDeliverySetupPage;
-class WritingProfilesSetupPage;
 
 #ifdef SPEECHER_WITH_KASSISTANT
 class SetupAssistant final : public KAssistantDialog {
@@ -48,6 +47,9 @@ public:
 
 protected:
     void accept() override;
+#ifdef SPEECHER_WITH_KASSISTANT
+    bool eventFilter(QObject *watched, QEvent *event) override;
+#endif
 
 private:
     static int pageIndex(SetupAssistantPage page);
@@ -63,6 +65,9 @@ private:
 #ifdef SPEECHER_WITH_KASSISTANT
     // The title row: the page's title, and "Step N of M" at its right.
     void updateStepHeader(KPageWidgetItem *current);
+    // Lines the title row up with the current page's centred column.
+    void alignStepHeader();
+    QWidget *m_header = nullptr;
     KTitleWidget *m_headerTitle = nullptr;
     QLabel *m_headerCounter = nullptr;
     QList<KPageWidgetItem *> m_items;
@@ -99,7 +104,6 @@ private:
     SpeechProviderSetupPage *m_speechProviderPage = nullptr;
     MicrophoneSetupPage *m_microphonePage = nullptr;
     TextDeliverySetupPage *m_deliveryPage = nullptr;
-    WritingProfilesSetupPage *m_profilesPage = nullptr;
     FinishSetupPage *m_finishPage = nullptr;
     QWidget *m_lastPage = nullptr;
     QWidget *m_activePage = nullptr;

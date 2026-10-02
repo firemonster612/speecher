@@ -83,6 +83,7 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 
 @interface SettingsRowModel : NSObject
 @property (nonatomic, readonly, copy) NSString *rowId;
+// As the draft words it: a status row titled "API key" in key mode.
 @property (nonatomic, readonly, copy) NSString *label;
 @property (nonatomic, readonly, copy) NSString *help;
 @property (nonatomic, readonly) SpeecherRowKind kind;
@@ -102,9 +103,12 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // The row offers values, even while the list is empty (a server not yet
 // asked), so it keeps the same control.
 @property (nonatomic, readonly) BOOL suggests;
+// A Collection row that is not enabled stays readable: only adding, editing
+// and deleting stop.
 @property (nonatomic, readonly) BOOL enabled;
 // Shown on the control, and replaced by disabledHelp while enabled says no.
 @property (nonatomic, readonly, copy) NSString *tooltip;
+// Names the gate that is closed, where a row has more than one.
 @property (nonatomic, readonly, copy) NSString *disabledHelp;
 // The action that can lift the gate while enabled says no — an action id the
 // row dispatch understands — and its button caption. Empty when none.
@@ -160,6 +164,14 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneGroupModel *> *groups;
 @end
 
+// One pane a settings search finds, with the visible rows on it whose label or
+// help mention the query, in reading order (speecher::SearchMatch). No rows
+// means the pane matched by its title or a group's.
+@interface SettingsSearchMatch : NSObject
+@property (nonatomic, readonly, copy) NSString *pane;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *rows;
+@end
+
 // One titled group of the sidebar; the top group's title is empty.
 @interface SidebarGroupModel : NSObject
 @property (nonatomic, readonly, copy) NSString *title;
@@ -187,9 +199,9 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // names, speecher::resolvePage's answer: an unknown pane, or a view the pane
 // does not have, gives Home.
 - (NSArray<NSString *> *)resolvePage:(NSString *)pageId NS_SWIFT_NAME(resolvePage(_:));
-// The pane ids a sidebar search shows, from the core index, with rows as
-// the draft shows them.
-- (NSArray<NSString *> *)searchPanes:(NSString *)query NS_SWIFT_NAME(searchPanes(_:));
+// The panes a sidebar search shows, from the core index, with rows as the
+// draft shows them.
+- (NSArray<SettingsSearchMatch *> *)searchSettings:(NSString *)query NS_SWIFT_NAME(searchSettings(_:));
 // What an Action row's button does. The schema names the commands; what they do
 // belongs to the front end, as it does on Qt.
 @property (nonatomic, copy, nullable) void (^actionTriggered)(NSString *rowId);
@@ -201,6 +213,9 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // Lets the rows whose choices are slow to gather — a device enumeration —
 // offer them from now on. Called once the window has painted.
 - (void)loadExpensiveRows;
+// Lists the microphones again, for the device row and its gate. Once loaded,
+// a snapshot reuses the last list rather than enumerating devices itself.
+- (void)refreshAudioInputs;
 // Empty when these records are consistent; otherwise one message per problem.
 - (NSArray<NSString *> *)problemsWith:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId;
 // What deleting the custom Writing Profile `profileId` changes in the draft,
@@ -269,6 +284,30 @@ typedef NS_ENUM(NSInteger, SpeecherUpdatePreviewState) {
 @property (nonatomic, readonly, copy) NSString *action;
 @property (nonatomic, readonly, copy) NSString *dismiss;
 + (SpeecherWhatsNewBanner *)previewForVersion:(NSString *)version;
+@end
+
+// speecher::ErrorFix: what a dictation error offers to fix it.
+typedef NS_ENUM(NSInteger, SpeecherErrorFix) {
+    SpeecherErrorFixNone,
+    SpeecherErrorFixSettingsPage,
+    SpeecherErrorFixMicrophonePermission,
+    SpeecherErrorFixAccessibilityPermission,
+};
+
+// speecher::PopupErrorAction, with the caption of the button that offers it.
+@interface SpeecherErrorAction : NSObject
+@property (nonatomic, readonly) SpeecherErrorFix fix;
+// The settings page to open, for SpeecherErrorFixSettingsPage.
+@property (nonatomic, readonly, copy) NSString *pageId;
+// "Open Accounts"; empty for SpeecherErrorFixNone.
+@property (nonatomic, readonly, copy) NSString *label;
+- (instancetype)initWithFix:(SpeecherErrorFix)fix pageId:(NSString *)pageId NS_SWIFT_NAME(init(fix:pageId:));
+@end
+
+// A sign-in's status line, and whether it says the sign-in works.
+@interface SpeecherCredentialStatus : NSObject
+@property (nonatomic, readonly, copy) NSString *text;
+@property (nonatomic, readonly) BOOL ready;
 @end
 
 // speecher::PopupOutcome: how a dictation ended, which picks the receipt's symbol.
@@ -399,6 +438,63 @@ typedef NS_ENUM(NSInteger, SpeecherTranscribeText) {
     SpeecherTranscribeTextRetrying,
     SpeecherTranscribeTextTranscribeMore,
     SpeecherTranscribeTextProgressName,
+    SpeecherTranscribeTextNoFilesYet,
+    SpeecherTranscribeTextNeedsRefiner,
+    SpeecherTranscribeTextDropToAdd,
+};
+
+// Mirrors speecher::DictationState, so the panel decides on the state rather
+// than on the words of its label.
+typedef NS_ENUM(NSInteger, SpeecherDictationState) {
+    SpeecherDictationStateIdle,
+    SpeecherDictationStateStarting,
+    SpeecherDictationStateListening,
+    SpeecherDictationStateStopping,
+    SpeecherDictationStateRefining,
+    SpeecherDictationStateDelivering,
+    SpeecherDictationStateError,
+};
+
+// Mirrors speecher::LocalModelText.
+typedef NS_ENUM(NSInteger, SpeecherLocalModelText) {
+    SpeecherLocalModelTextUseModel,
+    SpeecherLocalModelTextTestSpeed,
+    SpeecherLocalModelTextInUse,
+    SpeecherLocalModelTextSuggested,
+    SpeecherLocalModelTextYourChoice,
+    SpeecherLocalModelTextTooLarge,
+    SpeecherLocalModelTextHideOtherModels,
+    SpeecherLocalModelTextCompareNote,
+    SpeecherLocalModelTextDeleteModel,
+    SpeecherLocalModelTextDeleteBody,
+};
+
+// Mirrors speecher::SetupText.
+typedef NS_ENUM(NSInteger, SpeecherSetupText) {
+    SpeecherSetupTextSkipSetup,
+    SpeecherSetupTextCheckAgain,
+    SpeecherSetupTextGoToStep,
+    SpeecherSetupTextHowToDictate,
+    SpeecherSetupTextTranscriptionService,
+    SpeecherSetupTextLocalSpeechNote,
+    SpeecherSetupTextDownloadToContinue,
+    SpeecherSetupTextDownloadContinues,
+    SpeecherSetupTextCloseWhileDownloading,
+    SpeecherSetupTextCliproxyAccount,
+    SpeecherSetupTextListeningForInput,
+    SpeecherSetupTextInputDetected,
+    SpeecherSetupTextUsesYourSignIn,
+    SpeecherSetupTextYourOwnModels,
+    SpeecherSetupTextCleanupProvider,
+    SpeecherSetupTextSkipCleanup,
+    SpeecherSetupTextLookingForRunners,
+    SpeecherSetupTextNoRunnerFound,
+    SpeecherSetupTextNoRunner,
+    SpeecherSetupTextRawUntilRunner,
+    SpeecherSetupTextInstallRunner,
+    SpeecherSetupTextGetOllama,
+    SpeecherSetupTextDownloadWithOllama,
+    SpeecherSetupTextEndpointModelHint,
 };
 
 // Mirrors speecher::TranscribeQueueState.
@@ -432,6 +528,9 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger dictationsLevel;
 @property (nonatomic, readonly) NSInteger wordsLevel;
 @property (nonatomic, readonly) NSInteger audioLevel;
+// The day's tip under each measure, dictations, words, audio
+// (speecher::heatmapDayTip): its value, then the date on the next line.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *tips;
 @end
 
 // One row of "Where your words go". The "N other apps" fold has no profile.
@@ -454,6 +553,15 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) BOOL showsWeek;
 @end
 
+// One row of the Records card (speecher::InsightRecordText).
+@interface SpeecherInsightRecordModel : NSObject
+@property (nonatomic, readonly, copy) NSString *title;
+@property (nonatomic, readonly, copy) NSString *detail;
+@property (nonatomic, readonly, copy) NSString *value;
+// The next milestone shows a progress bar of allTimeWords out of nextMilestone.
+@property (nonatomic, readonly) BOOL milestoneBar;
+@end
+
 // Everything Home shows for one period, as speecher::summarize computed it.
 // Days the page words relative to today ("yesterday", "Mar 1, 2026") arrive
 // already worded, and are empty where the summary has no such day. So do the
@@ -466,12 +574,7 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger words;
 @property (nonatomic, readonly) NSInteger dictations;
 
-// Streak.
-@property (nonatomic, readonly) NSInteger currentStreak;
-@property (nonatomic, readonly) NSInteger bestStreak;
-@property (nonatomic, readonly, copy) NSString *bestStreakEnd;
-@property (nonatomic, readonly) BOOL bestStreakEndsToday;
-// Seven BOOLs, Monday first, and today's slot among them.
+// Streak: seven BOOLs, Monday first, and today's slot among them.
 @property (nonatomic, readonly, copy) NSArray<NSNumber *> *weekActivity;
 @property (nonatomic, readonly) NSInteger todayIndex;
 // One letter per weekday, Monday first (speecher::weekdayLetter).
@@ -509,7 +612,8 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 
 @property (nonatomic, readonly) NSInteger wordsPerMinute;
 @property (nonatomic, readonly) NSInteger typingWordsPerMinute;
-@property (nonatomic, readonly) NSInteger minutesSavedVersusTyping;
+// The time dictation saved over typing, "2 h 5 min" (speecher::minutesText).
+@property (nonatomic, readonly, copy) NSString *minutesSavedText;
 // "That's 3.6× faster than typing at 40 words per minute."
 @property (nonatomic, readonly, copy) NSString *speedupText;
 
@@ -519,19 +623,14 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 @property (nonatomic, readonly) NSInteger allTimeWords;
 // 0 once every milestone is passed.
 @property (nonatomic, readonly) NSInteger nextMilestone;
-// "8,850 to go. You passed 1,000 already.", or "You passed 1,000,000 words".
-@property (nonatomic, readonly, copy) NSString *milestoneText;
-// "m:ss".
-@property (nonatomic, readonly, copy) NSString *longestDuration;
-@property (nonatomic, readonly) NSInteger longestWords;
-@property (nonatomic, readonly, copy) NSString *longestApp;
-@property (nonatomic, readonly, copy) NSString *longestDay;
-@property (nonatomic, readonly, copy) NSString *busiestDay;
-@property (nonatomic, readonly) NSInteger busiestDayDictations;
-@property (nonatomic, readonly, copy) NSString *wordiestDay;
-@property (nonatomic, readonly) NSInteger wordiestDayWords;
-@property (nonatomic, readonly, copy, nullable) NSDate *firstDictation;
-@property (nonatomic, readonly) NSInteger firstDictationDaysAgo;
+@property (nonatomic, readonly, copy) NSArray<SpeecherInsightRecordModel *> *records;
+
+// What each chart says to assistive technology (speecher::heatmapDescription,
+// hourChartDescription, weekDescription); the heatmap's per measure, in the
+// order dictations, words, audio.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *heatmapDescriptions;
+@property (nonatomic, readonly, copy) NSString *hourChartDescription;
+@property (nonatomic, readonly, copy) NSString *weekDescription;
 @end
 
 // ModelRating, which the rating badge colours by.
@@ -548,13 +647,16 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSString *modelId;
 @property (nonatomic, readonly, copy) NSString *name;
 @property (nonatomic, readonly, copy) NSString *fileName;
-// "731 MB", as download sizes are quoted.
+// "731 MB", as download sizes are quoted, and its button, "Download 731 MB".
 @property (nonatomic, readonly, copy) NSString *sizeText;
+@property (nonatomic, readonly, copy) NSString *downloadCaption;
 // Word error rates in percent.
 @property (nonatomic, readonly) double librispeechWer;
 @property (nonatomic, readonly) double fleursWer;
-// Text appears as the person speaks rather than after they stop.
+// Text appears as the person speaks rather than after they stop, and that
+// worded (speecher::textShowsValue).
 @property (nonatomic, readonly) BOOL streams;
+@property (nonatomic, readonly, copy) NSString *textShowsText;
 @property (nonatomic, readonly, copy) NSString *licence;
 @property (nonatomic, readonly) SpeecherModelRating rating;
 // The badge's words, "Recommended" to "Not recommended".
@@ -625,22 +727,6 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL showSuggestion;
 @end
 
-// The welcome step's path, owned by core's WelcomeChoice. One per assistant,
-// kept across Back and Continue.
-@interface SetupWelcomeChoice : NSObject
-// After a round of sign-in checks (choice nil) or a click on a path (choice
-// set). Returns the speech provider to save.
-- (NSString *)updateWithProvider:(NSString *)provider
-                  readyProviders:(NSArray<NSString *> *)readyProviders
-               proxyAccountFound:(BOOL)proxyAccountFound
-                          choice:(nullable NSNumber *)choice
-                     localUsable:(BOOL)localUsable
-    NS_SWIFT_NAME(update(provider:readyProviders:proxyAccountFound:choice:localUsable:));
-// An explicit Transcription choice, which a later path default must not undo.
-- (void)providerChosen;
-@property (nonatomic, readonly) BOOL local;
-@end
-
 // The Local Model detail's fact names, one property per LocalModelFactLabels
 // field, so the Swift side pairs each with its value by name.
 @interface LocalModelFactNames : NSObject
@@ -692,6 +778,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSString *stateName;
 // What a status line says about dictation now (speecher::dictationStatusLabel).
 @property (nonatomic, readonly, copy) NSString *statusLabel;
+@property (nonatomic, readonly) SpeecherDictationState dictationState;
 // Every dictation state change, carrying the new status label.
 @property (nonatomic, copy, nullable) void (^statusChanged)(NSString *status);
 // What the Start/Stop control says and whether it does anything now
@@ -702,6 +789,10 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL listening;
 // The captions the menu bar panel shares with the Linux and Windows trays.
 @property (nonatomic, readonly, copy) NSString *traySettingsCaption;
+// The notice while Accessibility is off (speecher::accessibilityNoticeText).
+- (NSString *)accessibilityNoticeText:(BOOL)compact NS_SWIFT_NAME(accessibilityNoticeText(compact:));
+// The menu bar item's accessible name (speecher::trayToolTip).
+- (NSString *)trayToolTip:(BOOL)listening NS_SWIFT_NAME(trayToolTip(listening:));
 @property (nonatomic, readonly, copy) NSString *trayQuitCaption;
 // A level meter's accessible name, in the menu bar panel and setup.
 @property (nonatomic, readonly, copy) NSString *inputLevelLabel;
@@ -713,12 +804,28 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // state, whose status already says it (speecher::dictationFailureNote).
 // Re-read on every statusChanged.
 @property (nonatomic, readonly, copy) NSString *failureNote;
-// Home's fixed wording (speecher::InsightsShareLabels and the learned
-// corrections card), keyed "share", "copyText", "saveJson", "copied",
-// "saved", "saveFailed", "saveTitle", "correctionsTitle",
-// "reviewCorrections", "legendLess", "legendMore".
+// Home's fixed wording (speecher::InsightsShareLabels, speecher::homeText
+// and the heatmap's measures), keyed "share", "copyText", "saveJson",
+// "copied", "saved", "saveFailed", "saveTitle", "correctionsTitle",
+// "legendLess", "legendMore", "insightsOffTitle", "insightsOffBody",
+// "noInsightsTitle", "noInsightsBody", "insightsSettings", "yourDictation",
+// "period", "activity", "measure", "whenYouTalk", "noHourData", "pace",
+// "speakingPace", "savedOverTyping", "youSpeaking", "typicalTyping",
+// "whereYourWordsGo", "noDictationInPeriod", "records", "privacyNote",
+// "clearHistoryQuestion", "clearHistoryBody", "clearHistoryConfirm",
+// "clearHistoryFailed",
+// "measureDictations", "measureWords", "measureAudio".
 @property (nonatomic, readonly, copy) NSDictionary<NSString *, NSString *> *homeLabels;
 - (NSString *)learnedCorrectionsCaption:(NSInteger)count NS_SWIFT_NAME(learnedCorrectionsCaption(_:));
+// The line under the learned corrections count and the button under it,
+// empty when there is nothing to open (speecher::learnedCorrectionsNote and
+// learnedCorrectionsAction, from the settings and the Accessibility grant).
+@property (nonatomic, readonly, copy) NSString *learnedCorrectionsNote;
+@property (nonatomic, readonly, copy) NSString *learnedCorrectionsAction;
+// "Last 30 days".
+- (NSString *)insightsRangeLabel:(SpeecherInsightsRange)range NS_SWIFT_NAME(insightsRangeLabel(_:));
+// The line under Home's status (speecher::dictationShortcutHint).
+- (NSString *)dictationShortcutHint:(NSString *)shortcut NS_SWIFT_NAME(dictationShortcutHint(_:));
 @property (nonatomic, readonly, copy) NSString *noTranscriptYetText;
 - (void)quit;
 @property (nonatomic, copy, nullable) void (^audioLevelChanged)(float level);
@@ -749,7 +856,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // settings pane, so it reads these rather than the schema.
 @property (nonatomic, copy, nullable) void (^popupShowRequested)(uint64_t generation);
 @property (nonatomic, copy, nullable) void (^popupHideRequested)(void);
-@property (nonatomic, copy, nullable) void (^popupStatusChanged)(NSString *status);
+@property (nonatomic, copy, nullable) void (^popupStatusChanged)(NSString *status, SpeecherDictationState state);
 @property (nonatomic, copy, nullable) void (^popupPreviewChanged)(NSString *preview);
 @property (nonatomic, copy, nullable) void (^popupFrozenChanged)(BOOL frozen);
 @property (nonatomic, copy, nullable) void (^popupRefiningChanged)(BOOL refining);
@@ -757,16 +864,28 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, copy, nullable) void (^popupRefinementPreviewChanged)(NSString *preview);
 @property (nonatomic, copy, nullable) void (^popupOAuthRefreshRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupListeningIndicatorRequested)(void);
-@property (nonatomic, copy, nullable) void (^popupErrorRequested)(NSString *message);
+@property (nonatomic, copy, nullable) void (^popupErrorRequested)(NSString *message, SpeecherErrorAction *fix);
 // A delivery's receipt, with the outcome that picks its symbol.
 @property (nonatomic, copy, nullable) void (^popupMessageRequested)(NSString *message,
                                                                    SpeecherPopupOutcome outcome);
 // speecher::checkingCredentialsStatus() and accessibilityGrantActionLabel().
 @property (class, nonatomic, readonly, copy) NSString *checkingCredentialsStatus;
 @property (class, nonatomic, readonly, copy) NSString *accessibilityGrantActionLabel;
-// speecher::kPopupErrorWrapWidth and kPopupErrorDismissMs.
+// speecher::globalShortcutPrompt(), the row's Change caption, and its Reset
+// caption naming the default.
+@property (class, nonatomic, readonly, copy) NSString *globalShortcutPrompt;
+@property (class, nonatomic, readonly, copy) NSString *globalShortcutChangeCaption;
++ (NSString *)globalShortcutResetCaption:(NSString *)defaultShortcut NS_SWIFT_NAME(globalShortcutResetCaption(_:));
+// What settings search shows when nothing matches (speecher::noSettingsMatchText).
+@property (class, nonatomic, readonly, copy) NSString *noSettingsMatchText;
+// The popup's captions (speecher::popupDismissCaption, renewingSignInText,
+// and dictationStatusLabel for a state).
+@property (class, nonatomic, readonly, copy) NSString *popupDismissCaption;
+@property (class, nonatomic, readonly, copy) NSString *renewingSignInText;
++ (NSString *)statusLabelFor:(SpeecherDictationState)state NS_SWIFT_NAME(statusLabel(for:));
+// speecher::kPopupErrorWrapWidth, and popupErrorDismissMs for a message.
 @property (class, nonatomic, readonly) CGFloat popupErrorWrapWidth;
-@property (class, nonatomic, readonly) NSTimeInterval popupErrorDismissSeconds;
++ (NSTimeInterval)popupErrorDismissSecondsFor:(NSString *)message NS_SWIFT_NAME(popupErrorDismissSeconds(for:));
 // speecher::trimPreviewToFit against the panel's own font and width.
 + (NSString *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font
     NS_SWIFT_NAME(trimPreview(_:toWidth:font:));
@@ -810,6 +929,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // Registers the sequence the binder already reports, which is its built-in
 // default before anything was ever stored. nil once bound, otherwise why not.
 - (nullable NSString *)bindCurrentShortcut;
+// The built-in default, as shortcutDisplay would write it, and binding it.
+@property (nonatomic, readonly, copy) NSString *defaultShortcutDisplay;
+- (nullable NSString *)resetShortcut;
 // A registered hotkey is consumed system-wide and never reaches a recorder's
 // key monitor: pressing the bound combination while recording would start
 // dictation instead of re-recording it. Recording therefore lets go of the
@@ -855,23 +977,19 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // The steps, and the wording every assistant shares (app/SetupSteps.h).
 @property (nonatomic, readonly, copy) NSArray<SpeecherSetupStep *> *setupSteps;
 @property (nonatomic, readonly, copy) NSString *setupWindowTitle;
-@property (nonatomic, readonly, copy) NSString *setupWelcomeDetail;
 // The microphone choice's system-default entry.
 @property (nonatomic, readonly, copy) NSString *audioDeviceDefaultLabel;
 @property (nonatomic, readonly, copy) NSString *setupSilentMicrophoneHint;
-@property (nonatomic, readonly, copy) NSString *setupProfilesNote;
 @property (nonatomic, readonly, copy) NSString *setupBlockedHeading;
 @property (nonatomic, readonly, copy) NSString *setupBlockedFooter;
 - (NSString *)setupStepCounter:(NSInteger)step of:(NSInteger)total NS_SWIFT_NAME(setupStepCounter(_:of:));
-- (NSString *)setupSignInMissing:(BOOL)localOffered cliToolFound:(BOOL)cliToolFound
-    NS_SWIFT_NAME(setupSignInMissing(localOffered:cliToolFound:));
-// The welcome step's dead-end note, or empty while any way into dictation
-// remains; core decides when it shows and words it.
-- (NSString *)setupWelcomeDeadEnd:(BOOL)signInFound
-                      localUsable:(BOOL)localUsable
-                    endpointSaved:(BOOL)endpointSaved
-        signInProvidersRegistered:(BOOL)signInProvidersRegistered
-    NS_SWIFT_NAME(setupWelcomeDeadEnd(signInFound:localUsable:endpointSaved:signInProvidersRegistered:));
+// The Transcription step's dead-end note, or empty while any way into
+// dictation remains; core decides when it shows and words it.
+- (NSString *)setupTranscriptionDeadEnd:(BOOL)signInFound
+                            localUsable:(BOOL)localUsable
+                          endpointSaved:(BOOL)endpointSaved
+              signInProvidersRegistered:(BOOL)signInProvidersRegistered
+    NS_SWIFT_NAME(setupTranscriptionDeadEnd(signInFound:localUsable:endpointSaved:signInProvidersRegistered:));
 - (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
     NS_SWIFT_NAME(setupTranscriptionBlocked(localSelected:provider:));
 - (NSString *)setupMicrophoneBlocked:(BOOL)accessGranted NS_SWIFT_NAME(setupMicrophoneBlocked(accessGranted:));
@@ -885,6 +1003,23 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
     NS_SWIFT_NAME(setupRefinementStatus(_:ready:));
 - (NSString *)setupChecklistLine:(NSString *)stepId choice:(NSString *)choice
     NS_SWIFT_NAME(setupChecklistLine(_:choice:));
+- (NSString *)setupText:(SpeecherSetupText)text NS_SWIFT_NAME(setupText(_:));
+// The Local models page's and the Local Model card's wording
+// (speecher::localModelText, compareModelsCaption, compareTableHeaders).
++ (NSString *)localModelText:(SpeecherLocalModelText)text NS_SWIFT_NAME(localModelText(_:));
++ (NSString *)compareModelsCaption:(NSInteger)otherModels NS_SWIFT_NAME(compareModelsCaption(_:));
++ (NSString *)deleteModelQuestion:(NSString *)modelName NS_SWIFT_NAME(deleteModelQuestion(_:));
+@property (class, nonatomic, readonly, copy) NSArray<NSString *> *compareTableHeaders;
+// A settings row's label and choices as the Settings window words them
+// (speecher::setupSchemaRow), whether or not the row shows right now.
+- (NSString *)setupRowLabel:(NSString *)rowId NS_SWIFT_NAME(setupRowLabel(_:));
+- (NSArray<RowOptionModel *> *)setupRowOptions:(NSString *)rowId NS_SWIFT_NAME(setupRowOptions(_:));
+- (NSString *)setupProviderReady:(NSString *)providerLabel NS_SWIFT_NAME(setupProviderReady(_:));
+- (NSString *)setupRefinementNotSignedIn:(NSString *)providerLabel NS_SWIFT_NAME(setupRefinementNotSignedIn(_:));
+- (NSString *)setupLocalSpeechChoice:(NSString *)modelName NS_SWIFT_NAME(setupLocalSpeechChoice(_:));
+- (NSString *)setupCliproxySpeechChoice:(NSString *)providerLabel NS_SWIFT_NAME(setupCliproxySpeechChoice(_:));
+// The Ready step's verdict on pasting: Ready, or Clipboard only.
+- (NSString *)setupPasteVerdict:(BOOL)pastes NS_SWIFT_NAME(setupPasteVerdict(_:));
 
 // Every provider the registry offers, in the order it offers them.
 @property (nonatomic, readonly, copy) NSArray<SpeecherProviderModel *> *speechProviders;
@@ -909,12 +1044,12 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // it needs, read from the settings now: its verdict follows every edit rather
 // than a probe.
 @property (nonatomic, readonly) BOOL ownModelRefinementReady;
-// Core's setup policy: the provider auto-selection may move to, and which
-// providers are sign-ins.
-- (NSString *)setupProviderChoiceForSaved:(NSString *)saved
-                           readyProviders:(NSArray<NSString *> *)readyProviders
-                         explicitlyChosen:(BOOL)explicitlyChosen
-    NS_SWIFT_NAME(setupProviderChoice(saved:readyProviders:explicitlyChosen:));
+// Core's setup policy: the speech provider auto-selection may move to.
+- (NSString *)setupSpeechChoiceForSaved:(NSString *)saved
+                         readyProviders:(NSArray<NSString *> *)readyProviders
+                           localOffered:(BOOL)localOffered
+                      proxyAccountFound:(BOOL)proxyAccountFound
+    NS_SWIFT_NAME(setupSpeechChoice(saved:readyProviders:localOffered:proxyAccountFound:));
 // Core's refinement default for the saved provider; nil while the runner
 // check is still looking.
 - (nullable NSString *)setupRefinementChoiceForSaved:(NSString *)saved
@@ -986,8 +1121,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // credential source except the app settings key, which is a secret this front
 // end reads from and writes to the keyring itself.
 @property (nonatomic, readonly) BOOL credentialIsEditable;
-@property (nonatomic, readonly, copy) NSString *credentialStatus;
-@property (nonatomic, readonly, copy) NSString *anthropicCredentialStatus;
+@property (nonatomic, readonly, strong) SpeecherCredentialStatus *credentialStatus;
+@property (nonatomic, readonly, strong) SpeecherCredentialStatus *anthropicCredentialStatus;
 @property (nonatomic, copy, nullable) void (^anthropicCredentialsChanged)(void);
 - (NSString *)readApiKey;
 // nil when the keyring took it, otherwise why it refused.
@@ -1000,8 +1135,6 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // Whether the hardware can run any catalog model. Optimistically YES until
 // the hardware probe answers.
 @property (nonatomic, readonly) BOOL localSpeechCanRun;
-// Whether Claude Code or Codex is installed, signed in or not.
-@property (nonatomic, readonly) BOOL speechCliToolFound;
 // Anything below changed. rowsChanged says the settings rows that report it,
 // and the settings LocalSetup writes, changed too; it is NO for a download or
 // pull's progress alone. Arrives on the main thread, often while one runs.
@@ -1058,6 +1191,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSArray<NSString *> *transcribableExtensions;
 // Under the file chooser while no files are listed.
 @property (nonatomic, readonly, copy) NSString *mediaFilesHint;
+@property (nonatomic, readonly, copy) NSString *mediaFilesTooltip;
 // The paths among these that are files the decoder can take.
 - (NSArray<NSString *> *)audioFilesAmong:(NSArray<NSString *> *)paths
     NS_SWIFT_NAME(audioFiles(among:));
@@ -1149,10 +1283,15 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 #ifdef __cplusplus
 namespace speecher {
 class ApplicationController;
+struct PopupErrorAction;
 }
 
 @interface SpeecherBridge (Cxx)
 - (instancetype)initWithController:(speecher::ApplicationController *)controller;
+@end
+
+@interface SpeecherErrorAction (Cxx)
++ (SpeecherErrorAction *)actionWithCore:(const speecher::PopupErrorAction &)action;
 @end
 #endif
 

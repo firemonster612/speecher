@@ -86,36 +86,15 @@ QString setupRefinementChoice(const QString &saved, const QStringList &ready, bo
     return runnerFound ? QStringLiteral("local") : QStringLiteral("none");
 }
 
-QString WelcomeChoice::update(const QString &provider, const QStringList &readyProviders,
-                              bool proxyAccountFound, std::optional<bool> userChoice,
-                              bool localUsable)
+QString setupSpeechChoice(const QString &saved, const QStringList &ready, bool localOffered,
+                          bool proxyAccountFound, bool explicitlyChosen)
 {
-    QStringList signIns;
-    for (const auto &id : readyProviders) {
-        if (isSetupSignInProvider(id)) signIns.append(id);
+    const QString chosen = setupProviderChoice(saved, ready, explicitlyChosen);
+    if (explicitlyChosen || !localOffered || proxyAccountFound || !isSetupSignInProvider(chosen)
+        || ready.contains(chosen)) {
+        return chosen;
     }
-    m_signInFound = proxyAccountFound || !signIns.isEmpty();
-    m_localUsable = localUsable;
-    if (userChoice) m_explicit = userChoice;
-    const bool local = m_explicit.value_or(!m_signInFound && localUsable);
-    const bool transition = local != m_local;
-    m_local = local;
-    if (!transition && !userChoice) return provider;
-    if (local) {
-        if (provider != QStringLiteral("local") && (userChoice || isSetupSignInProvider(provider))) {
-            m_previousProvider = provider;
-            return QStringLiteral("local");
-        }
-        return provider;
-    }
-    if (m_previousProvider && provider == QStringLiteral("local")) {
-        const QString previous = *m_previousProvider;
-        m_previousProvider.reset();
-        return userChoice && !isSetupSignInProvider(previous) && !signIns.isEmpty()
-            ? signIns.first() : setupProviderChoice(previous, signIns, false);
-    }
-    m_previousProvider.reset();
-    return userChoice && !signIns.isEmpty() ? signIns.first() : provider;
+    return QStringLiteral("local");
 }
 
 RunnerChoice resolveRunnerChoice(const LocalRunnerSettings &saved,
@@ -573,7 +552,7 @@ LocalSetup::ModelState LocalSetup::modelState(const LocalModel &model, std::opti
         downloadSizeText(model.sizeBytes),
         QStringLiteral("%1% / %2%").arg(model.librispeechCleanWer).arg(model.fleursEnglishWer),
         state.speedText,
-        model.streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop"),
+        textShowsValue(model.streams),
         fitLabel(model),
     };
     return state;
@@ -683,7 +662,7 @@ bool LocalSetup::runSettingsAction(const QString &rowId, const AppSettings &show
         checkSpeechEndpoint(shown.speech.endpoint);
     } else if (rowId == QStringLiteral("refinementEndpointTest")) {
         checkRefinementEndpoint(shown.refinement);
-    } else if (rowId == QStringLiteral("localRunnerDetect") || rowId == QStringLiteral("localModelsRunner")) {
+    } else if (rowId == QStringLiteral("localRunnerDetect")) {
         detectRunners();
     } else if (rowId == QStringLiteral("localModelFolder")) {
         QDir().mkpath(m_models.directory());

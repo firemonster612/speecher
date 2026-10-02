@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -52,6 +53,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -63,6 +65,7 @@ import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.InsertAction
 import app.speecher.android.dictation.PanelSize
+import app.speecher.android.dictation.label
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -74,6 +77,8 @@ private const val SAMPLE_MILLIS = 70L
 /** Room for the waveform, two lines of transcript and the buttons, about half the full panel. */
 private val COMPACT_HEIGHT = 184.dp
 private val BAR_HEIGHT = 56.dp
+/** The least a half-display cap leaves: the status, a line of transcript and the buttons. */
+private val MIN_CAPPED_HEIGHT = 160.dp
 
 /**
  * A bell from 0 at the edges to 1 in the middle, with a little irregularity so it reads as sound.
@@ -105,12 +110,13 @@ fun DictationPanel(
     // Sized from the display, not from incoming constraints: inside the IME those are the IME
     // window's own height, so a fraction of them shrinks the panel below the window it sized,
     // leaving an unpainted band at the bottom edge.
-    val height = panelHeight(size, LocalWindowInfo.current.containerDpSize.height)
+    val display = LocalWindowInfo.current.containerDpSize
+    val height = panelHeight(size, display.height)
     val status =
         when (state) {
             is DictationState.Listening -> if (state.reconnecting) "Reconnecting" else "Listening"
             is DictationState.Refining -> "Refining transcript"
-            is DictationState.Failed -> state.reason.title
+            is DictationState.Failed -> state.title
         }
     val announced = Modifier.semantics {
         liveRegion = LiveRegionMode.Polite
@@ -128,88 +134,99 @@ fun DictationPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MinimizedBar(state, layout, onInsert, onInsertRefined)
+                MinimizedBar(state, layout, onCancel, onInsert, onInsertRefined)
             }
             return@Surface
         }
         val compact = size == PanelSize.Compact
-        Column(
-            Modifier.navigationBarsPadding()
-                .height(height)
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (compact) 8.dp else 20.dp,
-                    bottom = 12.dp,
-                )
-        ) {
+        val padding =
+            Modifier.padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = if (compact || display.width > display.height) 8.dp else 20.dp,
+                bottom = 12.dp,
+            )
+        val buttons: @Composable () -> Unit = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PanelButtons(state, layout, onCancel, onInsert, onInsertRefined, onRecover)
+            }
+        }
+        if (state is DictationState.Failed) {
+            // A failure never collapses, so its recovery stays in view. The message sits right
+            // above its buttons, and the panel grows rather than clip it at large font sizes.
+            Column(
+                Modifier.navigationBarsPadding().heightIn(min = height).then(padding),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+            ) {
+                FailureMessage(state, Modifier.fillMaxWidth().then(announced))
+                if (state.transcript.isNotBlank()) {
+                    Transcript(state, Modifier.fillMaxWidth().heightIn(max = 96.dp))
+                }
+                buttons()
+            }
+            return@Surface
+        }
+        Column(Modifier.navigationBarsPadding().height(height).then(padding)) {
             Box(
-                Modifier.fillMaxWidth().height(56.dp).then(announced),
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).then(announced),
                 contentAlignment = Alignment.Center,
             ) {
-                when (state) {
-                    is DictationState.Listening ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            LiveBars(state.level)
-                            if (state.reconnecting) {
-                                Text(
-                                    "Reconnecting…",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                if (state is DictationState.Listening) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        LiveBars(state.level)
+                        if (state.reconnecting) {
+                            Text(
+                                "Reconnecting…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                    is DictationState.Refining -> RefiningBars()
-                    is DictationState.Failed -> FailureMessage(state)
-                }
-                // A failure never collapses, so its recovery stays in view.
-                if (state !is DictationState.Failed) {
-                    IconButton(onToggleSize, Modifier.align(Alignment.CenterEnd)) {
-                        Icon(
-                            painterResource(R.drawable.ic_minimize),
-                            contentDescription = "Minimize",
-                        )
                     }
+                } else {
+                    RefiningBars()
+                }
+                IconButton(onToggleSize, Modifier.align(Alignment.CenterEnd)) {
+                    Icon(painterResource(R.drawable.ic_minimize), contentDescription = "Minimize")
                 }
             }
             Transcript(
                 state,
                 Modifier.weight(1f).fillMaxWidth().padding(vertical = if (compact) 4.dp else 12.dp),
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PanelButtons(
-                    state,
-                    layout,
-                    onCancel,
-                    onInsert,
-                    onInsertRefined,
-                    onRecover,
-                )
-            }
+            buttons()
         }
     }
 }
 
-/** The panel's height above the navigation bar at [size], on a display [displayHeight] tall. */
-internal fun panelHeight(size: PanelSize, displayHeight: Dp): Dp =
-    when (size) {
-        PanelSize.Full -> (displayHeight * 0.38f).coerceIn(240.dp, 360.dp)
-        PanelSize.Compact -> COMPACT_HEIGHT
+/**
+ * The panel's height above the navigation bar at [size], on a display [displayHeight] tall. Never
+ * more than half the display, so the field being dictated into stays in view in landscape.
+ */
+internal fun panelHeight(size: PanelSize, displayHeight: Dp): Dp {
+    val cap = (displayHeight * 0.5f).coerceAtLeast(MIN_CAPPED_HEIGHT)
+    return when (size) {
+        PanelSize.Full -> (displayHeight * 0.38f).coerceIn(240.dp, 360.dp).coerceAtMost(cap)
+        PanelSize.Compact -> COMPACT_HEIGHT.coerceAtMost(cap)
         PanelSize.Minimized -> BAR_HEIGHT
     }
+}
 
 /**
- * The collapsed panel: a recording dot and a small waveform, the newest words on one line (cut at
- * the start so the latest stay visible), and the primary Insert.
+ * The collapsed panel: Cancel, a recording dot and a small waveform, the newest words on one line
+ * (cut at the start so the latest stay visible), and the primary Insert.
  */
 @Composable
 private fun RowScope.MinimizedBar(
     state: DictationState,
     layout: ButtonLayout,
+    onCancel: () -> Unit,
     onInsert: () -> Unit,
     onInsertRefined: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    IconButton(onCancel) {
+        Icon(painterResource(R.drawable.ic_close), contentDescription = "Cancel dictation")
+    }
     if (state is DictationState.Listening) {
         Canvas(Modifier.size(8.dp)) { drawCircle(colors.error) }
         LiveBars(state.level, SMALL_BAR_WIDTH, SMALL_BARS_HEIGHT)
@@ -220,7 +237,7 @@ private fun RowScope.MinimizedBar(
         if (state is DictationState.Refining && state.refined.isNotEmpty()) state.refined
         else state.transcript
     Text(
-        words.ifEmpty { if (state is DictationState.Listening) "Speak now" else "" },
+        words.ifEmpty { if (state is DictationState.Listening) "Listening" else "" },
         Modifier.weight(1f),
         color = if (words.isEmpty()) colors.onSurfaceVariant else colors.onSurface,
         overflow = TextOverflow.StartEllipsis,
@@ -288,8 +305,8 @@ private fun RowScope.PanelButtons(
     onInsertRefined: () -> Unit,
     onRecover: () -> Unit,
 ) {
-    val button = Modifier.weight(1f).height(52.dp)
-    TextButton(onCancel, Modifier.height(52.dp)) { Text("Cancel") }
+    val button = Modifier.weight(1f).heightIn(min = 52.dp)
+    TextButton(onCancel, Modifier.heightIn(min = 52.dp)) { Text("Cancel") }
     if (state is DictationState.Failed) {
         // On a commit failure the recovery button already re-commits the same text, so a second
         // Insert would duplicate it; show only the recovery action there.
@@ -302,7 +319,7 @@ private fun RowScope.PanelButtons(
     layout.actions.dropLast(1).forEach { action ->
         FilledTonalButton(
             action.pick(onInsert, onInsertRefined),
-            Modifier.height(52.dp),
+            Modifier.heightIn(min = 52.dp),
             enabled = state.canInsert,
         ) {
             Text(action.label, maxLines = 1)
@@ -349,40 +366,65 @@ private val InsertAction.label: String
             InsertAction.InsertRefined -> "Insert refined"
         }
 
-private val FailureReason.title: String
+private val DictationState.Failed.title: String
     get() =
-        when (this) {
-            FailureReason.MicrophoneDenied -> "Speecher can't use the microphone"
-            FailureReason.SignedOut -> "You're signed out"
-            FailureReason.Network -> "No connection"
-            FailureReason.Provider -> "Transcription failed"
+        if (commitFailed) "Couldn't insert the text"
+        else
+            when (reason) {
+                FailureReason.MicrophoneDenied -> "Speecher can't use the microphone"
+                FailureReason.MicrophoneUnavailable -> "Microphone unavailable"
+                FailureReason.SignedOut -> "You're signed out"
+                FailureReason.Network -> "No connection"
+                FailureReason.Provider -> "Transcription failed"
+            }
+
+/** What to do next, in fixed words. The raw detail is diagnostic and never shown. */
+private val DictationState.Failed.advice: String
+    get() {
+        val name = provider?.label
+        return when {
+            commitFailed -> "Tap Retry to insert it again."
+            reason == FailureReason.MicrophoneDenied -> "Open Speecher and allow the microphone."
+            reason == FailureReason.MicrophoneUnavailable ->
+                "Another app may be using it. Try again when it's free."
+            reason == FailureReason.SignedOut ->
+                "Sign in to ${name ?: "your account"} to keep dictating."
+            reason == FailureReason.Network -> "Check your network and try again."
+            else -> "${name ?: "The provider"} returned an error. Try again."
         }
+    }
 
 private val FailureReason.recovery: String
     get() =
         when (this) {
             FailureReason.MicrophoneDenied -> "Open Speecher"
             FailureReason.SignedOut -> "Sign in"
+            FailureReason.MicrophoneUnavailable,
             FailureReason.Network,
             FailureReason.Provider -> "Retry"
         }
 
 @Composable
-private fun FailureMessage(state: DictationState.Failed) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            state.reason.title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.error,
-        )
-        if (state.detail.isNotBlank()) {
-            Text(
-                state.detail,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+private fun FailureMessage(state: DictationState.Failed, modifier: Modifier) {
+    val colors = MaterialTheme.colorScheme
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painterResource(R.drawable.ic_error),
+                contentDescription = null,
+                tint = colors.error,
             )
+            Text(state.title, style = MaterialTheme.typography.titleMedium, color = colors.error)
         }
+        Text(
+            state.advice,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

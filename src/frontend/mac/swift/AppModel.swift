@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     /// What dictation is doing, in the words and controls core gives every
     /// platform, re-read whole on every state change.
     @Published private(set) var status: String
+    @Published private(set) var dictationState: SpeecherDictationState
     @Published private(set) var listening: Bool
     @Published private(set) var toggleLabel: String
     @Published private(set) var toggleEnabled: Bool
@@ -28,6 +29,9 @@ final class AppModel: ObservableObject {
     /// Why the last session failed, until the next one starts; empty while the
     /// status itself says it.
     @Published private(set) var failureNote: String
+    /// What fixes the last failure, as its popup offered it, for as long as
+    /// the failure is still being reported.
+    @Published private(set) var failureFix: SpeecherErrorAction?
     /// The transcript was just copied, so the button says so for a moment.
     @Published private(set) var transcriptCopied = false
     @Published private(set) var accessibilityEnabled: Bool
@@ -44,9 +48,9 @@ final class AppModel: ObservableObject {
     @Published var apiKey = ""
     @Published var credentialProblem = ""
     // Resolving the OpenAI status can enter the keyring, so it is read on
-    // loadApiKey()'s deferred turn, never from a SwiftUI body.
-    @Published private(set) var credentialStatus = SpeecherBridge.checkingCredentialsStatus
-    @Published private(set) var anthropicCredentialStatus: String
+    // loadApiKey()'s deferred turn, never from a SwiftUI body. nil until then.
+    @Published private(set) var credentialStatus: SpeecherCredentialStatus?
+    @Published private(set) var anthropicCredentialStatus: SpeecherCredentialStatus
     // Bumped when the settings draft is reloaded (window reopen, setup), so
     // retained collection editors can reload from the fresh snapshot.
     @Published private(set) var draftGeneration = 0
@@ -58,9 +62,28 @@ final class AppModel: ObservableObject {
     /// The last single-key binding was refused for the missing Accessibility
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
-    /// The pane the sidebar is on. A window opened from closed starts on Home.
+    /// The pane the sidebar is on. A window opened from closed starts on
+    /// reopenPane.
     @Published var pane = "home" {
-        didSet { if pane != oldValue { activeShortcutRecorder?.stop() } }
+        didSet {
+            guard pane != oldValue else { return }
+            activeShortcutRecorder?.stop()
+            if pane != "whatsNew", !Self.screenshotRun {
+                UserDefaults.standard.set(pane, forKey: Self.lastPaneKey)
+            }
+        }
+    }
+    private static let lastPaneKey = "lastSettingsPane"
+    /// A screenshot run names a page or a window size. It neither reads nor
+    /// stores the last pane, so what it grabs does not depend on what the
+    /// machine showed before, and the pane the machine reopens stays as it was.
+    private static let screenshotRun = ["SPEECHER_GRAB_PAGE", "SPEECHER_GRAB_SIZE"]
+        .contains { !(ProcessInfo.processInfo.environment[$0] ?? "").isEmpty }
+
+    /// Where a settings window opened from closed starts: the pane last shown,
+    /// or Home.
+    var reopenPane: String {
+        Self.screenshotRun ? "home" : UserDefaults.standard.string(forKey: Self.lastPaneKey) ?? "home"
     }
     /// The recorder whose recording is in progress, if any. Stopped directly
     /// when the pane changes or the settings window closes, rather than
@@ -84,6 +107,11 @@ final class AppModel: ObservableObject {
     /// The view an alternatives pane should switch to when it next shows,
     /// by view id; the pane clears it once it has.
     @Published var requestedView: String? = nil
+    /// The row a search led to, which the pane scrolls to once it shows; the
+    /// pane clears it once it has.
+    @Published var requestedRow: String? = nil
+    /// Brings the settings window up on a page, which SpeecherMacUI owns.
+    var openSettingsPage: (String) -> Void = { _ in }
 
     let bridge: SpeecherBridge
     /// The Transcribe pane's batch, kept here so it outlives the pane's view:
@@ -97,6 +125,7 @@ final class AppModel: ObservableObject {
     /// Whether the slow rows have been asked for once, after which asking again
     /// costs nothing new.
     private var deferredLoaded = false
+    private var keyWindowObserver: NSObjectProtocol?
 
     var accessibilitySupported: Bool { bridge.accessibilitySupported }
     var shortcutSupported: Bool { bridge.shortcutSupported }
@@ -109,6 +138,7 @@ final class AppModel: ObservableObject {
         self.panes = panes
         sidebarGroups = bridge.settingsSchema.sidebarGroups
         status = bridge.statusLabel
+        dictationState = bridge.dictationState
         listening = bridge.listening
         toggleLabel = bridge.toggleLabel
         toggleEnabled = bridge.toggleEnabled
@@ -125,7 +155,9 @@ final class AppModel: ObservableObject {
         bridge.statusChanged = { [weak self] status in
             guard let self else { return }
             self.status = status
+            dictationState = self.bridge.dictationState
             failureNote = self.bridge.failureNote
+            if failureNote.isEmpty, dictationState != .error { failureFix = nil }
             listening = self.bridge.listening
             toggleLabel = self.bridge.toggleLabel
             toggleEnabled = self.bridge.toggleEnabled
@@ -179,6 +211,14 @@ final class AppModel: ObservableObject {
             }
         }
         refreshTranscriptDetail()
+        // A snapshot reuses the last device list, so a microphone plugged in
+        // while Speecher was in the background is listed when one of its
+        // windows comes forward.
+        keyWindowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshAudioInputs() }
+        }
     }
 
     /// Re-reads Home's numbers. Home calls it when it appears, so a day that
@@ -208,11 +248,43 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// The popup reported a failure with this fix.
+    func noteFailure(fix: SpeecherErrorAction) {
+        failureFix = fix.fix == .none ? nil : fix
+    }
+
+    /// A dictation that never started for a reason the user has to fix, such
+    /// as the microphone grant. No session failed, so the reason is held here
+    /// rather than read from the session, until the next session starts.
+    func noteRefusedStart(_ message: String, fix: SpeecherErrorAction) {
+        failureNote = message
+        failureFix = fix
+    }
+
+    /// Runs what an error offered: a settings page, the Accessibility grant,
+    /// or the system panel for a permission.
+    func perform(_ fix: SpeecherErrorAction) {
+        switch fix.fix {
+        case .settingsPage:
+            openSettingsPage(fix.pageId)
+        case .accessibilityPermission:
+            requestAccessibility()
+        default:
+            if let url = fix.systemSettingsURL { NSWorkspace.shared.open(url) }
+        }
+    }
+
     /// Shows a page by id: a pane id, or "pane:view" for one of its views.
-    /// An unknown id shows Home (speecher::resolvePage).
-    func showPage(_ pageId: String) {
+    /// An unknown id shows Home (speecher::resolvePage). A row id scrolls the
+    /// pane to that row, and on an Alternatives pane picks the view holding it.
+    func showPage(_ pageId: String, row rowId: String? = nil) {
         let page = bridge.settingsSchema.resolvePage(pageId)
         if !page[1].isEmpty { requestedView = page[1] }
+        if let rowId,
+           let group = pane(withId: page[0])?.groups.first(where: { $0.rows.contains(rowId) }) {
+            if !group.view.isEmpty { requestedView = group.view }
+            requestedRow = rowId
+        }
         if page[0] == "whatsNew" {
             showWhatsNew()
         } else {
@@ -250,6 +322,11 @@ final class AppModel: ObservableObject {
         // Only the keyring can stop to ask for an unlock, so it waits another
         // turn rather than holding up the other two.
         DispatchQueue.main.async { [weak self] in self?.loadApiKey() }
+    }
+
+    private func refreshAudioInputs() {
+        bridge.settingsSchema.refreshAudioInputs()
+        pages = bridge.settingsSchema.pages
     }
 
     func reloadSettingsDraft() {
@@ -321,6 +398,10 @@ final class AppModel: ObservableObject {
         }
         if rowId == "resetCustomSystemPrompt" {
             setValue(bridge.builtInSystemPrompt, for: "customSystemPrompt")
+            return
+        }
+        if rowId == "openMicrophoneSettings" {
+            perform(SpeecherErrorAction(fix: .microphonePermission, pageId: ""))
             return
         }
         // Every schema action, enableAccessibility included, goes to the
@@ -449,6 +530,14 @@ final class AppModel: ObservableObject {
         return true
     }
 
+    /// Goes back to the binder's built-in default.
+    func resetShortcut() {
+        shortcutProblem = bridge.resetShortcut() ?? ""
+        shortcutWarning = ""
+        shortcutNeedsAccessibility = false
+        shortcut = bridge.shortcutDisplay
+    }
+
     /// Registers the sequence the binder already reports — the stored one, or
     /// its built-in default on a first run — which is what finishing setup
     /// without recording a new shortcut means.
@@ -470,9 +559,33 @@ final class AppModel: ObservableObject {
     /// Home's fixed wording, from the core.
     func homeLabel(_ key: String) -> String { bridge.homeLabels[key] ?? "" }
 
-    /// The panes a sidebar search shows, from the core index every front end
-    /// searches.
-    func searchPanes(_ query: String) -> [Pane] {
-        bridge.settingsSchema.searchPanes(query).compactMap(pane(withId:))
+    /// The panes a sidebar search shows, each with the first row on it that
+    /// matched, from the core index every front end searches.
+    func search(_ query: String) -> [SearchHit] {
+        bridge.settingsSchema.searchSettings(query).compactMap { match in
+            pane(withId: match.pane).map { SearchHit(pane: $0, row: match.rows.first) }
+        }
+    }
+}
+
+/// A pane a search found, and the first row on it that matched; nil when the
+/// pane matched by its title.
+struct SearchHit: Identifiable {
+    let pane: Pane
+    let row: String?
+
+    var id: String { pane.id }
+}
+
+extension SpeecherErrorAction {
+    /// The Privacy & Security panel a permission fix opens; nil for the rest.
+    var systemSettingsURL: URL? {
+        let panel: String
+        switch fix {
+        case .microphonePermission: panel = "Privacy_Microphone"
+        case .accessibilityPermission: panel = "Privacy_Accessibility"
+        default: return nil
+        }
+        return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(panel)")
     }
 }

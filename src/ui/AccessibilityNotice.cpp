@@ -1,35 +1,21 @@
 #include "ui/AccessibilityNotice.h"
 
-#include <QHBoxLayout>
+#include "app/AccessibilityPresentation.h"
+
 #include <QLabel>
 #include <QPushButton>
-#include <QSizePolicy>
 
 namespace speecher {
 
 AccessibilityNotice::AccessibilityNotice(QWidget *parent)
-    : QFrame(parent)
-    , m_message(new QLabel(this))
-#ifdef Q_OS_MACOS
-    , m_enableButton(new QPushButton(QStringLiteral("Open settings"), this))
-#elif defined(Q_OS_WIN)
-    , m_enableButton(new QPushButton(QStringLiteral("Unavailable"), this))
-#else
-    , m_enableButton(new QPushButton(QStringLiteral("Enable permanently"), this))
-#endif
+    : InlineMessage(parent)
+    , m_enableButton(new QPushButton(this))
 {
     setObjectName(QStringLiteral("accessibilityNotice"));
-    setFrameShape(QFrame::StyledPanel);
-    setFrameShadow(QFrame::Plain);
-
-    m_message->setObjectName(QStringLiteral("accessibilityNoticeMessage"));
-    m_message->setWordWrap(true);
+    setType(Type::Warning);
+    label()->setObjectName(QStringLiteral("accessibilityNoticeMessage"));
     m_enableButton->setObjectName(QStringLiteral("enableAccessibilityButton"));
-    m_enableButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
-
-    auto *layout = new QHBoxLayout(this);
-    layout->addWidget(m_message, 1);
-    layout->addWidget(m_enableButton, 0, Qt::AlignVCenter);
+    addAction(m_enableButton);
 
     connect(m_enableButton, &QPushButton::clicked,
             this, &AccessibilityNotice::enableRequested);
@@ -52,41 +38,8 @@ void AccessibilityNotice::setState(bool supported, bool enabled, bool persistent
         return;
     }
 
-#ifdef Q_OS_MACOS
-    // macOS grants are permanent once given, so "off" is the only state to show.
-    m_message->setText(m_compact
-                           ? QStringLiteral("Accessibility is off. Speecher can copy but not paste.")
-                           : QStringLiteral(
-                                 "Accessibility is off, so Speecher can only leave your dictation on the clipboard. "
-                                 "Allow Speecher under Privacy & Security, then restart it. If the toggle already "
-                                 "shows Speecher on, turn it off and on again — an updated copy of Speecher does "
-                                 "not inherit the old grant."));
-    m_enableButton->setEnabled(true);
-#elif defined(Q_OS_WIN)
-    m_message->setText(enabled
-                           ? QStringLiteral("UI Automation is available.")
-                           : QStringLiteral(
-                                 "UI Automation is unavailable, so Speecher can only leave your dictation on the clipboard."));
-    m_enableButton->setEnabled(false);
-#else
-    if (!enabled) {
-        m_message->setText(m_compact
-                               ? QStringLiteral("Desktop accessibility is off. Pasting into the right app and editing selected text need it.")
-                               : QStringLiteral(
-                                     "Desktop accessibility is off, so Speecher cannot tell which app you are in, "
-                                     "paste into it, edit selected text, or learn corrections."));
-        m_enableButton->setEnabled(true);
-        m_enableButton->setText(QStringLiteral("Enable permanently"));
-    } else {
-        m_message->setText(m_compact
-                               ? QStringLiteral("Desktop accessibility is on only for this session.")
-                               : QStringLiteral(
-                                     "Desktop accessibility is on only for this session. Enable it permanently "
-                                     "so these features keep working after you sign in again."));
-        m_enableButton->setEnabled(true);
-        m_enableButton->setText(QStringLiteral("Enable permanently"));
-    }
-#endif
+    label()->setText(accessibilityNoticeText(enabled, m_compact));
+    m_enableButton->setText(accessibilityActionCaption(enabled, persistent));
     show();
 }
 
@@ -107,11 +60,11 @@ void AccessibilityNotice::showError(const QString &message)
         return;
     }
 #ifdef Q_OS_MACOS
-    m_message->setText(QStringLiteral("Could not open Accessibility settings: %1").arg(message));
+    label()->setText(QStringLiteral("Could not open Accessibility settings: %1").arg(message));
 #elif defined(Q_OS_WIN)
-    m_message->setText(QStringLiteral("UI Automation is unavailable: %1").arg(message));
+    label()->setText(QStringLiteral("UI Automation is unavailable: %1").arg(message));
 #else
-    m_message->setText(QStringLiteral("Could not enable desktop accessibility: %1").arg(message));
+    label()->setText(QStringLiteral("Could not enable desktop accessibility: %1").arg(message));
 #endif
     show();
 }

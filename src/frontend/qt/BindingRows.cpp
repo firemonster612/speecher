@@ -5,20 +5,15 @@
 #include <algorithm>
 
 #include <QAbstractItemView>
-#include <QDialog>
-#include <QDialogButtonBox>
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
-#include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
-#include <QMessageBox>
 #include <QPainter>
 #include <QPalette>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSizePolicy>
@@ -171,6 +166,8 @@ SchemaCustomRow BindingRows::makeReplacementRow(const SettingsRow &descriptor,
             refreshList();
         },
         true,
+        nullptr,
+        [this](const AppSettings &settings) { m_settings = settings; },
     };
 }
 
@@ -225,11 +222,14 @@ void BindingRows::refreshList()
         edit->setIcon(QIcon::fromTheme(QStringLiteral("document-edit")));
         edit->setMinimumWidth(edit->fontMetrics().horizontalAdvance(edit->text()) + 32);
         edit->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+        // Every row has the same two buttons, so their names say which phrase.
+        edit->setAccessibleName(QStringLiteral("%1 %2").arg(edit->text(), phrase(record)));
 
         auto *remove = new QPushButton(m_collection.deleteLabel, rowWidget);
         remove->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
         remove->setMinimumWidth(remove->fontMetrics().horizontalAdvance(remove->text()) + 32);
         remove->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+        remove->setAccessibleName(QStringLiteral("%1 %2").arg(remove->text(), phrase(record)));
 
         layout->addWidget(spoken, 1);
         layout->addWidget(arrow, 0);
@@ -250,77 +250,12 @@ void BindingRows::refreshList()
 
 void BindingRows::editRecord(int row)
 {
-    const bool editing = row >= 0 && row < m_records.size();
-
-    QDialog dialog(m_list);
-    dialog.setWindowTitle(editing ? QStringLiteral("Edit replacement") : m_collection.addDialogTitle);
-    auto *layout = new QVBoxLayout(&dialog);
-    layout->setContentsMargins(18, 18, 18, 14);
-    layout->setSpacing(8);
-
-    auto *phraseLabel = new QLabel(m_collection.columns.at(0).title, &dialog);
-    auto *phraseEdit = new QLineEdit(&dialog);
-    phraseEdit->setClearButtonEnabled(true);
-
-    auto *replacementLabel = new QLabel(m_collection.columns.at(1).title, &dialog);
-    auto *replacementEdit = new QPlainTextEdit(&dialog);
-    replacementEdit->setMinimumHeight(240);
-    replacementEdit->setLineWrapMode(QPlainTextEdit::WidgetWidth);
-
-    if (editing) {
-        phraseEdit->setText(phrase(m_records.at(row)));
-        replacementEdit->setPlainText(replacement(m_records.at(row)));
-    }
-
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-    QPushButton *saveButton = buttons->button(QDialogButtonBox::Ok);
-    saveButton->setText(QStringLiteral("Save"));
-    saveButton->setIcon(QIcon::fromTheme(QStringLiteral("document-save")));
-    QPushButton *deleteButton = nullptr;
-    if (editing) {
-        deleteButton = buttons->addButton(m_collection.deleteLabel, QDialogButtonBox::DestructiveRole);
-        deleteButton->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
-    }
-
-    layout->addWidget(phraseLabel);
-    layout->addWidget(phraseEdit);
-    layout->addSpacing(8);
-    layout->addWidget(replacementLabel);
-    layout->addWidget(replacementEdit, 1);
-    layout->addWidget(buttons);
-
-    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    QObject::connect(saveButton, &QPushButton::clicked, &dialog, [&] {
-        const QVariantMap updated{{m_collection.columns.at(0).id, phraseEdit->text().trimmed()},
-                                  {m_collection.columns.at(1).id, replacementEdit->toPlainText()}};
-        QList<QVariantMap> candidate = m_records;
-        if (editing) {
-            candidate[row] = updated;
-        } else {
-            candidate.append(updated);
-        }
-        const QStringList problems = m_collection.validate(candidate);
-        if (!problems.isEmpty()) {
-            QMessageBox::warning(&dialog,
-                                 QStringLiteral("Replacement not saved"),
-                                 problems.join(QLatin1Char('\n')));
-            return;
-        }
-        m_records = candidate;
-        refreshList();
-        m_notifyChanged();
-        dialog.accept();
-    });
-    if (deleteButton) {
-        QObject::connect(deleteButton, &QPushButton::clicked, &dialog, [&] {
-            deleteRecord(row);
-            dialog.accept();
-        });
-    }
-
-    dialog.resize(560, 430);
-    phraseEdit->setFocus(Qt::OtherFocusReason);
-    dialog.exec();
+    openRecordDialog(m_list, m_collection, m_settings, row, [this] { return m_records; },
+                     [this](const QList<QVariantMap> &records) {
+                         m_records = records;
+                         refreshList();
+                         m_notifyChanged();
+                     });
 }
 
 } // namespace speecher

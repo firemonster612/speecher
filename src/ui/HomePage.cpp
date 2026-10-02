@@ -55,12 +55,6 @@ QString number(int value)
     return QLocale().toString(value);
 }
 
-QString capitalized(QString text)
-{
-    if (!text.isEmpty()) text[0] = text.at(0).toUpper();
-    return text;
-}
-
 QIcon themedIcon(const QString &name, const QString &fallback = QString())
 {
     return QIcon::fromTheme(name, QIcon::fromTheme(fallback));
@@ -231,12 +225,17 @@ QString twoLines(const QString &text, const QFont &font, int width)
 }
 
 
-// "12 days with dictation in the last year", then Less, the levels and More.
-void addHeatLegend(QVBoxLayout *content, const InsightsSummary &summary, QWidget *host)
+// "12 days with dictation in the last year", or in the weeks the heatmap
+// has room for, then Less, the levels and More.
+void addHeatLegend(QVBoxLayout *content, const InsightsSummary &summary, InsightsHeatmap *heatmap,
+                   QWidget *host)
 {
     auto *foot = new QHBoxLayout;
     foot->setSpacing(settings::relatedSpacing());
-    foot->addWidget(mutedLabel(activeDaysLastYearText(summary.activeDaysLastYear), host), 1);
+    QLabel *span = mutedLabel(activeDaysLastYearText(summary.activeDaysLastYear), host);
+    QObject::connect(heatmap, &InsightsHeatmap::drawnWeeksChanged, span,
+                     [span, summary](int weeks) { span->setText(heatmapSpanText(summary, weeks)); });
+    foot->addWidget(span, 1);
     foot->addWidget(mutedLabel(heatLegendLessText(), host));
     foot->addWidget(new InsightsHeatmap(InsightsHeatmap::Shape::Legend, host));
     foot->addWidget(mutedLabel(heatLegendMoreText(), host));
@@ -260,7 +259,7 @@ QImage statsImage(const InsightsSummary &summary, InsightsRange range, HeatMeasu
 
     auto *title = new QHBoxLayout;
     title->addWidget(boldLabel(insightsImageTitle(), host), 1);
-    QLabel *period = mutedLabel(insightsImagePeriod(range), host, false);
+    QLabel *period = mutedLabel(insightsRangeLabel(range), host, false);
     period->setWordWrap(false);
     title->addWidget(period);
     content->addLayout(title);
@@ -289,9 +288,7 @@ QImage statsImage(const InsightsSummary &summary, InsightsRange range, HeatMeasu
     heatmap->setMeasure(measure);
     heatmap->setFixedWidth(heatmap->sizeHint().width());
     content->addWidget(heatmap);
-    auto *foot = new QHBoxLayout;
-    foot->setSpacing(settings::relatedSpacing());
-    addHeatLegend(content, summary, host);
+    addHeatLegend(content, summary, heatmap, host);
 
     root.adjustSize();
     constexpr qreal scale = 2;
@@ -342,7 +339,7 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
         text->addWidget(title);
         text->addWidget(body);
         row->addLayout(text, 1);
-        m_noticeButton = new QPushButton(QStringLiteral("Insights settings…"), host);
+        m_noticeButton = new QPushButton(homeText(HomeText::InsightsSettings), host);
         m_noticeButton->setObjectName(QStringLiteral("insightsNoticeSettings"));
         row->addWidget(m_noticeButton, 0, Qt::AlignVCenter);
         noticeContent->addLayout(row);
@@ -354,16 +351,17 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
     m_insightsHeader = new QWidget(m_column);
     {
         auto *header = new QHBoxLayout(m_insightsHeader);
-        header->setContentsMargins(0, settings::relatedSpacing(), 0, 0);
-        header->addWidget(settings::makeSectionLabel(QStringLiteral("Your dictation"), m_insightsHeader),
+        // The controls end where the cards' content does.
+        header->setContentsMargins(0, settings::relatedSpacing(), settings::rowPadding().right(), 0);
+        header->addWidget(settings::makeSectionLabel(homeText(HomeText::YourDictation), m_insightsHeader),
                           1, Qt::AlignBottom);
         m_range = new QComboBox(m_insightsHeader);
         m_range->setObjectName(QStringLiteral("insightsRange"));
-        m_range->setAccessibleName(QStringLiteral("Period"));
-        m_range->addItem(QStringLiteral("Last 7 days"), int(InsightsRange::Last7Days));
-        m_range->addItem(QStringLiteral("Last 30 days"), int(InsightsRange::Last30Days));
-        m_range->addItem(QStringLiteral("This year"), int(InsightsRange::ThisYear));
-        m_range->addItem(QStringLiteral("All time"), int(InsightsRange::AllTime));
+        m_range->setAccessibleName(homeText(HomeText::Period));
+        for (const InsightsRange range : {InsightsRange::Last7Days, InsightsRange::Last30Days,
+                                          InsightsRange::ThisYear, InsightsRange::AllTime}) {
+            m_range->addItem(insightsRangeLabel(range), int(range));
+        }
         m_range->setCurrentIndex(1);
         header->addWidget(m_range);
         connect(m_range, &QComboBox::currentIndexChanged, this, &HomePage::refresh);
@@ -400,6 +398,9 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
                 } else {
                     m_accessibilityNotice->setState(supported, enabled, persistent);
                 }
+                // The learned corrections card says whether accessibility
+                // holds learning back.
+                refresh();
             });
     if (controller->accessibilitySupported()) {
         m_accessibilityNotice->setState(true,
@@ -436,8 +437,10 @@ QFrame *HomePage::buildDictationCard(QWidget *parent)
     text->addLayout(statusRow);
     m_hint = mutedLabel(QString(), host, false);
     m_hint->setObjectName(QStringLiteral("dictationHint"));
+    m_hint->setTextFormat(Qt::RichText);
+    connect(m_hint, &QLabel::linkActivated, this, &HomePage::pageRequested);
     text->addWidget(m_hint);
-    // The popup shows a failure for five seconds and cannot take focus, so the
+    // The popup shows a failure for a few seconds and cannot take focus, so the
     // reason also stays here until the next session starts (lastFailure).
     m_errorText = new QLabel(host);
     m_errorText->setObjectName(QStringLiteral("dictationError"));
@@ -515,14 +518,11 @@ void HomePage::refresh()
     auto *title = m_notice->findChild<QLabel *>(QStringLiteral("insightsNoticeTitle"));
     auto *body = m_notice->findChild<QLabel *>(QStringLiteral("insightsNoticeBody"));
     if (!enabled) {
-        title->setText(QStringLiteral("Insights are off"));
-        body->setText(QStringLiteral("Speecher isn't recording new dictation. History you already "
-                                     "have stays on this computer until you clear it in Insights "
-                                     "settings."));
+        title->setText(homeText(HomeText::InsightsOffTitle));
+        body->setText(homeText(HomeText::InsightsOffBody));
     } else {
-        title->setText(QStringLiteral("No insights yet"));
-        body->setText(QStringLiteral("Your stats appear here after your next dictation. They're "
-                                     "stored only on this computer and never sent to the cloud."));
+        title->setText(homeText(HomeText::NoInsightsTitle));
+        body->setText(homeText(HomeText::NoInsightsBody));
     }
     m_noticeButton->setVisible(!enabled);
     const bool showStats = enabled && !records.isEmpty();
@@ -559,7 +559,7 @@ QWidget *HomePage::buildInsights(const InsightsSummary &summary)
     pair(buildHoursCard(summary, insights), buildPaceCard(summary, insights));
     pair(buildAppsCard(summary, insights), buildCorrectionsCard(insights));
     layout->addSpacing(settings::relatedSpacing());
-    layout->addWidget(settings::makeSectionLabel(QStringLiteral("Records"), insights));
+    layout->addWidget(settings::makeSectionLabel(homeText(HomeText::Records), insights));
     layout->addWidget(buildRecordsCard(summary, insights));
     layout->addWidget(buildFooter(insights));
     return insights;
@@ -604,6 +604,8 @@ QWidget *HomePage::buildTiles(const InsightsSummary &summary, QWidget *parent)
             auto *week = new InsightsHeatmap(InsightsHeatmap::Shape::Week, cardHost);
             week->setObjectName(QStringLiteral("streakWeek"));
             week->setDays(summary.heatmap);
+            week->setAccessibleName(text.title);
+            week->setAccessibleDescription(weekDescription(summary));
             content->addSpacing(settings::tightSpacing());
             content->addWidget(week);
         }
@@ -626,13 +628,13 @@ QFrame *HomePage::buildActivityCard(const InsightsSummary &summary, QWidget *par
     card->setObjectName(QStringLiteral("activityCard"));
     QWidget *host = content->parentWidget();
     auto *head = new QHBoxLayout;
-    head->addWidget(boldLabel(QStringLiteral("Activity"), host), 1);
+    head->addWidget(boldLabel(homeText(HomeText::Activity), host), 1);
     auto *measure = new QComboBox(host);
     measure->setObjectName(QStringLiteral("activityMeasure"));
-    measure->setAccessibleName(QStringLiteral("Measure"));
-    measure->addItem(QStringLiteral("Dictations"), int(HeatMeasure::Dictations));
-    measure->addItem(QStringLiteral("Words"), int(HeatMeasure::Words));
-    measure->addItem(QStringLiteral("Minutes of audio"), int(HeatMeasure::Audio));
+    measure->setAccessibleName(homeText(HomeText::Measure));
+    for (const HeatMeasure value : {HeatMeasure::Dictations, HeatMeasure::Words, HeatMeasure::Audio}) {
+        measure->addItem(heatMeasureLabel(value), int(value));
+    }
     measure->setCurrentIndex(measure->findData(int(m_measure)));
     head->addWidget(measure);
     content->addLayout(head);
@@ -641,26 +643,27 @@ QFrame *HomePage::buildActivityCard(const InsightsSummary &summary, QWidget *par
     heatmap->setObjectName(QStringLiteral("activityHeatmap"));
     heatmap->setDays(summary.heatmap);
     heatmap->setMeasure(m_measure);
+    heatmap->setAccessibleName(homeText(HomeText::Activity));
+    heatmap->setAccessibleDescription(heatmapDescription(summary, m_measure));
     content->addWidget(heatmap);
-    connect(measure, &QComboBox::currentIndexChanged, heatmap, [this, measure, heatmap] {
+    connect(measure, &QComboBox::currentIndexChanged, heatmap, [this, measure, heatmap, summary] {
         m_measure = static_cast<HeatMeasure>(measure->currentData().toInt());
         heatmap->setMeasure(m_measure);
+        heatmap->setAccessibleDescription(heatmapDescription(summary, m_measure));
     });
 
-    addHeatLegend(content, summary, host);
+    addHeatLegend(content, summary, heatmap, host);
     return card;
 }
 
 QFrame *HomePage::buildHoursCard(const InsightsSummary &summary, QWidget *parent)
 {
     QVBoxLayout *content = nullptr;
-    QFrame *card = makeTitledCard(QStringLiteral("When you talk"), parent, &content);
+    QFrame *card = makeTitledCard(homeText(HomeText::WhenYouTalk), parent, &content);
     card->setObjectName(QStringLiteral("hoursCard"));
     QWidget *host = content->parentWidget();
     if (!summary.hasHourData) {
-        content->addWidget(mutedLabel(
-            QStringLiteral("After a few days of dictation this shows the hours you talk most."),
-            host, false));
+        content->addWidget(mutedLabel(homeText(HomeText::NoHourData), host, false));
         content->addStretch();
         return card;
     }
@@ -670,6 +673,8 @@ QFrame *HomePage::buildHoursCard(const InsightsSummary &summary, QWidget *parent
     auto *chart = new InsightsBarChart(host);
     chart->setObjectName(QStringLiteral("hoursChart"));
     chart->setCounts(summary.hourCounts, summary.peakHour);
+    chart->setAccessibleName(homeText(HomeText::WhenYouTalk));
+    chart->setAccessibleDescription(hourChartDescription(summary));
     content->addWidget(chart);
     return card;
 }
@@ -677,11 +682,11 @@ QFrame *HomePage::buildHoursCard(const InsightsSummary &summary, QWidget *parent
 QFrame *HomePage::buildPaceCard(const InsightsSummary &summary, QWidget *parent)
 {
     QVBoxLayout *content = nullptr;
-    QFrame *card = makeTitledCard(QStringLiteral("Pace"), parent, &content);
+    QFrame *card = makeTitledCard(homeText(HomeText::Pace), parent, &content);
     card->setObjectName(QStringLiteral("paceCard"));
     QWidget *host = content->parentWidget();
     if (summary.dictations == 0) {
-        content->addWidget(mutedLabel(QStringLiteral("No dictation in this period."), host, false));
+        content->addWidget(mutedLabel(homeText(HomeText::NoDictationInPeriod), host, false));
         content->addStretch();
         return card;
     }
@@ -696,23 +701,24 @@ QFrame *HomePage::buildPaceCard(const InsightsSummary &summary, QWidget *parent)
         split->addLayout(column);
     };
     stat(bigNumber({{number(summary.wordsPerMinute), QStringLiteral("wpm")}}, nullptr),
-         QStringLiteral("Your speaking pace"));
+         homeText(HomeText::SpeakingPace));
     const int saved = summary.minutesSavedVersusTyping;
     QList<QPair<QString, QString>> savedParts;
     if (saved >= 60) savedParts.append({number(saved / 60), QStringLiteral("h")});
     if (saved < 60 || saved % 60) savedParts.append({number(saved % 60), QStringLiteral("min")});
-    stat(bigNumber(savedParts, nullptr), QStringLiteral("Saved over typing"));
+    stat(bigNumber(savedParts, nullptr), homeText(HomeText::SavedOverTyping));
     split->addStretch();
     content->addLayout(split);
     content->addStretch();
 
     QGridLayout *grid = makeBarGrid(content);
     const int scale = std::max(summary.wordsPerMinute, 160);
-    addBarRow(grid, new QLabel(QStringLiteral("You, speaking"), host),
-              makeBar(summary.wordsPerMinute, scale, true, host), number(summary.wordsPerMinute));
-    addBarRow(grid, new QLabel(QStringLiteral("Typical typing"), host),
-              makeBar(summary.typingWordsPerMinute, scale, false, host),
-              number(summary.typingWordsPerMinute));
+    // The figures are in the big number and the sentence below; the bars
+    // only compare them.
+    addBarRow(grid, new QLabel(homeText(HomeText::YouSpeaking), host),
+              makeBar(summary.wordsPerMinute, scale, true, host), QString());
+    addBarRow(grid, new QLabel(homeText(HomeText::TypicalTyping), host),
+              makeBar(summary.typingWordsPerMinute, scale, false, host), QString());
     content->addWidget(mutedLabel(summary.speedupText, host));
     return card;
 }
@@ -720,11 +726,11 @@ QFrame *HomePage::buildPaceCard(const InsightsSummary &summary, QWidget *parent)
 QFrame *HomePage::buildAppsCard(const InsightsSummary &summary, QWidget *parent)
 {
     QVBoxLayout *content = nullptr;
-    QFrame *card = makeTitledCard(QStringLiteral("Where your words go"), parent, &content);
+    QFrame *card = makeTitledCard(homeText(HomeText::WhereYourWordsGo), parent, &content);
     card->setObjectName(QStringLiteral("appsCard"));
     QWidget *host = content->parentWidget();
     if (summary.apps.isEmpty()) {
-        content->addWidget(mutedLabel(QStringLiteral("No dictation in this period."), host, false));
+        content->addWidget(mutedLabel(homeText(HomeText::NoDictationInPeriod), host, false));
         content->addStretch();
         return card;
     }
@@ -761,15 +767,23 @@ QFrame *HomePage::buildCorrectionsCard(QWidget *parent)
     card->setObjectName(QStringLiteral("correctionsCard"));
     QWidget *host = content->parentWidget();
     const int learned = m_controller->settings()->learnedCorrections().size();
-    auto *stat = new QVBoxLayout;
-    stat->setSpacing(0);
-    stat->addWidget(bigNumber({{number(learned), {}}}, host));
-    stat->addWidget(mutedLabel(learnedCorrectionsCaption(learned), host));
-    content->addLayout(stat);
-    content->addWidget(mutedLabel(
-        QStringLiteral("Speecher learned these from edits you made after dictating."), host, false));
+    const bool learning = m_controller->settings()->snapshot().correctionLearningEnabled;
+    const bool accessibility = !m_controller->accessibilitySupported() || m_controller->accessibilityEnabled();
+    // Nothing learned yet is said by the note alone, not by a big 0.
+    if (learned > 0) {
+        auto *stat = new QVBoxLayout;
+        stat->setSpacing(0);
+        stat->addWidget(bigNumber({{number(learned), {}}}, host));
+        stat->addWidget(mutedLabel(learnedCorrectionsCaption(learned), host));
+        content->addLayout(stat);
+    }
+    content->addWidget(mutedLabel(learnedCorrectionsNote(learned, learning, accessibility), host, false));
     content->addStretch();
-    auto *open = new QPushButton(reviewLearnedCorrectionsCaption(), host);
+    const QString action = learnedCorrectionsAction(learned, learning);
+    if (action.isEmpty()) {
+        return card;
+    }
+    auto *open = new QPushButton(action, host);
     open->setObjectName(QStringLiteral("reviewCorrections"));
     connect(open, &QPushButton::clicked, this,
             [this] { emit pageRequested(QStringLiteral("vocabulary:corrections")); });
@@ -783,59 +797,32 @@ QFrame *HomePage::buildRecordsCard(const InsightsSummary &summary, QWidget *pare
     card->setObjectName(QStringLiteral("recordsCard"));
     QFormLayout *form = settings::cardFormLayout(card);
     QWidget *host = form->parentWidget();
-    const QDate today = m_controller->insightsToday();
-    const auto add = [form, host](const QString &title, const QString &description, QWidget *value) {
-        settings::addCardRow(form, settings::makeRow(title, description, value, host), host);
-    };
-    const auto text = [host](const QString &value) { return new QLabel(value, host); };
-
-    if (summary.nextMilestone > 0) {
-        auto *progress = new QProgressBar(host);
-        progress->setObjectName(QStringLiteral("milestoneProgress"));
-        progress->setRange(0, summary.nextMilestone);
-        progress->setValue(summary.allTimeWords);
-        progress->setTextVisible(false);
-        progress->setFixedWidth(settings::gridUnit() * 6);
-        progress->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        add(QStringLiteral("Next milestone: %1 words").arg(number(summary.nextMilestone)),
-            milestoneText(summary), progress);
-    } else {
-        add(QStringLiteral("Every milestone passed"), milestoneText(summary),
-            text(wordCountText(summary.allTimeWords)));
+    for (const InsightRecordText &record : insightRecords(summary, m_controller->insightsToday())) {
+        QWidget *value = nullptr;
+        if (record.milestoneBar) {
+            auto *progress = new QProgressBar(host);
+            progress->setObjectName(QStringLiteral("milestoneProgress"));
+            progress->setRange(0, summary.nextMilestone);
+            progress->setValue(summary.allTimeWords);
+            progress->setTextVisible(false);
+            progress->setFixedWidth(settings::gridUnit() * 6);
+            progress->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+            value = progress;
+        } else {
+            value = new QLabel(record.value, host);
+        }
+        settings::addCardRow(form, settings::makeRow(record.title, record.detail, value, host), host);
     }
-    add(QStringLiteral("Longest streak"),
-        summary.bestStreakEndsToday
-            ? QStringLiteral("That's the one you're on")
-            : QStringLiteral("Ended %1").arg(relativeDay(summary.bestStreakEnd, today)),
-        text(dayCountText(summary.bestStreak)));
-    add(QStringLiteral("Longest dictation"),
-        QStringLiteral("%1 words into %2, %3")
-            .arg(number(summary.longest.words), summary.longest.appName,
-                 relativeDay(summary.longest.date, today)),
-        text(clockText(summary.longest.audioMs)));
-    add(QStringLiteral("Busiest day"), capitalized(relativeDay(summary.busiestDay.date, today)),
-        text(dictationCountText(summary.busiestDay.dictations)));
-    add(QStringLiteral("Wordiest day"), capitalized(relativeDay(summary.wordiestDay.date, today)),
-        text(wordCountText(summary.wordiestDay.words)));
-    const int daysAgo = summary.firstDictation.daysTo(today);
-    add(QStringLiteral("First dictation"),
-        QLocale().toString(summary.firstDictation, QStringLiteral("MMM d, yyyy")),
-        text(daysAgo == 0 ? QStringLiteral("Today")
-                          : QStringLiteral("%1 ago").arg(dayCountText(daysAgo))));
     return card;
 }
 
-QToolButton *HomePage::buildShareButton(QWidget *parent)
+QPushButton *HomePage::buildShareButton(QWidget *parent)
 {
-    auto *button = new QToolButton(parent);
+    auto *button = new QPushButton(parent);
     button->setObjectName(QStringLiteral("shareInsights"));
     const InsightsShareLabels labels = insightsShareLabels();
-    const QIcon shareIcon = themedIcon(QStringLiteral("document-share"), QStringLiteral("emblem-shared"));
-    button->setIcon(shareIcon);
+    button->setIcon(themedIcon(QStringLiteral("document-share"), QStringLiteral("emblem-shared")));
     button->setText(labels.share);
-    button->setToolButtonStyle(shareIcon.isNull() ? Qt::ToolButtonTextOnly : Qt::ToolButtonTextBesideIcon);
-    button->setAutoRaise(true);
-    button->setPopupMode(QToolButton::InstantPopup);
     // The button's text says what the last choice did, then goes back.
     const auto report = [button, labels](const QString &text, const QString &tip = QString()) {
         button->setText(text);
@@ -889,34 +876,28 @@ InsightsRange HomePage::currentRange() const
 
 QWidget *HomePage::buildFooter(QWidget *parent)
 {
-    // The lock and the sentence on one centred line, the link under them.
+    // The lock, then the sentence with its link at the end, in one flow that
+    // wraps at the cards' content width.
     auto *footer = new QWidget(parent);
     footer->setObjectName(QStringLiteral("insightsPrivacyNote"));
-    auto *column = new QVBoxLayout(footer);
-    column->setContentsMargins(0, settings::relatedSpacing(), 0, 0);
-    column->setSpacing(settings::tightSpacing());
-    auto *line = new QHBoxLayout;
+    auto *line = new QHBoxLayout(footer);
+    const QMargins padding = settings::rowPadding();
+    line->setContentsMargins(padding.left(), settings::relatedSpacing(), padding.right(), 0);
     line->setSpacing(settings::tightSpacing());
-    line->addStretch();
     const QIcon lockIcon = themedIcon(QStringLiteral("object-locked"), QStringLiteral("lock"));
     if (!lockIcon.isNull()) {
         auto *lock = new QLabel(footer);
         const int extent = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
         lock->setPixmap(lockIcon.pixmap(extent, extent));
-        line->addWidget(lock, 0, Qt::AlignVCenter);
+        line->addWidget(lock, 0, Qt::AlignTop);
     }
-    QLabel *note = mutedLabel(QStringLiteral("Insights are stored only on this computer and are "
-                                             "never sent to the cloud."),
+    QLabel *note = mutedLabel(QStringLiteral("%1 <a href=\"general\">%2</a>")
+                                  .arg(homeText(HomeText::PrivacyNote).toHtmlEscaped(),
+                                       homeText(HomeText::InsightsSettings).toHtmlEscaped()),
                               footer);
-    line->addWidget(note);
-    line->addStretch();
-    column->addLayout(line);
-    auto *link = new QLabel(QStringLiteral("<a href=\"general\">Insights settings</a>"), footer);
-    link->setFont(settings::smallFont(link->font()));
-    link->setAlignment(Qt::AlignHCenter);
-    connect(link, &QLabel::linkActivated, this,
-            [this] { emit pageRequested(QStringLiteral("general")); });
-    column->addWidget(link);
+    note->setTextFormat(Qt::RichText);
+    connect(note, &QLabel::linkActivated, this, &HomePage::pageRequested);
+    line->addWidget(note, 1);
     return footer;
 }
 
@@ -993,11 +974,10 @@ QPushButton *HomePage::toggleButton() const
 
 void HomePage::updateShortcutHint()
 {
+    // Without a Global Shortcut the hint is a link to where one is set.
     const QString shortcut = m_controller->globalShortcutDisplay();
-    m_hint->setText(shortcut.isEmpty()
-                        ? QStringLiteral("Set a Global Shortcut to dictate from anywhere.")
-                        : QStringLiteral("Press %1 anywhere to dictate into the app you're using.")
-                              .arg(shortcut));
+    const QString hint = dictationShortcutHint(shortcut).toHtmlEscaped();
+    m_hint->setText(shortcut.isEmpty() ? QStringLiteral("<a href=\"shortcut\">%1</a>").arg(hint) : hint);
 }
 
 void HomePage::setStatus(const QString &stateName)

@@ -98,8 +98,8 @@ public:
     const SettingsSchema &schema() const;
     // A pane group's rows as the draft now has them, for its card.
     SectionSnapshot section(const SettingsPaneGroup &group) const;
-    // The panes a sidebar search shows, with rows as the draft shows them.
-    QStringList searchPanes(const QString &query) const;
+    // The panes and rows a search finds, with rows as the draft shows them.
+    QList<SearchMatch> search(const QString &query) const;
     void setValue(const QString &rowId, const QVariant &value);
     // Writes the draft back to the store, applies the theme and re-reads it.
     void commit();
@@ -111,6 +111,11 @@ public:
     // Lets the rows whose choices are slow to gather — a device enumeration —
     // offer them from now on. Called once the window has painted.
     void loadExpensiveRows();
+    // Asks the system again whether there is a microphone at all, after a
+    // device change or as the window comes back from where its disabled note
+    // sent the person. True when the answer changed. Nothing is asked before
+    // loadExpensiveRows.
+    bool refreshAudioInput();
 
     // Empty when these records are consistent; otherwise one message per
     // problem, ready to show to a person.

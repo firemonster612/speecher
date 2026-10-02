@@ -145,33 +145,35 @@ final class ShortcutRecorder: ObservableObject {
     }
 }
 
-/// The Global Shortcut row at the top of Dictation: the recorder, and what it
-/// has to say, as the schema's "globalShortcut" custom row.
+/// The Global Shortcut row at the top of Dictation, and on the setup
+/// assistant's shortcut step: the binding as it stands, Change to record a new
+/// one, and Reset once it differs from the default. While recording, the
+/// description says what to press; Escape keeps the current binding.
 struct ShortcutRecorderRow: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = ShortcutRecorder()
-    /// A key the recorder caught but could not bind (a media key); shown under
-    /// the recorder while it stays armed.
+    /// A key the recorder caught but could not bind (a media key); shown
+    /// while the recorder stays armed.
     @State private var captureProblem = ""
 
     var body: some View {
         VStack(alignment: .leading) {
             LabeledContent {
-                Button(caption) {
-                    captureProblem = ""
-                    recorder.record(suspending: model, combination: { characters, flags in
-                        model.bindShortcut(characters: characters, modifierFlags: flags)
-                    }, singleKey: { keyCode in
-                        if model.bindSingleKey(macKeyCode: keyCode) { return true }
-                        captureProblem = "That key cannot be a dictation key."
-                        return false
-                    })
+                HStack {
+                    if !recorder.recording {
+                        Text(model.shortcut)
+                    }
+                    Button(SpeecherBridge.globalShortcutChangeCaption) { record() }
+                        .disabled(!model.shortcutSupported || recorder.recording)
+                    if !recorder.recording, model.shortcut != model.bridge.defaultShortcutDisplay {
+                        Button(SpeecherBridge.globalShortcutResetCaption(model.bridge.defaultShortcutDisplay)) {
+                            model.resetShortcut()
+                        }
+                        .disabled(!model.shortcutSupported)
+                    }
                 }
-                .disabled(!model.shortcutSupported)
             } label: {
-                // No title: the section header right above already reads
-                // Global Shortcut, the row's label.
-                Text(footnote)
+                RowView.label(model.row("globalShortcut")?.label ?? "", help: description)
             }
             if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
                 Button(SpeecherBridge.accessibilityGrantActionLabel) { model.requestAccessibility() }
@@ -184,21 +186,25 @@ struct ShortcutRecorderRow: View {
         // in deinit.
     }
 
-    private var caption: String {
-        if recorder.recording { return "Press a key or key combination…" }
-        return model.shortcut.isEmpty ? "Set shortcut" : model.shortcut
+    private func record() {
+        captureProblem = ""
+        recorder.record(suspending: model, combination: { characters, flags in
+            model.bindShortcut(characters: characters, modifierFlags: flags)
+        }, singleKey: { keyCode in
+            if model.bindSingleKey(macKeyCode: keyCode) { return true }
+            captureProblem = "That key cannot be a dictation key."
+            return false
+        })
     }
 
-    private var footnote: String {
+    private var description: String {
         if recorder.recording {
-            if !captureProblem.isEmpty {
-                return captureProblem + " Try another, or press Escape to keep the current one."
-            }
-            return "Press the keys you want — a bare modifier like Right Option works — "
-                + "or Escape to keep the current one."
+            return captureProblem.isEmpty
+                ? SpeecherBridge.globalShortcutPrompt
+                : captureProblem + " " + SpeecherBridge.globalShortcutPrompt
         }
         if !model.shortcutProblem.isEmpty { return model.shortcutProblem }
         if !model.shortcutWarning.isEmpty { return model.shortcutWarning }
-        return "Press a key combination, or a single key such as Right Option or F13."
+        return model.row("globalShortcut")?.help ?? ""
     }
 }

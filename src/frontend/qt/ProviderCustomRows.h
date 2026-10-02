@@ -64,6 +64,7 @@ private:
     QStackedWidget *m_credential = nullptr;
     QLabel *m_authStatus = nullptr;
     QLabel *m_anthropicAuthStatus = nullptr;
+    QLabel *m_anthropicAuthProblem = nullptr;
     QLineEdit *m_apiKey = nullptr;
     QString m_openAiStoredAccount;
     QString m_anthropicStoredAccount;

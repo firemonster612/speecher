@@ -16,7 +16,6 @@
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QThread>
-#include <QVBoxLayout>
 
 #include <memory>
 
@@ -48,6 +47,23 @@ SchemaCustomRowFactory ProviderCustomRows::factory()
         }
         if (descriptor.id == QStringLiteral("anthropicAuthMode")) {
             return makeAnthropicAuthModeRow(parent, std::move(notifyChanged));
+        }
+        if (descriptor.id == QStringLiteral("anthropicAuth")) {
+            m_anthropicAuthStatus = new QLabel(parent);
+            m_anthropicAuthStatus->setObjectName(QStringLiteral("anthropicAuthStatus"));
+            m_anthropicAuthStatus->setForegroundRole(QPalette::WindowText);
+            m_anthropicAuthStatus->setWordWrap(true);
+            // A failed check reads as the row's description, which has room
+            // for the path and the command that fixes it.
+            m_anthropicAuthProblem = new QLabel(parent);
+            m_anthropicAuthProblem->setObjectName(QStringLiteral("anthropicAuthProblem"));
+            m_anthropicAuthProblem->setWordWrap(true);
+            m_anthropicAuthProblem->setForegroundRole(QPalette::PlaceholderText);
+            m_anthropicAuthProblem->setFont(settings::smallFont(m_anthropicAuthProblem->font()));
+            m_anthropicAuthProblem->hide();
+            SchemaCustomRow row{m_anthropicAuthStatus, {}, {}};
+            row.detail = m_anthropicAuthProblem;
+            return row;
         }
         if (descriptor.id == QStringLiteral("cliproxyOauthDir")) {
             SchemaCustomRow row = makeCliproxyOauthDirRow(parent, std::move(notifyChanged));
@@ -144,29 +160,10 @@ SchemaCustomRow ProviderCustomRows::makeCredentialRow(QWidget *parent,
 SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
                                                              std::function<void()> notifyChanged)
 {
-    auto *container = new QWidget(parent);
-    // The status can run to a sentence with a path in it, far too wide for a
-    // row's control column. Expanding hands the row makeRow's full-width
-    // shape: title and description across the card, then this container, with
-    // the combo at its native size on the right and the status wrapping over
-    // the whole row instead of a sliver under the combo.
-    container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    auto *layout = new QVBoxLayout(container);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(settings::relatedSpacing());
-
-    m_anthropicAuthMode = new QComboBox(container);
+    m_anthropicAuthMode = new QComboBox(parent);
     for (const RowOption &mode : authModeOptions(QStringLiteral("anthropicAuthMode"))) {
         m_anthropicAuthMode->addItem(mode.label, mode.id);
     }
-    m_anthropicAuthStatus = new QLabel(container);
-    m_anthropicAuthStatus->setObjectName(QStringLiteral("anthropicAuthStatus"));
-    m_anthropicAuthStatus->setForegroundRole(QPalette::WindowText);
-    m_anthropicAuthStatus->setAttribute(Qt::WA_StyledBackground, false);
-    m_anthropicAuthStatus->setAutoFillBackground(false);
-    m_anthropicAuthStatus->setWordWrap(true);
-    layout->addWidget(m_anthropicAuthMode, 0, Qt::AlignRight);
-    layout->addWidget(m_anthropicAuthStatus);
 
     QObject::connect(m_anthropicAuthMode,
                      &QComboBox::currentIndexChanged,
@@ -184,7 +181,7 @@ SchemaCustomRow ProviderCustomRows::makeAnthropicAuthModeRow(QWidget *parent,
                      });
 
     return {
-        container,
+        m_anthropicAuthMode,
         [this] { return QVariant(m_anthropicAuthMode->currentData().toString()); },
         [this](const QVariant &value) {
             settings::selectData(m_anthropicAuthMode, value.toString());
@@ -447,7 +444,8 @@ void ProviderCustomRows::updateCredentialControl()
                                      settingsStatus,
                                      cliproxyBaseUrl,
                                      cliproxyApiKey)
-                      .status();
+                      .status()
+                      .text;
     });
     QObject::connect(thread,
                      &QThread::finished,
@@ -464,32 +462,17 @@ void ProviderCustomRows::updateCredentialControl()
 
 void ProviderCustomRows::updateAnthropicAuthControl()
 {
-    if (!m_anthropicAuthMode || !m_anthropicAuthStatus) {
+    // The schema shows the Status row only outside CLI Proxy API mode.
+    if (!m_anthropicAuthMode || !m_anthropicAuthStatus
+        || m_anthropicAuthMode->currentData().toString() == kCliProxyAuthMode) {
         return;
     }
-    const bool cliproxy =
-        m_anthropicAuthMode->currentData().toString() == kCliProxyAuthMode;
-    if (!cliproxy) {
-        const ClaudeCredentialResult credentials =
-            ClaudeCredentials::load(m_settings.claudeCredentialsPath(), false);
-        m_anthropicAuthStatus->setText(
-            credentials.ok ? QStringLiteral("Signed in with Claude Code")
-                           : credentials.error);
-    }
-    m_anthropicAuthStatus->setVisible(!cliproxy);
-    // Announce the changed hint, or the row's layout keeps the container's
-    // cached size and holds the old height.
-    QWidget *container = m_anthropicAuthStatus->parentWidget();
-    if (container) {
-        container->updateGeometry();
-    }
-    // The row frame pins its minimum height on resize; drop the stale pin so
-    // the next layout pass re-measures at the new content height.
-    if (QWidget *rowFrame = container ? container->parentWidget() : nullptr) {
-        if (rowFrame->objectName() == QLatin1String("settingsRow")) {
-            rowFrame->setMinimumHeight(0);
-        }
-    }
+    const ClaudeCredentialResult credentials =
+        ClaudeCredentials::load(m_settings.claudeCredentialsPath(), false);
+    m_anthropicAuthStatus->setText(credentials.ok ? QStringLiteral("Signed in with Claude Code")
+                                                  : QString());
+    m_anthropicAuthProblem->setText(credentials.ok ? QString() : credentials.error);
+    m_anthropicAuthProblem->setVisible(!credentials.ok);
 }
 
 } // namespace speecher

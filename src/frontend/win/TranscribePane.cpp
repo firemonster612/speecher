@@ -44,7 +44,7 @@ namespace Pickers = winrt::Windows::Storage::Pickers;
 
 // Segoe Fluent Icons.
 constexpr wchar_t kGlyphRemove = L'\uE711';
-constexpr wchar_t kGlyphOpenFile = L'\uE8E5';
+constexpr wchar_t kGlyphChevron = L'\uE76C';
 constexpr wchar_t kGlyphDone = L'\uE73E';
 constexpr wchar_t kGlyphFailed = L'\uE783';
 constexpr wchar_t kGlyphCurrent = L'\uE768';
@@ -145,15 +145,15 @@ Grid lineGrid()
     return grid;
 }
 
-// "1 Configure · 2 Transcribe · 3 Export" above the stage: the current step
-// in bold, the steps behind it checked and dim, the ones ahead dim, and a
-// hint under Configure that it is only a check before pressing Transcribe.
+// "1 Configure · 2 Transcribe · 3 Export" under the title, left-aligned with
+// it: the current step in bold, the steps behind it checked and dim, the ones
+// ahead dim, and a hint under Configure that it is only a check before
+// pressing Transcribe.
 void appendSteps(const StackPanel &column, TranscribeStep current, const PaneHost &host)
 {
     StackPanel steps;
     steps.Orientation(Orientation::Horizontal);
     steps.Spacing(8);
-    steps.HorizontalAlignment(HorizontalAlignment::Center);
     steps.Margin({0, 16, 0, 0});
     for (TranscribeStep step : {TranscribeStep::Configure, TranscribeStep::Transcribe, TranscribeStep::Export}) {
         const int number = int(step) + 1;
@@ -185,7 +185,6 @@ void appendSteps(const StackPanel &column, TranscribeStep current, const PaneHos
     column.Children().Append(steps);
     if (current == TranscribeStep::Configure) {
         TextBlock hint = secondaryTextBlock(transcribeStepHint(TranscribeStep::Configure), L"SettingsCardDescriptionStyle", host);
-        hint.HorizontalAlignment(HorizontalAlignment::Center);
         hint.Margin({0, 4, 0, 0});
         column.Children().Append(hint);
     }
@@ -417,20 +416,24 @@ UIElement TranscribePane::build(PaneHost &host, const QString &title)
     ScrollViewer scroll = pageScaffold(title, column);
     appendSteps(column, m_step, host);
     switch (m_step) {
-    case TranscribeStep::Configure:
+    case TranscribeStep::Configure: {
         appendSetup(column, host);
-        // Files dropped anywhere on the pane join the list. A transparent
-        // background makes the whole scroller hit-testable, gutters included.
-        scroll.Background(winrt::Microsoft::UI::Xaml::Media::SolidColorBrush(
+        // Files dropped anywhere on the pane join the list, the action bar
+        // included. A transparent background makes the whole page
+        // hit-testable, gutters included.
+        Grid page = pageWithActionBar(scroll, startAction(host));
+        page.Background(winrt::Microsoft::UI::Xaml::Media::SolidColorBrush(
             winrt::Microsoft::UI::Colors::Transparent()));
-        scroll.AllowDrop(true);
-        scroll.DragOver([](const IInspectable &, const DragEventArgs &args) {
+        page.AllowDrop(true);
+        page.DragOver([](const IInspectable &, const DragEventArgs &args) {
             if (args.DataView().Contains(StandardDataFormats::StorageItems())) {
                 args.AcceptedOperation(DataPackageOperation::Copy);
+                args.DragUIOverride().Caption(hs(transcribeText(TranscribeText::DropToAdd)));
             }
         });
-        scroll.Drop([this, &host](const IInspectable &, const DragEventArgs &args) { dropFiles(host, args); });
-        break;
+        page.Drop([this, &host](const IInspectable &, const DragEventArgs &args) { dropFiles(host, args); });
+        return page;
+    }
     case TranscribeStep::Transcribe:
         appendProcessing(column, m_views.back());
         break;
@@ -448,8 +451,9 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
         RowSnapshot snapshot;
         snapshot.label = label;
         snapshot.help = help;
-        // rowGrid shows disabledHelp in place of help on a disabled row.
-        snapshot.disabledHelp = help;
+        // rowGrid shows disabledHelp in place of help on a disabled row; only
+        // the refinement rows are ever disabled.
+        snapshot.disabledHelp = transcribeText(TranscribeText::NeedsRefiner);
         snapshot.enabled = enabled;
         return rowGrid(snapshot, control, host, follows);
     };
@@ -458,18 +462,13 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
         column.Children().Append(cardContainer(rows));
     };
 
-    // Audio files: a browse row, then one row per file with its size.
-    // The browse row is titled by what a click does, as on Linux and macOS;
-    // the button beside it carries the same name.
+    // Audio files: a browse row, then one row per file with its size. The
+    // browse button says what it does; the formats it takes are its tooltip.
     StackPanel files;
-    const QString chooseCaption = chooseFilesCaption(!m_files.isEmpty());
-    Button browse;
-    browse.Content(glyph(kGlyphOpenFile));
-    ToolTipService::SetToolTip(browse, box_value(hs(chooseCaption)));
-    Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(browse, hs(chooseCaption));
+    Button browse = textButton(chooseFilesCaption(!m_files.isEmpty()));
+    ToolTipService::SetToolTip(browse, box_value(hs(mediaFilesTooltip())));
     browse.Click([this, &host](const auto &, const auto &) { chooseFiles(host); });
-    files.Children().Append(
-        row(chooseCaption, m_files.isEmpty() ? mediaFilesHint() : QString(), browse, false));
+    files.Children().Append(row(m_files.isEmpty() ? mediaFilesHint() : QString(), QString(), browse, false));
     for (const QString &path : std::as_const(m_files)) {
         const QFileInfo info(path);
         Button remove;
@@ -506,16 +505,13 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
                                           }),
                                  false));
     ToggleSwitch vocabulary;
-    vocabulary.OnContent(box_value(L""));
-    vocabulary.OffContent(box_value(L""));
-    vocabulary.MinWidth(0);
     vocabulary.IsOn(m_vocabulary);
     vocabulary.Toggled([this](const IInspectable &sender, const auto &) {
         m_vocabulary = sender.as<ToggleSwitch>().IsOn();
     });
     speech.Children().Append(row(transcribeText(TranscribeText::Vocabulary),
                                  transcribeText(TranscribeText::VocabularyHelp),
-                                 vocabulary, true));
+                                 stateToggle(vocabulary), true));
     card(transcribeText(TranscribeText::TranscriptionSection), speech);
 
     // Refinement: the model is read-only here; cleanup, profile and tone only
@@ -537,18 +533,28 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
                                               }
                                           }),
                                  false));
+    // The model is set in Refinement settings, which the row opens; then the
+    // Writing Profile before the Cleanup Level and Tone it sets.
     if (!model.isEmpty()) {
+        Button openModel;
+        StackPanel modelValue;
+        modelValue.Orientation(Orientation::Horizontal);
+        modelValue.Spacing(8);
+        modelValue.Children().Append(secondaryTextBlock(model, L"SettingsInfoTextStyle", host));
+        FontIcon chevron = glyph(kGlyphChevron);
+        chevron.FontSize(12);
+        chevron.VerticalAlignment(VerticalAlignment::Center);
+        modelValue.Children().Append(chevron);
+        openModel.Content(modelValue);
+        openModel.Click([&host](const auto &, const auto &) {
+            if (host.showPage) {
+                host.showPage(QStringLiteral("refinement"));
+            }
+        });
         refine.Children().Append(row(transcribeText(TranscribeText::RefinerModel),
-                                     refinementModelHint(),
-                                     secondaryTextBlock(model, L"SettingsInfoTextStyle", host),
-                                     true));
+                                     refinementModelHint(), openModel, true));
     }
     const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
-    refine.Children().Append(row(transcribeText(TranscribeText::Cleanup),
-                                 transcribeText(TranscribeText::CleanupHelp),
-                                 selectorBar(cleanupStrengths(refinement.customCleanupLevels), m_cleanup,
-                                             [this](const QString &id) { m_cleanup = id; }),
-                                 true, refining));
     const QList<RowOption> profiles = writingProfileChoices(refinement.writingProfiles);
     refine.Children().Append(row(transcribeText(TranscribeText::WritingProfile),
                                  transcribeText(TranscribeText::WritingProfileHelp),
@@ -560,6 +566,11 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
                                                   rebuild();
                                               }
                                           }),
+                                 true, refining));
+    refine.Children().Append(row(transcribeText(TranscribeText::Cleanup),
+                                 transcribeText(TranscribeText::CleanupHelp),
+                                 selectorBar(cleanupStrengths(refinement.customCleanupLevels), m_cleanup,
+                                             [this](const QString &id) { m_cleanup = id; }),
                                  true, refining));
     refine.Children().Append(row(transcribeText(TranscribeText::Tone),
                                  transcribeText(TranscribeText::ToneHelp),
@@ -607,14 +618,29 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
         problem.Margin({0, 16, 0, 0});
         column.Children().Append(problem);
     }
+}
+
+// The page's one action, kept in view under the column, with why it cannot
+// start yet beside it.
+StackPanel TranscribePane::startAction(const PaneHost &host)
+{
+    StackPanel action;
+    action.Orientation(Orientation::Horizontal);
+    action.Spacing(12);
+    action.HorizontalAlignment(HorizontalAlignment::Right);
+    if (m_files.isEmpty()) {
+        TextBlock reason = secondaryTextBlock(transcribeText(TranscribeText::NoFilesYet),
+                                              L"SettingsCardDescriptionStyle", host);
+        reason.VerticalAlignment(VerticalAlignment::Center);
+        action.Children().Append(reason);
+    }
     Button start = textButton(startCaption(int(m_files.size())));
     start.Style(Application::Current().Resources().Lookup(box_value(L"AccentButtonStyle")).as<Style>());
     start.MinWidth(160);
-    start.HorizontalAlignment(HorizontalAlignment::Center);
-    start.Margin({0, 24, 0, 0});
     start.IsEnabled(!m_files.isEmpty());
     start.Click([this](const auto &, const auto &) { startBatch(); });
-    column.Children().Append(start);
+    action.Children().Append(start);
+    return action;
 }
 
 void TranscribePane::appendProcessing(const StackPanel &column, View &view)
@@ -660,7 +686,7 @@ void TranscribePane::appendProcessing(const StackPanel &column, View &view)
     showPartialText(view);
 
     Button cancel = textButton(transcribeText(TranscribeText::Cancel));
-    cancel.HorizontalAlignment(HorizontalAlignment::Center);
+    cancel.HorizontalAlignment(HorizontalAlignment::Right);
     cancel.Margin({0, 24, 0, 0});
     cancel.Click([this](const auto &, const auto &) { m_controller->fileTranscription()->cancel(); });
     column.Children().Append(cancel);
@@ -954,7 +980,7 @@ void TranscribePane::appendResults(const StackPanel &column, PaneHost &host)
     column.Children().Append(files);
 
     Button again = textButton(transcribeText(TranscribeText::TranscribeMore));
-    again.HorizontalAlignment(HorizontalAlignment::Center);
+    again.HorizontalAlignment(HorizontalAlignment::Right);
     again.Margin({0, 24, 0, 0});
     again.Click([this](const auto &, const auto &) {
         backToSetup();

@@ -1,5 +1,7 @@
 #include "core/InsightsSummary.h"
 
+#include "core/settings/SettingsSchema.h"
+
 #include <QHash>
 #include <QLocale>
 #include <QMap>
@@ -625,6 +627,20 @@ QString activeDaysLastYearText(int days)
     return QStringLiteral("%1 with dictation in the last year").arg(dayCountText(days));
 }
 
+QString heatmapSpanText(const InsightsSummary &summary, int drawnWeeks)
+{
+    if (drawnWeeks >= kHeatmapWeeks || summary.heatmap.isEmpty()) {
+        return activeDaysLastYearText(summary.activeDaysLastYear);
+    }
+    const QDate today = summary.heatmap.last().date;
+    const QDate firstMonday = today.addDays(-(today.dayOfWeek() - 1) - (drawnWeeks - 1) * 7);
+    const int active = int(std::count_if(summary.heatmap.cbegin(), summary.heatmap.cend(),
+                                         [&firstMonday](const HeatmapDay &day) {
+                                             return day.date >= firstMonday && day.dictations > 0;
+                                         }));
+    return QStringLiteral("%1 with dictation in the last %2 weeks").arg(dayCountText(active)).arg(drawnWeeks);
+}
+
 QString heatLegendLessText()
 {
     return QStringLiteral("Less");
@@ -668,9 +684,233 @@ QString learnedCorrectionsCaption(int count)
     return count == 1 ? QStringLiteral("Correction learned") : QStringLiteral("Corrections learned");
 }
 
-QString reviewLearnedCorrectionsCaption()
+QString learnedCorrectionsNote(int count, bool learningOn, bool accessibilityOn)
 {
-    return QStringLiteral("Review learned corrections…");
+    if (!learningOn) {
+        return QStringLiteral("Learning is off.");
+    }
+    if (!accessibilityOn) {
+        return accessibilityGateHelp(QStringLiteral("learn corrections"));
+    }
+    return count == 0 ? QStringLiteral("Fix a dictated word the same way twice and it appears here.")
+                      : QStringLiteral("Speecher learned these from edits you made after dictating.");
+}
+
+QString learnedCorrectionsAction(int count, bool learningOn)
+{
+    if (!learningOn) {
+        return QStringLiteral("Turn on learning");
+    }
+    return count == 0 ? QString() : QStringLiteral("Review learned corrections");
+}
+
+QString homeText(HomeText text)
+{
+    switch (text) {
+    case HomeText::InsightsOffTitle:
+        return QStringLiteral("Insights are off");
+    case HomeText::InsightsOffBody:
+        return QStringLiteral("Speecher isn't recording new dictation. History you already have stays on "
+                              "this computer until you clear it in Insights settings.");
+    case HomeText::NoInsightsTitle:
+        return QStringLiteral("No insights yet");
+    case HomeText::NoInsightsBody:
+        return QStringLiteral("Your stats appear here after your next dictation. They're stored only on "
+                              "this computer and never sent to the cloud.");
+    case HomeText::InsightsSettings:
+        return QStringLiteral("Insights settings");
+    case HomeText::YourDictation:
+        return QStringLiteral("Your dictation");
+    case HomeText::Period:
+        return QStringLiteral("Period");
+    case HomeText::Activity:
+        return QStringLiteral("Activity");
+    case HomeText::Measure:
+        return QStringLiteral("Measure");
+    case HomeText::WhenYouTalk:
+        return QStringLiteral("When you talk");
+    case HomeText::NoHourData:
+        return QStringLiteral("After a few days of dictation this shows the hours you talk most.");
+    case HomeText::Pace:
+        return QStringLiteral("Pace");
+    case HomeText::SpeakingPace:
+        return QStringLiteral("Your speaking pace");
+    case HomeText::SavedOverTyping:
+        return QStringLiteral("Saved over typing");
+    case HomeText::YouSpeaking:
+        return QStringLiteral("You, speaking");
+    case HomeText::TypicalTyping:
+        return QStringLiteral("Typical typing");
+    case HomeText::WhereYourWordsGo:
+        return QStringLiteral("Where your words go");
+    case HomeText::NoDictationInPeriod:
+        return QStringLiteral("No dictation in this period.");
+    case HomeText::Records:
+        return QStringLiteral("Records");
+    case HomeText::PrivacyNote:
+        return QStringLiteral("Insights are stored only on this computer and are never sent to the cloud.");
+    case HomeText::ClearHistoryTitle:
+        return QStringLiteral("Clear insights history");
+    case HomeText::ClearHistoryQuestion:
+        return QStringLiteral("Delete all insights history?");
+    case HomeText::ClearHistoryBody:
+        return QStringLiteral("Your stats, streaks and records are erased from this computer. This can't be "
+                              "undone.");
+    case HomeText::ClearHistoryConfirm:
+        return QStringLiteral("Delete history");
+    case HomeText::ClearHistoryFailed:
+        return QStringLiteral("Speecher couldn't delete the insights history. Close any app that has the "
+                              "history file open, then try again.");
+    }
+    return {};
+}
+
+QString minutesText(int minutes)
+{
+    if (minutes < 60) return QStringLiteral("%1 min").arg(minutes);
+    return minutes % 60 ? QStringLiteral("%1 h %2 min").arg(minutes / 60).arg(minutes % 60)
+                        : QStringLiteral("%1 h").arg(minutes / 60);
+}
+
+QString heatMeasureLabel(HeatMeasure measure)
+{
+    switch (measure) {
+    case HeatMeasure::Words:
+        return QStringLiteral("Words");
+    case HeatMeasure::Audio:
+        return QStringLiteral("Minutes of audio");
+    case HeatMeasure::Dictations:
+        break;
+    }
+    return QStringLiteral("Dictations");
+}
+
+namespace {
+
+// "45 s", or minutesText from a minute up: one heatmap day's audio.
+QString dayAudioText(qint64 audioMs)
+{
+    const qint64 seconds = (audioMs + 500) / 1000;
+    return seconds < 60 ? QStringLiteral("%1 s").arg(seconds) : minutesText(int((seconds + 30) / 60));
+}
+
+QString dayValueText(const HeatmapDay &day, HeatMeasure measure)
+{
+    switch (measure) {
+    case HeatMeasure::Words:
+        return wordCountText(day.words);
+    case HeatMeasure::Audio:
+        return QStringLiteral("%1 of audio").arg(dayAudioText(day.audioMs));
+    case HeatMeasure::Dictations:
+        break;
+    }
+    return dictationCountText(day.dictations);
+}
+
+qint64 dayValue(const HeatmapDay &day, HeatMeasure measure)
+{
+    switch (measure) {
+    case HeatMeasure::Words:
+        return day.words;
+    case HeatMeasure::Audio:
+        return day.audioMs;
+    case HeatMeasure::Dictations:
+        break;
+    }
+    return day.dictations;
+}
+
+} // namespace
+
+ChartTip heatmapDayTip(const HeatmapDay &day, HeatMeasure measure)
+{
+    const QString date = QLocale().toString(day.date, QStringLiteral("ddd, MMM d, yyyy"));
+    if (day.dictations == 0) {
+        return {QStringLiteral("No dictation"), date};
+    }
+    switch (measure) {
+    case HeatMeasure::Words:
+        return {QStringLiteral("%1 from %2").arg(wordCountText(day.words), dictationCountText(day.dictations)), date};
+    case HeatMeasure::Audio:
+        return {dayValueText(day, measure), date};
+    case HeatMeasure::Dictations:
+        break;
+    }
+    return {QStringLiteral("%1, %2").arg(dictationCountText(day.dictations), wordCountText(day.words)), date};
+}
+
+QString heatmapDescription(const InsightsSummary &summary, HeatMeasure measure)
+{
+    const QString active = activeDaysLastYearText(summary.activeDaysLastYear) + u'.';
+    const auto busiest = std::max_element(summary.heatmap.cbegin(), summary.heatmap.cend(),
+                                          [measure](const HeatmapDay &a, const HeatmapDay &b) {
+                                              return dayValue(a, measure) < dayValue(b, measure);
+                                          });
+    if (busiest == summary.heatmap.cend() || busiest->dictations == 0) {
+        return active;
+    }
+    return QStringLiteral("%1 Busiest: %2, %3.")
+        .arg(active, QLocale().toString(busiest->date, QStringLiteral("MMM d, yyyy")),
+             dayValueText(*busiest, measure));
+}
+
+QString hourChartDescription(const InsightsSummary &summary)
+{
+    return QStringLiteral("Dictations by hour of day. Most around %1, with %2.")
+        .arg(hourLabel(summary.peakHour), dictationCountText(summary.hourCounts[summary.peakHour]));
+}
+
+QString weekDescription(const InsightsSummary &summary)
+{
+    const QLocale locale;
+    QStringList days;
+    for (int index = 0; index <= summary.todayIndex; ++index) {
+        if (summary.weekActivity[index]) days << locale.dayName(index + 1, QLocale::LongFormat);
+    }
+    if (days.isEmpty()) {
+        return QStringLiteral("No dictation yet this week.");
+    }
+    const QString last = days.takeLast();
+    return QStringLiteral("Dictated this week on %1.")
+        .arg(days.isEmpty() ? last : QStringLiteral("%1 and %2").arg(days.join(QStringLiteral(", ")), last));
+}
+
+QList<InsightRecordText> insightRecords(const InsightsSummary &summary, const QDate &today)
+{
+    QList<InsightRecordText> records;
+    if (summary.nextMilestone > 0) {
+        records.append({QStringLiteral("Next milestone: %1 words").arg(formatNumber(summary.nextMilestone)),
+                        milestoneText(summary), QString(), true});
+    } else {
+        records.append({QStringLiteral("Every milestone passed"), milestoneText(summary),
+                        wordCountText(summary.allTimeWords)});
+    }
+    if (!(summary.bestStreakEndsToday && summary.currentStreak > 0)) {
+        records.append({QStringLiteral("Longest streak"),
+                        QStringLiteral("Ended %1").arg(relativeDay(summary.bestStreakEnd, today)),
+                        dayCountText(summary.bestStreak)});
+    }
+    const auto capitalized = [](QString text) {
+        if (!text.isEmpty()) text[0] = text.at(0).toUpper();
+        return text;
+    };
+    records.append({QStringLiteral("Longest dictation"),
+                    QStringLiteral("%1 into %2, %3")
+                        .arg(wordCountText(summary.longest.words), summary.longest.appName,
+                             relativeDay(summary.longest.date, today)),
+                    clockText(summary.longest.audioMs)});
+    records.append({QStringLiteral("Busiest day"), capitalized(relativeDay(summary.busiestDay.date, today)),
+                    dictationCountText(summary.busiestDay.dictations)});
+    records.append({QStringLiteral("Wordiest day"), capitalized(relativeDay(summary.wordiestDay.date, today)),
+                    wordCountText(summary.wordiestDay.words)});
+    if (summary.firstDictation.isValid()) {
+        const qint64 daysAgo = summary.firstDictation.daysTo(today);
+        records.append({QStringLiteral("First dictation"),
+                        QLocale().toString(summary.firstDictation, QStringLiteral("MMM d, yyyy")),
+                        daysAgo == 0 ? QStringLiteral("Today")
+                                     : QStringLiteral("%1 ago").arg(dayCountText(int(daysAgo)))});
+    }
+    return records;
 }
 
 } // namespace speecher

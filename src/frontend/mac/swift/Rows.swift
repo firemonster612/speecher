@@ -14,20 +14,25 @@ struct RowView: View {
     var body: some View {
         if row.enabled {
             control.help(row.tooltip)
-        } else if !gateNote {
+        } else if row.kind == .collection {
+            // A collection that is not enabled stays readable; its editor
+            // stops the edits and says why itself.
+            control
+        } else if !gateNote || row.disabledAction.isEmpty {
             control.disabled(true).help(row.disabledHelp)
         } else {
             // The schema requires the explanation visible beside the disabled
             // control and its recovery action usable (SettingsSchema.h's
-            // disabledHelp contract) — a tooltip alone hides both. One
-            // container: RowView sits in Form sections and the setup
+            // disabledHelp contract) — a tooltip alone hides both. The
+            // explanation is the row's description; the action goes under it
+            // in one container: RowView sits in Form sections and the setup
             // assistant, where sibling views would each become a form row
             // of their own.
             VStack(alignment: .leading) {
                 control
                     .disabled(true)
                     .help(row.disabledHelp)
-                GateNote(row: row, model: model)
+                Button(row.disabledActionLabel) { model.trigger(row.disabledAction) }
             }
         }
     }
@@ -67,7 +72,7 @@ struct RowView: View {
             // row's value; without one the label names the row.
             LabeledContent { Button(row.actionLabel) { model.trigger(row.rowId) } } label: {
                 Self.label(RowView.text(row.value).isEmpty ? row.label : RowView.text(row.value),
-                           help: row.enabled ? row.help : "")
+                           help: description)
             }
         case .collection:
             // The card's heading and footnote carry this row's label and help,
@@ -94,13 +99,8 @@ struct RowView: View {
             ShortcutRecorderRow(model: model)
         } else if row.rowId == "openAiAuth" {
             LabeledContent { CredentialField(model: model) } label: { label }
-        } else if row.rowId == "anthropicAuthMode" {
-            VStack(alignment: .leading) {
-                picker
-                if !model.anthropicCredentialStatus.isEmpty {
-                    Text(model.anthropicCredentialStatus)
-                }
-            }
+        } else if row.rowId == "anthropicAuth" {
+            LabeledContent { CredentialStatusLabel(status: model.anthropicCredentialStatus) } label: { label }
         } else if row.options.isEmpty, row.value is String {
             LabeledContent {
                 if row.secret {
@@ -114,22 +114,31 @@ struct RowView: View {
         }
     }
 
+    /// A release's title, its headings, and bullets that wrap under their own
+    /// first word rather than under the bullet.
     private var releaseNotes: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(Self.text(row.value)
-                    .components(separatedBy: "\n\n").enumerated()), id: \.offset) { _, block in
-                if block == "---" {
+            ForEach(Array(ReleaseNoteLine.parse(Self.text(row.value)).enumerated()), id: \.offset) { _, line in
+                switch line {
+                case .rule:
                     Divider()
-                } else {
-                    let heading = block.hasPrefix("#")
-                    let text = block.components(separatedBy: "\n")
-                        .map(Self.releaseNoteLine)
-                        .joined(separator: "\n")
+                case .title(let text):
+                    Text(Self.inlineMarkdown(text)).font(.title3.weight(.semibold))
+                case .heading(let text):
+                    Text(Self.inlineMarkdown(text)).font(.headline)
+                case .bullet(let text):
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(verbatim: "•")
+                        Text(Self.inlineMarkdown(text))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                case .text(let text):
                     Text(Self.inlineMarkdown(text))
-                        .fontWeight(heading ? .bold : nil)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .textSelection(.enabled)
     }
 
@@ -149,19 +158,27 @@ struct RowView: View {
         .disabled(row.options.allSatisfy { !$0.enabled })
     }
 
-    // The gate note in the row body replaces the description while the row is
-    // disabled, matching the Qt and Windows front ends; showing both would give
-    // a gated row two competing descriptions.
     private var label: some View {
-        Self.label(row.label, help: row.enabled || !gateNote ? row.help : "")
+        Self.label(row.label, help: description)
+    }
+
+    // Why a lone disabled row is disabled replaces its description, matching
+    // the Qt and Windows front ends; showing both would give a gated row two
+    // competing descriptions. A grouped row keeps its own, under the group's
+    // note.
+    private var description: String {
+        row.enabled || !gateNote || row.disabledHelp.isEmpty ? row.help : row.disabledHelp
     }
 
     /// The name of a setting and, under it, what it does. Two Texts in a stock
     /// label is how a settings row says that; SwiftUI sizes and colours the
     /// second one, which is why there is no font or colour here. A builder
-    /// rather than a view, so the form still sees two Texts.
+    /// rather than a view, so the form still sees two Texts. A row whose card
+    /// heading names it has no title of its own.
     @ViewBuilder static func label(_ title: String, help: String) -> some View {
-        Text(title)
+        if !title.isEmpty {
+            Text(title)
+        }
         if !help.isEmpty {
             Text(help)
         }
@@ -171,16 +188,6 @@ struct RowView: View {
     static func number(_ value: Any?) -> Int { (value as? NSNumber)?.intValue ?? 0 }
     static func text(_ value: Any?) -> String { value as? String ?? "" }
 
-    private static func releaseNoteLine(_ line: String) -> String {
-        if line.hasPrefix("#") {
-            return String(line.drop(while: { $0 == "#" || $0 == " " }))
-        }
-        if line.hasPrefix("- ") {
-            return "• " + String(line.dropFirst(2))
-        }
-        return line
-    }
-
     private static func inlineMarkdown(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(
             interpretedSyntax: .inlineOnlyPreservingWhitespace)
@@ -189,8 +196,62 @@ struct RowView: View {
     }
 }
 
+/// One line of What's New as it is drawn: core joins a bullet's wrapped lines,
+/// and a paragraph's are joined here.
+enum ReleaseNoteLine {
+    case title(String)
+    case heading(String)
+    case bullet(String)
+    case text(String)
+    case rule
+
+    static func parse(_ markdown: String) -> [ReleaseNoteLine] {
+        var lines: [ReleaseNoteLine] = []
+        for block in markdown.components(separatedBy: "\n\n") {
+            var paragraph: [String] = []
+            for line in block.components(separatedBy: "\n") where !line.isEmpty {
+                let special: ReleaseNoteLine?
+                if line == "---" {
+                    special = .rule
+                } else if line.hasPrefix("# ") {
+                    special = .title(String(line.dropFirst(2)))
+                } else if line.hasPrefix("#") {
+                    special = .heading(String(line.drop(while: { $0 == "#" || $0 == " " })))
+                } else if line.hasPrefix("- ") {
+                    special = .bullet(String(line.dropFirst(2)))
+                } else {
+                    special = nil
+                }
+                guard let special else {
+                    paragraph.append(line)
+                    continue
+                }
+                if !paragraph.isEmpty { lines.append(.text(paragraph.joined(separator: " "))) }
+                paragraph = []
+                lines.append(special)
+            }
+            if !paragraph.isEmpty { lines.append(.text(paragraph.joined(separator: " "))) }
+        }
+        return lines
+    }
+}
+
+/// A sign-in's status: what it says, marked as working or as a problem.
+struct CredentialStatusLabel: View {
+    let status: SpeecherCredentialStatus
+
+    var body: some View {
+        if status.ready {
+            Label(status.text, systemImage: "checkmark.circle")
+        } else {
+            Label(status.text, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+        }
+    }
+}
+
 /// Why a row is disabled and, where there is one, the action that lifts the
-/// gate. Beside a lone row's control, or as its own form row above a group.
+/// gate: its own form row above a group, or under a collection's table.
 struct GateNote: View {
     let row: SettingsRowModel
     @ObservedObject var model: AppModel
@@ -397,10 +458,12 @@ struct CredentialField: View {
                     Text(model.credentialProblem)
                 }
             }
-        } else {
+        } else if let status = model.credentialStatus {
             // Cached on the model: resolving it live can enter the keyring,
             // which must not happen inside a SwiftUI body.
-            Text(model.credentialStatus)
+            CredentialStatusLabel(status: status)
+        } else {
+            Text(SpeecherBridge.checkingCredentialsStatus)
         }
     }
 }

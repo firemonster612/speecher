@@ -3,6 +3,7 @@
 #include "core/AppSettings.h"
 #include "core/OutputFormat.h"
 #include "core/Target.h"
+#include "dictation/PopupPresentation.h"
 
 #include <functional>
 #include <optional>

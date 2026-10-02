@@ -1,6 +1,7 @@
 #include "providers/NativeCredentialStorage.h"
 
 #ifdef Q_OS_MACOS
+#include <QDebug>
 #include <QProcess>
 #include <Security/Security.h>
 #elif defined(Q_OS_WIN)
@@ -38,7 +39,7 @@ static QByteArray keychainCommand(const QByteArray &operation, const QByteArray 
     return command;
 }
 
-static bool finishKeychainTool(QProcess &process, QString *error)
+static bool finishKeychainTool(QProcess &process, const QString &failure, QString *error)
 {
     if (!process.waitForStarted(1000) || !process.waitForFinished(3000)) {
         process.kill();
@@ -48,8 +49,8 @@ static bool finishKeychainTool(QProcess &process, QString *error)
     }
     if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
         // Neither stdout nor stderr is safe to include in errors.
-        *error = QStringLiteral("macOS Keychain operation failed (exit %1); check Keychain access or sign in again")
-                     .arg(process.exitCode());
+        qWarning().noquote() << "macOS Keychain operation failed exit=" + QString::number(process.exitCode());
+        *error = failure;
         return false;
     }
     return true;
@@ -67,7 +68,9 @@ QByteArray readNativeCredential(const QByteArray &service, const QByteArray &acc
     process.start(QStringLiteral("/usr/bin/security"), {QStringLiteral("-i")});
     process.write(command);
     process.closeWriteChannel();
-    if (!finishKeychainTool(process, error)) return {};
+    if (!finishKeychainTool(process,
+                            QStringLiteral("Speecher can't read the saved login. Unlock your Keychain or sign in again."),
+                            error)) return {};
     QByteArray bytes = process.readAllStandardOutput();
     if (bytes.endsWith('\n')) bytes.chop(1);
     // security prints non-printable bytes as hex. A JSON object cannot itself
@@ -145,7 +148,9 @@ bool writeNativeCredential(const QByteArray &service, const QByteArray &account,
     process.start(QStringLiteral("/usr/bin/security"), {QStringLiteral("-i")});
     process.write(command);
     process.closeWriteChannel();
-    return finishKeychainTool(process, error);
+    return finishKeychainTool(process,
+                              QStringLiteral("Speecher can't save the refreshed login. Unlock your Keychain, then try again."),
+                              error);
 #elif defined(Q_OS_WIN)
     if (!canWriteNativeCredential(service, account, bytes, error)) return false;
     const QString target = QString::fromUtf8(account + '.' + service);

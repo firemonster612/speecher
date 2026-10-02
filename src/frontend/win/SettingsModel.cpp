@@ -229,7 +229,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
 {
     RowSnapshot snapshot;
     snapshot.id = row.id;
-    snapshot.label = row.label;
+    snapshot.label = row.labelValue ? row.labelValue(m_draft) : row.label;
     snapshot.help = row.helpValue ? row.helpValue(m_draft) : row.help;
     snapshot.kind = row.kind;
     snapshot.actionLabel = row.actionLabelValue ? row.actionLabelValue(m_draft) : row.actionLabel;
@@ -243,7 +243,8 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.multiline = row.multiline;
     snapshot.enabled = !row.enabled || row.enabled(m_draft, m_capabilities);
     snapshot.tooltip = row.tooltip;
-    snapshot.disabledHelp = row.disabledHelp;
+    snapshot.disabledHelp =
+        row.disabledHelpValue ? row.disabledHelpValue(m_draft, m_capabilities) : row.disabledHelp;
     snapshot.disabledAction = row.disabledAction;
     snapshot.disabledActionLabel = row.disabledActionLabel;
     snapshot.groupId = row.groupId;
@@ -297,9 +298,9 @@ const SettingsSchema &SettingsModel::schema() const
     return m_schema;
 }
 
-QStringList SettingsModel::searchPanes(const QString &query) const
+QList<SearchMatch> SettingsModel::search(const QString &query) const
 {
-    return speecher::searchPanes(m_schema, query, m_draft, m_capabilities);
+    return searchSettings(m_schema, query, m_draft, m_capabilities);
 }
 
 SectionSnapshot SettingsModel::section(const SettingsPaneGroup &group) const
@@ -358,6 +359,18 @@ void SettingsModel::syncWithStore()
 void SettingsModel::loadExpensiveRows()
 {
     m_expensiveReady = true;
+    refreshAudioInput();
+}
+
+bool SettingsModel::refreshAudioInput()
+{
+    if (!m_expensiveReady) {
+        return false;
+    }
+    const bool audioInput = !m_controller->platform()->availableAudioInputDevices().isEmpty();
+    const bool changed = audioInput != m_capabilities.audioInput;
+    m_capabilities.audioInput = audioInput;
+    return changed;
 }
 
 QStringList SettingsModel::problemsWith(const QList<QVariantMap> &records,
@@ -476,7 +489,8 @@ QString SettingsModel::credentialStatus() const
                               {},
                               m_draft.refinement.cliproxyBaseUrl,
                               m_draft.refinement.cliproxyApiKey)
-        .status();
+        .status()
+        .text;
 }
 
 QString SettingsModel::anthropicCredentialStatus() const

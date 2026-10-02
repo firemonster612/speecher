@@ -11,6 +11,7 @@ import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import kotlin.enums.enumEntries
+import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -19,6 +20,7 @@ class SettingsStore(private val context: Context) {
         context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE)
 
     fun load(): SpeecherSettings {
+        upgrade()
         // With nothing stored yet, fall back to the account the user is signed into rather than a
         // fixed provider, so neither Claude nor ChatGPT is favoured on a fresh install.
         val default = defaultProvider(TokenStore(context).signedIn())
@@ -202,6 +204,30 @@ class SettingsStore(private val context: Context) {
             )
             putString("buttonLayout", settings.buttonLayout.name)
             putString("panelSize", settings.panelSize.name)
+            putInt("version", VERSION)
+        }
+    }
+
+    /**
+     * Keeps what settings from an earlier release meant, once. That release placed the chip by the
+     * corner of a 52 x 36 dp window, now 56 x 48 dp with the same pill centred, so a saved offset
+     * moves up and left by half the difference to keep the pill put.
+     */
+    private fun upgrade() {
+        if (preferences.getInt("version", 1) >= VERSION) return
+        val density = context.resources.displayMetrics.density
+        preferences.edit(commit = true) {
+            if (preferences.contains("chipOffsetX") && preferences.contains("chipOffsetY")) {
+                putInt(
+                    "chipOffsetX",
+                    preferences.getInt("chipOffsetX", 0) - (2 * density).roundToInt(),
+                )
+                putInt(
+                    "chipOffsetY",
+                    preferences.getInt("chipOffsetY", 0) - (6 * density).roundToInt(),
+                )
+            }
+            putInt("version", VERSION)
         }
     }
 
@@ -227,6 +253,7 @@ class SettingsStore(private val context: Context) {
 
     private companion object {
         const val NO_OFFSET = Int.MIN_VALUE
+        const val VERSION = 2
         val replacedModels =
             mapOf("claude-sonnet-5" to "claude-sonnet-5-5", "gpt-6-sol" to "gpt-6.1-sol")
     }

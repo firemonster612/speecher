@@ -52,6 +52,7 @@
 #include <QSplitter>
 #include <QStandardPaths>
 #include <QStackedWidget>
+#include <QTabBar>
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QVBoxLayout>
@@ -127,13 +128,13 @@ private slots:
                 rows.append(item->text());
             }
         }
-        QStringList expected{QStringLiteral("Home"), QStringLiteral("General"), QStringLiteral("Accounts"),
-                             QStringLiteral("[Speech]"), QStringLiteral("Dictation")};
+        QStringList expected{QStringLiteral("Home"), QStringLiteral("Transcribe"), QStringLiteral("General"),
+                             QStringLiteral("Accounts"), QStringLiteral("[Speech]"), QStringLiteral("Dictation")};
 #ifdef SPEECHER_WITH_LOCAL_SPEECH
         expected.append(QStringLiteral("Local models"));
 #endif
-        expected += QStringList{QStringLiteral("Transcribe"), QStringLiteral("[Text]"),
-                                QStringLiteral("Refinement"), QStringLiteral("Vocabulary"),
+        expected += QStringList{QStringLiteral("[Text]"), QStringLiteral("Refinement"),
+                                QStringLiteral("Writing Profiles"), QStringLiteral("Vocabulary"),
                                 QStringLiteral("Output")};
         QCOMPARE(rows, expected);
 
@@ -162,7 +163,8 @@ private slots:
         // Up and Down step over the headers, from one pane to the next.
         navigation->setFocus();
         QTest::keyClick(navigation, Qt::Key_Down);
-        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("General"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Transcribe"));
+        QTest::keyClick(navigation, Qt::Key_Down);
         QTest::keyClick(navigation, Qt::Key_Down);
         QTest::keyClick(navigation, Qt::Key_Down);
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Dictation"));
@@ -180,9 +182,9 @@ private slots:
         auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
         window.showPage(QStringLiteral("vocabulary:corrections"));
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Vocabulary"));
-        QTabWidget *tabs = nullptr;
-        for (QTabWidget *candidate : window.findChildren<QTabWidget *>()) {
-            if (candidate->isVisibleTo(&window) || candidate->tabText(0) == QStringLiteral("Vocabulary")) {
+        QTabBar *tabs = nullptr;
+        for (QTabBar *candidate : window.findChildren<QTabBar *>()) {
+            if (candidate->tabText(0) == QStringLiteral("Terms")) {
                 tabs = candidate;
             }
         }
@@ -283,13 +285,10 @@ private slots:
         QVERIFY(integration);
         QVERIFY(integration->isHidden());
 
-        bool hasFullWidthHeading = false;
-        for (const QLabel *label : window.findChildren<QLabel *>(
-                 QStringLiteral("subsectionLabel"))) {
-            hasFullWidthHeading = hasFullWidthHeading
-                || label->text() == QStringLiteral("Global Shortcut");
-        }
-        QVERIFY(hasFullWidthHeading);
+        // The shortcut is a row of the card, titled like the other rows.
+        auto *row = control->findChild<QWidget *>(QStringLiteral("shortcutCapture"));
+        QVERIFY(row);
+        QCOMPARE(row->findChild<QLabel *>(QStringLiteral("rowTitle"))->text(), QStringLiteral("Global Shortcut"));
     }
 
     void sidebarOffersQuitSpeecher()
@@ -420,7 +419,7 @@ private slots:
         QCOMPARE(values.first(), QStringLiteral("90"));
         QVERIFY(page.findChild<QWidget *>(QStringLiteral("activityHeatmap")));
         const QList<QAction *> share =
-            page.findChild<QToolButton *>(QStringLiteral("shareInsights"))->menu()->actions();
+            page.findChild<QPushButton *>(QStringLiteral("shareInsights"))->menu()->actions();
         share.at(0)->trigger();
         QVERIFY(!QGuiApplication::clipboard()->image().isNull());
         share.at(1)->trigger();
@@ -917,11 +916,23 @@ private slots:
             QVERIFY(!navigation->itemWidget(navigation->item(row)));
             QVERIFY(!navigation->item(row)->text().isEmpty());
         }
-        // Return opens the first hit.
-        search->setText(QStringLiteral("paste"));
+        // Return opens the first hit at the row that matched.
+        window.show();
+        QVERIFY(QTest::qWaitForWindowActive(&window));
+        search->setText(QStringLiteral("default paste"));
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Output"));
         QTest::keyClick(search, Qt::Key_Return);
         QCOMPARE(window.findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Output"));
+        auto *output = window.findChild<SchemaSettingsPage *>(QStringLiteral("output"));
+        QTRY_VERIFY(output->isAncestorOf(QApplication::focusWidget()));
+        // Ctrl+F comes back to the field.
+        QTest::keyClick(&window, Qt::Key_F, Qt::ControlModifier);
+        QTRY_COMPARE(QApplication::focusWidget(), search);
+        // Nothing found says so, as an entry nobody can pick.
+        search->setText(QStringLiteral("zzzz"));
+        QCOMPARE(navigation->count(), 1);
+        QCOMPARE(navigation->item(0)->text(), QStringLiteral("No settings match"));
+        QCOMPARE(navigation->item(0)->flags(), Qt::NoItemFlags);
         // What's New is not searchable, even for its own name: General
         // answers, for the row that opens it.
         search->setText(QStringLiteral("What's New"));
@@ -1089,6 +1100,18 @@ private slots:
         windowAgain->click();
         QVERIFY(pageStart->isVisibleTo(&page));
         QVERIFY(!listed(&page));
+    }
+
+    void transcribeModelRowOpensRefinement()
+    {
+        ApplicationController controller(true);
+        TranscribePage page(&controller);
+        auto *model = page.findChild<QPushButton *>(QStringLiteral("transcribeRefinerModel"));
+        QVERIFY(model);
+        QSignalSpy requested(&page, &TranscribePage::pageRequested);
+        model->click();
+        QCOMPARE(requested.count(), 1);
+        QCOMPARE(requested.first().first().toString(), QStringLiteral("refinement"));
     }
 
     // Going back to setup while a retry runs, then starting the next batch:
@@ -1348,6 +1371,25 @@ private slots:
         QCOMPARE(outcome.messages,
                  QStringList{QStringLiteral(
                      "Row 2 duplicates the normalized spoken phrase from row 1.")});
+    }
+
+    void saveReportsInvalidTones()
+    {
+        ApplicationController controller(true);
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        SettingsPageSet::SaveOutcome outcome;
+        pages.load();
+
+        AppSettings withBlankTone = controller.settings()->snapshot();
+        withBlankTone.refinement.customTones = {
+            {QStringLiteral("pirate"), QStringLiteral("Pirate"), QString()},
+        };
+        pages.page(QStringLiteral("writingProfiles"))->load(withBlankTone);
+
+        QVERIFY(!pages.save(false, true, &outcome));
+        QCOMPARE(outcome.failure, SettingsPageSet::SaveFailure::InvalidTonesOrCleanupLevels);
+        QCOMPARE(outcome.messages, QStringList{QStringLiteral("Every tone needs an instruction.")});
     }
 
 private:

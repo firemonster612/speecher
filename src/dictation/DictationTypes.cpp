@@ -25,8 +25,9 @@ DictationToggleAction dictationToggleAction(const QString &stateName)
     if (lowered == QStringLiteral("refining")) {
         return {QStringLiteral("Cancel refinement"), true};
     }
+    // Nothing to do while the text is on its way, so the control says why.
     if (lowered == QStringLiteral("stopping") || lowered == QStringLiteral("delivering")) {
-        return {QStringLiteral("Start dictation"), false};
+        return {dictationStatusLabel(lowered), false};
     }
     // Keyed on the state name because that is what the callers receive over
     // their state-change signals, so the compiler cannot enforce coverage:
@@ -59,6 +60,13 @@ QString dictationStatusLabel(const QString &stateName, const QString &message)
 QString dictationFailureNote(const QString &stateName, const QString &lastFailure)
 {
     return stateName.toLower() == QStringLiteral("error") ? QString() : lastFailure;
+}
+
+QString dictationShortcutHint(const QString &shortcut)
+{
+    return shortcut.isEmpty()
+        ? QStringLiteral("Set a Global Shortcut to dictate from anywhere.")
+        : QStringLiteral("Press %1 anywhere to dictate into the app you're using.").arg(shortcut);
 }
 
 bool dictationListeningPresentation(const QString &stateName)

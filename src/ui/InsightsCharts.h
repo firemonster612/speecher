@@ -19,7 +19,7 @@ class InsightsHeatmap final : public QWidget {
 
 public:
     enum class Shape {
-        Year,   // 53 Monday-first weeks, fewer when narrow; cells never under 10 px
+        Year,   // 53 Monday-first weeks, fewer when narrow; cells never under 8 px
         Week,   // this week's days as dots, today ringed
         Legend, // the five levels, Less to More
     };
@@ -34,11 +34,16 @@ public:
     bool hasHeightForWidth() const override;
     int heightForWidth(int width) const override;
 
+signals:
+    // A Year heatmap too narrow for every week draws only the latest ones.
+    void drawnWeeksChanged(int weeks);
+
 protected:
     bool event(QEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void leaveEvent(QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     struct Cell {
@@ -55,19 +60,20 @@ private:
         QList<Cell> cells;
         QList<Label> labels;
         QSize size;
+        int weeks = 0;
     };
 
     Geometry layOut(int width) const;
     Geometry layOutYear(int width) const;
     Geometry layOutWeek() const;
     Geometry layOutLegend() const;
-    QString describe(const HeatmapDay &day) const;
     QColor levelColor(int level) const;
 
     Shape m_shape;
     // The cell under the pointer, outlined and described at once rather than
     // after the tooltip delay; -1 when none is.
     int m_hovered = -1;
+    int m_drawnWeeks = 0;
     HeatMeasure m_measure = HeatMeasure::Dictations;
     QList<HeatmapDay> m_days;
     HeatScale m_scale{{}, HeatMeasure::Dictations};

@@ -18,6 +18,16 @@ struct MenuBarPanel: View {
         VStack(alignment: .leading) {
             Label(model.status, systemImage: model.listening ? "mic.fill" : "mic")
                 .font(.headline)
+            // Why the last dictation failed, which the popup has since put
+            // away, and what fixes it.
+            if !model.failureNote.isEmpty {
+                Text(model.failureNote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let fix = model.failureFix {
+                    Button(fix.label) { model.perform(fix) }
+                }
+            }
             if model.listening {
                 // A level meter is not progress towards anything, so it is a
                 // gauge rather than a progress view, and its label is hidden
@@ -47,8 +57,15 @@ struct MenuBarPanel: View {
                 Button(model.bridge.copyTranscriptCaption, systemImage: "doc.on.doc") { model.copyTranscript() }
             }
             Divider()
-            LabeledContent("Shortcut") {
-                Text(model.shortcut.isEmpty ? "None" : model.shortcut)
+            if model.shortcut.isEmpty {
+                let openDictation = SpeecherErrorAction(fix: .settingsPage, pageId: "dictation")
+                Text(model.bridge.dictationShortcutHint(""))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(openDictation.label) { model.perform(openDictation) }
+            } else {
+                LabeledContent(model.row("globalShortcut")?.label ?? "") {
+                    Text(model.shortcut)
+                }
             }
             Button(model.bridge.traySettingsCaption) { openSettings() }
             Button(model.bridge.trayQuitCaption) { model.bridge.quit() }
@@ -73,12 +90,12 @@ struct AccessibilityNotice: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Label("Without Accessibility, dictation only reaches the clipboard.",
+        Label(model.bridge.accessibilityNoticeText(compact: true),
               systemImage: "exclamationmark.triangle")
             // A sentence in a Label truncates to one line unless it is told it
             // may grow downwards.
             .fixedSize(horizontal: false, vertical: true)
-        Button("Open Privacy & Security…") { model.requestAccessibility() }
+        Button(SpeecherBridge.accessibilityGrantActionLabel) { model.requestAccessibility() }
         if !model.accessibilityProblem.isEmpty {
             Text(model.accessibilityProblem)
         }
@@ -112,27 +129,36 @@ final class SpeecherMenuBarExtra: NSObject {
         popover.contentViewController = hostingController
         item.button?.action = #selector(togglePanel)
         item.button?.target = self
-        symbol(listening: model.listening)
+        symbol()
         // The item has to say what dictation is doing even while every window
-        // is shut, which is the whole reason it exists.
-        stateObserver = model.$listening.sink { [weak self] listening in
-            self?.symbol(listening: listening)
+        // is shut, which is the whole reason it exists: listening, working on
+        // what was heard, or failed until the next session starts.
+        stateObserver = model.$status.sink { [weak self] _ in
+            // After the model's other properties have taken the new state.
+            DispatchQueue.main.async { self?.symbol() }
         }
     }
 
-    private func symbol(listening: Bool) {
+    private func symbol() {
         guard let button = item.button else { return }
-        if listening {
+        let busy: Set<SpeecherDictationState> = [.stopping, .refining, .delivering]
+        if model.listening {
             button.image = NSImage(systemSymbolName: "mic.fill",
-                                   accessibilityDescription: "Speecher is listening")
+                                   accessibilityDescription: model.bridge.trayToolTip(listening: true))
+        } else if busy.contains(model.dictationState) {
+            button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: model.status)
+        } else if model.dictationState == .error || !model.failureNote.isEmpty {
+            button.image = NSImage(systemSymbolName: "exclamationmark.triangle",
+                                   accessibilityDescription: model.failureNote.isEmpty ? model.status
+                                                                                       : model.failureNote)
         } else {
             // A status item with no image is invisible, so a bundle resource
             // that fails to load must fall back to a symbol, never to nothing.
             let image = Bundle.main.image(forResource: "speecher-menubar")
-                ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "Speecher")
+                ?? NSImage(systemSymbolName: "mic", accessibilityDescription: model.bridge.trayToolTip(listening: false))
             image?.size = Self.idleIconSize
             button.image = image
-            button.image?.accessibilityDescription = "Speecher"
+            button.image?.accessibilityDescription = model.bridge.trayToolTip(listening: false)
         }
         button.image?.isTemplate = true
     }

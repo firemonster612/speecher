@@ -20,7 +20,8 @@ namespace speecher {
 class ApplicationController;
 
 // Records the dictation shortcut as one button: click to arm, press a key
-// combination or a single key, and it applies immediately. A combination
+// combination or a single key, and it applies immediately; click again or
+// press Escape to give up. A combination
 // commits as soon as its non-modifier arrives; a bare modifier — which
 // QKeySequenceEdit cannot capture — commits on release, once it is clear no
 // other key is joining it, resolved to a KeyboardEvent.code from its evdev
@@ -31,9 +32,10 @@ class ShortcutCaptureButton final : public QPushButton {
 
 public:
     explicit ShortcutCaptureButton(QWidget *parent = nullptr);
-    // The currently bound shortcut, shown while idle; empty shows
-    // "Set shortcut".
+    // The currently bound shortcut, which the row shows beside this button.
+    // Empty reads "Set shortcut", anything else "Change…".
     void setShortcutDisplay(const QString &display);
+    bool armed() const { return m_armed; }
     // Where the desktop registers combinations, a bare non-modifier such as
     // F13 binds as a plain QKeySequence through that service; without one it
     // can only bind as a watched single key.
@@ -84,13 +86,18 @@ class LinuxGlobalShortcutSetupPage final : public QWidget, public SetupStep {
     Q_OBJECT
 
 public:
+    enum class Placement {
+        // The setup step: the install, the shortcut's card, and the
+        // activation mode.
+        SetupStep,
+        // The Dictation settings card's rows: the page already renders the
+        // activation-mode row, and Speecher is installed by then.
+        SettingsCard,
+    };
+
     explicit LinuxGlobalShortcutSetupPage(ApplicationController &controller,
-                                          QWidget *parent = nullptr);
-    void hideAppMenuIntegration();
-    // The General settings page already renders the activation-mode schema
-    // row, so the embedded copy hides its own combo to avoid two controls over
-    // one setting. The wizard step keeps it.
-    void hideActivationMode();
+                                          QWidget *parent = nullptr,
+                                          Placement placement = Placement::SetupStep);
 
     // True while this AppImage run still needs the user to click Install
     // Speecher.
@@ -114,6 +121,8 @@ protected:
 private:
     void installIntegration();
     void applyBinding(const ShortcutBinding &binding);
+    void resetShortcut();
+    void clearShortcut();
     void chooseShortcut();
     void installKeyHelper();
     void refresh();
@@ -121,6 +130,10 @@ private:
     void refreshKeyHelper();
     // The feedback line only occupies the card while it has something to say.
     void showCaptureFeedback(const QString &text);
+    void setStatus(const QString &text);
+    // The row's description: what to press while capturing, else the latest
+    // status, else what the shortcut is for.
+    void refreshDescription();
     void showRegistrationResult(bool bound, const QString &detail);
 
     ApplicationController &m_controller;
@@ -129,19 +142,22 @@ private:
     QString m_binaryPath;
     bool m_waylandSession = false;
     QWidget *m_captureControls = nullptr;
-    QWidget *m_portalControls = nullptr;
     QWidget *m_manualControls = nullptr;
     QWidget *m_keyHelperControls = nullptr;
     ShortcutCaptureButton *m_setShortcut = nullptr;
     QPushButton *m_chooseShortcut = nullptr;
-    QLabel *m_captureLead = nullptr;
+    QPushButton *m_resetShortcut = nullptr;
+    QPushButton *m_clearShortcut = nullptr;
+    QLabel *m_binding = nullptr;
+    QLabel *m_description = nullptr;
+    QString m_statusText;
+    bool m_combinationsAvailable = false;
     QLabel *m_captureFeedback = nullptr;
     QWidget *m_activationModeRow = nullptr;
     QComboBox *m_activationMode = nullptr;
     QPushButton *m_keyHelperButton = nullptr;
     QLabel *m_keyHelperStatus = nullptr;
     QProgressBar *m_keyHelperProgress = nullptr;
-    QLabel *m_status = nullptr;
     QLabel *m_command = nullptr;
     QLabel *m_trayNote = nullptr;
     QLabel *m_holdUnavailableNote = nullptr;
@@ -149,7 +165,7 @@ private:
     QWidget *m_integration = nullptr;
     QPushButton *m_integrationButton = nullptr;
     QLabel *m_integrationStatus = nullptr;
-    bool m_integrationHidden = false;
+    bool m_settingsCard = false;
     std::optional<bool> m_notifiedStepComplete;
 };
 

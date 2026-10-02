@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "core/ShortcutBinding.h"
+#include "core/settings/SettingsSchema.h"
 #include "platform/win/WinGlobalShortcutBinder.h"
 
 #include <QDebug>
@@ -110,9 +111,19 @@ bool leftToDialog(const VirtualKey key)
         && ShortcutRecorder::heldModifiers() == Qt::NoModifier;
 }
 
-// Records the next shortcut in a modal dialog: the hotkey is suspended while it
-// is open and given back when it closes, whichever way that happens.
-void showRecorderDialog(PaneHost &host, const QString &title, const std::function<void()> &changed)
+// Binds `binding`, saying in host.shortcutProblem why when the binder refuses.
+void bind(PaneHost &host, const ShortcutBinding &binding)
+{
+    QString error;
+    if (!host.controller->setGlobalShortcut(binding, &error)) {
+        host.shortcutNotice.clear();
+        host.shortcutProblem = error.isEmpty() ? globalShortcutBindFailedText() : error;
+    }
+}
+
+} // namespace
+
+void ShortcutRecorder::record(PaneHost &host, const QString &title, std::function<void()> changed)
 {
     if (host.shortcutRecording || !host.xamlRoot || !host.xamlRoot()) {
         return;
@@ -130,7 +141,6 @@ void showRecorderDialog(PaneHost &host, const QString &title, const std::functio
     }
     dialog.Title(box_value(hs(title)));
     dialog.PrimaryButtonText(L"Save");
-    dialog.SecondaryButtonText(L"Reset to Ctrl+Alt+D");
     dialog.CloseButtonText(L"Cancel");
     dialog.DefaultButton(ContentDialogButton::Primary);
     dialog.IsPrimaryButtonEnabled(false);
@@ -138,10 +148,7 @@ void showRecorderDialog(PaneHost &host, const QString &title, const std::functio
     StackPanel content;
     content.Spacing(12);
     content.MinWidth(360);
-    content.Children().Append(styledTextBlock(
-        QStringLiteral("Press the keys you want: a combination, or a single key such as "
-                       "Right Alt or F13."),
-        L"BodyTextBlockStyle"));
+    content.Children().Append(styledTextBlock(globalShortcutPrompt(), L"BodyTextBlockStyle"));
     // The one focusable thing in the content, and the only place keys are
     // recorded, so the buttons keep their own Enter and Space and the default
     // button keeps its accent. It takes focus when the dialog opens.
@@ -224,29 +231,18 @@ void showRecorderDialog(PaneHost &host, const QString &title, const std::functio
         }
         show();
     });
-    // The one place a recording ends. Saving applies the captured binding,
-    // Reset the default one; Cancel, Escape and the window closing apply none.
-    // The binding changes before the hotkey comes back, so what comes back,
-    // and any error it reports, is the binding now in force.
+    // The one place a recording ends. Saving applies the captured binding;
+    // Cancel, Escape and the window closing apply none. The binding changes
+    // before the hotkey comes back, so what comes back, and any error it
+    // reports, is the binding now in force.
     dialog.Closed([&host, recording, changed, weak = std::weak_ptr<bool>(host.alive)](
                       const ContentDialog &, const ContentDialogClosedEventArgs &args) {
         if (gone(weak)) {
             return;
         }
-        ShortcutBinding chosen;
         if (args.Result() == ContentDialogResult::Primary) {
-            chosen = recording->capture.binding;
             host.shortcutNotice = recording->capture.notice;
-        } else if (args.Result() == ContentDialogResult::Secondary) {
-            chosen = WinGlobalShortcutBinder::defaultShortcut();
-        }
-        if (!chosen.isEmpty()) {
-            QString error;
-            if (!host.controller->setGlobalShortcut(chosen, &error)) {
-                host.shortcutNotice.clear();
-                host.shortcutProblem = error.isEmpty() ? QStringLiteral("That shortcut could not be bound.")
-                                                       : error;
-            }
+            bind(host, recording->capture.binding);
         }
         ShortcutRecorder::setRecording(host, false);
         changed();
@@ -262,7 +258,12 @@ void showRecorderDialog(PaneHost &host, const QString &title, const std::functio
     }
 }
 
-} // namespace
+void ShortcutRecorder::reset(PaneHost &host)
+{
+    host.shortcutProblem.clear();
+    host.shortcutNotice.clear();
+    bind(host, WinGlobalShortcutBinder::defaultShortcut());
+}
 
 // The Qt key a Windows virtual key stands for. Qt's enum uses the unshifted
 // character for every printable key the binder accepts, so the binder's own
@@ -347,62 +348,50 @@ void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
 
 StackPanel ShortcutRecorder::element(const RowSnapshot &row, PaneHost &host)
 {
-    StackPanel column;
-    const auto shortcutText = [&host] {
-        const QString display = host.controller->globalShortcut().displayText();
-        return display.isEmpty() ? QStringLiteral("None") : display;
-    };
-    TextBlock current = secondaryTextBlock(shortcutText(), L"SettingsInfoTextStyle", host);
-    InfoBar note;
-    note.IsClosable(false);
-    note.Margin({16, 0, 16, 12});
-    // After the dialog, what it left behind: the binder's refusal, or the
-    // typing cost of a single key that did save. Updated in place, and weakly,
-    // because the row these handlers live on holds both controls.
-    const auto showNote = [&host, note = make_weak(note)] {
-        const auto bar = note.get();
-        if (!bar) {
-            return;
-        }
-        const bool problem = !host.shortcutProblem.isEmpty();
-        bar.Severity(problem ? InfoBarSeverity::Error : InfoBarSeverity::Informational);
-        bar.Message(hs(problem ? host.shortcutProblem : host.shortcutNotice));
-        bar.IsOpen(problem || !host.shortcutNotice.isEmpty());
-    };
-
-    Button set;
-    set.Content(box_value(L"Set shortcut…"));
-    set.IsEnabled(host.controller->globalShortcutsSupported());
-    set.Click([&host, title = row.label, current = make_weak(current), shortcutText,
-               showNote](const auto &, const auto &) {
-        showRecorderDialog(host, title, [&host, current, shortcutText, showNote] {
-            // A rebuild while the dialog was open (a theme flip, news from
-            // LocalSetup) replaced this row with one built before the change,
-            // so the page is built again to show it.
-            const auto text = current.get();
-            if (!text || !text.IsLoaded()) {
-                host.refresh();
-                return;
-            }
-            text.Text(hs(shortcutText()));
-            showNote();
-        });
-    });
+    const QString current = host.controller->globalShortcut().displayText();
+    const ShortcutBinding standard = WinGlobalShortcutBinder::defaultShortcut();
     StackPanel control;
     control.Orientation(Orientation::Horizontal);
-    control.Spacing(12);
-    current.VerticalAlignment(VerticalAlignment::Center);
-    control.Children().Append(current);
-    control.Children().Append(set);
+    control.Spacing(8);
+    TextBlock binding = secondaryTextBlock(current.isEmpty() ? globalShortcutUnsetText() : current,
+                                           L"SettingsInfoTextStyle", host);
+    binding.VerticalAlignment(VerticalAlignment::Center);
+    binding.Margin({0, 0, 4, 0});
+    control.Children().Append(binding);
+    const bool supported = host.controller->globalShortcutsSupported();
+    Button change;
+    change.Content(box_value(hs(globalShortcutChangeCaption())));
+    change.IsEnabled(supported);
+    change.Click([&host, title = row.label](const auto &, const auto &) {
+        record(host, title, [&host] { host.refresh(); });
+    });
+    control.Children().Append(change);
+    if (host.controller->globalShortcut() != standard) {
+        Button reset;
+        reset.Content(box_value(hs(globalShortcutResetCaption(standard.displayText()))));
+        reset.IsEnabled(supported);
+        reset.Click([&host](const auto &, const auto &) {
+            ShortcutRecorder::reset(host);
+            host.refresh();
+        });
+        control.Children().Append(reset);
+    }
 
-    // No title: the section header right above already reads Global Shortcut,
-    // the row's label.
-    RowSnapshot recorderRow;
-    recorderRow.id = QStringLiteral("shortcutRecorder");
-    recorderRow.help = row.help;
-    column.Children().Append(rowGrid(recorderRow, control, host, false));
-    showNote();
-    column.Children().Append(note);
+    StackPanel column;
+    column.Children().Append(rowGrid(row, control, host, false));
+    // What the last change left behind: the binder's refusal, or the typing
+    // cost of a single key that did save. Absent, not just closed, while there
+    // is nothing to say, so it leaves no gap under the row.
+    const bool problem = !host.shortcutProblem.isEmpty();
+    if (problem || !host.shortcutNotice.isEmpty()) {
+        InfoBar note;
+        note.IsClosable(false);
+        note.Margin({16, 0, 16, 12});
+        note.Severity(problem ? InfoBarSeverity::Error : InfoBarSeverity::Informational);
+        note.Message(hs(problem ? host.shortcutProblem : host.shortcutNotice));
+        note.IsOpen(true);
+        column.Children().Append(note);
+    }
     return column;
 }
 

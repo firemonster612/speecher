@@ -78,7 +78,7 @@ private slots:
         QCOMPARE(VocabularyLimit::summary(vocabularyTermsOf(settings.vocabularyEntries()), QStringLiteral("claude")),
                  QStringLiteral("183 terms. 100 are key terms, and all are used for refinement."));
         QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}, QStringLiteral("claude")),
-                 QStringLiteral("2 of 100 key terms, using 2 of 500 tokens"));
+                 QStringLiteral("2 of 100 key terms"));
         QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}, QStringLiteral("codex")),
                  QStringLiteral("2 terms, all are used for refinement"));
         QStringList tooMany;

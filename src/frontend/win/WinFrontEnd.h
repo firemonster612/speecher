@@ -24,7 +24,7 @@ public:
     void showSetupAssistant(SetupAssistantPage page) override;
     void showTranscribeFiles(const QStringList &paths) override;
     bool captureMainWindow(const QString &path) override;
-    void showDictationError(const QString &message) override;
+    void showDictationError(const QString &message, const PopupErrorAction &fix = {}) override;
     void alert() override;
     void notifyIfNoWindowShown(const QString &title, const QString &message, const QString &pageId) override;
 

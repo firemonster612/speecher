@@ -94,11 +94,7 @@ QString summary(const QStringList &terms, const QString &speechProviderId)
             .arg(sent.size())
             .arg(refinement);
     }
-    return QStringLiteral("%1 of %2 key terms, using %3 of %4 tokens")
-        .arg(terms.size())
-        .arg(maxKeyterms)
-        .arg(tokenCount(terms))
-        .arg(maxTokens);
+    return QStringLiteral("%1 of %2 key terms").arg(terms.size()).arg(maxKeyterms);
 }
 
 } // namespace speecher::VocabularyLimit

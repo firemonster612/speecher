@@ -51,6 +51,13 @@ private slots:
         QVERIFY(dictationToggleAction(QStringLiteral("error")).enabled);
     }
 
+    void popupErrorsStayLongEnoughToRead()
+    {
+        QCOMPARE(popupErrorDismissMs(QStringLiteral("Microphone unavailable")), 8000);
+        QCOMPARE(popupErrorDismissMs(QString(200, u'a')), 12000);
+        QCOMPARE(popupErrorDismissMs(QString(2000, u'a')), 30000);
+    }
+
     // The tray panels' transcript is the preview, then the delivered text, and
     // outlives the session: a new one starting keeps it until it hears words,
     // and a failed one leaves what it heard.
@@ -1033,7 +1040,7 @@ private slots:
         QSignalSpy shown(&session, &DictationSession::popupShowRequested);
         QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
         const int errorSignalIndex = session.metaObject()->indexOfSignal(
-            "popupErrorRequested(QString)");
+            "popupErrorRequested(QString,speecher::PopupErrorAction)");
         QVERIFY(errorSignalIndex >= 0);
         QSignalSpy message(
             &session,
@@ -1048,6 +1055,7 @@ private slots:
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(),
                  QStringLiteral("Claude login cannot be refreshed"));
+        QCOMPARE(message.first().at(1).value<PopupErrorAction>().pageId, QStringLiteral("accounts"));
         QTest::qWait(1900);
         QCOMPARE(int(session.state()), int(DictationState::Error));
         QCOMPARE(hidden.count(), 0);
@@ -1150,7 +1158,7 @@ private slots:
 
         // Mic toggled off: the speech preview disappears for the whole
         // transcribe-then-refine stretch, even when late partials arrive.
-        popup.setStatus(QStringLiteral("Stopping"));
+        popup.setSessionState(DictationState::Stopping);
         QVERIFY(!previewPill->isHidden());
         QVERIFY(rawTranscript->isHidden());
         QVERIFY(!waveform->isHidden());
@@ -1198,6 +1206,8 @@ private slots:
         const QString error = QStringLiteral(
             "Claude login cannot be refreshed; run `claude` in a terminal and use the `/login` command");
 
+        // Clear of the test's pointer: resting on the capsule holds the countdown.
+        popup.move(QCursor::pos() + QPoint(50, 50));
         popup.show();
         QVERIFY(QMetaObject::invokeMethod(
             &popup,
@@ -1214,7 +1224,7 @@ private slots:
         QTest::qWait(150);
         QVERIFY(dismissProgress->value() < dismissProgress->maximum());
         QVERIFY(dismissProgress->value() > dismissProgress->minimum());
-        QTRY_VERIFY_WITH_TIMEOUT(popup.isHidden(), 5500);
+        QTRY_VERIFY_WITH_TIMEOUT(popup.isHidden(), popupErrorDismissMs(error) + 500);
     }
 };
 

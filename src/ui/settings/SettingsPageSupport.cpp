@@ -212,48 +212,46 @@ namespace {
 // wide it is, or a description that wraps gets clipped.
 class SettingsRow final : public QFrame {
 public:
-    explicit SettingsRow(QWidget *parent)
+    explicit SettingsRow(QWidget *parent, QComboBox *combo = nullptr)
         : QFrame(parent)
+        , m_combo(combo)
     {
     }
 
 protected:
     void resizeEvent(QResizeEvent *event) override
     {
+        // A combo sized to its longest choice would squeeze the description
+        // into a sliver, so it gets at most half the row.
+        if (m_combo) {
+            m_combo->setMaximumWidth(event->size().width() / 2);
+        }
         QFrame::resizeEvent(event);
+        fitHeight();
+    }
+
+    // A control shown or hidden at the same row width, such as a button,
+    // changes how far the text wraps without resizing the row.
+    bool event(QEvent *event) override
+    {
+        const bool handled = QFrame::event(event);
+        if (event->type() == QEvent::LayoutRequest) {
+            fitHeight();
+        }
+        return handled;
+    }
+
+private:
+    void fitHeight()
+    {
         if (QLayout *rowLayout = layout()) {
             setMinimumHeight(rowLayout->hasHeightForWidth()
                                  ? rowLayout->heightForWidth(width())
                                  : rowLayout->minimumSize().height());
         }
     }
-};
 
-// The wrapping text beside a check box whose sentence is too long to be the
-// box's own text. Clicking the words toggles the box, as a check box label does.
-class CheckBoxCaption final : public QLabel {
-public:
-    CheckBoxCaption(const QString &text, QCheckBox *checkBox, QWidget *parent)
-        : QLabel(text, parent)
-        , m_checkBox(checkBox)
-    {
-        setObjectName(QStringLiteral("checkBoxCaption"));
-        setWordWrap(true);
-        setBuddy(checkBox);
-    }
-
-protected:
-    void mouseReleaseEvent(QMouseEvent *event) override
-    {
-        QLabel::mouseReleaseEvent(event);
-        if (event->button() == Qt::LeftButton && rect().contains(event->pos())
-            && m_checkBox->isEnabled()) {
-            m_checkBox->toggle();
-        }
-    }
-
-private:
-    QCheckBox *m_checkBox;
+    QComboBox *m_combo;
 };
 
 } // namespace
@@ -267,18 +265,14 @@ QFrame *makeRow(const QString &label,
 {
     // One card row: title and an optional one-line subtitle on the left, the
     // control on the right, vertically centred. A text field is the exception:
-    // it wants the full row width, so it sits below the title.
-    auto *row = new SettingsRow(parent);
+    // it wants the full row width, so it sits below the title. A check box is
+    // FormCheckDelegate: the box carries the label, the description below it.
+    auto *checkBox = qobject_cast<QCheckBox *>(control);
+    auto *row = new SettingsRow(parent, qobject_cast<QComboBox *>(control));
     row->setObjectName(QStringLiteral("settingsRow"));
     QSizePolicy rowPolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     rowPolicy.setHeightForWidth(true);
     row->setSizePolicy(rowPolicy);
-
-    auto *checkBox = qobject_cast<QCheckBox *>(control);
-    // A check box row reads as one sentence: the sentence is the title and
-    // clicking the words toggles the box, as a check box label would.
-    const QString titleText = checkBox && !description.isEmpty() ? description : label;
-    const QString subtitleText = checkBox ? QString() : description;
 
     auto *text = new QWidget(row);
     text->setObjectName(QStringLiteral("rowLabelCell"));
@@ -287,48 +281,73 @@ QFrame *makeRow(const QString &label,
     textLayout->setContentsMargins(0, 0, 0, 0);
     textLayout->setSpacing(0);
 
-    QLabel *title = checkBox ? new CheckBoxCaption(titleText, checkBox, text)
-                             : new QLabel(titleText, text);
-    title->setObjectName(QStringLiteral("rowTitle"));
-    title->setWordWrap(true);
-    title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     if (checkBox) {
-        checkBox->setText(QString());
-        checkBox->setAccessibleName(titleText);
-    }
-    if (titleAccessory) {
-        auto *titleRow = new QWidget(text);
-        titleRow->setObjectName(QStringLiteral("rowText"));
-        auto *titleLayout = new QHBoxLayout(titleRow);
-        titleLayout->setContentsMargins(0, 0, 0, 0);
-        titleLayout->setSpacing(tightSpacing());
-        titleLayout->addWidget(title, 0, Qt::AlignVCenter);
-        titleLayout->addWidget(titleAccessory, 0, Qt::AlignVCenter);
-        titleLayout->addStretch(1);
-        textLayout->addWidget(titleRow);
+        checkBox->setText(label);
+        textLayout->addWidget(checkBox);
     } else {
-        textLayout->addWidget(title);
+        // A row without a label keeps the (hidden) title, so it leaves no
+        // empty line above its description or field.
+        auto *title = new QLabel(label, text);
+        title->setObjectName(QStringLiteral("rowTitle"));
+        title->setWordWrap(true);
+        title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        title->setVisible(!label.isEmpty());
+        if (control->focusPolicy() != Qt::NoFocus) {
+            title->setBuddy(control);
+        }
+        if (titleAccessory) {
+            auto *titleRow = new QWidget(text);
+            titleRow->setObjectName(QStringLiteral("rowText"));
+            auto *titleLayout = new QHBoxLayout(titleRow);
+            titleLayout->setContentsMargins(0, 0, 0, 0);
+            titleLayout->setSpacing(tightSpacing());
+            titleLayout->addWidget(title, 0, Qt::AlignVCenter);
+            titleLayout->addWidget(titleAccessory, 0, Qt::AlignVCenter);
+            titleLayout->addStretch(1);
+            textLayout->addWidget(titleRow);
+        } else {
+            textLayout->addWidget(title);
+        }
     }
-    if (!subtitleText.isEmpty() || dynamicDescription) {
+    if (control->accessibleName().isEmpty()) {
+        control->setAccessibleName(label);
+    }
+    control->setAccessibleDescription(description);
+    if (!description.isEmpty() || dynamicDescription) {
         // Kirigami's "grayed out description": the small font in the
         // placeholder colour. Kept (hidden) when the row fills it in later.
-        auto *subtitle = new QLabel(subtitleText, text);
+        auto *subtitle = new QLabel(description, text);
         subtitle->setObjectName(QStringLiteral("rowDescription"));
         subtitle->setWordWrap(true);
         subtitle->setForegroundRole(QPalette::PlaceholderText);
         subtitle->setFont(smallFont(subtitle->font()));
-        subtitle->setVisible(!subtitleText.isEmpty());
+        subtitle->setVisible(!description.isEmpty());
+        if (checkBox) {
+            // Under the box's text, past its indicator.
+            QStyleOptionButton option;
+            option.initFrom(checkBox);
+            const QStyle *style = checkBox->style();
+            subtitle->setContentsMargins(style->pixelMetric(QStyle::PM_IndicatorWidth, &option, checkBox)
+                                             + style->pixelMetric(QStyle::PM_CheckBoxLabelSpacing, &option, checkBox),
+                                         0, 0, 0);
+        }
         textLayout->addWidget(subtitle);
     }
 
-    const bool fullWidthControl =
-        control->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding && !checkBox;
     const QMargins padding = rowPadding();
+    if (checkBox) {
+        auto *layout = new QVBoxLayout(row);
+        layout->setContentsMargins(padding);
+        layout->addWidget(text);
+        return row;
+    }
+    const bool fullWidthControl = control->sizePolicy().horizontalPolicy() == QSizePolicy::Expanding;
     if (fullWidthControl) {
         auto *layout = new QVBoxLayout(row);
         layout->setContentsMargins(padding);
         layout->setSpacing(smallSpacing());
         layout->addWidget(text);
+        text->setVisible(!label.isEmpty() || !description.isEmpty() || dynamicDescription);
         layout->addWidget(control);
         return row;
     }
@@ -706,7 +725,10 @@ QFrame *makeSettingsCard(QWidget *parent)
     return card;
 }
 
-QPushButton *makeButtonRow(const QString &title, const QString &description, QWidget *parent)
+QPushButton *makeButtonRow(const QString &title,
+                           const QString &description,
+                           QWidget *parent,
+                           bool dynamicDescription)
 {
     auto *row = new FormButtonRow(parent);
     auto *layout = new QHBoxLayout(row);
@@ -722,12 +744,13 @@ QPushButton *makeButtonRow(const QString &title, const QString &description, QWi
     titleLabel->setObjectName(QStringLiteral("rowTitle"));
     titleLabel->setWordWrap(true);
     textLayout->addWidget(titleLabel);
-    if (!description.isEmpty()) {
+    if (!description.isEmpty() || dynamicDescription) {
         auto *subtitle = new QLabel(description, text);
         subtitle->setObjectName(QStringLiteral("rowDescription"));
         subtitle->setWordWrap(true);
         subtitle->setForegroundRole(QPalette::PlaceholderText);
         subtitle->setFont(smallFont(subtitle->font()));
+        subtitle->setVisible(!description.isEmpty());
         textLayout->addWidget(subtitle);
     }
     auto *arrow = new QLabel(row);

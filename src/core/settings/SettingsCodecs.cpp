@@ -191,7 +191,7 @@ void SettingsCodecs::setSpeechProvider(const QString &value)
 
 bool SettingsCodecs::codexFinalRetranscribe() const
 {
-    return value(SettingsKeys::CodexFinalRetranscribe, false).toBool();
+    return value(SettingsKeys::CodexFinalRetranscribe, true).toBool();
 }
 
 void SettingsCodecs::setCodexFinalRetranscribe(bool value)
@@ -1020,9 +1020,8 @@ void SettingsCodecs::setCompletionStatusDurationMs(int value)
     m_settings.setValue(SettingsKeys::CompletionStatusDurationMs, std::clamp(value, 0, 5000));
 }
 
-QList<PasteRule> SettingsCodecs::pasteRules() const
+QList<PasteRule> pasteRulesFromJson(const QByteArray &encoded)
 {
-    const QByteArray encoded = value(SettingsKeys::PasteRules, QByteArray()).toByteArray();
     if (encoded.isEmpty()) {
         return defaultPasteRules();
     }
@@ -1044,7 +1043,7 @@ QList<PasteRule> SettingsCodecs::pasteRules() const
     return rules.isEmpty() ? defaultPasteRules() : rules;
 }
 
-void SettingsCodecs::setPasteRules(const QList<PasteRule> &rules)
+QByteArray pasteRulesToJson(const QList<PasteRule> &rules)
 {
     QJsonArray array;
     for (const PasteRule &rule : rules) {
@@ -1055,7 +1054,17 @@ void SettingsCodecs::setPasteRules(const QList<PasteRule> &rules)
             {QStringLiteral("enabled"), rule.enabled},
         });
     }
-    m_settings.setValue(SettingsKeys::PasteRules, QJsonDocument(array).toJson(QJsonDocument::Compact));
+    return QJsonDocument(array).toJson(QJsonDocument::Compact);
+}
+
+QList<PasteRule> SettingsCodecs::pasteRules() const
+{
+    return pasteRulesFromJson(value(SettingsKeys::PasteRules, QByteArray()).toByteArray());
+}
+
+void SettingsCodecs::setPasteRules(const QList<PasteRule> &rules)
+{
+    m_settings.setValue(SettingsKeys::PasteRules, pasteRulesToJson(rules));
 }
 
 ShortcutActivationMode SettingsCodecs::shortcutActivationMode() const

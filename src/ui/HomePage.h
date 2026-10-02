@@ -57,7 +57,7 @@ private:
     QFrame *buildRecordsCard(const InsightsSummary &summary, QWidget *parent);
     QWidget *buildFooter(QWidget *parent);
     // Copies the stats as an image or as text, or saves them as JSON.
-    QToolButton *buildShareButton(QWidget *parent);
+    QPushButton *buildShareButton(QWidget *parent);
     InsightsRange currentRange() const;
     void applyWidth();
     void refreshLastTranscript();

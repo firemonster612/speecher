@@ -26,7 +26,10 @@ import androidx.compose.ui.unit.dp
 // Android's setup illustrations and ButtonLayoutPicker's panel sketch: palette colours, placeholder
 // bars for text that doesn't matter, and real words only where the user has to find them.
 
-/** Accessibility settings: a list with Speecher chip greyed out as restricted, and a tap on it. */
+/**
+ * Accessibility settings: a list with Speecher dictation button greyed out as restricted, and a tap
+ * on it.
+ */
 @Composable
 internal fun BlockedRowIllustration(modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
@@ -47,7 +50,13 @@ internal fun BlockedRowIllustration(modifier: Modifier = Modifier) {
             // The restricted row: the system draws it disabled, so everything in it is faded.
             val faded = colors.onSurface.copy(alpha = 0.38f)
             drawCircle(faded, unit * 1.5f, iconCenter)
-            drawLabel(text, "Speecher chip", Offset(unit * 7, top + unit * 0.6f), faded, unit * 2)
+            drawLabel(
+                text,
+                "Speecher dictation button",
+                Offset(unit * 7, top + unit * 0.6f),
+                faded,
+                unit * 2,
+            )
             drawLabel(
                 text,
                 "Restricted setting",

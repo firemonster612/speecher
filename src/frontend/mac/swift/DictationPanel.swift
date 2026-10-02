@@ -123,6 +123,9 @@ final class DictationPanelState: ObservableObject {
     enum Phase { case live, transcribing, refining }
 
     @Published var status = ""
+    /// The session state the status was reported with, which is what the
+    /// panel decides on rather than the status's words.
+    @Published var sessionState = SpeecherDictationState.idle
     @Published var preview = ""
     @Published var level: Float = 0
     @Published var phase = Phase.live
@@ -130,8 +133,13 @@ final class DictationPanelState: ObservableObject {
     @Published var pillWidth: CGFloat = minimumPillWidth
     var waveformFloor: Float = 0
     @Published var problem = ""
+    /// What the problem offers to fix it; nil when it offers nothing.
+    @Published var problemFix: SpeecherErrorAction?
     /// When a problem appeared and when it dismisses itself, for its countdown.
     @Published var problemCountdown = Date.distantPast...Date.distantPast
+    /// The share of the countdown left while the pointer holds it; nil while
+    /// it runs.
+    @Published var problemPausedAt: Double?
     /// The problem's height once wrapped at the shared width.
     @Published var problemHeight: CGFloat = pillHeight
     /// How the delivery ended, once it has; nil while the session is live.
@@ -146,22 +154,23 @@ final class DictationPanelState: ObservableObject {
 
     var presentation: (symbol: String, label: String, finished: Bool) {
         if !problem.isEmpty {
-            return ("exclamationmark.triangle.fill", "Dictation problem", false)
+            return ("exclamationmark.triangle.fill", SpeecherBridge.statusLabel(for: .error), false)
         }
         if let outcome {
             return (Self.symbol(for: outcome), status, true)
         }
-        switch status.lowercased() {
-        case "", "preparing", "starting":
-            return ("arrow.triangle.2.circlepath", status.isEmpty ? "Dictating" : status, false)
-        case "listening": return ("mic.fill", status, false)
-        case "stopping": return ("waveform", status, false)
-        case "refining": return ("sparkles", status, false)
         // Set by the OAuth refresh callback in wire(): ongoing work, not an
         // outcome, so it must not present as a finished delivery.
-        case "renewing sign-in…":
+        if status == SpeecherBridge.renewingSignInText {
             return ("arrow.triangle.2.circlepath", status, false)
-        default: return ("waveform", status, false)
+        }
+        let label = SpeecherBridge.statusLabel(for: sessionState)
+        switch sessionState {
+        case .idle, .starting:
+            return ("arrow.triangle.2.circlepath", SpeecherBridge.statusLabel(for: .starting), false)
+        case .listening: return ("mic.fill", label, false)
+        case .refining: return ("sparkles", label, false)
+        default: return ("waveform", label, false)
         }
     }
 
@@ -181,10 +190,10 @@ final class DictationPanelState: ObservableObject {
     var showsPreview: Bool { problem.isEmpty && !finished && !preview.isEmpty }
 
     var waitingLabel: String? {
-        if status == "Renewing sign-in…" { return status }
+        if status == SpeecherBridge.renewingSignInText { return status }
         switch phase {
-        case .transcribing: return "Transcribing…"
-        case .refining: return "Refining…"
+        case .transcribing: return SpeecherBridge.statusLabel(for: .stopping)
+        case .refining: return SpeecherBridge.statusLabel(for: .refining)
         case .live: return nil
         }
     }
@@ -253,6 +262,7 @@ private struct PanelBanner: View {
 struct DictationPanelView: View {
     @ObservedObject var state: DictationPanelState
     let dismiss: () -> Void
+    var performFix: (SpeecherErrorAction) -> Void = { _ in }
     let installUpdate: () -> Void
     let openWhatsNew: () -> Void
     let dismissWhatsNew: () -> Void
@@ -303,7 +313,10 @@ struct DictationPanelView: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity)
-                    Button("Dismiss", action: dismiss)
+                    if let fix = state.problemFix {
+                        Button(fix.label) { performFix(fix) }
+                    }
+                    Button(SpeecherBridge.popupDismissCaption, action: dismiss)
                 } else if finished {
                     Label(state.status, systemImage: symbol)
                         .font(.body)
@@ -315,7 +328,7 @@ struct DictationPanelView: View {
                     PanelWaveform(state: state)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(phaseLabel)
-                        .accessibilityValue("Input level \(Int(state.level * 100)) percent")
+                        .accessibilityValue(Text(Double(state.level), format: .percent.precision(.fractionLength(0))))
                 }
             }
             .padding(.horizontal, state.problem.isEmpty && !finished ? 0 : 24)
@@ -324,11 +337,18 @@ struct DictationPanelView: View {
             .padding(.top, state.showsPreview ? previewStripSpacing : 0)
             .padding(.bottom, state.showsPreview ? previewBottomPadding : 0)
             if !state.problem.isEmpty {
-                // The time left before the problem dismisses itself.
-                ProgressView(timerInterval: state.problemCountdown, countsDown: true) {
-                    EmptyView()
-                } currentValueLabel: {
-                    EmptyView()
+                // The time left before the problem dismisses itself, held
+                // while the pointer is over the panel.
+                Group {
+                    if let left = state.problemPausedAt {
+                        ProgressView(value: left)
+                    } else {
+                        ProgressView(timerInterval: state.problemCountdown, countsDown: true) {
+                            EmptyView()
+                        } currentValueLabel: {
+                            EmptyView()
+                        }
+                    }
                 }
                 .progressViewStyle(.linear)
                 .padding(.horizontal, 24)
@@ -352,6 +372,8 @@ struct DictationPanelView: View {
 /// The Linux waveform's fifteen dots, adaptive level and one-second travelling crest.
 private struct PanelWaveform: View {
     @ObservedObject var state: DictationPanelState
+    /// The bars still follow the voice, but no crest travels across them.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sum: Float = 0
     @State private var chunks = 0
     @State private var target: Float = 0
@@ -366,7 +388,7 @@ private struct PanelWaveform: View {
             for index in 0..<15 {
                 let bulge = 1 - abs(7 - Double(index)) / 24
                 let offset = phase - Double(index) / 15
-                let wave = multiplier(offset - Foundation.floor(offset))
+                let wave = reduceMotion ? 1 : multiplier(offset - Foundation.floor(offset))
                 let height = 3.2 * Double(max(1, smoothed * 5)) * bulge * wave
                 let rect = CGRect(x: (size.width - 92.8) / 2 + Double(index) * 6.4,
                                   y: (size.height - height) / 2, width: 3.2, height: height)
@@ -429,8 +451,20 @@ private struct PanelWaveform: View {
 private struct ShimmerText: View {
     let text: String
     private let loop: TimeInterval = 1.5
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        if reduceMotion {
+            Text(text)
+                .font(.body)
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
+        } else {
+            sweep
+        }
+    }
+
+    private var sweep: some View {
         TimelineView(.animation) { context in
             let progress = context.date.timeIntervalSinceReferenceDate
                 .truncatingRemainder(dividingBy: loop) / loop
@@ -475,9 +509,9 @@ final class SpeecherDictationPanel {
     private var updateObserver: AnyCancellable?
     private var whatsNewObserver: AnyCancellable?
     private var whatsNewAutoHide: Timer?
-    /// A problem tidies itself away after the same five seconds the Qt popup
-    /// counts down; the Dismiss button remains the early way out.
-    private var problemAutoDismiss: Timer?
+    /// A problem tidies itself away after the time core gives its length; the
+    /// Dismiss button remains the early way out, and the pointer holds it.
+    private var problemTick: Timer?
     /// Scratch-branch-only E2E seam: pins both notices on so the capture rig
     /// can film how they stack above the pill. A CI run has no update pending,
     /// so the stack is otherwise never on screen to photograph.
@@ -513,6 +547,10 @@ final class SpeecherDictationPanel {
         panel.contentView = NSHostingView(rootView: DictationPanelView(
             state: state,
             dismiss: { [weak self] in self?.dismiss() },
+            performFix: { [weak self] fix in
+                self?.dismiss()
+                self?.model.perform(fix)
+            },
             installUpdate: { [weak self] in self?.bridge.runUpdateAction() },
             openWhatsNew: { [weak self] in self?.openWhatsNew?() },
             dismissWhatsNew: { [weak self] in
@@ -544,15 +582,19 @@ final class SpeecherDictationPanel {
     }
 
     private func wire() {
-        bridge.popupStatusChanged = { [weak self] status in
+        bridge.popupStatusChanged = { [weak self] status, sessionState in
             guard let self else { return }
             E2EPanelEvidence.record("status", status)
             // A live state follows any earlier receipt.
             state.outcome = nil
             state.status = status
+            if state.sessionState != sessionState, sessionState != .error, sessionState != .idle {
+                announce(SpeecherBridge.statusLabel(for: sessionState))
+            }
+            state.sessionState = sessionState
             // The mic is closed but the provider is still finalising, so the
             // shimmer takes the line and the stale speech preview goes away.
-            if status == "Stopping" {
+            if sessionState == .stopping {
                 state.phase = .transcribing
                 state.preview = ""
             }
@@ -564,6 +606,7 @@ final class SpeecherDictationPanel {
             E2EPanelEvidence.record("status", message)
             state.outcome = outcome
             state.status = message
+            announce(message)
             syncFrameHeight()
         }
         bridge.popupPreviewChanged = { [weak self] preview in self?.setPreview(preview) }
@@ -591,17 +634,19 @@ final class SpeecherDictationPanel {
         }
         bridge.popupOAuthRefreshRequested = { [weak self] in
             self?.state.phase = .live
-            self?.state.status = "Renewing sign-in…"
+            self?.state.status = SpeecherBridge.renewingSignInText
             self?.state.preview = ""
             self?.syncFrameHeight()
         }
         bridge.popupListeningIndicatorRequested = { [weak self] in
             self?.state.phase = .live
-            self?.state.status = "Listening"
+            self?.state.sessionState = .listening
+            self?.state.status = SpeecherBridge.statusLabel(for: .listening)
             self?.syncFrameHeight()
         }
-        bridge.popupErrorRequested = { [weak self] message in
-            self?.show(problem: message)
+        bridge.popupErrorRequested = { [weak self] message, fix in
+            self?.model.noteFailure(fix: fix)
+            self?.show(problem: message, fix: fix)
         }
         bridge.popupShowRequested = { [weak self] generation in
             self?.state.problem = ""
@@ -611,8 +656,8 @@ final class SpeecherDictationPanel {
         bridge.popupHideRequested = { [weak self] in
             guard let self else { return }
             // A stale problem timer must not fire into whatever shows next.
-            problemAutoDismiss?.invalidate()
-            problemAutoDismiss = nil
+            problemTick?.invalidate()
+            problemTick = nil
             panel.orderOut(nil)
         }
     }
@@ -620,8 +665,8 @@ final class SpeecherDictationPanel {
     func show(generation: UInt64) {
         // A dictation starting inside a problem's five seconds must not be
         // torn down when that problem's timer fires.
-        problemAutoDismiss?.invalidate()
-        problemAutoDismiss = nil
+        problemTick?.invalidate()
+        problemTick = nil
         present()
         // The session waits out a 50ms fallback otherwise; telling it the panel
         // is up lets the microphone open as soon as the frame is on screen.
@@ -632,37 +677,73 @@ final class SpeecherDictationPanel {
         }
     }
 
-    func show(problem: String) {
+    func show(problem: String, fix: SpeecherErrorAction? = nil) {
         // The problem takes the one line of type the pill has, so the transcript
         // of the attempt that failed goes with it rather than lingering in the
         // state for the next show to flash.
         state.preview = ""
         state.outcome = nil
-        let seconds = SpeecherBridge.popupErrorDismissSeconds
+        let seconds = SpeecherBridge.popupErrorDismissSeconds(for: problem)
         state.problemCountdown = Date.now...Date.now.addingTimeInterval(seconds)
+        state.problemPausedAt = nil
+        state.problemFix = fix?.fix == SpeecherErrorFix.none ? nil : fix
         state.problem = problem
         applyPreview("")
         state.phase = .live
         present()
-        problemAutoDismiss?.invalidate()
-        problemAutoDismiss = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async { self?.autoDismissProblem() }
+        announce(problem)
+        problemTick?.invalidate()
+        problemTick = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async { self?.tickProblem() }
         }
     }
 
-    /// The countdown's end. invalidate() cannot recall a closure this timer has
-    /// already queued, so a dictation that started in the meantime would be torn
-    /// down by the previous problem's countdown; a problem is cleared before
-    /// such a session shows, which says so.
-    private func autoDismissProblem() {
+    /// The pointer over the panel holds a problem's countdown where it is, so
+    /// the text and its button can be read; leaving lets the rest run. The
+    /// tick reads the pointer rather than waiting for tracking events, which
+    /// never come when the problem appears under a pointer that is not moving.
+    /// invalidate() cannot recall a tick already queued, so a dictation that
+    /// started in the meantime would be torn down by the previous problem's
+    /// countdown; a problem is cleared before such a session shows, which
+    /// says so.
+    private func tickProblem() {
         guard !state.problem.isEmpty else { return }
-        dismiss()
+        holdProblem(panel.frame.contains(NSEvent.mouseLocation))
+        if state.problemPausedAt == nil, state.problemCountdown.upperBound <= Date.now {
+            dismiss()
+        }
+    }
+
+    private func holdProblem(_ inside: Bool) {
+        let countdown = state.problemCountdown
+        let total = countdown.upperBound.timeIntervalSince(countdown.lowerBound)
+        guard total > 0 else { return }
+        if inside {
+            guard state.problemPausedAt == nil else { return }
+            state.problemPausedAt = max(0, countdown.upperBound.timeIntervalSinceNow) / total
+        } else if let left = state.problemPausedAt {
+            let remaining = left * total
+            state.problemCountdown = Date.now.addingTimeInterval(remaining - total)...Date.now.addingTimeInterval(remaining)
+            state.problemPausedAt = nil
+        }
+    }
+
+    /// Says a change aloud: the panel never takes focus, so VoiceOver would
+    /// otherwise not notice it.
+    private func announce(_ text: String) {
+        guard !text.isEmpty else { return }
+        NSAccessibility.post(element: NSApp as Any,
+                             notification: .announcementRequested,
+                             userInfo: [.announcement: text,
+                                        .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     func dismiss() {
-        problemAutoDismiss?.invalidate()
-        problemAutoDismiss = nil
+        problemTick?.invalidate()
+        problemTick = nil
         state.problem = ""
+        state.problemFix = nil
+        state.problemPausedAt = nil
         panel.orderOut(nil)
         // Only an errored session is the one this problem belongs to. On a
         // live session stopListening() cancels the refinement or stops the
@@ -825,16 +906,20 @@ final class SpeecherDictationPanel {
     }
 
     /// What sits beside a problem's text: the padding, the warning symbol and
-    /// the bordered Dismiss button, with the gaps between them. Measured from
-    /// the real controls, so a one-line problem never wraps for want of a point.
+    /// the bordered fix and Dismiss buttons, with the gaps between them.
+    /// Measured from the real controls, so a one-line problem never wraps for
+    /// want of a point.
     private func problemChromeWidth(font: NSFont) -> CGFloat {
-        let dismiss = NSButton(title: "Dismiss", target: nil, action: nil)
-        dismiss.bezelStyle = .push
+        let buttons = [state.problemFix?.label, SpeecherBridge.popupDismissCaption].compactMap { $0 }
+        let buttonWidths = buttons.map { title -> CGFloat in
+            let button = NSButton(title: title, target: nil, action: nil)
+            button.bezelStyle = .push
+            return ceil(button.fittingSize.width) + 10
+        }
         let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
                              accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
-        return 2 * 24 + ceil(symbol?.size.width ?? font.pointSize) + 10 + 10
-            + ceil(dismiss.fittingSize.width)
+        return 2 * 24 + ceil(symbol?.size.width ?? font.pointSize) + 10 + buttonWidths.reduce(0, +)
     }
 
     private func position() {

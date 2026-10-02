@@ -145,12 +145,10 @@ UIElement LocalModelBrowser::listItem(const LocalModel &model)
     title.Children().Append(name);
     title.Children().Append(ratingBadge(model.rating, m_host));
     text.Children().Append(title);
-    // Size and error rate only, so the list stays as narrow as its names and
-    // badges; the fit is in the facts.
-    text.Children().Append(secondaryTextBlock(QStringLiteral("%1 · %2 WER")
-                                                  .arg(downloadSizeText(model.sizeBytes),
-                                                       werText(model.librispeechCleanWer)),
-                                              L"SettingsCardDescriptionStyle", m_host));
+    // The size only, so the list stays as narrow as its names and badges; the
+    // error rates and the fit are in the facts.
+    text.Children().Append(
+        secondaryTextBlock(downloadSizeText(model.sizeBytes), L"SettingsCardDescriptionStyle", m_host));
     Grid::SetColumn(text, 1);
     item.Children().Append(text);
     AutomationProperties::SetName(item, hs(QStringLiteral("%1, %2").arg(model.name, modelRatingLabel(model.rating))));
@@ -220,7 +218,6 @@ StackPanel LocalModelBrowser::makeDetail()
     m_actions = StackPanel();
     m_actions.Orientation(Orientation::Horizontal);
     m_actions.Spacing(8);
-    m_actions.Margin({0, 12, 0, 0});
     m_state = styledTextBlock(QString(), L"SettingsCardBodyStyle");
     m_state.VerticalAlignment(VerticalAlignment::Center);
     m_actions.Children().Append(m_state);
@@ -231,10 +228,25 @@ StackPanel LocalModelBrowser::makeDetail()
     m_actions.Children().Append(m_progress);
     m_download = addButton(L"");
     m_cancel = addButton(L"Cancel");
-    m_use = addButton(L"Use this model");
-    m_test = addButton(L"Test speed");
-    m_delete = addButton(L"Delete");
-    detail.Children().Append(m_actions);
+    m_use = addButton(hs(localModelText(LocalModelText::UseModel)).c_str());
+    m_test = addButton(hs(localModelText(LocalModelText::TestSpeed)).c_str());
+    // Delete stands apart at the row's far end, away from the safe actions.
+    m_delete = Button();
+    m_delete.Content(box_value(hs(localModelText(LocalModelText::DeleteModel))));
+    m_delete.VerticalAlignment(VerticalAlignment::Center);
+    Grid actionRow;
+    actionRow.ColumnSpacing(8);
+    actionRow.Margin({0, 12, 0, 0});
+    ColumnDefinition safeColumn;
+    safeColumn.Width({1, GridUnitType::Star});
+    ColumnDefinition deleteColumn;
+    deleteColumn.Width({0, GridUnitType::Auto});
+    actionRow.ColumnDefinitions().Append(safeColumn);
+    actionRow.ColumnDefinitions().Append(deleteColumn);
+    actionRow.Children().Append(m_actions);
+    Grid::SetColumn(m_delete, 1);
+    actionRow.Children().Append(m_delete);
+    detail.Children().Append(actionRow);
 
     const auto on = [weak = weak_from_this()](const Button &button, auto run) {
         button.Click([weak, run](const auto &, const auto &) {
@@ -249,7 +261,7 @@ StackPanel LocalModelBrowser::makeDetail()
         setValueAndCommit(self.m_host, self.m_rowId, self.selected().id);
     });
     on(m_test, [](LocalModelBrowser &self) { self.m_setup.runSpeedTest(self.selected().id); });
-    on(m_delete, [](LocalModelBrowser &self) { self.m_setup.removeModel(self.selected()); });
+    on(m_delete, [](LocalModelBrowser &self) { self.confirmDelete(); });
     return detail;
 }
 
@@ -259,6 +271,34 @@ Button LocalModelBrowser::addButton(const wchar_t *text)
     button.Content(box_value(text));
     m_actions.Children().Append(button);
     return button;
+}
+
+// The file is gigabytes and gone once deleted, so the person confirms, with
+// Cancel the default.
+void LocalModelBrowser::confirmDelete()
+{
+    const LocalModel model = selected();
+    ContentDialog dialog;
+    dialog.XamlRoot(m_host.xamlRoot());
+    // The dialog opens in the popup layer, outside the window's RequestedTheme.
+    if (m_host.effectiveTheme) {
+        dialog.RequestedTheme(m_host.effectiveTheme());
+    }
+    dialog.Title(box_value(hs(deleteModelQuestion(model.name))));
+    dialog.Content(box_value(hs(localModelText(LocalModelText::DeleteBody))));
+    dialog.PrimaryButtonText(hs(localModelText(LocalModelText::DeleteModel)));
+    dialog.CloseButtonText(L"Cancel");
+    dialog.DefaultButton(ContentDialogButton::Close);
+    dialog.Closed([weak = weak_from_this(), model](const ContentDialog &,
+                                                    const ContentDialogClosedEventArgs &args) {
+        if (args.Result() != ContentDialogResult::Primary) {
+            return;
+        }
+        if (auto self = weak.lock()) {
+            self->m_setup.removeModel(model);
+        }
+    });
+    dialog.ShowAsync();
 }
 
 const LocalModel &LocalModelBrowser::selected() const
@@ -290,13 +330,13 @@ void LocalModelBrowser::showDetail()
     m_name.Text(hs(model.name));
     m_rating.Child(ratingBadge(model.rating, m_host));
     m_bestFor.Text(hs(model.bestFor));
-    m_subtitle.Text(hs(state.suggested ? QStringLiteral("Suggested for this computer") : model.fileName));
+    m_subtitle.Text(hs(state.suggested ? localModelText(LocalModelText::Suggested) : model.fileName));
     m_size.Text(hs(QStringLiteral("%1 · %2").arg(downloadSizeText(model.sizeBytes),
                                                  m_setup.fitLabel(model))));
     m_speed.Text(hs(state.speedDetail));
     m_wer.Text(hs(QStringLiteral("%1 clear speech\n%2 everyday speech")
                       .arg(werText(model.librispeechCleanWer), werText(model.fleursEnglishWer))));
-    m_textShows.Text(model.streams ? L"As you speak" : L"After you stop");
+    m_textShows.Text(hs(textShowsValue(model.streams)));
     m_licence.Text(hs(model.licence));
     QStringList notes;
     for (const QString &pro : model.pros) {
@@ -320,14 +360,13 @@ void LocalModelBrowser::showDetail()
         m_state.Text(hs(QStringLiteral("%1 of %2").arg(downloadSizeText(progress->first),
                                                         downloadSizeText(model.sizeBytes))));
     } else {
-        m_state.Text(inUse ? L"In use" : L"");
+        m_state.Text(inUse ? hs(localModelText(LocalModelText::InUse)) : hstring());
     }
     setVisible(m_state, !m_state.Text().empty());
     setVisible(m_download, !progress && !downloaded);
     m_download.IsEnabled(!state.tooLarge);
-    m_download.Content(box_value(hs(state.tooLarge ? QStringLiteral("Too large for this computer")
-                                                   : QStringLiteral("Download %1")
-                                                         .arg(downloadSizeText(model.sizeBytes)))));
+    m_download.Content(box_value(hs(state.tooLarge ? localModelText(LocalModelText::TooLarge)
+                                                   : downloadCaption(model.sizeBytes))));
     setVisible(m_use, downloaded && !inUse);
     setVisible(m_test, downloaded);
     m_test.IsEnabled(!m_setup.speedTestRunning(model.id));

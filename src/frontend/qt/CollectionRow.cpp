@@ -1,15 +1,22 @@
 #include "frontend/qt/CollectionRow.h"
 
+#include "ui/InlineMessage.h"
 #include "ui/InsightsCharts.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -68,6 +75,18 @@ QString optionLabel(const CollectionColumn &column, const QString &id, const App
     return id;
 }
 
+// What a record's dialog is titled after: its first text column, which names
+// it, read-only or not.
+QString recordName(const CollectionDescriptor &collection, const QVariantMap &record)
+{
+    for (const CollectionColumn &column : collection.columns) {
+        if (column.kind == ColumnKind::Text || column.kind == ColumnKind::ReadOnly) {
+            return record.value(column.id).toString();
+        }
+    }
+    return {};
+}
+
 // Buttons are named after the collection they act on, so a test can find them
 // without the descriptor spelling out a widget name.
 QString buttonObjectName(const QString &verb, const QString &collectionId)
@@ -87,17 +106,25 @@ public:
     // Keeps the settings a choice column's options come from, and re-derives
     // the badges beside each record for them.
     void refresh(const AppSettings &settings);
+    // A collection whose gate is closed keeps its records readable and stops
+    // taking edits.
+    void setEditable(bool editable);
 
 private:
     void showRecords(const QList<QVariantMap> &records);
     void appendRecord(const QVariantMap &record, bool locked);
     QList<QVariantMap> lockedRecords() const;
     void importRecords();
+    // A negative row adds a record.
+    void editRecord(int row);
     void runAction(const QString &actionId);
     QList<int> selectedEditableRows() const;
     void updateButtons();
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
     CollectionDescriptor m_collection;
+    // The columns the table shows; the record dialog fills in every column.
+    QList<CollectionColumn> m_columns;
     AppSettings m_settings;
     QTableWidget *m_table;
     QPushButton *m_add = nullptr;
@@ -105,6 +132,8 @@ private:
     QLabel *m_empty = nullptr;
     QHash<QString, QPushButton *> m_actions;
     int m_lockedCount;
+    bool m_editable = true;
+    QPushButton *m_import = nullptr;
     // What Delete took and its index among the editable records, newest last,
     // so undo can put it back in its place.
     QList<QPair<qsizetype, QVariantMap>> m_deleted;
@@ -146,23 +175,19 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     }
 
     QStringList titles;
-    titles.reserve(m_collection.columns.size());
     for (const CollectionColumn &column : m_collection.columns) {
-        titles.append(column.title);
+        if (!column.dialogOnly) {
+            m_columns.append(column);
+            titles.append(column.title);
+        }
     }
     m_table->setObjectName(descriptor.id);
     m_table->setColumnCount(titles.size());
     m_table->setHorizontalHeaderLabels(titles);
-    for (int column = 0; column < m_collection.columns.size(); ++column) {
+    for (int column = 0; column < m_columns.size(); ++column) {
         m_table->horizontalHeader()->setSectionResizeMode(
             column,
-            m_collection.columns.at(column).stretch ? QHeaderView::Stretch
-                                                    : QHeaderView::ResizeToContents);
-    }
-    for (int column = 0; column < m_collection.columns.size(); ++column) {
-        if (m_collection.columns.at(column).multiline) {
-            useMultilineEditor(m_table, column);
-        }
+            m_columns.at(column).stretch ? QHeaderView::Stretch : QHeaderView::ResizeToContents);
     }
     m_table->verticalHeader()->hide();
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -176,7 +201,9 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
         m_empty = new QLabel(m_table->viewport());
         m_empty->setObjectName(QStringLiteral("collectionEmpty"));
         m_empty->setTextFormat(Qt::PlainText);
-        m_empty->setText(m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp);
+        m_empty->setText(m_collection.emptyHelp.isEmpty()
+                             ? m_collection.emptyTitle
+                             : m_collection.emptyTitle + QLatin1Char('\n') + m_collection.emptyHelp);
         m_empty->setAlignment(Qt::AlignCenter);
         m_empty->setWordWrap(true);
         m_empty->setForegroundRole(QPalette::PlaceholderText);
@@ -184,8 +211,8 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
         emptyLayout->addWidget(m_empty);
     }
     if (m_collection.badges) {
-        for (int column = 0; column < m_collection.columns.size(); ++column) {
-            if (m_collection.columns.at(column).stretch) {
+        for (int column = 0; column < m_columns.size(); ++column) {
+            if (m_columns.at(column).stretch) {
                 m_table->setItemDelegateForColumn(column, new BadgeDelegate(m_table));
             }
         }
@@ -195,10 +222,10 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
 
     auto *buttons = new QHBoxLayout;
     if (m_collection.supportsImport.parse) {
-        auto *import = new QPushButton(m_collection.supportsImport.actionLabel, this);
-        import->setObjectName(buttonObjectName(QStringLiteral("import"), descriptor.id));
-        connect(import, &QPushButton::clicked, this, [this] { importRecords(); });
-        buttons->addWidget(import);
+        m_import = new QPushButton(m_collection.supportsImport.actionLabel, this);
+        m_import->setObjectName(buttonObjectName(QStringLiteral("import"), descriptor.id));
+        connect(m_import, &QPushButton::clicked, this, [this] { importRecords(); });
+        buttons->addWidget(m_import);
     }
     buttons->addStretch();
     for (const RowOption &action : m_collection.actions) {
@@ -219,28 +246,17 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
 
     connect(m_table, &QTableWidget::itemChanged, this, [this] { m_notifyChanged(); });
     connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] { updateButtons(); });
+    // A double-click activates a row, or a single click where the style
+    // activates on one. A toggle's cell is its box instead.
+    connect(m_table, &QTableWidget::cellActivated, this, [this](int row, int column) {
+        if (m_columns.at(column).kind != ColumnKind::Toggle) {
+            editRecord(row);
+        }
+    });
+    // Return, Enter and F2 open a row through eventFilter.
+    m_table->installEventFilter(this);
     if (m_add) {
-        connect(m_add, &QPushButton::clicked, this, [this] {
-            {
-                // Building the row fires itemChanged per cell, and announcing
-                // the change reloads every settings page from the round-tripped
-                // draft — which drops a still-blank record and takes the new
-                // row back before it can be typed into. Stay quiet until the
-                // first real cell edit announces it.
-                const QSignalBlocker blocker(m_table);
-                appendRecord(m_collection.blankRecord, false);
-            }
-            const int row = m_table->rowCount() - 1;
-            m_table->selectRow(row);
-            for (int column = 0; column < m_collection.columns.size(); ++column) {
-                if (m_collection.columns.at(column).kind == ColumnKind::Text) {
-                    m_table->setCurrentCell(row, column);
-                    m_table->editItem(m_table->item(row, column));
-                    break;
-                }
-            }
-            updateButtons();
-        });
+        connect(m_add, &QPushButton::clicked, this, [this] { editRecord(-1); });
     }
     connect(m_delete, &QPushButton::clicked, this, [this] {
         QList<int> rows = selectedEditableRows();
@@ -281,6 +297,34 @@ void CollectionEditor::runAction(const QString &actionId)
     m_notifyChanged();
 }
 
+void CollectionEditor::editRecord(int row)
+{
+    if (!m_editable || (row >= 0 && row < m_lockedCount)) {
+        return;
+    }
+    openRecordDialog(this, m_collection, m_settings, row < 0 ? -1 : row - m_lockedCount,
+                     [this] { return records(); },
+                     [this](const QList<QVariantMap> &records) {
+                         showRecords(lockedRecords() + records);
+                         m_notifyChanged();
+                     });
+}
+
+// macOS's item views take Return as an edit key rather than activation, so
+// the keys that open a row are handled here, ahead of the view.
+bool CollectionEditor::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched != m_table || event->type() != QEvent::KeyPress || m_table->currentRow() < 0) {
+        return QWidget::eventFilter(watched, event);
+    }
+    const int key = static_cast<QKeyEvent *>(event)->key();
+    if (key != Qt::Key_Return && key != Qt::Key_Enter && key != Qt::Key_F2) {
+        return QWidget::eventFilter(watched, event);
+    }
+    editRecord(m_table->currentRow());
+    return true;
+}
+
 void CollectionEditor::importRecords()
 {
     const std::optional<QList<QVariantMap>> merged =
@@ -299,27 +343,23 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
     auto *carrier = new QTableWidgetItem;
     carrier->setData(Qt::UserRole, record);
     m_table->setVerticalHeaderItem(row, carrier);
-    for (int index = 0; index < m_collection.columns.size(); ++index) {
-        const CollectionColumn &column = m_collection.columns.at(index);
+    for (int index = 0; index < m_columns.size(); ++index) {
+        const CollectionColumn &column = m_columns.at(index);
         const QVariant value = record.value(column.id);
         const QString tooltip =
             column.recordTooltip ? column.recordTooltip(record) : column.tooltip;
-        if (locked || column.kind == ColumnKind::ReadOnly) {
-            QTableWidgetItem *item = readOnlyItem(column.kind == ColumnKind::Choice
-                                                      ? optionLabel(column, value.toString(), m_settings)
-                                                      : value.toString());
-            item->setToolTip(tooltip);
-            m_table->setItem(row, index, item);
-            continue;
-        }
-        if (column.kind == ColumnKind::Toggle) {
+        if (column.kind == ColumnKind::Toggle && !locked) {
             auto *item = new QTableWidgetItem;
-            item->setFlags(Qt::ItemIsSelectable | Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+            Qt::ItemFlags flags = Qt::ItemIsSelectable | Qt::ItemIsEnabled;
+            if (m_editable) {
+                flags |= Qt::ItemIsUserCheckable;
+            }
+            item->setFlags(flags);
             item->setCheckState(value.toBool() ? Qt::Checked : Qt::Unchecked);
             m_table->setItem(row, index, item);
             continue;
         }
-        if (column.kind == ColumnKind::Choice) {
+        if (column.kind == ColumnKind::Choice && !locked && m_editable) {
             auto *combo = new QComboBox(m_table);
             for (const RowOption &option : column.options(m_settings)) {
                 combo->addItem(option.label, option.id);
@@ -329,7 +369,10 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
             m_table->setCellWidget(row, index, combo);
             continue;
         }
-        auto *item = new QTableWidgetItem(value.toString());
+        // Text is edited in the record dialog, so its cells only show it.
+        QTableWidgetItem *item = readOnlyItem(column.kind == ColumnKind::Choice
+                                                  ? optionLabel(column, value.toString(), m_settings)
+                                                  : value.toString());
         item->setToolTip(tooltip);
         m_table->setItem(row, index, item);
     }
@@ -342,8 +385,8 @@ QList<QVariantMap> CollectionEditor::records() const
         // Start from what the row arrived with, so the keys no column shows
         // survive an edit to the ones that do.
         QVariantMap record = rowRecord(m_table, row);
-        for (int index = 0; index < m_collection.columns.size(); ++index) {
-            const CollectionColumn &column = m_collection.columns.at(index);
+        for (int index = 0; index < m_columns.size(); ++index) {
+            const CollectionColumn &column = m_columns.at(index);
             if (column.kind == ColumnKind::Choice) {
                 if (const auto *combo = qobject_cast<QComboBox *>(m_table->cellWidget(row, index))) {
                     record.insert(column.id, combo->currentData().toString());
@@ -396,9 +439,9 @@ void CollectionEditor::refresh(const AppSettings &settings)
     if (!m_collection.badges) {
         return;
     }
-    const auto stretch = std::find_if(m_collection.columns.cbegin(), m_collection.columns.cend(),
+    const auto stretch = std::find_if(m_columns.cbegin(), m_columns.cend(),
                                       [](const CollectionColumn &column) { return column.stretch; });
-    const int column = int(stretch - m_collection.columns.cbegin());
+    const int column = int(stretch - m_columns.cbegin());
     const QStringList badges = m_collection.badges(lockedRecords() + records(), settings);
     // Item data, not text, so it is no edit: nothing announces a change.
     const QSignalBlocker blocker(m_table);
@@ -408,6 +451,17 @@ void CollectionEditor::refresh(const AppSettings &settings)
             item->setData(BadgeDelegate::ToneRole, int(Badge::Tone::Accent));
         }
     }
+}
+
+void CollectionEditor::setEditable(bool editable)
+{
+    if (m_editable == editable) {
+        return;
+    }
+    // Read before the flag flips: records() reads the cells as they are.
+    const QList<QVariantMap> shown = lockedRecords() + records();
+    m_editable = editable;
+    showRecords(shown);
 }
 
 QList<QVariantMap> CollectionEditor::lockedRecords() const
@@ -438,12 +492,18 @@ void CollectionEditor::updateButtons()
     if (m_empty) {
         m_empty->setVisible(m_table->rowCount() == 0);
     }
-    m_delete->setEnabled(!selectedEditableRows().isEmpty());
+    m_delete->setEnabled(m_editable && !selectedEditableRows().isEmpty());
+    if (m_add) {
+        m_add->setEnabled(m_editable);
+    }
+    if (m_import) {
+        m_import->setEnabled(m_editable);
+    }
     if (QPushButton *undoDelete = m_actions.value(QStringLiteral("undoDelete"))) {
-        undoDelete->setEnabled(!m_deleted.isEmpty());
+        undoDelete->setVisible(m_editable && !m_deleted.isEmpty());
     }
     if (QPushButton *undoLatestLearn = m_actions.value(QStringLiteral("undoLatestLearn"))) {
-        undoLatestLearn->setEnabled(m_table->rowCount() > m_lockedCount);
+        undoLatestLearn->setEnabled(m_editable && m_table->rowCount() > m_lockedCount);
     }
 }
 
@@ -487,6 +547,183 @@ void useMultilineEditor(QTableWidget *table, int column)
     table->setItemDelegateForColumn(column, new MultilineDelegate(table));
 }
 
+void openRecordDialog(QWidget *parent,
+                      const CollectionDescriptor &collection,
+                      const AppSettings &appSettings,
+                      qsizetype row,
+                      std::function<QList<QVariantMap>()> current,
+                      std::function<void(const QList<QVariantMap> &)> apply,
+                      std::function<void()> remove,
+                      const QString &removalNotice)
+{
+    const QVariantMap original = row < 0 ? collection.blankRecord : current().at(row);
+    auto *dialog = new QDialog(parent);
+    dialog->setObjectName(QStringLiteral("collectionRecordDialog"));
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(row < 0 ? collection.addDialogTitle : recordName(collection, original));
+    dialog->setMinimumWidth(settings::gridUnit() * 30);
+    auto *layout = new QVBoxLayout(dialog);
+    auto *form = new QFormLayout;
+    layout->addLayout(form, 1);
+
+    // Each field writes its own column into the record the dialog hands back.
+    QList<std::function<void(QVariantMap &)>> readers;
+    QWidget *firstText = nullptr;
+    for (const CollectionColumn &column : collection.columns) {
+        const QVariant value = original.value(column.id);
+        QWidget *field = nullptr;
+        if (column.kind == ColumnKind::Toggle) {
+            auto *box = new QCheckBox(column.title, dialog);
+            box->setChecked(value.toBool());
+            form->addRow(box);
+            readers.append([box, id = column.id](QVariantMap &record) {
+                record.insert(id, box->isChecked());
+            });
+            field = box;
+        } else if (column.kind == ColumnKind::Choice) {
+            auto *combo = new QComboBox(dialog);
+            const QList<RowOption> options = column.options(appSettings);
+            for (const RowOption &option : options) {
+                combo->addItem(option.label, option.id);
+            }
+            settings::selectData(combo, value.toString());
+            // What the chosen option does, under it, where the options say.
+            if (std::any_of(options.cbegin(), options.cend(),
+                            [](const RowOption &option) { return !option.help.isEmpty(); })) {
+                // The help takes the field's width; the combo keeps its own.
+                auto *choice = new QWidget(dialog);
+                choice->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+                auto *choiceLayout = new QVBoxLayout(choice);
+                choiceLayout->setContentsMargins(0, 0, 0, 0);
+                choiceLayout->setSpacing(settings::tightSpacing());
+                auto *help = new QLabel(choice);
+                help->setObjectName(column.id + QStringLiteral("Help"));
+                help->setWordWrap(true);
+                help->setForegroundRole(QPalette::PlaceholderText);
+                help->setFont(settings::smallFont(help->font()));
+                const auto showHelp = [combo, help, options] {
+                    help->setText(options.value(combo->currentIndex()).help);
+                };
+                showHelp();
+                QObject::connect(combo, &QComboBox::currentIndexChanged, help, showHelp);
+                choiceLayout->addWidget(combo, 0, Qt::AlignLeft);
+                choiceLayout->addWidget(help);
+                form->addRow(column.title, choice);
+            } else {
+                form->addRow(column.title, combo);
+            }
+            readers.append([combo, id = column.id](QVariantMap &record) {
+                record.insert(id, combo->currentData().toString());
+            });
+            field = combo;
+        } else if (column.kind == ColumnKind::Text && column.multiline) {
+            auto *edit = new QPlainTextEdit(value.toString(), dialog);
+            edit->setPlaceholderText(column.placeholder);
+            // Return starts a new line, so Tab is what moves on.
+            edit->setTabChangesFocus(true);
+            form->addRow(column.title, edit);
+            readers.append([edit, id = column.id](QVariantMap &record) {
+                record.insert(id, edit->toPlainText());
+            });
+            field = edit;
+        } else if (column.kind == ColumnKind::Text) {
+            auto *edit = new QLineEdit(value.toString(), dialog);
+            edit->setPlaceholderText(column.placeholder);
+            form->addRow(column.title, edit);
+            readers.append([edit, id = column.id](QVariantMap &record) {
+                record.insert(id, edit->text().trimmed());
+            });
+            field = edit;
+        }
+        if (field) {
+            field->setObjectName(column.id);
+        }
+        if (!firstText && column.kind == ColumnKind::Text) {
+            firstText = field;
+        }
+    }
+
+    auto *problems = new InlineMessage(dialog);
+    problems->setType(InlineMessage::Type::Error);
+    problems->setCloseButtonVisible(false);
+    problems->hide();
+    layout->addWidget(problems);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
+    if (remove) {
+        // What deleting changes is said beside the button that does it, not
+        // in a second dialog.
+        auto *caution = new InlineMessage(dialog);
+        caution->setType(InlineMessage::Type::Warning);
+        caution->setCloseButtonVisible(false);
+        caution->setText(removalNotice);
+        auto *confirm = new QPushButton(collection.deleteLabel, caution);
+        confirm->setObjectName(QStringLiteral("confirmDeleteRecord"));
+        caution->addAction(confirm);
+        caution->hide();
+        layout->insertWidget(layout->indexOf(problems), caution);
+        const auto removeAndClose = [dialog, remove] {
+            remove();
+            dialog->accept();
+        };
+        QObject::connect(confirm, &QPushButton::clicked, dialog, removeAndClose);
+        QPushButton *deleteButton = buttons->addButton(collection.deleteLabel, QDialogButtonBox::DestructiveRole);
+        deleteButton->setObjectName(QStringLiteral("deleteRecord"));
+        QObject::connect(deleteButton, &QPushButton::clicked, dialog, [caution, removalNotice, removeAndClose] {
+            if (removalNotice.isEmpty()) {
+                removeAndClose();
+            } else {
+                caution->show();
+            }
+        });
+    }
+    layout->addWidget(buttons);
+    // The first text field names the record, so there is nothing to keep
+    // until it holds something.
+    if (auto *name = qobject_cast<QLineEdit *>(firstText)) {
+        QPushButton *ok = buttons->button(QDialogButtonBox::Ok);
+        const auto requireName = [ok, name] { ok->setEnabled(!name->text().trimmed().isEmpty()); };
+        requireName();
+        QObject::connect(name, &QLineEdit::textChanged, ok, requireName);
+    }
+
+    QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, dialog,
+                     [dialog, problems, readers, original, row, collection, current, apply] {
+        QVariantMap record = original;
+        for (const auto &read : readers) {
+            read(record);
+        }
+        const auto refuse = [problems](const QString &message) {
+            problems->setText(message);
+            problems->show();
+        };
+        // Found again rather than taken by index: the records may have been
+        // reloaded while the dialog was open, and one that changed or went
+        // must not come back as a second copy.
+        QList<QVariantMap> records = current();
+        if (row < 0) {
+            records.append(record);
+        } else if (const qsizetype index = records.indexOf(original); index >= 0) {
+            records[index] = record;
+        } else {
+            refuse(QStringLiteral("%1 changed while this dialog was open. Cancel and edit it again.")
+                       .arg(recordName(collection, original)));
+            return;
+        }
+        const QStringList refused = collection.validate ? collection.validate(records) : QStringList();
+        if (!refused.isEmpty()) {
+            refuse(refused.join(QLatin1Char('\n')));
+            return;
+        }
+        apply(records);
+        dialog->accept();
+    });
+    if (firstText) {
+        firstText->setFocus(Qt::OtherFocusReason);
+    }
+    dialog->open();
+}
+
 SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
                                   QWidget *parent,
                                   std::function<void()> notifyChanged)
@@ -499,6 +736,7 @@ SchemaCustomRow makeCollectionRow(const SettingsRow &descriptor,
         true,
         nullptr,
         [editor](const AppSettings &settings) { editor->refresh(settings); },
+        [editor](bool editable) { editor->setEditable(editable); },
     };
 }
 

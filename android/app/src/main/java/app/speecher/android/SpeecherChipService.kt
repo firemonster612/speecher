@@ -13,6 +13,7 @@ import android.view.Gravity
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.platform.ComposeView
@@ -20,9 +21,11 @@ import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationEngine
 import app.speecher.android.dictation.DictationState
+import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.createDictationEngine
+import app.speecher.android.dictation.oauth
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.screenCapture
 import app.speecher.android.dictation.screenshotJpeg
@@ -41,7 +44,7 @@ class SpeecherChipService : AccessibilityService() {
     private val owner = ServiceViewOwner()
     private val window by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     private var chip: ComposeView? = null
-    // Offers to keep a drag's position; ignored, it goes away and the drag stays temporary.
+    // Offers to keep a drag's position for a while; ignored, the drag stays temporary.
     private var pill: ComposeView? = null
     private val dismissPill = Runnable { removePill() }
     private var chipX = Int.MIN_VALUE
@@ -212,34 +215,49 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     /**
-     * Shows the save offer beside the chip, on whichever side has more room, centred on it
-     * vertically, and takes it down again after a few seconds.
+     * Shows the save offer just above the keyboard's top edge, so it covers no keys, on the side of
+     * the screen the chip is on. It goes when the user answers, the keyboard hides, or after the
+     * time the user's accessibility settings give controls, since it can cover the app's own
+     * buttons above the keyboard.
      */
     private fun showPill() {
         removePill()
         val chipParams = chip?.layoutParams as? WindowManager.LayoutParams ?: return
+        val keyboard = keyboardWindow() ?: return
+        val kb = Rect().also(keyboard::getBoundsInScreen)
         val bounds = window.currentWindowMetrics.bounds
         val gap = (ChipMargin.value * resources.displayMetrics.density).toInt()
-        val onLeft = chipX + chipParams.width / 2 > bounds.centerX()
+        val onRight = chipX + chipParams.width / 2 > bounds.centerX()
         val params =
             overlayParams(
                     WindowManager.LayoutParams.WRAP_CONTENT,
                     WindowManager.LayoutParams.WRAP_CONTENT,
                 )
                 .apply {
-                    gravity = Gravity.CENTER_VERTICAL or if (onLeft) Gravity.END else Gravity.START
-                    x = if (onLeft) bounds.right - chipX + gap else chipX + chipParams.width + gap
-                    y = chipY + chipParams.height / 2 - bounds.centerY()
+                    gravity = Gravity.BOTTOM or if (onRight) Gravity.END else Gravity.START
+                    x = gap
+                    y = bounds.bottom - kb.top + gap
                     fitInsetsTypes = 0
                     layoutInDisplayCutoutMode =
                         WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
                 }
         val view = ComposeView(this)
         owner.attach(view)
-        view.setContent { SpeecherTheme { SavePositionPill(onSave = ::saveChipPosition) } }
+        view.setContent {
+            SpeecherTheme {
+                SavePositionPill(onSave = ::saveChipPosition, onDismiss = ::removePill)
+            }
+        }
         window.addView(view, params)
         pill = view
-        handler.postDelayed(dismissPill, PILL_MILLIS)
+        val timeout =
+            getSystemService(AccessibilityManager::class.java)
+                .getRecommendedTimeoutMillis(
+                    PILL_MILLIS,
+                    AccessibilityManager.FLAG_CONTENT_TEXT or
+                        AccessibilityManager.FLAG_CONTENT_CONTROLS,
+                )
+        handler.postDelayed(dismissPill, timeout.toLong())
     }
 
     /**
@@ -319,6 +337,7 @@ class SpeecherChipService : AccessibilityService() {
     /** The mic starts on the tap, before the keyboard swap lands, to cover the swap gap. */
     private fun startDictation(): DictationEngine {
         val settings = SettingsStore(this).load()
+        val tokens = TokenStore(this)
         ActiveDictation.settings = settings
         ActiveDictation.state = DictationState.Listening()
         ActiveDictation.end()
@@ -329,13 +348,16 @@ class SpeecherChipService : AccessibilityService() {
                 settings,
                 { ActiveDictation.connection },
                 { state ->
+                    if (state is DictationState.Failed && state.reason == FailureReason.SignedOut) {
+                        state.provider?.let { tokens.endSession(it.oauth) }
+                    }
                     ActiveDictation.state = state
                     ActiveDictation.observe?.invoke(state)
                 },
                 { ActiveDictation.onInserted?.invoke() },
             )
         ActiveDictation.engine = engine
-        val signedIn = TokenStore(this).signedIn()
+        val signedIn = tokens.signedIn()
         engine.start(resolveSignedIn(settings.transcriptionProvider, signedIn))
         return engine
     }
@@ -429,7 +451,7 @@ class SpeecherChipService : AccessibilityService() {
 
     private companion object {
         const val JITTER_DP = 8f
-        const val PILL_MILLIS = 4_000L
+        const val PILL_MILLIS = 10_000
         // English plus the common European forms: voz (es/pt), vocal/vocale (fr/it), Sprach- and
         // Mikro- (de), dictado/dictée/Diktat. "mic" covers microphone, micrófono and microfone.
         val VOICE_TOKENS =

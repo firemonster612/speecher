@@ -230,7 +230,7 @@ class DictationEngine(
         } catch (_: SecurityException) {
             fail(current, FailureReason.MicrophoneDenied, "Grant microphone permission in Speecher")
         } catch (_: Exception) {
-            fail(current, FailureReason.Provider, "Microphone unavailable")
+            fail(current, FailureReason.MicrophoneUnavailable, "Microphone unavailable")
         }
     }
 
@@ -492,8 +492,13 @@ fun createDictationEngine(
     return DictationEngine(
         microphone::capture,
         microphone::stop,
-        { selected, events ->
+        { selected, onEvent ->
             val access = token(selected).accessToken
+            val events = { event: SpeechEvent ->
+                if (event == SpeechEvent.Connected || event is SpeechEvent.Final)
+                    store.clearSessionEnded(selected.oauth)
+                onEvent(event)
+            }
             if (selected == Provider.Claude)
                 ClaudeVoiceClient(
                     webSocketTransport(endpoints.getValue(selected).speech),
@@ -533,20 +538,22 @@ fun createDictationEngine(
             if (context.style == CleanupStrength.None) raw
             else
                 refineTranscript(
-                    http,
-                    selected.oauth,
-                    token(selected),
-                    raw,
-                    settings.vocabulary,
-                    choice.model,
-                    choice.effort,
-                    context,
-                    endpoints.getValue(selected).refinement,
-                    (if (ultrafast) ultrafastAvailable else fastModeAvailable.getValue(selected))
-                        .takeIf { settings.fastMode(selected) },
-                    ultrafast,
-                    onRefined,
-                )
+                        http,
+                        selected.oauth,
+                        token(selected),
+                        raw,
+                        settings.vocabulary,
+                        choice.model,
+                        choice.effort,
+                        context,
+                        endpoints.getValue(selected).refinement,
+                        (if (ultrafast) ultrafastAvailable
+                            else fastModeAvailable.getValue(selected))
+                            .takeIf { settings.fastMode(selected) },
+                        ultrafast,
+                        onRefined,
+                    )
+                    .also { store.clearSessionEnded(selected.oauth) }
         },
         if (settings.transcribePassEnabled)
             { pcm ->

@@ -30,16 +30,16 @@ QList<RowOption> customRowOptions(const QString &rowId,
     return authModeOptions(rowId);
 }
 
-QString anthropicCredentialStatus(const AppSettings &draft,
-                                  const SettingsStore &store)
+CredentialStatus anthropicCredentialStatus(const AppSettings &draft,
+                                           const SettingsStore &store)
 {
     if (draft.refinement.anthropicAuthMode == kCliProxyAuthMode) {
         return {};
     }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(
         store.claudeCredentialsPath(), false);
-    return credentials.ok ? QStringLiteral("Signed in with Claude Code")
-                          : credentials.error;
+    return {credentials.ok ? QStringLiteral("Signed in with Claude Code") : credentials.error,
+            credentials.ok};
 }
 
 } // namespace speecher::mac

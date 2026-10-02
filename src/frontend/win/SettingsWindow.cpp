@@ -15,10 +15,12 @@
 #include "frontend/win/TranscribePane.h"
 
 #include <QEventLoop>
+#include <QMediaDevices>
 #include <QTimer>
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include <windows.h>
 #include <shellapi.h>
@@ -33,6 +35,7 @@
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Microsoft.UI.Xaml.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
@@ -51,6 +54,13 @@ using winrt::Microsoft::UI::Xaml::Input::FocusManager;
 using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 
 const QString kGeometrySetting = QStringLiteral("ui/settingsWindowGeometry");
+// The open sidebar, narrower than NavigationView's 320 to leave the page room.
+constexpr int kPaneLength = 240;
+// Under half of a 1080p screen at 125% (768), so Snap can put the window
+// beside another. The page then keeps, beside the pane and inside its gutters, a
+// card wide enough for the widest control below its title.
+constexpr int kMinimumWidth = 760;
+constexpr int kMinimumHeight = 480;
 const QString kWhatsNewPane = QStringLiteral("whatsNew");
 const QString kHomePane = QStringLiteral("home");
 // The Transcribe pane keeps its batch across the window; entering and leaving
@@ -67,6 +77,7 @@ wchar_t glyphForIconId(const QString &iconId)
         {QStringLiteral("whatsNew"), L'\uE7E7'},
         {QStringLiteral("microphone"), L'\uE720'},
         {QStringLiteral("refinement"), L'\uE8D2'},
+        {QStringLiteral("writingProfiles"), L'\uE70F'},
         {QStringLiteral("localModels"), L'\uE977'},
         {QStringLiteral("transcribe"), L'\uE8D6'},
         {QStringLiteral("output"), L'\uF0E3'},
@@ -143,6 +154,17 @@ struct SettingsWindow::Native {
             static const QStringList livePages{QStringLiteral("dictation"), QStringLiteral("refinement"),
                                                QStringLiteral("localModels")};
             if (livePages.contains(currentPane)) {
+                queueLiveRebuild();
+            }
+        });
+        // A microphone plugged in or taken out changes the Input device row's
+        // choices, and whether it has any.
+        QObject::connect(new QMediaDevices(&lifetime), &QMediaDevices::audioInputsChanged, &lifetime, [this] {
+            if (!window) {
+                return;
+            }
+            model.refreshAudioInput();
+            if (currentPane == QStringLiteral("dictation")) {
                 queueLiveRebuild();
             }
         });
@@ -247,13 +269,19 @@ struct SettingsWindow::Native {
         root.Children().Append(titleBar);
 
         navigation = NavigationView();
+        // Always open. The adaptive Auto mode is not used: every pane switch
+        // while it was compact ended in a layout cycle.
         navigation.PaneDisplayMode(NavigationViewPaneDisplayMode::Left);
+        navigation.OpenPaneLength(kPaneLength);
         navigation.IsBackButtonVisible(NavigationViewBackButtonVisible::Collapsed);
         navigation.IsPaneToggleButtonVisible(false);
         navigation.IsSettingsVisible(false);
         navigation.AlwaysShowHeader(false);
         search = AutoSuggestBox();
         search.PlaceholderText(L"Find a setting");
+        // The suggestions are elements, whose text is no query to type over
+        // the box with.
+        search.UpdateTextOnSelect(false);
         SymbolIcon find;
         find.Symbol(Symbol::Find);
         search.QueryIcon(find);
@@ -262,14 +290,24 @@ struct SettingsWindow::Native {
             if (args.Reason() != AutoSuggestionBoxTextChangeReason::UserInput) {
                 return;
             }
-            query = qs(sender.Text());
-            rebuildSidebar();
+            const QString query = qs(sender.Text()).trimmed();
+            sender.ItemsSource(query.isEmpty() ? IInspectable{nullptr} : IInspectable(searchSuggestions(query)));
         });
-        // Enter opens the first hit.
-        search.QuerySubmitted([this](const AutoSuggestBox &, const auto &) {
-            const QStringList hits = model.searchPanes(query);
-            if (!hits.isEmpty()) {
-                showPage(hits.first());
+        // A chosen suggestion opens its row; Enter opens the first one.
+        search.QuerySubmitted([this](const AutoSuggestBox &,
+                                     const AutoSuggestBoxQuerySubmittedEventArgs &args) {
+            if (const auto chosen = args.ChosenSuggestion()) {
+                const auto hit = chosen.try_as<FrameworkElement>();
+                if (hit && hit.Tag()) {
+                    const QString target = qs(unbox_value<hstring>(hit.Tag()));
+                    showSearchHit(target.section(QLatin1Char('\n'), 0, 0),
+                                  target.section(QLatin1Char('\n'), 1));
+                }
+                return;
+            }
+            const QList<SearchMatch> matches = model.search(qs(args.QueryText()));
+            if (!matches.isEmpty()) {
+                showSearchHit(matches.first().pane, matches.first().rows.value(0));
             }
         });
         navigation.AutoSuggestBox(search);
@@ -300,7 +338,9 @@ struct SettingsWindow::Native {
         content.RowDefinitions().Append(pageRow);
         banner = InfoBar();
         banner.IsOpen(false);
-        banner.Margin({36, 12, 36, 0});
+        // The page column's width, so the banner's edges are the cards'.
+        banner.Margin({kPageGutter, 12, kPageGutter, 0});
+        banner.MaxWidth(kPageColumnWidth);
         banner.CloseButtonClick([this](const auto &, const auto &) {
             if (bannerCloseAction) {
                 bannerCloseAction();
@@ -316,6 +356,21 @@ struct SettingsWindow::Native {
         window.SetTitleBar(titleBar);
         applyTheme();
         restoreGeometry();
+        if (const auto presenter =
+                window.AppWindow().Presenter().try_as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>()) {
+            const double scale = GetDpiForWindow(windowHandle()) / 96.0;
+            presenter.PreferredMinimumWidth(int(kMinimumWidth * scale));
+            presenter.PreferredMinimumHeight(int(kMinimumHeight * scale));
+        }
+        // Back from the Windows privacy page the microphone note sends people
+        // to, the Input device row asks again. Other activations do not
+        // enumerate devices.
+        window.Activated([this](const auto &, const WindowActivatedEventArgs &args) {
+            if (args.WindowActivationState() != WindowActivationState::Deactivated
+                && std::exchange(microphoneSettingsOpened, false) && model.refreshAudioInput()) {
+                queueRebuild();
+            }
+        });
         closedToken = window.Closed([this](const auto &, const auto &) { windowClosed(); });
 
         rebuildSidebar();
@@ -390,11 +445,8 @@ struct SettingsWindow::Native {
         const int availableHeight = area.bottom - area.top;
         // A partial intersection can still leave the titlebar off-screen.
         // Bound the entire window, including the scaled default on small screens.
-        width = std::clamp(width,
-                           std::min(GetSystemMetricsForDpi(SM_CXMINTRACK, dpi), availableWidth),
-                           availableWidth);
-        height = std::clamp(height,
-                            std::min(GetSystemMetricsForDpi(SM_CYMINTRACK, dpi), availableHeight),
+        width = std::clamp(width, std::min(int(kMinimumWidth * dpi / 96.0), availableWidth), availableWidth);
+        height = std::clamp(height, std::min(int(kMinimumHeight * dpi / 96.0), availableHeight),
                             availableHeight);
         const int x = std::clamp(int(origin.x), int(area.left), int(area.right) - width);
         const int y = std::clamp(int(origin.y), int(area.top), int(area.bottom) - height);
@@ -450,26 +502,19 @@ struct SettingsWindow::Native {
             }
             navigation.MenuItems().Append(item);
         };
-        if (!query.isEmpty()) {
-            // A search lists its hits alone, from the core index.
-            for (const QString &id : model.searchPanes(query)) {
+        // What's New leads the untitled top group only while pending or
+        // selected; each titled group sits under a NavigationViewItemHeader.
+        if (SettingsWindow::offersWhatsNew(currentPane, controller->pendingWhatsNewVersion())) {
+            append(kWhatsNewPane);
+        }
+        for (const SidebarGroup &group : schema.sidebarGroups) {
+            if (!group.title.isEmpty()) {
+                NavigationViewItemHeader header;
+                header.Content(box_value(hs(group.title)));
+                navigation.MenuItems().Append(header);
+            }
+            for (const QString &id : group.panes) {
                 append(id);
-            }
-        } else {
-            // What's New leads the untitled top group only while pending or
-            // selected; each titled group sits under a NavigationViewItemHeader.
-            if (SettingsWindow::offersWhatsNew(currentPane, controller->pendingWhatsNewVersion())) {
-                append(kWhatsNewPane);
-            }
-            for (const SidebarGroup &group : schema.sidebarGroups) {
-                if (!group.title.isEmpty()) {
-                    NavigationViewItemHeader header;
-                    header.Content(box_value(hs(group.title)));
-                    navigation.MenuItems().Append(header);
-                }
-                for (const QString &id : group.panes) {
-                    append(id);
-                }
             }
         }
         navigation.SelectedItem(selected);
@@ -479,9 +524,11 @@ struct SettingsWindow::Native {
     void selectPane(const QString &id)
     {
         // The model browser belongs to its pane; left running, its download
-        // progress would keep updating controls no longer on screen.
+        // progress would keep updating controls no longer on screen. Another
+        // pane opens at its top, not at the scroll offset of this one.
         if (id != currentPane) {
             host.localModels.reset();
+            scrollToTop = true;
         }
         if (id == kTranscribePane) {
             transcribe->enter();
@@ -520,6 +567,73 @@ struct SettingsWindow::Native {
         refreshBanner();
     }
 
+    // The search's suggestions: each matching row under its pane's title, or
+    // the pane alone when only its title or a heading matched. Each carries
+    // "pane\nrow" as its tag; with no match, one untagged line says so.
+    winrt::Windows::Foundation::Collections::IVector<IInspectable> searchSuggestions(const QString &query)
+    {
+        auto items = winrt::single_threaded_vector<IInspectable>();
+        const SettingsSchema &schema = model.schema();
+        const auto suggestion = [this, &items](const QString &title, const QString &paneTitle,
+                                               const QString &target) {
+            StackPanel item;
+            item.Padding({0, 4, 0, 4});
+            item.Tag(box_value(hs(target)));
+            item.Children().Append(styledTextBlock(title, L"SettingsCardBodyStyle"));
+            if (!paneTitle.isEmpty()) {
+                item.Children().Append(secondaryTextBlock(paneTitle, L"SettingsCardDescriptionStyle", host));
+            }
+            QStringList name{title, paneTitle};
+            name.removeAll(QString());
+            winrt::Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(
+                item, hs(name.join(QStringLiteral(", "))));
+            items.Append(item);
+        };
+        for (const SearchMatch &match : model.search(query)) {
+            const SettingsPane *pane = schema.pane(match.pane);
+            if (match.rows.isEmpty()) {
+                suggestion(pane->title, QString(), match.pane);
+            }
+            for (const QString &rowId : match.rows) {
+                // A row the section names, with no label of its own, goes by
+                // the section's title.
+                QString title = schema.row(rowId)->label;
+                for (const SettingsPaneGroup &group : pane->groups) {
+                    if (title.isEmpty() && group.rows.contains(rowId)) {
+                        title = group.title;
+                    }
+                }
+                suggestion(title, pane->title, match.pane + QLatin1Char('\n') + rowId);
+            }
+        }
+        if (items.Size() == 0) {
+            items.Append(secondaryTextBlock(noSettingsMatchText(), L"SettingsCardBodyStyle", host));
+        }
+        return items;
+    }
+
+    // Opens the pane a search found, on the view that holds the row, scrolled
+    // to the row's card.
+    void showSearchHit(const QString &paneId, const QString &rowId)
+    {
+        const SettingsPane *pane = model.schema().pane(paneId);
+        if (!pane) {
+            return;
+        }
+        for (const SettingsPaneGroup &group : pane->groups) {
+            if (!group.view.isEmpty() && group.rows.contains(rowId)) {
+                host.views.insert(paneId, group.view);
+            }
+        }
+        host.revealRow = rowId;
+        if (paneId == currentPane) {
+            scrollToTop = true;
+            rebuildPage();
+        } else {
+            selectPane(paneId);
+        }
+    }
+
     void leaveWhatsNew()
     {
         selectPane(model.schema().pane(whatsNewReturnPane) ? whatsNewReturnPane : kHomePane);
@@ -531,6 +645,8 @@ struct SettingsWindow::Native {
             showWhatsNew();
         } else if (id == QStringLiteral("speechLocalModelDownload")) {
             host.showPage(QStringLiteral("localModels"));
+        } else if (id == QStringLiteral("openMicrophoneSettings")) {
+            microphoneSettingsOpened = true;
         } else if (id == QStringLiteral("resetCustomSystemPrompt")) {
             setValueAndCommit(host, QStringLiteral("customSystemPrompt"),
                               builtInDictationSystemPrompt());
@@ -604,6 +720,8 @@ struct SettingsWindow::Native {
                 page = buildPane(*pane, host);
                 break;
             }
+            // A sought row this pane did not show is not sought on the next.
+            host.revealRow.clear();
         } catch (const winrt::hresult_error &error) {
             // A throw from a dispatcher callback dies as a stowed exception
             // with no message anywhere; log it and keep the window alive.
@@ -612,7 +730,7 @@ struct SettingsWindow::Native {
                        << QString::fromWCharArray(error.message().c_str());
             return;
         }
-        replacePage(pageHost, page);
+        replacePage(pageHost, page, !std::exchange(scrollToTop, false));
     }
 
     void loadApiKey()
@@ -709,8 +827,15 @@ struct SettingsWindow::Native {
         if (!request.isEmpty()) {
             showPage(request);
         }
-        // Let composition catch up with the pane switch before printing.
+        // Let composition catch up with the pane switch before printing: the
+        // new page's first layout, which a busy first launch can hold back,
+        // then a moment for its frame.
         QEventLoop settle;
+        const auto page = pageHost.Child().try_as<FrameworkElement>();
+        for (int waited = 0; page && !page.IsLoaded() && waited < 2000; waited += 50) {
+            QTimer::singleShot(50, &settle, &QEventLoop::quit);
+            settle.exec();
+        }
         QTimer::singleShot(250, &settle, &QEventLoop::quit);
         settle.exec();
         // SPEECHER_GRAB_SCROLL=bottom shows the end of the page, as on the
@@ -718,7 +843,7 @@ struct SettingsWindow::Native {
         // this short would otherwise never capture.
         const QString scrollTo = qEnvironmentVariable("SPEECHER_GRAB_SCROLL");
         if (scrollTo == QStringLiteral("bottom") || scrollTo == QStringLiteral("middle")) {
-            if (const auto scroll = pageHost.Child().try_as<ScrollViewer>()) {
+            if (const auto scroll = pageScroller(pageHost.Child())) {
                 const double end = scroll.ScrollableHeight();
                 scroll.ChangeView(nullptr, scrollTo == QStringLiteral("middle") ? end * 0.6 : end,
                                   nullptr, true);
@@ -758,7 +883,7 @@ struct SettingsWindow::Native {
         dialog.ShowAsync();
     }
 
-    void inform(const QString &title)
+    void inform(const QString &title, const QString &text)
     {
         if (!root) {
             return;
@@ -767,7 +892,8 @@ struct SettingsWindow::Native {
         dialog.XamlRoot(root.XamlRoot());
         dialog.RequestedTheme(root.ActualTheme());
         dialog.Title(box_value(hs(title)));
-        dialog.CloseButtonText(L"OK");
+        dialog.Content(box_value(hs(text)));
+        dialog.CloseButtonText(L"Close");
         dialog.ShowAsync();
     }
 
@@ -793,10 +919,15 @@ struct SettingsWindow::Native {
 
     QString currentPane;
     QString whatsNewReturnPane;
-    QString query;
     bool sidebarUpdating = false;
+    // The next build is another pane, or a search's row, not a rebuild of
+    // the page on screen.
+    bool scrollToTop = false;
     bool rebuildQueued = false;
     bool liveRebuildPending = false;
+    // The Input device row sent the person to the privacy page; the next
+    // activation asks for devices again.
+    bool microphoneSettingsOpened = false;
 
     std::function<void()> bannerCloseAction;
 };
@@ -843,6 +974,14 @@ bool SettingsWindow::isVisible() const
     return handle && IsWindowVisible(handle);
 }
 
+void SettingsWindow::recheckMicrophonesOnReturn()
+{
+    // A window opened later enumerates the devices anyway.
+    if (m_native->window) {
+        m_native->microphoneSettingsOpened = true;
+    }
+}
+
 bool SettingsWindow::capture(const QString &path)
 {
     return m_native->capture(path);
@@ -856,9 +995,20 @@ void SettingsWindow::confirm(const QString &title,
     m_native->confirm(title, text, confirmLabel, std::move(confirmed));
 }
 
-void SettingsWindow::inform(const QString &title)
+void SettingsWindow::inform(const QString &title, const QString &text)
 {
-    m_native->inform(title);
+    m_native->inform(title, text);
+}
+
+QStringList SettingsWindow::searchSuggestionsForTest(const QString &query)
+{
+    QStringList suggestions;
+    for (const IInspectable &item : m_native->searchSuggestions(query)) {
+        const auto element = item.as<FrameworkElement>();
+        suggestions.append(element.Tag() ? qs(unbox_value<hstring>(element.Tag()))
+                                         : qs(element.as<TextBlock>().Text()));
+    }
+    return suggestions;
 }
 
 void SettingsWindow::setActionHook(std::function<void(const QString &)> hook)

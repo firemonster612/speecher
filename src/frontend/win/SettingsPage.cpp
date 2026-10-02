@@ -10,13 +10,18 @@
 #include <QImage>
 #include <QUrl>
 
+#include <shellapi.h>
+
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Globalization.NumberFormatting.h>
 #include <winrt/Windows.System.h>
+#include <winrt/Windows.UI.h>
 #include <winrt/Microsoft.UI.Windowing.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
@@ -35,10 +40,15 @@ using namespace winrt;
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
+using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
 using winrt::Microsoft::UI::Xaml::Markup::XamlReader;
 
 constexpr auto kXmlns =
     LR"(xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation")";
+
+// The least room a row's title keeps beside its control. With less, the
+// control goes below the title.
+constexpr double kMinimumTitleWidth = 150;
 
 Style lookupStyle(const wchar_t *key)
 {
@@ -53,11 +63,77 @@ TextBlock styledText(const QString &text, const wchar_t *styleKey)
     return styledTextBlock(text, styleKey);
 }
 
-// The room a Choice or Text control reserves, from the schema's width hint in
-// characters, so a list that arrives late does not resize the row.
+// The room a Choice or Text control reserves, so a list that arrives late does
+// not resize the row: one of three widths, picked by the schema's width hint
+// in characters, so the controls down a page share a few edges.
 double contentMinWidth(const RowSnapshot &row)
 {
-    return std::max(120.0, row.contentWidthHint * 8.0);
+    if (row.contentWidthHint == 0) {
+        return 120;
+    }
+    return row.contentWidthHint * 8 <= 200 ? 200 : kWideControlWidth;
+}
+
+// The switch inside a row's control: the control itself, or the one a
+// stateToggle wraps.
+ToggleSwitch innerToggle(const UIElement &control)
+{
+    if (const auto toggle = control.try_as<ToggleSwitch>()) {
+        return toggle;
+    }
+    if (const auto panel = control.try_as<Panel>()) {
+        for (const UIElement &child : panel.Children()) {
+            if (const auto toggle = child.try_as<ToggleSwitch>()) {
+                return toggle;
+            }
+        }
+    }
+    return nullptr;
+}
+
+bool isWithin(DependencyObject element, const DependencyObject &ancestor)
+{
+    while (element) {
+        if (element == ancestor) {
+            return true;
+        }
+        element = Media::VisualTreeHelper::GetParent(element);
+    }
+    return false;
+}
+
+// A row is read as one unit: the control carries the row's title and
+// description, which UIA does not otherwise tie to it. A button keeps its
+// caption as its name and gets the row as its help, and a control that
+// already has a name (a profile grid field) keeps it.
+void describeForAssistiveTech(const UIElement &control, const QString &title, const QString &description)
+{
+    Control target = control.try_as<Control>();
+    if (const auto panel = control.try_as<Panel>(); !target && panel) {
+        for (const UIElement &child : panel.Children()) {
+            if ((target = child.try_as<Control>())) {
+                break;
+            }
+        }
+    }
+    if (!target) {
+        return;
+    }
+    if (target.try_as<Primitives::ButtonBase>()) {
+        QStringList help{title, description};
+        help.removeAll(QString());
+        AutomationProperties::SetHelpText(target, hs(help.join(QStringLiteral(". "))));
+        return;
+    }
+    if (!AutomationProperties::GetName(target).empty()) {
+        return;
+    }
+    if (!title.isEmpty()) {
+        AutomationProperties::SetName(target, hs(title));
+    }
+    if (!description.isEmpty()) {
+        AutomationProperties::SetHelpText(target, hs(description));
+    }
 }
 
 } // namespace
@@ -99,19 +175,14 @@ ComboBox choiceComboBox(const RowSnapshot &row, PaneHost &host)
 
 namespace {
 
-ToggleSwitch toggleSwitch(const RowSnapshot &row, PaneHost &host)
+UIElement toggleSwitch(const RowSnapshot &row, PaneHost &host)
 {
     ToggleSwitch toggle;
-    // The Settings app's right-aligned switch says nothing beside itself; the
-    // template otherwise reserves a 154 px label column.
-    toggle.OnContent(box_value(L""));
-    toggle.OffContent(box_value(L""));
-    toggle.MinWidth(0);
     toggle.IsOn(row.value.toBool());
     toggle.Toggled([rowId = row.id, &host](const IInspectable &sender, const auto &) {
         setValueAndCommit(host, rowId, sender.as<ToggleSwitch>().IsOn());
     });
-    return toggle;
+    return stateToggle(toggle);
 }
 
 // A key or password: masked, and committed like any other text row.
@@ -151,7 +222,7 @@ UIElement textField(const RowSnapshot &row, PaneHost &host)
         box.Text(hs(row.value.toString()));
         if (row.multiline) {
             // Wide enough to read a paragraph beside the row's title.
-            box.MinWidth(360);
+            box.MinWidth(kWideControlWidth);
             makeMultiline(box);
         }
         const auto commit = [rowId = row.id, stored = row.value.toString(), &host](
@@ -358,6 +429,26 @@ UIElement gatedFullWidthCard(const RowSnapshot &row, const UIElement &card, Pane
     return wrap;
 }
 
+// The card holding the row a search opened the pane for scrolls to the top of
+// the page once it is laid out.
+UIElement revealIfSought(const QList<RowSnapshot> &unit, const UIElement &card, PaneHost &host)
+{
+    const bool sought = std::any_of(unit.cbegin(), unit.cend(), [&host](const RowSnapshot &row) {
+        return row.id == host.revealRow;
+    });
+    if (!sought) {
+        return card;
+    }
+    host.revealRow.clear();
+    card.as<FrameworkElement>().Loaded([](const IInspectable &sender, const auto &) {
+        BringIntoViewOptions options;
+        options.VerticalAlignmentRatio(0);
+        options.AnimationDesired(false);
+        sender.as<UIElement>().StartBringIntoView(options);
+    });
+    return card;
+}
+
 // One schema section as the Settings app draws it: a BodyStrong header, one
 // SettingsCard per row — rows sharing a groupId in one card — spaced 4, and
 // the footnote underneath.
@@ -391,15 +482,15 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
     for (const QList<RowSnapshot> &unit : units) {
         const RowSnapshot &first = unit.first();
         if (first.kind == RowKind::Collection) {
-            cards.Children().Append(
-                gatedFullWidthCard(first, editorFor(first, host)->card(), host));
+            cards.Children().Append(revealIfSought(
+                unit, gatedFullWidthCard(first, editorFor(first, host)->card(), host), host));
             continue;
         }
         if (first.kind == RowKind::Custom && customRowIsFullWidth(first.id)) {
-            cards.Children().Append(
-                gatedFullWidthCard(first,
-                                   cardContainer(customRowElement(first, host)),
-                                   host));
+            cards.Children().Append(revealIfSought(
+                unit,
+                gatedFullWidthCard(first, cardContainer(customRowElement(first, host)), host),
+                host));
             continue;
         }
         StackPanel rows;
@@ -423,7 +514,7 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
             }
             rows.Children().Append(rowGrid(row, rowControl(row, host), host, gatedGroup || index > 0));
         }
-        cards.Children().Append(cardContainer(rows));
+        cards.Children().Append(revealIfSought(unit, cardContainer(rows), host));
     }
     column.Children().Append(cards);
     const QString help = footnote(section);
@@ -437,8 +528,8 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
 ScrollViewer pageScaffold(const QString &title, const StackPanel &column)
 {
     ScrollViewer scroll;
-    scroll.Padding({36, 0, 36, 0});
-    column.MaxWidth(1064);
+    scroll.Padding({kPageGutter, 0, kPageGutter, 0});
+    column.MaxWidth(kPageColumnWidth);
     column.Padding({0, 0, 0, 36});
     if (!title.isEmpty()) {
         column.Children().Append(styledText(title, L"SettingsPageTitleStyle"));
@@ -447,15 +538,45 @@ ScrollViewer pageScaffold(const QString &title, const StackPanel &column)
     return scroll;
 }
 
-void replacePage(const Border &pageHost, const UIElement &page)
+Grid pageWithActionBar(const ScrollViewer &scroll, const UIElement &action)
+{
+    Grid page;
+    RowDefinition content;
+    content.Height({1, GridUnitType::Star});
+    RowDefinition actions;
+    actions.Height({0, GridUnitType::Auto});
+    page.RowDefinitions().Append(content);
+    page.RowDefinitions().Append(actions);
+    page.Children().Append(scroll);
+    Border bar;
+    bar.MaxWidth(kPageColumnWidth);
+    bar.Margin({kPageGutter, 12, kPageGutter, 20});
+    bar.Child(action);
+    Grid::SetRow(bar, 1);
+    page.Children().Append(bar);
+    return page;
+}
+
+ScrollViewer pageScroller(const UIElement &page)
+{
+    if (const auto scroll = page.try_as<ScrollViewer>()) {
+        return scroll;
+    }
+    if (const auto grid = page.try_as<Grid>(); grid && grid.Children().Size() > 0) {
+        return grid.Children().GetAt(0).try_as<ScrollViewer>();
+    }
+    return nullptr;
+}
+
+void replacePage(const Border &pageHost, const UIElement &page, bool keepScroll)
 {
     double offset = 0;
-    if (auto previous = pageHost.Child().try_as<ScrollViewer>()) {
+    if (auto previous = pageScroller(pageHost.Child()); previous && keepScroll) {
         offset = previous.VerticalOffset();
     }
     pageHost.Child(page);
     if (offset > 0) {
-        if (auto scroll = page.try_as<ScrollViewer>()) {
+        if (auto scroll = pageScroller(page)) {
             scroll.Loaded([offset](const IInspectable &sender, const auto &) {
                 sender.as<ScrollViewer>().ChangeView(nullptr, offset, nullptr, true);
             });
@@ -531,6 +652,23 @@ TextBlock secondaryTextBlock(const QString &text, const wchar_t *styleKey, const
     return block;
 }
 
+void openMicrophonePrivacySettings()
+{
+    ShellExecuteW(nullptr, L"open", L"ms-settings:privacy-microphone", nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void followSecondaryForeground(const TextBlock &text)
+{
+    text.Loaded([](const IInspectable &sender, const auto &) {
+        const TextBlock self = sender.as<TextBlock>();
+        PaneHost theme;
+        theme.effectiveTheme = [self] { return self.ActualTheme(); };
+        if (const auto brush = themeBrush(L"SettingsCardDescriptionForeground", theme)) {
+            self.Foreground(brush);
+        }
+    });
+}
+
 bool highContrastOn()
 {
     HIGHCONTRASTW contrast{};
@@ -557,16 +695,19 @@ winrt::Microsoft::UI::Xaml::Media::Brush themeBrush(const wchar_t *key, const Pa
                                          : L"Dark";
     // The style dictionary is the merged dictionary that carries our theme
     // dictionaries; walk the merged list rather than assuming its position.
+    // XamlControlsResources can carry theme dictionaries of the same names
+    // without our keys (a grab died on that once the navigation pane went
+    // compact), so the key is checked in each: a XAML dictionary's Lookup
+    // throws on a missing key with an error TryLookup does not catch.
     for (const auto &merged : Application::Current().Resources().MergedDictionaries()) {
         const auto themes = merged.ThemeDictionaries();
         if (!themes.HasKey(box_value(themeKey))) {
             continue;
         }
         const auto dictionary = themes.Lookup(box_value(themeKey)).as<ResourceDictionary>();
-        if (const auto brush = dictionary.TryLookup(box_value(key))) {
-            return brush.as<winrt::Microsoft::UI::Xaml::Media::Brush>();
+        if (dictionary.HasKey(box_value(key))) {
+            return dictionary.Lookup(box_value(key)).as<winrt::Microsoft::UI::Xaml::Media::Brush>();
         }
-        break;
     }
     return nullptr;
 }
@@ -680,7 +821,8 @@ Grid rowGrid(const RowSnapshot &row, const UIElement &control, PaneHost &host, b
             element.VerticalAlignment(VerticalAlignment::Center);
             element.HorizontalAlignment(HorizontalAlignment::Right);
         }
-        if (auto element = control.try_as<Control>()) {
+        const ToggleSwitch toggle = innerToggle(control);
+        if (auto element = toggle ? toggle.as<Control>() : control.try_as<Control>()) {
             if (!row.enabled) {
                 element.IsEnabled(false);
             }
@@ -688,10 +830,98 @@ Grid rowGrid(const RowSnapshot &row, const UIElement &control, PaneHost &host, b
         if (row.enabled && !row.tooltip.isEmpty()) {
             ToolTipService::SetToolTip(control, box_value(hs(row.tooltip)));
         }
+        describeForAssistiveTech(control, title, description);
+        // A long value wraps in a column of its own rather than taking the
+        // row's width from its title.
+        if (const auto text = control.try_as<TextBlock>()) {
+            text.MaxWidth(kWideControlWidth);
+            text.TextAlignment(TextAlignment::End);
+        }
         Grid::SetColumn(control.as<FrameworkElement>(), 1);
         grid.Children().Append(control);
+        // As SettingsCard does on a narrow window, a control that leaves its
+        // title too little room moves below it, at the title's left edge.
+        for (int index = 0; index < 2; ++index) {
+            RowDefinition line;
+            line.Height({0, GridUnitType::Auto});
+            grid.RowDefinitions().Append(line);
+        }
+        grid.SizeChanged([content = control.as<FrameworkElement>()](const IInspectable &sender,
+                                                                   const SizeChangedEventArgs &args) {
+            const Grid layout = sender.as<Grid>();
+            const Thickness padding = layout.Padding();
+            const double titleRoom = args.NewSize().Width - padding.Left - padding.Right
+                - layout.ColumnSpacing() - content.DesiredSize().Width;
+            const bool below = titleRoom < kMinimumTitleWidth;
+            layout.RowSpacing(below ? 8 : 0);
+            Grid::SetRow(content, below ? 1 : 0);
+            Grid::SetColumn(content, below ? 0 : 1);
+            Grid::SetColumnSpan(content, below ? 2 : 1);
+            content.HorizontalAlignment(below ? HorizontalAlignment::Left : HorizontalAlignment::Right);
+            if (const auto text = content.try_as<TextBlock>()) {
+                text.TextAlignment(below ? TextAlignment::Start : TextAlignment::End);
+            }
+        });
+        // As in the Settings app, the whole card flips a switch, not only the
+        // switch; the transparent fill makes the empty space hit-testable.
+        if (toggle && row.enabled) {
+            grid.Background(Media::SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0}));
+            grid.Tapped([toggle](const IInspectable &, const Input::TappedRoutedEventArgs &args) {
+                const auto source = args.OriginalSource().try_as<DependencyObject>();
+                if (!isWithin(source, toggle)) {
+                    toggle.IsOn(!toggle.IsOn());
+                }
+            });
+        }
     }
     return grid;
+}
+
+StackPanel stateToggle(const ToggleSwitch &toggle)
+{
+    const auto stateText = [](bool on) { return on ? hstring(L"On") : hstring(L"Off"); };
+    // The template keeps a column for content beside the knob; with none,
+    // its 12 px gap would leave the knob short of the column's right edge.
+    toggle.OnContent(box_value(L""));
+    toggle.OffContent(box_value(L""));
+    toggle.MinWidth(0);
+    toggle.Margin({0, 0, -12, 0});
+    TextBlock state = styledTextBlock(QString(), L"SettingsCardBodyStyle");
+    state.Text(stateText(toggle.IsOn()));
+    state.VerticalAlignment(VerticalAlignment::Center);
+    // The switch already reports its state; the word is for sighted readers.
+    AutomationProperties::SetAccessibilityView(state, Automation::Peers::AccessibilityView::Raw);
+    toggle.Toggled([state = make_weak(state), stateText](const IInspectable &sender, const auto &) {
+        if (const TextBlock text = state.get()) {
+            text.Text(stateText(sender.as<ToggleSwitch>().IsOn()));
+        }
+    });
+    // The word dims with a disabled switch, whether the row or its card
+    // disabled it. Read once in the tree, where ActualTheme is the window's.
+    const auto followEnabled = [state = make_weak(state), toggle = make_weak(toggle)] {
+        const TextBlock text = state.get();
+        const ToggleSwitch owner = toggle.get();
+        if (!text || !owner) {
+            return;
+        }
+        if (owner.IsEnabled()) {
+            text.ClearValue(TextBlock::ForegroundProperty());
+            return;
+        }
+        PaneHost theme;
+        theme.effectiveTheme = [text] { return text.ActualTheme(); };
+        if (const auto brush = themeBrush(L"SettingsCardDisabledForeground", theme)) {
+            text.Foreground(brush);
+        }
+    };
+    state.Loaded([followEnabled](const auto &, const auto &) { followEnabled(); });
+    toggle.IsEnabledChanged([followEnabled](const auto &, const auto &) { followEnabled(); });
+    StackPanel panel;
+    panel.Orientation(Orientation::Horizontal);
+    panel.Spacing(12);
+    panel.Children().Append(state);
+    panel.Children().Append(toggle);
+    return panel;
 }
 
 void makeMultiline(const TextBox &box)
@@ -743,6 +973,9 @@ UIElement buildPane(const SettingsPane &pane, PaneHost &host)
             host.refresh();
         }
     });
+    // The first view's name lines up with the page title, not with its
+    // selection pill's padding.
+    views.Margin({-12, 0, 0, 0});
     column.Children().InsertAt(1, views);
     return scroll;
 }

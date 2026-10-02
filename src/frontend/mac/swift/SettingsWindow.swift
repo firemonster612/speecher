@@ -8,10 +8,13 @@ import SwiftUI
 struct RootView: View {
     @ObservedObject var model: AppModel
     @State private var query = ""
+    /// The hit picked in the current search. A search starts with none, so
+    /// picking the pane already open still reaches the row that matched.
+    @State private var searchPick: String?
 
     var body: some View {
         NavigationSplitView {
-            SidebarList(model: model, query: $query)
+            SidebarList(model: model, query: $query, searchPick: $searchPick)
                 // A settings sidebar's width on macOS. Left to itself the split
                 // view picks one narrow enough to clip a pane name; an ideal
                 // rather than a lock, because the row height and glyph size
@@ -23,51 +26,72 @@ struct RootView: View {
         // On the split view rather than on a column: search covers the whole
         // window, and the sidebar is where a settings app puts the field.
         .searchable(text: $query, placement: .sidebar, prompt: "Search")
-        // Return opens the first hit.
+        // Return opens the first hit at the row that matched.
         .onSubmit(of: .search) {
-            if let first = model.searchPanes(query).first { model.showPage(first.id) }
+            guard let first = model.search(query).first else { return }
+            searchPick = first.pane.id
+            model.showPage(first.pane.id, row: first.row)
         }
         .toolbar(removing: .sidebarToggle)
         .toolbar(removing: .title)
-        .confirmationDialog("Delete all insights history?",
+        .confirmationDialog(model.homeLabel("clearHistoryQuestion"),
                             isPresented: $model.confirmingClearInsights) {
-            Button("Delete history", role: .destructive) { model.clearInsights() }
+            Button(model.homeLabel("clearHistoryConfirm"), role: .destructive) { model.clearInsights() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your stats, streaks and records are erased from this computer. This can't be undone.")
+            Text(model.homeLabel("clearHistoryBody"))
         }
-        .alert("Speecher couldn't delete the insights history.",
+        .alert(model.homeLabel("clearHistoryFailed"),
                isPresented: $model.clearInsightsFailed) {
-            Button("OK", role: .cancel) {}
+            // ui-lint: allow core-string (deleting the history again, not the update banner's retry)
+            Button("Try again") { model.clearInsights() }
+                .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) {}
         }
     }
 
+    /// The banner and the title keep to the column a grouped form centres its
+    /// cards in, so their edges line up however wide the window is. The pane
+    /// itself stays full width, so its scroller sits at the window edge.
+    private static let columnWidth: CGFloat = 742
+
     @ViewBuilder private var detail: some View {
         if let pane = model.pane(withId: model.pane) {
-            VStack(alignment: .leading, spacing: 0) {
-                if model.update.visible {
-                    UpdateBanner(model: model)
-                        .scenePadding([.top, .horizontal])
-                } else if model.whatsNewPending {
-                    WhatsNewStrip(banner: model.whatsNewBanner,
-                                  seeWhatsNew: { model.showWhatsNew() },
-                                  dismiss: { model.dismissWhatsNew() })
-                        .scenePadding([.top, .horizontal])
-                }
-                HStack {
-                    if pane.id == "whatsNew" {
-                        Button("Back", systemImage: "chevron.backward") { model.leaveWhatsNew() }
-                            .labelStyle(.iconOnly)
-                    }
-                    Text(pane.title)
-                        .font(.title2.weight(.semibold))
-                }
-                .scenePadding([.top, .horizontal])
+            VStack(spacing: 0) {
+                header(pane)
+                    .frame(maxWidth: Self.columnWidth, alignment: .leading)
+                // Content scrolls under the title, so the two are kept apart
+                // rather than the content being cut off at a glyph.
+                Divider()
+                    .padding(.top, 8)
                 PaneView(pane: pane, model: model)
                     // A fresh view per pane, so state one pane keeps, such as
                     // Vocabulary's chosen view, does not carry over to the next.
                     .id(pane.id)
             }
+        }
+    }
+
+    @ViewBuilder private func header(_ pane: Pane) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if model.update.visible {
+                UpdateBanner(model: model)
+                    .scenePadding([.top, .horizontal])
+            } else if model.whatsNewPending {
+                WhatsNewStrip(banner: model.whatsNewBanner,
+                              seeWhatsNew: { model.showWhatsNew() },
+                              dismiss: { model.dismissWhatsNew() })
+                    .scenePadding([.top, .horizontal])
+            }
+            HStack {
+                if pane.id == "whatsNew" {
+                    Button("Back", systemImage: "chevron.backward") { model.leaveWhatsNew() }
+                        .labelStyle(.iconOnly)
+                }
+                Text(pane.title)
+                    .font(.title2.weight(.semibold))
+            }
+            .scenePadding([.top, .horizontal])
         }
     }
 }
@@ -158,12 +182,23 @@ struct WhatsNewStrip: View {
 struct SidebarList: View {
     @ObservedObject var model: AppModel
     @Binding var query: String
+    @Binding var searchPick: String?
 
     var body: some View {
         // Every pick goes through showPage, so choosing What's New here is the
-        // same as any other way of opening it.
-        List(selection: Binding<String>(get: { model.pane },
-                                        set: { if $0 != model.pane { model.showPage($0) } })) {
+        // same as any other way of opening it. A search hit opens at the row
+        // that matched.
+        List(selection: Binding<String?>(get: { query.isEmpty ? model.pane : searchPick },
+                                         set: { pick in
+                                             guard let pick else { return }
+                                             if query.isEmpty {
+                                                 if pick != model.pane { model.showPage(pick) }
+                                                 return
+                                             }
+                                             searchPick = pick
+                                             let row = model.search(query).first(where: { $0.pane.id == pick })?.row
+                                             model.showPage(pick, row: row)
+                                         })) {
             if query.isEmpty {
                 // Each titled group under the native section header; the top
                 // group has none, and What's New leads it while pending or open.
@@ -185,11 +220,26 @@ struct SidebarList: View {
                 }
             } else {
                 // A search shows its hits as one flat list, not under the groups
-                // they came from.
-                ForEach(model.searchPanes(query)) { row($0) }
+                // they came from, and opens each at the row that matched.
+                ForEach(model.search(query)) { hit in
+                    row(hit.pane)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        // A click on the hit already picked changes no
+                        // selection, yet should still bring its row back.
+                        .simultaneousGesture(TapGesture().onEnded {
+                            model.showPage(hit.pane.id, row: hit.row)
+                        })
+                }
             }
         }
         .listStyle(.sidebar)
+        .onChange(of: query) { searchPick = nil }
+        .overlay {
+            if !query.isEmpty, model.search(query).isEmpty {
+                ContentUnavailableView(SpeecherBridge.noSettingsMatchText, systemImage: "magnifyingglass")
+            }
+        }
     }
 
     /// Icon plus label, and no colour of our own: sidebar icons take the accent
@@ -211,7 +261,8 @@ final class SpeecherSettingsWindow {
     init(model: AppModel) {
         self.model = model
         // No miniaturize: a settings window is quick to reopen with ⌘, so it has
-        // no business in the Dock. It remains resizable for the table panes.
+        // no business in the Dock. It remains resizable, and zooms, for the
+        // table panes.
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 620),
                           styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
                           backing: .buffered,
@@ -228,7 +279,6 @@ final class SpeecherSettingsWindow {
         window.titlebarSeparatorStyle = .none
         window.toolbar = NSToolbar()
         window.toolbarStyle = .unified
-        window.standardWindowButton(.zoomButton)?.isEnabled = false
         // A controller rather than a bare hosting view: NavigationSplitView
         // becomes an NSSplitViewController, which needs a parent view
         // controller to install its sidebar item into.

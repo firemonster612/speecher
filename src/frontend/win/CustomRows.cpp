@@ -19,6 +19,7 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Text.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Documents.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
@@ -43,11 +44,20 @@ TextBlock secondaryText(const QString &text, const PaneHost &host)
     return secondaryTextBlock(text, L"SettingsCardDescriptionStyle", host);
 }
 
+// A profile's fields are read one at a time, so each names its profile and
+// its column.
+void nameProfileField(const UIElement &field, const QString &profile, const QString &column)
+{
+    QStringList name{profile, column};
+    name.removeAll(QString());
+    Automation::AutomationProperties::SetName(field, hs(name.join(QStringLiteral(", "))));
+}
+
 // Free text with a commit on Enter or blur, for the CLI Proxy rows.
 TextBox commitTextBox(const RowSnapshot &row, PaneHost &host)
 {
     TextBox box;
-    box.MinWidth(240);
+    box.MinWidth(kWideControlWidth);
     box.PlaceholderText(hs(row.placeholder));
     box.Text(hs(row.value.toString()));
     const auto commit = [rowId = row.id, stored = row.value.toString(), &host](const TextBox &box) {
@@ -70,7 +80,7 @@ TextBox commitTextBox(const RowSnapshot &row, PaneHost &host)
 PasswordBox commitPasswordBox(const RowSnapshot &row, PaneHost &host)
 {
     PasswordBox box;
-    box.MinWidth(240);
+    box.MinWidth(kWideControlWidth);
     box.PlaceholderText(hs(row.placeholder));
     box.Password(hs(row.value.toString()));
     const auto commit = [rowId = row.id, stored = row.value.toString(), &host](
@@ -101,7 +111,7 @@ UIElement credentialField(PaneHost &host)
     StackPanel panel;
     panel.Spacing(4);
     PasswordBox box;
-    box.MinWidth(240);
+    box.MinWidth(kWideControlWidth);
     box.PlaceholderText(L"Enter OpenAI API key");
     box.Password(hs(host.apiKey));
     box.PasswordChanged([&host](const IInspectable &sender, const auto &) {
@@ -132,7 +142,9 @@ UIElement credentialField(PaneHost &host)
     });
     panel.Children().Append(box);
     if (!host.credentialProblem.isEmpty()) {
-        panel.Children().Append(secondaryText(host.credentialProblem, host));
+        TextBlock problem = secondaryText(host.credentialProblem, host);
+        problem.MaxWidth(kWideControlWidth);
+        panel.Children().Append(problem);
     }
     return panel;
 }
@@ -180,16 +192,20 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
     const QList<QVariantMap> records = row.value.value<QList<QVariantMap>>();
     QList<CollectionColumnSnapshot> choices;
     QList<CollectionColumnSnapshot> texts;
+    QString profileTitle;
     if (row.collection) {
         for (const CollectionColumnSnapshot &column : row.collection->columns) {
             if (column.kind == ColumnKind::Choice) {
                 choices.append(column);
             } else if (column.kind == ColumnKind::Text) {
                 texts.append(column);
+            } else if (column.id == kProfileColumn) {
+                profileTitle = column.title;
             }
         }
     }
     for (qsizetype index = 0; index < records.size(); ++index) {
+        const QString profile = records.at(index).value(kProfileColumn).toString();
         StackPanel pickers;
         pickers.Orientation(Orientation::Horizontal);
         pickers.Spacing(8);
@@ -207,10 +223,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 combo.Items().Append(item);
             }
             combo.SelectedIndex(selected);
-            // No per-combo gating: this row is full-width, so appendSection
-            // wraps the whole card in gatedFullWidthCard's ContentControl,
-            // whose IsEnabled(false) propagates down the tree. That wrapper
-            // is the load-bearing gate.
+            nameProfileField(combo, profile, column.title);
             combo.SelectionChanged([rowId = row.id, records, index, columnId = column.id, &host](
                                        const IInspectable &sender, const auto &) {
                 const auto item = sender.as<ComboBox>().SelectedItem();
@@ -251,7 +264,8 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         if (custom) {
             TextBox name;
             name.PlaceholderText(L"Name");
-            name.Text(hs(records.at(index).value(kProfileColumn).toString()));
+            name.Text(hs(profile));
+            nameProfileField(name, profile, profileTitle);
             name.LostFocus([rowId = row.id, records, index, &host](const IInspectable &sender, const auto &) {
                 const QString text = qs(sender.as<TextBox>().Text());
                 if (text == records.at(index).value(kProfileColumn).toString()) {
@@ -269,6 +283,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
             TextBox box;
             box.PlaceholderText(hs(column.title));
             box.Text(hs(records.at(index).value(column.id).toString()));
+            nameProfileField(box, profile, column.title);
             if (column.multiline) {
                 makeMultiline(box);
             }
@@ -287,7 +302,7 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         }
         RowSnapshot profileRow;
         profileRow.id = row.id + QLatin1Char('.') + records.at(index).value(kProfileIdKey).toString();
-        profileRow.label = records.at(index).value(kProfileColumn).toString();
+        profileRow.label = profile;
         rows.Children().Append(rowGrid(profileRow, controls, host, index > 0));
     }
     if (row.collection && !row.collection->addLabel.isEmpty()) {
@@ -375,7 +390,7 @@ UIElement releaseNotes(const RowSnapshot &row)
         text.TextWrapping(TextWrapping::Wrap);
         text.IsTextSelectionEnabled(true);
         if (heading) {
-            text.FontWeight(winrt::Windows::UI::Text::FontWeights::Bold());
+            text.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
         }
         text.Blocks().Append(paragraph);
         notes.Children().Append(text);
@@ -440,20 +455,8 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     if (row.id == QStringLiteral("openAiAuth")) {
         return credentialField(host);
     }
-    if (row.id == QStringLiteral("anthropicAuthMode")) {
-        StackPanel panel;
-        panel.Spacing(4);
-        ComboBox combo = choiceComboBox(row, host);
-        combo.HorizontalAlignment(HorizontalAlignment::Right);
-        panel.Children().Append(combo);
-        const QString status = host.model->anthropicCredentialStatus();
-        if (!status.isEmpty()) {
-            TextBlock text = secondaryText(status, host);
-            text.HorizontalAlignment(HorizontalAlignment::Right);
-            text.TextAlignment(TextAlignment::End);
-            panel.Children().Append(text);
-        }
-        return panel;
+    if (row.id == QStringLiteral("anthropicAuth")) {
+        return secondaryText(host.model->anthropicCredentialStatus(), host);
     }
     // The fallback the mac renderer uses: a picker when the row supplied
     // choices, a text field when it holds text, nothing otherwise.

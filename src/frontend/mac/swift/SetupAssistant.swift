@@ -35,17 +35,6 @@ struct ProviderRow: Identifiable {
         setupHint = provider.setupHint
     }
 
-    /// The welcome step's verdict, which is about the sign-in behind the
-    /// provider rather than the provider itself.
-    var credentialStatus: String {
-        guard probed else { return "Checking…" }
-        return ready ? "Sign-in found" : "Not found"
-    }
-
-    /// The sign-in instruction the welcome step prints under a row it could
-    /// not find: the registry's hint, which every front end shares.
-    var credentialHint: String { setupHint }
-
     /// The verdict the transcription and refinement rows carry, in core's words.
     func readinessStatus(_ bridge: SpeecherBridge) -> String {
         guard probed else { return "Checking…" }
@@ -98,8 +87,7 @@ final class SetupFlowModel: ObservableObject {
     @Published var step = 0
 
     // Transcription and refinement. Every registered provider carries its own
-    // probe verdict, which the welcome step reads as a credential check and the
-    // two provider steps read as a readiness one.
+    // probe verdict.
     @Published var speechProviders: [ProviderRow]
     @Published var refinementProviders: [ProviderRow]
     /// Auto-selecting a ready provider is a one-time courtesy per wizard run,
@@ -144,15 +132,15 @@ final class SetupFlowModel: ObservableObject {
     // Accessibility. The grant recorded on first sight of the page decides
     // whether finishing must relaunch: a grant that pre-dated this run does not.
     @Published var accessibilityProblem = ""
+    /// The grant was asked for on this run and macOS has not given it, which
+    /// is when the way to Privacy & Security by hand is worth offering.
+    @Published var accessibilityAsked = false
     private var initialGrant: Bool?
     private var accessibilityPoll: Timer?
 
     // Start at login, applied when setup finishes so a skip leaves it alone.
     @Published var launchAtLogin: Bool
 
-    // Running on this computer. Core's WelcomeChoice owns the welcome step's
-    // path: it follows the sign-in checks until the person picks one.
-    private let welcome = SetupWelcomeChoice()
     @Published var compareOpen = false
     /// What the steps read through this model from AppModel (rows, local
     /// models, runners) redraws them when AppModel changes.
@@ -190,18 +178,12 @@ final class SetupFlowModel: ObservableObject {
             return true
         }
         switch stepId {
-        // The first step holds until this computer is the path or a probe
-        // finds a sign-in. With no speech provider registered at all there is
-        // nothing to sign in to, and holding here would strand the person on
-        // step one. A later step's re-probe can close this gate; only this
-        // step's own checks move the path.
-        case "welcome":
-            return (localPath && localRunnable) || signInFound || providerId == "endpoint"
-                || speechProviders.isEmpty
-        case "transcription": return localSelected ? localDownloadStarted : providerReady
+        case "transcription":
+            return transcriptionDeadEnd == nil && (localSelected ? localDownloadStarted : providerReady)
         case "microphone":
             return microphonePermission == .authorized && microphoneInputDetected
-        case "accessibility": return model.accessibilityEnabled
+        // Accessibility is not a gate: without it dictation still reaches the
+        // clipboard, and the ready checklist says so.
         case "shortcut": return shortcutRegistered
         // The ready step's own gate is every other gate: a Finish that could
         // not work is held here, next to the list of what is holding it.
@@ -236,11 +218,9 @@ final class SetupFlowModel: ObservableObject {
     private func blockedReason(_ stepId: String) -> String {
         let bridge = model.bridge
         switch stepId {
-        case "welcome":
-            return bridge.setupSignInMissing(localOffered: offersLocal && localRunnable,
-                                             cliToolFound: bridge.speechCliToolFound)
         case "transcription":
-            return bridge.setupTranscriptionBlocked(localSelected: localSelected,
+            return transcriptionDeadEnd
+                ?? bridge.setupTranscriptionBlocked(localSelected: localSelected,
                                                     provider: selectedSpeechProvider?.label ?? "")
         case "microphone":
             return bridge.setupMicrophoneBlocked(accessGranted: microphonePermission == .authorized)
@@ -260,17 +240,17 @@ final class SetupFlowModel: ObservableObject {
                                    providerId: "local",
                                    symbol: "cpu",
                                    label: model.bridge.setupChecklistLine("transcription",
-                                                                          choice: "\(chosen.name), on this computer"),
+                                                                          choice: model.bridge.setupLocalSpeechChoice(chosen.name)),
                                    status: "Ready",
                                    ready: true))
         } else if let speech = selectedSpeechProvider {
-            let signIn = model.bridge.setupUsesCliproxy(provider: speech.id)
-                ? " (CLI Proxy API)" : ""
+            let choice = model.bridge.setupUsesCliproxy(provider: speech.id)
+                ? model.bridge.setupCliproxySpeechChoice(speech.label) : speech.label
             items.append(ReadyItem(id: "transcription",
                                    providerId: speech.id,
                                    symbol: "waveform",
                                    label: model.bridge.setupChecklistLine("transcription",
-                                                                          choice: "\(speech.label)\(signIn)"),
+                                                                          choice: choice),
                                    status: "Ready",
                                    ready: true))
         }
@@ -280,12 +260,12 @@ final class SetupFlowModel: ObservableObject {
                                label: model.bridge.setupChecklistLine("microphone", choice: microphoneDeviceLabel),
                                status: "Ready",
                                ready: true))
-        items.append(ReadyItem(id: "delivery",
+        items.append(ReadyItem(id: "accessibility",
                                providerId: "",
                                symbol: "keyboard",
-                               label: model.bridge.setupChecklistLine("delivery", choice: "paste with Cmd+V"),
-                               status: "Ready",
-                               ready: true))
+                               label: model.bridge.setupChecklistLine("accessibility", choice: "paste with Cmd+V"),
+                               status: model.bridge.setupPasteVerdict(model.accessibilityEnabled),
+                               ready: model.accessibilityEnabled))
         // Refinement is the one line that can say something other than Ready:
         // it is never gated, so this step is reachable with None chosen or
         // with a provider that is not signed in. An own-model choice's
@@ -387,14 +367,6 @@ final class SetupFlowModel: ObservableObject {
     }
     private let savedSpeechProvider: String
 
-    /// The sign-ins the welcome step checks: not Local or a speech server,
-    /// which need none.
-    var signInProviders: [ProviderRow] {
-        speechProviders.filter { model.bridge.isSetupSignInProvider($0.id) }
-    }
-
-    var signInFound: Bool { signInProviders.contains(where: \.ready) || cliproxyAvailable }
-
     var providerHint: String { selectedSpeechProvider?.setupHint ?? "" }
     var providerReady: Bool { selectedSpeechProvider?.ready ?? false }
     /// Whether a probe has answered about the selected service at all, which
@@ -408,7 +380,7 @@ final class SetupFlowModel: ObservableObject {
             return model.bridge.setupTranscriptionBlocked(localSelected: false, provider: "")
         }
         guard provider.probed else { return "Checking…" }
-        return provider.ready ? "\(provider.label) is ready." : provider.message
+        return provider.ready ? model.bridge.setupProviderReady(provider.label) : provider.message
     }
 
     /// Refinement stays optional, so an unready provider is a warning rather
@@ -418,12 +390,11 @@ final class SetupFlowModel: ObservableObject {
               !Self.ownModelProviders.contains(provider.id) else {
             return ""
         }
-        return "\(provider.label) is not signed in. Dictation will deliver the raw transcript."
+        return model.bridge.setupRefinementNotSignedIn(provider.label)
     }
 
-    /// A round of speech checks. Only the welcome step's own round may move
-    /// the path: a later step re-probes to close its gate, not to choose.
-    func checkSpeechProviders(followingPath: Bool = false) {
+    /// A round of speech checks.
+    func checkSpeechProviders() {
         // A directory typed but not yet submitted still counts: Check Again
         // must check what the person sees, not the last committed value.
         commitTypedDirectory()
@@ -432,9 +403,6 @@ final class SetupFlowModel: ObservableObject {
             guard let self else { return }
             record(&speechProviders, id: id, ready: ready, message: message)
             autoSelectReadySpeechProvider()
-            if followingPath, signInProviders.allSatisfy(\.probed) {
-                updatePath(choice: nil)
-            }
         }
     }
 
@@ -445,43 +413,20 @@ final class SetupFlowModel: ObservableObject {
     var offersLocal: Bool { model.bridge.localSpeechAvailable }
 
     /// Whether the hardware can run any catalog model; optimistic until the
-    /// hardware probe answers. A too-small answer that lands after the
-    /// sign-in checks shuts the welcome gate and shows the dead-end note,
-    /// but does not re-run the automatic path; by installed capacity no
-    /// Apple Silicon Mac answers too small.
+    /// hardware probe answers.
     var localRunnable: Bool { model.bridge.localSpeechCanRun }
 
-    /// The welcome step's dead-end note; core decides when it shows and
-    /// words it.
-    var welcomeDeadEnd: String? {
-        let note = model.bridge.setupWelcomeDeadEnd(signInFound: signInFound,
-                                                    localUsable: offersLocal && localRunnable,
-                                                    endpointSaved: providerId == "endpoint",
-                                                    signInProvidersRegistered: !signInProviders.isEmpty)
+    /// The transcription step's dead-end note; core decides when it shows and
+    /// words it. A sign-in check that has not answered is not a missing
+    /// sign-in yet.
+    var transcriptionDeadEnd: String? {
+        let signIns = speechProviders.filter { model.bridge.isSetupSignInProvider($0.id) }
+        let note = model.bridge.setupTranscriptionDeadEnd(
+            signInFound: signIns.contains { $0.ready || !$0.probed } || cliproxyAvailable,
+            localUsable: offersLocal && localRunnable,
+            endpointSaved: savedSpeechProvider == "endpoint",
+            signInProvidersRegistered: !signIns.isEmpty)
         return note.isEmpty ? nil : note
-    }
-
-    var localPath: Bool { welcome.local }
-
-    func pickPath(local: Bool) {
-        updatePath(choice: local)
-    }
-
-    /// Core decides the path and the speech provider that goes with it: the
-    /// sign-in path restores or picks a sign-in, this computer selects Local.
-    private func updatePath(choice: Bool?) {
-        guard offersLocal else { return }
-        let ready = signInProviders.filter(\.ready).map(\.id)
-        let current = providerId
-        objectWillChange.send()
-        let provider = welcome.update(provider: current, readyProviders: ready,
-                                      proxyAccountFound: cliproxyAvailable,
-                                      choice: choice.map { NSNumber(value: $0) },
-                                      localUsable: localRunnable)
-        if provider != current {
-            model.setValue(provider, for: "speechProvider")
-            refreshCliproxy()
-        }
     }
 
     var localSelected: Bool { offersLocal && providerId == "local" }
@@ -533,18 +478,18 @@ final class SetupFlowModel: ObservableObject {
 
     /// The step's own words for the chosen runner.
     var runnerStatus: String {
-        if model.local.detectingRunners { return "Looking for Ollama, LM Studio and llama-server…" }
+        if model.local.detectingRunners { return model.bridge.setupText(.lookingForRunners) }
         if let runner { return "\(runner.name) \(runner.version) is running on this computer." }
         return runnerChoice.runnerId.isEmpty
-            ? "No local runner found on this computer."
+            ? model.bridge.setupText(.noRunnerFound)
             : "\(runnerChoice.runnerName) is unavailable. Your saved selection is unchanged."
     }
 
-    /// The "This computer" row's status, which reports what is running here
+    /// The Local Runner row's status, which reports what is running here
     /// rather than a sign-in verdict.
     fileprivate var runnerRowStatus: (text: String, tone: StatusLabel.Tone) {
         if model.local.detectingRunners { return ("Checking…", .pending) }
-        guard let runner else { return ("No runner", .pending) }
+        guard let runner else { return (model.bridge.setupText(.noRunner), .pending) }
         return ("\(runner.name) found", .positive)
     }
 
@@ -568,7 +513,6 @@ final class SetupFlowModel: ObservableObject {
     func chooseSpeechProvider(_ id: String) {
         guard id != providerId else { return }
         speechChosenByUser = true
-        welcome.providerChosen()
         commitTypedDirectory()
         model.setValue(id, for: "speechProvider")
         refreshCliproxy()
@@ -669,7 +613,15 @@ final class SetupFlowModel: ObservableObject {
         guard !speechAutoSelected, !speechChosenByUser,
               speechProviders.allSatisfy(\.probed) else { return }
         speechAutoSelected = true
-        autoSelect(providerId, among: speechProviders, row: "speechProvider")
+        let chosen = model.bridge.setupSpeechChoice(
+            saved: providerId,
+            readyProviders: speechProviders.filter(\.ready).map(\.id),
+            localOffered: offersLocal && localRunnable,
+            proxyAccountFound: cliproxyAvailable)
+        if chosen != providerId {
+            model.setValue(chosen, for: "speechProvider")
+            refreshCliproxy()
+        }
     }
 
     /// The same courtesy on the refinement step, once the runner check has
@@ -683,13 +635,6 @@ final class SetupFlowModel: ObservableObject {
                   readyProviders: refinementProviders.filter(\.ready).map(\.id)) else { return }
         refinementAutoSelected = true
         if chosen != refinementProviderId { model.setValue(chosen, for: "refinementProvider") }
-    }
-
-    private func autoSelect(_ saved: String, among rows: [ProviderRow], row: String) {
-        let chosen = model.bridge.setupProviderChoice(saved: saved,
-                                                      readyProviders: rows.filter(\.ready).map(\.id),
-                                                      explicitlyChosen: false)
-        if chosen != saved { model.setValue(chosen, for: row) }
     }
 
     // MARK: Microphone
@@ -739,9 +684,10 @@ final class SetupFlowModel: ObservableObject {
     }
 
     func openMicrophoneSettings() {
-        let pane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-        NSWorkspace.shared.open(URL(string: pane)!)
+        if let url = Self.microphoneSettings.systemSettingsURL { NSWorkspace.shared.open(url) }
     }
+
+    static var microphoneSettings: SpeecherErrorAction { SpeecherErrorAction(fix: .microphonePermission, pageId: "") }
 
     func startMeter() {
         meterRunning = true
@@ -750,7 +696,7 @@ final class SetupFlowModel: ObservableObject {
         // step must not make the user speak again. The failure callback and a
         // device change clear it, matching the Qt page.
         refreshInputVolume()
-        meterStatus = "Listening for microphone input…"
+        meterStatus = model.bridge.setupText(.listeningForInput)
         silentMeterTimer?.invalidate()
         silentMeterTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
             DispatchQueue.main.async {
@@ -766,7 +712,7 @@ final class SetupFlowModel: ObservableObject {
                 refreshInputVolume()
             }
             if level > 0.01 {
-                meterStatus = "Microphone input detected."
+                meterStatus = model.bridge.setupText(.inputDetected)
                 microphoneInputDetected = true
             }
         }, failure: { [weak self] message in
@@ -830,6 +776,7 @@ final class SetupFlowModel: ObservableObject {
 
     func requestAccessibility() {
         accessibilityProblem = model.bridge.requestAccessibilityGrant() ?? ""
+        accessibilityAsked = true
     }
 
     var accessibilityStatus: String {
@@ -900,9 +847,12 @@ final class SetupFlowModel: ObservableObject {
         stopAccessibilityPoll()
         model.bridge.completeSetup()
         if accessibilityGrantAppearedDuringSetup {
+            // The restart is not optional, so its one button says what it does.
             let alert = NSAlert()
             alert.messageText = "Accessibility granted"
-            alert.informativeText = "Speecher will now restart to apply the Accessibility grant."
+            alert.informativeText = "Speecher restarts to apply the Accessibility grant."
+            // ui-lint: allow core-string (the setup relaunch, not the update banner's install)
+            alert.addButton(withTitle: "Restart now")
             alert.runModal()
             onFinished = {}
             closeWindow()
@@ -1256,12 +1206,9 @@ struct SetupAssistantView: View {
         case "transcription": TranscriptionStep(flow: flow, model: model)
         case "microphone": MicrophoneStep(flow: flow, model: model)
         case "accessibility": AccessibilityStep(flow: flow, model: model)
-        case "delivery": DeliveryStep(model: model)
         case "refinement": RefinementStep(flow: flow, model: model)
-        case "profiles": ProfilesStep(model: model)
         case "shortcut": ShortcutStep(flow: flow, model: model)
-        case "ready": ReadyStep(flow: flow)
-        default: LoginStep(flow: flow)
+        default: ReadyStep(flow: flow)
         }
     }
 
@@ -1274,7 +1221,7 @@ struct SetupAssistantView: View {
             // in both its states: it is where the flow accounts for itself, and
             // skipping past that account is not a thing to offer there.
             if !flow.isLastStep, !flow.isReadyStep, flow.canSkip {
-                Button("Skip Setup") { flow.skip() }
+                Button(flow.model.bridge.setupText(.skipSetup)) { flow.skip() }
             }
             Spacer()
             Button("Back") { flow.back() }
@@ -1293,169 +1240,16 @@ private struct WelcomeStep: View {
     var body: some View {
         Form {
             Section {
-                VStack(spacing: 16) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 96, height: 96)
-                    Text(flow.model.bridge.setupWelcomeDetail)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: 420)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            // The dead end, on either path; core words it and decides when
-            // it shows.
-            if let deadEnd = flow.welcomeDeadEnd {
-                Section {
-                    Label(deadEnd, systemImage: "exclamationmark.triangle")
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            // Two ways into dictation: a sign-in the person already has, or a
-            // model on this computer. The sign-in rows only matter for the first.
-            if flow.offersLocal {
-                Section("How should Speecher turn speech into text?") {
-                    Picker(selection: Binding(get: { flow.localPath },
-                                              set: { flow.pickPath(local: $0) })) {
-                        PathOptionLabel(symbol: "person.crop.circle",
-                                        title: "Use my ChatGPT or Claude sign-in",
-                                        note: "Transcribed in the cloud by the service you already pay for.",
-                                        status: flow.signInFound ? "Sign-in found" : "None found",
-                                        tone: flow.signInFound ? .positive : .pending)
-                            .tag(false)
-                        PathOptionLabel(symbol: "cpu",
-                                        title: "Run on this computer",
-                                        note: "Private, no account, works offline after a one-time download.")
-                            .tag(true)
-                    } label: {
-                        EmptyView()
-                    }
-                    .pickerStyle(.radioGroup)
-                    .labelsHidden()
-                }
-            }
-            if flow.localPath {
-                Section {
-                    Label(flow.model.local.hardwareLine, systemImage: "cpu")
-                    Text("Speecher will suggest a speech model for this computer on the next step. "
-                        + "Dictation stays on this computer and works offline once the model is downloaded.")
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                signIns
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 96, height: 96)
+                    .frame(maxWidth: .infinity)
             }
         }
         .formStyle(.grouped)
-        // Probed on appearance rather than at construction: a sign-in made in a
-        // terminal while the assistant sat open counts as soon as the person
-        // comes back to this step.
-        .onAppear {
-            flow.model.refreshLocalSetup()
-            flow.checkSpeechProviders(followingPath: true)
-        }
-    }
-
-    // Nothing later in the assistant can succeed without one of these sign-ins
-    // or this computer, so the one real prerequisite is stated on the first step.
-    private var signIns: some View {
-            Section(flow.offersLocal ? "Sign-ins on this computer" : "Before you start") {
-                Text("Speecher uses your existing ChatGPT or Claude sign-in, or an account "
-                    + "saved by CLI Proxy API. Sign in to one of these, then choose Check again:")
-                    .fixedSize(horizontal: false, vertical: true)
-                ForEach(flow.signInProviders) { provider in
-                    // The mark, then the sign-in's name with its verdict on the
-                    // trailing edge, and the hint indented under the name: the
-                    // stack starts past the mark, so nothing measures an inset.
-                    HStack(alignment: .top, spacing: 8) {
-                        ProviderMark(providerId: provider.id)
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(provider.credentialSource)
-                                    .fontWeight(.semibold)
-                                Spacer(minLength: 12)
-                                // Not found is a fact here, not a fault: the
-                                // step exists to say which sign-ins are there.
-                                StatusLabel(text: provider.credentialStatus,
-                                            tone: provider.ready ? .positive : .pending)
-                            }
-                            if provider.probed, !provider.ready, !provider.credentialHint.isEmpty {
-                                Text(provider.credentialHint)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                    }
-                }
-                // Accounts saved by CLI Proxy API count as a sign-in of their
-                // own: someone whose only login lives there opts in on the
-                // Transcription step. The directory is enterable right here,
-                // because a custom-directory user would otherwise be held on
-                // this step with the field that could free them gated behind
-                // Continue.
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("CLI Proxy API")
-                            .fontWeight(.semibold)
-                        Spacer(minLength: 12)
-                        StatusLabel(text: flow.cliproxyAvailable ? "Accounts found" : "Not found",
-                                    tone: flow.cliproxyAvailable ? .positive : .pending)
-                    }
-                    Text(flow.cliproxyAvailable ? flow.cliproxyFoundHint
-                                                : flow.cliproxyMissingHint)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if !flow.cliproxyAvailable {
-                        TextField("CLI Proxy API directory",
-                                  text: $flow.cliproxyDirectory,
-                                  prompt: Text(flow.cliproxyDirectoryPlaceholder))
-                            .labelsHidden()
-                            .onSubmit { flow.commitCliproxyDirectory() }
-                    }
-                }
-                Button("Check Again") { flow.checkSpeechProviders(followingPath: true) }
-            }
     }
 }
 
-/// One of the welcome step's two paths: a glyph, its name, the line under it,
-/// and for the sign-in path what the checks found.
-private struct PathOptionLabel: View {
-    let symbol: String
-    let title: String
-    let note: String
-    var status = ""
-    var tone = StatusLabel.Tone.pending
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: symbol)
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).fontWeight(.semibold)
-                Text(note)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 12)
-            if !status.isEmpty {
-                StatusLabel(text: status, tone: tone)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(title))
-        .accessibilityValue(Text(status))
-    }
-}
-
-/// One selectable provider: its mark, its name, for refinement the sign-in it
-/// borrows, and the probe's verdict on the trailing edge.
 private struct ProviderOptionLabel: View {
     let providerId: String
     let title: String
@@ -1513,6 +1307,13 @@ private struct TranscriptionStep: View {
 
     var body: some View {
         Form {
+            // Core words the dead end and decides when it shows.
+            if let deadEnd = flow.transcriptionDeadEnd {
+                Section {
+                    Label(deadEnd, systemImage: "exclamationmark.triangle")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Section {
                 // Every service is on the step with its own readiness, rather
                 // than hidden behind a pop-up button that has to be opened to
@@ -1525,7 +1326,7 @@ private struct TranscriptionStep: View {
                                                 title: provider.label,
                                                 status: localRowStatus.text,
                                                 tone: localRowStatus.tone,
-                                                note: "Runs on this computer. No account, works offline.")
+                                                note: flow.model.bridge.setupText(.localSpeechNote))
                                 .tag(provider.id)
                         } else {
                             ProviderOptionLabel(providerId: provider.id,
@@ -1536,7 +1337,7 @@ private struct TranscriptionStep: View {
                         }
                     }
                 } label: {
-                    Text("Transcription service")
+                    Text(flow.model.bridge.setupText(.transcriptionService))
                 }
                 .pickerStyle(.radioGroup)
                 // The Local card explains itself; the generic facts would
@@ -1551,17 +1352,21 @@ private struct TranscriptionStep: View {
                     RowView(row: row, model: model)
                 }
                 // The verdict and the way to ask again sit on one row, so a
-                // held Continue and its remedy are read together.
+                // held Continue and its remedy are read together. The dead-end
+                // note is the verdict while it shows; a status line would
+                // report the same missing sign-in a second time.
                 if flow.localSelected {
-                    if let line = localStatus {
+                    if let line = localStatus, flow.transcriptionDeadEnd == nil {
                         Text(line).foregroundStyle(.secondary)
                     }
                 } else if !flow.providerStatus.isEmpty {
                     HStack(alignment: .firstTextBaseline) {
-                        StatusLabel(text: flow.providerStatus, tone: statusTone)
+                        if flow.transcriptionDeadEnd == nil {
+                            StatusLabel(text: flow.providerStatus, tone: statusTone)
+                        }
                         Spacer(minLength: 12)
                         if !flow.providerReady {
-                            Button("Check Again") { flow.checkSpeechProviders() }
+                            Button(flow.model.bridge.setupText(.checkAgain)) { flow.checkSpeechProviders() }
                         }
                     }
                 }
@@ -1582,7 +1387,7 @@ private struct TranscriptionStep: View {
                            isOn: Binding(get: { flow.usingCliproxy },
                                          set: { flow.setUseCliproxy($0) }))
                     if flow.usingCliproxy {
-                        Picker("CLI Proxy API account",
+                        Picker(flow.model.bridge.setupText(.cliproxyAccount),
                                selection: Binding(get: { flow.cliproxyAccount },
                                                   set: { flow.chooseCliproxyAccount($0) })) {
                             ForEach(flow.cliproxyAccounts) { choice in
@@ -1593,7 +1398,7 @@ private struct TranscriptionStep: View {
                                     .selectionDisabled(!choice.enabled)
                             }
                         }
-                        TextField("Account directory",
+                        TextField(model.bridge.setupRowLabel("cliproxyOauthDir"),
                                   text: $flow.cliproxyDirectory,
                                   prompt: Text(flow.cliproxyDirectoryPlaceholder))
                             .onSubmit { flow.commitCliproxyDirectory() }
@@ -1620,8 +1425,7 @@ private struct TranscriptionStep: View {
     /// setup continues, and the ready step shows where it got to.
     private var localStatus: String? {
         guard let choice = flow.localChoice, !choice.downloaded else { return nil }
-        return choice.downloading ? "The download keeps going while you finish setup."
-                                  : "Download a model to continue. It keeps going while you finish setup."
+        return flow.model.bridge.setupText(choice.downloading ? .downloadContinues : .downloadToContinue)
     }
 
     /// Writing this binding is the person choosing, which is what stops the
@@ -1648,7 +1452,7 @@ private struct LocalChoiceSections: View {
         Section {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(choice.suggested ? "Suggested for this computer" : "Your choice")
+                    Text(SpeecherBridge.localModelText(choice.suggested ? .suggested : .yourChoice))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     HStack {
@@ -1667,15 +1471,14 @@ private struct LocalChoiceSections: View {
                 .foregroundStyle(.secondary)
         }
         Section {
-            DisclosureGroup(flow.compareOpen ? "Hide other models"
-                                             : "Compare \(local.models.count - 1) other models",
+            DisclosureGroup(flow.compareOpen ? SpeecherBridge.localModelText(.hideOtherModels)
+                                             : SpeecherBridge.compareModelsCaption(local.models.count - 1),
                             isExpanded: $flow.compareOpen) {
                 compareTable
             }
         } footer: {
             if flow.compareOpen {
-                Text("Word errors: clear read speech / everyday speech. Times are estimates until a "
-                    + "model is downloaded and tested here.")
+                Text(SpeecherBridge.localModelText(.compareNote))
             }
         }
     }
@@ -1689,7 +1492,7 @@ private struct LocalChoiceSections: View {
             } else if choice.downloaded {
                 StatusLabel(text: "Downloaded", tone: .positive)
             } else {
-                Button(choice.tooLarge ? "Too Large for This Computer" : "Download \(choice.sizeText)") {
+                Button(choice.tooLarge ? SpeecherBridge.localModelText(.tooLarge) : choice.downloadCaption) {
                     flow.downloadLocalChoice()
                 }
                 .disabled(choice.tooLarge)
@@ -1701,6 +1504,9 @@ private struct LocalChoiceSections: View {
     }
 
     // One selection, so a click or an arrow key names exactly one model.
+    /// The comparison's column titles, in core's order.
+    private static let headers = SpeecherBridge.compareTableHeaders
+
     private var compareTable: some View {
         Table(local.models, selection: Binding<String?>(get: { choice.modelId },
                                                         set: { if let id = $0 { flow.chooseLocalModel(id) } })) {
@@ -1708,22 +1514,22 @@ private struct LocalChoiceSections: View {
             // column takes what is left, so every value reads whole at the
             // assistant's width. Its ideal fits the longest name with its
             // badge; below that the name truncates, never the badge.
-            TableColumn("Model") { entry in
+            TableColumn(Self.headers[0]) { entry in
                 HStack {
                     Text(entry.tableCells[0]).lineLimit(1)
                     RatingBadge(entry: entry)
                 }
             }
             .width(min: 150, ideal: 250)
-            TableColumn("Download") { entry in Text(entry.tableCells[1]) }
+            TableColumn(Self.headers[1]) { entry in Text(entry.tableCells[1]) }
                 .width(58)
-            TableColumn("Word errors") { entry in Text(entry.tableCells[2]) }
+            TableColumn(Self.headers[2]) { entry in Text(entry.tableCells[2]) }
                 .width(88)
-            TableColumn("10 s of speech") { entry in Text(entry.tableCells[3]) }
+            TableColumn(Self.headers[3]) { entry in Text(entry.tableCells[3]) }
                 .width(108)
-            TableColumn("Text shows") { entry in Text(entry.tableCells[4]) }
+            TableColumn(Self.headers[4]) { entry in Text(entry.tableCells[4]) }
                 .width(84)
-            TableColumn("Memory") { entry in Text(entry.tableCells[5]) }
+            TableColumn(Self.headers[5]) { entry in Text(entry.tableCells[5]) }
                 .width(62)
         }
         .controlSize(.small)
@@ -1783,13 +1589,14 @@ private struct MicrophoneStep: View {
                 .foregroundStyle(.green)
         case .notDetermined:
             LabeledContent {
-                Button("Allow Microphone Access") { flow.requestMicrophoneAccess() }
+                // ui-lint: allow core-string (macOS-only: asks macOS for access; Windows and Linux have no request)
+                Button("Allow microphone access") { flow.requestMicrophoneAccess() }
             } label: {
                 Text("macOS has not been asked yet. Speecher only records while you dictate.")
             }
         default:
             LabeledContent {
-                Button("Open Microphone Settings") { flow.openMicrophoneSettings() }
+                Button(SetupFlowModel.microphoneSettings.label) { flow.openMicrophoneSettings() }
             } label: {
                 Text("Microphone access is off, so Speecher records silence. Turn Speecher on "
                     + "under Privacy & Security > Microphone, then come back to this page.")
@@ -1809,37 +1616,20 @@ private struct AccessibilityStep: View {
                     .foregroundStyle(model.accessibilityEnabled ? AnyShapeStyle(.green)
                                                                 : AnyShapeStyle(.primary))
                 if !model.accessibilityEnabled {
-                    Button("Grant Accessibility Access") { flow.requestAccessibility() }
+                    Button(SpeecherBridge.accessibilityGrantActionLabel) { flow.requestAccessibility() }
+                    if flow.accessibilityAsked {
+                        // ui-lint: allow core-string (macOS-only: the Accessibility grant's manual fallback)
+                        Button("Open Privacy & Security") {
+                            if let url = SpeecherErrorAction(fix: .accessibilityPermission, pageId: "").systemSettingsURL {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                    }
                 }
             }
         }
         .formStyle(.grouped)
         .onAppear { flow.enterAccessibilityStep() }
-    }
-}
-
-private struct DeliveryStep: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        Form {
-            Section {
-                Text("Nothing to install — Speecher uses the keyboard paste built into macOS.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Section {
-                // Both of these carry a sentence rather than a name, and the
-                // dialog is a fixed width: they wrap here rather than run out
-                // of the card.
-                ForEach(model.rows(matching: ["outputFormat", "restoreClipboardAfterTyping"]),
-                        id: \.rowId) { row in
-                    RowView(row: row, model: model)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .formStyle(.grouped)
     }
 }
 
@@ -1849,10 +1639,10 @@ private struct RefinementStep: View {
 
     /// The cloud providers use a sign-in; a runner here and a server are
     /// models the person runs. Each group is its own card.
-    private static let groups: [(title: String, ids: [String])] = [
-        ("Uses your sign-in", ["anthropic", "openai"]),
-        ("Your own models", ["local", "endpoint"]),
-    ]
+    private var groups: [(title: String, ids: [String])] {
+        [(model.bridge.setupText(.usesYourSignIn), ["anthropic", "openai"]),
+         (model.bridge.setupText(.yourOwnModels), ["local", "endpoint"])]
+    }
 
     var body: some View {
         // Only the selected provider's speed row: the settings window
@@ -1878,7 +1668,7 @@ private struct RefinementStep: View {
                 }
             }
             Section {
-                Toggle("Skip cleanup and deliver the raw transcript",
+                Toggle(model.bridge.setupText(.skipCleanup),
                        isOn: Binding(get: { flow.skipCleanup }, set: { flow.skipCleanup = $0 }))
                     .toggleStyle(.checkbox)
                 // Directly under the choices, so it reads as attached to the
@@ -1917,22 +1707,22 @@ private struct RefinementStep: View {
     /// The groups the registry fills, in order; a provider no group names
     /// still gets a card of its own.
     private var sections: [Group] {
-        let named = Set(Self.groups.flatMap(\.ids))
+        let named = Set(groups.flatMap(\.ids))
         let others = flow.refinementProviders.filter { !named.contains($0.id) }
-        return (Self.groups.map { group in
+        return (groups.map { group in
             Group(title: group.title,
                   rows: group.ids.compactMap { id in flow.refinementProviders.first { $0.id == id } })
-        } + [Group(title: "Cleanup provider", rows: others)]).filter { !$0.rows.isEmpty }
+        } + [Group(title: model.bridge.setupText(.cleanupProvider), rows: others)]).filter { !$0.rows.isEmpty }
     }
 
     @ViewBuilder private func option(_ row: ProviderRow) -> some View {
         switch row.id {
         case "local":
-            ProviderOptionLabel(providerId: row.id, title: "This computer",
+            ProviderOptionLabel(providerId: row.id, title: row.label,
                                 status: flow.runnerRowStatus.text, tone: flow.runnerRowStatus.tone,
                                 note: row.setupHint)
         case "endpoint":
-            ProviderOptionLabel(providerId: row.id, title: "A server I run",
+            ProviderOptionLabel(providerId: row.id, title: row.label,
                                 status: "", tone: .pending, note: row.setupHint)
         default:
             ProviderOptionLabel(providerId: row.id, title: row.label,
@@ -1949,7 +1739,7 @@ private struct RefinementStep: View {
     }
 }
 
-/// "This computer" on the refinement step: which runner answered, the model it
+/// Local Runner on the refinement step: which runner answered, the model it
 /// cleans up with, the cleanup model to pull through Ollama, or how to get a
 /// runner at all.
 private struct LocalRunnerSections: View {
@@ -1963,7 +1753,7 @@ private struct LocalRunnerSections: View {
                 StatusLabel(text: flow.runnerStatus,
                             tone: model.local.detectingRunners || flow.runner == nil ? .pending : .positive)
                 Spacer(minLength: 12)
-                Button("Check Again") { flow.detectRunners() }
+                Button(flow.model.bridge.setupText(.checkAgain)) { flow.detectRunners() }
                     .disabled(model.local.detectingRunners)
             }
             if flow.runner != nil {
@@ -1978,11 +1768,10 @@ private struct LocalRunnerSections: View {
                     suggestion
                 }
             } else if !model.local.detectingRunners {
-                Text("Cleanup models run in a separate app. Install Ollama, then choose Check Again "
-                    + "and Speecher will set up a model through it. LM Studio and llama-server work too.")
+                Text(model.bridge.setupText(.installRunner))
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Get Ollama") { flow.openOllamaDownload() }
-                StatusLabel(text: "Until a runner is set up, dictation delivers the raw transcript.",
+                Button(model.bridge.setupText(.getOllama)) { flow.openOllamaDownload() }
+                StatusLabel(text: model.bridge.setupText(.rawUntilRunner),
                             tone: .warning)
             }
         }
@@ -2021,13 +1810,13 @@ private struct LocalRunnerSections: View {
             if pull.running {
                 ProgressView(value: pull.fraction).frame(width: 140)
             } else if flow.runnerChoice.offerPull {
-                Button("Download with Ollama") { flow.pullSuggestedCleanupModel() }
+                Button(model.bridge.setupText(.downloadWithOllama)) { flow.pullSuggestedCleanupModel() }
             }
         }
     }
 }
 
-/// "A server I run" on the refinement step: the endpoint's format, address,
+/// Custom Endpoint on the refinement step: the endpoint's format, address,
 /// key and model, and the connection check that lists the server's models.
 /// With the CLI Proxy API preset the address and key shown are the proxy's,
 /// and the preset stays until one of them is edited.
@@ -2045,16 +1834,17 @@ private struct EndpointSections: View {
 
     var body: some View {
         Section {
-            Picker("Format", selection: Binding(get: { format }, set: {
+            Picker(model.bridge.setupRowLabel("refinementEndpointFormat"), selection: Binding(get: { format }, set: {
                 format = $0
                 edit(format: $0)
             })) {
-                Text("OpenAI-compatible (Chat Completions)").tag("openai")
-                Text("Anthropic-compatible (Messages)").tag("anthropic")
+                ForEach(model.bridge.setupRowOptions("refinementEndpointFormat"), id: \.rowOptionId) { option in
+                    Text(option.label).tag(option.rowOptionId)
+                }
             }
-            TextField("Server URL", text: $serverUrl, prompt: Text("http://localhost:8080/v1"))
+            TextField(model.bridge.setupRowLabel("refinementEndpointUrl"), text: $serverUrl, prompt: Text("http://localhost:8080/v1"))
                 .onSubmit(commitTypedFields)
-            SecureField("API key", text: $apiKey, prompt: Text("Optional"))
+            SecureField(model.bridge.setupRowLabel("refinementEndpointApiKey"), text: $apiKey, prompt: Text("Optional"))
                 .onSubmit(commitTypedFields)
             LabeledContent {
                 HStack {
@@ -2068,7 +1858,8 @@ private struct EndpointSections: View {
                     }
                 }
             } label: {
-                RowView.label("Model", help: "Connect to list the server's models, or type one.")
+                RowView.label(model.bridge.setupRowLabel("refinementEndpointModel"),
+                              help: model.bridge.setupText(.endpointModelHint))
             }
         } footer: {
             if !model.local.endpointStatus.isEmpty {
@@ -2108,28 +1899,6 @@ private struct EndpointSections: View {
     }
 }
 
-private struct ProfilesStep: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        Form {
-            Section {
-                if let row = model.row("defaultWritingProfile") {
-                    RowView(row: row, model: model)
-                }
-            } footer: {
-                Text(model.bridge.setupProfilesNote)
-            }
-            Section("Profile behavior") {
-                if let row = model.row("writingProfileBehavior") {
-                    RowView(row: row, model: model)
-                }
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
 /// The shortcut step, which also carries the activation-mode choice: the key
 /// and what pressing it does are decided together. The mode drives the same
 /// activationMode schema row the General pane renders, so there is no second
@@ -2137,37 +1906,17 @@ private struct ProfilesStep: View {
 private struct ShortcutStep: View {
     @ObservedObject var flow: SetupFlowModel
     @ObservedObject var model: AppModel
-    @StateObject private var recorder = ShortcutRecorder()
-    /// A key the recorder caught but could not bind (a media key); shown in
-    /// the footer while the recorder stays armed.
-    @State private var captureProblem = ""
 
     var body: some View {
         Form {
+            // The same row the Dictation pane shows, so the key, Change and
+            // Reset read alike in both places.
             Section {
-                // The key itself reads as a fact on its own row; the button
-                // below is what changes it.
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: "keyboard")
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text(model.row("globalShortcut")?.label ?? "")
-                    Spacer(minLength: 12)
-                    Text(model.shortcut)
-                        .fontWeight(.semibold)
-                }
-                LabeledContent {
-                    Button(caption) { record() }
-                } label: {
-                    Text("Press a key combination, or a single key such as "
-                         + "Right Option or F13.")
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if model.shortcutNeedsAccessibility, !model.accessibilityEnabled {
-                    Button("Grant Accessibility Access") { flow.requestAccessibility() }
-                }
+                ShortcutRecorderRow(model: model)
             } footer: {
-                Text(footnote)
+                if flow.shortcutRegistered {
+                    Text("Shortcut registered. " + flow.activationInstruction)
+                }
             }
             Section {
                 if let row = model.row("activationMode") {
@@ -2176,37 +1925,8 @@ private struct ShortcutStep: View {
             }
         }
         .formStyle(.grouped)
-        .onDisappear { recorder.stop() }
-    }
-
-    private func record() {
-        captureProblem = ""
-        recorder.record(suspending: model, combination: { characters, flags in
-            model.bindShortcut(characters: characters, modifierFlags: flags)
-        }, singleKey: { keyCode in
-            if model.bindSingleKey(macKeyCode: keyCode) { return true }
-            captureProblem = "That key cannot be a dictation key."
-            return false
-        })
-    }
-
-    private var caption: String {
-        recorder.recording ? "Press a Key…" : "Set Shortcut"
-    }
-
-    private var footnote: String {
-        if recorder.recording {
-            if !captureProblem.isEmpty {
-                return captureProblem + " Try another, or press Escape to keep the current one."
-            }
-            return "Press the keys you want — a bare modifier like Right Option works — "
-                + "or Escape to keep the current one."
-        }
-        if !model.shortcutProblem.isEmpty {
-            return "Could not register the shortcut: \(model.shortcutProblem). Record a different one."
-        }
-        if !model.shortcutWarning.isEmpty { return model.shortcutWarning }
-        return "Shortcut registered. " + flow.activationInstruction
+        // Leaving the step ends a recording still in progress.
+        .onDisappear { model.stopShortcutRecording() }
     }
 }
 
@@ -2220,11 +1940,15 @@ private struct ReadyStep: View {
             } else {
                 blocked
             }
+            // Applied when setup finishes, so a skip leaves it alone.
+            Section {
+                Toggle(flow.model.bridge.setupRowLabel("launchAtLogin"), isOn: $flow.launchAtLogin)
+            }
         }
         .formStyle(.grouped)
-        // Finishing is two steps away, so the sign-in the welcome step found is
-        // re-probed here rather than trusted: one that expired while the
-        // assistant sat open shuts the gate again before Finish is offered.
+        // The sign-in the transcription step found is re-probed here rather
+        // than trusted: one that expired while the assistant sat open shuts
+        // the gate again before Finish is offered.
         .onAppear { flow.checkSpeechProviders() }
     }
 
@@ -2232,15 +1956,14 @@ private struct ReadyStep: View {
         Section {
             if flow.downloadingModel != nil {
                 Text(flow.model.bridge.setupReadyIntro(blocked: false, downloading: true))
-                Label("You can close this window. The download keeps going, and Speecher shows a "
-                    + "notification when you can start dictating.", systemImage: "info.circle")
+                Label(flow.model.bridge.setupText(.closeWhileDownloading), systemImage: "info.circle")
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 StatusLabel(text: flow.model.bridge.setupReadyIntro(blocked: false, downloading: false),
                             tone: .positive)
             }
         }
-        Section("How to dictate") {
+        Section(flow.model.bridge.setupText(.howToDictate)) {
             Text(flow.activationInstruction)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Speecher stays out of the way until you press it. Its menu bar "
@@ -2287,7 +2010,7 @@ private struct ReadyStep: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 12)
-                    Button("Go to Step") { flow.goTo(step: step.index) }
+                    Button(flow.model.bridge.setupText(.goToStep)) { flow.goTo(step: step.index) }
                 }
             }
         } header: {
@@ -2295,19 +2018,6 @@ private struct ReadyStep: View {
         } footer: {
             Text(flow.model.bridge.setupBlockedFooter)
         }
-    }
-}
-
-private struct LoginStep: View {
-    @ObservedObject var flow: SetupFlowModel
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Start Speecher at login", isOn: $flow.launchAtLogin)
-            }
-        }
-        .formStyle(.grouped)
     }
 }
 

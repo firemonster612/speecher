@@ -252,51 +252,49 @@ private slots:
         QStringList ids;
         for (const SetupStepInfo &step : setupSteps()) ids.append(step.id);
         QCOMPARE(ids.last(), QString("ready"));
-        QVERIFY(ids.indexOf("shortcut") < ids.indexOf("ready"));
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-        QCOMPARE(ids.indexOf("login"), ids.size() - 2);
-#endif
+        QCOMPARE(ids.indexOf("shortcut"), ids.size() - 2);
+        QVERIFY(!ids.contains("profiles"));
 #ifdef Q_OS_WIN
         const bool accessibilityStep = false;
 #else
         const bool accessibilityStep = true;
 #endif
         QCOMPARE(ids.contains("accessibility"), accessibilityStep);
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+        QVERIFY(!ids.contains("delivery"));
+#else
+        QVERIFY(ids.contains("delivery"));
+#endif
         QCOMPARE(findSetupStep("shortcut")->title, QString("Global Shortcut"));
-        QCOMPARE(setupChecklistLine("delivery", "clipboard"), QString("Text delivery — clipboard"));
+        QCOMPARE(setupChecklistLine("microphone", "Built-in"), QString("Microphone — Built-in"));
         QCOMPARE(setupProviderVerdict("codex", false), QString("Not signed in"));
         QCOMPARE(setupProviderVerdict("endpoint", false), QString("Not set up"));
         QCOMPARE(setupRefinementStatus("none", std::nullopt), QString("No cleanup"));
-        QCOMPARE(setupSchemaRow("defaultWritingProfile").label, QString("Fallback profile"));
+        QCOMPARE(setupSchemaRow("defaultWritingProfile").label, QString("When the app isn't recognized"));
     }
 
-    void signInMissingNamesTheWayOutOfEachDeadEnd()
+    void theTranscriptionDeadEndNamesTheWayOut()
     {
-        QCOMPARE(setupSignInMissing(true, false),
-                 QString("No sign-in was found. Sign in, or choose to run on this computer."));
-        QCOMPARE(setupSignInMissing(false, true),
-                 QString("No ChatGPT, Claude, or CLI Proxy API sign-in was found."));
-        // Nothing on this machine can transcribe: say how to get something.
-        const QString deadEnd = setupSignInMissing(false, false);
-        QVERIFY(deadEnd.contains("can't run a local speech model"));
-        QVERIFY(deadEnd.contains("free ChatGPT or Claude account"));
-        QVERIFY(deadEnd.contains("install Claude Code or Claude Desktop, or Codex"));
-
-        // Core also decides when the note shows: any way out silences it, and
-        // an installed CLI turns it into the plain missing-sign-in line.
         qputenv("SPEECHER_TEST_CLAUDE_INSTALLED", "0");
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "0");
         const auto cleanup = qScopeGuard([] {
             qunsetenv("SPEECHER_TEST_CLAUDE_INSTALLED");
             qunsetenv("SPEECHER_TEST_CODEX_INSTALLED");
         });
-        QCOMPARE(setupWelcomeDeadEnd(false, false, false, true), deadEnd);
-        QVERIFY(setupWelcomeDeadEnd(true, false, false, true).isEmpty());
-        QVERIFY(setupWelcomeDeadEnd(false, true, false, true).isEmpty());
-        QVERIFY(setupWelcomeDeadEnd(false, false, true, true).isEmpty());
-        QVERIFY(setupWelcomeDeadEnd(false, false, false, false).isEmpty());
+        // Nothing on this machine can transcribe: say how to get something.
+        QCOMPARE(setupTranscriptionDeadEnd(false, false, false, true),
+                 QString("This computer can't run a local speech model, and no ChatGPT, Claude, "
+                         "or CLI Proxy API sign-in was found. Please get a free ChatGPT or Claude "
+                         "account and install Claude Code or Claude Desktop, or Codex."));
+        // Any way out silences it.
+        QVERIFY(setupTranscriptionDeadEnd(true, false, false, true).isEmpty());
+        QVERIFY(setupTranscriptionDeadEnd(false, true, false, true).isEmpty());
+        QVERIFY(setupTranscriptionDeadEnd(false, false, true, true).isEmpty());
+        QVERIFY(setupTranscriptionDeadEnd(false, false, false, false).isEmpty());
+        // An installed CLI makes signing in the missing step.
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
-        QCOMPARE(setupWelcomeDeadEnd(false, false, false, true), setupSignInMissing(false, true));
+        QCOMPARE(setupTranscriptionDeadEnd(false, false, false, true),
+                 QString("No ChatGPT, Claude, or CLI Proxy API sign-in was found."));
     }
 
     void tooSmallAMachineCannotRunAnyModel()
@@ -348,40 +346,17 @@ private slots:
         QVERIFY(setup.canRunAnyModel());
     }
 
-    void welcomeDefaultsFollowOnlySignInsAndUndoTheirOwnWrite()
+    void speechDefaultsToThisComputerOnlyWithoutAnySignIn()
     {
-        WelcomeChoice choice;
-        auto provider = choice.update("claude", {"local", "endpoint"}, false);
-        QVERIFY(choice.local());
-        QCOMPARE(provider, QString("local"));
-        provider = choice.update(provider, {"claude"}, false);
-        QVERIFY(!choice.local());
-        QCOMPARE(provider, QString("claude"));
-        provider = choice.update(provider, {"claude"}, false, true);
-        QCOMPARE(provider, QString("local"));
-        QCOMPARE(choice.update(provider, {"claude"}, false), QString("local"));
-        provider = choice.update(provider, {"claude"}, false, false);
-        QCOMPARE(provider, QString("claude"));
-        WelcomeChoice reopened;
-        QCOMPARE(reopened.update("local", {}, false), QString("local"));
-        QCOMPARE(reopened.update("local", {"claude"}, false), QString("local"));
-        WelcomeChoice automatic;
-        QCOMPARE(automatic.update("claude", {}, false), QString("local"));
-        automatic.providerChosen();
-        QCOMPARE(automatic.update("local", {"claude"}, false), QString("local"));
+        QCOMPARE(setupSpeechChoice("claude", {}, true, false, false), QString("local"));
+        QCOMPARE(setupSpeechChoice("claude", {"codex"}, true, false, false), QString("codex"));
+        QCOMPARE(setupSpeechChoice("claude", {}, true, true, false), QString("claude"));
+        // Not where the build has no Local Model or the hardware can't run one.
+        QCOMPARE(setupSpeechChoice("claude", {}, false, false, false), QString("claude"));
+        QCOMPARE(setupSpeechChoice("claude", {}, true, false, true), QString("claude"));
         QVERIFY(!isSetupSignInProvider("local"));
         QVERIFY(!isSetupSignInProvider("endpoint"));
         QVERIFY(isSetupSignInProvider("codex"));
-
-        // A machine that can't run a model never defaults to the local path,
-        // and even choosing that path there does not open ready.
-        WelcomeChoice unusable;
-        QCOMPARE(unusable.update("claude", {}, false, std::nullopt, false), QString("claude"));
-        QVERIFY(!unusable.local());
-        QVERIFY(!unusable.ready());
-        QCOMPARE(unusable.update("claude", {}, false, true, false), QString("local"));
-        QVERIFY(unusable.local());
-        QVERIFY(!unusable.ready());
     }
 
     void interruptedDownloadsResumeButCancelledOnesDoNot()

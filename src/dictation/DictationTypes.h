@@ -20,7 +20,7 @@ QString dictationStateLabel(DictationState state, const QString &message = {});
 // What a Start/Stop control presents for a session state name, matching
 // what toggle() would actually do (DictationSession::toggleSession): it stops
 // starting and listening, cancels a refinement, and does nothing during
-// stopping and delivering.
+// stopping and delivering, when it is disabled and names the state instead.
 struct DictationToggleAction {
     QString label;
     bool enabled = true;
@@ -36,6 +36,10 @@ QString dictationStatusLabel(const QString &stateName, const QString &message = 
 // The last failure (DictationSession::lastFailure) as Home shows it under the
 // status line: empty in the error state, whose status line already says it.
 QString dictationFailureNote(const QString &stateName, const QString &lastFailure);
+
+// The line under Home's status: how to start dictating from anywhere, or that
+// a Global Shortcut would let you. shortcut is its display text, empty for none.
+QString dictationShortcutHint(const QString &shortcut);
 
 // Whether a tray shows the listening icon, tooltip and level meter for a
 // session state name: the states where the microphone is open or about to be.

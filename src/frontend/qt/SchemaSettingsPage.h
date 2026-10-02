@@ -8,9 +8,11 @@
 
 class QVBoxLayout;
 class QLabel;
+class QPushButton;
 
 namespace speecher {
 
+class InlineMessage;
 class PlatformComposition;
 class ProviderRegistry;
 
@@ -33,6 +35,15 @@ struct SchemaCustomRow {
     // Called with the page's draft each time the page re-derives its rows,
     // for a widget showing something that depends on other settings.
     std::function<void(const AppSettings &)> refresh;
+    // Called instead of disabling the widget when its row's gate closes, for a
+    // widget that stays readable and only stops taking edits.
+    std::function<void(bool)> setEditable;
+    // Lays out card rows of its own, titles included, so it goes into the
+    // card as it is, with no heading or inset around it.
+    bool cardRows = false;
+    // Reads under the row's title and description, such as a live status
+    // that would otherwise crowd the control column.
+    QWidget *detail = nullptr;
 };
 
 // How a front end hands the renderer a widget for a row it wants to draw
@@ -45,14 +56,16 @@ using SchemaCustomRowFactory = std::function<
 
 // Renders a pane's sections as the Qt front end's settings page, and drives
 // load, appendToDraft and hasChanges from the descriptors rather than from a
-// hand-written line per field. The window header carries the page title.
+// hand-written line per field. The window header carries the page title; an
+// intro, when there is one, is the first line under it.
 class SchemaSettingsPage : public QScrollArea {
     Q_OBJECT
 
 public:
     explicit SchemaSettingsPage(const QList<SettingsSection> &sections,
                                 QWidget *parent = nullptr,
-                                SchemaCustomRowFactory customRows = {});
+                                SchemaCustomRowFactory customRows = {},
+                                const QString &intro = {});
 
     void load(const AppSettings &settings);
     // Empty when every collection on the page is consistent.
@@ -63,6 +76,9 @@ public:
     bool hasChanges(const AppSettings &settings) const;
     void setCapabilities(const Capabilities &capabilities);
     void refresh();
+    // Scrolls the row into view for a search that found it, and with
+    // focusControl also gives the row's control the focus.
+    void revealRow(const QString &rowId, bool focusControl);
 
 signals:
     void changed();
@@ -73,16 +89,34 @@ private:
         SettingsRow descriptor;
         QWidget *frame = nullptr;
         QWidget *control = nullptr;
-        QWidget *description = nullptr;
-        // The container the row shares with the rest of its group, which is
-        // what gets enabled and carries the group's tooltip.
-        QWidget *group = nullptr;
-        // The visible explanation (and fix) shown above the row or its group
-        // while the row's gate says no. Shared by every row of a group.
-        QWidget *gateNote = nullptr;
+        QLabel *title = nullptr;
+        QLabel *description = nullptr;
+        // While the gate is closed the description says why, unless a page
+        // notice does, or an earlier row of the same
+        // group already says it.
+        bool explainsGate = false;
         std::function<QVariant()> value;
         std::function<void(const QVariant &)> setValue;
         std::function<void(const AppSettings &)> refresh;
+        std::function<void(bool)> setEditable;
+        // The button row that opens the dialog this row is shown in, if any.
+        QPushButton *opener = nullptr;
+    };
+
+    // A button row standing in for rows shown in a dialog, and what its
+    // description says about them.
+    struct DialogOpener {
+        QPushButton *button = nullptr;
+        std::function<QString(const AppSettings &)> summary;
+    };
+
+    // One message at the top of the page for every gate that many rows share
+    // or an action can lift, such as desktop accessibility, however many rows
+    // it holds.
+    struct GateNotice {
+        QString key;
+        QWidget *holder = nullptr;
+        InlineMessage *message = nullptr;
     };
 
     // A section's chrome — its card, title and help note — only earns its
@@ -96,8 +130,10 @@ private:
     };
 
     void addSection(const SettingsSection &section, QVBoxLayout *pageLayout);
-    void addRow(const SettingsRow &descriptor, QWidget *host, QWidget *group, QWidget *gateNote);
-    QWidget *addGateNote(const SettingsRow &descriptor, QWidget *form);
+    // Adds the button row to the card and returns the form of its dialog's card.
+    QWidget *addDialog(const RowDialog &dialog, QWidget *cardForm);
+    void addRow(const SettingsRow &descriptor, QWidget *host, bool explainsGate);
+    void addGateNotice(const SettingsRow &descriptor, QVBoxLayout *pageLayout);
     SchemaCustomRow supplyRow(const SettingsRow &descriptor,
                               QWidget *host,
                               const std::function<void()> &notifyChanged);
@@ -108,6 +144,8 @@ private:
     SchemaCustomRowFactory m_customRows;
     QList<Row> m_rows;
     QList<Section> m_sections;
+    QList<GateNotice> m_gateNotices;
+    QList<DialogOpener> m_dialogs;
     Capabilities m_capabilities;
     AppSettings m_loaded;
     bool m_expensiveRowsLoaded = false;
