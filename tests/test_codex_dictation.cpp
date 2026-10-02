@@ -143,6 +143,59 @@ private slots:
         QCOMPARE(failed.first().at(2).toString(), QStringLiteral("finalize"));
     }
 
+    // The service drops a session once session_ttl_ms passes with no audio and
+    // says nothing; the next audio.append gets session_not_found. A stream
+    // that stops sending audio keeps it alive with silence until the client
+    // asks to close, and never mixes silence into audio that is flowing.
+    void codexIdleStreamKeepsTheSessionAlive()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        server.setSupportedSubprotocols({QStringLiteral("openai-bearer.test-token")});
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        CodexDictationClient client(nullptr, 8000, 300);
+        QSignalSpy connected(&client, &CodexDictationClient::connected);
+        client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream").arg(server.serverPort())),
+                     QStringLiteral("test-token"), 16000);
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
+        QList<QByteArray> audio;
+        bool closeRequested = false;
+        connect(peer.get(), &QWebSocket::textMessageReceived, this, [&](const QString &message) {
+            const QJsonObject event = QJsonDocument::fromJson(message.toUtf8()).object();
+            const QString type = event.value(QStringLiteral("type")).toString();
+            if (type == QStringLiteral("audio.append")) {
+                audio.append(QByteArray::fromBase64(event.value(QStringLiteral("audio")).toString().toLatin1()));
+            }
+            closeRequested = closeRequested || type == QStringLiteral("session.close");
+        });
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{}}})"));
+        QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
+
+        // Audio every 50 ms for about three keep-alive intervals.
+        const QByteArray speech = QByteArray::fromHex("0102ff00");
+        const QByteArray silence(3200, '\0');
+        constexpr int speechFrames = 16;
+        for (int i = 0; i < speechFrames; ++i) {
+            client.sendAudio(speech);
+            QTest::qWait(50);
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(audio.count(speech) == speechFrames, 1000);
+        const qsizetype firstSilence = audio.indexOf(silence);
+        QVERIFY2(firstSilence == -1 || firstSilence >= speechFrames,
+                 "a keep-alive was sent while audio was flowing");
+
+        // Idle: a keep-alive every interval.
+        QTRY_VERIFY_WITH_TIMEOUT(audio.size() >= speechFrames + 2, 2000);
+        QCOMPARE(audio.mid(speechFrames), QList<QByteArray>(audio.size() - speechFrames, silence));
+
+        client.stop();
+        QTRY_VERIFY_WITH_TIMEOUT(closeRequested, 1000);
+        const qsizetype sent = audio.size();
+        QTest::qWait(300);
+        QCOMPARE(audio.size(), sent);
+    }
+
     void codexDictationClientEndsAStreamOnAnyServiceEnd_data()
     {
         QTest::addColumn<bool>("sessionStarted");
@@ -239,8 +292,8 @@ private slots:
         QTest::newRow("final retranscribe") << true;
     }
 
-    // Codex ends every session after session_ttl_ms (5 minutes) with
-    // session.updated status=closed, whether or not the person has stopped.
+    // The service can end a session mid-dictation with a clean close
+    // (session.updated status=closed) while the person is still talking.
     void codexSessionEndedByTheServiceRollsOverWithoutLosingDictation()
     {
         QFETCH(bool, retranscribe);

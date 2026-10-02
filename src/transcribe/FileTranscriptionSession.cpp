@@ -350,7 +350,7 @@ void FileTranscriptionSession::handleAttemptCompleted(quint64 attemptId)
         finishTranscription();
         return;
     }
-    // The provider ended a stream before the file did (Codex sessions expire).
+    // The provider ended a stream before the file did (a clean server close).
     if (!attemptWasStable()) {
         handleSpeechFailure({attemptId,
                              QStringLiteral("The speech stream ended within seconds of starting"),

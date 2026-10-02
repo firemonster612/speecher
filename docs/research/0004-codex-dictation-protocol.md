@@ -15,6 +15,22 @@ Endpoint: `wss://chatgpt.com/backend-api/dictation/stream`, subprotocols `chatgp
 - `speech.started` / `speech.stopped` with `utterance_id` (server VAD). Note: digital-zero silence (1.5 s) did NOT trigger VAD endpointing mid-session in probes; `speech.stopped` fired only on `audio.flush`.
 - `transcript.failed`, `session.error` (`fatal` flag; `error.code/message/retryable`).
 
+## Session TTL (probed live 2026-10-02)
+
+- `session_ttl_ms` is an inactivity timeout, not a session lifetime. Every
+  `session.updated` carries `last_activity_ms` and `expires_at_ms =
+  last_activity_ms + session_ttl_ms`, and each `audio.append` (digital
+  silence included) moves `last_activity_ms`. A session fed audio
+  continuously stays open: 420 s at the shipped 300 s TTL, and 150 s at a
+  12 s TTL, closed only on `session.close`.
+- Expiry is silent. An idle session got no event past its TTL (watched for
+  2 min at an 8 s TTL); the socket stays open, and the next `audio.append`
+  gets `session.error` `{"code":"session_not_found","retryable":true}` with
+  `fatal: true`, then a 1000 close. Audio sent to an expired session is lost.
+- A 100 ms `audio.append` of zeros before `expires_at_ms` keeps the session
+  alive; speech after a 20 s pause at an 8 s TTL then transcribed in full.
+- Two sessions on one token can stream at the same time.
+
 ## Free-form context / prompt biasing (probed live 2026-09-20)
 
 The `session.start` config schema is strict (Pydantic; unknown keys fail with
