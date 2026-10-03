@@ -86,6 +86,13 @@ class DictationEngine(
     private val finalText = StringBuilder()
     private var interim = ""
     @Volatile private var recording = false
+    /** Paused by the person: the microphone is off and the stream finishing its words. */
+    private var paused = false
+    /**
+     * The paused stream has not ended yet. Audio heard after a resume waits in [unsent] until it
+     * has, since its final words would be dropped by opening the next stream any sooner.
+     */
+    @Volatile private var finishingPause = false
     private var inserted = false
     private var pendingInsert: PendingInsert? = null
     private var failedRefinement: Provider? = null
@@ -116,6 +123,8 @@ class DictationEngine(
         failedCommit = null
         sourceProvider = provider
         recording = true
+        paused = false
+        finishingPause = false
         streamed = false
         reconnecting = false
         reconnectsLeft = RECONNECT_BACKOFF_MS.size
@@ -168,11 +177,44 @@ class DictationEngine(
 
     @Synchronized
     fun stop() {
+        if (paused) {
+            paused = false
+            // An Insert while paused takes what was heard once the paused stream has ended.
+            if (!finishingPause) finishPendingInsert() else publish(listening(0f))
+            return
+        }
         if (!recording) return
         recording = false
         stopCapture()
         client?.stop()
         publish(listening(0f))
+    }
+
+    /**
+     * Turns the microphone off and lets the stream finish the words already spoken; they stay in
+     * the transcript. Resume carries on in a new stream.
+     */
+    @Synchronized
+    fun pause() {
+        if (!recording || state !is DictationState.Listening) return
+        recording = false
+        paused = true
+        // A stream still connecting is stopped as it opens, and ends like any other.
+        finishingPause = true
+        stopCapture()
+        client?.stop()
+        publish(listening(0f))
+    }
+
+    @Synchronized
+    fun resume() {
+        if (!paused) return
+        paused = false
+        recording = true
+        val current = session
+        publish(listening(0f))
+        executor.execute { captureAudio(current) }
+        if (!finishingPause) reopen(current)
     }
 
     @Synchronized
@@ -216,7 +258,7 @@ class DictationEngine(
             capture({ current == session && recording }) { audio, level ->
                 synchronized(this) {
                     if (current == session && recording) {
-                        client?.sendAudio(audio) ?: unsent.add(audio)
+                        client.takeUnless { finishingPause }?.sendAudio(audio) ?: unsent.add(audio)
                         if (
                             transcribe != null &&
                                 sourceProvider.hasBatchTranscription &&
@@ -281,17 +323,22 @@ class DictationEngine(
                 publishListening()
             }
             SpeechEvent.Completed ->
-                if (pendingInsert != null) finishPendingInsert()
+                if (finishingPause) pausedStreamEnded(current)
+                else if (pendingInsert != null) finishPendingInsert()
                 // Still recording, so the provider ended the session itself, as ChatGPT does at its
                 // session limit. That is not an error: carry on in a new session.
                 else if (recording) reopen(current) else publish(listening(0f))
+            // A paused stream that fails to finish, closed during a long pause, has still ended.
             is SpeechEvent.Failed ->
-                streamFailed(
-                    current,
-                    event.retryable,
-                    if (event.authentication) FailureReason.SignedOut else FailureReason.Network,
-                    event.detail.ifEmpty { "Speech connection failed" },
-                )
+                if (finishingPause) pausedStreamEnded(current)
+                else
+                    streamFailed(
+                        current,
+                        event.retryable,
+                        if (event.authentication) FailureReason.SignedOut
+                        else FailureReason.Network,
+                        event.detail.ifEmpty { "Speech connection failed" },
+                    )
         }
     }
 
@@ -330,6 +377,14 @@ class DictationEngine(
         client = null
         publishListening()
         openStream(current, delayMillis)
+    }
+
+    /** The paused stream ended: an Insert waiting on it goes ahead, a resume opens the next one. */
+    private fun pausedStreamEnded(current: Int) {
+        finishingPause = false
+        client = null
+        if (pendingInsert != null) finishPendingInsert()
+        else if (recording) reopen(current) else publishListening()
     }
 
     private fun finishPendingInsert() {
@@ -414,7 +469,7 @@ class DictationEngine(
 
     /** The current preview split into its committed and interim parts for the panel to render. */
     private fun listening(level: Float) =
-        DictationState.Listening(finalText.toString(), interim, level, reconnecting)
+        DictationState.Listening(finalText.toString(), interim, level, reconnecting, paused)
 
     private fun transcript(): String =
         if (finalText.isEmpty()) interim
@@ -427,6 +482,8 @@ class DictationEngine(
 
     private fun cancelSession() {
         recording = false
+        paused = false
+        finishingPause = false
         stopCapture()
         client?.cancel()
         client = null

@@ -608,6 +608,75 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `pause finishes the stream and keeps its words, and resume carries on in a new one`() {
+        val capture = Capture()
+        val clients = mutableListOf<Client>()
+        val events = mutableListOf<(SpeechEvent) -> Unit>()
+        val commits = mutableListOf<String>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, onEvent ->
+                    events.add(onEvent)
+                    Client().also(clients::add)
+                },
+                { _, raw, _ -> raw },
+                null,
+                { commits.add(it) },
+                Executor { it.run() },
+                {},
+            )
+        engine.start(Provider.Claude)
+        events[0](SpeechEvent.Final("before"))
+        engine.pause()
+        assertTrue(clients[0].stopped)
+        assertEquals(DictationState.Listening("before", "", 0f, paused = true), engine.state)
+
+        // Audio after a resume waits for the paused stream's last words, then goes to the next.
+        engine.resume()
+        capture.audio?.invoke(byteArrayOf(7), 0.4f)
+        assertEquals(1, clients.size)
+        events[0](SpeechEvent.Final("pause"))
+        events[0](SpeechEvent.Completed)
+        assertEquals(2, clients.size)
+        assertEquals(listOf(7.toByte()), clients[1].audio.single().toList())
+        events[1](SpeechEvent.Final("after"))
+        engine.insert()
+        events[1](SpeechEvent.Completed)
+        assertEquals(listOf("before pause after"), commits)
+    }
+
+    @Test
+    fun `cancel during refinement inserts nothing`() {
+        val commits = mutableListOf<String>()
+        lateinit var speech: (SpeechEvent) -> Unit
+        lateinit var engine: DictationEngine
+        engine =
+            DictationEngine(
+                { _, _ -> },
+                {},
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, raw, _ ->
+                    engine.cancel()
+                    raw
+                },
+                null,
+                { commits.add(it) },
+                Executor { it.run() },
+                {},
+            )
+        engine.start(Provider.Claude)
+        speech(SpeechEvent.Final("never inserted"))
+        engine.insertRefined(Provider.Claude)
+        speech(SpeechEvent.Completed)
+        assertTrue(commits.isEmpty())
+    }
+
+    @Test
     fun `failed commit keeps transcript available for retry`() {
         val capture = Capture()
         lateinit var speech: (SpeechEvent) -> Unit
