@@ -377,14 +377,7 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
 
     connect(controller->insightsLog(), &InsightsLog::changed, this, &HomePage::refresh);
     connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
-    connect(m_pause, &QToolButton::clicked, this, [controller] {
-        DictationSession *session = controller->session();
-        if (session->state() == DictationState::Paused) {
-            session->resume();
-        } else {
-            session->pause();
-        }
-    });
+    connect(m_pause, &QToolButton::clicked, controller->session(), &DictationSession::togglePause);
     connect(m_cancel, &QToolButton::clicked, controller, &ApplicationController::cancel);
     connect(controller, &ApplicationController::stateChanged, this, &HomePage::applyState);
     connect(controller, &ApplicationController::statusChanged, m_status, &QLabel::setText);

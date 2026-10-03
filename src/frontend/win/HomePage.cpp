@@ -366,12 +366,7 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
                                          controls.paused ? resumeCaption() : pauseCaption());
             pause.IsEnabled(controls.pauseEnabled);
             pause.Click([controller](const auto &, const auto &) {
-                DictationSession *session = controller->session();
-                if (session->state() == DictationState::Paused) {
-                    session->resume();
-                } else {
-                    session->pause();
-                }
+                controller->session()->togglePause();
             });
             listening.Children().Append(pause);
             ProgressBar level;

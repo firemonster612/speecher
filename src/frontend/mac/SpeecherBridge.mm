@@ -2384,14 +2384,9 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     _state->controller->cancel();
 }
 
-- (void)pause
+- (void)togglePause
 {
-    _state->controller->session()->pause();
-}
-
-- (void)resume
-{
-    _state->controller->session()->resume();
+    _state->controller->session()->togglePause();
 }
 
 - (BOOL)pauseVisible

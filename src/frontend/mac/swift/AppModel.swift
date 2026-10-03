@@ -600,7 +600,7 @@ final class AppModel: ObservableObject {
 
     /// The pause button: pauses, or resumes while paused.
     func togglePause() {
-        if paused { bridge.resume() } else { bridge.pause() }
+        bridge.togglePause()
     }
 
     /// Goes back to the binder's built-in default.

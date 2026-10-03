@@ -396,13 +396,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_cancelButton->setIcon(QIcon::fromTheme(QStringLiteral("window-close")));
     m_cancelButton->setToolTip(cancelCaption());
     m_cancelButton->setAccessibleName(cancelCaption());
-    connect(m_pauseButton, &QToolButton::clicked, this, [this] {
-        if (m_sessionState == DictationState::Paused) {
-            emit resumeRequested();
-        } else {
-            emit pauseRequested();
-        }
-    });
+    connect(m_pauseButton, &QToolButton::clicked, this, &TranscriberPopup::pauseToggled);
     connect(m_cancelButton, &QToolButton::clicked, this, &TranscriberPopup::cancelRequested);
     auto *waveformRow = new QHBoxLayout;
     // Clear of the capsule's rounded ends when there are no words.

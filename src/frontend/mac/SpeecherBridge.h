@@ -872,10 +872,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (void)startListening;
 - (void)stopListening;
 // Throws the dictation away (speecher::ApplicationController::cancel), and
-// pauses or resumes it (speecher::DictationSession).
+// pauses it or resumes it while paused (speecher::DictationSession).
 - (void)cancel;
-- (void)pause;
-- (void)resume;
+- (void)togglePause;
 // The buttons either side of the waveform for the current state
 // (speecher::sessionControls), and whether Cancel belongs in the menu bar
 // panel (speecher::dictationCancelable). Re-read on every statusChanged.

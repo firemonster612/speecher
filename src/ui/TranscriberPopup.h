@@ -61,8 +61,7 @@ signals:
     void whatsNewRequested();
     void whatsNewDismissed();
     // The buttons beside the waveform.
-    void pauseRequested();
-    void resumeRequested();
+    void pauseToggled();
     void cancelRequested();
 
 protected:

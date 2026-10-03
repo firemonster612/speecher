@@ -364,12 +364,7 @@ struct DictationPanel::Native : QObject {
         };
         pauseButton = sessionButton(L"\uE769");
         pauseButton.Click([this](const auto &, const auto &) {
-            DictationSession *session = controller->session();
-            if (session->state() == DictationState::Paused) {
-                session->resume();
-            } else {
-                session->pause();
-            }
+            controller->session()->togglePause();
         });
         cancelButton = sessionButton(L"\uE711");
         Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(cancelButton, win::hs(cancelCaption()));
