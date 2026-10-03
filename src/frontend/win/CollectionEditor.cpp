@@ -585,6 +585,7 @@ void CollectionEditor::openRecordDialog(int recordIndex)
     // One field per column a person may fill, so the record is checked before
     // it is kept.
     QList<QPair<QString, std::function<QVariant()>>> readers;
+    bool named = false;
     for (const CollectionColumnSnapshot &column : m_collection.columns) {
         if (column.kind == ColumnKind::ReadOnly) {
             continue;
@@ -690,6 +691,17 @@ void CollectionEditor::openRecordDialog(int recordIndex)
                 makeMultiline(box);
             }
             readers.append({column.id, [box] { return QVariant(qs(box.Text())); }});
+            // The first text field names the record, as on Linux, so there is
+            // nothing to keep until it holds something.
+            if (!named) {
+                named = true;
+                checks.append([box] { return !qs(box.Text()).trimmed().isEmpty(); });
+                box.TextChanged([recheck](const auto &, const auto &) {
+                    if (*recheck) {
+                        (*recheck)();
+                    }
+                });
+            }
             field = box;
         }
         if (column.help.isEmpty()) {
