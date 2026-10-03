@@ -34,7 +34,7 @@ class ClaudeVoiceTests : public QObject {
 private slots:
     void claudeVoiceStreamQueryMatchesClaudeCode()
     {
-        const QUrlQuery query = claudeVoiceStreamQuery();
+        const QUrlQuery query = claudeVoiceStreamQuery(QStringLiteral("en"));
 
         QCOMPARE(query.queryItemValue(QStringLiteral("encoding")), QStringLiteral("linear16"));
         QCOMPARE(query.queryItemValue(QStringLiteral("sample_rate")), QStringLiteral("16000"));
@@ -52,13 +52,21 @@ private slots:
                  QStringLiteral("speecher"),
                  QString::fromUtf8("café"),
              }),
-                 QByteArray("Deepgram Nova 3,Speecher,caf\xe9", 29));
+                 QByteArray("Deepgram Nova 3,Speecher,caf\xc3\xa9", 30));
         QCOMPARE(claudeVoiceKeytermsHeader({QString(1100, QLatin1Char('a')),
                                             QStringLiteral("Qt")}),
                  QByteArrayLiteral("Qt"));
-        QCOMPARE(claudeVoiceKeytermsHeader({QString::fromUtf8("日本語"),
-                                            QStringLiteral("Speecher")}),
-                 QByteArrayLiteral("Speecher"));
+        QCOMPARE(claudeVoiceKeytermsHeader({QString::fromUtf8("渡邊"), QStringLiteral("Speecher")}),
+                 QByteArray("\xe6\xb8\xa1\xe9\x82\x8a,Speecher"));
+        // The cap counts UTF-8 bytes: 341 three-byte characters fill 1023.
+        QCOMPARE(claudeVoiceKeytermsHeader({QString(341, QChar(0x6e21)), QStringLiteral("Qt")}).size(), 1023);
+    }
+
+    void claudeVoiceQueryNamesTheSpokenLanguageOrLeavesItToDetect()
+    {
+        QCOMPARE(claudeVoiceStreamQuery(QStringLiteral("de")).queryItemValue(QStringLiteral("language")),
+                 QStringLiteral("de"));
+        QVERIFY(!claudeVoiceStreamQuery(QStringLiteral("auto")).hasQueryItem(QStringLiteral("language")));
     }
 
     void claudeVoiceEventsUseOnlyTheObservedSchema()
@@ -100,7 +108,8 @@ private slots:
         deadlineClient.start(
             QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
             QStringLiteral("test-token"),
-            {});
+            {},
+            QStringLiteral("en"));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         QTRY_COMPARE_WITH_TIMEOUT(deadlineFailure.count(), 1, 1000);
         QCOMPARE(deadlineFailure.first().at(2).toString(), QStringLiteral("connect"));
@@ -110,7 +119,8 @@ private slots:
         bufferedClient.start(
             QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
             QStringLiteral("test-token"),
-            {});
+            {},
+            QStringLiteral("en"));
         bufferedClient.sendAudio(QByteArray(4 * 1024 * 1024 + 1, '\0'));
         QCOMPARE(bufferFailure.count(), 1);
         QCOMPARE(bufferFailure.first().at(2).toString(), QStringLiteral("connect"));
@@ -145,7 +155,8 @@ private slots:
         client.start(
             QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
             QStringLiteral("test-token"),
-            {});
+            {},
+            QStringLiteral("en"));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> socket(server.nextPendingConnection());
         QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
@@ -184,7 +195,8 @@ private slots:
         client.start(
             QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
             QStringLiteral("test-token"),
-            {});
+            {},
+            QStringLiteral("en"));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QTcpSocket> socket(server.nextPendingConnection());
         socket->abort();
@@ -342,7 +354,7 @@ private slots:
                         }
                     });
 
-            client.start(voiceUrl, credentials.accessToken, speech.vocabulary);
+            client.start(voiceUrl, credentials.accessToken, speech.vocabulary, speech.language);
             const int audioDurationMs = qRound(pcm.size() * 1000.0 / 32000.0);
             QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty() || !failed.isEmpty(),
                                      audioDurationMs + 10000);
@@ -361,7 +373,7 @@ private slots:
             QSignalSpy failed(&client, &ClaudeVoiceClient::failed);
             connect(&client, &ClaudeVoiceClient::connected, &client,
                     &ClaudeVoiceClient::stop);
-            client.start(voiceUrl, credentials.accessToken, speech.vocabulary);
+            client.start(voiceUrl, credentials.accessToken, speech.vocabulary, speech.language);
             QTRY_VERIFY_WITH_TIMEOUT(!completed.isEmpty() || !failed.isEmpty(), 8000);
             if (!failed.isEmpty()) {
                 QVERIFY(!failed.first().at(2).toString().isEmpty());
@@ -384,7 +396,8 @@ private slots:
         client.start(
             QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
             QStringLiteral("test-token"),
-            {QStringLiteral("Speecher")});
+            {QStringLiteral("Speecher")},
+            QStringLiteral("en"));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> socket(server.nextPendingConnection());
         QVERIFY(socket);
@@ -425,7 +438,8 @@ private slots:
         client.start(
             QUrl(QStringLiteral("ws://127.0.0.1:%1/voice").arg(server.serverPort())),
             QStringLiteral("invalid-token"),
-            {});
+            {},
+            QStringLiteral("en"));
 
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> socket(server.nextPendingConnection());

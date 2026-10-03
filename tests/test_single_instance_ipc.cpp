@@ -301,7 +301,8 @@ private slots:
 
         QThread *client = QThread::create([platform] {
             SingleInstanceIpc::sendCommandDetailed(QStringLiteral("toggle"),
-                                                   {OutputFormat::Html, QStringLiteral("ai_coding")},
+                                                   {OutputFormat::Html, QStringLiteral("ai_coding"),
+                                                    QStringLiteral("de")},
                                                    nullptr,
                                                    2000,
                                                    platform);
@@ -312,6 +313,7 @@ private slots:
         delete client;
         QCOMPARE(commands.first().at(1).toString(), QStringLiteral("html"));
         QCOMPARE(commands.first().at(4).toString(), QStringLiteral("ai_coding"));
+        QCOMPARE(commands.first().at(5).toString(), QStringLiteral("de"));
     }
 
     void theCommandLineFailsWhenTheInstanceIgnoresTheProfile_data()

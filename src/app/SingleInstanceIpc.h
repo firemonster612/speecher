@@ -19,9 +19,11 @@ struct IpcResponse {
     bool ok = false;
     QString state;
     QString message;
-    // The Writing Profile id a toggle or start request carried, echoed so a
-    // client can tell an instance that predates --profile, which ignores it.
+    // The Writing Profile id and Spoken Language a toggle or start request
+    // carried, echoed so a client can tell an instance that predates
+    // --profile or --language, which ignores them.
     QString writingProfile;
+    QString spokenLanguage;
 };
 
 enum class IpcCommandResult {
@@ -70,7 +72,8 @@ signals:
                          const QString &outputFormat,
                          QLocalSocket *socket,
                          const QStringList &files,
-                         const QString &writingProfile);
+                         const QString &writingProfile,
+                         const QString &spokenLanguage);
 
 public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);

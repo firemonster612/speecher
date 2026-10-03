@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 class SpeechClientsTest {
     private class FakeTransport : WebSocketTransport {
         lateinit var server: WebSocketTransport.Listener
+        val sent = mutableListOf<String>()
 
         override fun open(
             url: String,
@@ -24,7 +25,7 @@ class SpeechClientsTest {
             server = listener
         }
 
-        override fun sendText(text: String) = true
+        override fun sendText(text: String) = sent.add(text)
 
         override fun sendBinary(bytes: ByteArray) = true
 
@@ -37,7 +38,7 @@ class SpeechClientsTest {
     private fun codexClosed(code: Int): SpeechEvent {
         val transport = FakeTransport()
         val events = mutableListOf<SpeechEvent>()
-        CodexDictationClient(transport, "token", events::add).also {
+        CodexDictationClient(transport, "token", "en", events::add).also {
             transport.server.onText("""{"type":"session.started"}""")
             transport.server.onClosed(code, "")
             it.cancel()
@@ -63,7 +64,7 @@ class SpeechClientsTest {
     fun `a Codex error that says it is not retryable is not retried`() {
         val transport = FakeTransport()
         val events = mutableListOf<SpeechEvent>()
-        val client = CodexDictationClient(transport, "token", events::add)
+        val client = CodexDictationClient(transport, "token", "en", events::add)
         transport.server.onText("""{"type":"session.started"}""")
         transport.server.onText(
             """{"type":"session.error","fatal":true,"error":{"code":"quota","message":"exceeded","retryable":false}}"""
@@ -94,6 +95,7 @@ class SpeechClientsTest {
                     webSocketTransport(server.url("/").toString()),
                     "secret",
                     emptyList(),
+                    "en",
                     { if (it is SpeechEvent.Failed) failures.add(it) },
                     server.url("/voice").toString().replaceFirst("http", "ws"),
                 )
@@ -129,6 +131,7 @@ class SpeechClientsTest {
                 CodexDictationClient(
                     webSocketTransport(server.url("/").toString()),
                     "secret",
+                    "en",
                     { if (it is SpeechEvent.Failed) failures.add(it) },
                     server.url("/dictation").toString().replaceFirst("http", "ws"),
                 )
@@ -171,7 +174,8 @@ class SpeechClientsTest {
                 ClaudeVoiceClient(
                     webSocketTransport(server.url("/").toString()),
                     "secret",
-                    listOf("Speecher"),
+                    listOf("Speecher", "東京"),
+                    "de",
                     events::add,
                     server.url("/voice").toString().replaceFirst("http", "ws"),
                 )
@@ -181,9 +185,9 @@ class SpeechClientsTest {
             client.stop()
             val request = server.takeRequest()
             assertEquals("Bearer secret", request.headers["Authorization"])
-            assertEquals("Speecher", request.headers["x-config-keyterms"])
+            assertEquals("Speecher,東京", request.headers["x-config-keyterms"])
             assertEquals(
-                "encoding=linear16&sample_rate=16000&channels=1&endpointing_ms=300&utterance_end_ms=1000&language=en&use_conversation_engine=true&forward_interims=typed&stt_provider=deepgram-nova3",
+                "encoding=linear16&sample_rate=16000&channels=1&endpointing_ms=300&utterance_end_ms=1000&language=de&use_conversation_engine=true&forward_interims=typed&stt_provider=deepgram-nova3",
                 request.url.encodedQuery,
             )
             assertEquals("{\"type\":\"KeepAlive\"}", frames.poll(3, TimeUnit.SECONDS))
@@ -193,6 +197,21 @@ class SpeechClientsTest {
             assertEquals(SpeechEvent.Completed, events.poll(3, TimeUnit.SECONDS))
             client.cancel()
         }
+    }
+
+    @Test
+    fun `Codex leaves the language out of session start for Automatic`() {
+        val transport = FakeTransport()
+        CodexDictationClient(transport, "token", "auto", {}).also {
+            transport.server.onOpen()
+            it.cancel()
+        }
+        assertEquals(
+            listOf(
+                "{\"type\":\"session.start\",\"config\":{\"input_audio_format\":\"pcm16\",\"sample_rate_hz\":16000,\"num_channels\":1,\"max_buffer_size_bytes\":4194304,\"max_utterance_duration_ms\":30000,\"session_ttl_ms\":300000,\"provider_mode\":\"streaming_sse\",\"transcript_delivery_mode\":\"segment\",\"vad\":{\"type\":\"server_vad\",\"threshold\":0.5,\"prefix_padding_ms\":300,\"silence_duration_ms\":500}}}"
+            ),
+            transport.sent,
+        )
     }
 
     @Test
@@ -228,6 +247,7 @@ class SpeechClientsTest {
                 CodexDictationClient(
                     webSocketTransport(server.url("/").toString()),
                     "secret",
+                    "en",
                     events::add,
                     server.url("/dictation").toString().replaceFirst("http", "ws"),
                 )
@@ -240,7 +260,7 @@ class SpeechClientsTest {
                 request.headers["Sec-WebSocket-Protocol"],
             )
             assertEquals(
-                "{\"type\":\"session.start\",\"config\":{\"input_audio_format\":\"pcm16\",\"sample_rate_hz\":16000,\"num_channels\":1,\"max_buffer_size_bytes\":4194304,\"max_utterance_duration_ms\":30000,\"session_ttl_ms\":300000,\"provider_mode\":\"streaming_sse\",\"transcript_delivery_mode\":\"segment\",\"vad\":{\"type\":\"server_vad\",\"threshold\":0.5,\"prefix_padding_ms\":300,\"silence_duration_ms\":500}}}",
+                "{\"type\":\"session.start\",\"config\":{\"input_audio_format\":\"pcm16\",\"sample_rate_hz\":16000,\"num_channels\":1,\"max_buffer_size_bytes\":4194304,\"max_utterance_duration_ms\":30000,\"session_ttl_ms\":300000,\"provider_mode\":\"streaming_sse\",\"transcript_delivery_mode\":\"segment\",\"vad\":{\"type\":\"server_vad\",\"threshold\":0.5,\"prefix_padding_ms\":300,\"silence_duration_ms\":500},\"language\":\"en\"}}",
                 frames.poll(3, TimeUnit.SECONDS),
             )
             assertEquals(

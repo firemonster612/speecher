@@ -125,7 +125,7 @@ private struct LocalModelDetail: View {
                 (names.wordErrorRate, "\(LocalModelText.wer(entry.librispeechWer)) clear speech\n"
                     + "\(LocalModelText.wer(entry.fleursWer)) everyday speech"),
                 (names.textShows, entry.textShowsText),
-                (names.language, "English"),
+                (names.language, entry.languagesText),
                 (names.license, entry.licence)]
     }
 

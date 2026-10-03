@@ -8,6 +8,10 @@ Speecher turns a short spoken input into text for a chosen desktop target. It ca
 One recording that starts through toggle or push-to-talk and ends after Speecher produces and delivers text.
 _Avoid_: Recording job, transcription run
 
+**Spoken Language**:
+The language the speech service listens for, one setting for every Dictation Session, or Automatic where the service detects it. Distinct from a Writing Profile's output language, which refinement translates into.
+_Avoid_: Dictation language, input language, locale
+
 **Raw Transcript**:
 The speech provider's final text before optional cleanup.
 _Avoid_: Unformatted result

@@ -20,6 +20,7 @@ import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.shownPanelSize
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.ui.DictationPanel
+import app.speecher.android.ui.SettingsPage
 import app.speecher.android.ui.SpeecherTheme
 
 /** The id Android uses for this keyboard: the short `package/.Class` form of its component. */
@@ -175,12 +176,16 @@ class SpeecherImeService : InputMethodService() {
         else panel.clearFlags(flag)
     }
 
-    /** A denied microphone and an ended sign-in need the app; the other failures retry in place. */
+    /**
+     * A denied microphone, an ended sign-in and an unsupported spoken language need the app; the
+     * other failures retry in place.
+     */
     private fun recover() {
         val failed = panelState.value as? DictationState.Failed ?: return
         if (
             failed.reason != FailureReason.MicrophoneDenied &&
-                failed.reason != FailureReason.SignedOut
+                failed.reason != FailureReason.SignedOut &&
+                failed.reason != FailureReason.SpokenLanguage
         ) {
             ActiveDictation.engine?.retry()
             return
@@ -189,6 +194,8 @@ class SpeecherImeService : InputMethodService() {
         val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (failed.reason == FailureReason.SignedOut)
             intent.putExtra("sign_in_provider", failed.provider?.name)
+        if (failed.reason == FailureReason.SpokenLanguage)
+            intent.putExtra("settings_page", SettingsPage.Transcription.name)
         startActivity(intent)
     }
 

@@ -676,6 +676,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // worded (speecher::textShowsValue).
 @property (nonatomic, readonly) BOOL streams;
 @property (nonatomic, readonly, copy) NSString *textShowsText;
+// "English", or "14 languages" (speecher::languagesValue).
+@property (nonatomic, readonly, copy) NSString *languagesText;
 @property (nonatomic, readonly, copy) NSString *licence;
 @property (nonatomic, readonly) SpeecherModelRating rating;
 // The badge's words, "Recommended" to "Not recommended".

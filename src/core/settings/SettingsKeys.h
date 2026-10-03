@@ -17,6 +17,7 @@ inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscrip
 inline const QString UiSoundsEnabled = QStringLiteral("ui/soundsEnabled");
 inline const QString SpeechProvider = QStringLiteral("stt/provider");
 inline const QString CodexFinalRetranscribe = QStringLiteral("stt/codexFinalRetranscribe");
+inline const QString SpokenLanguage = QStringLiteral("stt/language");
 inline const QString LocalModelChosen = QStringLiteral("local/modelChosen");
 inline const QString LocalPendingDownloads = QStringLiteral("local/pendingDownloads");
 inline const QString LocalModel = QStringLiteral("local/model");

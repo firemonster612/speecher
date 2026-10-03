@@ -65,7 +65,9 @@ import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.InsertAction
 import app.speecher.android.dictation.PanelSize
+import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.label
+import app.speecher.android.dictation.spokenLanguageMismatch
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -403,9 +405,13 @@ private val DictationState.Failed.title: String
                 FailureReason.SignedOut -> "You're signed out"
                 FailureReason.Network -> "No connection"
                 FailureReason.Provider -> "Transcription failed"
+                FailureReason.SpokenLanguage -> "Spoken language not available"
             }
 
-/** What to do next, in fixed words. The raw detail is diagnostic and never shown. */
+/**
+ * What to do next, in fixed words. The raw detail is diagnostic and never shown, except a spoken
+ * language mismatch's, which is already those words.
+ */
 private val DictationState.Failed.advice: String
     get() {
         val name = provider?.label
@@ -417,6 +423,7 @@ private val DictationState.Failed.advice: String
             reason == FailureReason.SignedOut ->
                 "Sign in to ${name ?: "your account"} to keep dictating."
             reason == FailureReason.Network -> "Check your network and try again."
+            reason == FailureReason.SpokenLanguage -> detail
             else -> "${name ?: "The provider"} returned an error. Try again."
         }
     }
@@ -424,7 +431,8 @@ private val DictationState.Failed.advice: String
 private val FailureReason.recovery: String
     get() =
         when (this) {
-            FailureReason.MicrophoneDenied -> "Open Speecher"
+            FailureReason.MicrophoneDenied,
+            FailureReason.SpokenLanguage -> "Open Speecher"
             FailureReason.SignedOut -> "Sign in"
             FailureReason.MicrophoneUnavailable,
             FailureReason.Network,
@@ -593,3 +601,15 @@ internal fun PanelFailedNetworkPreview() =
 @Composable
 internal fun PanelFailedProviderPreview() =
     PanelPreview(DictationState.Failed(FailureReason.Provider, "HTTP 503 from Claude", ""))
+
+@PreviewLightDark
+@Composable
+internal fun PanelFailedSpokenLanguagePreview() =
+    PanelPreview(
+        DictationState.Failed(
+            FailureReason.SpokenLanguage,
+            spokenLanguageMismatch(Provider.Claude, "cy").orEmpty(),
+            "",
+            Provider.Claude,
+        )
+    )

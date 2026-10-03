@@ -206,6 +206,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setPreviewWords(draft.ui.previewWords);
     setSpeechProvider(draft.speech.providerId);
     setCodexFinalRetranscribe(draft.speech.codexFinalRetranscribe);
+    setSpokenLanguage(draft.speech.language);
     setLocalSpeechSettings(draft.speech.local);
     setSpeechEndpointSettings(draft.speech.endpoint);
     save(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);

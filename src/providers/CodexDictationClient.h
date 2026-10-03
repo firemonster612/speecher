@@ -41,7 +41,9 @@ public:
                                   int closeTimeoutMs = 8000,
                                   int keepAliveMs = idleKeepAliveMs);
 
-    void start(const QUrl &url, const QString &accessToken, int sampleRateHz);
+    // spokenLanguage is a SpeechSettings::language; Automatic sends none,
+    // which the service takes as detect.
+    void start(const QUrl &url, const QString &accessToken, int sampleRateHz, const QString &spokenLanguage);
     void sendAudio(const QByteArray &pcm);
     void stop();
     void cancel();
@@ -55,7 +57,7 @@ signals:
     void failed(const QString &message, bool retryable, const QString &phase);
 
 private:
-    void sendSessionStart(int sampleRateHz);
+    void sendSessionStart(int sampleRateHz, const QString &language);
     void sendAudioMessage(const QByteArray &pcm);
     void flushPendingAudio();
     void requestFinalization();

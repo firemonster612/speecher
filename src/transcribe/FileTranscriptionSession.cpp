@@ -2,6 +2,7 @@
 
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
+#include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "dictation/StartupPreparationRunner.h"
 #include "platform/audio/AudioPcmConverter.h"
@@ -181,6 +182,9 @@ bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeO
     m_batchSettings.speech.providerId = options.speechProviderId;
     m_batchSettings.refinement.providerId = options.refinementProviderId;
     m_batchSettings.speech.timedSegments = true;
+    if (options.spokenLanguage) {
+        m_batchSettings.speech.language = *options.spokenLanguage;
+    }
     if (!options.applyVocabulary) {
         m_batchSettings.speech.vocabulary.clear();
         m_batchSettings.vocabulary.clear();
@@ -310,7 +314,12 @@ void FileTranscriptionSession::prepareProviders()
     // it, exactly as a dictation starts.
     std::optional<SpeechPrepareJob> speechJob = m_transcriber->createPrepareJob(m_batchSettings.speech);
     SpeechPrepareResult prepared{true, {}};
-    if (!speechJob) {
+    if (const QString problem = spokenLanguageProblem(
+            m_batchSettings.speech, m_providers->speechProviderLabel(m_batchSettings.speech.providerId));
+        !problem.isEmpty()) {
+        speechJob.reset();
+        prepared = {false, problem};
+    } else if (!speechJob) {
         prepared = m_transcriber->prepare(m_batchSettings.speech);
     }
     m_preparation->start(++m_preparationGeneration, std::move(speechJob), std::move(refreshJob), prepared);

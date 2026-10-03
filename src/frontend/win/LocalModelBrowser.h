@@ -60,6 +60,7 @@ private:
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_speed{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_wer{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_textShows{nullptr};
+    winrt::Microsoft::UI::Xaml::Controls::TextBlock m_language{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_licence{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::TextBlock m_prosCons{nullptr};
     winrt::Microsoft::UI::Xaml::Controls::InfoBar m_problem{nullptr};

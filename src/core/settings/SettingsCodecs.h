@@ -24,6 +24,7 @@ public:
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
     QString speechProvider() const; void setSpeechProvider(const QString &value);
     bool codexFinalRetranscribe() const; void setCodexFinalRetranscribe(bool value);
+    QString spokenLanguage() const; void setSpokenLanguage(const QString &value);
     LocalSpeechSettings localSpeechSettings() const; void setLocalSpeechSettings(const LocalSpeechSettings &value);
     // Without apiKey: SettingsStore keeps the key in the keyring.
     SpeechEndpointSettings speechEndpointSettings() const; void setSpeechEndpointSettings(const SpeechEndpointSettings &value);

@@ -140,7 +140,8 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                                          object.value(QStringLiteral("outputFormat")).toString(),
                                          socket,
                                          files,
-                                         object.value(QStringLiteral("writingProfile")).toString());
+                                         object.value(QStringLiteral("writingProfile")).toString(),
+                                         object.value(QStringLiteral("spokenLanguage")).toString());
                 }
                 m_socketsInCommand.remove(socket);
                 if (m_socketsPendingDelete.remove(socket)) {
@@ -316,6 +317,9 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
         if (overrides.writingProfile) {
             request.insert(QStringLiteral("writingProfile"), *overrides.writingProfile);
         }
+        if (overrides.spokenLanguage) {
+            request.insert(QStringLiteral("spokenLanguage"), *overrides.spokenLanguage);
+        }
         if (!files.isEmpty()) {
             request.insert(QStringLiteral("files"), QJsonArray::fromStringList(files));
         }
@@ -359,6 +363,7 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
             response->state = object.value(QStringLiteral("state")).toString();
             response->message = object.value(QStringLiteral("message")).toString();
             response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
+            response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
         }
         return IpcCommandResult::Sent;
     }
@@ -380,6 +385,9 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
     };
     if (!response.writingProfile.isEmpty()) {
         object.insert(QStringLiteral("writingProfile"), response.writingProfile);
+    }
+    if (!response.spokenLanguage.isEmpty()) {
+        object.insert(QStringLiteral("spokenLanguage"), response.spokenLanguage);
     }
     QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     responseBytes.append('\n');

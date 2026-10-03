@@ -135,7 +135,7 @@ private slots:
         FakeServer server;
         server.route("POST /inference", httpResponse("200 OK", "application/json", "{\"text\":\"ok\"}"));
         endpoint.baseUrl = server.origin();
-        const SpeechEndpointUpload upload = speechEndpointUpload(endpoint, pcm, {});
+        const SpeechEndpointUpload upload = speechEndpointUpload(endpoint, pcm, {}, QStringLiteral("de"));
         QNetworkAccessManager network;
         QNetworkReply *reply = network.post(upload.request, upload.parts);
         upload.parts->setParent(reply);
@@ -159,7 +159,7 @@ private slots:
         QCOMPARE(body.mid(wav + 44, pcm.size()), pcm);
         for (const QByteArray field : {QByteArray("model\"\r\n\r\nwhisper-large-v3-turbo"),
                                        QByteArray("response_format\"\r\n\r\njson"),
-                                       QByteArray("language\"\r\n\r\nen"),
+                                       QByteArray("language\"\r\n\r\nde"),
                                        QByteArray("stream\"\r\n\r\ntrue")}) {
             QVERIFY2(body.contains(field), field.constData());
         }
@@ -176,6 +176,22 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
         QCOMPARE(server.requests.size(), 1);
         QVERIFY(server.requests.first().contains("name=\"prompt\"\r\n\r\nSpeecher, Kirigami Addons\r\n"));
+    }
+
+    void speechUploadLeavesTheLanguageToTheServerForAutomatic()
+    {
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"ok\"}"));
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = server.origin();
+        settings.language = QStringLiteral("auto");
+        transcriber.startAttempt(1, settings);
+        transcriber.sendAudio(1, QByteArray(640, '\0'));
+        transcriber.finishInput(1);
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
+        QVERIFY(!server.requests.first().contains("name=\"language\""));
     }
 
     // The endpoint gets what Claude Voice gets: 101 short terms send 100.
