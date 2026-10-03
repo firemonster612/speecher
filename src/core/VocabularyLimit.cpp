@@ -94,10 +94,10 @@ QString summary(const QStringList &terms, const QStringList &keyTerms, const QSt
     }
     const QStringList sent = speechKeyterms(keyTerms, speechProviderId);
     if (sent.size() < terms.size()) {
-        return QStringLiteral("%1 terms. %2 are key terms, and %3.")
-            .arg(terms.size())
-            .arg(sent.size())
-            .arg(refinement);
+        const QString count = terms.size() == 1 ? QStringLiteral("1 term") : QStringLiteral("%1 terms").arg(terms.size());
+        const QString sentCount =
+            sent.size() == 1 ? QStringLiteral("1 is a key term") : QStringLiteral("%1 are key terms").arg(sent.size());
+        return QStringLiteral("%1. %2, and %3.").arg(count, sentCount, refinement);
     }
     return QStringLiteral("%1 of %2 key terms").arg(terms.size()).arg(maxKeyterms);
 }

@@ -130,11 +130,13 @@ QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
         }
     }
     // Corrections sit last, so an over-cap list drops them before any term
-    // the person typed.
+    // the person typed. One whose text is a listed term adds nothing: that
+    // entry's own profiles and Key term decide whether it goes.
     for (const LearnedCorrection &correction : corrections) {
-        if (correction.enabled && !terms.contains(correction.corrected, Qt::CaseInsensitive)
-            && (writingProfile.isEmpty()
-                || !vocabularyTermExcluded(normalized, correction.corrected, writingProfile))) {
+        const bool listed = std::any_of(normalized.cbegin(), normalized.cend(), [&](const VocabularyEntry &entry) {
+            return entry.term.compare(correction.corrected.simplified(), Qt::CaseInsensitive) == 0;
+        });
+        if (correction.enabled && !listed && !terms.contains(correction.corrected, Qt::CaseInsensitive)) {
             terms.append(correction.corrected);
         }
     }
@@ -177,20 +179,24 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
             normalized.append(entry);
         } else {
             duplicate->starred = duplicate->starred || entry.starred;
-            duplicate->keyTerm = duplicate->keyTerm || entry.keyTerm;
             duplicate->frequency = qMax(duplicate->frequency, entry.frequency);
             duplicate->lastUsedMs = qMax(duplicate->lastUsedMs, entry.lastUsedMs);
-            // The copy already listed keeps its context and profiles, so an
-            // imported row naming the term cannot lift its limit. A context
+            // The copy already listed keeps its Key term, context and
+            // profiles, so an imported row naming the term cannot send it to
+            // the speech service or lift its limit. A context
             // it lacks comes from the later copy.
             if (duplicate->context.isEmpty()) {
                 duplicate->context = entry.context;
             }
         }
     }
+    // Priority only counts for a key term; one whose Key term is off keeps
+    // its Priority stored but takes its place among the rest.
     std::sort(normalized.begin(), normalized.end(), [](const VocabularyEntry &left, const VocabularyEntry &right) {
-        if (left.starred != right.starred) {
-            return left.starred;
+        const bool leftFirst = left.starred && left.keyTerm;
+        const bool rightFirst = right.starred && right.keyTerm;
+        if (leftFirst != rightFirst) {
+            return leftFirst;
         }
         if (left.frequency != right.frequency) {
             return left.frequency > right.frequency;

@@ -2066,8 +2066,6 @@ QStringList vocabularyTerms(const QList<VocabularyEntry> &entries)
     return terms;
 }
 
-// Where a term came from, as the Source column says it. The stored id stays
-// under kSourceIdKey, since the column only shows it.
 // The terms marked to go to the speech service, in the order they would.
 QStringList vocabularyKeyTerms(const QList<VocabularyEntry> &entries)
 {
@@ -2080,6 +2078,8 @@ QStringList vocabularyKeyTerms(const QList<VocabularyEntry> &entries)
     return terms;
 }
 
+// Where a term came from, as the Source column says it. The stored id stays
+// under kSourceIdKey, since the column only shows it.
 QString vocabularySourceLabel(const QString &source)
 {
     if (source == QStringLiteral("csv")) {

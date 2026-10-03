@@ -22,7 +22,8 @@ bool vocabularyTermExcluded(const QList<VocabularyEntry> &entries,
                             const QString &term,
                             const QString &writingProfile);
 // The terms a speech request carries under the Writing Profile: the key terms
-// that apply to it, then the enabled Learned Corrections, within the caps. An
+// that apply to it, then the enabled Learned Corrections for terms the list
+// does not hold, within the caps. An
 // empty profile takes every entry, for a request made before one is known.
 QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
                              const QList<LearnedCorrection> &corrections,
