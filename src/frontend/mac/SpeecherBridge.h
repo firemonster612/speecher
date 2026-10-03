@@ -64,6 +64,8 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSString *help;
 // Text columns only: the column whose value the cell shows as a muted second line.
 @property (nonatomic, readonly, copy) NSString *detailColumn;
+// Toggle columns only: the Toggle column this field is disabled without, in the sheet.
+@property (nonatomic, readonly, copy) NSString *enabledBy;
 // ChoiceSet columns only: the sheet's two choices, every option or the ticked ones.
 @property (nonatomic, readonly, copy) NSString *everyChoice;
 @property (nonatomic, readonly, copy) NSString *someChoice;
@@ -252,6 +254,9 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // records as they stand and the draft's other settings.
 - (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
     NS_SWIFT_NAME(badges(for:forRowId:));
+// The pill at the start of each record's detail line, the same way.
+- (NSArray<NSString *> *)detailBadgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
+    NS_SWIFT_NAME(detailBadges(for:forRowId:));
 // What a ChoiceSet cell says for these option ids, speecher::choiceSetText.
 - (NSString *)choiceSetTextForColumn:(NSString *)columnId
                              inRowId:(NSString *)rowId

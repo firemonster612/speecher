@@ -549,6 +549,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) BOOL dialogOnly;
 @property (nonatomic, copy) NSString *help;
 @property (nonatomic, copy) NSString *detailColumn;
+@property (nonatomic, copy) NSString *enabledBy;
 @property (nonatomic, copy) NSString *everyChoice;
 @property (nonatomic, copy) NSString *someChoice;
 @end
@@ -1277,6 +1278,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         model.dialogOnly = column.dialogOnly;
         model.help = column.help.toNSString();
         model.detailColumn = column.detailColumn.toNSString();
+        model.enabledBy = column.enabledBy.toNSString();
         model.everyChoice = column.everyChoice.toNSString();
         model.someChoice = column.someChoice.toNSString();
         [columns addObject:model];
@@ -1554,16 +1556,25 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 - (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
 {
+    return [self pills:&CollectionDescriptor::badges ofRecords:records forRowId:rowId];
+}
+
+- (NSArray<NSString *> *)detailBadgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
+{
+    return [self pills:&CollectionDescriptor::detailBadges ofRecords:records forRowId:rowId];
+}
+
+// One of a collection's per-record pill lists, for these records.
+- (NSArray<NSString *> *)pills:(decltype(&CollectionDescriptor::badges))which
+                     ofRecords:(NSArray<SpeecherRecord *> *)records
+                      forRowId:(NSString *)rowId
+{
     const SettingsRow *row = [self rowWithId:rowId];
     const CollectionDescriptor *collection = row ? [self collectionForRow:*row] : nullptr;
-    if (!collection || !collection->badges) {
+    if (!collection || !(collection->*which)) {
         return @[];
     }
-    NSMutableArray<NSString *> *badges = [NSMutableArray array];
-    for (const QString &badge : collection->badges(coreRecords(records), _state->draft)) {
-        [badges addObject:badge.toNSString()];
-    }
-    return badges;
+    return bridgedStrings((collection->*which)(coreRecords(records), _state->draft));
 }
 
 - (const CollectionColumn *)column:(NSString *)columnId inRowId:(NSString *)rowId

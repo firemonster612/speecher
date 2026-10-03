@@ -209,7 +209,15 @@ final class CollectionEditor: ObservableObject {
     /// The pill after each record's stretch column, by record, re-derived from
     /// the records as they now stand whenever they change.
     var badges: [UUID: String] {
-        let texts = model.bridge.settingsSchema.badges(for: records.map(\.values), forRowId: row.rowId)
+        byRecord(model.bridge.settingsSchema.badges(for: records.map(\.values), forRowId: row.rowId))
+    }
+
+    /// The pill at the start of the stretch column's second line, the same way.
+    var detailBadges: [UUID: String] {
+        byRecord(model.bridge.settingsSchema.detailBadges(for: records.map(\.values), forRowId: row.rowId))
+    }
+
+    private func byRecord(_ texts: [String]) -> [UUID: String] {
         var byRecord: [UUID: String] = [:]
         for (record, text) in zip(records, texts) where !text.isEmpty {
             byRecord[record.id] = text
@@ -280,6 +288,7 @@ struct CollectionRow: View {
 
     private var table: some View {
         let badges = editor.badges
+        let detailBadges = editor.detailBadges
         return Table(editor.records, selection: $editor.selection) {
             TableColumnForEach(editor.tableColumns, id: \.columnId) { column in
                 TableColumn(column.title) { record in
@@ -292,8 +301,15 @@ struct CollectionRow: View {
                             }
                         }
                         .help(editor.tooltip(column.columnId, record: record.id))
-                        if !column.detailColumn.isEmpty {
-                            RecordDetail(text: RecordField.string(record.values[column.detailColumn]))
+                        // A pill with no detail still gets the line.
+                        let detailBadge = column.stretch ? detailBadges[record.id] : nil
+                        if !column.detailColumn.isEmpty || detailBadge != nil {
+                            HStack {
+                                if let detailBadge {
+                                    RecordBadge(text: detailBadge, tint: Color(nsColor: .systemGray))
+                                }
+                                RecordDetail(text: RecordField.string(record.values[column.detailColumn]))
+                            }
                         }
                     }
                 }
@@ -421,6 +437,7 @@ struct RecordSheet: View {
                         LabeledContent(column.title) {
                             VStack(alignment: .leading) {
                                 field(column)
+                                    .disabled(!enabled(column))
                                 if !column.help.isEmpty {
                                     Text(column.help)
                                         .font(.subheadline)
@@ -481,6 +498,11 @@ struct RecordSheet: View {
             RecordField(column: column, value: draft(column.columnId),
                         commitsImmediately: true, placeholder: column.placeholder)
         }
+    }
+
+    /// A toggle stays off-limits while the toggle it depends on is off.
+    private func enabled(_ column: CollectionColumnModel) -> Bool {
+        column.enabledBy.isEmpty || (editor.draft[column.enabledBy] as? NSNumber)?.boolValue == true
     }
 
     /// Only some options with none of them ticked cannot be kept.
@@ -584,10 +606,11 @@ struct RecordDetail: View {
     }
 }
 
-/// A short label on a capsule after a record's name, in the accent colour, as
-/// the Local models pane shows a rating.
+/// A short label on a capsule, as the Local models pane shows a rating: in the
+/// accent after a record's name, or in grey at the start of its second line.
 struct RecordBadge: View {
     let text: String
+    var tint = Color(nsColor: .controlAccentColor)
 
     var body: some View {
         Text(text)
@@ -595,7 +618,7 @@ struct RecordBadge: View {
             .fixedSize()
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
-            .background(Capsule().fill(Color(nsColor: .controlAccentColor).opacity(0.3)))
+            .background(Capsule().fill(tint.opacity(0.3)))
             .accessibilityLabel(text)
     }
 }
