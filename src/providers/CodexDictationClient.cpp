@@ -39,7 +39,7 @@ bool isAuthenticationError(const QString &message, const QJsonObject &event = {}
 
 } // namespace
 
-CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs)
+CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs, int keepAliveMs)
     : QObject(parent)
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
@@ -55,6 +55,16 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs)
                  true,
                  QStringLiteral("finalize"));
             m_socket.abort();
+        }
+    });
+    m_keepAliveTimer.setSingleShot(true);
+    m_keepAliveTimer.setInterval(keepAliveMs);
+    connect(&m_keepAliveTimer, &QTimer::timeout, this, [this] {
+        // sendAudio() doesn't check m_cancelled or m_failureEmitted, so audio
+        // arriving after either can restart this timer.
+        if (!m_finalizing && !m_sessionClosed && !m_cancelled && !m_failureEmitted) {
+            const int bytesPer100Ms = m_socket.property("sampleRateHz").toInt() / 10 * 2;
+            sendAudioMessage(QByteArray(bytesPer100Ms, '\0'));
         }
     });
     connect(this, &CodexDictationClient::partialTranscript, this, &CodexDictationClient::extendCloseWait);
@@ -103,6 +113,7 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs)
             });
 #else
     Q_UNUSED(closeTimeoutMs)
+    Q_UNUSED(keepAliveMs)
 #endif
 }
 
@@ -120,6 +131,7 @@ void CodexDictationClient::start(const QUrl &url,
     m_cancelled = false;
     m_failureEmitted = false;
     m_closeTimer.stop();
+    m_keepAliveTimer.stop();
     ++m_sessionId;
 
     m_socket.setProperty("sampleRateHz", sampleRateHz);
@@ -168,7 +180,7 @@ void CodexDictationClient::sendSessionStart(int sampleRateHz)
         {QStringLiteral("num_channels"), 1},
         {QStringLiteral("max_buffer_size_bytes"), 4 * 1024 * 1024},
         {QStringLiteral("max_utterance_duration_ms"), 30000},
-        {QStringLiteral("session_ttl_ms"), 300000},
+        {QStringLiteral("session_ttl_ms"), sessionTtlMs},
         {QStringLiteral("provider_mode"), QStringLiteral("streaming_sse")},
         {QStringLiteral("transcript_delivery_mode"), QStringLiteral("segment")},
         {QStringLiteral("vad"), vad},
@@ -205,6 +217,7 @@ void CodexDictationClient::sendAudioMessage(const QByteArray &pcm)
         {QStringLiteral("type"), QStringLiteral("audio.append")},
         {QStringLiteral("audio"), QString::fromLatin1(pcm.toBase64())},
     }).toJson(QJsonDocument::Compact)));
+    m_keepAliveTimer.start();
 #else
     Q_UNUSED(pcm)
 #endif
@@ -259,6 +272,7 @@ void CodexDictationClient::cancel()
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     m_cancelled = true;
     m_closeTimer.stop();
+    m_keepAliveTimer.stop();
     m_pendingAudio.clear();
     m_socket.abort();
 #endif
@@ -283,6 +297,7 @@ void CodexDictationClient::handleTextMessage(const QString &message)
     if (type == QStringLiteral("session.started")) {
         if (!m_sessionStarted) {
             m_sessionStarted = true;
+            m_keepAliveTimer.start();
             flushPendingAudio();
             emit connected();
             if (m_finishRequested) {
@@ -296,10 +311,11 @@ void CodexDictationClient::handleTextMessage(const QString &message)
                .value(QStringLiteral("status")).toString() == QStringLiteral("closed")) {
         if (!m_sessionClosed) {
             // Either the closure this client asked for, or one the service
-            // imposed mid-stream (session_ttl_ms expiring). Both end the
-            // attempt; the Dictation Session rolls a mid-stream end over to a
-            // new attempt. Close first: a rollover runs inside completed()
-            // and aborts this socket.
+            // imposed mid-stream. Both end the attempt; the Dictation Session
+            // rolls a mid-stream end over to a new attempt. (An expired
+            // session_ttl_ms does not arrive here: the service sends nothing,
+            // which is what the idle keep-alive is for.) Close first: a
+            // rollover runs inside completed() and aborts this socket.
             m_sessionClosed = true;
             m_socket.close();
             emit completed();

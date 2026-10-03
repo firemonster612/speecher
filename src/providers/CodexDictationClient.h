@@ -24,9 +24,22 @@ class CodexDictationClient final : public QObject {
     Q_OBJECT
 
 public:
+    // The service ends a session once session_ttl_ms passes with no audio
+    // (expires_at_ms = last_activity_ms + session_ttl_ms, and every
+    // audio.append moves last_activity_ms), and it says nothing when that
+    // happens: the next audio.append gets session_not_found. A live stream
+    // that has sent no audio for idleKeepAliveMs (the microphone's voice
+    // gate holds silence back) sends 100 ms of silence, so a pause longer
+    // than the TTL can't swallow the first words after it. Half the TTL
+    // leaves minutes of slack for a late timer.
+    static constexpr int sessionTtlMs = 300000;
+    static constexpr int idleKeepAliveMs = sessionTtlMs / 2;
+
     // closeTimeoutMs: how long the service may go quiet after the client
     // asks to close before the stream counts as failed.
-    explicit CodexDictationClient(QObject *parent = nullptr, int closeTimeoutMs = 8000);
+    explicit CodexDictationClient(QObject *parent = nullptr,
+                                  int closeTimeoutMs = 8000,
+                                  int keepAliveMs = idleKeepAliveMs);
 
     void start(const QUrl &url, const QString &accessToken, int sampleRateHz);
     void sendAudio(const QByteArray &pcm);
@@ -53,6 +66,7 @@ private:
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     QWebSocket m_socket;
     QTimer m_closeTimer;
+    QTimer m_keepAliveTimer;
 #endif
     QList<QByteArray> m_pendingAudio;
     QSet<QString> m_finalUtteranceIds;
