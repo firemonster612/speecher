@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 // behind whichever row asked for it.
 //
 // The shape is System Settings': a table, a +/− accessory bar under it, and
-// adding through a sheet so the record can be checked before it exists.
+// adding through a sheet so the record can be checked before it exists. A
+// collection that names an edit command opens a record in the same sheet.
 // Removing asks nothing, because Undo delete puts it back, as on Linux and
 // Windows. A grouped form caps its content width, which is why
 // the table is as wide as the card and not as wide as the window; that is the
@@ -29,10 +30,13 @@ final class CollectionEditor: ObservableObject {
     @Published private(set) var problems: [String] = []
     /// Set when an import is what was refused.
     @Published private(set) var problemsTitle = ""
-    @Published var adding = false
+    @Published var recordSheetShown = false
     @Published var importing = false
-    /// The record the add sheet is filling in.
+    /// The record the sheet is filling in: a blank one, or a copy of the one
+    /// being edited.
     @Published var draft: [String: Any] = [:]
+    /// The record the sheet edits; nil while it adds one.
+    @Published private(set) var editing: UUID?
 
     /// What Delete took and where it stood, newest last, so undo can put it
     /// back in its place.
@@ -46,7 +50,19 @@ final class CollectionEditor: ObservableObject {
     var collection: CollectionModel { row.collection! }
     var canAdd: Bool { !collection.addLabel.isEmpty }
     var canRemove: Bool { records.contains { selection.contains($0.id) && !$0.locked } }
+    var canEdit: Bool { !collection.editLabel.isEmpty }
+    /// The selected record when it is the only one and may be edited.
+    var selectedEditable: UUID? {
+        guard selection.count == 1, let id = selection.first,
+              records.contains(where: { $0.id == id && !$0.locked }) else { return nil }
+        return id
+    }
     var editableRecords: [[String: Any]] { records.filter { !$0.locked }.map(\.values) }
+    /// A dialog-only column stays out of the table only where the sheet can
+    /// reopen a record; elsewhere its cell is the one place to change it.
+    var tableColumns: [CollectionColumnModel] {
+        collection.columns.filter { !($0.dialogOnly && canEdit) }
+    }
 
     init(row: SettingsRowModel, model: AppModel) {
         self.row = row
@@ -59,17 +75,16 @@ final class CollectionEditor: ObservableObject {
         guard !seeded else { return }
         seeded = true
         load(from: row)
-        draft = collection.blankRecord
     }
 
     /// A settings reopen reloaded the draft. A clean editor replaces its
     /// records and its merge baseline together from the fresh snapshot, so
     /// records learned or changed while the window was closed appear. A dirty
-    /// editor — a refused save, or the add sheet mid-record — keeps its state:
+    /// editor — a refused save, or the sheet mid-record — keeps its state:
     /// reloading would silently discard pending work, and the next successful
     /// save re-syncs both.
     func reload(from freshRow: SettingsRowModel) {
-        guard seeded, problems.isEmpty, !adding else { return }
+        guard seeded, problems.isEmpty, !recordSheetShown else { return }
         load(from: freshRow)
         // The reloaded records carry new identities, so the old selection
         // points at nothing.
@@ -91,14 +106,42 @@ final class CollectionEditor: ObservableObject {
         save()
     }
 
-    /// Empty once the draft was taken; otherwise why it was refused, so the
-    /// sheet can stay open with the record still in it.
-    func commitDraft() -> [String] {
-        let proposed = editableRecords + [draft]
-        let refusals = model.bridge.settingsSchema.problems(with: proposed, forRowId: row.rowId)
-        guard refusals.isEmpty else { return refusals }
-        records.append(CollectionRecord(values: draft, locked: false))
+    func add() {
+        editing = nil
         draft = collection.blankRecord
+        recordSheetShown = true
+    }
+
+    func edit(_ id: UUID) {
+        guard canEdit, let record = records.first(where: { $0.id == id }), !record.locked else { return }
+        editing = id
+        draft = record.values
+        recordSheetShown = true
+    }
+
+    /// The add sheet's title, or the edited record's name: its first text value.
+    var sheetTitle: String {
+        guard let record = records.first(where: { $0.id == editing }),
+              let name = collection.columns.first(where: { $0.kind == .text }) else {
+            return collection.addDialogTitle
+        }
+        return RecordField.string(record.values[name.columnId])
+    }
+
+    /// Empty once the sheet's record was added or replaced the edited one;
+    /// otherwise why it was refused, so the sheet can stay open with the
+    /// record still in it.
+    func commit(_ record: [String: Any]) -> [String] {
+        var proposed = records
+        if let index = proposed.firstIndex(where: { $0.id == editing }) {
+            proposed[index].values = record
+        } else {
+            proposed.append(CollectionRecord(values: record, locked: false))
+        }
+        let refusals = model.bridge.settingsSchema.problems(
+            with: proposed.filter { !$0.locked }.map(\.values), forRowId: row.rowId)
+        guard refusals.isEmpty else { return refusals }
+        records = proposed
         save()
         return []
     }
@@ -174,6 +217,12 @@ final class CollectionEditor: ObservableObject {
         return byRecord
     }
 
+    func choiceSetText(_ column: CollectionColumnModel, record: CollectionRecord) -> String {
+        model.bridge.settingsSchema.choiceSetText(forColumn: column.columnId,
+                                                  inRowId: row.rowId,
+                                                  ids: record.values[column.columnId] as? [String] ?? [])
+    }
+
     func tooltip(_ columnId: String, record id: UUID) -> String {
         guard let record = records.first(where: { $0.id == id }) else { return "" }
         return model.bridge.settingsSchema.tooltip(forColumn: columnId,
@@ -232,20 +281,33 @@ struct CollectionRow: View {
     private var table: some View {
         let badges = editor.badges
         return Table(editor.records, selection: $editor.selection) {
-            TableColumnForEach(editor.collection.columns, id: \.columnId) { column in
+            TableColumnForEach(editor.tableColumns, id: \.columnId) { column in
                 TableColumn(column.title) { record in
-                    HStack {
-                        RecordCell(editor: editor, column: column, record: record,
-                                   editable: row.enabled)
-                        if column.stretch, let badge = badges[record.id] {
-                            RecordBadge(text: badge)
+                    VStack(alignment: .leading) {
+                        HStack {
+                            RecordCell(editor: editor, column: column, record: record,
+                                       editable: row.enabled)
+                            if column.stretch, let badge = badges[record.id] {
+                                RecordBadge(text: badge)
+                            }
+                        }
+                        .help(editor.tooltip(column.columnId, record: record.id))
+                        if !column.detailColumn.isEmpty {
+                            RecordDetail(text: RecordField.string(record.values[column.detailColumn]))
                         }
                     }
-                    .help(editor.tooltip(column.columnId, record: record.id))
                 }
                 .width(min: Self.width(column).min,
                        ideal: Self.width(column).ideal,
                        max: Self.width(column).max)
+            }
+        }
+        // Double-click or Return opens a record, as the Edit command does.
+        .contextMenu(forSelectionType: CollectionRecord.ID.self) { _ in
+            EmptyView()
+        } primaryAction: { ids in
+            if row.enabled, ids.count == 1, let id = ids.first {
+                editor.edit(id)
             }
         }
         .overlay {
@@ -256,7 +318,7 @@ struct CollectionRow: View {
                     Text(editor.collection.emptyHelp)
                 } actions: {
                     if editor.canAdd {
-                        Button(editor.collection.addLabel) { editor.adding = true }
+                        Button(editor.collection.addLabel) { editor.add() }
                             .disabled(!row.enabled)
                     }
                 }
@@ -287,12 +349,18 @@ struct CollectionRow: View {
     private var accessoryBar: some View {
         HStack {
             if editor.canAdd {
-                Button("Add", systemImage: "plus") { editor.adding = true }
+                Button("Add", systemImage: "plus") { editor.add() }
                     .help(editor.collection.addLabel)
             }
             Button(editor.collection.deleteLabel, systemImage: "minus") { editor.removeSelected() }
                 .help(editor.collection.deleteLabel)
                 .disabled(!editor.canRemove)
+            if editor.canEdit {
+                Button(editor.collection.editLabel) {
+                    if let id = editor.selectedEditable { editor.edit(id) }
+                }
+                .disabled(editor.selectedEditable == nil)
+            }
             Spacer()
             if !editor.collection.importLabel.isEmpty {
                 Button(editor.collection.importLabel) { editor.importing = true }
@@ -308,8 +376,8 @@ struct CollectionRow: View {
         .disabled(!row.enabled)
         .buttonStyle(.accessoryBar)
         .labelStyle(.iconOnly)
-        .sheet(isPresented: $editor.adding) {
-            AddRecordSheet(editor: editor)
+        .sheet(isPresented: $editor.recordSheetShown) {
+            RecordSheet(editor: editor)
         }
         .fileImporter(isPresented: $editor.importing,
                       allowedContentTypes: editor.importContentTypes) { result in
@@ -320,13 +388,26 @@ struct CollectionRow: View {
     }
 }
 
-/// Adding a record is a scoped task with its own fields and its own validation,
-/// which is what a sheet is for — and it means the record is checked before it
-/// exists rather than after a blank row has already been saved.
-struct AddRecordSheet: View {
+/// Adding or editing a record is a scoped task with its own fields and its own
+/// validation, which is what a sheet is for — and it means the record is
+/// checked before it exists rather than after a blank row has already been
+/// saved.
+struct RecordSheet: View {
     @ObservedObject var editor: CollectionEditor
     @Environment(\.dismiss) private var dismiss
     @State private var refusals: [String] = []
+    /// Which ChoiceSet fields are on their second choice, by column. Apart from
+    /// the ticks, so switching to every option and back keeps them.
+    @State private var limited: [String: Bool]
+
+    init(editor: CollectionEditor) {
+        _editor = ObservedObject(wrappedValue: editor)
+        var limited: [String: Bool] = [:]
+        for column in editor.collection.columns where column.kind == .choiceSet {
+            limited[column.columnId] = !Self.ticked(column, in: editor.draft).isEmpty
+        }
+        _limited = State(initialValue: limited)
+    }
 
     private var columns: [CollectionColumnModel] {
         editor.collection.columns.filter { $0.kind != .readOnly }
@@ -338,13 +419,19 @@ struct AddRecordSheet: View {
                 Section {
                     ForEach(columns, id: \.columnId) { column in
                         LabeledContent(column.title) {
-                            RecordField(column: column,
-                                        value: draft(column.columnId),
-                                        commitsImmediately: true)
+                            VStack(alignment: .leading) {
+                                field(column)
+                                if !column.help.isEmpty {
+                                    Text(column.help)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
                         }
                     }
                 } header: {
-                    Text(editor.collection.addDialogTitle)
+                    Text(editor.sheetTitle)
                 } footer: {
                     if !refusals.isEmpty {
                         RefusalLabel(title: "", problems: refusals)
@@ -357,17 +444,63 @@ struct AddRecordSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
-                Button("Add") {
-                    refusals = editor.commitDraft()
+                Button(editor.editing == nil ? "Add" : "OK") {
+                    refusals = editor.commit(record)
                     if refusals.isEmpty { dismiss() }
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(limitedToNothing)
             }
             .scenePadding()
         }
-        // A sheet does not resize itself to its content the way a window does,
-        // so it is told the room its fields need.
-        .frame(minWidth: 420, minHeight: 180)
+        // A grouped form scrolls, so it gives a sheet no height to fit to; the
+        // sheet is told the room its fields need, and can be resized.
+        .frame(minWidth: 420, minHeight: 180, idealHeight: idealHeight)
+        .presentationSizing(.fitted)
+    }
+
+    /// A line per field, more for a multi-line field, a ChoiceSet's options and
+    /// help under a field, plus the header and the buttons.
+    private var idealHeight: CGFloat {
+        let lines = columns.reduce(0) { lines, column in
+            let field = column.kind == .choiceSet ? 2 + column.options.count : column.multiline ? 4 : 1
+            return lines + field + (column.help.isEmpty ? 0 : 2)
+        }
+        return CGFloat(lines) * 24 + 120
+    }
+
+    @ViewBuilder private func field(_ column: CollectionColumnModel) -> some View {
+        if column.kind == .choiceSet {
+            ChoiceSetField(column: column,
+                           ids: Binding(get: { Self.ticked(column, in: editor.draft) },
+                                        set: { editor.draft[column.columnId] = $0 }),
+                           limited: Binding(get: { limited[column.columnId] ?? false },
+                                            set: { limited[column.columnId] = $0 }))
+        } else {
+            RecordField(column: column, value: draft(column.columnId),
+                        commitsImmediately: true, placeholder: column.placeholder)
+        }
+    }
+
+    /// Only some options with none of them ticked cannot be kept.
+    private var limitedToNothing: Bool {
+        columns.contains { limited[$0.columnId] == true && Self.ticked($0, in: editor.draft).isEmpty }
+    }
+
+    /// The draft as the sheet keeps it: a ChoiceSet on every option holds no ids.
+    private var record: [String: Any] {
+        var record = editor.draft
+        for column in columns where column.kind == .choiceSet {
+            let ids: [String] = limited[column.columnId] == true ? Self.ticked(column, in: record) : []
+            record[column.columnId] = ids
+        }
+        return record
+    }
+
+    /// A ChoiceSet's ids that are options it offers, in the options' order.
+    private static func ticked(_ column: CollectionColumnModel, in record: [String: Any]) -> [String] {
+        let ids = record[column.columnId] as? [String] ?? []
+        return column.options.map(\.rowOptionId).filter(ids.contains)
     }
 
     private func draft(_ columnId: String) -> Binding<Any?> {
@@ -376,7 +509,39 @@ struct AddRecordSheet: View {
     }
 }
 
-/// Why records were refused, the same in the table, the add sheet and an
+/// Every option, or only the ticked ones: two radio buttons, with a checkbox
+/// per option under the second that only it enables.
+struct ChoiceSetField: View {
+    let column: CollectionColumnModel
+    @Binding var ids: [String]
+    @Binding var limited: Bool
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Picker("", selection: $limited) {
+                Text(column.everyChoice).tag(false)
+                Text(column.someChoice).tag(true)
+            }
+            .pickerStyle(.radioGroup)
+            .labelsHidden()
+            VStack(alignment: .leading) {
+                ForEach(column.options, id: \.rowOptionId) { option in
+                    Toggle(option.label, isOn: tick(option.rowOptionId))
+                        .toggleStyle(.checkbox)
+                }
+            }
+            .padding(.leading)
+            .disabled(!limited)
+        }
+    }
+
+    private func tick(_ id: String) -> Binding<Bool> {
+        Binding(get: { ids.contains(id) },
+                set: { ticked in ids = ticked ? ids + [id] : ids.filter { $0 != id } })
+    }
+}
+
+/// Why records were refused, the same in the table, the sheet and an
 /// import: the records were not saved, so it reads as an error.
 struct RefusalLabel: View {
     let title: String
@@ -394,6 +559,23 @@ struct RefusalLabel: View {
             Image(systemName: "exclamationmark.octagon.fill")
         }
         .foregroundStyle(.red)
+    }
+}
+
+/// What a record's detail column holds, as one muted line under its cell's own.
+struct RecordDetail: View {
+    let text: String
+
+    var body: some View {
+        // One line: a multi-line detail reads as one.
+        let line = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if !line.isEmpty {
+            Text(line)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(text)
+        }
     }
 }
 
@@ -422,7 +604,11 @@ struct RecordCell: View {
     var editable = true
 
     var body: some View {
-        if record.locked || column.kind == .readOnly || !editable {
+        if column.kind == .choiceSet {
+            // Picked in the sheet; the cell names the options.
+            let text = editor.choiceSetText(column, record: record)
+            Text(text).help(text)
+        } else if record.locked || column.kind == .readOnly || !editable {
             Text(RecordField.display(column, record.values[column.columnId]))
         } else {
             RecordField(column: column, value: value)
@@ -439,17 +625,19 @@ struct RecordCell: View {
 }
 
 /// The control a column's kind asks for, over a record's untyped value. Shared
-/// by the table's cells and the add sheet's fields so the two cannot disagree
+/// by the table's cells and the sheet's fields so the two cannot disagree
 /// about what a column accepts.
 struct RecordField: View {
     let column: CollectionColumnModel
     @Binding var value: Any?
-    /// The add sheet's fields write through on every keystroke: clicking the
+    /// The sheet's fields write through on every keystroke: clicking the
     /// sheet's Add button does not move focus on macOS, so a field that only
-    /// commits on focus-out would hand commitDraft() a draft missing the text
+    /// commits on focus-out would hand commit(_:) a draft missing the text
     /// still sitting in the field. Table cells keep committing on focus-out,
     /// which is what lets a term momentarily duplicate another while typed.
     var commitsImmediately = false
+    /// The sheet's example in an empty field; table cells show none.
+    var placeholder = ""
 
     var body: some View {
         switch column.kind {
@@ -467,7 +655,7 @@ struct RecordField: View {
             .labelsHidden()
         default:
             CellField(text: text, multiline: column.multiline,
-                      commitsImmediately: commitsImmediately) { value = $0 }
+                      commitsImmediately: commitsImmediately, placeholder: placeholder) { value = $0 }
         }
     }
 
@@ -503,14 +691,16 @@ struct CellField: View {
     /// A snippet's lines: the field grows downward to show them.
     var multiline = false
     var commitsImmediately = false
+    var placeholder = ""
     let commit: (String) -> Void
     @State private var edited = ""
     @FocusState private var editing: Bool
 
     var body: some View {
         // Option-Return starts a new line, as in every multi-line field. The
-        // add sheet shows room for four; a table cell grows to at most four.
-        TextField("", text: $edited, axis: multiline ? .vertical : .horizontal)
+        // sheet shows room for four; a table cell grows to at most four.
+        TextField("", text: $edited, prompt: placeholder.isEmpty ? nil : Text(placeholder),
+                  axis: multiline ? .vertical : .horizontal)
             .lineLimit(4, reservesSpace: multiline && commitsImmediately)
             .labelsHidden()
             .focused($editing)
@@ -520,9 +710,7 @@ struct CellField: View {
                 if commitsImmediately { commit(edited) }
             }
             // No focus-out commit in immediate mode: every keystroke has
-            // already landed, and the focus resigning on the add sheet's way
-            // out would write the old term back into the draft commitDraft()
-            // has just reset for the next record.
+            // already landed.
             .onChange(of: editing) {
                 if !editing && !commitsImmediately { commit(edited) }
             }
