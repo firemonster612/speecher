@@ -541,7 +541,12 @@ final class AppModel: ObservableObject {
     }
 
     func endShortcutRecording() {
-        shortcutProblem = bridge.endShortcutRecording() ?? ""
+        var cancelShortcutFailed: ObjCBool = false
+        let problem = bridge.endShortcutRecording(cancelShortcutFailed: &cancelShortcutFailed) ?? ""
+        shortcutProblem = cancelShortcutFailed.boolValue ? "" : problem
+        if cancelShortcutFailed.boolValue {
+            cancelShortcutProblem = problem
+        }
     }
 
     /// Ends the recording in progress, if any, and restores the hotkey.

@@ -689,18 +689,22 @@ private slots:
     }
 
     // A Cancel Shortcut that could not be taken back after recording is
-    // reported like the dictation one, which wins when both fail.
-    void resumingTheShortcutsReportsTheCancelShortcutsError()
+    // reported as the Cancel Shortcut's, so its row shows it. The dictation
+    // shortcut's error wins when both fail.
+    void resumingTheShortcutsReportsWhichShortcutFailed()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);
+        GlobalShortcutRole failed = GlobalShortcutRole::Dictation;
         platform->cancelBinder->resumeError = QStringLiteral("cancel taken");
         controller.suspendGlobalShortcut();
-        QCOMPARE(controller.resumeGlobalShortcut(), QStringLiteral("cancel taken"));
+        QCOMPARE(controller.resumeGlobalShortcut(&failed), QStringLiteral("cancel taken"));
+        QCOMPARE(int(failed), int(GlobalShortcutRole::Cancel));
 
         platform->binder->resumeError = QStringLiteral("dictation taken");
         controller.suspendGlobalShortcut();
-        QCOMPARE(controller.resumeGlobalShortcut(), QStringLiteral("dictation taken"));
+        QCOMPARE(controller.resumeGlobalShortcut(&failed), QStringLiteral("dictation taken"));
+        QCOMPARE(int(failed), int(GlobalShortcutRole::Dictation));
     }
 
     // The Cancel Shortcut keeps its binding under its own key, next to the

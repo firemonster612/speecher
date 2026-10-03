@@ -973,7 +973,10 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // dictation instead of re-recording it. Recording therefore lets go of the
 // registration first; ending it restores the bound sequence.
 - (void)beginShortcutRecording;
-- (nullable NSString *)endShortcutRecording;
+// A shortcut that could not be taken back returns its error, with
+// cancelShortcutFailed saying whether it was the Cancel Shortcut's.
+- (nullable NSString *)endShortcutRecordingCancelShortcutFailed:(BOOL *)cancelShortcutFailed
+    NS_SWIFT_NAME(endShortcutRecording(cancelShortcutFailed:));
 
 // The Cancel Shortcut: the same recorder's two kinds of binding, and Clear,
 // since it has no default. Each returns nil once done, otherwise why not.

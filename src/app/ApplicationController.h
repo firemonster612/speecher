@@ -134,7 +134,9 @@ public:
     // Lets a shortcut recorder see the bound combinations, and Escape, as key
     // events.
     void suspendGlobalShortcut();
-    QString resumeGlobalShortcut();
+    // The error of a shortcut that could not be taken back, and in failedRole
+    // which one it was, so the front end shows it under that shortcut's row.
+    QString resumeGlobalShortcut(GlobalShortcutRole *failedRole = nullptr);
     void registerGlobalShortcut(GlobalShortcutRole role = GlobalShortcutRole::Dictation);
     // Forgets the desktop's registration of the shortcut, where it keeps one.
     bool removeGlobalShortcutRegistration(QString *error = nullptr, GlobalShortcutRole role = GlobalShortcutRole::Dictation);

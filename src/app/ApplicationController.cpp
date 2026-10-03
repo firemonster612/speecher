@@ -600,13 +600,18 @@ void ApplicationController::suspendGlobalShortcut()
     updateCancelKeyGrab();
 }
 
-QString ApplicationController::resumeGlobalShortcut()
+QString ApplicationController::resumeGlobalShortcut(GlobalShortcutRole *failedRole)
 {
     m_shortcutSuspensions = std::max(0, m_shortcutSuspensions - 1);
     const QString cancelError = m_cancelShortcutBinder->resume();
     const QString error = m_shortcutBinder->resume();
     updateCancelKeyGrab();
-    return error.isEmpty() ? cancelError : error;
+    // A settings page shows one problem at a time; the dictation shortcut's wins.
+    const bool cancelFailed = error.isEmpty() && !cancelError.isEmpty();
+    if (failedRole) {
+        *failedRole = cancelFailed ? GlobalShortcutRole::Cancel : GlobalShortcutRole::Dictation;
+    }
+    return cancelFailed ? cancelError : error;
 }
 
 void ApplicationController::updateCancelKeyGrab()

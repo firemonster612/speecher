@@ -2196,10 +2196,13 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     if (_state->controller) _state->controller->suspendGlobalShortcut();
 }
 
-- (NSString *)endShortcutRecording
+- (NSString *)endShortcutRecordingCancelShortcutFailed:(BOOL *)cancelShortcutFailed
 {
+    *cancelShortcutFailed = NO;
     if (!_state->controller) return nil;
-    const QString error = _state->controller->resumeGlobalShortcut();
+    speecher::GlobalShortcutRole failedRole = speecher::GlobalShortcutRole::Dictation;
+    const QString error = _state->controller->resumeGlobalShortcut(&failedRole);
+    *cancelShortcutFailed = failedRole == speecher::GlobalShortcutRole::Cancel;
     return error.isEmpty() ? nil : error.toNSString();
 }
 

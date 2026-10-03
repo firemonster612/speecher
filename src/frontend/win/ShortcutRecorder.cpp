@@ -341,11 +341,13 @@ void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
         host.controller->suspendGlobalShortcut();
         return;
     }
-    const QString error = host.controller->resumeGlobalShortcut();
+    GlobalShortcutRole failedRole = GlobalShortcutRole::Dictation;
+    const QString error = host.controller->resumeGlobalShortcut(&failedRole);
     // A binding the dialog could not apply says more than the old one failing
     // to come back.
     if (!error.isEmpty() && host.shortcutProblem.isEmpty()) {
         host.shortcutProblem = error;
+        host.shortcutNoteRole = failedRole;
     }
 }
 
