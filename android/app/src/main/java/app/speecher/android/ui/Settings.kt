@@ -506,15 +506,11 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                         )
                 }
             },
-            // The desktop's Key term and Priority columns: a microphone when the speech service
-            // gets the word, faint for a key term it does not, then a star for priority. ListItem
-            // tops the leading and trailing slots of a three-line row, so they fill its height.
+            // The desktop's Key term column: a microphone when the speech service gets the word,
+            // faint for a key term it does not. ListItem tops the leading and trailing slots of a
+            // three-line row, so they fill its height.
             leadingContent = {
-                Row(
-                    Modifier.fillMaxHeight(),
-                    Arrangement.spacedBy(8.dp),
-                    Alignment.CenterVertically,
-                ) {
+                Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
                     // Without case, as the desktop matches: Claude keeps one
                     // spelling of a word an earlier release let in twice.
                     val sent = keyTerms.any { it.equals(word.term, ignoreCase = true) }
@@ -528,13 +524,6 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                             else -> "Key term, but this speech service takes none."
                         },
                         faint = !sent,
-                    )
-                    // Priority only means anything for a key term.
-                    IconSlot(
-                        R.drawable.ic_star,
-                        if (word.priority && word.keyTerm)
-                            "Priority: first in line for the speech service."
-                        else null,
                     )
                 }
             },
@@ -617,7 +606,6 @@ private fun WordEditor(
     var term by rememberSaveable { mutableStateOf(word.term) }
     var context by rememberSaveable { mutableStateOf(word.context) }
     var keyTerm by rememberSaveable { mutableStateOf(word.keyTerm) }
-    var priority by rememberSaveable { mutableStateOf(word.priority) }
     var limited by rememberSaveable { mutableStateOf(word.profiles.isNotEmpty()) }
     var chosen by remember { mutableStateOf(word.profiles) }
     val duplicate =
@@ -651,17 +639,6 @@ private fun WordEditor(
                         "every term either way.",
             ) {
                 keyTerm = !keyTerm
-            }
-            ChoiceRow(
-                "Priority",
-                Role.Checkbox,
-                priority,
-                enabled = keyTerm,
-                supporting =
-                    "Puts the key term first in line for the speech service, so it stays in when " +
-                        "the list is longer than the service takes.",
-            ) {
-                priority = !priority
             }
             OutlinedTextField(
                 context,
@@ -709,7 +686,8 @@ private fun WordEditor(
                         context.trim(),
                         if (limited) chosen else emptySet(),
                         keyTerm,
-                        priority,
+                        // Kept, though no longer edited: a word given priority before stays first.
+                        word.priority,
                     )
                 )
             }

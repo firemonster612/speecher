@@ -552,7 +552,6 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) BOOL dialogOnly;
 @property (nonatomic, copy) NSString *help;
 @property (nonatomic, copy) NSString *detailColumn;
-@property (nonatomic, copy) NSString *enabledBy;
 @property (nonatomic, copy) NSString *everyChoice;
 @property (nonatomic, copy) NSString *someChoice;
 @property (nonatomic, copy) NSString *iconId;
@@ -1290,7 +1289,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         model.dialogOnly = column.dialogOnly;
         model.help = column.help.toNSString();
         model.detailColumn = column.detailColumn.toNSString();
-        model.enabledBy = column.enabledBy.toNSString();
         model.everyChoice = column.everyChoice.toNSString();
         model.someChoice = column.someChoice.toNSString();
         model.iconId = column.iconId.toNSString();

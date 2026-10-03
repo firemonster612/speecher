@@ -74,7 +74,8 @@ struct BindingRule {
 struct VocabularyEntry {
     QString term;
     QString source = QStringLiteral("manual");
-    // Priority: first in line for the speech service.
+    // First in line for the speech service among key terms. No longer shown
+    // or edited; a term starred before keeps its place.
     bool starred = false;
     int frequency = 0;
     qint64 lastUsedMs = 0;

@@ -142,8 +142,6 @@ FontIcon columnIcon(const QString &iconId)
     FontIcon icon;
     if (iconId == QStringLiteral("microphone")) {
         icon.Glyph(L"\uE720"); // Microphone
-    } else if (iconId == QStringLiteral("star")) {
-        icon.Glyph(L"\uE735"); // FavoriteStarFill
     }
     icon.FontSize(16);
     icon.HorizontalAlignment(HorizontalAlignment::Center);
@@ -616,8 +614,6 @@ void CollectionEditor::openRecordDialog(int recordIndex)
     // One field per column a person may fill, so the record is checked before
     // it is kept.
     QList<QPair<QString, std::function<QVariant()>>> readers;
-    // The checkboxes so far, by column, for a later one enabled by them.
-    QList<QPair<QString, CheckBox>> toggles;
     bool named = false;
     for (const CollectionColumnSnapshot &column : m_collection.columns) {
         // Neither holds anything a person fills in.
@@ -630,19 +626,6 @@ void CollectionEditor::openRecordDialog(int recordIndex)
             CheckBox box;
             box.Content(box_value(hs(column.title)));
             box.IsChecked(value.toBool());
-            const auto enabler = std::find_if(toggles.cbegin(), toggles.cend(), [&](const auto &toggle) {
-                return toggle.first == column.enabledBy;
-            });
-            if (enabler != toggles.cend()) {
-                const CheckBox &other = enabler->second;
-                box.IsEnabled(other.IsChecked().GetBoolean());
-                const auto follow = [box](const IInspectable &sender, const RoutedEventArgs &) {
-                    box.IsEnabled(sender.as<CheckBox>().IsChecked().GetBoolean());
-                };
-                other.Checked(follow);
-                other.Unchecked(follow);
-            }
-            toggles.append({column.id, box});
             readers.append({column.id, [box] {
                                 return QVariant(box.IsChecked().GetBoolean());
                             }});

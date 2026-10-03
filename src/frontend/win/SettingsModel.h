@@ -32,9 +32,6 @@ struct CollectionColumnSnapshot {
     bool dialogOnly = false;
     // Said under the field in the record dialog.
     QString help;
-    // Toggle columns only: the Toggle column this one's dialog field is
-    // disabled beside while it is off.
-    QString enabledBy;
     // Text columns only: the column whose value the cell shows as a muted
     // second line.
     QString detailColumn;

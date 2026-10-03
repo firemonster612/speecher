@@ -68,7 +68,6 @@ QIcon collectionIcon(const QString &iconId)
 {
     static const QHash<QString, QStringList> names{
         {QStringLiteral("microphone"), {QStringLiteral("audio-input-microphone")}},
-        {QStringLiteral("star"), {QStringLiteral("starred"), QStringLiteral("rating"), QStringLiteral("emblem-favorite")}},
     };
     for (const QString &name : names.value(iconId)) {
         if (QIcon::hasThemeIcon(name)) {
@@ -738,8 +737,6 @@ void openRecordDialog(QWidget *parent,
     // What must hold before OK takes the record, rechecked as fields change.
     QList<std::function<bool()>> checks;
     const auto recheck = std::make_shared<std::function<void()>>();
-    // The checkboxes so far, by column, for a later one enabled by them.
-    QHash<QString, QCheckBox *> toggles;
     QWidget *firstText = nullptr;
     // A field with help gets it underneath, in one widget with the field: a
     // wrapped label as a row of its own is sized too narrow and clipped.
@@ -777,11 +774,6 @@ void openRecordDialog(QWidget *parent,
         if (column.kind == ColumnKind::Toggle) {
             auto *box = new QCheckBox(column.title, dialog);
             box->setChecked(value.toBool());
-            if (QCheckBox *enabler = toggles.value(column.enabledBy)) {
-                box->setEnabled(enabler->isChecked());
-                QObject::connect(enabler, &QCheckBox::toggled, box, &QWidget::setEnabled);
-            }
-            toggles.insert(column.id, box);
             addField(column, box);
             readers.append([box, id = column.id](QVariantMap &record) {
                 record.insert(id, box->isChecked());

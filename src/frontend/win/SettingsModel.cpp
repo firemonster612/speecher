@@ -261,7 +261,6 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
             shown.placeholder = column.placeholder;
             shown.dialogOnly = column.dialogOnly;
             shown.help = column.help;
-            shown.enabledBy = column.enabledBy;
             shown.detailColumn = column.detailColumn;
             shown.everyChoice = column.everyChoice;
             shown.someChoice = column.someChoice;

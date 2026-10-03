@@ -49,7 +49,6 @@ const QString kLastUsedColumn = QStringLiteral("lastUsed");
 const QString kContextColumn = QStringLiteral("context");
 const QString kKeyTermColumn = QStringLiteral("keyTerm");
 const QString kKeyTermIconColumn = QStringLiteral("keyTermIcon");
-const QString kPriorityIconColumn = QStringLiteral("priorityIcon");
 const QString kProfilesColumn = QStringLiteral("profiles");
 const QString kHeardColumn = QStringLiteral("original");
 const QString kCorrectedColumn = QStringLiteral("corrected");
@@ -2159,13 +2158,8 @@ SettingsPage vocabularyPage()
     keyTerm.dialogOnly = true;
     keyTerm.help = QStringLiteral("Sent to the speech service as a hint, so it hears the term. "
                                   "Refinement uses every term either way.");
-    CollectionColumn priority{kStarColumn, QStringLiteral("Priority"), ColumnKind::Toggle};
-    priority.dialogOnly = true;
-    priority.enabledBy = kKeyTermColumn;
-    priority.help = QStringLiteral("Puts the key term first in line for the speech service, so it stays "
-                                   "in when the list is longer than the service takes.");
-    // The table shows both as icons, as a mail client shows starred and
-    // flagged: a column each, before the term.
+    // The table shows it as an icon before the term, as a mail client shows
+    // a flag.
     CollectionColumn keyTermIcon{kKeyTermIconColumn, QStringLiteral("Key term"), ColumnKind::Icon};
     keyTermIcon.iconId = QStringLiteral("microphone");
     keyTermIcon.icons = [](const QList<QVariantMap> &records, const AppSettings &settings) {
@@ -2192,25 +2186,10 @@ SettingsPage vocabularyPage()
         }
         return cells;
     };
-    CollectionColumn priorityIcon{kPriorityIconColumn, QStringLiteral("Priority"), ColumnKind::Icon};
-    priorityIcon.iconId = QStringLiteral("star");
-    // Priority only means anything for a key term.
-    priorityIcon.icons = [](const QList<QVariantMap> &records, const AppSettings &) {
-        QList<IconCell> cells;
-        for (const QVariantMap &record : records) {
-            cells.append(record.value(kStarColumn).toBool() && record.value(kKeyTermColumn, true).toBool()
-                             ? IconCell{IconCell::State::Shown,
-                                        QStringLiteral("Priority: first in line for the speech service.")}
-                             : IconCell{});
-        }
-        return cells;
-    };
     terms.columns = {
         keyTermIcon,
-        priorityIcon,
         term,
         keyTerm,
-        priority,
         context,
         profiles,
         {kSourceColumn, QStringLiteral("Source"), ColumnKind::ReadOnly},

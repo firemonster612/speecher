@@ -76,11 +76,6 @@ struct CollectionColumn {
     bool dialogOnly = false;
     // Said under the field where a record is added or edited.
     QString help;
-    // Toggle columns only: the id of another Toggle column this one only
-    // means anything beside, such as a term's priority beside its being a key
-    // term. Where a record is added or edited, this field is disabled while
-    // that one is off.
-    QString enabledBy;
     // Text columns only: the id of another column whose value the table shows
     // as a muted second line under this one's, such as a term's context.
     QString detailColumn;
@@ -92,7 +87,7 @@ struct CollectionColumn {
     QString everyChoice;
     QString someChoice;
     // Icon columns only. The icon, by a platform-neutral id each front end
-    // maps to its own set ("microphone", "star"), shown in the header with the
+    // maps to its own set ("microphone"), shown in the header with the
     // title as its tooltip and accessible name, and in the cells by `icons`.
     QString iconId;
     // One cell per record in order. It depends on the other records, such as

@@ -1042,13 +1042,13 @@ private slots:
         QCOMPARE(limit->text(),
                  VocabularyLimit::summary({QStringLiteral("Deepgram"), QStringLiteral("Speecher")}, QStringLiteral("claude")));
 
-        table->item(0, 2)->setText(QStringLiteral("Deepgram Nova 3"));
+        table->item(0, 1)->setText(QStringLiteral("Deepgram Nova 3"));
         QCOMPARE(limit->text(),
                  VocabularyLimit::summary({QStringLiteral("Deepgram Nova 3"),
                                            QStringLiteral("Speecher")}, QStringLiteral("claude")));
     }
 
-    void prioritisingATermMakesItAKeyTermAtOnce()
+    void unmarkingAKeyTermLetsTheNextOneIn()
     {
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
@@ -1063,37 +1063,29 @@ private slots:
 
         auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
         QVERIFY(table);
-        // The first two columns are the Key term and Priority icons. The
-        // offscreen platform has no icon theme, so the tooltips say which.
+        // The first column is the Key term icon. The offscreen platform has
+        // no icon theme, so the tooltips say which state each cell is in.
         const auto sent = [table](int row) {
             return table->item(row, 0)->toolTip().startsWith(QStringLiteral("Key term: sent"));
-        };
-        const auto prioritised = [table](int row) {
-            return table->item(row, 1)->toolTip().startsWith(QStringLiteral("Priority"));
         };
         QVERIFY(sent(0));
         QVERIFY(!sent(100));
         // A screen reader reads the same words.
         QCOMPARE(table->item(0, 0)->data(Qt::AccessibleTextRole).toString(), table->item(0, 0)->toolTip());
 
-        // Giving the last term priority pulls it into the key terms and
-        // pushes the 100th out, before anything is saved. Priority waits on
-        // Key term.
-        table->selectRow(100);
+        // Turning the first term's Key term off lets the 101st in, before
+        // anything is saved. The dialog has no Priority.
+        table->selectRow(0);
         page->findChild<QPushButton *>(QStringLiteral("editVocabularyEntries"))->click();
         QDialog *dialog = shownRecordDialog(*page);
         QVERIFY(dialog);
+        QVERIFY(!dialog->findChild<QCheckBox *>(QStringLiteral("starred")));
         auto *keyTerm = dialog->findChild<QCheckBox *>(QStringLiteral("keyTerm"));
-        auto *priority = dialog->findChild<QCheckBox *>(QStringLiteral("starred"));
-        QVERIFY(keyTerm->isChecked() && priority->isEnabled());
+        QVERIFY(keyTerm->isChecked());
         keyTerm->setChecked(false);
-        QVERIFY(!priority->isEnabled());
-        keyTerm->setChecked(true);
-        priority->setChecked(true);
         acceptRecordDialog(dialog);
+        QVERIFY(!sent(0));
         QVERIFY(sent(100));
-        QVERIFY(prioritised(100));
-        QVERIFY(!sent(99));
     }
 
     void addingAVocabularyTermSurvivesTheSettingsRoundTrip()
@@ -1176,9 +1168,8 @@ private slots:
         QDialog *dialog = shownRecordDialog(*page);
         QVERIFY(dialog);
         QCOMPARE(dialog->windowTitle(), QStringLiteral("Kubernetes"));
-        // Both boxes say what they do.
+        // The Key term box says what it does.
         QVERIFY(!dialog->findChild<QLabel *>(QStringLiteral("keyTermHelp"))->text().isEmpty());
-        QVERIFY(!dialog->findChild<QLabel *>(QStringLiteral("starredHelp"))->text().isEmpty());
         dialog->findChild<QPlainTextEdit *>(QStringLiteral("context"))
             ->setPlainText(QStringLiteral("The container platform."));
         QList<QRadioButton *> choices = dialog->findChild<QWidget *>(QStringLiteral("profiles"))
@@ -1196,7 +1187,7 @@ private slots:
         QVERIFY(ok->isEnabled());
         acceptRecordDialog(dialog);
 
-        QCOMPARE(table->item(0, 3)->text(), QStringLiteral("Work"));
+        QCOMPARE(table->item(0, 2)->text(), QStringLiteral("Work"));
         AppSettings applied;
         page->appendToDraft(applied);
         QCOMPARE(applied.vocabulary.first().context, QStringLiteral("The container platform."));

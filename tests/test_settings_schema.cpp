@@ -1087,9 +1087,6 @@ private slots:
         QCOMPARE(sent.at(99).state, IconCell::State::Faint);
         QCOMPARE(sent.at(101).state, IconCell::State::Shown);
         QCOMPARE(sent.last().state, IconCell::State::None);
-        const QList<IconCell> priority = column(QStringLiteral("priorityIcon")).icons(shown, settings);
-        QCOMPARE(priority.first().state, IconCell::State::None);
-        QCOMPARE(priority.at(101).state, IconCell::State::Shown);
         // A speech service that takes no key terms sends none of them.
         settings.speech.providerId = QStringLiteral("codex");
         QCOMPARE(column(QStringLiteral("keyTermIcon")).icons(shown, settings).first().state, IconCell::State::Faint);

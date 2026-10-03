@@ -483,7 +483,6 @@ struct RecordSheet: View {
                 RowView.label(column.title, help: column.help)
             }
             .toggleStyle(.checkbox)
-            .disabled(!enabled(column))
         } else {
             LabeledContent(column.title) {
                 VStack(alignment: .leading) {
@@ -510,11 +509,6 @@ struct RecordSheet: View {
             RecordField(column: column, value: draft(column.columnId),
                         commitsImmediately: true, placeholder: column.placeholder)
         }
-    }
-
-    /// A toggle stays off-limits while the toggle it depends on is off.
-    private func enabled(_ column: CollectionColumnModel) -> Bool {
-        column.enabledBy.isEmpty || (editor.draft[column.enabledBy] as? NSNumber)?.boolValue == true
     }
 
     /// Only some options with none of them ticked cannot be kept.
@@ -656,7 +650,6 @@ struct RecordIcon: View {
     static func symbol(_ iconId: String) -> String {
         switch iconId {
         case "microphone": return "mic.fill"
-        case "star": return "star.fill"
         default: return "circle.fill"
         }
     }
