@@ -13,8 +13,8 @@ class VocabularySummaryTest {
             listOf("Speecher", "speecher", "Kotlin").map(::VocabularyWord) +
                 VocabularyWord("Grafana", keyTerm = false)
         assertEquals(
-            "Names and terms Speecher should spell your way. Claude takes the 2 marked Key term, " +
-                "and refinement uses every word for the dictation's Writing Profile.",
+            "Names and terms Speecher should spell your way. Claude takes 2 key terms, shown by " +
+                "the microphone, and refinement uses every word for the dictation's Writing Profile.",
             vocabularySummary(
                 SpeecherSettings(transcriptionProvider = Provider.Claude, vocabulary = words)
             ),

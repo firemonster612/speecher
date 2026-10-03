@@ -1,6 +1,5 @@
 package app.speecher.android.ui
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,13 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -33,6 +31,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -41,7 +40,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,7 +53,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -504,34 +506,38 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                         )
                 }
             },
-            // The Speech column: Key term over Priority, centred in the row. ListItem tops the
-            // trailing slot of a three-line row, so the slot fills the row's height instead.
+            // The desktop's Key term and Priority columns: a microphone when the speech service
+            // gets the word, faint for a key term it does not, then a star for priority. ListItem
+            // tops the leading and trailing slots of a three-line row, so they fill its height.
+            leadingContent = {
+                Row(
+                    Modifier.fillMaxHeight(),
+                    Arrangement.spacedBy(8.dp),
+                    Alignment.CenterVertically,
+                ) {
+                    IconSlot(
+                        R.drawable.ic_mic,
+                        when {
+                            !word.keyTerm -> null
+                            word.term in keyTerms ->
+                                "Key term: sent to the speech service as a hint."
+                            settings.transcriptionProvider == Provider.Claude ->
+                                "Key term, but past what the speech service takes, so not sent."
+                            else -> "Key term, but this speech service takes none."
+                        },
+                        faint = word.term !in keyTerms,
+                    )
+                    // Priority only means anything for a key term.
+                    IconSlot(
+                        R.drawable.ic_star,
+                        if (word.priority && word.keyTerm)
+                            "Priority: first in line for the speech service."
+                        else null,
+                    )
+                }
+            },
             trailingContent = {
-                Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (word.term in keyTerms) {
-                            Badge(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ) {
-                                Text("Key term")
-                            }
-                        }
-                        // Priority only means anything for a key term.
-                        if (word.priority && word.keyTerm) {
-                            Badge(
-                                Modifier.border(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.outline,
-                                    CircleShape,
-                                ),
-                                containerColor = Color.Transparent,
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ) {
-                                Text("Priority")
-                            }
-                        }
-                    }
+                Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
                     IconButton({
                         onChange(settings.copy(vocabulary = settings.vocabulary - word))
                     }) {
@@ -562,6 +568,31 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                 else settings.vocabulary + next
             onChange(settings.copy(vocabulary = vocabulary))
             editing = null
+        }
+    }
+}
+
+/**
+ * One of a vocabulary row's leading icon slots, a fixed width so the rows line up. Empty without a
+ * [description]; with one, the icon in the text colour, or the disabled colour when [faint], and
+ * the description as its tooltip.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IconSlot(icon: Int, description: String?, faint: Boolean = false) {
+    Box(Modifier.size(24.dp)) {
+        if (description == null) return@Box
+        TooltipBox(
+            TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+            tooltip = { PlainTooltip { Text(description) } },
+            state = rememberTooltipState(),
+        ) {
+            val colors = rowColors()
+            Icon(
+                painterResource(icon),
+                contentDescription = description,
+                tint = if (faint) colors.disabledLeadingIconColor else colors.headlineColor,
+            )
         }
     }
 }
@@ -879,8 +910,9 @@ internal fun vocabularySummary(settings: SpeecherSettings): String {
             "key terms, and $refinement."
     }
     val hints = claudeVoiceKeyterms(speechTerms(settings.vocabulary)).size
-    return "Names and terms Speecher should spell your way. Claude takes the $hints marked Key " +
-        "term, and $refinement."
+    val keyTerms = if (hints == 1) "1 key term" else "$hints key terms"
+    return "Names and terms Speecher should spell your way. Claude takes $keyTerms, shown by " +
+        "the microphone, and $refinement."
 }
 
 @Composable
