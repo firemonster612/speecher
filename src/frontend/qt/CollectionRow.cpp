@@ -651,6 +651,27 @@ void openRecordDialog(QWidget *parent,
     QList<std::function<bool()>> checks;
     const auto recheck = std::make_shared<std::function<void()>>();
     QWidget *firstText = nullptr;
+    // A field with help gets it underneath, in one widget with the field: a
+    // wrapped label as a row of its own is sized too narrow and clipped.
+    const auto addField = [dialog, form](const CollectionColumn &column, QWidget *field) {
+        if (column.help.isEmpty()) {
+            form->addRow(column.title, field);
+            return;
+        }
+        auto *withHelp = new QWidget(dialog);
+        withHelp->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        auto *layout = new QVBoxLayout(withHelp);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(settings::tightSpacing());
+        auto *help = new QLabel(column.help, withHelp);
+        help->setObjectName(column.id + QStringLiteral("Help"));
+        help->setWordWrap(true);
+        help->setForegroundRole(QPalette::PlaceholderText);
+        help->setFont(settings::smallFont(help->font()));
+        layout->addWidget(field);
+        layout->addWidget(help);
+        form->addRow(column.title, withHelp);
+    };
     for (const CollectionColumn &column : collection.columns) {
         const QVariant value = original.value(column.id);
         QWidget *field = nullptr;
@@ -692,7 +713,7 @@ void openRecordDialog(QWidget *parent,
                 choiceLayout->addWidget(help);
                 form->addRow(column.title, choice);
             } else {
-                form->addRow(column.title, combo);
+                addField(column, combo);
             }
             readers.append([combo, id = column.id](QVariantMap &record) {
                 record.insert(id, combo->currentData().toString());
@@ -724,7 +745,7 @@ void openRecordDialog(QWidget *parent,
             choiceLayout->addWidget(every);
             choiceLayout->addWidget(some);
             choiceLayout->addWidget(list);
-            form->addRow(column.title, choice);
+            addField(column, choice);
             const auto ticked = [list] {
                 QStringList ids;
                 for (int index = 0; index < list->count(); ++index) {
@@ -746,7 +767,7 @@ void openRecordDialog(QWidget *parent,
             edit->setPlaceholderText(column.placeholder);
             // Return starts a new line, so Tab is what moves on.
             edit->setTabChangesFocus(true);
-            form->addRow(column.title, edit);
+            addField(column, edit);
             readers.append([edit, id = column.id](QVariantMap &record) {
                 record.insert(id, edit->toPlainText());
             });
@@ -754,7 +775,7 @@ void openRecordDialog(QWidget *parent,
         } else if (column.kind == ColumnKind::Text) {
             auto *edit = new QLineEdit(value.toString(), dialog);
             edit->setPlaceholderText(column.placeholder);
-            form->addRow(column.title, edit);
+            addField(column, edit);
             readers.append([edit, id = column.id](QVariantMap &record) {
                 record.insert(id, edit->text().trimmed());
             });
@@ -762,15 +783,6 @@ void openRecordDialog(QWidget *parent,
         }
         if (field) {
             field->setObjectName(column.id);
-        }
-        if (field && !column.help.isEmpty()) {
-            // Under the field, in the form's field column, as a row's description.
-            auto *help = new QLabel(column.help, dialog);
-            help->setObjectName(column.id + QStringLiteral("Help"));
-            help->setWordWrap(true);
-            help->setForegroundRole(QPalette::PlaceholderText);
-            help->setFont(settings::smallFont(help->font()));
-            form->addRow(QString(), help);
         }
         if (!firstText && column.kind == ColumnKind::Text) {
             firstText = field;
