@@ -251,17 +251,26 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     if (const CollectionDescriptor *collection = collectionForRow(row)) {
         CollectionSnapshot table;
         for (const CollectionColumn &column : collection->columns) {
-            table.columns.append({column.id,
-                                  column.title,
-                                  column.kind,
-                                  column.options ? column.options(m_draft) : QList<RowOption>(),
-                                  column.stretch,
-                                  column.multiline});
+            CollectionColumnSnapshot shown;
+            shown.id = column.id;
+            shown.title = column.title;
+            shown.kind = column.kind;
+            shown.options = column.options ? column.options(m_draft) : QList<RowOption>();
+            shown.stretch = column.stretch;
+            shown.multiline = column.multiline;
+            shown.placeholder = column.placeholder;
+            shown.dialogOnly = column.dialogOnly;
+            shown.help = column.help;
+            shown.detailColumn = column.detailColumn;
+            shown.everyChoice = column.everyChoice;
+            shown.someChoice = column.someChoice;
+            table.columns.append(shown);
         }
         table.lockedRecordCount = collection->lockedRecordCount ? collection->lockedRecordCount() : 0;
         table.blankRecord = collection->blankRecord;
         table.addLabel = collection->addLabel;
         table.addDialogTitle = collection->addDialogTitle;
+        table.editLabel = collection->editLabel;
         table.deleteLabel = collection->deleteLabel;
         table.emptyTitle = collection->emptyTitle;
         table.emptyHelp = collection->emptyHelp;
@@ -438,22 +447,39 @@ QStringList SettingsModel::badgesFor(const QList<QVariantMap> &records,
     return collection->badges(records, m_draft);
 }
 
-QString SettingsModel::tooltipForColumn(const QString &columnId,
-                                        const QString &rowId,
-                                        const QVariantMap &record) const
+const CollectionColumn *SettingsModel::columnWithId(const QString &rowId,
+                                                   const QString &columnId) const
 {
     const SettingsRow *row = rowWithId(rowId);
     const CollectionDescriptor *collection = row ? collectionForRow(*row) : nullptr;
     if (!collection) {
-        return {};
+        return nullptr;
     }
     for (const CollectionColumn &column : collection->columns) {
-        if (column.id != columnId) {
-            continue;
+        if (column.id == columnId) {
+            return &column;
         }
-        return column.recordTooltip ? column.recordTooltip(record) : column.tooltip;
     }
-    return {};
+    return nullptr;
+}
+
+QString SettingsModel::tooltipForColumn(const QString &columnId,
+                                        const QString &rowId,
+                                        const QVariantMap &record) const
+{
+    const CollectionColumn *column = columnWithId(rowId, columnId);
+    if (!column) {
+        return {};
+    }
+    return column->recordTooltip ? column->recordTooltip(record) : column->tooltip;
+}
+
+QString SettingsModel::choiceSetText(const QString &rowId,
+                                     const QString &columnId,
+                                     const QStringList &ids) const
+{
+    const CollectionColumn *column = columnWithId(rowId, columnId);
+    return column ? speecher::choiceSetText(*column, ids, m_draft) : QString();
 }
 
 const AppSettings &SettingsModel::draft() const

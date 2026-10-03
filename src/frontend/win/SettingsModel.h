@@ -22,11 +22,23 @@ struct CollectionColumnSnapshot {
     QString id;
     QString title;
     ColumnKind kind = ColumnKind::Text;
-    // Choice columns only.
+    // Choice and ChoiceSet columns only.
     QList<RowOption> options;
     bool stretch = false;
     // Text columns only: the value may hold several lines.
     bool multiline = false;
+    QString placeholder;
+    // A field of the record dialog, left out of the table.
+    bool dialogOnly = false;
+    // Said under the field in the record dialog.
+    QString help;
+    // Text columns only: the column whose value the cell shows as a muted
+    // second line.
+    QString detailColumn;
+    // ChoiceSet columns only: the record dialog's two choices, every option or
+    // the ticked ones.
+    QString everyChoice;
+    QString someChoice;
 };
 
 struct CollectionSnapshot {
@@ -37,6 +49,8 @@ struct CollectionSnapshot {
     // Empty on a collection nothing may be added to by hand.
     QString addLabel;
     QString addDialogTitle;
+    // Empty on a collection whose records are only edited in place.
+    QString editLabel;
     QString deleteLabel;
     // What an empty editor says; empty on a collection that always has records.
     QString emptyTitle;
@@ -143,6 +157,10 @@ public:
     QString tooltipForColumn(const QString &columnId,
                              const QString &rowId,
                              const QVariantMap &record) const;
+    // What a ChoiceSet cell says for a record's ids, against the draft's options.
+    QString choiceSetText(const QString &rowId,
+                          const QString &columnId,
+                          const QStringList &ids) const;
 
     const AppSettings &draft() const;
     SettingsStore *store() const;
@@ -169,6 +187,7 @@ public:
 private:
     const SettingsRow *rowWithId(const QString &rowId) const;
     const CollectionDescriptor *collectionForRow(const SettingsRow &row) const;
+    const CollectionColumn *columnWithId(const QString &rowId, const QString &columnId) const;
     RowSnapshot rowSnapshot(const SettingsRow &row) const;
     QList<RowOption> optionsForRow(const SettingsRow &row) const;
 

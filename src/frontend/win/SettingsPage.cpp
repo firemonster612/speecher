@@ -483,7 +483,7 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
         const RowSnapshot &first = unit.first();
         if (first.kind == RowKind::Collection) {
             cards.Children().Append(revealIfSought(
-                unit, gatedFullWidthCard(first, editorFor(first, host)->card(), host), host));
+                unit, gatedFullWidthCard(first, editorFor(first, host)->card(first), host), host));
             continue;
         }
         if (first.kind == RowKind::Custom && customRowIsFullWidth(first.id)) {

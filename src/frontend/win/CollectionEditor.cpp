@@ -36,23 +36,36 @@ const QString kUndoLatestLearn = QStringLiteral("undoLatestLearn");
 
 // How much of the list's width a column takes. The descriptor names the one
 // that takes the leftover; a flag needs no more than its checkbox, and the
-// rest get widths their values fit in.
-GridLength columnWidth(const CollectionColumnSnapshot &column)
+// rest get widths their values fit in. Columns that only show text share the
+// leftover in a narrow window, up to that width, so a table of six columns
+// still leaves the leftover one room.
+ColumnDefinition columnDefinition(const CollectionColumnSnapshot &column)
 {
+    ColumnDefinition definition;
     if (column.stretch) {
-        return {1, GridUnitType::Star};
+        definition.Width({1, GridUnitType::Star});
+        return definition;
     }
     switch (column.kind) {
     case ColumnKind::Toggle:
-        return {56, GridUnitType::Pixel};
+        definition.Width({56, GridUnitType::Pixel});
+        break;
     case ColumnKind::Choice:
-        return {150, GridUnitType::Pixel};
-    case ColumnKind::ReadOnly:
-        return {110, GridUnitType::Pixel};
+        definition.Width({150, GridUnitType::Pixel});
+        break;
     case ColumnKind::Text:
-        return {140, GridUnitType::Pixel};
+        definition.Width({140, GridUnitType::Pixel});
+        break;
+    case ColumnKind::ReadOnly:
+        definition.Width({0.4, GridUnitType::Star});
+        definition.MaxWidth(110);
+        break;
+    case ColumnKind::ChoiceSet:
+        definition.Width({0.55, GridUnitType::Star});
+        definition.MaxWidth(150);
+        break;
     }
-    return {0, GridUnitType::Auto};
+    return definition;
 }
 
 Grid columnGrid(const QList<CollectionColumnSnapshot> &columns)
@@ -60,11 +73,34 @@ Grid columnGrid(const QList<CollectionColumnSnapshot> &columns)
     Grid grid;
     grid.ColumnSpacing(8);
     for (const CollectionColumnSnapshot &column : columns) {
-        ColumnDefinition definition;
-        definition.Width(columnWidth(column));
-        grid.ColumnDefinitions().Append(definition);
+        grid.ColumnDefinitions().Append(columnDefinition(column));
     }
     return grid;
+}
+
+// The columns the table shows. A dialog-only column is a field of the record
+// dialog instead, where that dialog can edit a record; where it can only add
+// one, the table stays the place to change the column afterwards.
+QList<CollectionColumnSnapshot> tableColumns(const CollectionSnapshot &collection)
+{
+    QList<CollectionColumnSnapshot> shown;
+    for (const CollectionColumnSnapshot &column : collection.columns) {
+        if (!column.dialogOnly || collection.editLabel.isEmpty()) {
+            shown.append(column);
+        }
+    }
+    return shown;
+}
+
+// What a record is called, such as a vocabulary term: its first text column.
+QString recordName(const CollectionSnapshot &collection, const QVariantMap &record)
+{
+    for (const CollectionColumnSnapshot &column : collection.columns) {
+        if (column.kind == ColumnKind::Text) {
+            return record.value(column.id).toString();
+        }
+    }
+    return {};
 }
 
 TextBlock cellText(const QString &text,
@@ -96,6 +132,28 @@ QString displayText(const CollectionColumnSnapshot &column, const QVariant &valu
     return value.toString();
 }
 
+// The pill after a cell, as Home's Writing Profiles sit after a name.
+Grid besideBadge(const UIElement &cell, const QString &badgeText, const PaneHost &host)
+{
+    Grid pill = badge(badgeText, themeBrush(L"RatingBadgeAccent", host));
+    AutomationProperties::SetName(pill, hs(badgeText));
+    // A Grid, not a horizontal StackPanel, so the cell still fills the
+    // column and the pill takes only its own width.
+    Grid withBadge;
+    withBadge.ColumnSpacing(8);
+    ColumnDefinition field;
+    field.Width({1, GridUnitType::Star});
+    ColumnDefinition label;
+    label.Width({0, GridUnitType::Auto});
+    withBadge.ColumnDefinitions().Append(field);
+    withBadge.ColumnDefinitions().Append(label);
+    Grid::SetColumn(cell.as<FrameworkElement>(), 0);
+    Grid::SetColumn(pill, 1);
+    withBadge.Children().Append(cell);
+    withBadge.Children().Append(pill);
+    return withBadge;
+}
+
 } // namespace
 
 CollectionEditor::CollectionEditor(const RowSnapshot &row, PaneHost &host)
@@ -112,8 +170,9 @@ CollectionEditor::CollectionEditor(const RowSnapshot &row, PaneHost &host)
     m_savedRecords = editableRecords();
 }
 
-UIElement CollectionEditor::card()
+UIElement CollectionEditor::card(const RowSnapshot &row)
 {
+    m_collection.columns = row.collection->columns;
     build();
     return m_card;
 }
@@ -125,7 +184,7 @@ void CollectionEditor::build()
     content.Padding({16, 12, 16, 12});
     content.Spacing(8);
 
-    // The toolbar: Add, Import, the descriptor's named actions, Delete.
+    // The toolbar: Add, Edit, Import, the descriptor's named actions, Delete.
     StackPanel toolbar;
     toolbar.Orientation(Orientation::Horizontal);
     toolbar.Spacing(8);
@@ -135,10 +194,26 @@ void CollectionEditor::build()
         m_addButton.Content(box_value(hs(m_collection.addLabel)));
         m_addButton.Click([weak = weak_from_this()](const auto &, const auto &) {
             if (auto self = weak.lock()) {
-                self->openAddDialog();
+                self->openRecordDialog(-1);
             }
         });
         toolbar.Children().Append(m_addButton);
+    }
+    m_editButton = nullptr;
+    if (!m_collection.editLabel.isEmpty()) {
+        m_editButton = Button();
+        m_editButton.Content(box_value(hs(m_collection.editLabel)));
+        m_editButton.Click([weak = weak_from_this()](const auto &, const auto &) {
+            auto self = weak.lock();
+            if (!self) {
+                return;
+            }
+            const QList<int> selected = self->selectedIndexes();
+            if (selected.size() == 1) {
+                self->openRecordDialog(selected.first());
+            }
+        });
+        toolbar.Children().Append(m_editButton);
     }
     if (!m_collection.importLabel.isEmpty()) {
         Button import;
@@ -172,10 +247,11 @@ void CollectionEditor::build()
     content.Children().Append(toolbar);
 
     // The header row, aligned with the cells by sharing their column table.
-    m_header = columnGrid(m_collection.columns);
+    const QList<CollectionColumnSnapshot> columns = tableColumns(m_collection);
+    m_header = columnGrid(columns);
     m_header.Padding({12, 0, 12, 0});
-    for (qsizetype index = 0; index < m_collection.columns.size(); ++index) {
-        TextBlock title = cellText(m_collection.columns.at(index).title,
+    for (qsizetype index = 0; index < columns.size(); ++index) {
+        TextBlock title = cellText(columns.at(index).title,
                                    L"SettingsCardDescriptionStyle",
                                    &m_host);
         Grid::SetColumn(title, static_cast<int32_t>(index));
@@ -202,6 +278,21 @@ void CollectionEditor::build()
             self->updateToolbar();
         }
     });
+    // Double-clicking a row opens it, as the edit command does; a double-click
+    // on a cell's own control stays that control's.
+    if (!m_collection.editLabel.isEmpty()) {
+        m_list.DoubleTapped([weak = weak_from_this()](const IInspectable &,
+                                                      const Input::DoubleTappedRoutedEventArgs &args) {
+            auto self = weak.lock();
+            if (!self) {
+                return;
+            }
+            const int index = self->recordAt(args.OriginalSource());
+            if (index >= 0 && !self->m_records.at(index).locked) {
+                self->openRecordDialog(index);
+            }
+        });
+    }
     content.Children().Append(m_list);
     // The empty state stands in for the header and the list: what goes here,
     // with the accented Add above it as the way to start.
@@ -234,11 +325,12 @@ void CollectionEditor::rebuildRows()
         values.append(record.values);
     }
     const QStringList badges = m_host.model->badgesFor(values, m_rowId);
+    const QList<CollectionColumnSnapshot> columns = tableColumns(m_collection);
     for (qsizetype index = 0; index < m_records.size(); ++index) {
-        Grid row = columnGrid(m_collection.columns);
+        Grid row = columnGrid(columns);
         row.Tag(box_value(static_cast<int32_t>(index)));
-        for (qsizetype columnIndex = 0; columnIndex < m_collection.columns.size(); ++columnIndex) {
-            const CollectionColumnSnapshot &column = m_collection.columns.at(columnIndex);
+        for (qsizetype columnIndex = 0; columnIndex < columns.size(); ++columnIndex) {
+            const CollectionColumnSnapshot &column = columns.at(columnIndex);
             const UIElement cell = cellFor(column,
                                            static_cast<int>(index),
                                            column.stretch ? badges.value(index) : QString());
@@ -256,8 +348,21 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
 {
     const Record &record = m_records.at(recordIndex);
     const QVariant value = record.values.value(column.id);
+    const QString detail = column.detailColumn.isEmpty()
+        ? QString()
+        : record.values.value(column.detailColumn).toString();
+    QString tooltip = detail.isEmpty()
+        ? m_host.model->tooltipForColumn(column.id, m_rowId, record.values)
+        : detail;
     UIElement cell{nullptr};
-    if (record.locked || column.kind == ColumnKind::ReadOnly) {
+    if (column.kind == ColumnKind::ChoiceSet) {
+        // The labels can outrun the column, so the tooltip says them whole.
+        tooltip = m_host.model->choiceSetText(m_rowId, column.id, value.toStringList());
+        cell = cellText(tooltip, L"SettingsCardBodyStyle", nullptr);
+    } else if (record.locked || column.kind == ColumnKind::ReadOnly
+               // A cell with a line under it only shows its text; the record
+               // dialog edits it.
+               || !column.detailColumn.isEmpty()) {
         cell = cellText(displayText(column, value),
                         column.kind == ColumnKind::ReadOnly ? L"SettingsCardDescriptionStyle"
                                                             : L"SettingsCardBodyStyle",
@@ -335,31 +440,22 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
         });
         cell = box;
     }
-    const QString tooltip = m_host.model->tooltipForColumn(column.id, m_rowId, record.values);
+    if (!badgeText.isEmpty()) {
+        cell = besideBadge(cell, badgeText, m_host);
+    }
+    const QString detailLine = detail.simplified();
+    if (!detailLine.isEmpty()) {
+        // The detail's one line under the cell's own, muted and cut at the end.
+        StackPanel lines;
+        lines.VerticalAlignment(VerticalAlignment::Center);
+        lines.Children().Append(cell);
+        lines.Children().Append(cellText(detailLine, L"CaptionTextBlockStyle", &m_host));
+        cell = lines;
+    }
     if (!tooltip.isEmpty()) {
         ToolTipService::SetToolTip(cell, box_value(hs(tooltip)));
     }
-    if (badgeText.isEmpty()) {
-        return cell;
-    }
-    // The pill after the field, as Home's Writing Profiles sit after a name.
-    Grid pill = badge(badgeText, themeBrush(L"RatingBadgeAccent", m_host));
-    AutomationProperties::SetName(pill, hs(badgeText));
-    // A Grid, not a horizontal StackPanel, so the field still fills the
-    // column and the pill takes only its own width.
-    Grid withBadge;
-    withBadge.ColumnSpacing(8);
-    ColumnDefinition field;
-    field.Width({1, GridUnitType::Star});
-    ColumnDefinition label;
-    label.Width({0, GridUnitType::Auto});
-    withBadge.ColumnDefinitions().Append(field);
-    withBadge.ColumnDefinitions().Append(label);
-    Grid::SetColumn(cell.as<FrameworkElement>(), 0);
-    Grid::SetColumn(pill, 1);
-    withBadge.Children().Append(cell);
-    withBadge.Children().Append(pill);
-    return withBadge;
+    return cell;
 }
 
 QList<int> CollectionEditor::selectedIndexes() const
@@ -370,6 +466,21 @@ QList<int> CollectionEditor::selectedIndexes() const
     }
     std::sort(indexes.begin(), indexes.end());
     return indexes;
+}
+
+int CollectionEditor::recordAt(const IInspectable &element) const
+{
+    for (DependencyObject node = element.try_as<DependencyObject>(); node;
+         node = Media::VisualTreeHelper::GetParent(node)) {
+        if (const auto item = node.try_as<ListViewItem>()) {
+            const IInspectable row = m_list.ItemFromContainer(item);
+            return row ? unbox_value<int32_t>(row.as<Grid>().Tag()) : -1;
+        }
+        if (node.try_as<Control>()) {
+            return -1;
+        }
+    }
+    return -1;
 }
 
 void CollectionEditor::updateToolbar()
@@ -387,11 +498,15 @@ void CollectionEditor::updateToolbar()
                                     : Style{nullptr});
         }
     }
+    const QList<int> selected = selectedIndexes();
     bool removable = false;
-    for (int index : selectedIndexes()) {
+    for (int index : selected) {
         removable = removable || !m_records.at(index).locked;
     }
     m_deleteButton.IsEnabled(removable);
+    if (m_editButton) {
+        m_editButton.IsEnabled(selected.size() == 1 && !m_records.at(selected.first()).locked);
+    }
     for (const auto &[actionId, button] : m_actionButtons) {
         if (actionId == kUndoDelete) {
             button.IsEnabled(!m_deleted.isEmpty());
@@ -407,8 +522,13 @@ void CollectionEditor::updateToolbar()
 
 QList<QVariantMap> CollectionEditor::editableRecords() const
 {
+    return editableRecords(m_records);
+}
+
+QList<QVariantMap> CollectionEditor::editableRecords(const QList<Record> &all)
+{
     QList<QVariantMap> records;
-    for (const Record &record : m_records) {
+    for (const Record &record : all) {
         if (!record.locked) {
             records.append(record.values);
         }
@@ -438,34 +558,47 @@ void CollectionEditor::showProblems(const QStringList &problems, const QString &
     m_problems.IsOpen(!problems.isEmpty());
 }
 
-void CollectionEditor::openAddDialog()
+void CollectionEditor::openRecordDialog(int recordIndex)
 {
+    const bool adding = recordIndex < 0;
+    // Edits start from the record as it is, so the keys no field shows survive.
+    const QVariantMap original = adding ? m_collection.blankRecord : m_records.at(recordIndex).values;
     ContentDialog dialog;
     dialog.XamlRoot(m_host.xamlRoot());
-    dialog.Title(box_value(hs(m_collection.addDialogTitle)));
-    dialog.PrimaryButtonText(L"Add");
+    // The dialog opens in the popup layer, outside the window's RequestedTheme.
+    if (m_host.effectiveTheme) {
+        dialog.RequestedTheme(m_host.effectiveTheme());
+    }
+    dialog.Title(box_value(hs(adding ? m_collection.addDialogTitle : recordName(m_collection, original))));
+    dialog.PrimaryButtonText(adding ? L"Add" : L"Save");
     dialog.CloseButtonText(L"Cancel");
     dialog.DefaultButton(ContentDialogButton::Primary);
 
     StackPanel fields;
     fields.Spacing(12);
     fields.MinWidth(360);
-    // One field per column a person may fill, over the descriptor's blank
-    // record, so the record is checked before it exists.
+    // What must hold before the primary button takes the record, rechecked as
+    // the fields change. Emptied when the dialog closes, which ends the cycle
+    // through the fields' handlers.
+    QList<std::function<bool()>> checks;
+    const auto recheck = std::make_shared<std::function<void()>>();
+    // One field per column a person may fill, so the record is checked before
+    // it is kept.
     QList<QPair<QString, std::function<QVariant()>>> readers;
     for (const CollectionColumnSnapshot &column : m_collection.columns) {
         if (column.kind == ColumnKind::ReadOnly) {
             continue;
         }
-        const QVariant blank = m_collection.blankRecord.value(column.id);
+        const QVariant value = original.value(column.id);
+        UIElement field{nullptr};
         if (column.kind == ColumnKind::Toggle) {
             CheckBox box;
             box.Content(box_value(hs(column.title)));
-            box.IsChecked(blank.toBool());
+            box.IsChecked(value.toBool());
             readers.append({column.id, [box] {
                                 return QVariant(box.IsChecked().GetBoolean());
                             }});
-            fields.Children().Append(box);
+            field = box;
         } else if (column.kind == ColumnKind::Choice) {
             ComboBox combo;
             combo.Header(box_value(hs(column.title)));
@@ -475,7 +608,7 @@ void CollectionEditor::openAddDialog()
                 ComboBoxItem item;
                 item.Content(box_value(hs(option.label)));
                 item.Tag(box_value(hs(option.id)));
-                if (option.id == blank.toString()) {
+                if (option.id == value.toString()) {
                     selected = combo.Items().Size();
                 }
                 combo.Items().Append(item);
@@ -487,17 +620,89 @@ void CollectionEditor::openAddDialog()
                                                 item.as<ComboBoxItem>().Tag()))
                                             : QString();
                             }});
-            fields.Children().Append(combo);
+            field = combo;
+        } else if (column.kind == ColumnKind::ChoiceSet) {
+            // Every option, or only the ticked ones: the boxes sit under the
+            // second choice and count only while it is chosen.
+            RadioButtons scope;
+            scope.Header(box_value(hs(column.title)));
+            scope.Items().Append(box_value(hs(column.everyChoice)));
+            scope.Items().Append(box_value(hs(column.someChoice)));
+            StackPanel boxes;
+            // In line with the second choice's label, past its circle.
+            boxes.Margin({28, 0, 0, 0});
+            QList<QPair<QString, CheckBox>> options;
+            const QStringList stored = value.toStringList();
+            bool limited = false;
+            for (const RowOption &option : column.options) {
+                const bool ticked = stored.contains(option.id);
+                limited = limited || ticked;
+                CheckBox box;
+                box.Content(box_value(hs(option.label)));
+                box.IsChecked(ticked);
+                box.Click([recheck](const auto &, const auto &) {
+                    if (*recheck) {
+                        (*recheck)();
+                    }
+                });
+                boxes.Children().Append(box);
+                options.append({option.id, box});
+            }
+            const auto enableBoxes = [options](bool enabled) {
+                for (const auto &[id, box] : options) {
+                    box.IsEnabled(enabled);
+                }
+            };
+            scope.SelectedIndex(limited ? 1 : 0);
+            enableBoxes(limited);
+            scope.SelectionChanged([enableBoxes, recheck](const IInspectable &sender, const auto &) {
+                enableBoxes(sender.as<RadioButtons>().SelectedIndex() == 1);
+                if (*recheck) {
+                    (*recheck)();
+                }
+            });
+            // The ticked ids while the second choice holds, otherwise none,
+            // which means every option.
+            const auto chosen = [scope, options] {
+                QStringList ids;
+                if (scope.SelectedIndex() != 1) {
+                    return ids;
+                }
+                for (const auto &[id, box] : options) {
+                    if (box.IsChecked().GetBoolean()) {
+                        ids.append(id);
+                    }
+                }
+                return ids;
+            };
+            readers.append({column.id, [chosen] { return QVariant(chosen()); }});
+            checks.append([scope, chosen] { return scope.SelectedIndex() != 1 || !chosen().isEmpty(); });
+            StackPanel choice;
+            choice.Children().Append(scope);
+            choice.Children().Append(boxes);
+            field = choice;
         } else {
             TextBox box;
             box.Header(box_value(hs(column.title)));
-            box.Text(hs(blank.toString()));
+            box.Text(hs(value.toString()));
+            box.PlaceholderText(hs(column.placeholder));
             if (column.multiline) {
                 makeMultiline(box);
             }
             readers.append({column.id, [box] { return QVariant(qs(box.Text())); }});
-            fields.Children().Append(box);
+            field = box;
         }
+        if (column.help.isEmpty()) {
+            fields.Children().Append(field);
+            continue;
+        }
+        // Under the field, muted and small, as a card row's description.
+        StackPanel withHelp;
+        withHelp.Spacing(4);
+        withHelp.Children().Append(field);
+        withHelp.Children().Append(
+            secondaryTextBlock(column.help, L"SettingsCardDescriptionStyle", m_host));
+        fields.Children().Append(withHelp);
     }
     TextBlock refusals;
     refusals.Style(Application::Current()
@@ -506,22 +711,39 @@ void CollectionEditor::openAddDialog()
                        .as<Style>());
     refusals.Visibility(Visibility::Collapsed);
     fields.Children().Append(refusals);
-    dialog.Content(fields);
+    // A record of many fields outgrows a small window.
+    ScrollViewer scroller;
+    scroller.Content(fields);
+    dialog.Content(scroller);
 
-    dialog.PrimaryButtonClick([weak = weak_from_this(), readers, refusals](
+    *recheck = [dialog, checks] {
+        dialog.IsPrimaryButtonEnabled(
+            std::all_of(checks.cbegin(), checks.cend(), [](const auto &check) { return check(); }));
+    };
+    (*recheck)();
+    dialog.Closed([recheck](const ContentDialog &, const ContentDialogClosedEventArgs &) {
+        *recheck = nullptr;
+    });
+
+    dialog.PrimaryButtonClick([weak = weak_from_this(), readers, refusals, recordIndex, original](
                                   const ContentDialog &,
                                   const ContentDialogButtonClickEventArgs &args) {
         auto self = weak.lock();
         if (!self) {
             return;
         }
-        QVariantMap draft = self->m_collection.blankRecord;
+        QVariantMap record = original;
         for (const auto &[columnId, read] : readers) {
-            draft.insert(columnId, read());
+            record.insert(columnId, read());
+        }
+        QList<Record> proposed = self->m_records;
+        if (recordIndex < 0) {
+            proposed.append({record, false});
+        } else {
+            proposed[recordIndex].values = record;
         }
         const QStringList problems =
-            self->m_host.model->problemsWith(self->editableRecords() + QList<QVariantMap>{draft},
-                                             self->m_rowId);
+            self->m_host.model->problemsWith(CollectionEditor::editableRecords(proposed), self->m_rowId);
         if (!problems.isEmpty()) {
             // Refused: the dialog stays open with the record still in it.
             refusals.Text(hs(problems.join(QLatin1Char('\n'))));
@@ -529,7 +751,7 @@ void CollectionEditor::openAddDialog()
             args.Cancel(true);
             return;
         }
-        self->m_records.append({draft, false});
+        self->m_records = proposed;
         self->rebuildRows();
         self->save();
     });
