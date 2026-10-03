@@ -68,7 +68,18 @@ dump() {
 
 value_is() { [[ "$(ax value "$1" "$2" "$3" "${5:-0}")" == "$4" ]]; }
 sheets_are() { [[ "$(ax sheets)" == "$1" ]]; }
-edit_enabled() { [[ "$(ax enabled window AXButton 'Edit*')" == true ]]; }
+
+# button SCOPE LABEL INDEX: "ROLE<TAB>LABEL<TAB>INDEX" for the button titled
+# LABEL, or, where the runner's AX tree leaves SwiftUI's buttons unnamed, the
+# INDEXth unnamed button.
+button() {
+  if ax find "$1" AXButton "$2" 0 >/dev/null; then
+    printf 'AXButton\t%s\t0\n' "$2"
+  else
+    log "no button labelled '$2' in $1; using unnamed button #$3"
+    printf 'unnamed\t\t%s\n' "$3"
+  fi
+}
 
 wait_until() {
   local tries="$1"
@@ -202,12 +213,16 @@ dump window window-start
   || fail "the Profiles column does not read 'Work, AI coding' for Kubernetes"
 [[ "$(ax hastext window "$KUBERNETES_CONTEXT")" == yes ]] \
   || fail "Kubernetes' context line is not in the table"
-ax find window AXButton 'Edit*' >/dev/null || fail "the accessory bar has no Edit… button"
+IFS=$'\t' read -r add_role add_label add_index < <(button window Add 0)
+IFS=$'\t' read -r edit_role edit_label edit_index < <(button window 'Edit*' 2)
+edit_enabled() { [[ "$(ax enabled window "$edit_role" "$edit_label" "$edit_index")" == true ]]; }
+ax find window "$edit_role" "$edit_label" "$edit_index" >/dev/null \
+  || fail "the accessory bar has no Edit… button"
 shot table
 
 # --- 2. Add Sev1 -----------------------------------------------------------
 
-if activate window AXButton Add 0 sheets_are 1; then
+if activate window "$add_role" "$add_label" "$add_index" sheets_are 1; then
   sleep 1
   dump sheet add-sheet-open
   [[ "$(ax hastext sheet 'New term')" == yes ]] || fail "the add sheet is not titled New term"
@@ -222,9 +237,13 @@ if activate window AXButton Add 0 sheets_are 1; then
   sleep 0.5
   dump sheet add-sheet-filled
   shot add-sheet
-  activate sheet AXButton Add 0 sheets_are 0 || fail "the sheet's Add did not close it"
+  IFS=$'\t' read -r role label index < <(button sheet Add -1)
+  activate sheet "$role" "$label" "$index" sheets_are 0 || fail "the sheet's Add did not close it"
   sleep 1
-  [[ "$(ax has window Sev1)" == yes ]] || fail "Sev1 is not in the table after Add"
+  row="$(ax row Sev1)"
+  log "Sev1 row: $row"
+  [[ "$row" == *"$SEV1_CONTEXT"* && "$row" == *"| Work, AI coding |"* ]] \
+    || fail "the table's Sev1 row does not show its context and Work, AI coding: $row"
   wait_until 20 saved_is Sev1 "{\"context\": \"$SEV1_CONTEXT\", \"profiles\": [\"work\", \"ai_coding\"]}" \
     || fail "Sev1 was not saved with its context and Work, AI coding: $(saved_entry Sev1)"
   shot table-with-sev1
@@ -246,7 +265,7 @@ if ! wait_until 3 edit_enabled; then
 fi
 if ! wait_until 3 edit_enabled; then
   fail "could not select the Kubernetes row (Edit… stayed disabled)"
-elif activate window AXButton 'Edit*' 0 sheets_are 1; then
+elif activate window "$edit_role" "$edit_label" "$edit_index" sheets_are 1; then
   sleep 1
   dump sheet edit-sheet-open
   [[ "$(ax hastext sheet Kubernetes)" == yes ]] || fail "the edit sheet is not titled Kubernetes"
@@ -261,9 +280,13 @@ elif activate window AXButton 'Edit*' 0 sheets_are 1; then
     || fail "could not untick AI coding"
   sleep 0.5
   shot edit-sheet-unticked
-  activate sheet AXButton OK 0 sheets_are 0 || fail "the sheet's OK did not close it"
+  IFS=$'\t' read -r role label index < <(button sheet OK -1)
+  activate sheet "$role" "$label" "$index" sheets_are 0 || fail "the sheet's OK did not close it"
   sleep 1
-  [[ "$(ax hastext window Work)" == yes ]] || fail "no row's Profiles reads Work after the edit"
+  row="$(ax row Kubernetes)"
+  log "Kubernetes row: $row"
+  [[ "$row" == *"| Work |"* && "$row" != *"AI coding"* ]] \
+    || fail "the table's Kubernetes row does not read Work alone: $row"
   wait_until 20 saved_is Kubernetes "{\"context\": \"$KUBERNETES_CONTEXT\", \"profiles\": [\"work\"]}" \
     || fail "Kubernetes was not saved limited to Work: $(saved_entry Kubernetes)"
   shot table-after-edit

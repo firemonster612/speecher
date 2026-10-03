@@ -1,12 +1,21 @@
 // AX driver for vocabulary_run.sh: osascript -l JavaScript vocabulary_ax.js
 // <command> [args]. Scratch-branch-only. Scopes are "window" (the settings
 // window, sheets included) and "sheet" (the window's open sheet).
+//
+// Roles are AX roles, plus "input" (a one-line field or a multi-line area) and
+// "unnamed" (a plain button with no title, description or help, as SwiftUI's
+// accessory-bar buttons show up on the runner). An index counts matches in
+// tree order; a negative one counts from the end.
 
 const se = Application('System Events');
 const proc = se.processes.byName('speecher');
 
 function attr(element, name) {
     try { return element[name](); } catch (error) { return null; }
+}
+
+function axAttr(element, name) {
+    try { return element.attributes.byName(name).value(); } catch (error) { return null; }
 }
 
 function settingsWindow() {
@@ -33,8 +42,9 @@ function describe(element) {
     return {
         role: attr(element, 'role'),
         subrole: attr(element, 'subrole'),
-        name: attr(element, 'name'),
-        description: attr(element, 'description'),
+        title: axAttr(element, 'AXTitle'),
+        description: axAttr(element, 'AXDescription'),
+        help: axAttr(element, 'AXHelp'),
         value: attr(element, 'value'),
         enabled: attr(element, 'enabled'),
         position: attr(element, 'position'),
@@ -42,26 +52,30 @@ function describe(element) {
     };
 }
 
+function labels(info) {
+    return [info.title, info.description, info.help].filter(text => typeof text === 'string' && text !== '');
+}
+
 function labelMatches(info, label) {
     const wanted = label.endsWith('*') ? label.slice(0, -1) : label;
     const exact = !label.endsWith('*');
-    for (const text of [info.name, info.description]) {
-        if (typeof text !== 'string') continue;
-        if (exact ? text === wanted : text.startsWith(wanted)) return true;
-    }
-    return false;
+    return labels(info).some(text => (exact ? text === wanted : text.startsWith(wanted)));
 }
 
-// Role "input" is any text input: a one-line field or a multi-line area.
-function roleMatches(actual, role) {
-    return role === 'input' ? actual === 'AXTextField' || actual === 'AXTextArea' : actual === role;
+function roleMatches(info, role) {
+    if (role === 'input') return info.role === 'AXTextField' || info.role === 'AXTextArea';
+    if (role === 'unnamed') return info.role === 'AXButton' && !info.subrole && labels(info).length === 0;
+    return info.role === role;
 }
 
 function matches(scopeName, role, label) {
     const found = [];
     for (const element of scope(scopeName).entireContents()) {
-        if (!roleMatches(attr(element, 'role'), role)) continue;
+        const kind = attr(element, 'role');
+        if (role !== 'input' && role !== 'unnamed' && kind !== role) continue;
+        if (role === 'unnamed' && kind !== 'AXButton') continue;
         const info = describe(element);
+        if (!roleMatches(info, role)) continue;
         if (label === '' || labelMatches(info, label)) found.push({ element, info });
     }
     return found;
@@ -69,8 +83,9 @@ function matches(scopeName, role, label) {
 
 function only(scopeName, role, label, index) {
     const found = matches(scopeName, role, label);
-    const at = Number(index || 0);
-    if (found.length <= at) throw new Error(`no ${role} "${label}" #${at} in ${scopeName}`);
+    let at = Number(index || 0);
+    if (at < 0) at += found.length;
+    if (at < 0 || found.length <= at) throw new Error(`no ${role} "${label}" #${index || 0} in ${scopeName}`);
     return found[at];
 }
 
@@ -80,9 +95,24 @@ function centre(info) {
 }
 
 function line(info) {
-    return [info.role, info.subrole, JSON.stringify(info.name), JSON.stringify(info.description),
-            JSON.stringify(info.value), info.enabled, JSON.stringify(info.position),
-            JSON.stringify(info.size)].join(' | ');
+    return [info.role, info.subrole, JSON.stringify(info.title), JSON.stringify(info.description),
+            JSON.stringify(info.help), JSON.stringify(info.value), info.enabled,
+            JSON.stringify(info.position), JSON.stringify(info.size)].join(' | ');
+}
+
+// The table's row (an outline row on the runner) that shows TEXT, as
+// { row, cells }.
+function rowShowing(text) {
+    for (const table of scope('window').entireContents()) {
+        const role = attr(table, 'role');
+        if (role !== 'AXOutline' && role !== 'AXTable') continue;
+        if (axAttr(table, 'AXDescription') === 'Sidebar') continue;
+        for (const row of table.rows()) {
+            const cells = row.entireContents().map(describe);
+            if (cells.some(cell => cell.value === text)) return { row, cells };
+        }
+    }
+    throw new Error(`no table row shows ${text}`);
 }
 
 function run(argv) {
@@ -95,14 +125,6 @@ function run(argv) {
         const info = describe(settingsWindow());
         return [...info.position, ...info.size].map(Math.round).join(',');
     }
-    // hastext SCOPE TEXT: whether a static text reads TEXT, as a title does.
-    case 'hastext':
-        for (const element of scope(args[0]).entireContents()) {
-            if (attr(element, 'role') !== 'AXStaticText') continue;
-            const info = describe(element);
-            if (info.value === args[1] || info.name === args[1]) return 'yes';
-        }
-        return 'no';
     case 'sheets':
         return String(settingsWindow().sheets().length);
     case 'dump':
@@ -120,43 +142,35 @@ function run(argv) {
     case 'focus':
         only(args[0], args[1], args[2], args[3]).element.focused = true;
         return 'ok';
-    // has SCOPE TEXT: whether any element shows TEXT as its value, name or description.
+    // has SCOPE TEXT: whether any element holds TEXT as its value or a label.
     case 'has':
         for (const element of scope(args[0]).entireContents()) {
             const info = describe(element);
-            if ([info.value, info.name, info.description].includes(args[1])) return 'yes';
+            if (info.value === args[1] || labels(info).includes(args[1])) return 'yes';
         }
         return 'no';
-    // rowof TERM: the centre of a read-only cell in the table row showing TERM
-    // (the row's last static text, away from the editable term field).
+    // hastext SCOPE TEXT: whether a static text reads TEXT, as a title does.
+    case 'hastext':
+        for (const element of scope(args[0]).entireContents()) {
+            if (attr(element, 'role') !== 'AXStaticText') continue;
+            if (attr(element, 'value') === args[1]) return 'yes';
+        }
+        return 'no';
+    // row TERM: the texts the row showing TERM holds, joined with " | ".
+    case 'row':
+        return rowShowing(args[0]).cells
+            .filter(cell => typeof cell.value === 'string' && cell.value !== '')
+            .map(cell => cell.value).join(' | ');
+    // rowof TERM: the centre of the row's last static text (a read-only cell,
+    // away from the editable term field).
     case 'rowof': {
-        for (const table of scope('window').entireContents()) {
-            if (attr(table, 'role') !== 'AXTable') continue;
-            for (const row of table.rows()) {
-                const cells = row.entireContents().map(describe);
-                if (!cells.some(cell => cell.value === args[0] || cell.name === args[0])) continue;
-                const texts = cells.filter(cell => cell.role === 'AXStaticText' && cell.size
-                                           && cell.size[0] > 0);
-                const target = texts.length ? texts[texts.length - 1] : describe(row);
-                return centre(target).join(' ');
-            }
-        }
-        throw new Error(`no table row shows ${args[0]}`);
+        const { row, cells } = rowShowing(args[0]);
+        const texts = cells.filter(cell => cell.role === 'AXStaticText' && cell.size && cell.size[0] > 0);
+        return centre(texts.length ? texts[texts.length - 1] : describe(row)).join(' ');
     }
-    // selectrow TERM: sets the row's AXSelected, the keyboard-free way to pick it.
-    case 'selectrow': {
-        for (const table of scope('window').entireContents()) {
-            if (attr(table, 'role') !== 'AXTable') continue;
-            for (const row of table.rows()) {
-                const cells = row.entireContents().map(describe);
-                if (cells.some(cell => cell.value === args[0] || cell.name === args[0])) {
-                    row.selected = true;
-                    return 'ok';
-                }
-            }
-        }
-        throw new Error(`no table row shows ${args[0]}`);
-    }
+    case 'selectrow':
+        rowShowing(args[0]).row.selected = true;
+        return 'ok';
     case 'click':
         se.click({ at: [Number(args[0]), Number(args[1])] });
         return 'ok';

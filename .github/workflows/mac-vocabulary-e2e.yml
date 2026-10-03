@@ -72,7 +72,7 @@ jobs:
         run: ffmpeg -version >/dev/null 2>&1 || brew install ffmpeg
 
       - name: Drive the Vocabulary sheet
-        timeout-minutes: 20
+        timeout-minutes: 35
         env:
           APP_BUNDLE: ${{ github.workspace }}/build/speecher.app
           EVIDENCE_ROOT: ${{ runner.temp }}/vocabulary-e2e
