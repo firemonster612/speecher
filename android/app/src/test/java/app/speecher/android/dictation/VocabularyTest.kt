@@ -5,6 +5,7 @@ import androidx.core.content.edit
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.speechTerms
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,7 +19,7 @@ class VocabularyTest {
         VocabularyWord("Kubernetes", "The container platform.", setOf(WritingProfile.Work))
 
     @Test
-    fun `words stored as bare terms load as words for every profile, and context and profiles persist`() {
+    fun `words stored as bare terms load as key terms for every profile, and the rest persists`() {
         val context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
             commit = true
@@ -30,8 +31,14 @@ class VocabularyTest {
             listOf(VocabularyWord("Speecher"), VocabularyWord("Priya Raman")),
             store.load().vocabulary,
         )
-        store.save(SpeecherSettings(vocabulary = listOf(VocabularyWord("Speecher"), kubernetes)))
-        assertEquals(listOf(VocabularyWord("Speecher"), kubernetes), store.load().vocabulary)
+        val words =
+            listOf(
+                VocabularyWord("Speecher", priority = true),
+                kubernetes,
+                VocabularyWord("Grafana", keyTerm = false),
+            )
+        store.save(SpeecherSettings(vocabulary = words))
+        assertEquals(words, store.load().vocabulary)
     }
 
     @Test
@@ -48,6 +55,24 @@ class VocabularyTest {
         assertEquals(
             listOf(VocabularyWord("Speecher"), kubernetes),
             settings.vocabularyFor(WritingProfile.Work),
+        )
+    }
+
+    @Test
+    fun `the speech service gets the profile's key terms, priority ones first`() {
+        val settings =
+            SpeecherSettings(
+                vocabulary =
+                    listOf(
+                        VocabularyWord("Speecher"),
+                        VocabularyWord("Grafana", keyTerm = false),
+                        VocabularyWord("PR", priority = true),
+                        VocabularyWord("Lúcia", profiles = setOf(WritingProfile.Personal)),
+                    )
+            )
+        assertEquals(
+            listOf("PR", "Speecher"),
+            speechTerms(settings.vocabularyFor(WritingProfile.Work)),
         )
     }
 

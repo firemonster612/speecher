@@ -1,5 +1,6 @@
 package app.speecher.android.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
@@ -45,6 +47,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +71,7 @@ import app.speecher.protocol.claudeVoiceKeytermIndices
 import app.speecher.protocol.claudeVoiceKeyterms
 import app.speecher.protocol.modelSupportsFastMode
 import app.speecher.protocol.modelSupportsUltrafast
+import app.speecher.protocol.speechTerms
 
 /** The pages the Settings list opens, each under its own top bar with a back arrow. */
 enum class SettingsPage(val title: String) {
@@ -500,8 +504,26 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
             },
             supportingContent = {
                 Column {
-                    if (word.context.isNotEmpty()) {
-                        Text(word.context, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // Priority only means anything for a key term.
+                    val priority = word.priority && word.keyTerm
+                    if (word.context.isNotEmpty() || priority) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (priority) {
+                                Badge(
+                                    Modifier.padding(end = 8.dp)
+                                        .border(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outline,
+                                            CircleShape,
+                                        ),
+                                    containerColor = Color.Transparent,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ) {
+                                    Text("Priority")
+                                }
+                            }
+                            Text(word.context, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                     if (word.profiles.isEmpty()) Text("All profiles")
                     else
@@ -560,6 +582,8 @@ private fun WordEditor(
 ) {
     var term by rememberSaveable { mutableStateOf(word.term) }
     var context by rememberSaveable { mutableStateOf(word.context) }
+    var keyTerm by rememberSaveable { mutableStateOf(word.keyTerm) }
+    var priority by rememberSaveable { mutableStateOf(word.priority) }
     var limited by rememberSaveable { mutableStateOf(word.profiles.isNotEmpty()) }
     var chosen by remember { mutableStateOf(word.profiles) }
     val duplicate =
@@ -584,6 +608,27 @@ private fun WordEditor(
                 supportingText =
                     if (duplicate) ({ Text("That word is already listed.") }) else null,
             )
+            ChoiceRow(
+                "Key term",
+                Role.Checkbox,
+                keyTerm,
+                supporting =
+                    "Sent to the speech service as a hint, so it hears the term. Refinement uses " +
+                        "every term either way.",
+            ) {
+                keyTerm = !keyTerm
+            }
+            ChoiceRow(
+                "Priority",
+                Role.Checkbox,
+                priority,
+                enabled = keyTerm,
+                supporting =
+                    "Puts the key term first in line for the speech service, so it stays in when " +
+                        "the list is longer than the service takes.",
+            ) {
+                priority = !priority
+            }
             OutlinedTextField(
                 context,
                 { context = it },
@@ -625,20 +670,30 @@ private fun WordEditor(
                 "Save",
             ) {
                 onSave(
-                    VocabularyWord(term.trim(), context.trim(), if (limited) chosen else emptySet())
+                    VocabularyWord(
+                        term.trim(),
+                        context.trim(),
+                        if (limited) chosen else emptySet(),
+                        keyTerm,
+                        priority,
+                    )
                 )
             }
         }
     }
 }
 
-/** A radio button or checkbox and its label, the whole row the target. */
+/**
+ * A radio button or checkbox and its label, with [supporting] text under it if given, the whole row
+ * the target.
+ */
 @Composable
 private fun ChoiceRow(
     label: String,
     role: Role,
     selected: Boolean,
     enabled: Boolean = true,
+    supporting: String? = null,
     onClick: () -> Unit,
 ) {
     val target =
@@ -651,15 +706,22 @@ private fun ChoiceRow(
     ) {
         if (role == Role.RadioButton) RadioButton(selected, null, enabled = enabled)
         else Checkbox(selected, null, enabled = enabled)
-        Text(
-            label,
-            Modifier.padding(start = 16.dp),
-            style = MaterialTheme.typography.bodyLarge,
-            // Material's disabled content opacity, as the control beside it uses.
-            color =
-                if (enabled) MaterialTheme.colorScheme.onSurface
-                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-        )
+        // Material's disabled content opacity, as the control beside it uses.
+        val alpha = if (enabled) 1f else 0.38f
+        Column(Modifier.padding(start = 16.dp)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+            )
+            supporting?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                )
+            }
+        }
     }
 }
 
@@ -792,10 +854,13 @@ internal fun PasteCode(
     }
 }
 
-/** The words Claude Voice receives as key terms: as many as fit its header, in list order. */
+/**
+ * The words Claude Voice receives as key terms: those marked so, priority first, as many as fit its
+ * header.
+ */
 internal fun keyTerms(settings: SpeecherSettings): Set<String> {
     if (settings.transcriptionProvider != Provider.Claude) return emptySet()
-    val terms = settings.vocabulary.map { it.term }
+    val terms = speechTerms(settings.vocabulary)
     return claudeVoiceKeytermIndices(terms).map { terms[it] }.toSet()
 }
 
@@ -807,12 +872,12 @@ internal fun vocabularySummary(settings: SpeecherSettings): String {
     val count = settings.vocabulary.size
     val refinement =
         if (count > MAX_REFINEMENT_TERMS) "the first $MAX_REFINEMENT_TERMS are used for refinement"
-        else "refinement uses those for the dictation's Writing Profile"
+        else "refinement uses every word for the dictation's Writing Profile"
     if (settings.transcriptionProvider != Provider.Claude) {
         return "Names and terms Speecher should spell your way. ChatGPT dictation takes no " +
             "key terms, and $refinement."
     }
-    val hints = claudeVoiceKeyterms(settings.vocabulary.map { it.term }).size
+    val hints = claudeVoiceKeyterms(speechTerms(settings.vocabulary)).size
     return "Names and terms Speecher should spell your way. Claude takes the $hints marked Key " +
         "term, and $refinement."
 }
@@ -870,10 +935,16 @@ internal fun SettingsVocabularyPreview() = SpeecherTheme {
                             "Kubernetes",
                             "The container platform, when I talk about clusters, pods or deploys.",
                             setOf(WritingProfile.Work, WritingProfile.AiCoding),
+                            priority = true,
                         ),
-                        VocabularyWord("Speecher"),
+                        VocabularyWord("Speecher", priority = true),
                         VocabularyWord("Lúcia", "My sister.", setOf(WritingProfile.Personal)),
-                        VocabularyWord("Grafana", "", setOf(WritingProfile.Work, standup)),
+                        VocabularyWord(
+                            "Grafana",
+                            "",
+                            setOf(WritingProfile.Work, standup),
+                            keyTerm = false,
+                        ),
                     ),
             )
         )

@@ -8,11 +8,13 @@ import org.junit.Test
 
 class VocabularySummaryTest {
     @Test
-    fun `Claude counts the terms that fit its header, ChatGPT only refinement`() {
-        val words = listOf("Speecher", "speecher", "Kotlin").map(::VocabularyWord)
+    fun `Claude counts the key terms that fit its header, ChatGPT only refinement`() {
+        val words =
+            listOf("Speecher", "speecher", "Kotlin").map(::VocabularyWord) +
+                VocabularyWord("Grafana", keyTerm = false)
         assertEquals(
             "Names and terms Speecher should spell your way. Claude takes the 2 marked Key term, " +
-                "and refinement uses those for the dictation's Writing Profile.",
+                "and refinement uses every word for the dictation's Writing Profile.",
             vocabularySummary(
                 SpeecherSettings(transcriptionProvider = Provider.Claude, vocabulary = words)
             ),

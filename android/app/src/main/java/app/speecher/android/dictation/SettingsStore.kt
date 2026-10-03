@@ -56,6 +56,9 @@ class SettingsStore(private val context: Context) {
                                         List(ids.length()) { WritingProfile(ids.getString(it)) }
                                             .toSet()
                                     },
+                                    // Stored only when off, so every earlier word is a key term.
+                                    word.optBoolean("keyTerm", true),
+                                    word.optBoolean("priority"),
                                 )
                         }
                     },
@@ -149,12 +152,16 @@ class SettingsStore(private val context: Context) {
                 JSONArray(
                         settings.vocabulary.map { word ->
                             JSONObject(
-                                mapOf(
-                                    "term" to word.term,
-                                    "context" to word.context,
-                                    "profiles" to JSONArray(word.profiles.map { it.id }),
+                                    mapOf(
+                                        "term" to word.term,
+                                        "context" to word.context,
+                                        "profiles" to JSONArray(word.profiles.map { it.id }),
+                                    )
                                 )
-                            )
+                                .apply {
+                                    if (!word.keyTerm) put("keyTerm", false)
+                                    if (word.priority) put("priority", true)
+                                }
                         }
                     )
                     .toString(),

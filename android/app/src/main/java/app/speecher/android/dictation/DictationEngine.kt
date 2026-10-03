@@ -14,6 +14,7 @@ import app.speecher.protocol.SpeechEvent
 import app.speecher.protocol.modelSupportsUltrafast
 import app.speecher.protocol.preferredTranscript
 import app.speecher.protocol.refineTranscript
+import app.speecher.protocol.speechTerms
 import app.speecher.protocol.transcribeSpeech
 import app.speecher.protocol.webSocketTransport
 import java.io.ByteArrayOutputStream
@@ -503,9 +504,9 @@ fun createDictationEngine(
                 ClaudeVoiceClient(
                     webSocketTransport(endpoints.getValue(selected).speech),
                     access,
-                    settings.vocabularyFor(writingProfile(settings, ActiveDictation.target)).map {
-                        it.term
-                    },
+                    speechTerms(
+                        settings.vocabularyFor(writingProfile(settings, ActiveDictation.target))
+                    ),
                     events,
                     endpoints.getValue(selected).speech,
                 )
