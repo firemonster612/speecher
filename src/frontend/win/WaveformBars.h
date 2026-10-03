@@ -25,6 +25,9 @@ namespace speecher::win {
 // the caution colour.
 class WaveformBars final : public QObject {
 public:
+    // The fifteen dots' width in DIPs: 3.2 wide with 3.2 between.
+    static constexpr double stripWidth = waveform::barCount * 3.2 + (waveform::barCount - 1) * 3.2;
+
     explicit WaveformBars(QObject *parent = nullptr);
 
     winrt::Microsoft::UI::Xaml::Controls::StackPanel element() const { return m_bars; }

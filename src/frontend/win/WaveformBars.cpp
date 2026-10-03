@@ -15,7 +15,6 @@ using namespace Microsoft::UI::Xaml::Controls;
 constexpr double barWidth = 3.2;
 constexpr double barGap = 3.2;
 constexpr float barDotHeight = 3.2f;
-constexpr double stripWidth = waveform::barCount * barWidth + (waveform::barCount - 1) * barGap;
 
 } // namespace
 

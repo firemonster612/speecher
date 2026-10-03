@@ -9,11 +9,13 @@ import SwiftUI
 private let pillHeight: CGFloat = 48
 private let minimumPillWidth: CGFloat = 126
 /// The pause and cancel buttons either side of the waveform, large round
-/// controls as on the Windows panel, and the gap beside each.
+/// controls as on the Windows panel, and the gap between each and the dots.
+/// The tab under the words hugs them: its rounded ends sit the same gap
+/// beyond the buttons (PanelContour's lobe padding).
 private let sessionButtonSize: CGFloat = 30
 private let sessionButtonGap: CGFloat = 10
-/// Clear of the capsule's rounded ends when there are no words.
-private let sessionButtonInset: CGFloat = 10
+/// The dots' own width, which the strip shrinks to beside the buttons.
+private let waveformInkWidth: CGFloat = 92.8
 private let previewChromeWidth: CGFloat = 48
 private let compactStripHeight: CGFloat = 28
 private let previewTopPadding: CGFloat = 12
@@ -218,7 +220,6 @@ final class DictationPanelState: ObservableObject {
         guard showsControls else { return 0 }
         return (pauseVisible ? sessionButtonSize + sessionButtonGap : 0)
             + (cancelVisible ? sessionButtonSize + sessionButtonGap : 0)
-            + 2 * sessionButtonInset
     }
     /// Paused keeps the bars, flat and still in the caution colour.
     var showsPaused: Bool { showsControls && paused }
@@ -240,7 +241,7 @@ final class DictationPanelState: ObservableObject {
             : pillHeight
     }
     var inkWidth: CGFloat {
-        guard let label = waitingLabel else { return 92.8 + controlsWidth }
+        guard let label = waitingLabel else { return waveformInkWidth + controlsWidth }
         return (label as NSString).size(withAttributes: [
             .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
         ]).width + controlsWidth
@@ -336,7 +337,7 @@ struct DictationPanelView: View {
                     .padding(.horizontal, 24)
                     .padding(.top, previewTopPadding)
             }
-            HStack(spacing: 10) {
+            HStack(spacing: state.showsControls ? sessionButtonGap : 10) {
                 if !state.problem.isEmpty {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .symbolRenderingMode(.multicolor)
@@ -365,6 +366,7 @@ struct DictationPanelView: View {
                             .fixedSize()
                     } else {
                         DotWaveform(level: state.$level, frozen: state.frozen, paused: state.showsPaused,
+                                    width: state.showsControls ? waveformInkWidth : minimumPillWidth,
                                     height: state.stripHeight, floor: $state.waveformFloor)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(state.showsPaused ? SpeecherBridge.statusLabel(for: .paused) : phaseLabel)
@@ -376,8 +378,7 @@ struct DictationPanelView: View {
                     }
                 }
             }
-            .padding(.horizontal, !state.problem.isEmpty || finished ? 24
-                     : state.showsControls ? sessionButtonInset : 0)
+            .padding(.horizontal, !state.problem.isEmpty || finished ? 24 : 0)
             .frame(height: state.problem.isEmpty ? state.stripHeight : nil)
             .padding(.vertical, state.problem.isEmpty ? 0 : 10)
             .padding(.top, state.showsPreview ? previewStripSpacing : 0)
@@ -436,6 +437,7 @@ struct DotWaveform: View {
     let level: Published<Float>.Publisher
     var frozen = false
     var paused = false
+    var width = minimumPillWidth
     var height: CGFloat
     /// The quietest level heard, which the bars' range starts from; its owner
     /// keeps it so it outlives this view.
@@ -459,7 +461,7 @@ struct DotWaveform: View {
                 let wave = reduceMotion || paused ? 1 : multiplier(offset - Foundation.floor(offset))
                 let scale = paused ? 1 : Double(max(1, smoothed * 5))
                 let height = 3.2 * scale * bulge * wave
-                let rect = CGRect(x: (size.width - 92.8) / 2 + Double(index) * 6.4,
+                let rect = CGRect(x: (size.width - waveformInkWidth) / 2 + Double(index) * 6.4,
                                   y: (size.height - height) / 2, width: 3.2, height: height)
                 context.fill(Path(roundedRect: rect, cornerSize: CGSize(width: 0.8, height: height / 4)),
                              with: .foreground)
@@ -467,7 +469,7 @@ struct DotWaveform: View {
         }
         .foregroundStyle(paused ? Color(nsColor: .systemOrange) : Color.primary)
         .opacity(frozen && !paused ? 0.4 : 1)
-        .frame(width: minimumPillWidth, height: height)
+        .frame(width: width, height: height)
         .onReceive(level) { value in
             var mapped: Float = 0
             if value > 0 {

@@ -850,6 +850,9 @@ struct DictationPanel::Native : QObject {
         row.HorizontalAlignment(HorizontalAlignment::Center);
         glyph.Visibility(hasProblem || finished ? Visibility::Visible : Visibility::Collapsed);
         waveform.Visibility(listening ? Visibility::Visible : Visibility::Collapsed);
+        // Beside the buttons the strip is only as wide as its dots, so the tab
+        // under the words hugs [button][bars][button] with equal gaps.
+        waveform.Width(controlsWidth > 0 ? win::WaveformBars::stripWidth : double(panelWidth));
         pauseButton.Visibility(controls.pauseVisible ? Visibility::Visible : Visibility::Collapsed);
         pauseButton.IsEnabled(controls.pauseEnabled);
         pauseButton.Content().as<FontIcon>().Glyph(paused ? L"\uE768" : L"\uE769");
@@ -892,10 +895,10 @@ struct DictationPanel::Native : QObject {
             : previewTopPadding + lineHeight + previewStripSpacing
                 + std::max(compactStripHeight, lineHeight + 6) + previewBottomPadding;
         resize(wantedWidth, wantedHeight);
-        // With the buttons showing, the lobe holds the whole row: the bars'
-        // fixed-width strip or the status text, with a button either side.
-        const double inkWidth = controlsWidth == 0 ? (waiting ? measuredTextWidth(shown) : 92.8)
-            : (listening ? panelWidth : std::max(panelWidth, measuredTextWidth(shown) + 32))
+        // With the buttons showing, the lobe holds the whole row: the bars or
+        // the status text, with a button either side.
+        const double inkWidth = controlsWidth == 0 ? (waiting ? measuredTextWidth(shown) : win::WaveformBars::stripWidth)
+            : (listening ? win::WaveformBars::stripWidth : std::max(panelWidth, measuredTextWidth(shown) + 32))
                 + controlsWidth;
         updateOutline(showPreview ? previewTopPadding + lineHeight + previewShoulderDrop : 0, inkWidth);
         chrome.UpdateLayout();
@@ -913,22 +916,38 @@ struct DictationPanel::Native : QObject {
     // inside it.
     void limitClicksToCapsule(bool interactive)
     {
-        RECT wanted{};
+        // The words bar across the top, and under it only the tab's width
+        // when the outline carves one, so clicks beside the tab go through.
+        RECT bar{};
+        RECT tab{};
         if (interactive) {
             const auto bounds = chrome.TransformToVisual(nullptr).TransformBounds(
                 {0, 0, float(chrome.ActualWidth()), float(chrome.ActualHeight())});
-            wanted = {int(std::floor(bounds.X * scale())), int(std::floor(bounds.Y * scale())),
-                      int(std::ceil((bounds.X + bounds.Width) * scale())),
-                      int(std::ceil((bounds.Y + bounds.Height) * scale()))};
+            const auto px = [this](double dip) { return int(std::lround(dip * scale())); };
+            bar = {px(bounds.X), px(bounds.Y), px(bounds.X + bounds.Width), px(bounds.Y + bounds.Height)};
+            if (outlineTabHalf > 0) {
+                const double middle = bounds.X + bounds.Width / 2.0;
+                tab = {px(middle - outlineTabHalf), px(bounds.Y + outlineShoulder),
+                       px(middle + outlineTabHalf), bar.bottom};
+                bar.bottom = tab.top;
+            }
         }
-        if (EqualRect(&wanted, &clickRegion)) {
+        if (EqualRect(&bar, &clickRegion) && EqualRect(&tab, &clickTab)) {
             return;
         }
-        clickRegion = wanted;
+        clickRegion = bar;
+        clickTab = tab;
+        HRGN region = nullptr;
+        if (interactive) {
+            region = CreateRectRgnIndirect(&bar);
+            if (!IsRectEmpty(&tab)) {
+                HRGN lobe = CreateRectRgnIndirect(&tab);
+                CombineRgn(region, region, lobe, RGN_OR);
+                DeleteObject(lobe);
+            }
+        }
         // The system owns the region once it is set.
-        SetWindowRgn(window,
-                     interactive ? CreateRectRgnIndirect(&wanted) : nullptr,
-                     IsWindowVisible(window));
+        SetWindowRgn(window, region, IsWindowVisible(window));
     }
 
     bool pointerOverChrome() const
@@ -1053,9 +1072,13 @@ struct DictationPanel::Native : QObject {
             figure.Segments().Append(segment);
         };
         if (shoulder <= 0 || lobeHeight <= 0 || fillet < 4) {
+            outlineShoulder = 0;
+            outlineTabHalf = 0;
             outline.Data(capsuleGeometry(width, height));
             return;
         }
+        outlineShoulder = shoulder;
+        outlineTabHalf = half;
         figure.StartPoint({float(cap), 0});
         line(width - cap, 0);
         arc(width - cap, shoulder, cap, SweepDirection::Clockwise);
@@ -1180,8 +1203,14 @@ struct DictationPanel::Native : QObject {
     Phase phase = Phase::Live;
     Brush normalForeground{nullptr};
     Microsoft::UI::Xaml::Media::Animation::Storyboard shimmer{nullptr};
-    // The window region limitClicksToCapsule() last set; empty for none.
+    // The window region limitClicksToCapsule() last set, as the words bar and
+    // the tab under it; empty for none.
     RECT clickRegion{};
+    RECT clickTab{};
+    // The carved outline's shoulder and the tab's half width in DIPs, which
+    // the click region follows; 0 while the outline is a plain capsule.
+    double outlineShoulder = 0;
+    double outlineTabHalf = 0;
     bool shimmering = false;
     bool frozen = false;
     bool completed = false;
