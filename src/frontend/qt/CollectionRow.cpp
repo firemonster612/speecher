@@ -642,6 +642,10 @@ void openRecordDialog(QWidget *parent,
     dialog->setWindowTitle(row < 0 ? collection.addDialogTitle : recordName(collection, original));
     dialog->setMinimumWidth(settings::gridUnit() * 30);
     auto *layout = new QVBoxLayout(dialog);
+    // Never shorter than its fields: wrapped help settles its height after
+    // the dialog first sizes itself, and a list of options must not be
+    // squeezed under it.
+    layout->setSizeConstraint(QLayout::SetMinimumSize);
     auto *form = new QFormLayout;
     layout->addLayout(form, 1);
 
