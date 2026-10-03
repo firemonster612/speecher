@@ -23,6 +23,7 @@
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSignalBlocker>
+#include <QStyle>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -190,8 +191,23 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     m_table->setObjectName(descriptor.id);
     m_table->setColumnCount(titles.size());
     m_table->setHorizontalHeaderLabels(titles);
+    QHeaderView *header = m_table->horizontalHeader();
     for (int column = 0; column < m_columns.size(); ++column) {
-        m_table->horizontalHeader()->setSectionResizeMode(
+        if (m_columns.at(column).kind == ColumnKind::ChoiceSet) {
+            // It can name every option, so it takes the width of its widest
+            // one and elides a longer list, leaving the room to the stretch
+            // column; the tooltip holds the whole list.
+            int widest = header->sectionSizeHint(column);
+            for (const RowOption &option : m_columns.at(column).options(AppSettings())) {
+                widest = std::max(widest, m_table->fontMetrics().horizontalAdvance(option.label)
+                                              + 2 * (style()->pixelMetric(QStyle::PM_FocusFrameHMargin) + 1)
+                                              + m_table->style()->pixelMetric(QStyle::PM_HeaderMargin));
+            }
+            header->setSectionResizeMode(column, QHeaderView::Interactive);
+            header->resizeSection(column, widest);
+            continue;
+        }
+        header->setSectionResizeMode(
             column,
             m_columns.at(column).stretch ? QHeaderView::Stretch : QHeaderView::ResizeToContents);
     }
@@ -225,7 +241,9 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
         detailed = detailed || !shown.detailColumn.isEmpty();
     }
     if (detailed) {
-        // Room for the detail's line under every record's own.
+        // Room for the detail's line under every record's own, which other
+        // cells must not wrap into.
+        m_table->setWordWrap(false);
         m_table->verticalHeader()->setDefaultSectionSize(
             m_table->verticalHeader()->defaultSectionSize() + m_table->fontMetrics().height());
     }
