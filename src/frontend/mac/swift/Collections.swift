@@ -206,23 +206,18 @@ final class CollectionEditor: ObservableObject {
         save()
     }
 
-    /// The pill after each record's stretch column, by record, re-derived from
+    /// Each Icon column's cells by record, keyed by column, re-derived from
     /// the records as they now stand whenever they change.
-    var badges: [UUID: String] {
-        byRecord(model.bridge.settingsSchema.badges(for: records.map(\.values), forRowId: row.rowId))
-    }
-
-    /// The pill at the start of the stretch column's second line, the same way.
-    var detailBadges: [UUID: String] {
-        byRecord(model.bridge.settingsSchema.detailBadges(for: records.map(\.values), forRowId: row.rowId))
-    }
-
-    private func byRecord(_ texts: [String]) -> [UUID: String] {
-        var byRecord: [UUID: String] = [:]
-        for (record, text) in zip(records, texts) where !text.isEmpty {
-            byRecord[record.id] = text
+    var iconCells: [String: [UUID: CollectionIconCell]] {
+        let values = records.map(\.values)
+        var cells: [String: [UUID: CollectionIconCell]] = [:]
+        for column in tableColumns where column.kind == .icon {
+            let icons = model.bridge.settingsSchema.icons(forColumn: column.columnId,
+                                                          inRowId: row.rowId,
+                                                          records: values)
+            cells[column.columnId] = Dictionary(uniqueKeysWithValues: zip(records.map(\.id), icons))
         }
-        return byRecord
+        return cells
     }
 
     func choiceSetText(_ column: CollectionColumnModel, record: CollectionRecord) -> String {
@@ -287,27 +282,18 @@ struct CollectionRow: View {
     }
 
     private var table: some View {
-        let badges = editor.badges
-        let detailBadges = editor.detailBadges
+        let iconCells = editor.iconCells
         return Table(editor.records, selection: $editor.selection) {
             TableColumnForEach(editor.tableColumns, id: \.columnId) { column in
-                TableColumn(column.title) { record in
-                    VStack(alignment: .leading) {
-                        HStack {
+                TableColumn(Self.header(column)) { record in
+                    if column.kind == .icon {
+                        RecordIcon(iconId: column.iconId, cell: iconCells[column.columnId]?[record.id])
+                    } else {
+                        VStack(alignment: .leading) {
                             RecordCell(editor: editor, column: column, record: record,
                                        editable: row.enabled)
-                            if column.stretch, let badge = badges[record.id] {
-                                RecordBadge(text: badge)
-                            }
-                        }
-                        .help(editor.tooltip(column.columnId, record: record.id))
-                        // A pill with no detail still gets the line.
-                        let detailBadge = column.stretch ? detailBadges[record.id] : nil
-                        if !column.detailColumn.isEmpty || detailBadge != nil {
-                            HStack {
-                                if let detailBadge {
-                                    RecordBadge(text: detailBadge, tint: Color(nsColor: .systemGray))
-                                }
+                                .help(editor.tooltip(column.columnId, record: record.id))
+                            if !column.detailColumn.isEmpty {
                                 RecordDetail(text: RecordField.string(record.values[column.detailColumn]))
                             }
                         }
@@ -316,6 +302,7 @@ struct CollectionRow: View {
                 .width(min: Self.width(column).min,
                        ideal: Self.width(column).ideal,
                        max: Self.width(column).max)
+                .alignment(column.kind == .icon ? .center : .automatic)
             }
         }
         // Double-click or Return opens a record, as the Edit command does.
@@ -342,14 +329,24 @@ struct CollectionRow: View {
         }
     }
 
+    /// A column's header: its title, or an Icon column's icon alone, which
+    /// VoiceOver reads as the title.
+    private static func header(_ column: CollectionColumnModel) -> Text {
+        guard column.kind == .icon else { return Text(column.title) }
+        return Text(Image(systemName: RecordIcon.symbol(column.iconId))).accessibilityLabel(column.title)
+    }
+
     /// How much of the table's width a column asks for. The descriptor names the
-    /// one that takes the leftover; a flag needs no more than its checkbox, and
-    /// the rest size to the values they hold. Columns stay resizable either way.
+    /// one that takes the leftover; a flag needs no more than its checkbox, an
+    /// icon no more than itself, and the rest size to the values they hold.
+    /// Columns other than an icon's stay resizable.
     private static func width(_ column: CollectionColumnModel)
         -> (min: CGFloat, ideal: CGFloat, max: CGFloat?) {
         switch (column.kind, column.stretch) {
         case (.toggle, _):
             return (44, 48, 56)
+        case (.icon, _):
+            return (28, 28, 28)
         case (_, true):
             return (100, 132, nil)
         default:
@@ -425,8 +422,9 @@ struct RecordSheet: View {
         _limited = State(initialValue: limited)
     }
 
+    /// Read-only and icon columns hold nothing to fill in.
     private var columns: [CollectionColumnModel] {
-        editor.collection.columns.filter { $0.kind != .readOnly }
+        editor.collection.columns.filter { $0.kind != .readOnly && $0.kind != .icon }
     }
 
     var body: some View {
@@ -624,20 +622,39 @@ struct RecordDetail: View {
     }
 }
 
-/// A short label on a capsule, as the Local models pane shows a rating: in the
-/// accent after a record's name, or in grey at the start of its second line.
-struct RecordBadge: View {
-    let text: String
-    var tint = Color(nsColor: .controlAccentColor)
+/// An Icon column's cell: the column's symbol in the text colour, in the
+/// secondary style when faint, or nothing. The tooltip says which either way.
+struct RecordIcon: View {
+    let iconId: String
+    let cell: CollectionIconCell?
 
     var body: some View {
-        Text(text)
-            .font(.caption)
-            .fixedSize()
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(Capsule().fill(tint.opacity(0.3)))
-            .accessibilityLabel(text)
+        icon
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .help(cell?.tooltip ?? "")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(cell?.tooltip ?? "")
+    }
+
+    @ViewBuilder private var icon: some View {
+        switch cell?.state {
+        case .shown?:
+            Image(systemName: Self.symbol(iconId))
+        case .faint?:
+            Image(systemName: Self.symbol(iconId)).foregroundStyle(.secondary)
+        default:
+            Color.clear
+        }
+    }
+
+    /// SF Symbols for the schema's icon ids, filled as Mail marks a flagged message.
+    static func symbol(_ iconId: String) -> String {
+        switch iconId {
+        case "microphone": return "mic.fill"
+        case "star": return "star.fill"
+        default: return "circle.fill"
+        }
     }
 }
 
