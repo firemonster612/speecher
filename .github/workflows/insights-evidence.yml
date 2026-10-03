@@ -253,32 +253,17 @@ jobs:
           fi
           pkill -9 -x speecher || true
           find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
-          # Dark Aqua through System Events, which needs Apple Events access
-          # for osascript; neither defaults domain moves a running session's
-          # appearance. Home, as AppKit draws it, shows the switch took.
-          python3 .github/macos-e2e/tcc_seed.py \
-            "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
-            kTCCServiceAppleEvents /usr/bin/osascript 2 com.apple.systemevents 1 || true
-          appearance() {
-            perl -e 'alarm 30; exec @ARGV' osascript -e \
-              "tell application \"System Events\" to tell appearance preferences to set dark mode to $1"
-          }
-          if appearance true; then
-            for page in stats-image home; do
-              SPEECHER_GRAB_PAGE=$page build/speecher.app/Contents/MacOS/speecher \
-                --grab "pages/macos-$page-dark.png" > "$RUNNER_TEMP/macos-$page-dark.log" 2>&1 || true
-              if [ ! -s "pages/macos-$page-dark.png" ]; then
-                echo "macos-$page-dark failed:"
-                tail -20 "$RUNNER_TEMP/macos-$page-dark.log"
-                failed=1
-              fi
-              pkill -9 -x speecher || true
-              find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
-            done
-            appearance false || true
-          else
-            echo "::warning::System Events would not switch to Dark Aqua; no dark grabs"
+          # The dark theme, through the Theme setting, as on Windows.
+          defaults write com.io-github-firemonster612.speecher ui.theme -string dark
+          SPEECHER_GRAB_PAGE=stats-image build/speecher.app/Contents/MacOS/speecher \
+            --grab pages/macos-stats-image-dark.png > "$RUNNER_TEMP/macos-dark.log" 2>&1 || true
+          defaults delete com.io-github-firemonster612.speecher ui.theme
+          if [ ! -s pages/macos-stats-image-dark.png ]; then
+            echo "macos-stats-image-dark failed:"
+            tail -20 "$RUNNER_TEMP/macos-dark.log"
+            failed=1
           fi
+          pkill -9 -x speecher || true
           exit $failed
 
       - name: Upload macOS pages
