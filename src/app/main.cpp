@@ -355,7 +355,7 @@ int main(int argc, char **argv)
         if (!daemon) {
             AllowSetForegroundWindow(ASFW_ANY);
             auto result = SingleInstanceIpc::sendCommandDetailed(
-                showCommand, std::nullopt, decision.transcribeFiles, &response);
+                showCommand, SessionOverrides(), decision.transcribeFiles, &response);
             // The startup claim can precede the winning instance's pipe listener.
             if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
                 QDeadlineTimer deadline(750);
@@ -366,7 +366,7 @@ int main(int argc, char **argv)
                         break;
                     }
                     result = SingleInstanceIpc::sendCommandDetailed(
-                        showCommand, std::nullopt, decision.transcribeFiles, &response, int(remaining));
+                        showCommand, SessionOverrides(), decision.transcribeFiles, &response, int(remaining));
                 }
             }
             if (result == IpcCommandResult::Sent) {
@@ -375,7 +375,7 @@ int main(int argc, char **argv)
         }
 #else
         if (!daemon
-            && SingleInstanceIpc::sendCommandDetailed(showCommand, std::nullopt, decision.transcribeFiles, &response)
+            && SingleInstanceIpc::sendCommandDetailed(showCommand, SessionOverrides(), decision.transcribeFiles, &response)
                 == IpcCommandResult::Sent) {
             return answered();
         }
@@ -395,10 +395,14 @@ int main(int argc, char **argv)
     } else {
         if (decision.startListening) {
             QTimer::singleShot(0, &controller, [&controller, &decision] {
-                if (decision.outputFormat) {
+                const SessionOverrides &overrides = decision.sessionOverrides;
+                if (overrides.outputFormat || overrides.writingProfile) {
                     controller.handleIpcCommand(QStringLiteral("start"),
-                                                outputFormatName(*decision.outputFormat),
-                                                nullptr);
+                                                overrides.outputFormat ? outputFormatName(*overrides.outputFormat)
+                                                                       : QString(),
+                                                nullptr,
+                                                {},
+                                                overrides.writingProfile.value_or(QString()));
                 } else {
                     controller.startListening();
                 }

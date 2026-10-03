@@ -44,6 +44,17 @@ QList<BindingRule> withVariablesFilled(QList<BindingRule> rules)
     return rules;
 }
 
+QString writingProfileFor(const AppSettings &settings, const Target &target)
+{
+    if (!settings.refinement.sessionWritingProfile.isEmpty()) {
+        return settings.refinement.sessionWritingProfile;
+    }
+    return resolveWritingProfile(target,
+                                 settings.refinement.writingProfileOverrides,
+                                 settings.appRecognitionRules,
+                                 writingProfileFromName(settings.refinement.defaultWritingProfile));
+}
+
 // Every stored term in priority order, not the speech request's capped list:
 // the speech service takes a hundred hints, while refinement reads the list as
 // prompt text and can use the rest.
@@ -141,14 +152,9 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
     RefinementSettings refinement = settings.refinement;
     refinement.bindingVocabulary = BindingProcessor::refinementVocabulary(
         activeBindings(settings, target));
-    const QString resolved = resolveWritingProfile(
-        target,
-        refinement.writingProfileOverrides,
-        settings.appRecognitionRules,
-        writingProfileFromName(refinement.defaultWritingProfile));
     const WritingProfileSettings profileSettings = writingProfileSettingsFor(
         refinement.writingProfiles,
-        resolved);
+        writingProfileFor(settings, target));
     refinement.style = refinedCleanupLevel(profileSettings.cleanupStrength, profileSettings.outputLanguage);
     refinement.tone = profileSettings.tone;
     return refinement;
@@ -177,11 +183,7 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     result.refinementVocabulary = refinementVocabulary(settings);
 
     result.refinementContext.target = target;
-    result.refinementContext.writingProfile = resolveWritingProfile(
-        target,
-        result.refinementSettings.writingProfileOverrides,
-        settings.appRecognitionRules,
-        writingProfileFromName(result.refinementSettings.defaultWritingProfile));
+    result.refinementContext.writingProfile = writingProfileFor(settings, target);
     result.refinementContext.tone = result.refinementSettings.tone;
     fillUserInstructions(result.refinementContext, result.refinementSettings,
                          writingProfileSettingsFor(result.refinementSettings.writingProfiles,

@@ -199,19 +199,19 @@ SessionResponse DictationSession::response(bool ok, const QString &message) cons
 
 void DictationSession::toggle()
 {
-    toggleSession(std::nullopt);
+    toggleSession({});
 }
 
-void DictationSession::toggleWithFormat(OutputFormat format)
+void DictationSession::toggleWith(const SessionOverrides &overrides)
 {
-    toggleSession(format);
+    toggleSession(overrides);
 }
 
-void DictationSession::toggleSession(std::optional<OutputFormat> format)
+void DictationSession::toggleSession(const SessionOverrides &overrides)
 {
     qInfo().noquote() << "toggle requested state=" + stateName();
     if (m_state == DictationState::Idle || m_state == DictationState::Error) {
-        startSession(format);
+        startSession(overrides);
     } else if (m_state == DictationState::Starting
                || m_state == DictationState::Listening
                || m_state == DictationState::Refining) {
@@ -221,23 +221,26 @@ void DictationSession::toggleSession(std::optional<OutputFormat> format)
 
 void DictationSession::startListening()
 {
-    startSession(std::nullopt);
+    startSession({});
 }
 
-void DictationSession::startListeningWithFormat(OutputFormat format)
+void DictationSession::startListeningWith(const SessionOverrides &overrides)
 {
-    startSession(format);
+    startSession(overrides);
 }
 
-void DictationSession::startSession(std::optional<OutputFormat> format)
+void DictationSession::startSession(const SessionOverrides &overrides)
 {
     if (m_state != DictationState::Idle && m_state != DictationState::Error) {
         return;
     }
 
     AppSettings settings = m_settings->dictationSnapshot();
-    if (format) {
-        settings.output.format = *format;
+    if (overrides.outputFormat) {
+        settings.output.format = *overrides.outputFormat;
+    }
+    if (overrides.writingProfile) {
+        settings.refinement.sessionWritingProfile = *overrides.writingProfile;
     }
     QString providerError;
     if (!selectSpeechTranscriber(settings.speech.providerId, &providerError)) {

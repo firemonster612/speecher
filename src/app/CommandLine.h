@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/HeadlessTranscribe.h"
-#include "core/OutputFormat.h"
+#include "dictation/DictationTypes.h"
 
 #include <QString>
 #include <QStringList>
@@ -31,7 +31,8 @@ struct CommandLineDecision {
     int exitCode = 0;
     // RunCli: the IPC command to send.
     QString ipcCommand;
-    std::optional<OutputFormat> outputFormat;
+    // --format and --profile, for toggle, start and a daemon's --start-listening.
+    SessionOverrides sessionOverrides;
     bool startListening = false;
     bool showSettings = false;
     bool showSetup = false;
@@ -50,8 +51,8 @@ struct CommandLineDecision {
 // what those runs do.
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath);
 
-// Drops the flags that make a launch *do* something — start dictation, open
-// settings, open setup — and keeps everything else. An update relaunches the
+// Drops the flags that make a launch *do* something — start dictation and its
+// --format and --profile, open settings, open setup — and keeps everything else. An update relaunches the
 // app with the argv it was started with, and resuming a recording or reopening
 // a window without a fresh gesture is not what the user asked for.
 QStringList argumentsWithoutStartupActions(const QStringList &arguments);

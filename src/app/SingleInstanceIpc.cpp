@@ -139,7 +139,8 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                     emit commandReceived(object.value(QStringLiteral("command")).toString(),
                                          object.value(QStringLiteral("outputFormat")).toString(),
                                          socket,
-                                         files);
+                                         files,
+                                         object.value(QStringLiteral("writingProfile")).toString());
                 }
                 m_socketsInCommand.remove(socket);
                 if (m_socketsPendingDelete.remove(socket)) {
@@ -267,7 +268,7 @@ bool SingleInstanceIpc::sendCommand(const QString &command,
                                     std::shared_ptr<const SingleInstancePlatform> platform)
 {
     return sendCommandDetailed(command,
-                               std::nullopt,
+                               SessionOverrides(),
                                response,
                                timeoutMs,
                                std::move(platform),
@@ -280,21 +281,21 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
-    return sendCommandDetailed(command, std::nullopt, response, timeoutMs, std::move(platform), error);
+    return sendCommandDetailed(command, SessionOverrides(), response, timeoutMs, std::move(platform), error);
 }
 
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
-                                                        std::optional<OutputFormat> outputFormat,
+                                                        const SessionOverrides &overrides,
                                                         IpcResponse *response,
                                                         int timeoutMs,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
-    return sendCommandDetailed(command, outputFormat, {}, response, timeoutMs, std::move(platform), error);
+    return sendCommandDetailed(command, overrides, {}, response, timeoutMs, std::move(platform), error);
 }
 
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
-                                                        std::optional<OutputFormat> outputFormat,
+                                                        const SessionOverrides &overrides,
                                                         const QStringList &files,
                                                         IpcResponse *response,
                                                         int timeoutMs,
@@ -309,8 +310,11 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
             continue;
         }
         QJsonObject request{{QStringLiteral("command"), command}};
-        if (outputFormat) {
-            request.insert(QStringLiteral("outputFormat"), outputFormatName(*outputFormat));
+        if (overrides.outputFormat) {
+            request.insert(QStringLiteral("outputFormat"), outputFormatName(*overrides.outputFormat));
+        }
+        if (overrides.writingProfile) {
+            request.insert(QStringLiteral("writingProfile"), *overrides.writingProfile);
         }
         if (!files.isEmpty()) {
             request.insert(QStringLiteral("files"), QJsonArray::fromStringList(files));
@@ -354,6 +358,7 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
             response->ok = object.value(QStringLiteral("ok")).toBool();
             response->state = object.value(QStringLiteral("state")).toString();
             response->message = object.value(QStringLiteral("message")).toString();
+            response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
         }
         return IpcCommandResult::Sent;
     }
@@ -368,11 +373,14 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
     if (!socket || socket->state() != QLocalSocket::ConnectedState) {
         return;
     }
-    const QJsonObject object{
+    QJsonObject object{
         {QStringLiteral("ok"), response.ok},
         {QStringLiteral("state"), response.state},
         {QStringLiteral("message"), response.message.isEmpty() ? QJsonValue() : QJsonValue(response.message)},
     };
+    if (!response.writingProfile.isEmpty()) {
+        object.insert(QStringLiteral("writingProfile"), response.writingProfile);
+    }
     QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     responseBytes.append('\n');
     socket->write(responseBytes);

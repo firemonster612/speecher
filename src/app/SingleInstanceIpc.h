@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/OutputFormat.h"
 #include "app/PlatformComposition.h"
+#include "dictation/DictationTypes.h"
 
 #include <QDeadlineTimer>
 #include <QLocalServer>
@@ -19,6 +19,9 @@ struct IpcResponse {
     bool ok = false;
     QString state;
     QString message;
+    // The Writing Profile id a toggle or start request carried, echoed so a
+    // client can tell an instance that predates --profile, which ignores it.
+    QString writingProfile;
 };
 
 enum class IpcCommandResult {
@@ -48,14 +51,14 @@ public:
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
     static IpcCommandResult sendCommandDetailed(const QString &command,
-                                                std::optional<OutputFormat> outputFormat,
+                                                const SessionOverrides &overrides,
                                                 IpcResponse *response,
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
     // files rides along as the request's "files" array (the transcribe command).
     static IpcCommandResult sendCommandDetailed(const QString &command,
-                                                std::optional<OutputFormat> outputFormat,
+                                                const SessionOverrides &overrides,
                                                 const QStringList &files,
                                                 IpcResponse *response,
                                                 int timeoutMs = 2500,
@@ -66,7 +69,8 @@ signals:
     void commandReceived(const QString &command,
                          const QString &outputFormat,
                          QLocalSocket *socket,
-                         const QStringList &files);
+                         const QStringList &files,
+                         const QString &writingProfile);
 
 public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);

@@ -35,6 +35,7 @@
 #include <QPermissions>
 #endif
 
+#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -890,36 +891,50 @@ void ApplicationController::quitApplication()
 void ApplicationController::handleIpcCommand(const QString &command,
                                              const QString &outputFormat,
                                              QLocalSocket *socket,
-                                             const QStringList &files)
+                                             const QStringList &files,
+                                             const QString &writingProfile)
 {
-    const bool hasFormat = !outputFormat.isEmpty();
-    if (hasFormat && outputFormat != QStringLiteral("plain") && outputFormat != QStringLiteral("html")) {
-        SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown output format")));
-        return;
+    SessionOverrides overrides;
+    if (!outputFormat.isEmpty()) {
+        if (outputFormat != QStringLiteral("plain") && outputFormat != QStringLiteral("html")) {
+            SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown output format")));
+            return;
+        }
+        overrides.outputFormat = outputFormatFromString(outputFormat);
     }
-    const OutputFormat format = outputFormatFromString(outputFormat);
+    if (!writingProfile.isEmpty()) {
+        const QList<RowOption> profiles = writingProfileChoices(m_settings->writingProfileSettings());
+        if (std::none_of(profiles.cbegin(), profiles.cend(),
+                         [&writingProfile](const RowOption &profile) { return profile.id == writingProfile; })) {
+            SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown writing profile")));
+            return;
+        }
+        overrides.writingProfile = writingProfile;
+    }
+    // toggle and start echo the profile they read; see IpcResponse::writingProfile.
+    const auto acknowledge = [this, socket, &writingProfile] {
+        IpcResponse reply = response();
+        reply.writingProfile = writingProfile;
+        SingleInstanceIpc::writeResponse(socket, reply);
+    };
     if (command == QStringLiteral("toggle")) {
         if (!ensureSetupCompleted()) {
-            SingleInstanceIpc::writeResponse(socket, response());
+            acknowledge();
             return;
         }
         if (sessionActive() || m_microphoneStartPending) {
             stopListening();
         } else {
-            startWithMicrophone([this, hasFormat, format] {
-                hasFormat ? m_session->toggleWithFormat(format) : m_session->toggle();
-            });
+            startWithMicrophone([this, overrides] { m_session->toggleWith(overrides); });
         }
-        SingleInstanceIpc::writeResponse(socket, response());
+        acknowledge();
     } else if (command == QStringLiteral("start")) {
         if (!ensureSetupCompleted()) {
-            SingleInstanceIpc::writeResponse(socket, response());
+            acknowledge();
             return;
         }
-        startWithMicrophone([this, hasFormat, format] {
-            hasFormat ? m_session->startListeningWithFormat(format) : m_session->startListening();
-        });
-        SingleInstanceIpc::writeResponse(socket, response());
+        startWithMicrophone([this, overrides] { m_session->startListeningWith(overrides); });
+        acknowledge();
     } else if (command == QStringLiteral("stop")) {
         stopListening();
         SingleInstanceIpc::writeResponse(socket, response());

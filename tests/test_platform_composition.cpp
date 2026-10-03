@@ -649,11 +649,11 @@ private slots:
                                                  QStringLiteral("--start-listening"),
                                                  QStringLiteral("--format"),
                                                  QStringLiteral("plain"),
+                                                 QStringLiteral("--profile"),
+                                                 QStringLiteral("custom_deleted"),
                                                  QStringLiteral("--show-settings"),
                                                  QStringLiteral("--show-setup")}),
-                 QStringList({QStringLiteral("--daemon"),
-                              QStringLiteral("--format"),
-                              QStringLiteral("plain")}));
+                 QStringList({QStringLiteral("--daemon")}));
     }
 
     void audioFileArgumentsOpenTheTranscribePage()
@@ -776,8 +776,7 @@ private slots:
         settings.raw().clear();
     }
 
-    // A custom profile is named like a custom tone: its id without custom_,
-    // with - for _.
+    // By its name with - between words, as toggle and start take it.
     void transcribeTakesACustomProfile()
     {
         SettingsStore settings;
@@ -796,6 +795,60 @@ private slots:
              QStringLiteral("stand-up"), audio},
             {});
         QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("custom_stand_up")));
+        settings.raw().clear();
+    }
+
+    void toggleAndStartTakeAWritingProfile()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        // Created as "Stand up", since renamed.
+        draft.refinement.writingProfiles.append({QStringLiteral("custom_stand_up"), QStringLiteral("balanced"),
+                                                 QStringLiteral("none"), QString(), QStringLiteral("Daily sync")});
+        settings.applySnapshot(draft);
+        const auto parse = [](const QStringList &arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {});
+        };
+        const auto profile = [&parse](const QString &value) {
+            return parse({QStringLiteral("toggle"), QStringLiteral("--profile"), value})
+                .sessionOverrides.writingProfile;
+        };
+
+        const CommandLineDecision toggle = parse({QStringLiteral("toggle"), QStringLiteral("--profile"),
+                                                  QStringLiteral("Email")});
+        QCOMPARE(toggle.mode, LaunchMode::RunCli);
+        QCOMPARE(toggle.sessionOverrides.writingProfile, std::optional(WritingProfile::Email));
+        const CommandLineDecision start = parse({QStringLiteral("start"), QStringLiteral("--profile"),
+                                                 QStringLiteral("AI-Coding"), QStringLiteral("--format"),
+                                                 QStringLiteral("html")});
+        QCOMPARE(start.sessionOverrides.writingProfile, std::optional(WritingProfile::AiCoding));
+        QCOMPARE(start.sessionOverrides.outputFormat, std::optional(OutputFormat::Html));
+        QCOMPARE(profile(QStringLiteral("ai coding")), std::optional(WritingProfile::AiCoding));
+        QCOMPARE(profile(QStringLiteral("Daily Sync")), std::optional(QStringLiteral("custom_stand_up")));
+        QCOMPARE(profile(QStringLiteral("daily-sync")), std::optional(QStringLiteral("custom_stand_up")));
+        QVERIFY(!profile(QStringLiteral("stand-up")));
+        // What toggle and start pass on to the daemon they start.
+        QCOMPARE(parse({QStringLiteral("--daemon"), QStringLiteral("--start-listening"), QStringLiteral("--profile"),
+                        QStringLiteral("custom_stand_up")})
+                     .sessionOverrides.writingProfile,
+                 std::optional(QStringLiteral("custom_stand_up")));
+
+        // A custom profile named like a built-in makes that name ambiguous.
+        draft.refinement.writingProfiles.append({QStringLiteral("custom_email"), QStringLiteral("balanced"),
+                                                 QStringLiteral("none"), QString(), QStringLiteral("Email")});
+        settings.applySnapshot(draft);
+        for (const QStringList &mistake : {QStringList{QStringLiteral("toggle"), QStringLiteral("--profile"),
+                                                       QStringLiteral("email")},
+                                           QStringList{QStringLiteral("toggle"), QStringLiteral("--profile"),
+                                                       QStringLiteral("poetry")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--profile")},
+                                           QStringList{QStringLiteral("status"), QStringLiteral("--profile"),
+                                                       QStringLiteral("work")}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
         settings.raw().clear();
     }
 

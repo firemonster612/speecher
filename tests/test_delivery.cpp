@@ -712,6 +712,20 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
                  QStringLiteral("{date}"));
     }
 
+    void aSessionWritingProfileBeatsTheAppOverride()
+    {
+        AppSettings settings;
+        settings.refinement.writingProfileOverrides = {{QStringLiteral("org.kde.kate"), WritingProfile::Email}};
+        Target kate;
+        kate.applicationId = QStringLiteral("org.kde.kate");
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, kate).refinementContext.writingProfile,
+                 WritingProfile::Email);
+
+        settings.refinement.sessionWritingProfile = WritingProfile::Personal;
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, kate).refinementContext.writingProfile,
+                 WritingProfile::Personal);
+    }
+
     void applicationMatrixClassifiesWritingProfiles()
     {
         const auto classified = [](const QString &applicationId) {
