@@ -111,6 +111,7 @@ void TranscriptPipeline::fillUserInstructions(RefinementContext &context,
 {
     context.additionalInstructions = refinement.additionalInstructions;
     context.profileInstructions = profile.instructions;
+    context.outputLanguage = profile.outputLanguage;
     context.customSystemPrompt =
         refinement.customSystemPromptEnabled ? refinement.customSystemPrompt : QString();
 }
@@ -148,7 +149,7 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
     const WritingProfileSettings profileSettings = writingProfileSettingsFor(
         refinement.writingProfiles,
         resolved);
-    refinement.style = profileSettings.cleanupStrength;
+    refinement.style = refinedCleanupLevel(profileSettings.cleanupStrength, profileSettings.outputLanguage);
     refinement.tone = profileSettings.tone;
     return refinement;
 }

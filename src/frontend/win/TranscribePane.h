@@ -113,6 +113,7 @@ private:
     QStringList m_batch;
     TranscribeOptions m_batchOptions;
     TranscribeBatchLabels m_batchLabels;
+    bool m_batchRefines = false;
     QList<TranscribeFileResult> m_results;
     bool m_cancelled = false;
     // The result row a retry is running for, or -1.

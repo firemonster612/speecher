@@ -298,10 +298,12 @@ QString refinementModel(const QString &providerId, const RefinementSettings &set
     return {};
 }
 
-bool refinesTranscripts(const TranscribeOptions &options)
+bool refinesTranscripts(const TranscribeOptions &options, const RefinementSettings &settings)
 {
+    const WritingProfileSettings profile =
+        writingProfileSettingsFor(settings.writingProfiles, writingProfileFromName(options.writingProfile));
     return options.refinementProviderId != QStringLiteral("none")
-        && options.cleanupStrength != QStringLiteral("none");
+        && refinedCleanupLevel(options.cleanupStrength, profile.outputLanguage) != QStringLiteral("none");
 }
 
 QString shownTranscript(const TranscribeFileResult &result, bool raw)
@@ -427,7 +429,7 @@ TranscribeBatchLabels batchLabels(const TranscribeOptions &options,
 {
     TranscribeBatchLabels labels;
     labels.speech = providerLabel(providers.speechProviders(), options.speechProviderId);
-    if (refinesTranscripts(options)) {
+    if (refinesTranscripts(options, settings)) {
         labels.refinement = QStringLiteral("%1 %2")
                                 .arg(providerLabel(providers.refinementProviders(), options.refinementProviderId),
                                      refinementModel(options.refinementProviderId, settings))

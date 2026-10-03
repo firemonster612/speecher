@@ -629,6 +629,7 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
             writingTone(object.value(QStringLiteral("tone")).toString(), tones),
             object.value(QStringLiteral("instructions")).toString(),
             object.value(QStringLiteral("name")).toString(),
+            object.value(QStringLiteral("outputLanguage")).toString(),
         });
     }
     bool hasAiCoding = false;
@@ -670,6 +671,9 @@ void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSetting
         };
         if (!isBuiltInWritingProfile(settings.profile)) {
             object.insert(QStringLiteral("name"), settings.name);
+        }
+        if (!settings.outputLanguage.isEmpty()) {
+            object.insert(QStringLiteral("outputLanguage"), settings.outputLanguage);
         }
         array.append(object);
     }

@@ -273,6 +273,32 @@ private slots:
         QCOMPARE(readFile(results.first().savedPath), QStringLiteral("Heard it."));
     }
 
+    // A batch set to None still refines, at Light, when its profile
+    // translates, and says so.
+    void anExplicitNoneStillTranslates()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        AppSettings stored = settings.snapshot();
+        stored.refinement.writingProfiles = {{WritingProfile::Other, QStringLiteral("balanced"), QStringLiteral("none"),
+                                              QString(), QString(), QStringLiteral("Spanish")}};
+        settings.applySnapshot(stored);
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("none");
+        options.writingProfile = WritingProfile::Other;
+        QVERIFY(refinesTranscripts(options, settings.snapshot().refinement));
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        QCOMPARE(m_refinedWith, QStringList({QStringLiteral("light_cleanup"), QStringLiteral("none")}));
+        QCOMPARE(finished.first().first().value<QList<TranscribeFileResult>>().first().refined,
+                 QStringLiteral("Heard it."));
+    }
+
     void rollsOverAStreamThatEndsMidFile()
     {
         DictationSession::setStableAttemptMs(0);

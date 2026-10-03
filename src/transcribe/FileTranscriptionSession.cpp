@@ -430,6 +430,10 @@ void FileTranscriptionSession::refine(const QString &raw)
         writingProfileSettingsFor(m_pipeline.refinementSettings.writingProfiles,
                                   m_pipeline.refinementContext.writingProfile));
     TranscriptPipeline::resolveCustomChoices(m_pipeline);
+    // Even a page or command line set to None translates for a profile with
+    // an output language.
+    m_pipeline.refinementSettings.style =
+        refinedCleanupLevel(m_pipeline.refinementSettings.style, m_pipeline.refinementContext.outputLanguage);
     const RefinementSettings &refinement = m_pipeline.refinementSettings;
     if (!m_refiner || refinement.style == QStringLiteral("none")
         || m_pipeline.bindingResult.canSkipRefinement) {

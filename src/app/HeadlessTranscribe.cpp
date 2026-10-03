@@ -89,7 +89,7 @@ int runHeadlessTranscribe(const QStringList &files,
         return finish(2, QStringLiteral("Unknown refinement provider: %1 (see speecher --help)")
                              .arg(resolved.refinementProviderId));
     }
-    const bool refines = refinesTranscripts(resolved);
+    const bool refines = refinesTranscripts(resolved, settings->snapshot().refinement);
     // Saving happens here rather than in the session, so --raw can save what
     // it prints.
     TranscribeOptions sessionOptions = resolved;

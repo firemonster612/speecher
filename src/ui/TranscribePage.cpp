@@ -608,7 +608,7 @@ void TranscribePage::showStep()
         break;
     case TranscribeStep::Export:
         m_progressTimer.stop();
-        m_variants->setVisible(refinesTranscripts(m_model->batchOptions()));
+        m_variants->setVisible(m_model->batchRefines());
         m_showRefined->setChecked(true);
         m_problem->setText(m_model->problem());
         m_problem->setVisible(!m_model->problem().isEmpty());
@@ -710,9 +710,11 @@ WritingProfileSettings TranscribePage::pickedProfile(const RefinementSettings &r
 void TranscribePage::applyProfileCleanup()
 {
     const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
+    const WritingProfileSettings profile = pickedProfile(refinement);
     // A stored strength this build does not know falls back to the middle one.
-    settings::selectData(m_cleanup, offeredCleanupLevel(pickedProfile(refinement).cleanupStrength,
-                                                        refinement.customCleanupLevels));
+    settings::selectData(m_cleanup,
+                         offeredCleanupLevel(refinedCleanupLevel(profile.cleanupStrength, profile.outputLanguage),
+                                             refinement.customCleanupLevels));
 }
 
 void TranscribePage::applyProfileTone()

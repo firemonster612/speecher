@@ -614,6 +614,28 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(pipeline.refinementContext.customTone, std::optional(terse));
     }
 
+    // Translating needs refinement, so a profile set to None that has an
+    // output language refines at Light, a selection edit too.
+    void aProfileThatTranslatesRefinesEvenAtNone()
+    {
+        AppSettings settings;
+        settings.refinement.writingProfiles = {
+            {WritingProfile::Other, QStringLiteral("none"), QStringLiteral("none"), QString(), QString(),
+             QStringLiteral("Spanish")},
+        };
+        const TranscriptPipelineResult dictation =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{});
+        QCOMPARE(dictation.refinementContext.outputLanguage, QStringLiteral("Spanish"));
+        QCOMPARE(dictation.refinementSettings.style, QStringLiteral("light_cleanup"));
+
+        Target selection;
+        selection.selectedText = QStringLiteral("hola");
+        selection.selectionStart = 0;
+        selection.selectionEnd = 4;
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("shorter"), settings, selection).refinementSettings.style,
+                 QStringLiteral("light_cleanup"));
+    }
+
     void transcriptPipelineScopesLearnedCorrectionsAndPreservesUserBindingPrecedence()
     {
         AppSettings settings;
