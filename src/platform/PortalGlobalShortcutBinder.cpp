@@ -52,9 +52,10 @@ QString portalTrigger(const QKeySequence &sequence)
 }
 
 // The portal keeps an app's bound shortcuts across sessions and ListShortcuts
-// hands them back at startup, so a shortcut the person let go of would return
-// on the next launch. Speecher remembers the removal and skips that restore
-// until they choose a shortcut again.
+// hands them back whenever a session is restored, so a shortcut the person let
+// go of would return on the next launch, or after a chooser they cancelled.
+// Speecher remembers the removal and restores nothing until a newly chosen
+// shortcut is bound.
 QString clearedKey(const GlobalShortcutAction &action)
 {
     return action.settingsKey + QStringLiteral("PortalCleared");
@@ -199,9 +200,6 @@ QString PortalGlobalShortcutBinder::unsupportedReason() const
 
 void PortalGlobalShortcutBinder::bind()
 {
-    if (wasCleared(action())) {
-        return;
-    }
     if (!m_supportKnown) {
         m_bindWhenSupported = true;
         return;
@@ -221,7 +219,6 @@ void PortalGlobalShortcutBinder::registerShortcut()
         emit registrationFinished(false, m_unsupportedReason);
         return;
     }
-    rememberCleared(action(), false);
     createSession(true);
 }
 
@@ -337,6 +334,9 @@ bool PortalGlobalShortcutBinder::ensureHostIdentity(bool registration)
 
 void PortalGlobalShortcutBinder::createSession(bool registration)
 {
+    if (!registration && wasCleared(action())) {
+        return;
+    }
     if (!m_supported) {
         if (registration) {
             emit registrationFinished(false, m_unsupportedReason);
@@ -502,6 +502,7 @@ void PortalGlobalShortcutBinder::processRequestResponse(const PortalResponse &re
             requestFailed(QStringLiteral("Your desktop didn't say which keys it assigned."));
             return;
         }
+        rememberCleared(action(), false);
         activatePendingSession(trigger);
         emit registrationFinished(true, m_triggerDescription);
     }
