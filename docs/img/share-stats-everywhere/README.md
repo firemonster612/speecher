@@ -10,8 +10,8 @@ workflow. Today is pinned to 2026-09-26 and the period is Last 30 days.
   30 million words a dictation, so the period holds 2.7 billion words, past
   what an int holds.
 - `<platform>-stats-image-dark.png`: the mockup seed in the dark theme: the
-  Breeze Dark colour scheme on Linux, the Theme setting set to Dark on macOS
-  and Windows.
+  Breeze Dark colour scheme on Linux, Dark Aqua on macOS, the Theme setting
+  set to Dark on Windows.
 - `windows-pasted-large.jpg`: the large seed copied from the Share menu in a
   Windows 11 session and read from the clipboard by another process, scaled
   to JPEG for size.
