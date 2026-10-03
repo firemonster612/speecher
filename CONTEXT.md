@@ -41,7 +41,7 @@ A setting that chooses how Speecher attempts insertion for an application or app
 _Avoid_: Output route, injection rule
 
 **Vocabulary Entry**:
-A word or phrase Speecher should recognize, preserve, or replace during dictation.
+A word or phrase Speecher should recognize, preserve, or replace during dictation. It may carry a context, which tells refinement what it means and when it applies, and may be limited to some Writing Profiles; under any other profile neither the speech service nor refinement gets it.
 _Avoid_: Dictionary word
 
 **Snippet**:

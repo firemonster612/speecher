@@ -574,6 +574,41 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QVERIFY(!refinement.contains(QStringLiteral("only speech")));
     }
 
+    // A term limited to other Writing Profiles stays out of both requests, and
+    // a term's context goes to refinement beside it.
+    void vocabularyFollowsTheDictationsWritingProfile()
+    {
+        AppSettings settings;
+        settings.refinement.defaultWritingProfile = WritingProfile::Work;
+        VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
+        kubernetes.context = QStringLiteral("The container platform.");
+        kubernetes.profiles = {WritingProfile::Work, WritingProfile::AiCoding};
+        VocabularyEntry lucia{QStringLiteral("Lúcia")};
+        lucia.profiles = {WritingProfile::Personal};
+        settings.vocabulary = {kubernetes, lucia, {QStringLiteral("Speecher")}};
+        settings.learnedCorrections = {
+            {QStringLiteral("0"), QStringLiteral("cute"), QStringLiteral("Qt"), QString(), 1, 0.98, true, 1, 1},
+        };
+
+        const TranscriptPipelineResult work =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{});
+        QCOMPARE(work.refinementVocabulary,
+                 (QStringList{QStringLiteral("Qt"), QStringLiteral("Kubernetes"), QStringLiteral("Speecher")}));
+        QCOMPARE(work.refinementContext.vocabularyContext,
+                 (QHash<QString, QString>{{QStringLiteral("Kubernetes"), QStringLiteral("The container platform.")}}));
+        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, Target{}),
+                 (QStringList{QStringLiteral("Kubernetes"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
+
+        settings.refinement.sessionWritingProfile = WritingProfile::Personal;
+        const TranscriptPipelineResult personal =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{});
+        QCOMPARE(personal.refinementVocabulary,
+                 (QStringList{QStringLiteral("Qt"), QStringLiteral("Lúcia"), QStringLiteral("Speecher")}));
+        QVERIFY(personal.refinementContext.vocabularyContext.isEmpty());
+        QCOMPARE(TranscriptPipeline::speechVocabulary(settings, Target{}),
+                 (QStringList{QStringLiteral("Lúcia"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
+    }
+
     // A rule that points at a custom profile gives the target that profile's
     // settings, and the prompt names its id.
     void transcriptPipelineResolvesACustomProfileThroughARule()

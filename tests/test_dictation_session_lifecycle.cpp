@@ -252,6 +252,33 @@ private slots:
         QCOMPARE(completed.count(), 1);
     }
 
+    // The speech request carries only the terms for the Writing Profile the
+    // target settles.
+    void speechKeyTermsFollowTheWritingProfile()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setDefaultWritingProfile(WritingProfile::Work);
+        VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
+        kubernetes.profiles = {WritingProfile::Work};
+        VocabularyEntry lucia{QStringLiteral("Lúcia")};
+        lucia.profiles = {WritingProfile::Personal};
+        settings.setVocabularyEntries({kubernetes, lucia});
+
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        QCOMPARE(speech->lastVocabulary, QStringList{QStringLiteral("Kubernetes")});
+    }
+
     void dictationSessionDeliversRawTranscript()
     {
         SettingsStore settings;

@@ -51,6 +51,7 @@
 #include <QPlainTextEdit>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QListWidget>
 #include <QRadioButton>
 #include <QScopeGuard>
 #include <QScreen>
@@ -1131,6 +1132,52 @@ private slots:
         QVERIFY(dialog);
         QCOMPARE(dialog->windowTitle(), QStringLiteral("Speecher"));
         QCOMPARE(page->findChildren<QDialog *>(QStringLiteral("collectionRecordDialog")).size(), 1);
+    }
+
+    // Edit… opens the selected term; its profiles can be limited, but not to
+    // none, and its context is kept with it.
+    void aTermsContextAndProfilesAreEditedInItsDialog()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
+        AppSettings settings;
+        settings.vocabulary = {{QStringLiteral("Kubernetes")}};
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
+        auto *edit = page->findChild<QPushButton *>(QStringLiteral("editVocabularyEntries"));
+        QVERIFY(table && edit);
+        QVERIFY(!edit->isEnabled());
+        table->selectRow(0);
+        QVERIFY(edit->isEnabled());
+        edit->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Kubernetes"));
+        dialog->findChild<QPlainTextEdit *>(QStringLiteral("context"))
+            ->setPlainText(QStringLiteral("The container platform."));
+        QList<QRadioButton *> choices = dialog->findChild<QWidget *>(QStringLiteral("profiles"))
+                                            ->findChildren<QRadioButton *>();
+        QCOMPARE(choices.size(), 2);
+        QVERIFY(choices.at(0)->isChecked());
+        auto *options = dialog->findChild<QListWidget *>(QStringLiteral("profilesOptions"));
+        QVERIFY(!options->isEnabled());
+        choices.at(1)->setChecked(true);
+        QPushButton *ok = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok);
+        QVERIFY(options->isEnabled());
+        QVERIFY(!ok->isEnabled());
+        options->item(0)->setCheckState(Qt::Checked);
+        QCOMPARE(options->item(0)->text(), QStringLiteral("Work"));
+        QVERIFY(ok->isEnabled());
+        acceptRecordDialog(dialog);
+
+        QCOMPARE(table->item(0, 2)->text(), QStringLiteral("Work"));
+        AppSettings applied;
+        page->appendToDraft(applied);
+        QCOMPARE(applied.vocabulary.first().context, QStringLiteral("The container platform."));
+        QCOMPARE(applied.vocabulary.first().profiles, QStringList{QStringLiteral("work")});
     }
 
     void aToneIsAddedAndEditedInItsDialog()
