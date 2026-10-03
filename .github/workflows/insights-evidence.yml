@@ -500,6 +500,22 @@ jobs:
           if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
             $failed += "stats-image-dark ($($process.ExitCode))"
           }
+          # Home wider than the pages above, where the cards' columns once
+          # flipped until WinUI gave up with "Layout cycle detected": a year of
+          # use, and a single dictation.
+          $env:SPEECHER_GRAB_PAGE = "home"
+          $env:SPEECHER_GRAB_SIZE = "1240x700"
+          $one = Join-Path $env:RUNNER_TEMP "seed-one.jsonl"
+          Get-Content docs/insights-mockup/seed-active.jsonl -Tail 1 | Set-Content $one
+          foreach ($seed in @{ name = "home-wide"; path = (Resolve-Path docs/insights-mockup/seed-active.jsonl).Path },
+                            @{ name = "home-wide-one"; path = $one }) {
+            $env:SPEECHER_INSIGHTS_SEED = $seed.path
+            $out = Join-Path (Resolve-Path pages).Path "windows-$($seed.name).png"
+            $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+            if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+              $failed += "$($seed.name) ($($process.ExitCode))"
+            }
+          }
           if ($failed) {
             throw "speecher --grab failed for $($failed -join ', ')"
           }

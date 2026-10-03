@@ -234,6 +234,13 @@ Grid adaptiveRow(const std::vector<UIElement> &cards, double minWidth)
     }
     layoutColumns(grid, minWidth * cards.size(), minWidth);
     grid.SizeChanged([minWidth](const IInspectable &sender, const SizeChangedEventArgs &args) {
+        // The columns follow the width alone. A card's unconstrained size
+        // depends on the layout it last had, so answering the height a new
+        // column count gives can flip between two layouts until WinUI gives
+        // up with "Layout cycle detected".
+        if (args.NewSize().Width == args.PreviousSize().Width) {
+            return;
+        }
         layoutColumns(sender.as<Grid>(), args.NewSize().Width, minWidth);
     });
     return grid;
