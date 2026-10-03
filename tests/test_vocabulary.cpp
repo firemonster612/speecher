@@ -221,7 +221,8 @@ private slots:
         QCOMPARE(entries.at(0).profiles, QStringList());
         // Recreated under the same id, the profile starts with no terms.
         settings.setWritingProfileSettings(profiles);
-        QCOMPARE(settings.vocabularyEntries().at(0).profiles, QStringList());
+        entries = settings.vocabularyEntries();
+        QCOMPARE(entries.at(0).profiles, QStringList());
         QCOMPARE(entries.at(1).profiles, QStringList{QStringLiteral("work")});
 
         QString error;

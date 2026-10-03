@@ -122,8 +122,9 @@ QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
                              const QList<LearnedCorrection> &corrections,
                              const QString &writingProfile)
 {
+    const QList<VocabularyEntry> normalized = normalizeVocabularyEntries(entries);
     QStringList terms;
-    for (const VocabularyEntry &entry : normalizeVocabularyEntries(entries)) {
+    for (const VocabularyEntry &entry : normalized) {
         if (writingProfile.isEmpty() || vocabularyEntryApplies(entry, writingProfile)) {
             terms.append(entry.term);
         }
@@ -133,7 +134,7 @@ QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
     for (const LearnedCorrection &correction : corrections) {
         if (correction.enabled && !terms.contains(correction.corrected, Qt::CaseInsensitive)
             && (writingProfile.isEmpty()
-                || !vocabularyTermExcluded(entries, correction.corrected, writingProfile))) {
+                || !vocabularyTermExcluded(normalized, correction.corrected, writingProfile))) {
             terms.append(correction.corrected);
         }
     }
