@@ -29,6 +29,9 @@ class HomePage : public QWidget {
 public:
     explicit HomePage(ApplicationController *controller, QWidget *parent = nullptr);
     QPushButton *toggleButton() const;
+    // What the Share menu's "Copy image with stats" does: the selected
+    // period's numbers over the year's heatmap, on the clipboard.
+    void copyStatsImage();
 
 public slots:
     // Shows a session state name: the toggle, the waveform and the status
@@ -59,6 +62,8 @@ private:
     // Copies the stats as an image or as text, or saves them as JSON.
     QPushButton *buildShareButton(QWidget *parent);
     InsightsRange currentRange() const;
+    // The selected period, summarized up to the day Home shows.
+    InsightsSummary currentSummary() const;
     void applyWidth();
     void refreshLastTranscript();
     void applyState(const QString &stateName);

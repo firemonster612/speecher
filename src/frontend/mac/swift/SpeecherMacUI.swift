@@ -158,6 +158,12 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     /// the pane to show before the grab.
     @MainActor
     @objc public func captureSettings(toPath path: String) -> Bool {
+        // "stats-image" saves the picture Home's Share menu copies, read back
+        // from the pasteboard.
+        if ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"] == "stats-image" {
+            guard model.copyStatsImage(), let png = NSPasteboard.general.data(forType: .png) else { return false }
+            return (try? png.write(to: URL(fileURLWithPath: path))) != nil
+        }
         if let page = ProcessInfo.processInfo.environment["SPEECHER_GRAB_PAGE"], !page.isEmpty {
             model.showPage(page)
             RunLoop.main.run(until: Date().addingTimeInterval(0.5))

@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QHash>
+#include <QImage>
 #include <QLocale>
 #include <QSaveFile>
 #include <QTimer>
@@ -33,6 +34,8 @@
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
+#include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
+#include <winrt/Windows.Storage.Streams.h>
 #pragma pop_macro("GetCurrentTime")
 
 #include <algorithm>
@@ -70,7 +73,7 @@ const std::array<InsightsRange, 4> kRanges{InsightsRange::Last7Days,
                                            InsightsRange::ThisYear,
                                            InsightsRange::AllTime};
 
-QString number(int value)
+QString number(qint64 value)
 {
     return QLocale().toString(value);
 }
@@ -178,21 +181,29 @@ ComboBox indexPicker(const QStringList &labels,
     return combo;
 }
 
-// As many equal columns as fit and divide the cards evenly, so four tiles go
-// 4, 2 or 1 across and a pair stacks when narrow. A column fits when it is at
-// least minWidth and as wide as every card's text laid out unwrapped, with the
-// column spacing between them.
-void layoutColumns(const Grid &grid, double width, double minWidth)
+// The widest card's width with its text laid out unwrapped, and at least
+// minWidth. Measured once per row: measured again later, a card answers with
+// the layout it last had (a progress bar keeps its arranged width), so columns
+// chosen from it flipped between two layouts until WinUI gave up with "Layout
+// cycle detected".
+double unwrappedWidth(const Grid &grid, double minWidth)
 {
-    const uint32_t count = grid.Children().Size();
-    double columnWidth = minWidth;
+    double width = minWidth;
     for (const UIElement &card : grid.Children()) {
         card.Measure({std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()});
-        columnWidth = std::max(columnWidth, double(card.DesiredSize().Width));
+        width = std::max(width, double(card.DesiredSize().Width));
     }
     // Measuring unconstrained left each card's desired size at its widest;
     // the grid measures them again at the column width.
     grid.InvalidateMeasure();
+    return width;
+}
+
+// As many equal columns of at least columnWidth as fit and divide the cards
+// evenly, so four tiles go 4, 2 or 1 across and a pair stacks when narrow.
+void layoutColumns(const Grid &grid, double width, double columnWidth)
+{
+    const uint32_t count = grid.Children().Size();
     const double spacing = grid.ColumnSpacing();
     uint32_t columns = static_cast<uint32_t>(
         std::clamp(std::floor((width + spacing) / (columnWidth + spacing)), 1.0, double(count)));
@@ -230,8 +241,15 @@ Grid adaptiveRow(const std::vector<UIElement> &cards, double minWidth)
         grid.Children().Append(card);
     }
     layoutColumns(grid, minWidth * cards.size(), minWidth);
-    grid.SizeChanged([minWidth](const IInspectable &sender, const SizeChangedEventArgs &args) {
-        layoutColumns(sender.as<Grid>(), args.NewSize().Width, minWidth);
+    // Measured on the first layout in the window, where the cards' styles
+    // apply, and kept: the same page always measures the same.
+    auto columnWidth = std::make_shared<std::optional<double>>();
+    grid.SizeChanged([minWidth, columnWidth](const IInspectable &sender, const SizeChangedEventArgs &args) {
+        const Grid grid = sender.as<Grid>();
+        if (!*columnWidth) {
+            *columnWidth = unwrappedWidth(grid, minWidth);
+        }
+        layoutColumns(grid, args.NewSize().Width, **columnWidth);
     });
     return grid;
 }
@@ -648,6 +666,23 @@ UIElement heatmapGrid(const InsightsSummary &summary, HeatMeasure measure, const
     return holder;
 }
 
+// The active days on the left and the Less-to-More legend on the right.
+Grid heatFooter(const InsightsSummary &summary, const PaneHost &host, const Brush &accent,
+                const Brush &empty)
+{
+    StackPanel legend;
+    legend.Orientation(Orientation::Horizontal);
+    legend.Spacing(3);
+    legend.Children().Append(secondaryCaption(heatLegendLessText(), host));
+    for (int level = 0; level < static_cast<int>(kHeatStrengths.size()); ++level) {
+        Border cell = heatCell(level, accent, empty);
+        cell.VerticalAlignment(VerticalAlignment::Center);
+        legend.Children().Append(cell);
+    }
+    legend.Children().Append(secondaryCaption(heatLegendMoreText(), host));
+    return titledHeader(secondaryCaption(activeDaysLastYearText(summary.activeDaysLastYear), host), legend);
+}
+
 UIElement activityCard(const InsightsSummary &summary, PaneHost &host,
                        const Brush &accent, const Brush &empty)
 {
@@ -666,20 +701,7 @@ UIElement activityCard(const InsightsSummary &summary, PaneHost &host,
     body.Children().Append(describedChart(heatmapGrid(summary, measure, host, accent, empty),
                                           homeText(HomeText::Activity),
                                           heatmapDescription(summary, measure)));
-
-    StackPanel legend;
-    legend.Orientation(Orientation::Horizontal);
-    legend.Spacing(3);
-    legend.Children().Append(secondaryCaption(heatLegendLessText(), host));
-    for (int level = 0; level < static_cast<int>(kHeatStrengths.size()); ++level) {
-        Border cell = heatCell(level, accent, empty);
-        cell.VerticalAlignment(VerticalAlignment::Center);
-        legend.Children().Append(cell);
-    }
-    legend.Children().Append(secondaryCaption(heatLegendMoreText(), host));
-    body.Children().Append(titledHeader(
-        secondaryCaption(activeDaysLastYearText(summary.activeDaysLastYear), host),
-        legend));
+    body.Children().Append(heatFooter(summary, host, accent, empty));
     return cardContainer(body);
 }
 
@@ -772,7 +794,7 @@ UIElement paceCard(const InsightsSummary &summary, const PaneHost &host)
     figures.Children().Append(figure(minutesText(summary.minutesSavedVersusTyping),
                                      homeText(HomeText::SavedOverTyping), host));
     body.Children().Append(figures);
-    const double scale = std::max(summary.wordsPerMinute, 160);
+    const double scale = std::max<double>(summary.wordsPerMinute, 160);
     body.Children().Append(barTable(
         {{styledTextBlock(homeText(HomeText::YouSpeaking), L"SettingsCardBodyStyle"),
           double(summary.wordsPerMinute), scale, number(summary.wordsPerMinute), {}},
@@ -900,6 +922,42 @@ UIElement privacyFooter(PaneHost &host)
     return footer;
 }
 
+// The picture "Copy image with stats" puts on the clipboard, as on Linux and
+// macOS: the period's four figures over the year's heatmap, in Home's card on
+// the window's solid background.
+Border statsImage(const InsightsSummary &summary, InsightsRange range, HeatMeasure measure,
+                  const PaneHost &host, const Brush &accent, const Brush &empty)
+{
+    StackPanel body = cardBody();
+    body.Spacing(12);
+    body.Children().Append(titledHeader(styledTextBlock(insightsImageTitle(), L"BodyStrongTextBlockStyle"),
+                                        secondaryCaption(insightsRangeLabel(range), host)));
+    StackPanel figures;
+    figures.Orientation(Orientation::Horizontal);
+    figures.Spacing(32);
+    // The tiles' figures, in their order and under their titles.
+    for (const InsightTileText &tile : insightTiles(summary, QDate())) {
+        StackPanel column;
+        column.Children().Append(secondaryCaption(tile.title, host));
+        column.Children().Append(styledTextBlock(
+            tile.unit.isEmpty() ? tile.value : tile.value + QLatin1Char(' ') + tile.unit,
+            L"SubtitleTextBlockStyle"));
+        figures.Children().Append(column);
+    }
+    body.Children().Append(figures);
+    if (const QString pace = insightsImagePaceLine(summary); !pace.isEmpty()) {
+        body.Children().Append(secondaryCaption(pace, host));
+    }
+    body.Children().Append(heatmapWeeks(summary.heatmap, static_cast<int>((summary.heatmap.size() + 6) / 7),
+                                        measure, host, accent, empty));
+    body.Children().Append(heatFooter(summary, host, accent, empty));
+    Border image;
+    image.Background(themeBrush(L"StatsImageBackground", host));
+    image.Padding({24, 24, 24, 24});
+    image.Child(cardContainer(body));
+    return image;
+}
+
 using WeakButton = winrt::weak_ref<Button>;
 
 winrt::fire_and_forget saveJson(PaneHost &host, WeakButton button, QByteArray json, QDate today);
@@ -923,8 +981,7 @@ void reportShare(const WeakButton &weak, const QString &text, const QString &tip
     });
 }
 
-// Share: the stats as text on the clipboard, or saved as JSON. The image the
-// Linux Home also copies is left out here.
+// Share: the stats as an image or text on the clipboard, or saved as JSON.
 UIElement shareButton(PaneHost &host, const InsightsSummary &summary, InsightsRange range,
                       const QDate &today)
 {
@@ -934,6 +991,19 @@ UIElement shareButton(PaneHost &host, const InsightsSummary &summary, InsightsRa
     MenuFlyout menu;
     menu.Placement(Primitives::FlyoutPlacementMode::BottomEdgeAlignedRight);
     const WeakButton weak = winrt::make_weak(button.as<Button>());
+    MenuFlyoutItem copyImage;
+    copyImage.Text(hs(labels.copyImage));
+    FontIcon imageIcon;
+    imageIcon.Glyph(L"\uEB9F"); // Photo
+    copyImage.Icon(imageIcon);
+    copyImage.Click([&host, weak, labels](const auto &, const auto &) {
+        copyStatsImage(host, [weak, labels](bool copied) {
+            if (copied) {
+                reportShare(weak, labels.copied);
+            }
+        });
+    });
+    menu.Items().Append(copyImage);
     MenuFlyoutItem copyText;
     copyText.Text(hs(labels.copyText));
     FontIcon copyIcon;
@@ -988,6 +1058,69 @@ winrt::fire_and_forget saveJson(PaneHost &host, WeakButton button, QByteArray js
 }
 
 } // namespace
+
+winrt::fire_and_forget copyStatsImage(PaneHost &host, std::function<void(bool copied)> done)
+{
+    using winrt::Microsoft::UI::Xaml::Media::Imaging::RenderTargetBitmap;
+    const std::weak_ptr<bool> alive = host.alive;
+    const auto root = host.xamlRoot ? host.xamlRoot() : winrt::Microsoft::UI::Xaml::XamlRoot{nullptr};
+    const auto window = root ? root.Content().try_as<Panel>() : nullptr;
+    if (!window) {
+        done(false);
+        co_return;
+    }
+    // RenderTargetBitmap draws only what is in the window's tree, but not
+    // what is on screen: a canvas lays the picture out at its own size, then
+    // holds it far to the left of the window.
+    Canvas stage;
+    bool copied = false;
+    try {
+        const QList<DictationRecord> &records = host.controller->insightsLog()->records();
+        const InsightsSummary summary = summarize(records, host.homeRange, host.controller->insightsToday(),
+                                                  host.controller->settings()->writingProfileSettings());
+        const ChartBrushes brushes = chartBrushes(host);
+        const Border image = statsImage(summary, host.homeRange, static_cast<HeatMeasure>(host.homeMeasure),
+                                        host, brushes.accent, brushes.empty);
+        stage.IsHitTestVisible(false);
+        stage.Children().Append(image);
+        window.Children().Append(stage);
+        image.UpdateLayout();
+        const winrt::Windows::Foundation::Size size = image.DesiredSize();
+        // Twice the layout size in pixels, as on Linux, so it stays sharp when
+        // pasted. RenderTargetBitmap draws at the window's rasterization scale
+        // and stretches anything bigger, so a Viewbox lays the picture out
+        // that much larger instead and the text is drawn at that size.
+        const double scale = 2 / root.RasterizationScale();
+        stage.Children().Clear();
+        Viewbox enlarged;
+        enlarged.Width(std::ceil(size.Width * scale));
+        enlarged.Height(std::ceil(size.Height * scale));
+        enlarged.Child(image);
+        Canvas::SetLeft(enlarged, -100000);
+        stage.Children().Append(enlarged);
+        enlarged.UpdateLayout();
+        RenderTargetBitmap bitmap;
+        co_await bitmap.RenderAsync(enlarged);
+        const auto pixels = co_await bitmap.GetPixelsAsync();
+        if (!gone(alive)) {
+            // BGRA8, premultiplied: QImage's ARGB32 on a little-endian machine.
+            QGuiApplication::clipboard()->setImage(QImage(pixels.data(), bitmap.PixelWidth(), bitmap.PixelHeight(),
+                                                          bitmap.PixelWidth() * 4,
+                                                          QImage::Format_ARGB32_Premultiplied)
+                                                       .copy());
+            copied = true;
+        }
+    } catch (const winrt::hresult_error &error) {
+        qWarning() << "drawing the stats image failed:" << qs(error.message());
+    }
+    if (!gone(alive)) {
+        uint32_t index = 0;
+        if (window.Children().IndexOf(stage, index)) {
+            window.Children().RemoveAt(index);
+        }
+    }
+    done(copied);
+}
 
 UIElement buildHomePage(PaneHost &host)
 {

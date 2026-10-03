@@ -37,6 +37,9 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <limits>
+
 namespace speecher {
 
 namespace {
@@ -50,7 +53,7 @@ constexpr int kTwoUpMinimumWidth = 560;
 // sink into the groove; this reads at the same step below the lead bar.
 constexpr int kMutedProgressPercent = 70;
 
-QString number(int value)
+QString number(qint64 value)
 {
     return QLocale().toString(value);
 }
@@ -148,11 +151,13 @@ QWidget *bigNumber(const QList<QPair<QString, QString>> &parts, QWidget *parent)
 }
 
 // A bar in the accent colour, or the lighter tint for every bar but the lead.
-QProgressBar *makeBar(int value, int maximum, bool leading, QWidget *parent)
+QProgressBar *makeBar(qint64 value, qint64 maximum, bool leading, QWidget *parent)
 {
     auto *bar = new QProgressBar(parent);
-    bar->setRange(0, std::max(1, maximum));
-    bar->setValue(value);
+    // A progress bar counts in int; past that, the same ratio in fewer steps.
+    const double step = std::max(1.0, double(maximum) / std::numeric_limits<int>::max());
+    bar->setRange(0, std::max(1, int(maximum / step)));
+    bar->setValue(int(value / step));
     bar->setTextVisible(false);
     bar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     if (!leading) {
@@ -702,7 +707,7 @@ QFrame *HomePage::buildPaceCard(const InsightsSummary &summary, QWidget *parent)
     };
     stat(bigNumber({{number(summary.wordsPerMinute), QStringLiteral("wpm")}}, nullptr),
          homeText(HomeText::SpeakingPace));
-    const int saved = summary.minutesSavedVersusTyping;
+    const qint64 saved = summary.minutesSavedVersusTyping;
     QList<QPair<QString, QString>> savedParts;
     if (saved >= 60) savedParts.append({number(saved / 60), QStringLiteral("h")});
     if (saved < 60 || saved % 60) savedParts.append({number(saved % 60), QStringLiteral("min")});
@@ -712,7 +717,7 @@ QFrame *HomePage::buildPaceCard(const InsightsSummary &summary, QWidget *parent)
     content->addStretch();
 
     QGridLayout *grid = makeBarGrid(content);
-    const int scale = std::max(summary.wordsPerMinute, 160);
+    const qint64 scale = std::max<qint64>(summary.wordsPerMinute, 160);
     // The figures are in the big number and the sentence below; the bars
     // only compare them.
     addBarRow(grid, new QLabel(homeText(HomeText::YouSpeaking), host),
@@ -735,7 +740,7 @@ QFrame *HomePage::buildAppsCard(const InsightsSummary &summary, QWidget *parent)
         return card;
     }
     QGridLayout *grid = makeBarGrid(content);
-    const int most = summary.apps.first().words;
+    const qint64 most = summary.apps.first().words;
     for (int index = 0; index < summary.apps.size(); ++index) {
         const AppShare &app = summary.apps.at(index);
         auto *name = new QWidget(host);
@@ -832,24 +837,20 @@ QPushButton *HomePage::buildShareButton(QWidget *parent)
             button->setToolTip(QString());
         });
     };
-    const auto current = [this] {
-        return summarize(m_controller->insightsLog()->records(), currentRange(), m_summarizedDay,
-                         m_controller->settings()->writingProfileSettings());
-    };
     auto *menu = new QMenu(button);
     connect(menu->addAction(themedIcon(QStringLiteral("image-x-generic")), labels.copyImage),
-            &QAction::triggered, this, [this, current, report, labels] {
-                QGuiApplication::clipboard()->setImage(statsImage(current(), currentRange(), m_measure));
+            &QAction::triggered, this, [this, report, labels] {
+                copyStatsImage();
                 report(labels.copied);
             });
     connect(menu->addAction(themedIcon(QStringLiteral("edit-copy")), labels.copyText),
-            &QAction::triggered, this, [this, current, report, labels] {
-                QGuiApplication::clipboard()->setText(insightsShareText(current(), currentRange()));
+            &QAction::triggered, this, [this, report, labels] {
+                QGuiApplication::clipboard()->setText(insightsShareText(currentSummary(), currentRange()));
                 report(labels.copied);
             });
     menu->addSeparator();
     connect(menu->addAction(themedIcon(QStringLiteral("document-save-as")), labels.saveJson),
-            &QAction::triggered, this, [this, current, report, labels] {
+            &QAction::triggered, this, [this, report, labels] {
                 const QString suggested =
                     QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
                         .filePath(insightsJsonFileName(m_summarizedDay));
@@ -858,7 +859,7 @@ QPushButton *HomePage::buildShareButton(QWidget *parent)
                 if (path.isEmpty()) return;
                 QSaveFile file(path);
                 if (file.open(QIODevice::WriteOnly)
-                    && file.write(insightsJson(current(), currentRange(), m_summarizedDay)) >= 0
+                    && file.write(insightsJson(currentSummary(), currentRange(), m_summarizedDay)) >= 0
                     && file.commit()) {
                     report(labels.saved);
                 } else {
@@ -867,6 +868,17 @@ QPushButton *HomePage::buildShareButton(QWidget *parent)
             });
     button->setMenu(menu);
     return button;
+}
+
+void HomePage::copyStatsImage()
+{
+    QGuiApplication::clipboard()->setImage(statsImage(currentSummary(), currentRange(), m_measure));
+}
+
+InsightsSummary HomePage::currentSummary() const
+{
+    return summarize(m_controller->insightsLog()->records(), currentRange(), m_summarizedDay,
+                     m_controller->settings()->writingProfileSettings());
 }
 
 InsightsRange HomePage::currentRange() const
