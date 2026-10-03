@@ -181,21 +181,29 @@ ComboBox indexPicker(const QStringList &labels,
     return combo;
 }
 
-// As many equal columns as fit and divide the cards evenly, so four tiles go
-// 4, 2 or 1 across and a pair stacks when narrow. A column fits when it is at
-// least minWidth and as wide as every card's text laid out unwrapped, with the
-// column spacing between them.
-void layoutColumns(const Grid &grid, double width, double minWidth)
+// The widest card's width with its text laid out unwrapped, and at least
+// minWidth. Measured once per row: measured again later, a card answers with
+// the layout it last had (a progress bar keeps its arranged width), so columns
+// chosen from it flipped between two layouts until WinUI gave up with "Layout
+// cycle detected".
+double unwrappedWidth(const Grid &grid, double minWidth)
 {
-    const uint32_t count = grid.Children().Size();
-    double columnWidth = minWidth;
+    double width = minWidth;
     for (const UIElement &card : grid.Children()) {
         card.Measure({std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()});
-        columnWidth = std::max(columnWidth, double(card.DesiredSize().Width));
+        width = std::max(width, double(card.DesiredSize().Width));
     }
     // Measuring unconstrained left each card's desired size at its widest;
     // the grid measures them again at the column width.
     grid.InvalidateMeasure();
+    return width;
+}
+
+// As many equal columns of at least columnWidth as fit and divide the cards
+// evenly, so four tiles go 4, 2 or 1 across and a pair stacks when narrow.
+void layoutColumns(const Grid &grid, double width, double columnWidth)
+{
+    const uint32_t count = grid.Children().Size();
     const double spacing = grid.ColumnSpacing();
     uint32_t columns = static_cast<uint32_t>(
         std::clamp(std::floor((width + spacing) / (columnWidth + spacing)), 1.0, double(count)));
@@ -233,15 +241,15 @@ Grid adaptiveRow(const std::vector<UIElement> &cards, double minWidth)
         grid.Children().Append(card);
     }
     layoutColumns(grid, minWidth * cards.size(), minWidth);
-    grid.SizeChanged([minWidth](const IInspectable &sender, const SizeChangedEventArgs &args) {
-        // The columns follow the width alone. A card's unconstrained size
-        // depends on the layout it last had, so answering the height a new
-        // column count gives can flip between two layouts until WinUI gives
-        // up with "Layout cycle detected".
-        if (args.NewSize().Width == args.PreviousSize().Width) {
-            return;
+    // Measured on the first layout in the window, where the cards' styles
+    // apply, and kept: the same page always measures the same.
+    auto columnWidth = std::make_shared<std::optional<double>>();
+    grid.SizeChanged([minWidth, columnWidth](const IInspectable &sender, const SizeChangedEventArgs &args) {
+        const Grid grid = sender.as<Grid>();
+        if (!*columnWidth) {
+            *columnWidth = unwrappedWidth(grid, minWidth);
         }
-        layoutColumns(sender.as<Grid>(), args.NewSize().Width, minWidth);
+        layoutColumns(grid, args.NewSize().Width, **columnWidth);
     });
     return grid;
 }
