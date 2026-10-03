@@ -616,8 +616,8 @@ private struct HeatFooter: View {
 
 /// The picture "Copy image with stats" puts on the pasteboard, as on Linux
 /// and Windows: the period's four figures over the year's heatmap. ImageRenderer
-/// cannot draw a grouped Form, which AppKit backs, so the card is the Form
-/// section's look in the system's own colours.
+/// cannot draw a grouped Form, which AppKit backs, so the card is a Form
+/// section's fill on the window's background, in the system's own colours.
 private struct StatsImage: View {
     @ObservedObject var model: AppModel
     let measure: HeatMeasure
@@ -653,8 +653,7 @@ private struct StatsImage: View {
         }
         .fixedSize()
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(nsColor: .separatorColor)))
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .quaternarySystemFill)))
         .padding(24)
         .background(Color(nsColor: .windowBackgroundColor))
     }

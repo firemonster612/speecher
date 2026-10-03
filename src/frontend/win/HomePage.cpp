@@ -1054,36 +1054,45 @@ winrt::fire_and_forget copyStatsImage(PaneHost &host, std::function<void(bool co
         done(false);
         co_return;
     }
-    const QList<DictationRecord> &records = host.controller->insightsLog()->records();
-    const InsightsSummary summary = summarize(records, host.homeRange, host.controller->insightsToday(),
-                                              host.controller->settings()->writingProfileSettings());
-    const ChartBrushes brushes = chartBrushes(host);
-    const Border image = statsImage(summary, host.homeRange, static_cast<HeatMeasure>(host.homeMeasure), host,
-                                    brushes.accent, brushes.empty);
     // RenderTargetBitmap draws only what is in the window's tree, but not
-    // what is on screen: a canvas lays the picture out at its own size, far
-    // to the left of the window.
+    // what is on screen: a canvas lays the picture out at its own size, then
+    // holds it far to the left of the window.
     Canvas stage;
-    stage.IsHitTestVisible(false);
-    Canvas::SetLeft(image, -100000);
-    stage.Children().Append(image);
-    window.Children().Append(stage);
     bool copied = false;
     try {
+        const QList<DictationRecord> &records = host.controller->insightsLog()->records();
+        const InsightsSummary summary = summarize(records, host.homeRange, host.controller->insightsToday(),
+                                                  host.controller->settings()->writingProfileSettings());
+        const ChartBrushes brushes = chartBrushes(host);
+        const Border image = statsImage(summary, host.homeRange, static_cast<HeatMeasure>(host.homeMeasure),
+                                        host, brushes.accent, brushes.empty);
+        stage.IsHitTestVisible(false);
+        stage.Children().Append(image);
+        window.Children().Append(stage);
         image.UpdateLayout();
         const winrt::Windows::Foundation::Size size = image.DesiredSize();
-        // Twice the layout size, as on Linux, so it stays sharp when pasted.
-        constexpr double scale = 2;
+        // Twice the layout size in pixels, as on Linux, so it stays sharp when
+        // pasted. RenderTargetBitmap draws at the window's rasterization scale
+        // and stretches anything bigger, so a Viewbox lays the picture out
+        // that much larger instead and the text is drawn at that size.
+        const double scale = 2 / root.RasterizationScale();
+        stage.Children().Clear();
+        Viewbox enlarged;
+        enlarged.Width(std::ceil(size.Width * scale));
+        enlarged.Height(std::ceil(size.Height * scale));
+        enlarged.Child(image);
+        Canvas::SetLeft(enlarged, -100000);
+        stage.Children().Append(enlarged);
+        enlarged.UpdateLayout();
         RenderTargetBitmap bitmap;
-        co_await bitmap.RenderAsync(image, int(std::ceil(size.Width * scale)), int(std::ceil(size.Height * scale)));
+        co_await bitmap.RenderAsync(enlarged);
         const auto pixels = co_await bitmap.GetPixelsAsync();
         if (!gone(alive)) {
             // BGRA8, premultiplied: QImage's ARGB32 on a little-endian machine.
-            QImage picture = QImage(pixels.data(), bitmap.PixelWidth(), bitmap.PixelHeight(),
-                                    bitmap.PixelWidth() * 4, QImage::Format_ARGB32_Premultiplied)
-                                 .copy();
-            picture.setDevicePixelRatio(double(bitmap.PixelWidth()) / size.Width);
-            QGuiApplication::clipboard()->setImage(picture);
+            QGuiApplication::clipboard()->setImage(QImage(pixels.data(), bitmap.PixelWidth(), bitmap.PixelHeight(),
+                                                          bitmap.PixelWidth() * 4,
+                                                          QImage::Format_ARGB32_Premultiplied)
+                                                       .copy());
             copied = true;
         }
     } catch (const winrt::hresult_error &error) {

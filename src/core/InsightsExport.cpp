@@ -14,7 +14,7 @@ QString number(qint64 value)
     return QLocale().toString(value);
 }
 
-QString plural(int count, const QString &noun)
+QString plural(qint64 count, const QString &noun)
 {
     return QStringLiteral("%1 %2").arg(number(count), count == 1 ? noun : noun + u's');
 }

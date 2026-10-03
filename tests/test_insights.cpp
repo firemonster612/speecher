@@ -285,6 +285,8 @@ private slots:
         QCOMPARE(summary.words, 4000000000);
         QCOMPARE(summary.allTimeWords, 4000000000);
         QCOMPARE(insightTiles(summary, kToday).first().value, QStringLiteral("4,000,000,000"));
+        QVERIFY(insightsShareText(summary, InsightsRange::AllTime)
+                    .contains(QStringLiteral("4,000,000,000 words dictated")));
     }
 
     void streakSurvivesAnIdleToday()

@@ -769,8 +769,8 @@ QString homeText(HomeText text)
 QString minutesText(qint64 minutes)
 {
     if (minutes < 60) return QStringLiteral("%1 min").arg(minutes);
-    return minutes % 60 ? QStringLiteral("%1 h %2 min").arg(minutes / 60).arg(minutes % 60)
-                        : QStringLiteral("%1 h").arg(minutes / 60);
+    return minutes % 60 ? QStringLiteral("%1 h %2 min").arg(formatNumber(minutes / 60)).arg(minutes % 60)
+                        : QStringLiteral("%1 h").arg(formatNumber(minutes / 60));
 }
 
 QString heatMeasureLabel(HeatMeasure measure)

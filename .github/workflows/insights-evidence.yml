@@ -85,9 +85,9 @@ jobs:
             bash -lc 'git config --global --add safe.directory "*" \
               && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=OFF -DSPEECHER_WITH_KDE=ON \
               && cmake --build build --parallel --target speecher \
-              && .github/grab-linux-pages.sh build/speecher \
-              && PAGES=stats-image PAGES_SUFFIX=-large SPEECHER_INSIGHTS_SEED=$PWD/docs/insights-mockup/seed-large.jsonl \
-                 .github/grab-linux-pages.sh build/speecher'
+              && { status=0; .github/grab-linux-pages.sh build/speecher || status=1; \
+                   PAGES=stats-image PAGES_SUFFIX=-large SPEECHER_INSIGHTS_SEED=$PWD/docs/insights-mockup/seed-large.jsonl \
+                   .github/grab-linux-pages.sh build/speecher || status=1; exit $status; }'
 
       - name: Upload Linux pages
         if: always()
