@@ -22,6 +22,8 @@ struct HeadlessTranscribeOptions {
     // Seeds cleanup and tone from the user's settings for this profile.
     std::optional<QString> writingProfile;
     std::optional<QString> tone;
+    // Replaces the Spoken Language setting.
+    std::optional<QString> spokenLanguage;
     TranscriptDestination destination = TranscriptDestination::BesideInput;
     QString folder;
     bool printTranscripts = false;

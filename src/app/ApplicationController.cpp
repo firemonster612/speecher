@@ -17,6 +17,7 @@
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsSchema.h"
+#include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
@@ -892,7 +893,8 @@ void ApplicationController::handleIpcCommand(const QString &command,
                                              const QString &outputFormat,
                                              QLocalSocket *socket,
                                              const QStringList &files,
-                                             const QString &writingProfile)
+                                             const QString &writingProfile,
+                                             const QString &spokenLanguage)
 {
     SessionOverrides overrides;
     if (!outputFormat.isEmpty()) {
@@ -911,10 +913,18 @@ void ApplicationController::handleIpcCommand(const QString &command,
         }
         overrides.writingProfile = writingProfile;
     }
-    // toggle and start echo the profile they read; see IpcResponse::writingProfile.
-    const auto acknowledge = [this, socket, &writingProfile] {
+    if (!spokenLanguage.isEmpty()) {
+        if (!isKnownSpokenLanguage(spokenLanguage)) {
+            SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown spoken language")));
+            return;
+        }
+        overrides.spokenLanguage = spokenLanguage;
+    }
+    // toggle and start echo the overrides they read; see IpcResponse::writingProfile.
+    const auto acknowledge = [this, socket, &writingProfile, &spokenLanguage] {
         IpcResponse reply = response();
         reply.writingProfile = writingProfile;
+        reply.spokenLanguage = spokenLanguage;
         SingleInstanceIpc::writeResponse(socket, reply);
     };
     if (command == QStringLiteral("toggle")) {

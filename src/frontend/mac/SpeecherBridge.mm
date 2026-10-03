@@ -777,6 +777,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *sizeText;
 @property (nonatomic, copy) NSString *downloadCaption;
 @property (nonatomic, copy) NSString *textShowsText;
+@property (nonatomic, copy) NSString *languagesText;
 @property (nonatomic) double librispeechWer;
 @property (nonatomic) double fleursWer;
 @property (nonatomic) BOOL streams;
@@ -3129,6 +3130,7 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
     info.fleursWer = model.fleursEnglishWer;
     info.streams = model.streams;
     info.textShowsText = speecher::textShowsValue(model.streams).toNSString();
+    info.languagesText = speecher::languagesValue(model).toNSString();
     info.licence = model.licence.toNSString();
     info.rating = bridgedModelRating(model.rating);
     info.ratingLabel = modelRatingLabel(model.rating).toNSString();

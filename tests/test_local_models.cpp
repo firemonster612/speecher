@@ -581,8 +581,8 @@ private slots:
     void suggestionPrefersTheMostAccurateQuickStreamingModelThatFits()
     {
         // Values from the approved prototype's four machines.
-        QCOMPARE(suggestedLocalModel(laptop4750u()).id, QStringLiteral("parakeet"));
-        QCOMPARE(suggestedLocalModel(m4Max36GB()).id, QStringLiteral("parakeet"));
+        QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("en")).id, QStringLiteral("parakeet"));
+        QCOMPARE(suggestedLocalModel(m4Max36GB(), QStringLiteral("en")).id, QStringLiteral("parakeet"));
 
         // 4 GB, no GPU, little of it free: nothing fits, so the smallest model.
         HardwareProfile old;
@@ -590,13 +590,23 @@ private slots:
         old.systemRamBytes = 4 * gb;
         old.availableRamBytes = 2.2 * gb;
         QCOMPARE(modelFit(*findLocalModel(QStringLiteral("moonshine-small")), old), ModelFit::TooLarge);
-        QCOMPARE(suggestedLocalModel(old).id, QStringLiteral("moonshine-small"));
+        QCOMPARE(suggestedLocalModel(old, QStringLiteral("en")).id, QStringLiteral("moonshine-small"));
 
         // Parakeet fits only tightly, both Moonshines fit: the more accurate one.
         HardwareProfile small;
         small.availableRamBytes = 3.8 * gb;
         QCOMPARE(modelFit(*findLocalModel(QStringLiteral("parakeet")), small), ModelFit::Tight);
-        QCOMPARE(suggestedLocalModel(small).id, QStringLiteral("moonshine-medium"));
+        QCOMPARE(suggestedLocalModel(small, QStringLiteral("en")).id, QStringLiteral("moonshine-medium"));
+    }
+
+    void suggestionListensForTheSpokenLanguage()
+    {
+        // No streaming model takes German, so the smallest that does; Cohere
+        // takes it as a hint but cannot detect a language.
+        QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("de")).id, QStringLiteral("whisper-turbo"));
+        QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("fil")).id, QStringLiteral("qwen3-asr"));
+        QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("auto")).id, QStringLiteral("whisper-turbo"));
+        QVERIFY(!localModelListensFor(*findLocalModel(QStringLiteral("cohere")), QStringLiteral("auto")));
     }
 
     void downloadResumesAPartialFileAndVerifiesIt()

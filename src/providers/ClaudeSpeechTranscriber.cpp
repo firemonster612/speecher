@@ -118,7 +118,7 @@ void ClaudeSpeechTranscriber::createClient(quint64 attemptId,
             emit failed({attemptId, message, retryable, phase});
         }
     });
-    m_client->start(voiceUrl(settings), m_accessToken, settings.vocabulary);
+    m_client->start(voiceUrl(settings), m_accessToken, settings.vocabulary, settings.language);
 }
 
 void ClaudeSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &pcm)

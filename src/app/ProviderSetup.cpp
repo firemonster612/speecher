@@ -105,9 +105,9 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
              .arg(paneTitle(QStringLiteral("localModels"))),
          false,
          QStringLiteral("Runs on this computer: no account, works offline after a one-time "
-                        "download. English; speed depends on the model and this computer."),
+                        "download. Languages depend on the model; speed on the model and this computer."),
          {{QStringLiteral("Engine"), QStringLiteral("transcribe.cpp")},
-          {QStringLiteral("Languages"), QStringLiteral("English")},
+          {QStringLiteral("Languages"), QStringLiteral("Depend on the model")},
           {QStringLiteral("Speed"), QStringLiteral("Depends on the model and this computer")},
           {QStringLiteral("Accuracy"), QStringLiteral("See the %1 page").arg(paneTitle(QStringLiteral("localModels")))}}},
         [localModels](QObject *parent) {

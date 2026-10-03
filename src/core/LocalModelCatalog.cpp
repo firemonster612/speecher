@@ -1,5 +1,9 @@
 #include "core/LocalModelCatalog.h"
 
+#include "core/AppSettings.h"
+
+#include <QLocale>
+
 #include <algorithm>
 
 namespace speecher {
@@ -10,8 +14,13 @@ constexpr quint64 gib = quint64(1) << 30;
 constexpr double runtimeMemoryFactor = 1.35;
 constexpr double maxSuggestedSecondsFor10s = 1.5;
 
+QStringList codes(const char *spaceSeparated)
+{
+    return QString::fromLatin1(spaceSeparated).split(QLatin1Char(' '));
+}
+
 // Q8_0 files unless noted. Revisions and sha256 are the Hugging Face commit and
-// LFS object checked on 2026-09-25 or later; WER and speed are from transcribe.cpp
+// LFS object checked on 2026-09-25 or later; WER, speed and languages are from transcribe.cpp
 // v0.2.4's catalog/<variant>.json (speed: xrt_compute on the 35 s dots
 // sample). Granite Speech 5.0 470M TurboCTC is left out: its output has no
 // punctuation or capitals.
@@ -27,6 +36,7 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 2.54,
         .fleursEnglishWer = 8.55,
         .streams = true,
+        .languages = codes("en"),
         .licence = QStringLiteral("MIT"),
         .m4MaxMetalSpeed = 58.59,
         .ryzen4750uVulkanSpeed = 14.16,
@@ -47,6 +57,7 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 2.16,
         .fleursEnglishWer = 7.87,
         .streams = true,
+        .languages = codes("en"),
         .licence = QStringLiteral("MIT"),
         .m4MaxMetalSpeed = 36.12,
         .ryzen4750uVulkanSpeed = 8.9,
@@ -67,6 +78,7 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 1.60,
         .fleursEnglishWer = 3.99,
         .streams = true,
+        .languages = codes("en"),
         // transcribe.cpp's catalog says CC-BY-4.0; the upstream model card wins.
         .licence = QStringLiteral("NVIDIA Open Model License"),
         .m4MaxMetalSpeed = 228.39,
@@ -89,6 +101,11 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 2.01,
         .fleursEnglishWer = 4.38,
         .streams = false,
+        .languages = codes("af am ar as az ba be bg bn bo br bs ca cs cy da de el en es et eu fa fi fo "
+                           "fr gl gu haw ha he hi hr ht hu hy id is it ja jw ka kk km kn ko la lb ln lo "
+                           "lt lv mg mi mk ml mn mr ms mt my ne nl nn no oc pa pl ps pt ro ru sa sd si "
+                           "sk sl sn so sq sr su sv sw ta te tg th tk tl tr tt uk ur uz vi yi yo yue zh"),
+        .detectsLanguage = true,
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 51.12,
         .ryzen4750uVulkanSpeed = 3.69,
@@ -112,6 +129,9 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 1.62,
         .fleursEnglishWer = 3.23,
         .streams = false,
+        .languages = codes("zh en yue ar de fr es pt id it ko ru th vi ja tr hi ms nl sv da fi pl cs "
+                           "fil fa el ro hu mk"),
+        .detectsLanguage = true,
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 36.83,
         .ryzen4750uVulkanSpeed = 3.72,
@@ -133,6 +153,7 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 1.27,
         .fleursEnglishWer = 5.08,
         .streams = false,
+        .languages = codes("en fr de es it pt nl pl el ar ja zh vi ko"),
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 75.14,
         .ryzen4750uVulkanSpeed = 8.52,
@@ -158,6 +179,8 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 1.60,
         .fleursEnglishWer = 3.55,
         .streams = false,
+        .languages = codes("en fr de es it pt nl hi"),
+        .detectsLanguage = true,
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 2.41,
         .ryzen4750uVulkanSpeed = 0,
@@ -242,8 +265,26 @@ std::optional<SpeedEstimate> estimatedSpeed(const LocalModel &model, const Hardw
     return SpeedEstimate{10.0 / multiple, hardware.chipName.contains(referenceChip)};
 }
 
-const LocalModel &suggestedLocalModel(const HardwareProfile &hardware)
+bool localModelListensFor(const LocalModel &model, const QString &spokenLanguage)
 {
+    return spokenLanguage == QLatin1String(kAutomaticSpokenLanguage) ? model.detectsLanguage
+                                                                   : model.languages.contains(spokenLanguage);
+}
+
+const LocalModel &suggestedLocalModel(const HardwareProfile &hardware, const QString &spokenLanguage)
+{
+    // Only the models that listen for the language, unless none does.
+    QList<const LocalModel *> candidates;
+    for (const LocalModel &model : catalog) {
+        if (localModelListensFor(model, spokenLanguage)) {
+            candidates << &model;
+        }
+    }
+    if (candidates.isEmpty()) {
+        for (const LocalModel &model : catalog) {
+            candidates << &model;
+        }
+    }
     const auto quickStreamingFit = [&](const LocalModel &model) {
         if (!model.streams || modelFit(model, hardware) != ModelFit::Fits) {
             return false;
@@ -252,9 +293,9 @@ const LocalModel &suggestedLocalModel(const HardwareProfile &hardware)
         return speed && speed->secondsFor10sSpeech <= maxSuggestedSecondsFor10s;
     };
     const LocalModel *best = nullptr;
-    for (const LocalModel &model : catalog) {
-        if (quickStreamingFit(model) && (!best || model.fleursEnglishWer < best->fleursEnglishWer)) {
-            best = &model;
+    for (const LocalModel *model : std::as_const(candidates)) {
+        if (quickStreamingFit(*model) && (!best || model->fleursEnglishWer < best->fleursEnglishWer)) {
+            best = model;
         }
     }
     if (best) {
@@ -262,10 +303,10 @@ const LocalModel &suggestedLocalModel(const HardwareProfile &hardware)
     }
     // Fit depends only on size, so the smallest model is also the smallest
     // that fits whenever any does.
-    return *std::min_element(catalog.cbegin(), catalog.cend(),
-                             [](const LocalModel &left, const LocalModel &right) {
-                                 return left.sizeBytes < right.sizeBytes;
-                             });
+    return **std::min_element(candidates.cbegin(), candidates.cend(),
+                              [](const LocalModel *left, const LocalModel *right) {
+                                  return left->sizeBytes < right->sizeBytes;
+                              });
 }
 
 QString modelFitLabel(ModelFit fit)
@@ -352,6 +393,14 @@ QString deleteModelQuestion(const QString &modelName)
 QString textShowsValue(bool streams)
 {
     return streams ? QStringLiteral("As you speak") : QStringLiteral("After you stop");
+}
+
+QString languagesValue(const LocalModel &model)
+{
+    if (model.languages.size() == 1) {
+        return QLocale::languageToString(QLocale::codeToLanguage(model.languages.first()));
+    }
+    return QStringLiteral("%1 languages").arg(model.languages.size());
 }
 
 QString downloadCaption(qint64 bytes)

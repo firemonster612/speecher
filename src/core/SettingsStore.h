@@ -136,6 +136,7 @@ public:
     using SettingsCodecs::refinementEndpointSettings;
     using SettingsCodecs::setRefinementEndpointSettings;
     using SettingsCodecs::setCodexFinalRetranscribe;
+    using SettingsCodecs::setSpokenLanguage;
     using SettingsCodecs::setSetupCompleted;
     using SettingsCodecs::setStoredApiKeyFallback;
     using SettingsCodecs::setTheme;
@@ -153,6 +154,7 @@ public:
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
     using SettingsCodecs::codexFinalRetranscribe;
+    using SettingsCodecs::spokenLanguage;
     using SettingsCodecs::setShortcutActivationMode;
     using SettingsCodecs::setupCompleted;
     using SettingsCodecs::shortcutActivationMode;

@@ -1,5 +1,6 @@
 #include "providers/LocalSpeechEngine.h"
 #include "core/settings/SettingsSchema.h"
+#include "core/settings/SpokenLanguages.h"
 
 #include <QElapsedTimer>
 #include <QFile>
@@ -14,9 +15,8 @@
 namespace speecher {
 namespace {
 
-// Speecher transcribes English. The multilingual models (Cohere, Qwen3-ASR,
-// Whisper) would otherwise guess the language, and Cohere needs the hint.
-constexpr auto language = "en";
+// The speed test clip is LibriSpeech, read in English.
+const QString speedTestLanguage = QStringLiteral("en");
 constexpr double speedTestReferenceSeconds = 10.0;
 constexpr double sampleRateHz = 16000.0;
 
@@ -250,17 +250,20 @@ bool LocalSpeechEngine::streams() const
     return m_streams;
 }
 
-std::optional<QString> LocalSpeechEngine::transcribe(const QByteArray &pcm16, QString *error)
+std::optional<QString> LocalSpeechEngine::transcribe(const QByteArray &pcm16,
+                                                     const QString &spokenLanguage,
+                                                     QString *error)
 {
-    return run(pcm16, false, error);
+    return run(pcm16, false, spokenLanguage, error);
 }
 
 std::optional<QString> LocalSpeechEngine::transcribeTimed(const QByteArray &pcm16,
+                                                          const QString &spokenLanguage,
                                                           QList<TranscriptSegment> *segments,
                                                           QString *error)
 {
     const bool timed = m_timesSegments;
-    const std::optional<QString> text = run(pcm16, timed, error);
+    const std::optional<QString> text = run(pcm16, timed, spokenLanguage, error);
     if (!text || !timed || transcribe_returned_timestamp_kind(m_session) != TRANSCRIBE_TIMESTAMPS_SEGMENT) {
         return text;
     }
@@ -273,7 +276,10 @@ std::optional<QString> LocalSpeechEngine::transcribeTimed(const QByteArray &pcm1
     return text;
 }
 
-std::optional<QString> LocalSpeechEngine::run(const QByteArray &pcm16, bool timed, QString *error)
+std::optional<QString> LocalSpeechEngine::run(const QByteArray &pcm16,
+                                              bool timed,
+                                              const QString &spokenLanguage,
+                                              QString *error)
 {
     const std::vector<float> pcm = floatPcm(pcm16);
     if (pcm.empty()) {
@@ -284,7 +290,8 @@ std::optional<QString> LocalSpeechEngine::run(const QByteArray &pcm16, bool time
     transcribe_run_params params;
     transcribe_run_params_init(&params);
     params.timestamps = timed ? TRANSCRIBE_TIMESTAMPS_SEGMENT : TRANSCRIBE_TIMESTAMPS_NONE;
-    params.language = language;
+    const QByteArray language = requestedSpokenLanguage(spokenLanguage).toUtf8();
+    params.language = language.isEmpty() ? nullptr : language.constData();
     const transcribe_status status = transcribe_run(m_session, pcm.data(), int(pcm.size()), &params);
     if (status == TRANSCRIBE_ERR_ABORTED) {
         return std::nullopt;
@@ -295,14 +302,15 @@ std::optional<QString> LocalSpeechEngine::run(const QByteArray &pcm16, bool time
     return QString::fromUtf8(transcribe_full_text(m_session)).trimmed();
 }
 
-bool LocalSpeechEngine::beginStream(QString *error)
+bool LocalSpeechEngine::beginStream(const QString &spokenLanguage, QString *error)
 {
     // A cancelled attempt can leave the previous stream active.
     transcribe_stream_reset(m_session);
     transcribe_run_params params;
     transcribe_run_params_init(&params);
     params.timestamps = TRANSCRIBE_TIMESTAMPS_NONE;
-    params.language = language;
+    const QByteArray language = requestedSpokenLanguage(spokenLanguage).toUtf8();
+    params.language = language.isEmpty() ? nullptr : language.constData();
     return succeeded(transcribe_stream_begin(m_session, &params, nullptr), error);
 }
 
@@ -353,12 +361,12 @@ std::optional<double> LocalSpeechEngine::speedTestSeconds(QString *error)
     const QByteArray pcm16 = clip.readAll();
     // Untimed: a backend's first run pays one-off costs, such as Vulkan
     // compiling its shaders, that dictation after it never sees.
-    if (!transcribe(pcm16, error)) {
+    if (!transcribe(pcm16, speedTestLanguage, error)) {
         return std::nullopt;
     }
     QElapsedTimer timer;
     timer.start();
-    if (!transcribe(pcm16, error)) {
+    if (!transcribe(pcm16, speedTestLanguage, error)) {
         return std::nullopt;
     }
     const double clipSeconds = double(pcm16.size() / 2) / sampleRateHz;

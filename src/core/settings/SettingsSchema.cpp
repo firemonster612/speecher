@@ -7,6 +7,7 @@
 #include "core/LocalModelCatalog.h"
 #include "core/OutputMethod.h"
 #include "core/ReleaseNotesPresentation.h"
+#include "core/settings/SpokenLanguages.h"
 
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
@@ -1134,6 +1135,51 @@ SettingsPage audioPage(const SchemaContext &context)
         return QStringLiteral("Service used to turn speech into a raw transcript.");
     };
 
+    // Only what the chosen service or Local Model listens for, so a choice
+    // here always works; a saved language it lacks stays, disabled, beside a
+    // caution rather than turning into English.
+    SettingsRow spokenLanguage = choiceRow(
+        QStringLiteral("spokenLanguage"),
+        QStringLiteral("Spoken Language"),
+        QStringLiteral("The language you dictate in."),
+        [](const AppSettings &settings) {
+            QList<RowOption> options;
+            for (const QString &language : spokenLanguages(settings.speech)) {
+                options.append({language, spokenLanguageLabel(language)});
+            }
+            std::sort(options.begin(), options.end(), [](const RowOption &left, const RowOption &right) {
+                const bool leftAutomatic = left.id == QLatin1String(kAutomaticSpokenLanguage);
+                const bool rightAutomatic = right.id == QLatin1String(kAutomaticSpokenLanguage);
+                return leftAutomatic != rightAutomatic ? leftAutomatic : left.label < right.label;
+            });
+            const QString saved = settings.speech.language;
+            if (std::none_of(options.cbegin(), options.cend(),
+                             [&saved](const RowOption &option) { return option.id == saved; })) {
+                options.append({saved, spokenLanguageLabel(saved), QString(), options.isEmpty()});
+            }
+            return options;
+        },
+        [](const AppSettings &settings) { return settings.speech.language; },
+        [](AppSettings &settings, const QString &value) { settings.speech.language = value; });
+    spokenLanguage.contentWidthHint = 24;
+    spokenLanguage.sinceVersion = QStringLiteral("0.2.1");
+    const auto speechServiceLabel = [speechChoices](const AppSettings &settings) {
+        for (const RowOption &option : speechChoices) {
+            if (option.id == settings.speech.providerId) {
+                return option.label;
+            }
+        }
+        return settings.speech.providerId;
+    };
+    SettingsRow spokenLanguageCaution =
+        infoRow(QStringLiteral("spokenLanguageCaution"), QStringLiteral("Caution"), QString(), QString());
+    spokenLanguageCaution.value = [speechServiceLabel](const AppSettings &settings) {
+        return QVariant(spokenLanguageProblem(settings.speech, speechServiceLabel(settings)));
+    };
+    spokenLanguageCaution.visible = [speechServiceLabel](const AppSettings &settings, const Capabilities &) {
+        return !spokenLanguageProblem(settings.speech, speechServiceLabel(settings)).isEmpty();
+    };
+
     SettingsRow finalRetranscribe = toggleRow(
         QStringLiteral("codexFinalRetranscribe"),
         QStringLiteral("Transcribe again for accuracy"),
@@ -1226,7 +1272,8 @@ SettingsPage audioPage(const SchemaContext &context)
         {
             {QStringLiteral("Transcription"),
              QString(),
-             QList<SettingsRow>{std::move(speechProvider), std::move(finalRetranscribe)}
+             QList<SettingsRow>{std::move(speechProvider), std::move(spokenLanguage), std::move(spokenLanguageCaution),
+                               std::move(finalRetranscribe)}
                  + speechLocalModelRows([context] { return liveFacts(context); })
                  + speechEndpointRows([context](const AppSettings &draft) {
                      return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);

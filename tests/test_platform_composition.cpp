@@ -651,6 +651,8 @@ private slots:
                                                  QStringLiteral("plain"),
                                                  QStringLiteral("--profile"),
                                                  QStringLiteral("custom_deleted"),
+                                                 QStringLiteral("--language"),
+                                                 QStringLiteral("de"),
                                                  QStringLiteral("--show-settings"),
                                                  QStringLiteral("--show-setup")}),
                  QStringList({QStringLiteral("--daemon")}));
@@ -796,6 +798,35 @@ private slots:
             {});
         QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("custom_stand_up")));
         settings.raw().clear();
+    }
+
+    void toggleStartAndTranscribeTakeASpokenLanguage()
+    {
+        const auto parse = [](const QStringList &arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {});
+        };
+        QCOMPARE(parse({QStringLiteral("toggle"), QStringLiteral("--language"), QStringLiteral("de")})
+                     .sessionOverrides.spokenLanguage,
+                 std::optional(QStringLiteral("de")));
+        QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--language"), QStringLiteral("auto")})
+                     .sessionOverrides.spokenLanguage,
+                 std::optional(QStringLiteral("auto")));
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        QFile file(audio);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        QCOMPARE(parse({QStringLiteral("transcribe"), QStringLiteral("--language"), QStringLiteral("fr"), audio})
+                     .headless.spokenLanguage,
+                 std::optional(QStringLiteral("fr")));
+        for (const QStringList &mistake :
+             {QStringList{QStringLiteral("toggle"), QStringLiteral("--language"), QStringLiteral("klingon")},
+              QStringList{QStringLiteral("start"), QStringLiteral("--language")},
+              QStringList{QStringLiteral("status"), QStringLiteral("--language"), QStringLiteral("de")}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
     }
 
     void toggleAndStartTakeAWritingProfile()

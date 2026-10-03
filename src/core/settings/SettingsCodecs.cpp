@@ -199,6 +199,16 @@ void SettingsCodecs::setCodexFinalRetranscribe(bool value)
     m_settings.setValue(SettingsKeys::CodexFinalRetranscribe, value);
 }
 
+QString SettingsCodecs::spokenLanguage() const
+{
+    return value(SettingsKeys::SpokenLanguage, QStringLiteral("en")).toString();
+}
+
+void SettingsCodecs::setSpokenLanguage(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::SpokenLanguage, value);
+}
+
 LocalSpeechSettings SettingsCodecs::localSpeechSettings() const
 {
     const LocalSpeechSettings defaults;
@@ -1306,6 +1316,7 @@ AppSettings SettingsCodecs::snapshot() const
 
     settings.speech.providerId = speechProvider();
     settings.speech.codexFinalRetranscribe = codexFinalRetranscribe();
+    settings.speech.language = spokenLanguage();
     settings.speech.local = localSpeechSettings();
     settings.speech.claudeAuthMode = anthropicAuthMode();
     settings.speech.codexAuthMode = openAiAuthMode();

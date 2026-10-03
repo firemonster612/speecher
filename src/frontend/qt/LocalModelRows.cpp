@@ -274,7 +274,7 @@ private:
         m_wer->setText(QStringLiteral("%1 clear speech\n%2 everyday speech")
                            .arg(werLine(model.librispeechCleanWer), werLine(model.fleursEnglishWer)));
         m_textShows->setText(textShowsValue(model.streams));
-        m_language->setText(QStringLiteral("English"));
+        m_language->setText(languagesValue(model));
         m_licence->setText(model.licence);
         QStringList notes;
         for (const QString &pro : model.pros) {

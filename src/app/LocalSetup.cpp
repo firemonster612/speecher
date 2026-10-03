@@ -358,7 +358,7 @@ QString LocalSetup::hardwareLine() const
 
 const LocalModel &LocalSetup::suggestedModel() const
 {
-    return suggestedLocalModel(m_hardware.profile);
+    return suggestedLocalModel(m_hardware.profile, m_settings.spokenLanguage());
 }
 
 std::optional<ModelFit> LocalSetup::fit(const LocalModel &model) const
