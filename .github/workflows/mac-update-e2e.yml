@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - 'e2e/**'
+      # Scratch branch with its own workflow (mac-vocabulary-e2e.yml).
+      - '!e2e/vocabulary-context-mac'
   workflow_dispatch:
 
 permissions:

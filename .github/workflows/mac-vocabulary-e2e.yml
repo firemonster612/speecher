@@ -1,0 +1,89 @@
+name: macOS vocabulary sheet E2E
+
+# Evidence only, on a scratch branch that never merges: the Vocabulary pane's
+# Terms view driven by AX clicks and typing on a macOS runner (add a term with
+# a context and Writing Profile limits, edit another), with screenshots of the
+# real screen and an mp4 of the walk.
+
+on:
+  push:
+    branches:
+      - e2e/vocabulary-context-mac
+
+concurrency:
+  group: mac-vocabulary-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  vocabulary-e2e:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CMAKE_OBJCXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: clang_64
+          modules: qtmultimedia qtwebsockets
+          cache: true
+
+      - name: Cache macOS compiler outputs
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: macos-26-release
+
+      - name: Remove obsolete AGL references
+        run: |
+          # Same workaround as release.yml: the macOS 26 SDK has no AGL.
+          wrap="$QT_ROOT_DIR/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          sed -i '' \
+            -e 's/find_library(WrapOpenGL_AGL NAMES AGL)/set(WrapOpenGL_AGL "")/' \
+            -e 's/set(__opengl_agl_fw_path "-framework AGL")//' \
+            "$wrap"
+          if grep -n 'framework AGL' "$wrap"; then
+            echo "AGL reference survived in FindWrapOpenGL.cmake" >&2
+            exit 1
+          fi
+          find "$QT_ROOT_DIR" -type f \( -name '*.prl' -o -name '*.cmake' \) -exec \
+            sed -i '' -e 's/-framework[[:space:]]*AGL//g' -e 's/AGL;//g' -e 's/AGL\.framework//g' {} +
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Compile CGEvent clicker
+        run: swiftc .github/macos-e2e/click_at.swift -o "$RUNNER_TEMP/click_at"
+
+      - name: Ensure ffmpeg
+        run: ffmpeg -version >/dev/null 2>&1 || brew install ffmpeg
+
+      - name: Drive the Vocabulary sheet
+        timeout-minutes: 20
+        env:
+          APP_BUNDLE: ${{ github.workspace }}/build/speecher.app
+          EVIDENCE_ROOT: ${{ runner.temp }}/vocabulary-e2e
+          CLICKER: ${{ runner.temp }}/click_at
+          SEED_JSON: ${{ github.workspace }}/docs/vocabulary-context-mockup/seed-vocabulary.json
+        run: bash .github/macos-e2e/vocabulary_run.sh
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vocabulary-e2e-evidence
+          path: ${{ runner.temp }}/vocabulary-e2e
+          if-no-files-found: error
