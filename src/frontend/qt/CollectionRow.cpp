@@ -60,6 +60,22 @@ public:
     }
 };
 
+// An Icon column's icon from the theme's monochrome set, by the schema's
+// platform-neutral id.
+QIcon collectionIcon(const QString &iconId)
+{
+    static const QHash<QString, QStringList> names{
+        {QStringLiteral("microphone"), {QStringLiteral("audio-input-microphone")}},
+        {QStringLiteral("star"), {QStringLiteral("starred"), QStringLiteral("rating"), QStringLiteral("emblem-favorite")}},
+    };
+    for (const QString &name : names.value(iconId)) {
+        if (QIcon::hasThemeIcon(name)) {
+            return QIcon::fromTheme(name);
+        }
+    }
+    return {};
+}
+
 QTableWidgetItem *readOnlyItem(const QString &text)
 {
     auto *item = new QTableWidgetItem(text);
@@ -126,6 +142,8 @@ private:
     QList<int> selectedEditableRows() const;
     // Says each ChoiceSet cell again, for the options the settings now offer.
     void showChoiceSets();
+    // Draws each Icon cell again, for the records as they now stand.
+    void showIcons();
     void updateButtons();
     bool eventFilter(QObject *watched, QEvent *event) override;
 
@@ -194,6 +212,15 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     m_table->setHorizontalHeaderLabels(titles);
     QHeaderView *header = m_table->horizontalHeader();
     for (int column = 0; column < m_columns.size(); ++column) {
+        const CollectionColumn &shown = m_columns.at(column);
+        if (shown.kind == ColumnKind::Icon) {
+            // The icon names the column; its title is the tooltip and what a
+            // screen reader says.
+            auto *title = new QTableWidgetItem(collectionIcon(shown.iconId), QString());
+            title->setToolTip(shown.title);
+            title->setData(Qt::AccessibleTextRole, shown.title);
+            m_table->setHorizontalHeaderItem(column, title);
+        }
         if (m_columns.at(column).kind == ColumnKind::ChoiceSet) {
             // It can name every option, so it takes the width of its widest
             // one and elides a longer list, leaving the room to the stretch
@@ -236,7 +263,7 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     bool detailed = false;
     for (int column = 0; column < m_columns.size(); ++column) {
         const CollectionColumn &shown = m_columns.at(column);
-        if (shown.kind == ColumnKind::Badges || !shown.detailColumn.isEmpty()) {
+        if (!shown.detailColumn.isEmpty()) {
             m_table->setItemDelegateForColumn(column, new BadgeDelegate(m_table));
         }
         detailed = detailed || !shown.detailColumn.isEmpty();
@@ -412,8 +439,8 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
             m_table->setCellWidget(row, index, combo);
             continue;
         }
-        // The pills are item data refresh() sets.
-        if (column.kind == ColumnKind::Badges) {
+        // Its icon and tooltip come from showIcons().
+        if (column.kind == ColumnKind::Icon) {
             m_table->setItem(row, index, readOnlyItem(QString()));
             continue;
         }
@@ -453,8 +480,8 @@ QList<QVariantMap> CollectionEditor::records() const
                 continue;
             }
             // Its cell only names the options; the ids stay in the record.
-            // A Badges cell holds nothing of the record's.
-            if (column.kind == ColumnKind::ChoiceSet || column.kind == ColumnKind::Badges) {
+            // An Icon cell holds nothing of the record's.
+            if (column.kind == ColumnKind::ChoiceSet || column.kind == ColumnKind::Icon) {
                 continue;
             }
             const QTableWidgetItem *item = m_table->item(row, index);
@@ -501,30 +528,35 @@ void CollectionEditor::refresh(const AppSettings &settings)
 {
     m_settings = settings;
     showChoiceSets();
-    const auto badgeColumn = std::find_if(m_columns.cbegin(), m_columns.cend(), [](const CollectionColumn &column) {
-        return column.kind == ColumnKind::Badges;
-    });
-    if (badgeColumn == m_columns.cend()) {
-        return;
-    }
-    const int column = int(badgeColumn - m_columns.cbegin());
+    showIcons();
+}
+
+void CollectionEditor::showIcons()
+{
     const QList<QVariantMap> shown = lockedRecords() + records();
-    const QStringList badges = m_collection.badges ? m_collection.badges(shown, settings) : QStringList();
-    const QStringList secondBadges =
-        m_collection.secondBadges ? m_collection.secondBadges(shown, settings) : QStringList();
     // Item data, not text, so it is no edit: nothing announces a change.
     const QSignalBlocker blocker(m_table);
-    for (int row = 0; row < m_table->rowCount(); ++row) {
-        QTableWidgetItem *item = m_table->item(row, column);
-        if (!item) {
+    const int size = m_table->style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, m_table);
+    for (int index = 0; index < m_columns.size(); ++index) {
+        const CollectionColumn &column = m_columns.at(index);
+        if (column.kind != ColumnKind::Icon || !column.icons) {
             continue;
         }
-        // The accent pill above the neutral one; a lone pill takes the top.
-        const QString first = badges.value(row);
-        const QString second = secondBadges.value(row);
-        item->setData(BadgeDelegate::TextRole, first.isEmpty() ? second : first);
-        item->setData(BadgeDelegate::ToneRole, int(first.isEmpty() ? Badge::Tone::Neutral : Badge::Tone::Accent));
-        item->setData(BadgeDelegate::DetailBadgeRole, first.isEmpty() ? QString() : second);
+        const QIcon icon = collectionIcon(column.iconId);
+        // Faint is the style's own disabled look of the icon.
+        const QIcon faint(icon.pixmap(QSize(size, size), m_table->devicePixelRatio(), QIcon::Disabled));
+        const QList<IconCell> cells = column.icons(shown, m_settings);
+        for (int row = 0; row < m_table->rowCount() && row < cells.size(); ++row) {
+            QTableWidgetItem *item = m_table->item(row, index);
+            if (!item) {
+                continue;
+            }
+            const IconCell &cell = cells.at(row);
+            item->setIcon(cell.state == IconCell::State::Shown   ? icon
+                          : cell.state == IconCell::State::Faint ? faint
+                                                                 : QIcon());
+            item->setToolTip(cell.tooltip);
+        }
     }
 }
 

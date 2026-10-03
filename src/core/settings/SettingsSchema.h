@@ -34,11 +34,20 @@ enum class ColumnKind {
     Choice,
     // Any number of the options, held as a QStringList of their ids.
     ChoiceSet,
-    // The collection's badges and secondBadges for the record, as pills; it
-    // holds no value of its own and is never a field where records are edited.
-    Badges,
+    // An icon that says something about the record, such as whether a
+    // vocabulary term goes to the speech service. It holds no value of its own
+    // and is never a field where records are edited.
+    Icon,
     Toggle,
     ReadOnly,
+};
+
+// What an Icon column shows for one record: its icon, a faint one (the
+// style's disabled look), or none, and what the cell's tooltip says.
+struct IconCell {
+    enum class State { None, Shown, Faint };
+    State state = State::None;
+    QString tooltip;
 };
 
 // One typed column of a collection. A record's value for the column lives under
@@ -82,6 +91,14 @@ struct CollectionColumn {
     QString everyLabel;
     QString everyChoice;
     QString someChoice;
+    // Icon columns only. The icon, by a platform-neutral id each front end
+    // maps to its own set ("microphone", "star"), shown in the header with the
+    // title as its tooltip and accessible name, and in the cells by `icons`.
+    QString iconId;
+    // One cell per record in order. It depends on the other records, such as
+    // which terms fit in what the speech service takes, so a front end asks
+    // again with its current records each time it redraws them.
+    std::function<QList<IconCell>(const QList<QVariantMap> &, const AppSettings &)> icons;
 };
 
 // What a ChoiceSet cell says for a record's ids: their options' labels, in the
@@ -139,15 +156,6 @@ struct CollectionDescriptor {
     // because both of today's two undo its own edit history.
     QList<RowOption> actions;
     int minimumHeight = 0;
-    // Short labels shown as pills in the collection's Badges column, one per
-    // record in order, empty for none. badges are in the accent tone, such as
-    // which vocabulary terms the speech service receives; secondBadges sit
-    // under them in a neutral tone, such as which terms have priority. A
-    // record with only one shows it alone. They depend on the other records,
-    // so a front end asks again with its current records each time it redraws
-    // them.
-    std::function<QStringList(const QList<QVariantMap> &, const AppSettings &)> badges;
-    std::function<QStringList(const QList<QVariantMap> &, const AppSettings &)> secondBadges;
 };
 
 struct NumberRange {

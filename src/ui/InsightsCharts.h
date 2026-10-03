@@ -120,14 +120,11 @@ private:
 // widens instead of eliding; in a narrower one the name elides first.
 // DetailRole adds one more line under the text, elided, which the style draws
 // in the placeholder colour, such as a vocabulary term's context.
-// DetailBadgeRole starts that line with a second, Neutral pill, such as a
-// vocabulary term's priority. With no text, the cell holds only the pills.
 class BadgeDelegate final : public QStyledItemDelegate {
 public:
     static constexpr int TextRole = Qt::UserRole + 16;
     static constexpr int ToneRole = Qt::UserRole + 17;
     static constexpr int DetailRole = Qt::UserRole + 18;
-    static constexpr int DetailBadgeRole = Qt::UserRole + 19;
 
     using QStyledItemDelegate::QStyledItemDelegate;
 

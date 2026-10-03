@@ -49,6 +49,7 @@ const QString kLastUsedColumn = QStringLiteral("lastUsed");
 const QString kContextColumn = QStringLiteral("context");
 const QString kKeyTermColumn = QStringLiteral("keyTerm");
 const QString kSpeechColumn = QStringLiteral("speech");
+const QString kPriorityIconColumn = QStringLiteral("priorityIcon");
 const QString kProfilesColumn = QStringLiteral("profiles");
 const QString kHeardColumn = QStringLiteral("original");
 const QString kCorrectedColumn = QStringLiteral("corrected");
@@ -2163,10 +2164,49 @@ SettingsPage vocabularyPage()
     priority.enabledBy = kKeyTermColumn;
     priority.help = QStringLiteral("Puts the key term first in line for the speech service, so it stays "
                                    "in when the list is longer than the service takes.");
-    // The table shows both as badges in a column of their own.
+    // The table shows both as icons, as a mail client shows starred and
+    // flagged: a column each, before the term.
+    CollectionColumn sent{kSpeechColumn, QStringLiteral("Key term"), ColumnKind::Icon};
+    sent.iconId = QStringLiteral("microphone");
+    sent.icons = [](const QList<QVariantMap> &records, const AppSettings &settings) {
+        // The same entries the settings would store, so the icons follow the
+        // priority order the speech request is cut from.
+        const QString &provider = settings.speech.providerId;
+        const bool takesKeyTerms = provider == QStringLiteral("claude") || provider == QStringLiteral("endpoint");
+        const QStringList hints = VocabularyLimit::speechKeyterms(
+            vocabularyKeyTerms(vocabularyEntries(records)), provider);
+        QList<IconCell> cells;
+        for (const QVariantMap &record : records) {
+            if (!record.value(kKeyTermColumn, true).toBool()) {
+                cells.append({IconCell::State::None, QStringLiteral("Not a key term: refinement only.")});
+            } else if (hints.contains(record.value(kTermColumn).toString().simplified(), Qt::CaseInsensitive)) {
+                cells.append({IconCell::State::Shown, QStringLiteral("Key term: sent to the speech service as a hint.")});
+            } else if (takesKeyTerms) {
+                cells.append({IconCell::State::Faint,
+                              QStringLiteral("Key term, but past what the speech service takes, so not sent.")});
+            } else {
+                cells.append({IconCell::State::Faint, QStringLiteral("Key term, but this speech service takes none.")});
+            }
+        }
+        return cells;
+    };
+    CollectionColumn first{kPriorityIconColumn, QStringLiteral("Priority"), ColumnKind::Icon};
+    first.iconId = QStringLiteral("star");
+    // Priority only means anything for a key term.
+    first.icons = [](const QList<QVariantMap> &records, const AppSettings &) {
+        QList<IconCell> cells;
+        for (const QVariantMap &record : records) {
+            cells.append(record.value(kStarColumn).toBool() && record.value(kKeyTermColumn, true).toBool()
+                             ? IconCell{IconCell::State::Shown,
+                                        QStringLiteral("Priority: first in line for the speech service.")}
+                             : IconCell{});
+        }
+        return cells;
+    };
     terms.columns = {
+        sent,
+        first,
         term,
-        {kSpeechColumn, QStringLiteral("Speech"), ColumnKind::Badges},
         keyTerm,
         priority,
         context,
@@ -2193,32 +2233,6 @@ SettingsPage vocabularyPage()
                          {kLastUsedMsKey, qint64(0)},
                          {kContextColumn, QString()},
                          {kProfilesColumn, QStringList()}};
-    terms.badges = [](const QList<QVariantMap> &records, const AppSettings &settings) {
-        QStringList badges(records.size());
-        // The same entries the settings would store, so the badges follow
-        // the priority order the speech request is cut from: a key term
-        // past what the service takes gets none.
-        const QStringList hints = VocabularyLimit::speechKeyterms(
-            vocabularyKeyTerms(vocabularyEntries(records)), settings.speech.providerId);
-        for (int index = 0; index < records.size(); ++index) {
-            if (hints.contains(records.at(index).value(kTermColumn).toString().simplified(),
-                               Qt::CaseInsensitive)) {
-                badges[index] = QStringLiteral("Key term");
-            }
-        }
-        return badges;
-    };
-    // Priority only means anything for a key term.
-    terms.secondBadges = [](const QList<QVariantMap> &records, const AppSettings &) {
-        QStringList badges(records.size());
-        for (int index = 0; index < records.size(); ++index) {
-            const QVariantMap &record = records.at(index);
-            if (record.value(kStarColumn).toBool() && record.value(kKeyTermColumn, true).toBool()) {
-                badges[index] = QStringLiteral("Priority");
-            }
-        }
-        return badges;
-    };
     terms.addLabel = QStringLiteral("Add");
     terms.addDialogTitle = QStringLiteral("New term");
     terms.editLabel = QStringLiteral("Edit…");

@@ -1042,7 +1042,7 @@ private slots:
         QCOMPARE(limit->text(),
                  VocabularyLimit::summary({QStringLiteral("Deepgram"), QStringLiteral("Speecher")}, QStringLiteral("claude")));
 
-        table->item(0, 0)->setText(QStringLiteral("Deepgram Nova 3"));
+        table->item(0, 2)->setText(QStringLiteral("Deepgram Nova 3"));
         QCOMPARE(limit->text(),
                  VocabularyLimit::summary({QStringLiteral("Deepgram Nova 3"),
                                            QStringLiteral("Speecher")}, QStringLiteral("claude")));
@@ -1063,12 +1063,16 @@ private slots:
 
         auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
         QVERIFY(table);
-        // The Speech column holds the pills.
-        const auto badge = [table](int row, int role = BadgeDelegate::TextRole) {
-            return table->item(row, 1)->data(role).toString();
+        // The first two columns are the Key term and Priority icons. The
+        // offscreen platform has no icon theme, so the tooltips say which.
+        const auto sent = [table](int row) {
+            return table->item(row, 0)->toolTip().startsWith(QStringLiteral("Key term: sent"));
         };
-        QCOMPARE(badge(0), QStringLiteral("Key term"));
-        QCOMPARE(badge(100), QString());
+        const auto prioritised = [table](int row) {
+            return table->item(row, 1)->toolTip().startsWith(QStringLiteral("Priority"));
+        };
+        QVERIFY(sent(0));
+        QVERIFY(!sent(100));
 
         // Giving the last term priority pulls it into the key terms and
         // pushes the 100th out, before anything is saved. Priority waits on
@@ -1085,9 +1089,9 @@ private slots:
         keyTerm->setChecked(true);
         priority->setChecked(true);
         acceptRecordDialog(dialog);
-        QCOMPARE(badge(100), QStringLiteral("Key term"));
-        QCOMPARE(badge(100, BadgeDelegate::DetailBadgeRole), QStringLiteral("Priority"));
-        QCOMPARE(badge(99), QString());
+        QVERIFY(sent(100));
+        QVERIFY(prioritised(100));
+        QVERIFY(!sent(99));
     }
 
     void addingAVocabularyTermSurvivesTheSettingsRoundTrip()
@@ -1190,7 +1194,7 @@ private slots:
         QVERIFY(ok->isEnabled());
         acceptRecordDialog(dialog);
 
-        QCOMPARE(table->item(0, 2)->text(), QStringLiteral("Work"));
+        QCOMPARE(table->item(0, 3)->text(), QStringLiteral("Work"));
         AppSettings applied;
         page->appendToDraft(applied);
         QCOMPARE(applied.vocabulary.first().context, QStringLiteral("The container platform."));
