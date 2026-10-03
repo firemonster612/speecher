@@ -24,6 +24,9 @@ read -r number build < <("$exe" --version 2>/dev/null |
   sed -n 's/^speecher \(.*\) (build \([0-9]*\))$/\1 \2/p')
 printf '[updates]\nautoCheck=false\nlastRunVersion=%s\nlastRunBuildNumber=%s\n' \
   "$number" "$build" > "$config/speecher.conf"
+# Vocabulary terms with context and profile limits, as on macOS and Windows.
+printf '[stt]\nvocabularyEntries="%s"\n' \
+  "$(sed 's/"/\\"/g' docs/vocabulary-context-mockup/seed-vocabulary.json)" >> "$config/speecher.conf"
 failed=0
 for page in $PAGES; do
   if ! SPEECHER_GRAB_PAGE="$page" dbus-run-session -- "$exe" --grab "pages/linux-$page.png" \
