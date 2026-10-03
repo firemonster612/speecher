@@ -434,18 +434,7 @@ struct RecordSheet: View {
             Form {
                 Section {
                     ForEach(columns, id: \.columnId) { column in
-                        LabeledContent(column.title) {
-                            VStack(alignment: .leading) {
-                                field(column)
-                                    .disabled(!enabled(column))
-                                if !column.help.isEmpty {
-                                    Text(column.help)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
+                        row(column)
                     }
                 } header: {
                     Text(editor.sheetTitle)
@@ -487,6 +476,30 @@ struct RecordSheet: View {
         return CGFloat(lines) * 24 + 150
     }
 
+    @ViewBuilder private func row(_ column: CollectionColumnModel) -> some View {
+        if column.kind == .toggle {
+            // A settings row's layout: its name and, under it, what it does,
+            // with the box on the right.
+            Toggle(isOn: flag(column.columnId)) {
+                RowView.label(column.title, help: column.help)
+            }
+            .toggleStyle(.checkbox)
+            .disabled(!enabled(column))
+        } else {
+            LabeledContent(column.title) {
+                VStack(alignment: .leading) {
+                    field(column)
+                    if !column.help.isEmpty {
+                        Text(column.help)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
     @ViewBuilder private func field(_ column: CollectionColumnModel) -> some View {
         if column.kind == .choiceSet {
             ChoiceSetField(column: column,
@@ -524,6 +537,11 @@ struct RecordSheet: View {
     private static func ticked(_ column: CollectionColumnModel, in record: [String: Any]) -> [String] {
         let ids = record[column.columnId] as? [String] ?? []
         return column.options.map(\.rowOptionId).filter(ids.contains)
+    }
+
+    private func flag(_ columnId: String) -> Binding<Bool> {
+        Binding(get: { RowView.flag(editor.draft[columnId]) },
+                set: { editor.draft[columnId] = $0 as NSNumber })
     }
 
     private func draft(_ columnId: String) -> Binding<Any?> {
