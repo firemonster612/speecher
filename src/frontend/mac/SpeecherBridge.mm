@@ -1591,8 +1591,8 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         return @"";
     }
     QStringList coreIds;
-    for (NSString *id in ids) {
-        coreIds.append(QString::fromNSString(id));
+    for (NSString *optionId in ids) {
+        coreIds.append(QString::fromNSString(optionId));
     }
     return speecher::choiceSetText(*column, coreIds, _state->draft).toNSString();
 }
