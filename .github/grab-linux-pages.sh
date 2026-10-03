@@ -2,8 +2,9 @@
 # Grabs each page id in $PAGES from build/speecher into pages/linux-<page>.png:
 # offscreen, KDE platform theme, Breeze Light in an isolated XDG_CONFIG_HOME,
 # as AGENTS.md's "Look before you claim" describes. Run from the source root.
-# SPEECHER_INSIGHTS_SEED picks another seed log, and PAGES_SUFFIX goes after
-# the page id in the file name.
+# SPEECHER_INSIGHTS_SEED picks another seed log, PAGES_COLOR_SCHEME another
+# Breeze colour scheme (BreezeDark), and PAGES_SUFFIX goes after the page id
+# in the file name.
 set -euo pipefail
 : "${PAGES:?set PAGES to the page ids to grab}"
 exe="${1:-build/speecher}"
@@ -18,7 +19,7 @@ suffix="${PAGES_SUFFIX:-}"
 config="$XDG_CONFIG_HOME/io.github.firemonster612"
 mkdir -p "$config" pages
 {
-  cat /usr/share/color-schemes/BreezeLight.colors
+  cat "/usr/share/color-schemes/${PAGES_COLOR_SCHEME:-BreezeLight}.colors"
   printf '\n[Icons]\nTheme=breeze\n[KDE]\nwidgetStyle=Breeze\n'
 } > "$XDG_CONFIG_HOME/kdeglobals"
 # This build as the last one run and no update checks, so no "is installed"

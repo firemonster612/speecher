@@ -7,7 +7,8 @@ name: Insights evidence
 #
 # stats-image is the picture Home's Share menu copies, read back from the
 # clipboard; stats-image-large is the same from seed-large.jsonl, whose
-# totals run past what an int holds.
+# totals run past what an int holds, and stats-image-dark is the first in the
+# dark theme.
 #
 # Linux, macOS and Windows also grab the same $PAGES into
 # pages/<platform>-<page>.png, merged into one "pages" artifact, so a pull
@@ -87,6 +88,8 @@ jobs:
               && cmake --build build --parallel --target speecher \
               && { status=0; .github/grab-linux-pages.sh build/speecher || status=1; \
                    PAGES=stats-image PAGES_SUFFIX=-large SPEECHER_INSIGHTS_SEED=$PWD/docs/insights-mockup/seed-large.jsonl \
+                   .github/grab-linux-pages.sh build/speecher || status=1; \
+                   PAGES=stats-image PAGES_SUFFIX=-dark PAGES_COLOR_SCHEME=BreezeDark \
                    .github/grab-linux-pages.sh build/speecher || status=1; exit $status; }'
 
       - name: Upload Linux pages
@@ -246,6 +249,17 @@ jobs:
           if [ ! -s pages/macos-stats-image-large.png ]; then
             echo "macos-stats-image-large failed:"
             tail -20 "$RUNNER_TEMP/macos-large.log"
+            failed=1
+          fi
+          pkill -9 -x speecher || true
+          find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
+          defaults write -g AppleInterfaceStyle Dark
+          SPEECHER_GRAB_PAGE=stats-image build/speecher.app/Contents/MacOS/speecher \
+            --grab pages/macos-stats-image-dark.png > "$RUNNER_TEMP/macos-dark.log" 2>&1 || true
+          defaults delete -g AppleInterfaceStyle
+          if [ ! -s pages/macos-stats-image-dark.png ]; then
+            echo "macos-stats-image-dark failed:"
+            tail -20 "$RUNNER_TEMP/macos-dark.log"
             failed=1
           fi
           pkill -9 -x speecher || true
@@ -459,6 +473,17 @@ jobs:
           $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
           if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
             $failed += "stats-image-large ($($process.ExitCode))"
+          }
+          # The dark theme, through the Theme setting Qt keeps in the registry.
+          $env:SPEECHER_INSIGHTS_SEED = (Resolve-Path docs/insights-mockup/seed-active.jsonl).Path
+          $ui = "HKCU:\Software\io.github.firemonster612\speecher\ui"
+          New-Item -Path $ui -Force | Out-Null
+          New-ItemProperty -Path $ui -Name theme -Value "dark" -PropertyType String -Force | Out-Null
+          $out = Join-Path (Resolve-Path pages).Path "windows-stats-image-dark.png"
+          $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+          Remove-ItemProperty -Path $ui -Name theme
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+            $failed += "stats-image-dark ($($process.ExitCode))"
           }
           if ($failed) {
             throw "speecher --grab failed for $($failed -join ', ')"
