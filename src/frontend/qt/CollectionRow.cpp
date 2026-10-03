@@ -397,6 +397,7 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
             }
             item->setFlags(flags);
             item->setCheckState(value.toBool() ? Qt::Checked : Qt::Unchecked);
+            item->setToolTip(tooltip);
             m_table->setItem(row, index, item);
             continue;
         }
@@ -653,9 +654,11 @@ void openRecordDialog(QWidget *parent,
     QWidget *firstText = nullptr;
     // A field with help gets it underneath, in one widget with the field: a
     // wrapped label as a row of its own is sized too narrow and clipped.
+    // A checkbox names itself, so its row spans the form with no title.
     const auto addField = [dialog, form](const CollectionColumn &column, QWidget *field) {
+        const bool titled = column.kind != ColumnKind::Toggle;
         if (column.help.isEmpty()) {
-            form->addRow(column.title, field);
+            titled ? form->addRow(column.title, field) : form->addRow(field);
             return;
         }
         auto *withHelp = new QWidget(dialog);
@@ -668,9 +671,16 @@ void openRecordDialog(QWidget *parent,
         help->setWordWrap(true);
         help->setForegroundRole(QPalette::PlaceholderText);
         help->setFont(settings::smallFont(help->font()));
+        if (!titled) {
+            // In line with the checkbox's text, past its box.
+            QStyle *style = field->style();
+            help->setContentsMargins(style->pixelMetric(QStyle::PM_IndicatorWidth, nullptr, field)
+                                         + style->pixelMetric(QStyle::PM_CheckBoxLabelSpacing, nullptr, field),
+                                     0, 0, 0);
+        }
         layout->addWidget(field);
         layout->addWidget(help);
-        form->addRow(column.title, withHelp);
+        titled ? form->addRow(column.title, withHelp) : form->addRow(withHelp);
     };
     for (const CollectionColumn &column : collection.columns) {
         const QVariant value = original.value(column.id);
@@ -678,7 +688,7 @@ void openRecordDialog(QWidget *parent,
         if (column.kind == ColumnKind::Toggle) {
             auto *box = new QCheckBox(column.title, dialog);
             box->setChecked(value.toBool());
-            form->addRow(box);
+            addField(column, box);
             readers.append([box, id = column.id](QVariantMap &record) {
                 record.insert(id, box->isChecked());
             });

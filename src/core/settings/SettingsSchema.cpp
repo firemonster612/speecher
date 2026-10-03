@@ -2138,8 +2138,12 @@ SettingsPage vocabularyPage()
     profiles.everyChoice = QStringLiteral("Every Writing Profile");
     profiles.someChoice = QStringLiteral("Only these Writing Profiles:");
     profiles.help = QStringLiteral("Under any other profile, neither refinement nor the speech service gets this term.");
+    CollectionColumn key{kStarColumn, QStringLiteral("Key term"), ColumnKind::Toggle};
+    key.help = QStringLiteral("Sent to the speech service before other terms, so it stays in when "
+                              "the list is longer than the service takes.");
+    key.tooltip = key.help;
     terms.columns = {
-        {kStarColumn, QStringLiteral("Key term"), ColumnKind::Toggle},
+        key,
         term,
         context,
         profiles,

@@ -1156,6 +1156,8 @@ private slots:
         QDialog *dialog = shownRecordDialog(*page);
         QVERIFY(dialog);
         QCOMPARE(dialog->windowTitle(), QStringLiteral("Kubernetes"));
+        // The Key term box says what it does.
+        QVERIFY(!dialog->findChild<QLabel *>(QStringLiteral("starredHelp"))->text().isEmpty());
         dialog->findChild<QPlainTextEdit *>(QStringLiteral("context"))
             ->setPlainText(QStringLiteral("The container platform."));
         QList<QRadioButton *> choices = dialog->findChild<QWidget *>(QStringLiteral("profiles"))
