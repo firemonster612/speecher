@@ -478,8 +478,8 @@ struct RecordSheet: View {
 
     @ViewBuilder private func row(_ column: CollectionColumnModel) -> some View {
         if column.kind == .toggle {
-            // A settings row's layout: its name and, under it, what it does,
-            // with the box on the right.
+            // The box, its name beside it and, under the name, what it does,
+            // in a settings row's two Texts.
             Toggle(isOn: flag(column.columnId)) {
                 RowView.label(column.title, help: column.help)
             }
