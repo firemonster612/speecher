@@ -391,6 +391,29 @@ private slots:
                               + QStringLiteral("Current editing configuration")));
     }
 
+    // The profile's output language is a rule before the user's instructions
+    // in both dictation prompts; selection editing keeps the selection's own.
+    void outputLanguageAsksForATranslation()
+    {
+        RefinementContext context;
+        context.includeNearbyText = false;
+        context.outputLanguage = QStringLiteral(" Spanish ");
+        context.additionalInstructions = QStringLiteral("Spell it Speecher.");
+        const QString rule = QStringLiteral(
+            "Rule: output_language.\n"
+            "Write the refined text in Spanish. When the dictation was spoken in another language, "
+            "translate it and apply the other rules to the translation. This rule overrides the rules "
+            "that preserve the original wording. Keep literal technical text, "
+            "names, and binding placeholders unchanged.\n\nUser instructions.");
+        QVERIFY(dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context).contains(rule));
+        QVERIFY(compactRefinementSystemPrompt(QStringLiteral("light_cleanup"), context).contains(rule));
+        context.customSystemPrompt = QStringLiteral("Clean up my dictation.");
+        QVERIFY(dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context).contains(rule));
+        context.editSelection = true;
+        QVERIFY(!refinementSystemPrompt(QStringLiteral("light_cleanup"), context)
+                     .contains(QStringLiteral("output_language")));
+    }
+
     void customSystemPromptReplacesTheDictationRules()
     {
         RefinementContext context;

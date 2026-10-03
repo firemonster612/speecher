@@ -82,6 +82,10 @@ class AudioInput : public QObject {
 public:
     using QObject::QObject;
     virtual void warmUp() {}
+    // Records from this device rather than the one the settings name, for an
+    // input started once and then thrown away. Inputs that read no device,
+    // such as a file standing in for the microphone, ignore it.
+    virtual void useDevice(const QString &deviceId) { Q_UNUSED(deviceId) }
     virtual bool start(QString *error = nullptr) = 0;
     virtual void stop() = 0;
     virtual bool isActive() const = 0;
@@ -178,6 +182,16 @@ signals:
     void failed(const QString &message);
 };
 
+// A stretch of the Raw Transcript and when it was spoken, in milliseconds from
+// the start of the attempt's audio.
+struct TranscriptSegment {
+    qint64 startMs = 0;
+    qint64 endMs = 0;
+    QString text;
+
+    bool operator==(const TranscriptSegment &) const = default;
+};
+
 class SpeechTranscriber : public QObject {
     Q_OBJECT
 
@@ -204,6 +218,9 @@ signals:
     // finals, emitted before attemptCompleted by providers that retranscribe
     // the buffered audio in one pass at the end.
     void attemptTranscript(quint64 attemptId, const QString &text);
+    // Optional: when each part of that whole-attempt transcript was spoken,
+    // emitted just before it by providers whose service returns timings.
+    void attemptSegments(quint64 attemptId, const QList<speecher::TranscriptSegment> &segments);
     void attemptCompleted(quint64 attemptId);
     void failed(const speecher::SpeechFailure &failure);
 };

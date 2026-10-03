@@ -20,6 +20,7 @@ public:
     static QList<AudioInputDeviceInfo> availableInputDevices();
 
     void warmUp() override;
+    void useDevice(const QString &deviceId) override;
     bool start(QString *error = nullptr) override;
     void stop() override;
     bool isActive() const override;

@@ -58,6 +58,9 @@ struct WritingProfileSettings {
     QString instructions;
     // A custom profile's name. A built-in is called by its label.
     QString name;
+    // The language refinement writes in, by name, such as "Spanish". Empty
+    // writes in the language that was spoken.
+    QString outputLanguage;
 
     bool operator==(const WritingProfileSettings &other) const = default;
 };
@@ -106,6 +109,11 @@ struct CustomCleanupLevel {
 };
 
 inline const QString kCustomOnlyCleanupBase = QStringLiteral("custom_only");
+
+// The cleanup level refinement runs at. Translating is refinement, so None
+// with an output language refines at Light, the level that stays closest to
+// what was said.
+QString refinedCleanupLevel(const QString &level, const QString &outputLanguage);
 
 struct Target {
     QString applicationId;
@@ -168,6 +176,8 @@ struct RefinementContext {
     // the writing profile's.
     QString additionalInstructions;
     QString profileInstructions;
+    // The writing profile's output language; empty keeps the spoken one.
+    QString outputLanguage;
     // Replaces the built-in dictation rules when not blank.
     QString customSystemPrompt;
     // Set when the tone or the cleanup level is one the user defined. The

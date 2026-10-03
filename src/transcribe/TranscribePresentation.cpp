@@ -182,7 +182,7 @@ QString transcribeText(TranscribeText text)
     case TranscribeText::ExportAll:
         return QStringLiteral("Export all\u2026");
     case TranscribeText::Export:
-        return QStringLiteral("Export\u2026");
+        return QStringLiteral("Export…");
     case TranscribeText::ExportAllDialogTitle:
         return QStringLiteral("Export transcripts to");
     case TranscribeText::ExportDialogTitle:
@@ -298,10 +298,12 @@ QString refinementModel(const QString &providerId, const RefinementSettings &set
     return {};
 }
 
-bool refinesTranscripts(const TranscribeOptions &options)
+bool refinesTranscripts(const TranscribeOptions &options, const RefinementSettings &settings)
 {
+    const WritingProfileSettings profile =
+        writingProfileSettingsFor(settings.writingProfiles, writingProfileFromName(options.writingProfile));
     return options.refinementProviderId != QStringLiteral("none")
-        && options.cleanupStrength != QStringLiteral("none");
+        && refinedCleanupLevel(options.cleanupStrength, profile.outputLanguage) != QStringLiteral("none");
 }
 
 QString shownTranscript(const TranscribeFileResult &result, bool raw)
@@ -316,6 +318,60 @@ QString resultMeta(const TranscribeFileResult &result, qint64 durationMs, bool r
     }
     const QString words = QStringLiteral("%1 words").arg(wordCount(shownTranscript(result, raw)));
     return durationMs >= 0 ? durationLabel(durationMs) + kSeparator + words : words;
+}
+
+QString transcriptFormatCaption(TranscriptFormat format)
+{
+    switch (format) {
+    case TranscriptFormat::Text:
+        break;
+    case TranscriptFormat::Srt:
+        return QStringLiteral("SRT subtitles\u2026");
+    case TranscriptFormat::WebVtt:
+        return QStringLiteral("WebVTT subtitles\u2026");
+    }
+    return transcribeText(TranscribeText::Export);
+}
+
+QString transcriptFormatFileType(TranscriptFormat format)
+{
+    switch (format) {
+    case TranscriptFormat::Text:
+        break;
+    case TranscriptFormat::Srt:
+        return QStringLiteral("SRT subtitles");
+    case TranscriptFormat::WebVtt:
+        return QStringLiteral("WebVTT subtitles");
+    }
+    return transcribeText(TranscribeText::TextFiles);
+}
+
+bool canExportAs(const TranscribeFileResult &result, TranscriptFormat format)
+{
+    return !result.failed() && (format == TranscriptFormat::Text || !result.segments.isEmpty());
+}
+
+QString exportedTranscript(const TranscribeFileResult &result, TranscriptFormat format, bool raw)
+{
+    return format == TranscriptFormat::Text ? shownTranscript(result, raw) : subtitleFile(result.segments, format);
+}
+
+QString subtitlesNote(const QList<TranscribeFileResult> &results, const TranscribeBatchLabels &labels)
+{
+    if (std::all_of(results.cbegin(), results.cend(), [](const TranscribeFileResult &result) { return result.failed(); })) {
+        return {};
+    }
+    const bool timed = std::any_of(results.cbegin(), results.cend(), [](const TranscribeFileResult &result) {
+        return canExportAs(result, TranscriptFormat::Srt);
+    });
+    if (!timed) {
+        return QStringLiteral("Subtitles need timings, and %1 returned none.").arg(labels.speech);
+    }
+    // labels.refinement is empty when the batch did not refine.
+    return labels.refinement.isEmpty()
+        ? QStringLiteral("Subtitles come from the Raw Transcript.")
+        : QStringLiteral("Subtitles come from the Raw Transcript, since refinement rewrites the words its "
+                         "timings belong to.");
 }
 
 QString allTranscripts(const QList<TranscribeFileResult> &results, bool raw)
@@ -373,7 +429,7 @@ TranscribeBatchLabels batchLabels(const TranscribeOptions &options,
 {
     TranscribeBatchLabels labels;
     labels.speech = providerLabel(providers.speechProviders(), options.speechProviderId);
-    if (refinesTranscripts(options)) {
+    if (refinesTranscripts(options, settings)) {
         labels.refinement = QStringLiteral("%1 %2")
                                 .arg(providerLabel(providers.refinementProviders(), options.refinementProviderId),
                                      refinementModel(options.refinementProviderId, settings))

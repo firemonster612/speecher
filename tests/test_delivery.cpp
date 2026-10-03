@@ -614,6 +614,28 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(pipeline.refinementContext.customTone, std::optional(terse));
     }
 
+    // Translating needs refinement, so a profile set to None that has an
+    // output language refines at Light, a selection edit too.
+    void aProfileThatTranslatesRefinesEvenAtNone()
+    {
+        AppSettings settings;
+        settings.refinement.writingProfiles = {
+            {WritingProfile::Other, QStringLiteral("none"), QStringLiteral("none"), QString(), QString(),
+             QStringLiteral("Spanish")},
+        };
+        const TranscriptPipelineResult dictation =
+            TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{});
+        QCOMPARE(dictation.refinementContext.outputLanguage, QStringLiteral("Spanish"));
+        QCOMPARE(dictation.refinementSettings.style, QStringLiteral("light_cleanup"));
+
+        Target selection;
+        selection.selectedText = QStringLiteral("hola");
+        selection.selectionStart = 0;
+        selection.selectionEnd = 4;
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("shorter"), settings, selection).refinementSettings.style,
+                 QStringLiteral("light_cleanup"));
+    }
+
     void transcriptPipelineScopesLearnedCorrectionsAndPreservesUserBindingPrecedence()
     {
         AppSettings settings;
@@ -647,6 +669,47 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
             QStringLiteral("cute uses post grass and open ai"), settings, firefox);
         QCOMPARE(inFirefox.bindingResult.boundText,
                  QStringLiteral("user choice uses global choice and OpenAI"));
+    }
+
+    void snippetDateAndTimeAreFilledAndSurviveRefinement()
+    {
+        AppSettings settings;
+        settings.bindings = {
+            {QStringLiteral("sign off"), QStringLiteral("Sent {date} at {time} {clipboard} {date")},
+        };
+        const auto expansionAt = [](const QDateTime &now) {
+            return QStringLiteral("Sent %1 at %2 {clipboard} {date")
+                .arg(QLocale().toString(now.date(), QLocale::ShortFormat),
+                     QLocale().toString(now.time(), QLocale::ShortFormat));
+        };
+
+        const QString before = expansionAt(QDateTime::currentDateTime());
+        const TranscriptPipelineResult pipeline = TranscriptPipeline::prepare(
+            QStringLiteral("thanks sign off"), settings, Target{});
+        const QString after = expansionAt(QDateTime::currentDateTime());
+        const QString bound = pipeline.bindingResult.boundText;
+        QVERIFY2(bound == QStringLiteral("thanks ") + before
+                     || bound == QStringLiteral("thanks ") + after,
+                 qPrintable(bound));
+
+        // Refinement sees only the placeholder; the filled-in text comes back
+        // through it, and through a phrase the model wrote out again.
+        QCOMPARE(pipeline.refinementInput, QStringLiteral("thanks SPEECHER_BINDING_0"));
+        const QString expansion = bound.mid(QStringLiteral("thanks ").size());
+        QCOMPARE(TranscriptPipeline::restoreRefinedResult(pipeline,
+                                                          QStringLiteral("Thanks. SPEECHER_BINDING_0")),
+                 std::optional<QString>(QStringLiteral("Thanks. ") + expansion));
+        QCOMPARE(TranscriptPipeline::restoreRefinedResult(pipeline, QStringLiteral("Sign off.")),
+                 std::optional<QString>(expansion + QStringLiteral(".")));
+
+        // A Learned Correction is not a Snippet: its braces stay as typed.
+        settings.learnedCorrections = {
+            {QStringLiteral("0"), QStringLiteral("stamp"), QStringLiteral("{date}"),
+             QString(), 1, 0.98, true, 1, 1},
+        };
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("stamp"), settings, Target{})
+                     .bindingResult.boundText,
+                 QStringLiteral("{date}"));
     }
 
     void aSessionWritingProfileBeatsTheAppOverride()

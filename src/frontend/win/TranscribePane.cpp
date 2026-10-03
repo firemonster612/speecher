@@ -355,7 +355,8 @@ void TranscribePane::applyWritingProfile()
     const WritingProfileSettings profile =
         writingProfileSettingsFor(refinement.writingProfiles, writingProfileFromName(m_profile));
     // A stored strength this build does not know falls back to the middle one.
-    m_cleanup = offeredCleanupLevel(profile.cleanupStrength, refinement.customCleanupLevels);
+    m_cleanup = offeredCleanupLevel(refinedCleanupLevel(profile.cleanupStrength, profile.outputLanguage),
+                                    refinement.customCleanupLevels);
     m_tone = profile.tone;
 }
 
@@ -377,8 +378,9 @@ void TranscribePane::startBatch()
 {
     m_batch = m_files;
     m_batchOptions = options();
-    m_batchLabels = batchLabels(m_batchOptions, *m_controller->providerRegistry(),
-                                m_controller->settings()->snapshot().refinement);
+    const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
+    m_batchLabels = batchLabels(m_batchOptions, *m_controller->providerRegistry(), refinement);
+    m_batchRefines = refinesTranscripts(m_batchOptions, refinement);
     m_results.clear();
     m_cancelled = false;
     m_current = -1;
@@ -732,7 +734,7 @@ void TranscribePane::showProgress()
 {
     const qreal progress = m_fileFinished
         ? 1.0
-        : m_progress.advance(overallFileProgress(m_fractionSent, m_phase, refinesTranscripts(m_batchOptions),
+        : m_progress.advance(overallFileProgress(m_fractionSent, m_phase, m_batchRefines,
                                                  m_phaseClock.elapsed()));
     for (const View &view : m_views) {
         if (view.progressBar) {
@@ -853,7 +855,7 @@ void TranscribePane::appendResults(const StackPanel &column, PaneHost &host)
     top.Padding({16, 16, 16, 16});
     top.Spacing(8);
     Grid toolbar = lineGrid();
-    if (refinesTranscripts(m_batchOptions)) {
+    if (m_batchRefines) {
         const QList<RowOption> versions{{QStringLiteral("refined"), transcribeText(TranscribeText::Refined)},
                                         {QStringLiteral("raw"), transcribeText(TranscribeText::Raw)}};
         toolbar.Children().Append(selectorBar(versions, m_showRaw ? QStringLiteral("raw") : QStringLiteral("refined"),
@@ -878,6 +880,9 @@ void TranscribePane::appendResults(const StackPanel &column, PaneHost &host)
     top.Children().Append(secondaryTextBlock(
         batchSummary(m_results, int(m_batch.size()), m_cancelled, m_durationsMs, m_batchOptions, m_batchLabels),
         L"SettingsCardDescriptionStyle", host));
+    if (const QString note = subtitlesNote(m_results, m_batchLabels); !note.isEmpty()) {
+        top.Children().Append(secondaryTextBlock(note, L"SettingsCardDescriptionStyle", host));
+    }
     column.Children().Append(cardContainer(top));
 
     if (!m_resultsProblem.isEmpty()) {
@@ -954,10 +959,22 @@ void TranscribePane::appendResults(const StackPanel &column, PaneHost &host)
             buttons.Children().Append(retryButton);
         } else {
             buttons.Children().Append(copyButton(transcribeText(TranscribeText::Copy), text));
-            Button exportButton = textButton(transcribeText(TranscribeText::Export));
-            exportButton.Click([this, &host, path = result.path, text](const auto &, const auto &) {
-                exportOne(host, path, text);
+            // The button exports text, as it always has; its arrow offers subtitles.
+            SplitButton exportButton;
+            exportButton.Content(box_value(hs(transcribeText(TranscribeText::Export))));
+            exportButton.Click([this, &host, result](const auto &, const auto &) {
+                exportOne(host, result, TranscriptFormat::Text);
             });
+            MenuFlyout formats;
+            formats.Placement(Primitives::FlyoutPlacementMode::BottomEdgeAlignedRight);
+            for (TranscriptFormat format : {TranscriptFormat::Srt, TranscriptFormat::WebVtt}) {
+                MenuFlyoutItem item;
+                item.Text(hs(transcriptFormatCaption(format)));
+                item.IsEnabled(canExportAs(result, format));
+                item.Click([this, &host, result, format](const auto &, const auto &) { exportOne(host, result, format); });
+                formats.Items().Append(item);
+            }
+            exportButton.Flyout(formats);
             buttons.Children().Append(exportButton);
         }
         Grid::SetColumn(buttons, 1);
@@ -1037,14 +1054,18 @@ winrt::fire_and_forget TranscribePane::chooseFolder(PaneHost &host)
     }
 }
 
-winrt::fire_and_forget TranscribePane::exportOne(PaneHost &host, QString audioPath, QString text)
+winrt::fire_and_forget TranscribePane::exportOne(PaneHost &host, TranscribeFileResult result, TranscriptFormat format)
 {
     const std::weak_ptr<bool> weak = host.alive;
+    // Read now: the Refined/Raw choice may change while the picker is open.
+    const QString text = exportedTranscript(result, format, m_showRaw);
     try {
         Pickers::FileSavePicker picker;
         check_hresult(picker.as<::IInitializeWithWindow>()->Initialize(host.hwnd()));
-        picker.SuggestedFileName(hs(QFileInfo(audioPath).completeBaseName() + QStringLiteral("-transcribed")));
-        picker.FileTypeChoices().Insert(hs(transcribeText(TranscribeText::TextFiles)), winrt::single_threaded_vector<hstring>({hstring(L".txt")}));
+        picker.SuggestedFileName(hs(QFileInfo(result.path).completeBaseName() + QStringLiteral("-transcribed")));
+        picker.FileTypeChoices().Insert(
+            hs(transcriptFormatFileType(format)),
+            winrt::single_threaded_vector<hstring>({hs(QStringLiteral(".") + transcriptFileExtension(format))}));
         const auto file = co_await picker.PickSaveFileAsync();
         if (gone(weak) || !file) {
             co_return;

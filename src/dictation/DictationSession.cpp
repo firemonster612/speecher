@@ -834,8 +834,8 @@ void DictationSession::rollOverSpeechAttempt()
                              QStringLiteral("streaming")});
         return;
     }
-    // The provider ended a healthy stream on its own (Codex's session TTL, a
-    // clean server close) while the person is still talking. That is routine:
+    // The provider ended a healthy stream on its own (a clean server close)
+    // while the person is still talking. That is routine:
     // no warning, and the healthy stream refills the error budget.
     refillReconnectsIfAttemptWasStable();
     qInfo() << "speech stream ended by the provider; rolling over to attempt" << m_attemptId + 1;

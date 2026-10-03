@@ -304,11 +304,15 @@ final class SpeecherSettingsWindow {
         titleObserver = model.$pane.sink { [weak window] pane in
             window?.title = panes.first { $0.id == pane }?.title ?? "Settings"
         }
-        // A recording must not outlive the window it was started in.
+        // A recording or a microphone test must not outlive the window it was
+        // started in.
         closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
         ) { [weak model] _ in
-            MainActor.assumeIsolated { model?.stopShortcutRecording() }
+            MainActor.assumeIsolated {
+                model?.stopShortcutRecording()
+                model?.bridge.stopMicrophoneTest()
+            }
         }
     }
 

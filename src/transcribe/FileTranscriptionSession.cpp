@@ -180,6 +180,7 @@ bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeO
     m_batchSettings = m_settings->snapshot();
     m_batchSettings.speech.providerId = options.speechProviderId;
     m_batchSettings.refinement.providerId = options.refinementProviderId;
+    m_batchSettings.speech.timedSegments = true;
     if (!options.applyVocabulary) {
         m_batchSettings.speech.vocabulary.clear();
         m_batchSettings.vocabulary.clear();
@@ -274,6 +275,22 @@ void FileTranscriptionSession::prepareProviders()
                                                     : m_attemptBaseText + QLatin1Char(' ') + text);
                 }
             });
+    connect(m_transcriber, &SpeechTranscriber::attemptSegments, this,
+            [this](quint64 attemptId, const QList<TranscriptSegment> &segments) {
+                if (attemptId != m_attemptId) {
+                    return;
+                }
+                for (TranscriptSegment segment : segments) {
+                    // A segment with no length or no words cannot be a cue.
+                    segment.text = segment.text.trimmed();
+                    if (segment.endMs <= segment.startMs || segment.text.isEmpty()) {
+                        continue;
+                    }
+                    segment.startMs += m_attemptStartMs;
+                    segment.endMs += m_attemptStartMs;
+                    m_current.segments.append(segment);
+                }
+            });
     connect(m_transcriber, &SpeechTranscriber::attemptCompleted,
             this, &FileTranscriptionSession::handleAttemptCompleted);
     connect(m_transcriber, &SpeechTranscriber::failed,
@@ -303,6 +320,7 @@ void FileTranscriptionSession::beginStreaming()
 {
     m_reconnectsLeft = kReconnectsPerFile;
     m_attemptBaseText.clear();
+    m_attemptStartMs = 0;
     m_attemptClock.start();
     m_transcriber->startAttempt(++m_attemptId, m_batchSettings.speech);
     m_sendTimer.start();
@@ -337,6 +355,7 @@ void FileTranscriptionSession::startNextAttempt()
         m_transcript->commitFinal(partial);
     }
     m_attemptBaseText = m_transcript->text();
+    m_attemptStartMs = m_sent * 1000 / kBytesPerSecond;
     m_attemptClock.start();
     m_transcriber->startAttempt(++m_attemptId, m_batchSettings.speech);
 }
@@ -350,7 +369,7 @@ void FileTranscriptionSession::handleAttemptCompleted(quint64 attemptId)
         finishTranscription();
         return;
     }
-    // The provider ended a stream before the file did (Codex sessions expire).
+    // The provider ended a stream before the file did (a clean server close).
     if (!attemptWasStable()) {
         handleSpeechFailure({attemptId,
                              QStringLiteral("The speech stream ended within seconds of starting"),
@@ -411,6 +430,10 @@ void FileTranscriptionSession::refine(const QString &raw)
         writingProfileSettingsFor(m_pipeline.refinementSettings.writingProfiles,
                                   m_pipeline.refinementContext.writingProfile));
     TranscriptPipeline::resolveCustomChoices(m_pipeline);
+    // Even a page or command line set to None translates for a profile with
+    // an output language.
+    m_pipeline.refinementSettings.style =
+        refinedCleanupLevel(m_pipeline.refinementSettings.style, m_pipeline.refinementContext.outputLanguage);
     const RefinementSettings &refinement = m_pipeline.refinementSettings;
     if (!m_refiner || refinement.style == QStringLiteral("none")
         || m_pipeline.bindingResult.canSkipRefinement) {

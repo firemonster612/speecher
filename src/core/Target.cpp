@@ -152,6 +152,13 @@ WritingProfileSettings writingProfileSettingsFor(const QList<WritingProfileSetti
     return {};
 }
 
+QString refinedCleanupLevel(const QString &level, const QString &outputLanguage)
+{
+    return level == QStringLiteral("none") && !outputLanguage.trimmed().isEmpty()
+        ? QStringLiteral("light_cleanup")
+        : level;
+}
+
 bool Target::hasIdentity() const
 {
     return !applicationId.isEmpty() || processId > 0 || !applicationName.isEmpty();

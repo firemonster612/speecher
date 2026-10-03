@@ -21,7 +21,7 @@ The desktop application and editable control selected when a Dictation Session s
 _Avoid_: Destination, focused app
 
 **Writing Profile**:
-How refinement treats a Target, inferred from it, with a user-selected fallback and optional override. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone and Additional Instructions. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
+How refinement treats a Target, inferred from it, with a user-selected fallback and optional override. A profile is built-in (Work, Email, Personal, AI coding, Other) or user-defined, and sets a Cleanup Level, a Tone, Additional Instructions and an optional output language that refinement translates into. AI coding wins over a terminal's own identity when a coding agent is detected inside it.
 _Avoid_: Style preset, persona
 
 **Cleanup Level**:

@@ -89,7 +89,7 @@ private:
 
     winrt::fire_and_forget chooseFiles(PaneHost &host);
     winrt::fire_and_forget chooseFolder(PaneHost &host);
-    winrt::fire_and_forget exportOne(PaneHost &host, QString audioPath, QString text);
+    winrt::fire_and_forget exportOne(PaneHost &host, TranscribeFileResult result, TranscriptFormat format);
     winrt::fire_and_forget exportAll(PaneHost &host);
     winrt::fire_and_forget dropFiles(PaneHost &host, winrt::Microsoft::UI::Xaml::DragEventArgs args);
 
@@ -113,6 +113,7 @@ private:
     QStringList m_batch;
     TranscribeOptions m_batchOptions;
     TranscribeBatchLabels m_batchLabels;
+    bool m_batchRefines = false;
     QList<TranscribeFileResult> m_results;
     bool m_cancelled = false;
     // The result row a retry is running for, or -1.

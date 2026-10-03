@@ -379,6 +379,13 @@ typedef NS_ENUM(NSInteger, SpeecherTranscriptDestination) {
 @property (nonatomic, readonly) BOOL failed;
 @end
 
+// What Export writes. Mirrors speecher::TranscriptFormat.
+typedef NS_ENUM(NSInteger, SpeecherTranscriptFormat) {
+    SpeecherTranscriptFormatText,
+    SpeecherTranscriptFormatSrt,
+    SpeecherTranscriptFormatWebVtt,
+};
+
 // Mirrors speecher::TranscribePhase.
 typedef NS_ENUM(NSInteger, SpeecherTranscribePhase) {
     SpeecherTranscribePhaseReading,
@@ -453,6 +460,13 @@ typedef NS_ENUM(NSInteger, SpeecherDictationState) {
     SpeecherDictationStateRefining,
     SpeecherDictationStateDelivering,
     SpeecherDictationStateError,
+};
+
+// Mirrors speecher::MicrophoneTestState.
+typedef NS_ENUM(NSInteger, SpeecherMicrophoneTestState) {
+    SpeecherMicrophoneTestStateStopped,
+    SpeecherMicrophoneTestStateStarting,
+    SpeecherMicrophoneTestStateRunning,
 };
 
 // Mirrors speecher::LocalModelText.
@@ -1099,6 +1113,23 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
                             failure:(void (^)(NSString *message))onFailure
     NS_SWIFT_NAME(startMicrophoneMeter(onLevel:failure:));
 - (void)stopMicrophoneMeter;
+
+// The Test microphone row's test (speecher::MicrophoneTest), apart from the
+// meter above, so the setup assistant and the row never share a device. It
+// ends itself when a Dictation Session starts or another device is saved.
+@property (nonatomic, readonly) SpeecherMicrophoneTestState microphoneTestState;
+// The button's caption (speecher::microphoneTestCaption) and whether it may
+// be clicked (speecher::MicrophoneTest::canToggle).
+@property (nonatomic, readonly, copy) NSString *microphoneTestCaption;
+@property (nonatomic, readonly) BOOL microphoneTestEnabled;
+// Each called on the main thread: the state or enabled moved, a level, and
+// why the device would not open.
+@property (nonatomic, copy, nullable) void (^microphoneTestChanged)(void);
+@property (nonatomic, copy, nullable) void (^microphoneTestLevelChanged)(float level);
+@property (nonatomic, copy, nullable) void (^microphoneTestFailed)(NSString *message);
+// Starts the test on the saved Input device, or stops it.
+- (void)toggleMicrophoneTest;
+- (void)stopMicrophoneTest;
 // The system input volume of the default microphone, 0 to 1, or -1 when macOS
 // does not say.
 - (float)microphoneInputVolume;
@@ -1245,6 +1276,16 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
     NS_SWIFT_NAME(resultMeta(_:durationMs:raw:));
 - (NSString *)allTranscripts:(NSArray<SpeecherTranscriptResult *> *)results raw:(BOOL)raw
     NS_SWIFT_NAME(allTranscripts(_:raw:));
+// A transcript's Export menu: each format's caption and file extension,
+// whether the result offers it, and what it writes.
+- (NSString *)transcriptFormatCaption:(SpeecherTranscriptFormat)format NS_SWIFT_NAME(formatCaption(_:));
+- (NSString *)transcriptFileExtension:(SpeecherTranscriptFormat)format NS_SWIFT_NAME(fileExtension(_:));
+- (BOOL)canExport:(SpeecherTranscriptResult *)result as:(SpeecherTranscriptFormat)format
+    NS_SWIFT_NAME(canExport(_:as:));
+- (NSString *)exportedTranscript:(SpeecherTranscriptResult *)result
+                          format:(SpeecherTranscriptFormat)format
+                             raw:(BOOL)raw
+    NS_SWIFT_NAME(exportedTranscript(_:format:raw:));
 - (NSString *)processingTitleForBatch:(NSArray<NSString *> *)batch current:(NSInteger)current
     NS_SWIFT_NAME(processingTitle(batch:current:));
 - (SpeecherTranscribeQueueState)queueStateAt:(NSInteger)index
@@ -1262,6 +1303,10 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
                              options:(SpeecherTranscribeOptions *)options
                               labels:(SpeecherTranscribeBatchLabels *)labels
     NS_SWIFT_NAME(batchSummary(results:batchSize:cancelled:durations:options:labels:));
+// The line under the summary about subtitles; empty when none finished.
+- (NSString *)subtitlesNoteForResults:(NSArray<SpeecherTranscriptResult *> *)results
+                               labels:(SpeecherTranscribeBatchLabels *)labels
+    NS_SWIFT_NAME(subtitlesNote(results:labels:));
 // The batch as it runs, on the main thread. Indexes count files in the order
 // they were passed to startTranscribing.
 @property (nonatomic, copy, nullable) void (^transcriptionBatchStarted)(NSInteger count);

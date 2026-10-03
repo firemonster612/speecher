@@ -20,6 +20,7 @@
 namespace speecher {
 
 class ApplicationController;
+class MicrophoneTest;
 
 namespace win {
 
@@ -91,6 +92,9 @@ struct PaneHost {
     // The Local models list and detail, kept for the same reason: its
     // selection outlives the rebuild each LocalSetup change causes.
     std::shared_ptr<LocalModelBrowser> localModels;
+    // The Test microphone row's test, kept for the same reason. Reset, which
+    // closes the microphone, on a pane change and when the window closes.
+    std::shared_ptr<MicrophoneTest> microphoneTest;
     // The OpenAI credential field's state: a keyring read that lands after
     // typing started must not overwrite what was typed.
     QString apiKey;

@@ -3,6 +3,8 @@
 #include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
 
+#include <QDateTime>
+#include <QLocale>
 #include <QSet>
 
 namespace speecher {
@@ -26,6 +28,20 @@ QList<BindingRule> withoutNoBindPhrases(const QList<BindingRule> &rules,
         }
     }
     return filtered;
+}
+
+// A Snippet's {date} and {time} become today's date and the current time in
+// the locale's short format. Any other text in braces stays as written.
+QList<BindingRule> withVariablesFilled(QList<BindingRule> rules)
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    const QString date = QLocale().toString(now.date(), QLocale::ShortFormat);
+    const QString time = QLocale().toString(now.time(), QLocale::ShortFormat);
+    for (BindingRule &rule : rules) {
+        rule.replacement.replace(QStringLiteral("{date}"), date)
+            .replace(QStringLiteral("{time}"), time);
+    }
+    return rules;
 }
 
 QString writingProfileFor(const AppSettings &settings, const Target &target)
@@ -70,7 +86,11 @@ QStringList refinementVocabulary(const AppSettings &settings)
 
 QList<BindingRule> activeBindings(const AppSettings &settings, const Target &target)
 {
-    QList<BindingRule> rules = settings.bindings;
+    // Only the user's own rules: a Learned Correction's text is what the user
+    // typed, braces and all. prepare reads these rules once, so the expansion
+    // before refinement, the one after it and the placeholder restore all
+    // insert the same date and time.
+    QList<BindingRule> rules = withVariablesFilled(settings.bindings);
     QSet<QString> claimedPhrases;
     for (const BindingRule &rule : settings.bindings) {
         claimedPhrases.insert(BindingProcessor::normalizedPhrase(rule.phrase));
@@ -102,6 +122,7 @@ void TranscriptPipeline::fillUserInstructions(RefinementContext &context,
 {
     context.additionalInstructions = refinement.additionalInstructions;
     context.profileInstructions = profile.instructions;
+    context.outputLanguage = profile.outputLanguage;
     context.customSystemPrompt =
         refinement.customSystemPromptEnabled ? refinement.customSystemPrompt : QString();
 }
@@ -134,7 +155,7 @@ RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSett
     const WritingProfileSettings profileSettings = writingProfileSettingsFor(
         refinement.writingProfiles,
         writingProfileFor(settings, target));
-    refinement.style = profileSettings.cleanupStrength;
+    refinement.style = refinedCleanupLevel(profileSettings.cleanupStrength, profileSettings.outputLanguage);
     refinement.tone = profileSettings.tone;
     return refinement;
 }

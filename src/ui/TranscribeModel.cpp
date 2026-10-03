@@ -136,8 +136,9 @@ bool TranscribeModel::start(const TranscribeOptions &options, QString *error)
     }
     m_batch = m_files;
     m_batchOptions = options;
-    m_batchLabels = batchLabels(options, *m_controller->providerRegistry(),
-                                m_controller->settings()->snapshot().refinement);
+    const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
+    m_batchLabels = batchLabels(options, *m_controller->providerRegistry(), refinement);
+    m_batchRefines = refinesTranscripts(options, refinement);
     m_results.clear();
     m_cancelled = false;
     m_current = -1;
@@ -203,7 +204,7 @@ qreal TranscribeModel::progress()
     if (m_fileDone) {
         return 1.0;
     }
-    return m_progress.advance(overallFileProgress(m_fractionSent, m_phase, refinesTranscripts(m_batchOptions),
+    return m_progress.advance(overallFileProgress(m_fractionSent, m_phase, m_batchRefines,
                                                   m_phaseClock.elapsed()));
 }
 
@@ -212,14 +213,19 @@ const QList<TranscribeFileResult> &TranscribeModel::results() const
     return m_results;
 }
 
-const TranscribeOptions &TranscribeModel::batchOptions() const
+bool TranscribeModel::batchRefines() const
 {
-    return m_batchOptions;
+    return m_batchRefines;
 }
 
 QString TranscribeModel::summary() const
 {
     return batchSummary(m_results, int(m_batch.size()), m_cancelled, m_durationsMs, m_batchOptions, m_batchLabels);
+}
+
+QString TranscribeModel::subtitlesNote() const
+{
+    return speecher::subtitlesNote(m_results, m_batchLabels);
 }
 
 void TranscribeModel::retry(int index)

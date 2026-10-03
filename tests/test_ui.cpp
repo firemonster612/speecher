@@ -17,9 +17,13 @@
 #include "dictation/PopupPresentation.h"
 #include "providers/LocalModelStore.h"
 #include "providers/EndpointSpeechTranscriber.h"
+#include <QPointer>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QFile>
 #include <QTcpServer>
+#include "app/MicrophoneTest.h"
+#include "frontend/qt/MicrophoneTestRow.h"
 #include "frontend/qt/OutputCustomRows.h"
 #ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetupFlow.h"
@@ -122,6 +126,27 @@ public:
 
     QSize configuredSize;
 };
+
+#ifdef Q_OS_LINUX
+// Points the audio seam, which only LinuxComposition reads, at two seconds of
+// a loud square wave, so the real row can be driven without a sound server.
+// Unset on scope exit.
+auto feedMicrophoneFromTone(const QTemporaryDir &dir)
+{
+    const QString path = dir.filePath(QStringLiteral("tone.wav"));
+    QByteArray samples;
+    for (int i = 0; i < 32000; ++i) {
+        const qint16 sample = (i / 20) % 2 ? 16000 : -16000;
+        samples.append(reinterpret_cast<const char *>(&sample), sizeof sample);
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(test::wavBytes(samples, 16000, 1)) < 0) {
+        qFatal("cannot write %s", qPrintable(path));
+    }
+    qputenv("SPEECHER_AUDIO_WAV", path.toUtf8());
+    return qScopeGuard([] { qunsetenv("SPEECHER_AUDIO_WAV"); });
+}
+#endif
 
 } // namespace
 
@@ -1829,8 +1854,15 @@ private slots:
         QVERIFY(!checkAgain->isHidden());
 
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        // The Test microphone row needs a controller, which this page lacks.
+        const auto standInMicrophoneTest = [](const SettingsRow &descriptor, QWidget *parent,
+                                              std::function<void()>) {
+            return descriptor.id == QStringLiteral("microphoneTest")
+                ? SchemaCustomRow{new QWidget(parent), {}, {}}
+                : SchemaCustomRow{};
+        };
         const std::unique_ptr<SchemaSettingsPage> audio =
-            schemaPage(QStringLiteral("audio"), *platform, providers);
+            schemaPage(QStringLiteral("audio"), *platform, providers, standInMicrophoneTest);
         AppSettings snapshot = settings.snapshot();
         audio->load(snapshot);
         auto *settingsChoice = audio->findChild<QComboBox *>(QStringLiteral("speechProvider"));
@@ -2367,6 +2399,152 @@ private slots:
 
         QCOMPARE(status->minimumHeight(), status->heightForWidth(status->width()));
         QVERIFY(status->minimumHeight() < longStatusHeight);
+    }
+#endif
+
+    // The test owns the microphone only while it runs: stopping it, a
+    // Dictation Session starting and a saved change of device each close the
+    // device; running it never starts a session, and none starts while
+    // dictating.
+    void microphoneTestClosesTheDeviceWhenItEnds()
+    {
+        ApplicationController controller(true);
+        const QString savedDevice = controller.settings()->audioInputDeviceId();
+        const auto restoreDevice = qScopeGuard([&] { controller.settings()->setAudioInputDeviceId(savedDevice); });
+        QPointer<FakeAudioInput> input;
+        MicrophoneTest test(controller, nullptr, [&input](QObject *parent) {
+            input = new FakeAudioInput(parent);
+            return input.data();
+        });
+        const auto deviceClosed = [&input] {
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            return input.isNull();
+        };
+
+        QSignalSpy levels(&test, &MicrophoneTest::levelChanged);
+        test.start(savedDevice);
+        QCOMPARE(test.state(), MicrophoneTestState::Running);
+        emit input->levelChanged(0.5f);
+        QCOMPARE(levels.size(), 1);
+        QCOMPARE(controller.stateName(), QStringLiteral("idle"));
+        test.stop();
+        QCOMPARE(test.state(), MicrophoneTestState::Stopped);
+        QVERIFY(deviceClosed());
+
+        test.start(savedDevice);
+        emit controller.stateChanged(QStringLiteral("starting"));
+        QCOMPARE(test.state(), MicrophoneTestState::Stopped);
+        QVERIFY(deviceClosed());
+
+        QVERIFY(!test.canToggle());
+        test.start(savedDevice);
+        QCOMPARE(test.state(), MicrophoneTestState::Stopped);
+        emit controller.stateChanged(QStringLiteral("idle"));
+        QVERIFY(test.canToggle());
+
+        test.start(savedDevice);
+        controller.settings()->setAudioInputDeviceId(savedDevice + QStringLiteral("-other"));
+        QCOMPARE(test.state(), MicrophoneTestState::Stopped);
+        QVERIFY(deviceClosed());
+    }
+
+    // A device unplugged while it opens fails inside the input's start(),
+    // which then gives up with a timeout. The test reports the real reason,
+    // once.
+    void microphoneTestReportsAFailureWhileStartingOnce()
+    {
+        ApplicationController controller(true);
+        MicrophoneTest test(controller, nullptr, [](QObject *parent) {
+            auto *input = new FakeAudioInput(parent);
+            input->startError = QStringLiteral("produced no audio");
+            input->onStart = [input] {
+                input->emitFailure(QStringLiteral("unplugged"));
+                input->startResult = false;
+            };
+            return input;
+        });
+        QSignalSpy failures(&test, &MicrophoneTest::failed);
+        test.start(QString());
+        QCOMPARE(test.state(), MicrophoneTestState::Stopped);
+        QCOMPARE(failures.size(), 1);
+        QCOMPARE(failures.first().first().toString(), QStringLiteral("unplugged"));
+    }
+
+    // Opening a device can wait in a nested event loop, where a stop or the
+    // test's own destruction may arrive. The input outlives its start() call,
+    // and a test stopped while starting never reports Running.
+    void microphoneTestSurvivesAStopWhileTheDeviceOpens()
+    {
+        ApplicationController controller(true);
+        std::unique_ptr<MicrophoneTest> test;
+        QPointer<FakeAudioInput> input;
+        bool inputSurvivedTheWait = false;
+        std::function<void()> duringStart;
+        const auto createInput = [&](QObject *parent) {
+            input = new FakeAudioInput(parent);
+            input->onStart = [&] {
+                duringStart();
+                QEventLoop wait;
+                QTimer::singleShot(0, &wait, &QEventLoop::quit);
+                wait.exec();
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                inputSurvivedTheWait = !input.isNull();
+            };
+            return input.data();
+        };
+        test = std::make_unique<MicrophoneTest>(controller, nullptr, createInput);
+        QList<MicrophoneTestState> states;
+        connect(test.get(), &MicrophoneTest::changed, test.get(), [&] { states.append(test->state()); });
+
+        duringStart = [&] {
+            QCOMPARE(test->state(), MicrophoneTestState::Starting);
+            QVERIFY(!test->canToggle());
+            test->stop();
+        };
+        test->start(QString());
+        QVERIFY(inputSurvivedTheWait);
+        QCOMPARE(states, QList<MicrophoneTestState>({MicrophoneTestState::Starting, MicrophoneTestState::Stopped}));
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(input.isNull());
+
+        duringStart = [&] { test.reset(); };
+        MicrophoneTest *const destroyedWhileStarting = test.get();
+        destroyedWhileStarting->start(QString());
+        QVERIFY(inputSurvivedTheWait);
+        QVERIFY(!test);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(input.isNull());
+    }
+
+#ifdef Q_OS_LINUX
+    // Leaving the page or closing the window hides the row, and choosing
+    // another device on the page stops the test before the page saves.
+    void microphoneTestRowStopsWhenItHidesOrTheDeviceMoves()
+    {
+        QTemporaryDir dir;
+        const auto unsetSeam = feedMicrophoneFromTone(dir);
+        ApplicationController controller(true);
+        SettingsRow descriptor;
+        descriptor.id = QStringLiteral("microphoneTest");
+        QWidget page;
+        const SchemaCustomRow row = microphoneTestRow(controller)(descriptor, &page, {});
+        QVERIFY(row.widget && row.refresh);
+        AppSettings draft;
+        row.refresh(draft);
+        page.show();
+        auto *button = page.findChild<QPushButton *>(QStringLiteral("microphoneTest"));
+
+        button->click();
+        QCOMPARE(button->text(), microphoneTestCaption(MicrophoneTestState::Running));
+        page.hide();
+        QCOMPARE(button->text(), microphoneTestCaption(MicrophoneTestState::Stopped));
+
+        page.show();
+        button->click();
+        QCOMPARE(button->text(), microphoneTestCaption(MicrophoneTestState::Running));
+        draft.audio.deviceId = QStringLiteral("another-microphone");
+        row.refresh(draft);
+        QCOMPARE(button->text(), microphoneTestCaption(MicrophoneTestState::Stopped));
     }
 #endif
 
