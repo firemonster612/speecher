@@ -99,7 +99,7 @@ bool isUniform(const QImage &image)
 }
 
 // Segoe Fluent Icons for each receipt: sent into the Target, left on the
-// clipboard, or delivered raw because refinement failed.
+// clipboard, delivered raw because refinement failed, or cancelled.
 QString outcomeGlyph(PopupOutcome outcome)
 {
     switch (outcome) {
@@ -107,6 +107,7 @@ QString outcomeGlyph(PopupOutcome outcome)
     case PopupOutcome::Copied: return QString::fromUtf16(u"\uF0E3");
     case PopupOutcome::Fallback: return QString::fromUtf16(u"\uE946");
     case PopupOutcome::Error: return QString::fromUtf16(u"\uE7BA");
+    case PopupOutcome::Cancelled: return QString::fromUtf16(u"\uE711");
     }
     return QString::fromUtf16(u"\uE946");
 }

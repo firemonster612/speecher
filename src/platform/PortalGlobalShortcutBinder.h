@@ -23,7 +23,9 @@ class PortalGlobalShortcutBinder final : public GlobalShortcutBinder,
     Q_OBJECT
 
 public:
-    explicit PortalGlobalShortcutBinder(QObject *parent = nullptr);
+    explicit PortalGlobalShortcutBinder(
+        GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
+        QObject *parent = nullptr);
 
     bool supported() const override;
     bool supportKnown() const override;

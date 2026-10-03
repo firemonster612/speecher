@@ -430,15 +430,44 @@ void DictationSession::stopListening()
 }
 
 // The quit path. stopListening() finalizes — its Refining branch delivers the
-// fallback transcript — so quitting must not go through it. This follows the
-// Starting branch's cancel semantics instead: bump the generation so every
-// pending completion (startup preparation, refinement, delivery result) is
-// stale, cancel the providers, and go Idle with no delivery and no receipt.
+// fallback transcript — so quitting must not go through it. No receipt either:
+// the popup goes away with the process.
 void DictationSession::cancelForShutdown()
 {
     if (m_state == DictationState::Idle) {
         return;
     }
+    discard();
+    emit popupHideRequested();
+    setState(DictationState::Idle);
+}
+
+void DictationSession::cancel()
+{
+    if (m_state == DictationState::Idle || m_state == DictationState::Delivering) {
+        return;
+    }
+    if (m_state == DictationState::Error) {
+        stopListening();
+        return;
+    }
+    qInfo().noquote() << "cancel requested state=" + stateName();
+    discard();
+    setState(DictationState::Idle);
+    emit popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
+    const quint64 generation = m_generation;
+    QTimer::singleShot(kCancelledOutcomeMs, this, [this, generation] {
+        if (generation == m_generation && m_state == DictationState::Idle) {
+            emit popupHideRequested();
+        }
+    });
+}
+
+// Follows the Starting branch of stopListening(): bump the generation and the
+// attempt so every pending completion (startup preparation, speech, refinement,
+// screenshot) is stale, cancel the providers, and deliver nothing.
+void DictationSession::discard()
+{
     ++m_generation;
     m_startupRunner->cancel();
     m_audio->stop();
@@ -446,6 +475,7 @@ void DictationSession::cancelForShutdown()
     if (m_transcriber) {
         m_transcriber->cancelAttempt(m_attemptId);
     }
+    ++m_attemptId;
     if (m_refiner) {
         m_refiner->cancel();
     }
@@ -457,8 +487,6 @@ void DictationSession::cancelForShutdown()
     m_transcriptPipeline = {};
     resumePausedMedia();
     emit popupRefiningChanged(false);
-    emit popupHideRequested();
-    setState(DictationState::Idle);
 }
 
 void DictationSession::setState(DictationState state, const QString &message, const PopupErrorAction &fix)

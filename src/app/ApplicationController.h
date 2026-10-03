@@ -11,6 +11,7 @@
 #include "app/SingleInstanceIpc.h"
 #include "core/DictationRecord.h"
 #include "core/ShortcutBinding.h"
+#include "platform/GlobalShortcutBinder.h"
 
 class QLocalSocket;
 class QTimer;
@@ -23,7 +24,7 @@ class DictationSession;
 class FileTranscriptionSession;
 struct TranscribeOptions;
 class AudioInput;
-class GlobalShortcutBinder;
+class CancelKeyGrab;
 class InsightsLog;
 class LocalModelStore;
 class LocalSetup;
@@ -106,16 +107,22 @@ public:
     // Platforms that do not push grants to a running process poll this.
     void refreshAccessibilityState();
     bool grabMainWindow(const QString &path) const;
-    bool globalShortcutsSupported() const;
-    bool globalShortcutSupportKnown() const;
-    bool globalShortcutUsesDesktopChooser() const;
+    // Each Global Shortcut question and change names the shortcut it is about:
+    // the one that toggles dictation unless it says otherwise.
+    bool globalShortcutsSupported(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
+    bool globalShortcutSupportKnown(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
+    bool globalShortcutUsesDesktopChooser(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
     // Empty when the bound backend can honour this binding, otherwise what to
     // tell the user. Recorders ask before saving so a refusal is explained
     // rather than silently never firing.
-    QString globalShortcutUnsupportedBindingReason(const ShortcutBinding &binding) const;
-    ShortcutBinding globalShortcut() const;
-    QString globalShortcutDisplay() const;
-    bool setGlobalShortcut(const ShortcutBinding &shortcut, QString *error = nullptr);
+    QString globalShortcutUnsupportedBindingReason(const ShortcutBinding &binding,
+                                                   GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
+    ShortcutBinding globalShortcut(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
+    QString globalShortcutDisplay(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
+    // Refuses the other Global Shortcut's binding; an empty one clears it.
+    bool setGlobalShortcut(const ShortcutBinding &shortcut,
+                           QString *error = nullptr,
+                           GlobalShortcutRole role = GlobalShortcutRole::Dictation);
     // False once a press has proved that the bound backend never reports key
     // release, which is what makes push-to-talk behave as toggle. Answered from
     // what the shortcut has already done, never probed; it starts out true.
@@ -124,12 +131,13 @@ public:
     // what puts the caution beside the toggle. A later change it accepts clears
     // it again.
     bool launchAtLoginAccepted() const;
-    // Lets a shortcut recorder see the bound combination as a key event.
+    // Lets a shortcut recorder see the bound combinations, and Escape, as key
+    // events.
     void suspendGlobalShortcut();
     QString resumeGlobalShortcut();
-    void registerGlobalShortcut();
+    void registerGlobalShortcut(GlobalShortcutRole role = GlobalShortcutRole::Dictation);
     // Forgets the desktop's registration of the shortcut, where it keeps one.
-    bool removeGlobalShortcutRegistration(QString *error = nullptr);
+    bool removeGlobalShortcutRegistration(QString *error = nullptr, GlobalShortcutRole role = GlobalShortcutRole::Dictation);
 
     void showMainWindow();
     // What a plain launch shows. Files opened during startup, before anyone
@@ -160,6 +168,8 @@ public slots:
     void toggle();
     void startListening();
     void stopListening();
+    // Throws away the dictation in progress, or one about to start.
+    void cancel();
     void showMain();
     void showSettings();
     void showSetup();
@@ -183,7 +193,7 @@ signals:
     void globalShortcutSupportChanged();
     void globalShortcutReleaseSupportChanged();
     void launchAtLoginAcceptedChanged();
-    void globalShortcutRegistrationFinished(bool bound, const QString &detail);
+    void globalShortcutRegistrationFinished(bool bound, const QString &detail, GlobalShortcutRole role);
     void whatsNewChanged();
     void quitRequested();
 
@@ -197,6 +207,9 @@ private:
     void handleShortcutPressed();
     void handleShortcutReleased(qint64 heldMs);
     void forgetShortcutGesture();
+    GlobalShortcutBinder *shortcutBinder(GlobalShortcutRole role) const;
+    // Escape is taken while a session can be cancelled and nothing records keys.
+    void updateCancelKeyGrab();
     void setLaunchAtLoginAccepted(bool accepted);
 
     bool m_popupOnly = false;
@@ -222,6 +235,9 @@ private:
     QString m_lastTranscript;
     QDate m_insightsToday;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
+    GlobalShortcutBinder *m_cancelShortcutBinder = nullptr;
+    CancelKeyGrab *m_cancelKeyGrab = nullptr;
+    int m_shortcutSuspensions = 0;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;
     bool m_accessibilityEnabled = false;

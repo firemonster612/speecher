@@ -20,6 +20,7 @@
 #include "dictation/DictationSession.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
+#include "platform/CancelKeyGrab.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
 
@@ -70,7 +71,9 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_secrets(m_settings->secrets())
     , m_providers(new ProviderRegistry(this))
     , m_localModels(new LocalModelStore(this))
-    , m_shortcutBinder(m_platform->createGlobalShortcutBinder(this))
+    , m_shortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Dictation, this))
+    , m_cancelShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Cancel, this))
+    , m_cancelKeyGrab(m_platform->createCancelKeyGrab(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
     , m_pushToTalkStart(new QTimer(this))
 {
@@ -133,7 +136,24 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_shortcutBinder,
             &GlobalShortcutBinder::registrationFinished,
             this,
-            &ApplicationController::globalShortcutRegistrationFinished);
+            [this](bool bound, const QString &detail) {
+                emit globalShortcutRegistrationFinished(bound, detail, GlobalShortcutRole::Dictation);
+            });
+    // The Cancel Shortcut acts on press only; its release means nothing.
+    connect(m_cancelShortcutBinder, &GlobalShortcutBinder::activated, this, &ApplicationController::cancel);
+    connect(m_cancelShortcutBinder, &GlobalShortcutBinder::bindingChanged,
+            this, &ApplicationController::globalShortcutChanged);
+    connect(m_cancelShortcutBinder, &GlobalShortcutBinder::supportChanged,
+            this, &ApplicationController::globalShortcutSupportChanged);
+    connect(m_cancelShortcutBinder,
+            &GlobalShortcutBinder::registrationFinished,
+            this,
+            [this](bool bound, const QString &detail) {
+                emit globalShortcutRegistrationFinished(bound, detail, GlobalShortcutRole::Cancel);
+            });
+    if (m_cancelKeyGrab) {
+        connect(m_cancelKeyGrab, &CancelKeyGrab::pressed, this, &ApplicationController::cancel);
+    }
     m_secrets->migrateSettingsFallbacks();
     m_secrets->prefetch();
     registerProviders(*m_providers, m_secrets, m_localModels);
@@ -212,6 +232,7 @@ ApplicationController::ApplicationController(bool popupOnly,
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
+    connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateCancelKeyGrab);
 #ifdef Q_OS_MACOS
     connect(m_session, &DictationSession::stateChanged, this, [this](const QString &state) {
         if (state != QStringLiteral("Listening")) {
@@ -364,6 +385,7 @@ void ApplicationController::runDeferredStartup()
     m_audio->warmUp();
 #endif
     m_shortcutBinder->bind();
+    m_cancelShortcutBinder->bind();
     const AccessibilityState state = m_platform->accessibilityState();
     const bool requestSucceeded = state.persistent && m_platform->requestAccessibility();
     m_accessibilitySupported = state.supported;
@@ -506,38 +528,45 @@ bool ApplicationController::grabMainWindow(const QString &path) const
     return m_frontEnd && m_frontEnd->captureMainWindow(path);
 }
 
-bool ApplicationController::globalShortcutsSupported() const
+GlobalShortcutBinder *ApplicationController::shortcutBinder(GlobalShortcutRole role) const
 {
-    return m_shortcutBinder->supported();
+    return role == GlobalShortcutRole::Cancel ? m_cancelShortcutBinder : m_shortcutBinder;
 }
 
-bool ApplicationController::globalShortcutSupportKnown() const
+bool ApplicationController::globalShortcutsSupported(GlobalShortcutRole role) const
 {
-    return m_shortcutBinder->supportKnown();
+    return shortcutBinder(role)->supported();
 }
 
-bool ApplicationController::globalShortcutUsesDesktopChooser() const
+bool ApplicationController::globalShortcutSupportKnown(GlobalShortcutRole role) const
 {
-    return m_shortcutBinder->usesDesktopShortcutChooser();
+    return shortcutBinder(role)->supportKnown();
+}
+
+bool ApplicationController::globalShortcutUsesDesktopChooser(GlobalShortcutRole role) const
+{
+    return shortcutBinder(role)->usesDesktopShortcutChooser();
 }
 
 QString ApplicationController::globalShortcutUnsupportedBindingReason(
-    const ShortcutBinding &binding) const
+    const ShortcutBinding &binding, GlobalShortcutRole role) const
 {
-    return m_shortcutBinder->unsupportedBindingReason(binding);
+    return shortcutBinder(role)->unsupportedBindingReason(binding);
 }
 
-ShortcutBinding ApplicationController::globalShortcut() const
+ShortcutBinding ApplicationController::globalShortcut(GlobalShortcutRole role) const
 {
-    return m_shortcutBinder->shortcut();
+    return shortcutBinder(role)->shortcut();
 }
 
-QString ApplicationController::globalShortcutDisplay() const
+QString ApplicationController::globalShortcutDisplay(GlobalShortcutRole role) const
 {
-    return m_shortcutBinder->shortcutDisplay();
+    return shortcutBinder(role)->shortcutDisplay();
 }
 
-bool ApplicationController::setGlobalShortcut(const ShortcutBinding &shortcut, QString *error)
+bool ApplicationController::setGlobalShortcut(const ShortcutBinding &shortcut,
+                                              QString *error,
+                                              GlobalShortcutRole role)
 {
 #ifdef SPEECHER_E2E_HOOKS
     // E2E-build-only hook: a registration the desktop refuses, so the setup
@@ -549,27 +578,50 @@ bool ApplicationController::setGlobalShortcut(const ShortcutBinding &shortcut, Q
         return false;
     }
 #endif
-    return m_shortcutBinder->setShortcut(shortcut, error);
+    const GlobalShortcutRole other =
+        role == GlobalShortcutRole::Cancel ? GlobalShortcutRole::Dictation : GlobalShortcutRole::Cancel;
+    if (!shortcut.isEmpty() && shortcut == globalShortcut(other)) {
+        if (error) {
+            *error = globalShortcutTakenText(other);
+        }
+        return false;
+    }
+    return shortcutBinder(role)->setShortcut(shortcut, error);
 }
 
 void ApplicationController::suspendGlobalShortcut()
 {
+    ++m_shortcutSuspensions;
     m_shortcutBinder->suspend();
+    m_cancelShortcutBinder->suspend();
+    updateCancelKeyGrab();
 }
 
 QString ApplicationController::resumeGlobalShortcut()
 {
-    return m_shortcutBinder->resume();
+    m_shortcutSuspensions = std::max(0, m_shortcutSuspensions - 1);
+    m_cancelShortcutBinder->resume();
+    const QString error = m_shortcutBinder->resume();
+    updateCancelKeyGrab();
+    return error;
 }
 
-void ApplicationController::registerGlobalShortcut()
+void ApplicationController::updateCancelKeyGrab()
 {
-    m_shortcutBinder->registerShortcut();
+    if (m_cancelKeyGrab) {
+        m_cancelKeyGrab->setGrabbed(m_shortcutSuspensions == 0
+                                    && dictationCancelable(m_session->stateName()));
+    }
 }
 
-bool ApplicationController::removeGlobalShortcutRegistration(QString *error)
+void ApplicationController::registerGlobalShortcut(GlobalShortcutRole role)
 {
-    return m_shortcutBinder->removeRegistration(error);
+    shortcutBinder(role)->registerShortcut();
+}
+
+bool ApplicationController::removeGlobalShortcutRegistration(QString *error, GlobalShortcutRole role)
+{
+    return shortcutBinder(role)->removeRegistration(error);
 }
 
 bool ApplicationController::startIpc(QString *error)
@@ -840,6 +892,17 @@ void ApplicationController::stopListening()
     m_session->stopListening();
 }
 
+void ApplicationController::cancel()
+{
+    m_pushToTalkStart->stop();
+    ++m_microphoneStartGeneration;
+    m_microphoneStartPending = false;
+    // The push-to-talk key that started the session may still be down; its
+    // release must not act on a session that is already gone.
+    m_shortcutStartedSession = false;
+    m_session->cancel();
+}
+
 void ApplicationController::showMain()
 {
     if (!ensureSetupCompleted()) {
@@ -937,6 +1000,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
         acknowledge();
     } else if (command == QStringLiteral("stop")) {
         stopListening();
+        SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("cancel")) {
+        cancel();
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("showMain")) {
         showMain();

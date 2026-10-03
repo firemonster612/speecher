@@ -121,6 +121,9 @@ TrayStatusPanel::TrayStatusPanel(ApplicationController *controller, QWidget *par
     m_toggle->setObjectName(QStringLiteral("trayPanelToggle"));
     m_toggle->setDefault(true);
     layout->addWidget(m_toggle);
+    m_cancel = panelButton(cancelDictationCaption(), this);
+    m_cancel->setObjectName(QStringLiteral("trayPanelCancel"));
+    layout->addWidget(m_cancel);
 
     layout->addWidget(settings::makeSeparator(this));
     m_transcript = new QLabel(this);
@@ -145,6 +148,10 @@ TrayStatusPanel::TrayStatusPanel(ApplicationController *controller, QWidget *par
     connect(m_toggle, &QPushButton::clicked, this, [this] {
         hide();
         m_controller->toggle();
+    });
+    connect(m_cancel, &QPushButton::clicked, this, [this] {
+        hide();
+        m_controller->cancel();
     });
     connect(m_copy, &QPushButton::clicked, this, [this] {
         QGuiApplication::clipboard()->setText(m_controller->lastTranscript());
@@ -191,6 +198,7 @@ void TrayStatusPanel::applyState(const QString &stateName)
     const DictationToggleAction toggle = dictationToggleAction(stateName);
     m_toggle->setText(toggle.label);
     m_toggle->setEnabled(toggle.enabled);
+    m_cancel->setVisible(dictationCancelable(stateName));
     fitHeight();
 }
 

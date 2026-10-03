@@ -38,6 +38,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QScopeGuard>
+#include <QSettings>
 #include <QStringList>
 #include <QSystemTrayIcon>
 #include <QTemporaryDir>
@@ -236,10 +237,11 @@ public:
         return m_delegate->createPopupPositioner(parent);
     }
 
-    GlobalShortcutBinder *createGlobalShortcutBinder(QObject *parent) const override
+    GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role, QObject *parent) const override
     {
-        binder = new FakeGlobalShortcutBinder(parent);
-        return binder;
+        auto *created = new FakeGlobalShortcutBinder(parent);
+        (role == GlobalShortcutRole::Cancel ? cancelBinder : binder) = created;
+        return created;
     }
 
     AccessibilityState accessibilityState() const override
@@ -279,6 +281,7 @@ public:
 
     mutable std::function<void(bool)> microphoneAnswer;
     mutable FakeGlobalShortcutBinder *binder = nullptr;
+    mutable FakeGlobalShortcutBinder *cancelBinder = nullptr;
     mutable AccessibilityState accessibility{true, true, false};
     mutable std::function<void()> accessibilityRefresh;
 
@@ -620,6 +623,92 @@ private slots:
         QCOMPARE(controller.session()->state(), DictationState::Idle);
     }
 
+    // The Cancel Shortcut's press throws away a start still waiting on the
+    // microphone grant.
+    void cancelShortcutDropsAPendingMicrophoneStart()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const bool setupCompleted = controller.settings()->setupCompleted();
+        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
+        controller.settings()->setSetupCompleted(true);
+        controller.startListening();
+        QVERIFY(platform->microphoneAnswer);
+        emit platform->cancelBinder->activated();
+        platform->microphoneAnswer(true);
+        QCOMPARE(controller.session()->state(), DictationState::Idle);
+    }
+
+    // Cancel drops push-to-talk's deferred start, and the key's release after
+    // a cancel leaves the next dictation alone.
+    void cancelDropsADeferredPushToTalkStartAndItsRelease()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const bool setupCompleted = controller.settings()->setupCompleted();
+        const ShortcutActivationMode mode = controller.settings()->shortcutActivationMode();
+        const auto restore = qScopeGuard([&] {
+            controller.settings()->setSetupCompleted(setupCompleted);
+            controller.settings()->setShortcutActivationMode(mode);
+        });
+        controller.settings()->setSetupCompleted(true);
+        controller.settings()->setShortcutActivationMode(ShortcutActivationMode::PushToTalk);
+
+        emit platform->binder->activated();
+        controller.cancel();
+        QTest::qWait(300);
+        QVERIFY(!platform->microphoneAnswer);
+        emit platform->binder->deactivated();
+
+        emit platform->binder->activated();
+        QTRY_VERIFY(platform->microphoneAnswer);
+        platform->microphoneAnswer(true);
+        QCOMPARE(controller.session()->state(), DictationState::Starting);
+        controller.cancel();
+        QCOMPARE(controller.session()->state(), DictationState::Idle);
+        platform->microphoneAnswer = nullptr;
+        controller.startListening();
+        platform->microphoneAnswer(true);
+        emit platform->binder->deactivated();
+        QCOMPARE(controller.session()->state(), DictationState::Starting);
+        controller.cancel();
+    }
+
+    // The two Global Shortcuts cannot share a binding.
+    void cancelShortcutRefusesTheDictationShortcut()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const ShortcutBinding keys(QKeySequence(Qt::META | Qt::ALT | Qt::Key_C));
+        QVERIFY(controller.setGlobalShortcut(keys));
+        QString error;
+        QVERIFY(!controller.setGlobalShortcut(keys, &error, GlobalShortcutRole::Cancel));
+        QCOMPARE(error, QStringLiteral("That is already the Global Shortcut for dictation."));
+        QVERIFY(controller.globalShortcut(GlobalShortcutRole::Cancel).isEmpty());
+    }
+
+    // The Cancel Shortcut keeps its binding under its own key, next to the
+    // dictation shortcut's, and a new binder reads it back.
+    void cancelShortcutPersistsUnderItsOwnKey()
+    {
+        QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+                           QString::fromLatin1(SettingsKeys::Application));
+        settings.remove(QStringLiteral("shortcuts/toggleDictation"));
+        const GlobalShortcutAction cancel = GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel);
+        const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));
+
+        FakeSingleKeyShortcutBinder binder(cancel);
+        QVERIFY(binder.setShortcut(f13));
+        QCOMPARE(settings.value(QStringLiteral("shortcuts/cancelDictation")).toString(), QStringLiteral("key:F13"));
+        QVERIFY(!settings.contains(QStringLiteral("shortcuts/toggleDictation")));
+
+        FakeSingleKeyShortcutBinder restored(cancel);
+        restored.bind();
+        QCOMPARE(restored.shortcut(), f13);
+        QVERIFY(restored.setShortcut({}));
+        QVERIFY(!settings.contains(QStringLiteral("shortcuts/cancelDictation")));
+    }
+
     // A refused login item has no window of its own to complain in: the
     // controller remembers it so the settings surface can draw the caution.
     void aRefusedLaunchAtLoginIsRememberedUntilOneIsAccepted()
@@ -680,6 +769,14 @@ private slots:
             {QStringLiteral("speecher"), QStringLiteral("transcribe"), QStringLiteral("later.mp3")}, {});
         QCOMPARE(verb.mode, LaunchMode::RunGui);
         QCOMPARE(verb.transcribeFiles, QStringList{QDir::current().absoluteFilePath(QStringLiteral("later.mp3"))});
+    }
+
+    void cancelIsSentToTheRunningSpeecher()
+    {
+        const CommandLineDecision decision =
+            parseCommandLine({QStringLiteral("speecher"), QStringLiteral("cancel")}, {});
+        QCOMPARE(decision.mode, LaunchMode::RunCli);
+        QCOMPARE(decision.ipcCommand, QStringLiteral("cancel"));
     }
 
     void transcribeOptionsRunWithoutAWindow()
@@ -2084,8 +2181,8 @@ private slots:
     {
         const ShortcutBinding rightAlt = ShortcutBinding::singleKey(QStringLiteral("AltRight"));
         const ShortcutBinding combo(QKeySequence(Qt::META | Qt::ALT | Qt::Key_D));
-        QList<GlobalShortcutBinder *> binders{new KGlobalAccelShortcutBinder(nullptr),
-                                              new PortalGlobalShortcutBinder(nullptr)};
+        QList<GlobalShortcutBinder *> binders{new KGlobalAccelShortcutBinder(),
+                                              new PortalGlobalShortcutBinder()};
         for (GlobalShortcutBinder *binder : binders) {
             const std::unique_ptr<GlobalShortcutBinder> owned(binder);
             QVERIFY(binder->unsupportedBindingReason(combo).isEmpty());

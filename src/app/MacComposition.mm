@@ -6,6 +6,7 @@
 #include "output/mac/MacPasteDelivery.h"
 #include "platform/RoutingShortcutBinder.h"
 #include "platform/audio/QtAudioInput.h"
+#include "platform/mac/MacCancelKeyGrab.h"
 #include "platform/mac/MacGlobalShortcutBinder.h"
 #include "platform/mac/MacMediaController.h"
 #include "platform/mac/MacSingleKeyShortcutBinder.h"
@@ -225,13 +226,20 @@ PopupPositioner *MacComposition::createPopupPositioner(QObject *parent) const
     return new MacPopupPositioner(parent);
 }
 
-GlobalShortcutBinder *MacComposition::createGlobalShortcutBinder(QObject *parent) const
+GlobalShortcutBinder *MacComposition::createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                                 QObject *parent) const
 {
     // Carbon hot keys take the combinations; the NSEvent monitor binder takes
     // a single key, which no hotkey API accepts.
-    return new RoutingShortcutBinder(new MacGlobalShortcutBinder,
-                                     new MacSingleKeyShortcutBinder,
+    const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
+    return new RoutingShortcutBinder(new MacGlobalShortcutBinder(action),
+                                     new MacSingleKeyShortcutBinder(action),
                                      parent);
+}
+
+CancelKeyGrab *MacComposition::createCancelKeyGrab(QObject *parent) const
+{
+    return new MacCancelKeyGrab(parent);
 }
 
 AccessibilityState MacComposition::accessibilityState() const

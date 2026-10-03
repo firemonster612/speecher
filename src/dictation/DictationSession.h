@@ -61,6 +61,11 @@ public slots:
     // media without ever delivering text — quitting mid-dictation must not
     // paste into whatever window has focus.
     void cancelForShutdown();
+    // Throws the session away from Starting through Refining: nothing is
+    // pasted, copied or recorded, and the popup says "Canceled" for a moment.
+    // Dismisses an error; does nothing while idle or delivering, when the text
+    // is already out.
+    void cancel();
     void popupPresented(quint64 generation);
     // How long startup waits for the popup to paint before proceeding without
     // it. Tests raise it so a slow runner cannot fire it under an assertion.
@@ -112,6 +117,7 @@ private:
     void refillReconnectsIfAttemptWasStable();
     bool attemptWasStable() const;
     void deliverFinal(const QString &text);
+    void discard();
     void clearScreenshotContext();
     void resumePausedMedia();
     bool selectSpeechTranscriber(const QString &providerId, QString *error);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "core/ShortcutBinding.h"
 
 #include <QHash>
 #include <QList>
@@ -523,6 +524,8 @@ QString globalShortcutSetCaption();
 QString globalShortcutSingleKeyCaption();
 QString globalShortcutChooseCaption();
 QString globalShortcutClearCaption();
+// Why a Global Shortcut cannot take the binding the other one already has.
+QString globalShortcutTakenText(GlobalShortcutRole takenBy);
 // What the Global Shortcut row says when the binder refused a binding without
 // saying why.
 QString globalShortcutBindFailedText();

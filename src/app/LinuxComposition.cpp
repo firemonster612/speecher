@@ -129,38 +129,40 @@ namespace {
 
 // The desktop shortcut service takes a combination: KGlobalAccel on Plasma,
 // otherwise the portal.
-GlobalShortcutBinder *createCombinationBinder(QObject *parent)
+GlobalShortcutBinder *createCombinationBinder(const GlobalShortcutAction &action)
 {
-    auto *plasma = new KGlobalAccelShortcutBinder(parent);
+    auto *plasma = new KGlobalAccelShortcutBinder(action);
     if (plasma->supported()) {
         return plasma;
     }
     delete plasma;
-    return new PortalGlobalShortcutBinder(parent);
+    return new PortalGlobalShortcutBinder(action);
 }
 
 // The single-key backend watches the key itself: XInput2 under X11, the
 // key-watch helper under Wayland. The session type decides which; a headless
 // or unknown session gets the X11 watcher, which reports its own unsupported
 // reason when it cannot reach a server.
-GlobalShortcutBinder *createSingleKeyBinder(QObject *parent)
+GlobalShortcutBinder *createSingleKeyBinder(const GlobalShortcutAction &action)
 {
 #ifdef SPEECHER_WITH_X11
     if (!isWaylandSession()) {
-        return new XInput2ShortcutBinder(parent);
+        return new XInput2ShortcutBinder(action);
     }
 #endif
     // The key-watch daemon reads evdev, so it works on X11 too; a build
     // without the XInput2 backend (no libxi dev files) falls back to it.
-    return new KeywatchShortcutBinder(parent);
+    return new KeywatchShortcutBinder(action);
 }
 
 } // namespace
 
-GlobalShortcutBinder *LinuxComposition::createGlobalShortcutBinder(QObject *parent) const
+GlobalShortcutBinder *LinuxComposition::createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                                   QObject *parent) const
 {
-    return new RoutingShortcutBinder(createCombinationBinder(nullptr),
-                                     createSingleKeyBinder(nullptr),
+    const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
+    return new RoutingShortcutBinder(createCombinationBinder(action),
+                                     createSingleKeyBinder(action),
                                      parent);
 }
 

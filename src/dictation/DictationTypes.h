@@ -57,6 +57,12 @@ QString dictationShortcutHint(const QString &shortcut);
 // session state name: the states where the microphone is open or about to be.
 bool dictationListeningPresentation(const QString &stateName);
 
+// Whether a session state name is one a cancel would throw away, Starting
+// through Refining: trays offer Cancel then, and Windows and macOS take Escape.
+bool dictationCancelable(const QString &stateName);
+// The trays' Cancel item.
+QString cancelDictationCaption();
+
 // The captions every tray menu, tray panel and menu bar panel shares.
 QString trayToolTip(bool listening);
 QString traySettingsCaption();

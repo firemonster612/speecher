@@ -174,13 +174,15 @@ final class DictationPanelState: ObservableObject {
         }
     }
 
-    /// The receipt's symbol: sent into the Target, or left on the clipboard.
+    /// The receipt's symbol: sent into the Target, left on the clipboard, or
+    /// cancelled.
     static func symbol(for outcome: SpeecherPopupOutcome) -> String {
         switch outcome {
         case .inserted: return "paperplane.fill"
         case .copied: return "doc.on.clipboard"
         case .fallback: return "info.circle"
         case .error: return "exclamationmark.triangle.fill"
+        case .cancelled: return "xmark.circle"
         @unknown default: return "info.circle"
         }
     }

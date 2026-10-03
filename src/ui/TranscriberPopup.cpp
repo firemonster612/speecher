@@ -645,7 +645,8 @@ static QString breakableRuns(const QString &text, const QFontMetrics &metrics, i
 }
 
 // The theme icon for each receipt: the document went out, or it sits on the
-// clipboard. A fallback delivered text, but not the text asked for.
+// clipboard. A fallback delivered text, but not the text asked for; a cancel
+// delivered nothing.
 static QIcon outcomeIcon(PopupOutcome outcome)
 {
     switch (outcome) {
@@ -657,6 +658,8 @@ static QIcon outcomeIcon(PopupOutcome outcome)
         return QIcon::fromTheme(QStringLiteral("dialog-information"));
     case PopupOutcome::Error:
         return QIcon::fromTheme(QStringLiteral("dialog-warning"));
+    case PopupOutcome::Cancelled:
+        return QIcon::fromTheme(QStringLiteral("dialog-cancel"));
     }
     return {};
 }

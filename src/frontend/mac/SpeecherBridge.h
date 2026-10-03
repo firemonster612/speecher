@@ -316,6 +316,7 @@ typedef NS_ENUM(NSInteger, SpeecherPopupOutcome) {
     SpeecherPopupOutcomeCopied,
     SpeecherPopupOutcomeFallback,
     SpeecherPopupOutcomeError,
+    SpeecherPopupOutcomeCancelled,
 };
 
 // One step of the setup assistant (speecher::SetupStepInfo).

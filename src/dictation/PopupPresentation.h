@@ -17,7 +17,13 @@ enum class PopupOutcome {
     // Refinement failed, so the raw transcript was delivered instead.
     Fallback,
     Error,
+    // The person cancelled the session; nothing was delivered.
+    Cancelled,
 };
+
+// What a cancelled session's popup says, and for how long before it hides.
+QString cancelledOutcomeText();
+inline constexpr int kCancelledOutcomeMs = 1000;
 
 // Error text wraps at this width (logical pixels, points or DIPs) and the
 // capsule grows taller rather than wider.

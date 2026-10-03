@@ -8,7 +8,9 @@
 
 namespace speecher {
 
+class CancelKeyGrab;
 class GlobalShortcutBinder;
+enum class GlobalShortcutRole;
 class PopupPositioner;
 class SettingsStore;
 
@@ -39,7 +41,15 @@ public:
     virtual ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const = 0;
     virtual TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const = 0;
     virtual PopupPositioner *createPopupPositioner(QObject *parent) const = 0;
-    virtual GlobalShortcutBinder *createGlobalShortcutBinder(QObject *parent) const = 0;
+    virtual GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                             QObject *parent) const = 0;
+    // Takes Escape while a Dictation Session can be cancelled, on platforms
+    // that can stop it reaching the focused app; none elsewhere.
+    virtual CancelKeyGrab *createCancelKeyGrab(QObject *parent) const
+    {
+        Q_UNUSED(parent);
+        return nullptr;
+    }
 
     virtual AccessibilityState accessibilityState() const = 0;
     virtual void watchAccessibilityChanges(QObject *context,

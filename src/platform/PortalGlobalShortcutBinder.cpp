@@ -23,7 +23,6 @@ constexpr auto requestInterface = "org.freedesktop.portal.Request";
 constexpr auto registryInterface = "org.freedesktop.host.portal.Registry";
 constexpr auto sessionInterface = "org.freedesktop.portal.Session";
 constexpr auto appId = "io.github.firemonster612.speecher";
-constexpr auto shortcutId = "toggle-dictation";
 constexpr int createTimeoutMs = 5000;
 constexpr int registrationTimeoutMs = 120000;
 
@@ -75,8 +74,8 @@ const QDBusArgument &operator>>(const QDBusArgument &argument, PortalShortcut &s
     return argument;
 }
 
-PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
-    : GlobalShortcutBinder(parent)
+PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : GlobalShortcutBinder(std::move(action), parent)
     , m_requestTimer(new QTimer(this))
 {
     qDBusRegisterMetaType<PortalShortcut>();
@@ -205,8 +204,11 @@ QString PortalGlobalShortcutBinder::shortcutDisplay() const
     return m_triggerDescription;
 }
 
-bool PortalGlobalShortcutBinder::setShortcut(const ShortcutBinding &, QString *error)
+bool PortalGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString *error)
 {
+    if (shortcut.isEmpty()) {
+        return removeRegistration(error);
+    }
     if (error) {
         *error = QStringLiteral(
             "Your desktop picks this key combination itself. Use Choose shortcut instead.");
@@ -342,11 +344,12 @@ void PortalGlobalShortcutBinder::listShortcuts()
 void PortalGlobalShortcutBinder::bindShortcuts()
 {
     PortalShortcut shortcut;
-    shortcut.id = QString::fromLatin1(shortcutId);
-    shortcut.properties.insert(QStringLiteral("description"),
-                               QStringLiteral("Toggle dictation"));
-    shortcut.properties.insert(QStringLiteral("preferred_trigger"),
-                               portalTrigger(GlobalShortcutBinder::defaultShortcut()));
+    shortcut.id = action().id;
+    shortcut.properties.insert(QStringLiteral("description"), action().description);
+    if (!action().defaultShortcut.isEmpty()) {
+        shortcut.properties.insert(QStringLiteral("preferred_trigger"),
+                                   portalTrigger(action().defaultShortcut));
+    }
     sendRequest(QStringLiteral("BindShortcuts"),
                 {QVariant::fromValue(m_pendingSessionPath),
                  QVariant::fromValue(PortalShortcuts{shortcut}),
@@ -477,7 +480,7 @@ void PortalGlobalShortcutBinder::handleActivated(const QDBusObjectPath &sessionH
                                                   const QVariantMap &)
 {
     if (sessionHandle.path() == m_sessionPath.path()
-        && id == QString::fromLatin1(shortcutId)) {
+        && id == action().id) {
         emit activated();
     }
 }
@@ -488,7 +491,7 @@ void PortalGlobalShortcutBinder::handleDeactivated(const QDBusObjectPath &sessio
                                                     const QVariantMap &)
 {
     if (sessionHandle.path() == m_sessionPath.path()
-        && id == QString::fromLatin1(shortcutId)) {
+        && id == action().id) {
         emit deactivated();
     }
 }
@@ -515,7 +518,7 @@ bool PortalGlobalShortcutBinder::shortcutTrigger(const QVariantMap &results,
     const PortalShortcuts shortcuts = qdbus_cast<PortalShortcuts>(
         results.value(QStringLiteral("shortcuts")));
     for (const PortalShortcut &shortcut : shortcuts) {
-        if (shortcut.id == QString::fromLatin1(shortcutId)) {
+        if (shortcut.id == action().id) {
             *trigger = shortcut.properties.value(
                 QStringLiteral("trigger_description")).toString();
             return !trigger->isEmpty();

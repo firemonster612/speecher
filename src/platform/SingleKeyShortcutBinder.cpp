@@ -7,7 +7,7 @@
 namespace speecher {
 namespace {
 
-void storeBinding(const ShortcutBinding &binding)
+void storeBinding(const QString &key, const ShortcutBinding &binding)
 {
     QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
                        QString::fromLatin1(SettingsKeys::Application));
@@ -15,23 +15,22 @@ void storeBinding(const ShortcutBinding &binding)
         // Only clear what this binder owns: on macOS the combination binder
         // stores its sequence under the same key, and a router clearing the
         // single key right after a combination was set must not erase it.
-        const ShortcutBinding stored =
-            ShortcutBinding::fromString(settings.value(SettingsKeys::GlobalShortcut).toString());
+        const ShortcutBinding stored = ShortcutBinding::fromString(settings.value(key).toString());
         if (stored.isSingleKey()) {
-            settings.remove(SettingsKeys::GlobalShortcut);
+            settings.remove(key);
         }
     } else {
-        settings.setValue(SettingsKeys::GlobalShortcut, binding.toString());
+        settings.setValue(key, binding.toString());
     }
 }
 
 } // namespace
 
-ShortcutBinding SingleKeyShortcutBinder::storedBinding()
+ShortcutBinding SingleKeyShortcutBinder::storedBinding() const
 {
     QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
                        QString::fromLatin1(SettingsKeys::Application));
-    return ShortcutBinding::fromString(settings.value(SettingsKeys::GlobalShortcut).toString());
+    return ShortcutBinding::fromString(settings.value(action().settingsKey).toString());
 }
 
 QString SingleKeyShortcutBinder::unsupportedReason() const
@@ -71,7 +70,7 @@ bool SingleKeyShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
         unwatch();
         m_down = false;
         m_binding = {};
-        storeBinding(m_binding);
+        storeBinding(action().settingsKey, m_binding);
         emit bindingChanged();
         return true;
     }
@@ -87,7 +86,7 @@ bool SingleKeyShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
     }
     m_down = false;
     m_binding = shortcut;
-    storeBinding(m_binding);
+    storeBinding(action().settingsKey, m_binding);
     emit bindingChanged();
     return true;
 }

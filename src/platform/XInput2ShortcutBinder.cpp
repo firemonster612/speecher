@@ -17,8 +17,8 @@ constexpr int x11MaxKeycode = 255;
 
 } // namespace
 
-XInput2ShortcutBinder::XInput2ShortcutBinder(QObject *parent)
-    : SingleKeyShortcutBinder(parent)
+XInput2ShortcutBinder::XInput2ShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : SingleKeyShortcutBinder(std::move(action), parent)
 {
     m_display = XOpenDisplay(nullptr);
     if (!m_display) {

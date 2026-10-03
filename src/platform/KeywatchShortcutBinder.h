@@ -15,7 +15,9 @@ class KeywatchShortcutBinder final : public SingleKeyShortcutBinder {
     Q_OBJECT
 
 public:
-    explicit KeywatchShortcutBinder(QObject *parent = nullptr);
+    explicit KeywatchShortcutBinder(
+        GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
+        QObject *parent = nullptr);
 
     bool supported() const override;
     QString unsupportedBindingReason(const ShortcutBinding &binding) const override;

@@ -75,6 +75,18 @@ bool dictationListeningPresentation(const QString &stateName)
     return lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening");
 }
 
+bool dictationCancelable(const QString &stateName)
+{
+    const QString lowered = stateName.toLower();
+    return lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")
+        || lowered == QStringLiteral("stopping") || lowered == QStringLiteral("refining");
+}
+
+QString cancelDictationCaption()
+{
+    return QStringLiteral("Cancel dictation");
+}
+
 QString trayToolTip(bool listening)
 {
     return listening ? QStringLiteral("Speecher is listening") : QStringLiteral("Speecher");

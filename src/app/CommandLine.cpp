@@ -96,6 +96,7 @@ const char kHelp[] = R"(Usage: speecher [command] [options]
 
 Commands (sent to the running Speecher):
   toggle | start | stop    control dictation
+  cancel                   throw away the dictation in progress
   status                   print the dictation state
   settings | setup         open settings or the setup assistant
   quit                     quit the running Speecher
@@ -429,6 +430,7 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     const bool isCliCommand = verb == QStringLiteral("toggle")
         || verb == QStringLiteral("start")
         || verb == QStringLiteral("stop")
+        || verb == QStringLiteral("cancel")
         || verb == QStringLiteral("status")
         || verb == QStringLiteral("settings")
         || verb == QStringLiteral("setup")
@@ -555,7 +557,8 @@ int runCliCommand(const CommandLineDecision &decision,
         return 1;
     }
 
-    if (command == QStringLiteral("stop") || command == QStringLiteral("status")
+    if (command == QStringLiteral("stop") || command == QStringLiteral("cancel")
+        || command == QStringLiteral("status")
         || command == QStringLiteral("quit") || command == QStringLiteral("grab")) {
         std::cout << "idle\n";
         return 0;

@@ -936,6 +936,106 @@ private slots:
         QCOMPARE(int(session.state()), int(DictationState::Idle));
     }
 
+    // Cancel throws the session away from Starting through Refining: nothing
+    // is delivered or recorded, paused media resumes, the popup says
+    // "Canceled", and a speech final or refinement result that lands
+    // afterwards is stale.
+    void cancelDiscardsTheSessionInEveryActiveState()
+    {
+        for (const DictationState target : {DictationState::Starting, DictationState::Listening,
+                                            DictationState::Stopping, DictationState::Refining}) {
+            SettingsStore settings;
+            settings.raw().clear();
+            settings.setPauseMediaDuringTranscription(true);
+            settings.setInsightsEnabled(true);
+            settings.setRefinementProvider(QStringLiteral("openai"));
+            auto audio = std::make_unique<FakeAudioInput>();
+            auto media = std::make_unique<FakeMediaController>();
+            auto delivery = std::make_unique<FakeDelivery>();
+            ProviderRegistry registry;
+            FakeSpeechTranscriber *speech = nullptr;
+            FakeRefiner *refiner = nullptr;
+            registerFakeSpeechProvider(registry, &speech);
+            registerFakeRefiner(registry, &refiner);
+            DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+            QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+            QSignalSpy message(&session, &DictationSession::popupMessageRequested);
+            QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
+
+            session.startListening();
+            if (target != DictationState::Starting) {
+                QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+                speech->emitFinalText(QStringLiteral("never pasted"));
+            }
+            if (target == DictationState::Stopping) {
+                speech->autoCompleteOnFinish = false;
+            }
+            if (target == DictationState::Stopping || target == DictationState::Refining) {
+                session.stopListening();
+            }
+            QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(target), 250);
+
+            session.cancel();
+
+            QCOMPARE(int(session.state()), int(DictationState::Idle));
+            QCOMPARE(message.count(), 1);
+            QCOMPARE(message.first().at(0).toString(), QStringLiteral("Canceled"));
+            QCOMPARE(message.first().at(1).value<PopupOutcome>(), PopupOutcome::Cancelled);
+            QVERIFY(media->resumeCalls >= 1);
+            if (target == DictationState::Refining) {
+                QCOMPARE(refiner->cancelCalls, 1);
+            }
+            speech->emitFinalText(QStringLiteral("late final"));
+            speech->emitCompletion();
+            refiner->emitCompletedText(QStringLiteral("late refinement"));
+            QTest::qWait(10);
+            QCOMPARE(int(session.state()), int(DictationState::Idle));
+            QCOMPARE(delivery->calls, 0);
+            QCOMPARE(recorded.count(), 0);
+            if (target == DictationState::Listening) {
+                QTRY_COMPARE_WITH_TIMEOUT(hidden.count(), 1, 2000);
+            }
+        }
+    }
+
+    // An error is dismissed without a "Canceled"; idle and delivering, when
+    // the text is already out, are left alone.
+    void cancelDismissesAnErrorAndLeavesIdleAndDeliveringAlone()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy message(&session, &DictationSession::popupMessageRequested);
+        QSignalSpy states(&session, &DictationSession::stateChanged);
+
+        session.cancel();
+        QCOMPARE(states.count(), 0);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("delivered"));
+        session.stopListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Delivering), 250);
+        session.cancel();
+        QCOMPARE(int(session.state()), int(DictationState::Delivering));
+        QCOMPARE(delivery->calls, 1);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Idle), 3000);
+
+        speech->prepareResult = {false, QStringLiteral("Sign in again")};
+        message.clear();
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Error), 250);
+        session.cancel();
+        QCOMPARE(int(session.state()), int(DictationState::Idle));
+        QCOMPARE(message.count(), 0);
+    }
+
     void dictationSessionNeverCapturesScreenshotForSecureTarget()
     {
         SettingsStore settings;

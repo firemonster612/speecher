@@ -22,7 +22,9 @@ public:
         quint32 virtualKey = 0;
     };
 
-    explicit WinGlobalShortcutBinder(QObject *parent = nullptr);
+    explicit WinGlobalShortcutBinder(
+        GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
+        QObject *parent = nullptr);
     ~WinGlobalShortcutBinder() override;
 
     bool supported() const override;
@@ -41,7 +43,6 @@ public:
     static std::optional<NativeHotKey> nativeHotKey(const QKeySequence &shortcut,
                                                      QString *error = nullptr);
     static QKeySequence keySequenceForHotKey(quint32 modifiers, quint32 virtualKey);
-    static QKeySequence defaultShortcut();
     // Whether a setShortcut error means another application already owns the
     // combination. Setup tells the user to record a different one only then;
     // a key Windows cannot register at all will not yield to a retry.
@@ -49,18 +50,13 @@ public:
 
 private:
     friend class ::WinPlatformTests;
-    static LRESULT CALLBACK messageWindowProc(HWND window,
-                                               UINT message,
-                                               WPARAM wParam,
-                                               LPARAM lParam);
     bool registerShortcut(const QKeySequence &shortcut, QString *error);
-    bool ensureMessageWindow(QString *error);
     void unregisterShortcut();
-    void handleRawInput(HRAWINPUT handle);
     void handleRawInput(const RAWINPUT &input);
 
     QKeySequence m_shortcut;
-    HWND m_messageWindow = nullptr;
+    // This binder's two hot-key ids are this and the next.
+    int m_firstHotKeyId = 0;
     int m_hotKeyId = 0;
     quint32 m_pressedKey = 0;
     bool m_pressed = false;

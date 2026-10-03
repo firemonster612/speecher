@@ -1,11 +1,25 @@
 #pragma once
 
 #include "core/ShortcutBinding.h"
+#include "core/settings/SettingsKeys.h"
 
 #include <QObject>
 #include <QString>
 
 namespace speecher {
+
+// What a binder needs to know about the Global Shortcut it serves.
+struct GlobalShortcutAction {
+    // Where Speecher keeps the binding, on platforms without a desktop
+    // registry of their own.
+    QString settingsKey;
+    // The desktop shortcut service's name for it (KGlobalAccel, the portal).
+    QString id;
+    // What the desktop's own shortcut settings call it.
+    QString description;
+    // Empty: unbound until the person sets one.
+    QKeySequence defaultShortcut;
+};
 
 // Binds one desktop-wide ShortcutBinding to dictation. Platforms that report
 // key release drive push-to-talk through activated()/deactivated(); platforms
@@ -14,12 +28,40 @@ class GlobalShortcutBinder : public QObject {
     Q_OBJECT
 
 public:
-    using QObject::QObject;
-
     static QKeySequence defaultShortcut()
     {
+#ifdef Q_OS_WIN
+        return QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D);
+#else
         return QKeySequence(Qt::META | Qt::ALT | Qt::Key_D);
+#endif
     }
+
+    static GlobalShortcutAction actionFor(GlobalShortcutRole role)
+    {
+        if (role == GlobalShortcutRole::Cancel) {
+            return {SettingsKeys::CancelShortcut,
+                    QStringLiteral("cancel-dictation"),
+                    QStringLiteral("Cancel dictation"),
+                    {}};
+        }
+        return {SettingsKeys::GlobalShortcut,
+                QStringLiteral("toggle-dictation"),
+                QStringLiteral("Toggle dictation"),
+                defaultShortcut()};
+    }
+
+    explicit GlobalShortcutBinder(QObject *parent = nullptr)
+        : GlobalShortcutBinder(actionFor(GlobalShortcutRole::Dictation), parent)
+    {
+    }
+    explicit GlobalShortcutBinder(GlobalShortcutAction action, QObject *parent = nullptr)
+        : QObject(parent)
+        , m_action(std::move(action))
+    {
+    }
+
+    const GlobalShortcutAction &action() const { return m_action; }
 
     virtual bool supported() const = 0;
     virtual bool supportKnown() const { return true; }
@@ -47,6 +89,7 @@ public:
             ? QStringLiteral("Global Shortcuts on this desktop need a key combination, not a single key.")
             : QString();
     }
+    // An empty binding lets the shortcut go and forgets it.
     virtual bool setShortcut(const ShortcutBinding &shortcut, QString *error = nullptr) = 0;
     // Recording a replacement needs the current combination delivered as an
     // ordinary key event. A platform that consumes it system-wide lets go of
@@ -89,6 +132,9 @@ signals:
     void bindingChanged();
     void supportChanged();
     void registrationFinished(bool bound, const QString &detail);
+
+private:
+    GlobalShortcutAction m_action;
 };
 
 } // namespace speecher

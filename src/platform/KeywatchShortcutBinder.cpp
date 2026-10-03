@@ -30,8 +30,8 @@ const char *refusalText(keywatch::Refusal refusal)
 
 } // namespace
 
-KeywatchShortcutBinder::KeywatchShortcutBinder(QObject *parent)
-    : SingleKeyShortcutBinder(parent)
+KeywatchShortcutBinder::KeywatchShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : SingleKeyShortcutBinder(std::move(action), parent)
     , m_socket(new QLocalSocket(this))
 {
     // The async slots serve reconnects after the daemon restarts; the initial

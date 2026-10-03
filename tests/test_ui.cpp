@@ -991,6 +991,7 @@ private slots:
                                  || row == QStringLiteral("writingProfileBehavior")
                                  || row == QStringLiteral("whatsNewNotes")
                                  || row == QStringLiteral("globalShortcut")
+                                 || row == QStringLiteral("cancelShortcut")
                                  || row == QStringLiteral("localModelBrowser"),
                              qPrintable(pane.id + QLatin1Char('/') + row));
                 }
@@ -2205,7 +2206,7 @@ private slots:
         SchemaCustomRowFactory customRows = [](const SettingsRow &row,
                                                QWidget *parent,
                                                std::function<void()>) {
-            return row.id == QStringLiteral("globalShortcut")
+            return row.id == QStringLiteral("globalShortcut") || row.id == QStringLiteral("cancelShortcut")
                 ? SchemaCustomRow{new QWidget(parent), {}, {}}
                 : SchemaCustomRow{};
         };
@@ -2247,7 +2248,7 @@ private slots:
         SchemaCustomRowFactory customRows = [](const SettingsRow &row,
                                                QWidget *parent,
                                                std::function<void()>) {
-            return row.id == QStringLiteral("globalShortcut")
+            return row.id == QStringLiteral("globalShortcut") || row.id == QStringLiteral("cancelShortcut")
                 ? SchemaCustomRow{new QWidget(parent), {}, {}, true}
                 : SchemaCustomRow{};
         };
@@ -2303,6 +2304,9 @@ private slots:
         SchemaCustomRowFactory customRows = [](const SettingsRow &row,
                                                QWidget *parent,
                                                std::function<void()>) {
+            if (row.id == QStringLiteral("cancelShortcut")) {
+                return SchemaCustomRow{new QWidget(parent), {}, {}, true};
+            }
             if (row.id != QStringLiteral("globalShortcut")) {
                 return SchemaCustomRow{};
             }
