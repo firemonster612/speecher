@@ -805,7 +805,7 @@ private slots:
         const auto parse = [](const QStringList &arguments) {
             return parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {});
         };
-        QCOMPARE(parse({QStringLiteral("toggle"), QStringLiteral("--language"), QStringLiteral("de")})
+        QCOMPARE(parse({QStringLiteral("toggle"), QStringLiteral("--language"), QStringLiteral("DE")})
                      .sessionOverrides.spokenLanguage,
                  std::optional(QStringLiteral("de")));
         QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--language"), QStringLiteral("auto")})

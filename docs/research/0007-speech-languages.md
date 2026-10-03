@@ -19,7 +19,7 @@ varied.
   `multi`, `auto`, `xx-bogus`, and af as az ba bo br cy eu fo gl gu ha haw ht hy
   is jw ka kk km la lb ln lo mg mi ml mn mt my ne nn oc pa ps sa sd si sn so sq
   su tg tk tt uz yi yo nb.
-- **Accepted base codes (53, plus `fil`):** am ar be bg bn bs ca cs da de el en
+- **Accepted base codes (52, plus `fil`):** am ar be bg bn bs ca cs da de el en
   es et fa fi fr he hi hr hu id it ja kn ko lt lv mk mr ms nl no pl pt ro ru sk
   sl sr sv sw ta te th tl tr uk ur vi yue zh. Regional tags were accepted too
   (en-GB en-AU en-IN en-NZ de-CH nl-BE sv-SE da-DK es-419 es-MX fr-CA pt-PT
@@ -56,7 +56,7 @@ varied.
   `session.error` `{"code":"invalid_event","message":"Value error, Invalid
   transcription language","retryable":false}` and no `session.started`.
   `auto` is rejected the same way.
-- **Accepted (68 base codes):** af am ar az be bg bn bs ca cs cy da de el en es
+- **Accepted (67 base codes):** af am ar az be bg bn bs ca cs cy da de el en es
   et fa fi fr gl gu he hi hr hu hy id is it ja ka kk kn ko lt lv mi mk ml mn mr
   ms my ne nl no pl pt ro ru sk sl so sr sv sw ta te th tl tr uk ur vi yue zh,
   plus nb, fil and the regional tags above. `session.started` echoes the code
@@ -95,7 +95,7 @@ model can.
 
 ## What Speecher does with this
 
-- Claude Voice lists the 53 accepted base codes plus Automatic, which leaves
+- Claude Voice lists the 52 accepted base codes plus Automatic, which leaves
   `language` out. A fixed code is still worth sending: it keeps the live
   preview streaming.
 - ChatGPT Codex lists the accepted base codes (no duplicate `nb`/`fil`) plus
@@ -104,6 +104,9 @@ model can.
   cannot undo a language the stream kept.
 - A Custom Endpoint lists Whisper's codes plus Automatic, which leaves the form
   field out.
+- Filipino is stored as `tl` everywhere, the code both services and Whisper
+  take. Qwen3-ASR declares it `fil`, so the local engine sends `fil` to a model
+  that declares only that.
 - Keyterms go to Claude Voice as UTF-8, capped at 1024 bytes of it, so no term
   is skipped for its characters.
 

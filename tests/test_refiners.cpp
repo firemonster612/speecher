@@ -433,12 +433,26 @@ private slots:
             QVERIFY(dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context).contains(rule));
             QVERIFY(compactRefinementSystemPrompt(QStringLiteral("light_cleanup"), context).contains(rule));
         }
-        context.editSelection = true;
-        QVERIFY(refinementSystemPrompt(QStringLiteral("light_cleanup"), context)
-                    .contains(QStringLiteral("Rule: spoken_language.")));
         context.spokenLanguage = QStringLiteral("en");
-        QVERIFY(!refinementSystemPrompt(QStringLiteral("light_cleanup"), context)
+        QVERIFY(!dictationRefinementSystemPrompt(QStringLiteral("light_cleanup"), context)
                      .contains(QStringLiteral("spoken_language")));
+    }
+
+    // In selection editing the speech is the instruction, so the rule keeps
+    // the document's language instead, unless the instruction asks otherwise.
+    void selectionEditingKeepsTheDocumentsLanguage()
+    {
+        RefinementContext context;
+        context.includeNearbyText = false;
+        context.editSelection = true;
+        context.spokenLanguage = QStringLiteral("de");
+        const QString prompt = refinementSystemPrompt(QStringLiteral("light_cleanup"), context);
+        QVERIFY(prompt.contains(QStringLiteral(
+            "Rule: document_language.\n"
+            "The spoken instructions may be in a language other than English. Keep the selected document in its "
+            "own language unless the instructions explicitly ask for another language, and follow the "
+            "punctuation, spacing, quotation marks, and typography of the language the document ends up in.")));
+        QVERIFY(!prompt.contains(QStringLiteral("spoken_language")));
     }
 
     void customSystemPromptReplacesTheDictationRules()

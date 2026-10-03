@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
         refresh()
         signIn.restore(status.working)
         page = if (status.complete && signIn.activeProvider == null) Page.Home else Page.Setup
-        if (savedInstanceState == null) handleSignInIntent(intent)
+        if (savedInstanceState == null) handleIntent(intent)
         setContent {
             SpeecherTheme {
                 signInSteps?.let { provider ->
@@ -226,10 +226,19 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleSignInIntent(intent)
+        handleIntent(intent)
     }
 
-    private fun handleSignInIntent(intent: Intent) {
+    /** Opens what a panel failure's recovery asks for: a provider's sign-in or a settings page. */
+    private fun handleIntent(intent: Intent) {
+        intent
+            .getStringExtra("settings_page")
+            ?.let { name -> SettingsPage.entries.firstOrNull { it.name == name } }
+            ?.let {
+                page = Page.Settings
+                settingsPage = it
+                return
+            }
         val provider =
             intent.getStringExtra("sign_in_provider")?.let { name ->
                 Provider.entries.firstOrNull { it.name == name }

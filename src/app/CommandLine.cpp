@@ -271,7 +271,7 @@ std::optional<QString> storedId(const CliNames &choices, const QString &name)
 // A Spoken Language a command line names, by code.
 std::optional<QString> spokenLanguageNamed(const QString &value, QString *error)
 {
-    const QString code = value.trimmed();
+    const QString code = value.trimmed().toLower();
     if (isKnownSpokenLanguage(code)) {
         return code;
     }
@@ -279,7 +279,7 @@ std::optional<QString> spokenLanguageNamed(const QString &value, QString *error)
     return std::nullopt;
 }
 
-std::optional<QString> requestedSpokenLanguage(const QStringList &arguments, QString *error)
+std::optional<QString> spokenLanguageOption(const QStringList &arguments, QString *error)
 {
     const qsizetype optionIndex = arguments.indexOf(QStringLiteral("--language"));
     if (optionIndex < 0) {
@@ -483,7 +483,7 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     if (overrideError.isEmpty() && verb != QStringLiteral("transcribe")) {
         overrides.writingProfile = requestedWritingProfile(arguments, &overrideError);
         if (overrideError.isEmpty()) {
-            overrides.spokenLanguage = requestedSpokenLanguage(arguments, &overrideError);
+            overrides.spokenLanguage = spokenLanguageOption(arguments, &overrideError);
         }
     }
     if (!overrideError.isEmpty()) {

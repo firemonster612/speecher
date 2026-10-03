@@ -14,11 +14,6 @@ constexpr quint64 gib = quint64(1) << 30;
 constexpr double runtimeMemoryFactor = 1.35;
 constexpr double maxSuggestedSecondsFor10s = 1.5;
 
-QStringList codes(const char *spaceSeparated)
-{
-    return QString::fromLatin1(spaceSeparated).split(QLatin1Char(' '));
-}
-
 // Q8_0 files unless noted. Revisions and sha256 are the Hugging Face commit and
 // LFS object checked on 2026-09-25 or later; WER, speed and languages are from transcribe.cpp
 // v0.2.4's catalog/<variant>.json (speed: xrt_compute on the 35 s dots
@@ -36,7 +31,7 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 2.54,
         .fleursEnglishWer = 8.55,
         .streams = true,
-        .languages = codes("en"),
+        .languages = languageCodes("en"),
         .licence = QStringLiteral("MIT"),
         .m4MaxMetalSpeed = 58.59,
         .ryzen4750uVulkanSpeed = 14.16,
@@ -57,7 +52,7 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 2.16,
         .fleursEnglishWer = 7.87,
         .streams = true,
-        .languages = codes("en"),
+        .languages = languageCodes("en"),
         .licence = QStringLiteral("MIT"),
         .m4MaxMetalSpeed = 36.12,
         .ryzen4750uVulkanSpeed = 8.9,
@@ -78,7 +73,7 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 1.60,
         .fleursEnglishWer = 3.99,
         .streams = true,
-        .languages = codes("en"),
+        .languages = languageCodes("en"),
         // transcribe.cpp's catalog says CC-BY-4.0; the upstream model card wins.
         .licence = QStringLiteral("NVIDIA Open Model License"),
         .m4MaxMetalSpeed = 228.39,
@@ -101,10 +96,10 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 2.01,
         .fleursEnglishWer = 4.38,
         .streams = false,
-        .languages = codes("af am ar as az ba be bg bn bo br bs ca cs cy da de el en es et eu fa fi fo "
-                           "fr gl gu haw ha he hi hr ht hu hy id is it ja jw ka kk km kn ko la lb ln lo "
-                           "lt lv mg mi mk ml mn mr ms mt my ne nl nn no oc pa pl ps pt ro ru sa sd si "
-                           "sk sl sn so sq sr su sv sw ta te tg th tk tl tr tt uk ur uz vi yi yo yue zh"),
+        .languages = languageCodes("af am ar as az ba be bg bn bo br bs ca cs cy da de el en es et eu fa fi fo "
+                                   "fr gl gu haw ha he hi hr ht hu hy id is it ja jw ka kk km kn ko la lb ln lo "
+                                   "lt lv mg mi mk ml mn mr ms mt my ne nl nn no oc pa pl ps pt ro ru sa sd si "
+                                   "sk sl sn so sq sr su sv sw ta te tg th tk tl tr tt uk ur uz vi yi yo yue zh"),
         .detectsLanguage = true,
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 51.12,
@@ -129,8 +124,9 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 1.62,
         .fleursEnglishWer = 3.23,
         .streams = false,
-        .languages = codes("zh en yue ar de fr es pt id it ko ru th vi ja tr hi ms nl sv da fi pl cs "
-                           "fil fa el ro hu mk"),
+        // transcribe.cpp declares Filipino as fil; see localModelLanguageHint.
+        .languages = languageCodes("zh en yue ar de fr es pt id it ko ru th vi ja tr hi ms nl sv da fi pl cs "
+                                   "tl fa el ro hu mk"),
         .detectsLanguage = true,
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 36.83,
@@ -153,7 +149,7 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 1.27,
         .fleursEnglishWer = 5.08,
         .streams = false,
-        .languages = codes("en fr de es it pt nl pl el ar ja zh vi ko"),
+        .languages = languageCodes("en fr de es it pt nl pl el ar ja zh vi ko"),
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 75.14,
         .ryzen4750uVulkanSpeed = 8.52,
@@ -179,7 +175,7 @@ const QList<LocalModel> catalog{
         .librispeechCleanWer = 1.60,
         .fleursEnglishWer = 3.55,
         .streams = false,
-        .languages = codes("en fr de es it pt nl hi"),
+        .languages = languageCodes("en fr de es it pt nl hi"),
         .detectsLanguage = true,
         .licence = QStringLiteral("Apache 2.0"),
         .m4MaxMetalSpeed = 2.41,
@@ -205,6 +201,11 @@ quint64 memoryNeedBytes(const LocalModel &model)
 }
 
 } // namespace
+
+QStringList languageCodes(const char *spaceSeparated)
+{
+    return QString::fromLatin1(spaceSeparated).split(QLatin1Char(' '));
+}
 
 const QList<LocalModel> &localModelCatalog()
 {
@@ -263,6 +264,15 @@ std::optional<SpeedEstimate> estimatedSpeed(const LocalModel &model, const Hardw
     }
     const QString referenceChip = apple ? QStringLiteral("M4 Max") : QStringLiteral("4750U");
     return SpeedEstimate{10.0 / multiple, hardware.chipName.contains(referenceChip)};
+}
+
+QString localModelLanguageHint(const QString &spokenLanguage, const QStringList &declared)
+{
+    if (spokenLanguage == QStringLiteral("tl") && !declared.contains(spokenLanguage)
+        && declared.contains(QStringLiteral("fil"))) {
+        return QStringLiteral("fil");
+    }
+    return spokenLanguage;
 }
 
 bool localModelListensFor(const LocalModel &model, const QString &spokenLanguage)

@@ -99,6 +99,8 @@ private:
     LocalRunsOn m_runsOn;
     bool m_streams = false;
     bool m_timesSegments = false;
+    // The language codes the loaded model declares.
+    QStringList m_languages;
 };
 
 } // namespace speecher

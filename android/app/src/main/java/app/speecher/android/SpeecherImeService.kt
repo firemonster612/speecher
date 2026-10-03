@@ -20,6 +20,7 @@ import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.shownPanelSize
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.ui.DictationPanel
+import app.speecher.android.ui.SettingsPage
 import app.speecher.android.ui.SpeecherTheme
 
 /** The id Android uses for this keyboard: the short `package/.Class` form of its component. */
@@ -191,6 +192,8 @@ class SpeecherImeService : InputMethodService() {
         val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (failed.reason == FailureReason.SignedOut)
             intent.putExtra("sign_in_provider", failed.provider?.name)
+        if (failed.reason == FailureReason.SpokenLanguage)
+            intent.putExtra("settings_page", SettingsPage.Transcription.name)
         startActivity(intent)
     }
 

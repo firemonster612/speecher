@@ -1,5 +1,6 @@
 #include "providers/LocalSpeechEngine.h"
 #include "core/settings/SettingsSchema.h"
+#include "core/LocalModelCatalog.h"
 #include "core/settings/SpokenLanguages.h"
 
 #include <QElapsedTimer>
@@ -211,6 +212,10 @@ bool LocalSpeechEngine::load(const QString &modelPath, const LocalRunsOn &runsOn
     const bool knowsCapabilities = transcribe_model_get_capabilities(m_model, &capabilities) == TRANSCRIBE_OK;
     m_streams = knowsCapabilities && capabilities.supports_streaming;
     m_timesSegments = knowsCapabilities && capabilities.max_timestamp_kind == TRANSCRIBE_TIMESTAMPS_SEGMENT;
+    m_languages.clear();
+    for (int index = 0; knowsCapabilities && index < capabilities.n_languages; ++index) {
+        m_languages.append(QString::fromUtf8(capabilities.languages[index]));
+    }
     m_modelPath = modelPath;
     m_runsOn = runsOn;
     return true;
@@ -290,7 +295,7 @@ std::optional<QString> LocalSpeechEngine::run(const QByteArray &pcm16,
     transcribe_run_params params;
     transcribe_run_params_init(&params);
     params.timestamps = timed ? TRANSCRIBE_TIMESTAMPS_SEGMENT : TRANSCRIBE_TIMESTAMPS_NONE;
-    const QByteArray language = requestedSpokenLanguage(spokenLanguage).toUtf8();
+    const QByteArray language = localModelLanguageHint(requestedSpokenLanguage(spokenLanguage), m_languages).toUtf8();
     params.language = language.isEmpty() ? nullptr : language.constData();
     const transcribe_status status = transcribe_run(m_session, pcm.data(), int(pcm.size()), &params);
     if (status == TRANSCRIBE_ERR_ABORTED) {
@@ -309,7 +314,7 @@ bool LocalSpeechEngine::beginStream(const QString &spokenLanguage, QString *erro
     transcribe_run_params params;
     transcribe_run_params_init(&params);
     params.timestamps = TRANSCRIBE_TIMESTAMPS_NONE;
-    const QByteArray language = requestedSpokenLanguage(spokenLanguage).toUtf8();
+    const QByteArray language = localModelLanguageHint(requestedSpokenLanguage(spokenLanguage), m_languages).toUtf8();
     params.language = language.isEmpty() ? nullptr : language.constData();
     return succeeded(transcribe_stream_begin(m_session, &params, nullptr), error);
 }

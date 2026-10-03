@@ -49,6 +49,9 @@ struct LocalModel {
     QStringList cons;
 };
 
+// "en fr de" as a list of language codes.
+QStringList languageCodes(const char *spaceSeparated);
+
 const QList<LocalModel> &localModelCatalog();
 const LocalModel *findLocalModel(const QString &id);
 
@@ -96,6 +99,10 @@ std::optional<SpeedEstimate> estimatedSpeed(const LocalModel &model, const Hardw
 
 // The model takes the Spoken Language as a hint, or detects it for Automatic.
 bool localModelListensFor(const LocalModel &model, const QString &spokenLanguage);
+// The hint transcribe.cpp wants for the Spoken Language, given the codes the
+// loaded model declares. Speecher stores Filipino as "tl", as the speech
+// services and Whisper do; Qwen3-ASR declares it "fil".
+QString localModelLanguageHint(const QString &spokenLanguage, const QStringList &declared);
 
 // The model the setup assistant and Local models page put first: one that
 // listens for the Spoken Language, when any does.

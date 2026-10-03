@@ -7,21 +7,16 @@
 namespace speecher {
 namespace {
 
-QStringList codes(const char *spaceSeparated)
-{
-    return QString::fromLatin1(spaceSeparated).split(QLatin1Char(' '));
-}
-
 // The codes Claude Voice accepted in the 2026-10-03 probe. It refuses any
 // other, including "multi", by closing the stream; leaving the code out
 // detects the language.
-const QStringList claudeVoiceLanguages = codes(
+const QStringList claudeVoiceLanguages = languageCodes(
     "am ar be bg bn bs ca cs da de el en es et fa fi fr he hi hr hu id it ja kn ko lt lv mk mr ms nl no pl "
     "pt ro ru sk sl sr sv sw ta te th tl tr uk ur vi yue zh");
 
 // The codes ChatGPT's dictation stream accepted in the same probe; it detects
 // the language when given none.
-const QStringList codexLanguages = codes(
+const QStringList codexLanguages = languageCodes(
     "af am ar az be bg bn bs ca cs cy da de el en es et fa fi fr gl gu he hi hr hu hy id is it ja ka kk kn "
     "ko lt lv mi mk ml mn mr ms my ne nl no pl pt ro ru sk sl so sr sv sw ta te th tl tr uk ur vi yue zh");
 
@@ -85,7 +80,8 @@ QStringList spokenLanguages(const SpeechSettings &speech)
         if (!model) {
             return {};
         }
-        return model->detectsLanguage ? withAutomatic(model->languages) : model->languages;
+        return localModelListensFor(*model, QLatin1String(kAutomaticSpokenLanguage)) ? withAutomatic(model->languages)
+                                                                                    : model->languages;
     }
     return {};
 }
@@ -110,12 +106,14 @@ QString requestedSpokenLanguage(const QString &language)
 
 QString spokenLanguageProblem(const SpeechSettings &speech, const QString &serviceLabel)
 {
-    const QStringList offered = spokenLanguages(speech);
-    if (offered.isEmpty() || offered.contains(speech.language)) {
-        return {};
-    }
     const LocalModel *model =
         speech.providerId == QStringLiteral("local") ? findLocalModel(speech.local.modelId) : nullptr;
+    const QStringList offered = spokenLanguages(speech);
+    const bool listens = model ? localModelListensFor(*model, speech.language)
+                               : offered.isEmpty() || offered.contains(speech.language);
+    if (listens) {
+        return {};
+    }
     const QString service = model ? model->name : serviceLabel;
     if (speech.language == QLatin1String(kAutomaticSpokenLanguage)) {
         return QStringLiteral("%1 can't detect the language. Choose the language you speak.").arg(service);

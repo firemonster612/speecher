@@ -599,12 +599,22 @@ private slots:
         QCOMPARE(suggestedLocalModel(small, QStringLiteral("en")).id, QStringLiteral("moonshine-medium"));
     }
 
+    // Filipino is "tl" in Speecher and every list; only the hint Qwen3-ASR
+    // gets is "fil".
+    void filipinoIsOneCodeUntilTheModelNeedsItsOwn()
+    {
+        QVERIFY(localModelListensFor(*findLocalModel(QStringLiteral("qwen3-asr")), QStringLiteral("tl")));
+        QCOMPARE(localModelLanguageHint(QStringLiteral("tl"), {QStringLiteral("en"), QStringLiteral("fil")}),
+                 QStringLiteral("fil"));
+        QCOMPARE(localModelLanguageHint(QStringLiteral("tl"), {QStringLiteral("tl"), QStringLiteral("fil")}),
+                 QStringLiteral("tl"));
+    }
+
     void suggestionListensForTheSpokenLanguage()
     {
         // No streaming model takes German, so the smallest that does; Cohere
         // takes it as a hint but cannot detect a language.
         QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("de")).id, QStringLiteral("whisper-turbo"));
-        QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("fil")).id, QStringLiteral("qwen3-asr"));
         QCOMPARE(suggestedLocalModel(laptop4750u(), QStringLiteral("auto")).id, QStringLiteral("whisper-turbo"));
         QVERIFY(!localModelListensFor(*findLocalModel(QStringLiteral("cohere")), QStringLiteral("auto")));
     }
