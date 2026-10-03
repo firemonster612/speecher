@@ -30,6 +30,9 @@ typedef NS_ENUM(NSInteger, SpeecherColumnKind) {
     SpeecherColumnKindChoice,
     // Any number of the options, held as an array of their ids; none means all.
     SpeecherColumnKindChoiceSet,
+    // An icon per record that says something about it; it holds no value of
+    // the record's and is never a field in the sheet.
+    SpeecherColumnKindIcon,
     SpeecherColumnKindToggle,
     SpeecherColumnKindReadOnly,
 };
@@ -69,6 +72,21 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // ChoiceSet columns only: the sheet's two choices, every option or the ticked ones.
 @property (nonatomic, readonly, copy) NSString *everyChoice;
 @property (nonatomic, readonly, copy) NSString *someChoice;
+// Icon columns only: the schema's platform-neutral icon ("microphone", "star").
+@property (nonatomic, readonly, copy) NSString *iconId;
+@end
+
+// What an Icon column shows for one record (speecher::IconCell).
+typedef NS_ENUM(NSInteger, SpeecherIconState) {
+    SpeecherIconStateNone,
+    SpeecherIconStateShown,
+    // The icon in the secondary style.
+    SpeecherIconStateFaint,
+};
+
+@interface CollectionIconCell : NSObject
+@property (nonatomic, readonly) SpeecherIconState state;
+@property (nonatomic, readonly, copy) NSString *tooltip;
 @end
 
 // A table of records with typed columns. Everything about it that does not
@@ -250,13 +268,11 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 - (CollectionImportResult *)recordsImportedFrom:(NSData *)data
                                            into:(NSArray<SpeecherRecord *> *)records
                                        forRowId:(NSString *)rowId;
-// The pill beside each record's stretch column, empty for none, for these
-// records as they stand and the draft's other settings.
-- (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
-    NS_SWIFT_NAME(badges(for:forRowId:));
-// The pill at the start of each record's detail line, the same way.
-- (NSArray<NSString *> *)detailBadgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
-    NS_SWIFT_NAME(detailBadges(for:forRowId:));
+// An Icon column's cell for each of these records, as they stand with the
+// draft's other settings.
+- (NSArray<CollectionIconCell *> *)iconsForColumn:(NSString *)columnId
+                                          inRowId:(NSString *)rowId
+                                          records:(NSArray<SpeecherRecord *> *)records;
 // What a ChoiceSet cell says for these option ids, speecher::choiceSetText.
 - (NSString *)choiceSetTextForColumn:(NSString *)columnId
                              inRowId:(NSString *)rowId

@@ -60,6 +60,7 @@ using speecher::Capabilities;
 using speecher::CollectionColumn;
 using speecher::CollectionDescriptor;
 using speecher::ColumnKind;
+using speecher::IconCell;
 using speecher::ModelRating;
 using speecher::PaneLayout;
 using speecher::RowKind;
@@ -103,6 +104,8 @@ SpeecherColumnKind bridgedColumnKind(ColumnKind kind)
         return SpeecherColumnKindChoice;
     case ColumnKind::ChoiceSet:
         return SpeecherColumnKindChoiceSet;
+    case ColumnKind::Icon:
+        return SpeecherColumnKindIcon;
     case ColumnKind::Toggle:
         return SpeecherColumnKindToggle;
     case ColumnKind::ReadOnly:
@@ -552,9 +555,18 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *enabledBy;
 @property (nonatomic, copy) NSString *everyChoice;
 @property (nonatomic, copy) NSString *someChoice;
+@property (nonatomic, copy) NSString *iconId;
 @end
 
 @implementation CollectionColumnModel
+@end
+
+@interface CollectionIconCell ()
+@property (nonatomic) SpeecherIconState state;
+@property (nonatomic, copy) NSString *tooltip;
+@end
+
+@implementation CollectionIconCell
 @end
 
 @interface CollectionModel ()
@@ -1189,9 +1201,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (const AppSettings &)draft;
 @end
 
-// One of a collection's per-record pill lists: its badges or detail badges.
-using RecordPills = decltype(&CollectionDescriptor::badges);
-
 @implementation SettingsSchemaModel {
     SchemaState *_state;
 }
@@ -1284,6 +1293,7 @@ using RecordPills = decltype(&CollectionDescriptor::badges);
         model.enabledBy = column.enabledBy.toNSString();
         model.everyChoice = column.everyChoice.toNSString();
         model.someChoice = column.someChoice.toNSString();
+        model.iconId = column.iconId.toNSString();
         [columns addObject:model];
     }
     CollectionModel *model = [[CollectionModel alloc] init];
@@ -1557,29 +1567,6 @@ using RecordPills = decltype(&CollectionDescriptor::badges);
     return result;
 }
 
-- (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
-{
-    return [self pills:&CollectionDescriptor::badges ofRecords:records forRowId:rowId];
-}
-
-- (NSArray<NSString *> *)detailBadgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
-{
-    return [self pills:&CollectionDescriptor::detailBadges ofRecords:records forRowId:rowId];
-}
-
-// Those pills for these records.
-- (NSArray<NSString *> *)pills:(RecordPills)which
-                     ofRecords:(NSArray<SpeecherRecord *> *)records
-                      forRowId:(NSString *)rowId
-{
-    const SettingsRow *row = [self rowWithId:rowId];
-    const CollectionDescriptor *collection = row ? [self collectionForRow:*row] : nullptr;
-    if (!collection || !(collection->*which)) {
-        return @[];
-    }
-    return bridgedStrings((collection->*which)(coreRecords(records), _state->draft));
-}
-
 - (const CollectionColumn *)column:(NSString *)columnId inRowId:(NSString *)rowId
 {
     const SettingsRow *row = [self rowWithId:rowId];
@@ -1609,6 +1596,34 @@ using RecordPills = decltype(&CollectionDescriptor::badges);
         coreIds.append(QString::fromNSString(optionId));
     }
     return speecher::choiceSetText(*column, coreIds, _state->draft).toNSString();
+}
+
+- (NSArray<CollectionIconCell *> *)iconsForColumn:(NSString *)columnId
+                                          inRowId:(NSString *)rowId
+                                          records:(NSArray<SpeecherRecord *> *)records
+{
+    const CollectionColumn *column = [self column:columnId inRowId:rowId];
+    if (!column || !column->icons) {
+        return @[];
+    }
+    NSMutableArray<CollectionIconCell *> *cells = [NSMutableArray array];
+    for (const IconCell &cell : column->icons(coreRecords(records), _state->draft)) {
+        CollectionIconCell *bridged = [[CollectionIconCell alloc] init];
+        switch (cell.state) {
+        case IconCell::State::None:
+            bridged.state = SpeecherIconStateNone;
+            break;
+        case IconCell::State::Shown:
+            bridged.state = SpeecherIconStateShown;
+            break;
+        case IconCell::State::Faint:
+            bridged.state = SpeecherIconStateFaint;
+            break;
+        }
+        bridged.tooltip = cell.tooltip.toNSString();
+        [cells addObject:bridged];
+    }
+    return cells;
 }
 
 - (NSString *)tooltipForColumn:(NSString *)columnId
