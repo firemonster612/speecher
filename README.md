@@ -126,6 +126,16 @@ Add `--format html` or `--format plain` to `toggle` or `start` when you want a s
 
 Add `--profile <name>` to `toggle` or `start` to use one Writing Profile for that dictation, whichever app you dictate into. Give the profile's current name in any case, quoted if it has spaces, or with `-` between its words: `--profile email`, `--profile "AI coding"` or `--profile ai-coding`, and `--profile stand-up` for one of your own named "Stand up". `speecher --help` lists the names your settings offer. If one of your profiles shares a name with another, rename one of them. The two options combine, and neither changes your settings.
 
+## Android
+
+Speecher for Android is a dictation keyboard with a button that docks beside your usual keyboard. Tap the button, speak, then insert the text into the field you were typing in. It transcribes with your own ChatGPT or Claude account, signed in on the phone. It is not on the Play Store.
+
+1. Download `Speecher-<version>.apk` from the newest [`android-v*` release](https://github.com/firemonster612/speecher/releases) on the phone and open it. Allow your browser to install unknown apps when Android asks.
+2. Open Speecher and work through the setup list: sign in, allow the microphone, turn on the Speecher keyboard, and turn on the dictation button.
+3. Android may block the dictation button, because it is an accessibility service in a sideloaded app. If it does, open **App info** for Speecher, tap the three-dot menu, choose **Allow restricted settings**, and turn the button on again.
+
+No computer or adb is needed. When a new version is out, Home shows an update row. The first update asks you to let Speecher install apps. After that, Android installs Speecher's updates without asking again.
+
 ## Build
 
 ```sh

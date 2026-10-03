@@ -19,6 +19,9 @@ fun installApk(context: Context, http: OkHttpClient, update: ApkUpdate) {
         val params =
             PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
                 setAppPackageName(BuildConfig.APPLICATION_ID)
+                // An app updating itself installs without a confirmation prompt. Android falls back
+                // to the prompt when it does not allow that, which InstallResultReceiver shows.
+                setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
             }
         val id = installer.createSession(params)
         try {
