@@ -35,10 +35,10 @@ const QString kUndoDelete = QStringLiteral("undoDelete");
 const QString kUndoLatestLearn = QStringLiteral("undoLatestLearn");
 
 // How much of the list's width a column takes. The descriptor names the one
-// that takes the leftover; a flag needs no more than its checkbox, and the
-// rest get widths their values fit in. Columns that only show text share the
-// leftover in a narrow window, up to that width, so a table of six columns
-// still leaves the leftover one room.
+// that takes the leftover; a flag needs no more than its checkbox, an icon no
+// more than itself, and the rest get widths their values fit in. Columns that
+// only show text share the leftover in a narrow window, up to that width, so a
+// table of six columns still leaves the leftover one room.
 ColumnDefinition columnDefinition(const CollectionColumnSnapshot &column)
 {
     ColumnDefinition definition;
@@ -49,6 +49,9 @@ ColumnDefinition columnDefinition(const CollectionColumnSnapshot &column)
     switch (column.kind) {
     case ColumnKind::Toggle:
         definition.Width({56, GridUnitType::Pixel});
+        break;
+    case ColumnKind::Icon:
+        definition.Width({20, GridUnitType::Pixel});
         break;
     case ColumnKind::Choice:
         definition.Width({150, GridUnitType::Pixel});
@@ -132,31 +135,38 @@ QString displayText(const CollectionColumnSnapshot &column, const QVariant &valu
     return value.toString();
 }
 
-// A pill in one of the rating badges' tones, named for screen readers.
-Grid namedBadge(const QString &text, const wchar_t *brushKey, const PaneHost &host)
+// An Icon column's glyph from Segoe Fluent Icons, by the schema's
+// platform-neutral id, in the foreground it inherits.
+FontIcon columnIcon(const QString &iconId)
 {
-    Grid pill = badge(text, themeBrush(brushKey, host));
-    AutomationProperties::SetName(pill, hs(text));
-    return pill;
+    FontIcon icon;
+    if (iconId == QStringLiteral("microphone")) {
+        icon.Glyph(L"\uE720"); // Microphone
+    } else if (iconId == QStringLiteral("star")) {
+        icon.Glyph(L"\uE735"); // FavoriteStarFill
+    }
+    icon.FontSize(16);
+    icon.HorizontalAlignment(HorizontalAlignment::Center);
+    icon.VerticalAlignment(VerticalAlignment::Center);
+    return icon;
 }
 
-// A cell and a pill on one line. A Grid, not a horizontal StackPanel, so the
-// cell still fills the column and the pill takes only its own width.
-Grid withBadge(const UIElement &cell, const Grid &pill, bool pillFirst)
+// What an Icon cell shows: its icon, faint in the disabled text colour, or
+// nothing. The tooltip is also what a screen reader says.
+UIElement iconCell(const QString &iconId, const IconCell &cell, const PaneHost &host)
 {
-    Grid line;
-    line.ColumnSpacing(8);
-    ColumnDefinition field;
-    field.Width({1, GridUnitType::Star});
-    ColumnDefinition label;
-    label.Width({0, GridUnitType::Auto});
-    line.ColumnDefinitions().Append(pillFirst ? label : field);
-    line.ColumnDefinitions().Append(pillFirst ? field : label);
-    Grid::SetColumn(cell.as<FrameworkElement>(), pillFirst ? 1 : 0);
-    Grid::SetColumn(pill, pillFirst ? 0 : 1);
-    line.Children().Append(cell);
-    line.Children().Append(pill);
-    return line;
+    if (cell.state == IconCell::State::None) {
+        return Grid();
+    }
+    FontIcon icon = columnIcon(iconId);
+    if (cell.state == IconCell::State::Faint) {
+        if (const auto brush = themeBrush(L"SettingsCardDisabledForeground", host)) {
+            icon.Foreground(brush);
+        }
+    }
+    ToolTipService::SetToolTip(icon, box_value(hs(cell.tooltip)));
+    AutomationProperties::SetName(icon, hs(cell.tooltip));
+    return icon;
 }
 
 } // namespace
@@ -256,9 +266,21 @@ void CollectionEditor::build()
     m_header = columnGrid(columns);
     m_header.Padding({12, 0, 12, 0});
     for (qsizetype index = 0; index < columns.size(); ++index) {
-        TextBlock title = cellText(columns.at(index).title,
-                                   L"SettingsCardDescriptionStyle",
-                                   &m_host);
+        const CollectionColumnSnapshot &column = columns.at(index);
+        FrameworkElement title{nullptr};
+        if (column.kind == ColumnKind::Icon) {
+            // The icon names the column, in the titles' muted colour; its
+            // title is the tooltip and what a screen reader says.
+            FontIcon icon = columnIcon(column.iconId);
+            if (const auto brush = themeBrush(L"SettingsCardDescriptionForeground", m_host)) {
+                icon.Foreground(brush);
+            }
+            ToolTipService::SetToolTip(icon, box_value(hs(column.title)));
+            AutomationProperties::SetName(icon, hs(column.title));
+            title = icon;
+        } else {
+            title = cellText(column.title, L"SettingsCardDescriptionStyle", &m_host);
+        }
         Grid::SetColumn(title, static_cast<int32_t>(index));
         m_header.Children().Append(title);
     }
@@ -329,18 +351,22 @@ void CollectionEditor::rebuildRows()
     for (const Record &record : m_records) {
         values.append(record.values);
     }
-    const QStringList badges = m_host.model->badgesFor(values, m_rowId);
-    const QStringList detailBadges = m_host.model->detailBadgesFor(values, m_rowId);
     const QList<CollectionColumnSnapshot> columns = tableColumns(m_collection);
+    // Each Icon column's cells, asked for with every record at once: a term's
+    // icon depends on the others.
+    QList<QList<IconCell>> icons;
+    for (const CollectionColumnSnapshot &column : columns) {
+        icons.append(column.kind == ColumnKind::Icon ? m_host.model->iconsFor(values, m_rowId, column.id)
+                                                     : QList<IconCell>());
+    }
     for (qsizetype index = 0; index < m_records.size(); ++index) {
         Grid row = columnGrid(columns);
         row.Tag(box_value(static_cast<int32_t>(index)));
         for (qsizetype columnIndex = 0; columnIndex < columns.size(); ++columnIndex) {
             const CollectionColumnSnapshot &column = columns.at(columnIndex);
-            const UIElement cell = cellFor(column,
-                                           static_cast<int>(index),
-                                           column.stretch ? badges.value(index) : QString(),
-                                           column.stretch ? detailBadges.value(index) : QString());
+            const UIElement cell = column.kind == ColumnKind::Icon
+                ? iconCell(column.iconId, icons.at(columnIndex).value(index), m_host)
+                : cellFor(column, static_cast<int>(index));
             Grid::SetColumn(cell.as<FrameworkElement>(), static_cast<int32_t>(columnIndex));
             row.Children().Append(cell);
         }
@@ -349,10 +375,7 @@ void CollectionEditor::rebuildRows()
     updateToolbar();
 }
 
-UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
-                                   int recordIndex,
-                                   const QString &badgeText,
-                                   const QString &detailBadgeText)
+UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column, int recordIndex)
 {
     const Record &record = m_records.at(recordIndex);
     const QVariant value = record.values.value(column.id);
@@ -448,23 +471,13 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
         });
         cell = box;
     }
-    if (!badgeText.isEmpty()) {
-        // After the cell, as Home's Writing Profiles sit after a name.
-        cell = withBadge(cell, namedBadge(badgeText, L"RatingBadgeAccent", m_host), false);
-    }
     const QString detailLine = detail.simplified();
-    if (!detailLine.isEmpty() || !detailBadgeText.isEmpty()) {
-        // The detail's one line under the cell's own, muted and cut at the
-        // end, starting with its own pill in the neutral tone where there is
-        // one; a pill with no detail still gets the line.
-        UIElement second = cellText(detailLine, L"CaptionTextBlockStyle", &m_host);
-        if (!detailBadgeText.isEmpty()) {
-            second = withBadge(second, namedBadge(detailBadgeText, L"RatingBadgeNeutral", m_host), true);
-        }
+    if (!detailLine.isEmpty()) {
+        // The detail's one line under the cell's own, muted and cut at the end.
         StackPanel lines;
         lines.VerticalAlignment(VerticalAlignment::Center);
         lines.Children().Append(cell);
-        lines.Children().Append(second);
+        lines.Children().Append(cellText(detailLine, L"CaptionTextBlockStyle", &m_host));
         cell = lines;
     }
     if (!tooltip.isEmpty()) {
@@ -604,7 +617,8 @@ void CollectionEditor::openRecordDialog(int recordIndex)
     QList<QPair<QString, CheckBox>> toggles;
     bool named = false;
     for (const CollectionColumnSnapshot &column : m_collection.columns) {
-        if (column.kind == ColumnKind::ReadOnly) {
+        // Neither holds anything a person fills in.
+        if (column.kind == ColumnKind::ReadOnly || column.kind == ColumnKind::Icon) {
             continue;
         }
         const QVariant value = original.value(column.id);

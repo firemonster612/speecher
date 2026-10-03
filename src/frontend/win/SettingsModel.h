@@ -42,6 +42,8 @@ struct CollectionColumnSnapshot {
     // the ticked ones.
     QString everyChoice;
     QString someChoice;
+    // Icon columns only: the schema's platform-neutral icon id.
+    QString iconId;
 };
 
 struct CollectionSnapshot {
@@ -153,11 +155,11 @@ public:
     // What deleting the custom Writing Profile `profileId` changes in the
     // draft, empty when nothing points at it.
     QString writingProfileDeletionNotice(const QString &profileId) const;
-    // The pill beside each record's stretch column, empty for none, for these
-    // records as they stand and the draft's other settings.
-    QStringList badgesFor(const QList<QVariantMap> &records, const QString &rowId) const;
-    // The pill at the start of each record's detail line, asked for the same way.
-    QStringList detailBadgesFor(const QList<QVariantMap> &records, const QString &rowId) const;
+    // Each record's cell in the Icon column columnId, for these records as
+    // they stand and the draft's other settings.
+    QList<IconCell> iconsFor(const QList<QVariantMap> &records,
+                             const QString &rowId,
+                             const QString &columnId) const;
     // What a cell says on hover, which a learned correction answers per record.
     QString tooltipForColumn(const QString &columnId,
                              const QString &rowId,

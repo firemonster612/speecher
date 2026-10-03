@@ -265,6 +265,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
             shown.detailColumn = column.detailColumn;
             shown.everyChoice = column.everyChoice;
             shown.someChoice = column.someChoice;
+            shown.iconId = column.iconId;
             table.columns.append(shown);
         }
         table.lockedRecordCount = collection->lockedRecordCount ? collection->lockedRecordCount() : 0;
@@ -437,28 +438,6 @@ QString SettingsModel::writingProfileDeletionNotice(const QString &profileId) co
     return speecher::writingProfileDeletionNotice(m_draft, profileId);
 }
 
-QStringList SettingsModel::badgesFor(const QList<QVariantMap> &records,
-                                     const QString &rowId) const
-{
-    const SettingsRow *row = rowWithId(rowId);
-    const CollectionDescriptor *collection = row ? collectionForRow(*row) : nullptr;
-    if (!collection || !collection->badges) {
-        return {};
-    }
-    return collection->badges(records, m_draft);
-}
-
-QStringList SettingsModel::detailBadgesFor(const QList<QVariantMap> &records,
-                                           const QString &rowId) const
-{
-    const SettingsRow *row = rowWithId(rowId);
-    const CollectionDescriptor *collection = row ? collectionForRow(*row) : nullptr;
-    if (!collection || !collection->detailBadges) {
-        return {};
-    }
-    return collection->detailBadges(records, m_draft);
-}
-
 const CollectionColumn *SettingsModel::columnWithId(const QString &rowId,
                                                    const QString &columnId) const
 {
@@ -484,6 +463,14 @@ QString SettingsModel::tooltipForColumn(const QString &columnId,
         return {};
     }
     return column->recordTooltip ? column->recordTooltip(record) : column->tooltip;
+}
+
+QList<IconCell> SettingsModel::iconsFor(const QList<QVariantMap> &records,
+                                        const QString &rowId,
+                                        const QString &columnId) const
+{
+    const CollectionColumn *column = columnWithId(rowId, columnId);
+    return column && column->icons ? column->icons(records, m_draft) : QList<IconCell>();
 }
 
 QString SettingsModel::choiceSetText(const QString &rowId,
