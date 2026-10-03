@@ -375,10 +375,12 @@ struct DictationPanel::Native : QObject {
         Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(cancelButton, win::hs(cancelCaption()));
         ToolTipService::SetToolTip(cancelButton, box_value(win::hs(cancelCaption())));
         cancelButton.Click([this](const auto &, const auto &) { controller->cancel(); });
+        // A status in place of the bars (Paused, Transcribing…) sits between
+        // the two buttons as the bars do.
         row.Children().Append(pauseButton);
         row.Children().Append(waveform);
-        row.Children().Append(cancelButton);
         row.Children().Append(text);
+        row.Children().Append(cancelButton);
 
         previewText = TextBlock();
         previewText.VerticalAlignment(VerticalAlignment::Center);
@@ -878,7 +880,10 @@ struct DictationPanel::Native : QObject {
         text.Text(hstring(shown.toStdWString()));
         text.Visibility(listening ? Visibility::Collapsed : Visibility::Visible);
         text.Width(hasProblem ? wantedWidth - chromeWidth
-                   : finished ? wantedWidth - 68 : wantedWidth - controlsWidth);
+                   : finished ? wantedWidth - 68
+                   // Hugging the status keeps the buttons beside it, inside the lobe.
+                   : controlsWidth > 0 ? std::max(panelWidth, measuredTextWidth(shown) + 32)
+                                       : wantedWidth);
         text.TextWrapping(hasProblem ? TextWrapping::Wrap : TextWrapping::NoWrap);
         text.MaxLines(hasProblem ? 0 : 1);
         text.TextAlignment(TextAlignment::Center);
@@ -928,8 +933,12 @@ struct DictationPanel::Native : QObject {
             : previewTopPadding + lineHeight + previewStripSpacing
                 + std::max(compactStripHeight, lineHeight + 6) + previewBottomPadding;
         resize(wantedWidth, wantedHeight);
-        updateOutline(showPreview ? previewTopPadding + lineHeight + previewShoulderDrop : 0,
-                      (waiting || paused ? measuredTextWidth(shown) : 92.8) + controlsWidth);
+        // With the buttons showing, the lobe holds the whole row: the bars'
+        // fixed-width strip or the status text, with a button either side.
+        const double inkWidth = controlsWidth == 0 ? (waiting ? measuredTextWidth(shown) : 92.8)
+            : (listening ? panelWidth : std::max(panelWidth, measuredTextWidth(shown) + 32))
+                + controlsWidth;
+        updateOutline(showPreview ? previewTopPadding + lineHeight + previewShoulderDrop : 0, inkWidth);
         chrome.UpdateLayout();
         if (IsWindowVisible(window)) {
             reposition();

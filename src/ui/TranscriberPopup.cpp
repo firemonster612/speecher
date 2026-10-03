@@ -555,7 +555,11 @@ void TranscriberPopup::setPreview(const QString &preview)
         return;
     }
     restoreStandardLayout();
-    m_waveform->setMode(WaveformWidget::Mode::Waveform);
+    // The paused attempt's last words land after the pause; the strip keeps
+    // saying Paused.
+    if (m_sessionState != DictationState::Paused) {
+        m_waveform->setMode(WaveformWidget::Mode::Waveform);
+    }
     applyPreviewText(preview);
 }
 
