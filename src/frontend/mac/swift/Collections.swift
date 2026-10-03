@@ -329,11 +329,12 @@ struct CollectionRow: View {
         }
     }
 
-    /// A column's header: its title, or an Icon column's icon alone, which
-    /// VoiceOver reads as the title.
+    /// A column's header: its title, or an Icon column's icon alone. A table
+    /// header takes only Text, which keeps neither a tooltip nor an
+    /// accessibility label, so the icon's cells carry the meaning.
     private static func header(_ column: CollectionColumnModel) -> Text {
         guard column.kind == .icon else { return Text(column.title) }
-        return Text(Image(systemName: RecordIcon.symbol(column.iconId))).accessibilityLabel(column.title)
+        return Text(Image(systemName: RecordIcon.symbol(column.iconId)))
     }
 
     /// How much of the table's width a column asks for. The descriptor names the
@@ -633,19 +634,22 @@ struct RecordIcon: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .help(cell?.tooltip ?? "")
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(cell?.tooltip ?? "")
     }
 
     @ViewBuilder private var icon: some View {
         switch cell?.state {
         case .shown?:
-            Image(systemName: Self.symbol(iconId))
+            image
         case .faint?:
-            Image(systemName: Self.symbol(iconId)).foregroundStyle(.secondary)
+            image.foregroundStyle(.secondary)
         default:
             Color.clear
         }
+    }
+
+    /// Read by VoiceOver as the tooltip, which says what the icon means.
+    private var image: some View {
+        Image(systemName: Self.symbol(iconId)).accessibilityLabel(cell?.tooltip ?? "")
     }
 
     /// SF Symbols for the schema's icon ids, filled as Mail marks a flagged message.
