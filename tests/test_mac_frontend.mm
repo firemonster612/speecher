@@ -488,7 +488,7 @@ private slots:
         QCoreApplication::processEvents();
         QVERIFY(hotKeyComboIsFree());
 
-        [bridge endShortcutRecording];
+        [bridge endShortcutRecordingCancelShortcutFailed:nil];
         QVERIFY(hotKeyComboIsFree());
         const unichar replacement = NSF10FunctionKey;
         QVERIFY([bridge bindShortcutWithCharacters:[NSString stringWithCharacters:&replacement length:1]
@@ -496,7 +496,7 @@ private slots:
                                                    | NSEventModifierFlagOption
                                                    | NSEventModifierFlagShift] == nil);
         QVERIFY(hotKeyComboIsFree(kVK_F10));
-        [bridge endShortcutRecording];
+        [bridge endShortcutRecordingCancelShortcutFailed:nil];
         QVERIFY(hotKeyComboIsFree());
         QVERIFY(!hotKeyComboIsFree(kVK_F10));
     }
@@ -511,7 +511,7 @@ private slots:
         }
         // Recorder callbacks may arrive after controller teardown.
         [bridge beginShortcutRecording];
-        QVERIFY([bridge endShortcutRecording] == nil);
+        QVERIFY([bridge endShortcutRecordingCancelShortcutFailed:nil] == nil);
     }
 
     // Ending a recording that bound a replacement keeps the replacement rather
@@ -527,7 +527,7 @@ private slots:
         QVERIFY([bridge bindShortcutWithCharacters:@"g"
                                      modifierFlags:NSEventModifierFlagControl
                                                    | NSEventModifierFlagOption] == nil);
-        [bridge endShortcutRecording];
+        [bridge endShortcutRecordingCancelShortcutFailed:nil];
 
         QCOMPARE(controller.globalShortcut().combination(),
                  QKeySequence(Qt::META | Qt::ALT | Qt::Key_G));
@@ -549,8 +549,10 @@ private slots:
         QCOMPARE(RegisterEventHotKey(kVK_F9, controlKey | optionKey | shiftKey,
                                      identifier, GetApplicationEventTarget(),
                                      kEventHotKeyExclusive, &competingHotKey), OSStatus(noErr));
-        NSString *error = [bridge endShortcutRecording];
+        BOOL cancelShortcutFailed = YES;
+        NSString *error = [bridge endShortcutRecordingCancelShortcutFailed:&cancelShortcutFailed];
         QVERIFY(error.length > 0);
+        QVERIFY(!cancelShortcutFailed);
     }
 
     // The single-key half of the bridge: keycode-to-name mapping, display,

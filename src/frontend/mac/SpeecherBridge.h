@@ -974,8 +974,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // registration first; ending it restores the bound sequence.
 - (void)beginShortcutRecording;
 // A shortcut that could not be taken back returns its error, with
-// cancelShortcutFailed saying whether it was the Cancel Shortcut's.
-- (nullable NSString *)endShortcutRecordingCancelShortcutFailed:(BOOL *)cancelShortcutFailed
+// cancelShortcutFailed, when given, saying whether it was the Cancel Shortcut's.
+- (nullable NSString *)endShortcutRecordingCancelShortcutFailed:(BOOL *_Nullable)cancelShortcutFailed
     NS_SWIFT_NAME(endShortcutRecording(cancelShortcutFailed:));
 
 // The Cancel Shortcut: the same recorder's two kinds of binding, and Clear,
