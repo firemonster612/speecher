@@ -16,12 +16,18 @@ QList<VocabularyEntry> load(const QSettings &settings)
     if (document.isArray()) {
         for (const QJsonValue &value : document.array()) {
             const QJsonObject object = value.toObject();
+            QStringList profiles;
+            for (const QJsonValue &profile : object.value(QStringLiteral("profiles")).toArray()) {
+                profiles.append(profile.toString());
+            }
             entries.append({
                 object.value(QStringLiteral("term")).toString(),
                 object.value(QStringLiteral("source")).toString(QStringLiteral("manual")),
                 object.value(QStringLiteral("starred")).toBool(false),
                 object.value(QStringLiteral("frequency")).toInt(0),
                 qint64(object.value(QStringLiteral("lastUsedMs")).toDouble()),
+                object.value(QStringLiteral("context")).toString(),
+                profiles,
             });
         }
     } else {
@@ -40,13 +46,20 @@ void store(QSettings &settings, const QList<VocabularyEntry> &entries)
     QJsonArray array;
     QStringList legacyTerms;
     for (const VocabularyEntry &entry : normalized) {
-        array.append(QJsonObject{
+        QJsonObject object{
             {QStringLiteral("term"), entry.term},
             {QStringLiteral("source"), entry.source},
             {QStringLiteral("starred"), entry.starred},
             {QStringLiteral("frequency"), entry.frequency},
             {QStringLiteral("lastUsedMs"), double(entry.lastUsedMs)},
-        });
+        };
+        if (!entry.context.isEmpty()) {
+            object.insert(QStringLiteral("context"), entry.context);
+        }
+        if (!entry.profiles.isEmpty()) {
+            object.insert(QStringLiteral("profiles"), QJsonArray::fromStringList(entry.profiles));
+        }
+        array.append(object);
         legacyTerms.append(entry.term);
     }
     settings.setValue(

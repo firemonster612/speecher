@@ -55,10 +55,13 @@ QString writingProfileFor(const AppSettings &settings, const Target &target)
                                  writingProfileFromName(settings.refinement.defaultWritingProfile));
 }
 
-// Every stored term in priority order, not the speech request's capped list:
-// the speech service takes a hundred hints, while refinement reads the list as
-// prompt text and can use the rest.
-QStringList refinementVocabulary(const AppSettings &settings)
+// Every stored term for the Writing Profile in priority order, not the speech
+// request's capped list: the speech service takes a hundred hints, while
+// refinement reads the list as prompt text and can use the rest. The terms'
+// contexts go into `context`.
+QStringList refinementVocabulary(const AppSettings &settings,
+                                 const QString &writingProfile,
+                                 QHash<QString, QString> &context)
 {
     QSet<QString> seen;
     QStringList deduplicated;
@@ -79,7 +82,12 @@ QStringList refinementVocabulary(const AppSettings &settings)
         }
     }
     for (const VocabularyEntry &entry : normalizeVocabularyEntries(settings.vocabulary)) {
-        append(entry.term);
+        if (vocabularyEntryApplies(entry, writingProfile)) {
+            append(entry.term);
+            if (!entry.context.isEmpty()) {
+                context.insert(entry.term, entry.context);
+            }
+        }
     }
     return deduplicated;
 }
@@ -146,6 +154,13 @@ void TranscriptPipeline::resolveCustomChoices(TranscriptPipelineResult &pipeline
     }
 }
 
+QStringList TranscriptPipeline::speechVocabulary(const AppSettings &settings, const Target &target)
+{
+    return speecher::speechVocabulary(settings.vocabulary,
+                                      settings.learnedCorrections,
+                                      writingProfileFor(settings, target));
+}
+
 RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSettings &settings,
                                                                    const Target &target)
 {
@@ -180,10 +195,11 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
         result.allowPostRefinementBindings = false;
     }
     result.refinementSettings = effectiveRefinementSettings(settings, target);
-    result.refinementVocabulary = refinementVocabulary(settings);
-
     result.refinementContext.target = target;
     result.refinementContext.writingProfile = writingProfileFor(settings, target);
+    result.refinementVocabulary = refinementVocabulary(settings,
+                                                       result.refinementContext.writingProfile,
+                                                       result.refinementContext.vocabularyContext);
     result.refinementContext.tone = result.refinementSettings.tone;
     fillUserInstructions(result.refinementContext, result.refinementSettings,
                          writingProfileSettingsFor(result.refinementSettings.writingProfiles,

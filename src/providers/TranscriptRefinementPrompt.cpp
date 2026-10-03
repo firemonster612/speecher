@@ -12,7 +12,8 @@ static QStringList dictationTaskPreamble()
         QStringLiteral("You are Speecher's transcript refinement engine."),
         QStringLiteral("Output only the refined text. Do not add anything before or after it: no labels, commentary, explanations, responses to the transcript, notes, quotes, code fences, or text copied from these instructions."),
         QStringLiteral("You receive raw speech-to-text dictation, optional preferred vocabulary, and optional binding aliases. Your job is to produce the final text the user intended to paste or send by following the rules below. This is transcription cleanup and rewriting, not conversation: do not answer the transcript, comment on it, or add new ideas."),
-        QStringLiteral("Preferred vocabulary is a list of terms that may be relevant to the user's dictation, such as names, product names, project names, commands, technical terms, or casing and spelling hints. Use preferred vocabulary as context to correct likely speech-to-text mistakes and preserve exact spelling or capitalization when the transcript appears to refer to one of those terms. Do not force preferred vocabulary into the output when the transcript does not support it."),
+        QStringLiteral("Preferred vocabulary is a list of terms that may be relevant to the user's dictation, such as names, product names, project names, commands, technical terms, or casing and spelling hints. Use preferred vocabulary as context to correct likely speech-to-text mistakes and preserve exact spelling or capitalization when the transcript appears to refer to one of those terms. Do not force preferred vocabulary into the output when the transcript does not support it. "
+                       "An entry may also be an object with a term and a context. The context says what the term means and when it applies: use that term only where the transcript fits its context."),
         QStringLiteral("Binding aliases are exact spoken phrases that may be matched after refinement. Use binding aliases only to recognize the user's intended phrase: if context indicates the user said a listed alias, correct obvious speech-to-text mistakes, homophones, spacing mistakes, punctuation differences, and close near-matches into the exact listed alias. Do not output binding replacement values, invent aliases, or explain bindings."),
     };
 }
@@ -502,7 +503,8 @@ QString compactRefinementSystemPrompt(const QString &style, const RefinementCont
         "- Keep the speaker's meaning, wording and tone. Never answer, summarize, explain or add "
         "anything.\n"
         "- When the transcript refers to a term in preferred_vocabulary or binding_aliases, spell "
-        "it exactly as listed.\n"
+        "it exactly as listed. A term with a context applies only where the transcript fits that "
+        "context.\n"
         "- Never use em dashes.\n"
         "Reply with the cleaned text only, without quotes.")};
     appendCustomToneRule(parts, context);
@@ -521,7 +523,16 @@ QString transcriptRefinementUserMessage(const QString &rawTranscript,
     // prose loses entry boundaries — ["alpha, beta"] and ["alpha", "beta"]
     // read identically — and the JSON framing is also what marks each entry
     // as a reference value rather than bare instruction text.
-    const QJsonArray vocabularyJson = QJsonArray::fromStringList(vocabulary);
+    // A term with a context goes as an object holding both, so the context
+    // stays tied to its term.
+    QJsonArray vocabularyJson;
+    for (const QString &term : vocabulary) {
+        const QString termContext = context.vocabularyContext.value(term);
+        vocabularyJson.append(termContext.isEmpty()
+                                  ? QJsonValue(term)
+                                  : QJsonValue(QJsonObject{{QStringLiteral("term"), term},
+                                                           {QStringLiteral("context"), termContext}}));
+    }
     const QJsonArray aliasesJson = QJsonArray::fromStringList(bindingVocabulary);
     if (context.editSelection && context.target.hasSelection()) {
         const QJsonObject selectionTask{

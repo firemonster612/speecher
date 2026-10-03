@@ -522,7 +522,8 @@ void Badge::paintEvent(QPaintEvent *)
 void BadgeDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     const QString text = index.data(TextRole).toString();
-    if (text.isEmpty()) {
+    const QString detail = index.data(DetailRole).toString().simplified();
+    if (text.isEmpty() && detail.isEmpty()) {
         QStyledItemDelegate::paint(painter, option, index);
         return;
     }
@@ -535,29 +536,46 @@ void BadgeDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
     const int margin = style->pixelMetric(QStyle::PM_FocusFrameHMargin, &item, widget) + 1;
     const QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &item, widget)
                                .adjusted(margin, 0, -margin, 0);
+    // A blank last line the style lays out with the rest, for the detail.
+    if (!detail.isEmpty()) {
+        item.text += QChar::LineSeparator + QStringLiteral(" ");
+    }
     QStringList lines = item.text.split(QChar::LineSeparator);
     const QSize size = Badge::sizeFor(item.font, text);
     const int room = textRect.width() - size.width() - badgeGap();
     // Too narrow for the pill and a few letters of the name: the name alone.
-    const bool badged = room >= item.fontMetrics.averageCharWidth() * 6;
+    const bool badged = !text.isEmpty() && room >= item.fontMetrics.averageCharWidth() * 6;
     if (badged) {
         lines.first() = item.fontMetrics.elidedText(lines.first(), item.textElideMode, room);
         item.text = lines.join(QChar::LineSeparator);
     }
     style->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
-    if (!badged) {
-        return;
-    }
     const int lineHeight = item.fontMetrics.height();
     const int top = textRect.center().y() - int(lines.size()) * lineHeight / 2;
-    const int x = textRect.left() + item.fontMetrics.horizontalAdvance(lines.first()) + badgeGap();
-    const QRect pill(QPoint(x, top + (lineHeight - size.height()) / 2), size);
-    Badge::paint(*painter, pill, text, Badge::Tone(index.data(ToneRole).toInt()), item.palette);
+    if (badged) {
+        const int x = textRect.left() + item.fontMetrics.horizontalAdvance(lines.first()) + badgeGap();
+        const QRect pill(QPoint(x, top + (lineHeight - size.height()) / 2), size);
+        Badge::paint(*painter, pill, text, Badge::Tone(index.data(ToneRole).toInt()), item.palette);
+    }
+    if (!detail.isEmpty()) {
+        const QRect line(textRect.left(), top + int(lines.size() - 1) * lineHeight, textRect.width(), lineHeight);
+        const bool selected = item.state & QStyle::State_Selected;
+        painter->save();
+        painter->setFont(item.font);
+        style->drawItemText(painter, line, Qt::AlignLeft | Qt::AlignVCenter, item.palette,
+                            item.state & QStyle::State_Enabled,
+                            item.fontMetrics.elidedText(detail, Qt::ElideRight, line.width()),
+                            selected ? QPalette::HighlightedText : QPalette::PlaceholderText);
+        painter->restore();
+    }
 }
 
 QSize BadgeDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     QSize size = QStyledItemDelegate::sizeHint(option, index);
+    if (!index.data(DetailRole).toString().isEmpty()) {
+        size.rheight() += option.fontMetrics.height();
+    }
     const QString text = index.data(TextRole).toString();
     if (text.isEmpty()) {
         return size;

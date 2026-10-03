@@ -301,12 +301,16 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     }
     m_continuedStartupGeneration = generation;
 
-    const AppSettings settings = *m_sessionSettings;
     clearScreenshotContext();
     m_target = m_targetProvider
-        ? m_targetProvider->capture(settings.appRecognitionRules)
+        ? m_targetProvider->capture(m_sessionSettings->appRecognitionRules)
         : Target{};
-    m_target.category = classifyTarget(m_target, settings.appRecognitionRules);
+    m_target.category = classifyTarget(m_target, m_sessionSettings->appRecognitionRules);
+    // The target settles the Writing Profile, and with it the terms the
+    // speech request may carry.
+    m_sessionSettings->speech.vocabulary =
+        TranscriptPipeline::speechVocabulary(*m_sessionSettings, m_target);
+    const AppSettings settings = *m_sessionSettings;
     const RefinementSettings effectiveRefinement =
         TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
     if (settings.refinement.includeScreenshotContext

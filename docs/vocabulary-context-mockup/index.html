@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher: vocabulary context and profiles (mockup)</title>
+<style>
+  :root {
+    --window: #eff0f1;
+    --header: #dee0e2;
+    --sidebar: #f7f7f8;
+    --base: #ffffff;
+    --alt: #f7f7f7;
+    --frame: #c6c8ca;
+    --frame-soft: #dcdde0;
+    --text: #232629;
+    --muted: #707d8a;
+    --highlight: #3daee9;
+    --highlight-tint: #dff1fb;
+    --button: #fcfcfc;
+    --negative: #da4453;
+    --font: "Noto Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px;
+    background: #9aa1a8;
+    font: 13px/1.4 var(--font);
+    color: var(--text);
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+  }
+  button, input, textarea, select { font: inherit; color: inherit; }
+
+  /* ------------------------------------------------------------ window */
+  .window {
+    width: 900px;
+    height: 640px;
+    background: var(--window);
+    border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 46px 1fr;
+    overflow: hidden;
+    position: relative;
+  }
+  .search {
+    border-bottom: 1px solid var(--frame);
+    border-right: 1px solid var(--frame);
+    background: var(--header);
+    padding: 8px;
+  }
+  .search div {
+    height: 29px; border: 1px solid var(--highlight); border-radius: 4px;
+    background: var(--base); color: var(--muted); padding: 5px 10px 0 32px;
+    position: relative;
+  }
+  .search div::before { content: "⌕"; position: absolute; left: 10px; top: 2px; font-size: 16px; color: var(--text); }
+  .title {
+    background: var(--header); border-bottom: 1px solid var(--frame);
+    font-size: 19px; font-weight: 700; padding: 9px 8px;
+  }
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--frame); padding: 10px 12px; position: relative; }
+  .nav { padding: 7px 8px 7px 33px; border-radius: 4px; position: relative; margin-bottom: 1px; }
+  .nav i { position: absolute; left: 8px; top: 6px; width: 17px; text-align: center; font-style: normal; }
+  .nav.active { background: var(--highlight); color: #fff; }
+  .group { font-weight: 700; margin: 12px 6px 4px; display: flex; gap: 8px; align-items: center; }
+  .group::after { content: ""; flex: 1; border-top: 1px solid var(--frame); }
+  .quit { position: absolute; left: 9px; right: 9px; bottom: 9px; }
+
+  .content { overflow: hidden; padding: 6px 0 0 68px; }
+  .tabs { display: flex; }
+  .tab { padding: 6px 9px; background: #c8cacd; border-top: 2px solid transparent; }
+  .tab.active { background: var(--window); border: 1px solid var(--frame); border-bottom: none; border-top: 2px solid var(--highlight); }
+  .tab.active span { border-bottom: 1px solid var(--text); }
+  .card {
+    width: 542px; background: var(--base); border: 1px solid var(--frame-soft);
+    border-radius: 6px; padding: 10px 14px 14px;
+  }
+  .help { color: var(--muted); margin: 0 0 6px; }
+
+  /* ------------------------------------------------------------- table */
+  .table { border: 1px solid var(--frame); border-radius: 3px; height: 330px; overflow: hidden; position: relative; }
+  .thead, .row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 100px 68px 40px 76px; }
+  .thead div { padding: 6px 2px; white-space: nowrap; text-align: center; border-right: 1px solid var(--frame-soft); border-bottom: 1px solid var(--frame); }
+  .thead div:last-child { border-right: none; }
+  .row { border-bottom: 1px solid var(--frame-soft); height: 44px; cursor: default; user-select: none; }
+  .row > div { padding: 0 6px; display: flex; align-items: center; min-width: 0; }
+  .row.selected { background: var(--highlight); color: #fff; }
+  .row.selected .context, .row.selected .scope.all { color: #e8f6fd; }
+  .row .check { justify-content: center; }
+  .box { width: 16px; height: 16px; border: 1px solid #a6a9ad; border-radius: 3px; background: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; }
+  .box.on { background: var(--highlight); border-color: #2a95cc; }
+  .box.on::after { content: "✓"; }
+  .term { flex-direction: column; align-items: flex-start !important; justify-content: center; gap: 1px; }
+  .term .name { display: flex; gap: 6px; align-items: center; white-space: nowrap; max-width: 100%; }
+  .badge { font-size: 11.5px; font-weight: 600; padding: 0 7px; border-radius: 10px; border: 1px solid var(--highlight); background: var(--highlight-tint); color: var(--text); }
+  .context { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .scope { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block !important; line-height: 44px; }
+  .scope.all { color: var(--muted); }
+  .buttons { display: flex; gap: 8px; margin-top: 8px; }
+  .buttons .spacer { flex: 1; }
+  .btn {
+    height: 30px; padding: 0 12px; border: 1px solid #b8bbbe; border-radius: 4px;
+    background: linear-gradient(#fdfdfd, #f3f3f4); min-width: 80px;
+  }
+  .btn:disabled { color: #a3a6a9; background: #eceded; border-color: #d6d8da; }
+  .btn.default { border-color: var(--highlight); }
+  .btn.destructive { color: var(--negative); }
+  .limit { border-top: 1px solid var(--frame-soft); margin-top: 12px; padding-top: 10px; display: flex; justify-content: space-between; }
+
+  /* ------------------------------------------------------------ dialog */
+  .scrim { position: absolute; inset: 0; background: rgba(35,38,41,.25); display: none; align-items: center; justify-content: center; }
+  .scrim.open { display: flex; }
+  .dialog { width: 480px; background: var(--window); border-radius: 6px; box-shadow: 0 8px 28px rgba(0,0,0,.4); overflow: hidden; }
+  .titlebar { background: var(--header); border-bottom: 1px solid var(--frame); text-align: center; padding: 6px; font-weight: 600; position: relative; }
+  .titlebar span { position: absolute; right: 10px; top: 4px; font-weight: 400; color: var(--muted); }
+  .form { padding: 14px 16px 6px; display: grid; grid-template-columns: 92px 1fr; gap: 10px 12px; align-items: start; }
+  .form label.l { text-align: right; padding-top: 5px; }
+  .field input[type=text], .field textarea {
+    width: 100%; border: 1px solid #b8bbbe; border-radius: 3px; background: #fff; padding: 5px 7px; outline: none;
+  }
+  .field input[type=text]:focus, .field textarea:focus { border-color: var(--highlight); box-shadow: 0 0 0 1px var(--highlight); }
+  .field textarea { height: 66px; resize: none; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .opt { display: flex; gap: 7px; align-items: center; padding: 4px 0; }
+  .radio { width: 16px; height: 16px; border: 1px solid #a6a9ad; border-radius: 50%; background: #fff; position: relative; flex: none; }
+  .radio.on { border-color: var(--highlight); }
+  .radio.on::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--highlight); }
+  .list { margin: 4px 0 0 23px; border: 1px solid var(--frame); background: #fff; border-radius: 3px; padding: 2px 8px; }
+  .list.disabled { opacity: .5; }
+  .list .opt { padding: 3px 0; }
+  .dialog .buttons { padding: 8px 16px 14px; margin: 0; }
+  .clickable { cursor: default; }
+
+  /* ----------------------------------------------- mockup-only panel */
+  .side { width: 400px; background: #fff; border-radius: 6px; padding: 14px 16px; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+  .side h2 { margin: 0 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #8a5a00; }
+  .side p { margin: 0 0 10px; color: var(--muted); }
+  .side h3 { font-size: 13px; margin: 12px 0 4px; }
+  .side select { border: 1px solid #b8bbbe; border-radius: 3px; padding: 3px 6px; background: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; min-height: 22px; }
+  .chip { border: 1px solid var(--highlight); background: var(--highlight-tint); border-radius: 10px; padding: 0 8px; font-size: 12px; }
+  .none { color: var(--muted); font-style: italic; }
+  pre { margin: 0; background: #f4f5f6; border: 1px solid var(--frame-soft); border-radius: 4px; padding: 8px; font: 11.5px/1.45 ui-monospace, "JetBrains Mono", monospace; white-space: pre-wrap; overflow: hidden; }
+  pre .k { color: #1d6fa5; } pre .s { color: #2c7a4b; }
+</style>
+</head>
+<body>
+
+<div class="window" id="window">
+  <div class="search"><div>Search settings…</div></div>
+  <div class="title">Vocabulary</div>
+  <nav class="sidebar">
+    <div class="nav"><i>⌂</i>Home</div>
+    <div class="nav"><i>≣</i>Transcribe</div>
+    <div class="nav"><i>⚙</i>General</div>
+    <div class="nav"><i>☺</i>Accounts</div>
+    <div class="group">Speech</div>
+    <div class="nav"><i>🎙</i>Dictation</div>
+    <div class="group">Text</div>
+    <div class="nav"><i>✎</i>Refinement</div>
+    <div class="nav"><i>▣</i>Writing Profiles</div>
+    <div class="nav active"><i>A</i>Vocabulary</div>
+    <div class="nav"><i>▤</i>Output</div>
+    <button class="btn quit">Quit Speecher</button>
+  </nav>
+  <main class="content">
+    <div class="tabs">
+      <div class="tab active"><span>Terms</span></div>
+      <div class="tab">Learned corrections</div>
+      <div class="tab">Replacements &amp; snippets</div>
+    </div>
+    <section class="card">
+      <p class="help">Refinement uses the terms for the dictation's Writing Profile. Key terms also go to Claude Voice.</p>
+      <div class="table" id="table">
+        <div class="thead"><div>Key term</div><div>Term</div><div>Profiles</div><div>Source</div><div>Uses</div><div>Last used</div></div>
+        <div id="rows"></div>
+      </div>
+      <div class="buttons">
+        <button class="btn">Import CSV…</button>
+        <span class="spacer"></span>
+        <button class="btn" id="delete" disabled>Delete</button>
+        <button class="btn" id="edit" disabled>Edit…</button>
+        <button class="btn" id="add">Add</button>
+      </div>
+      <div class="limit"><span>Limit</span><span id="limit"></span></div>
+    </section>
+  </main>
+
+  <div class="scrim" id="scrim">
+    <div class="dialog" role="dialog" aria-modal="true">
+      <div class="titlebar"><b id="dialogTitle">New term</b><span>✕</span></div>
+      <div class="form">
+        <label class="l" for="termField">Term</label>
+        <div class="field"><input type="text" id="termField" placeholder="Kubernetes"></div>
+
+        <span></span>
+        <div class="field">
+          <div class="opt clickable" id="keyToggle"><span class="box" id="keyBox"></span>Key term</div>
+          <div class="note">Also sent to Claude Voice, so speech recognition hears it.</div>
+        </div>
+
+        <label class="l" for="contextField">Context</label>
+        <div class="field">
+          <textarea id="contextField" placeholder="What it means and when it applies, such as &quot;the container platform, when I talk about clusters or deploys&quot;."></textarea>
+          <div class="note">Refinement reads this to decide when the words you said mean this term.</div>
+        </div>
+
+        <label class="l">Profiles</label>
+        <div class="field">
+          <div class="opt clickable" id="scopeAll"><span class="radio" id="radioAll"></span>Every Writing Profile</div>
+          <div class="opt clickable" id="scopeSome"><span class="radio" id="radioSome"></span>Only these Writing Profiles:</div>
+          <div class="list" id="profileList"></div>
+          <div class="note">Under any other profile, neither refinement nor Claude Voice gets this term.</div>
+        </div>
+      </div>
+      <div class="buttons">
+        <button class="btn destructive" id="dialogDelete">Delete</button>
+        <span class="spacer"></span>
+        <button class="btn" id="cancel">Cancel</button>
+        <button class="btn default" id="ok">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<aside class="side">
+  <h2>Mockup only</h2>
+  <p>Not part of the app. What one dictation sends, so the effect of the profile limit and the context is visible.</p>
+  <label>Dictating under <select id="profileSelect"></select></label>
+  <h3>Claude Voice key terms</h3>
+  <div class="chips" id="speechTerms"></div>
+  <h3>Refinement request</h3>
+  <pre id="payload"></pre>
+</aside>
+
+<script>
+const PROFILES = [
+  { id: "work", name: "Work" },
+  { id: "email", name: "Email" },
+  { id: "personal", name: "Personal" },
+  { id: "ai_coding", name: "AI coding" },
+  { id: "other", name: "Other" },
+  { id: "custom-standup", name: "Standup notes" },
+];
+const profileName = id => PROFILES.find(p => p.id === id)?.name ?? id;
+
+let terms = [
+  { term: "Kubernetes", key: true, context: "The container platform, when I talk about clusters, pods or deploys.", profiles: ["work", "ai_coding"], source: "Added", uses: 41, last: "Today" },
+  { term: "Aoife Byrne", key: true, context: "My manager. Sounds like \"ee-fa burn\".", profiles: ["work", "email"], source: "Added", uses: 18, last: "Yesterday" },
+  { term: "PR", key: false, context: "Pull request, in code review talk. Never \"public relations\".", profiles: ["ai_coding"], source: "Added", uses: 63, last: "Today" },
+  { term: "Speecher", key: true, context: "", profiles: [], source: "Added", uses: 12, last: "Today" },
+  { term: "Lúcia", key: false, context: "My sister.", profiles: ["personal"], source: "Imported", uses: 7, last: "Sep 28" },
+  { term: "Grafana", key: false, context: "", profiles: ["work"], source: "Imported", uses: 3, last: "Sep 30" },
+  { term: "ollama", key: false, context: "The Local Runner. Always lowercase.", profiles: [], source: "Learned", uses: 5, last: "Sep 29" },
+];
+let selected = -1;
+let editing = null; // index being edited, or -1 when adding
+
+const $ = id => document.getElementById(id);
+
+function scopeLabel(t) {
+  if (!t.profiles.length) return "All";
+  return t.profiles.map(profileName).join(", ");
+}
+
+function render() {
+  const rows = $("rows");
+  rows.innerHTML = "";
+  terms.forEach((t, i) => {
+    const row = document.createElement("div");
+    row.className = "row" + (i === selected ? " selected" : "");
+    row.dataset.term = t.term;
+    row.innerHTML = `
+      <div class="check"><span class="box ${t.key ? "on" : ""}"></span></div>
+      <div class="term"><span class="name">${esc(t.term)}${t.key ? '<span class="badge">Key term</span>' : ""}</span>
+        ${t.context ? `<span class="context" title="${esc(t.context)}">${esc(t.context)}</span>` : ""}</div>
+      <div class="scope ${t.profiles.length ? "" : "all"}" title="${esc(scopeLabel(t))}">${esc(scopeLabel(t))}</div>
+      <div>${t.source}</div><div>${t.uses}</div><div>${t.last}</div>`;
+    row.querySelector(".box").addEventListener("click", e => { e.stopPropagation(); t.key = !t.key; render(); });
+    row.addEventListener("click", () => { selected = i; render(); });
+    row.addEventListener("dblclick", () => openDialog(i));
+    rows.appendChild(row);
+  });
+  $("delete").disabled = selected < 0;
+  $("edit").disabled = selected < 0;
+  $("limit").textContent = `${terms.filter(t => t.key).length} of 100 key terms`;
+  renderPayload();
+}
+
+function esc(s) { return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+// ------------------------------------------------------------- dialog
+let draft = null;
+function openDialog(index) {
+  editing = index;
+  const t = index < 0 ? { term: "", key: false, context: "", profiles: [] } : terms[index];
+  draft = { ...t, profiles: [...t.profiles], only: t.profiles.length > 0 };
+  $("dialogTitle").textContent = index < 0 ? "New term" : t.term;
+  $("dialogDelete").style.visibility = index < 0 ? "hidden" : "visible";
+  $("termField").value = draft.term;
+  $("contextField").value = draft.context;
+  renderDialog();
+  $("scrim").classList.add("open");
+  $("termField").focus();
+}
+function renderDialog() {
+  $("keyBox").className = "box" + (draft.key ? " on" : "");
+  $("radioAll").className = "radio" + (draft.only ? "" : " on");
+  $("radioSome").className = "radio" + (draft.only ? " on" : "");
+  const list = $("profileList");
+  list.className = "list" + (draft.only ? "" : " disabled");
+  list.innerHTML = "";
+  PROFILES.forEach(p => {
+    const opt = document.createElement("div");
+    opt.className = "opt clickable";
+    opt.dataset.profile = p.id;
+    opt.innerHTML = `<span class="box ${draft.profiles.includes(p.id) ? "on" : ""}"></span>${p.name}`;
+    opt.addEventListener("click", () => {
+      if (!draft.only) return;
+      draft.profiles = draft.profiles.includes(p.id) ? draft.profiles.filter(x => x !== p.id) : [...draft.profiles, p.id];
+      renderDialog();
+    });
+    list.appendChild(opt);
+  });
+  const name = $("termField").value.trim();
+  $("ok").disabled = !name || (draft.only && !draft.profiles.length);
+}
+$("keyToggle").addEventListener("click", () => { draft.key = !draft.key; renderDialog(); });
+$("scopeAll").addEventListener("click", () => { draft.only = false; renderDialog(); });
+$("scopeSome").addEventListener("click", () => { draft.only = true; renderDialog(); });
+$("termField").addEventListener("input", renderDialog);
+$("cancel").addEventListener("click", closeDialog);
+$("dialogDelete").addEventListener("click", () => { terms.splice(editing, 1); selected = -1; closeDialog(); });
+$("ok").addEventListener("click", () => {
+  const order = PROFILES.map(p => p.id);
+  const t = {
+    term: $("termField").value.trim(),
+    key: draft.key,
+    context: $("contextField").value.trim(),
+    profiles: draft.only ? order.filter(id => draft.profiles.includes(id)) : [],
+  };
+  if (editing < 0) {
+    terms.unshift({ ...t, source: "Added", uses: 0, last: "Never" });
+    selected = 0;
+  } else {
+    Object.assign(terms[editing], t);
+  }
+  closeDialog();
+});
+function closeDialog() { $("scrim").classList.remove("open"); render(); }
+
+$("add").addEventListener("click", () => openDialog(-1));
+$("edit").addEventListener("click", () => selected >= 0 && openDialog(selected));
+$("delete").addEventListener("click", () => { if (selected >= 0) { terms.splice(selected, 1); selected = -1; render(); } });
+
+// ------------------------------------------------- mockup-only panel
+PROFILES.forEach(p => $("profileSelect").add(new Option(p.name, p.id)));
+$("profileSelect").addEventListener("change", renderPayload);
+function renderPayload() {
+  const profile = $("profileSelect").value;
+  const active = terms.filter(t => !t.profiles.length || t.profiles.includes(profile));
+  const keys = active.filter(t => t.key);
+  $("speechTerms").innerHTML = keys.length
+    ? keys.map(t => `<span class="chip">${esc(t.term)}</span>`).join("")
+    : '<span class="none">none</span>';
+  const vocab = active.map(t => t.context ? { term: t.term, context: t.context } : t.term);
+  // One entry per line, so the whole list fits beside the window.
+  const json = '{\n  "mode": "refine_dictation",\n  "raw_transcript": "…",\n  "preferred_vocabulary": [\n'
+    + vocab.map(v => "    " + JSON.stringify(v).replace('{"term":', '{ "term": ').replace(',"context":', ', "context": ').replace(/}$/, " }")).join(",\n")
+    + "\n  ]\n}";
+  $("payload").innerHTML = esc(json)
+    .replace(/&quot;(\w+)&quot;:/g, '<span class="k">"$1"</span>:')
+    .replace(/: &quot;([^]*?)&quot;/g, ': <span class="s">"$1"</span>');
+}
+
+render();
+</script>
+</body>
+</html>

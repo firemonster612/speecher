@@ -32,6 +32,8 @@ struct RowOption {
 enum class ColumnKind {
     Text,
     Choice,
+    // Any number of the options, held as a QStringList of their ids.
+    ChoiceSet,
     Toggle,
     ReadOnly,
 };
@@ -60,7 +62,23 @@ struct CollectionColumn {
     // Filled in where a record is added or edited, but left out of the table:
     // a detail that would crowd it, such as what a cleanup level builds on.
     bool dialogOnly = false;
+    // Said under the field where a record is added or edited.
+    QString help;
+    // Text columns only: the id of another column whose value the table shows
+    // as a muted second line under this one's, such as a term's context.
+    QString detailColumn;
+    // ChoiceSet columns only. An empty set means every option: its cell says
+    // everyLabel, and where a record is edited it is the everyChoice of two,
+    // the other being someChoice with a box per option under it. someChoice
+    // with no box ticked cannot be kept.
+    QString everyLabel;
+    QString everyChoice;
+    QString someChoice;
 };
+
+// What a ChoiceSet cell says for a record's ids: their options' labels, in the
+// options' order, or the column's everyLabel when none is an option.
+QString choiceSetText(const CollectionColumn &column, const QStringList &ids, const AppSettings &settings);
 
 // Records a collection can be filled from a file with. Core owns the parse; the
 // file chooser and the refusal belong to the front end.
@@ -96,6 +114,9 @@ struct CollectionDescriptor {
     // The title of the dialog or sheet that fills in a new record, where a
     // front end adds through one.
     QString addDialogTitle;
+    // The command that opens the selected record in the same dialog or sheet,
+    // titled after the record. Empty where records are only edited in place.
+    QString editLabel;
     // The command that deletes records, the selection's or one row's. There is
     // no confirmation: every editor can undo a delete.
     QString deleteLabel = QStringLiteral("Delete");

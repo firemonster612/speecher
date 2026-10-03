@@ -77,6 +77,10 @@ struct VocabularyEntry {
     bool starred = false;
     int frequency = 0;
     qint64 lastUsedMs = 0;
+    // What the term means and when it applies, for refinement. Empty for none.
+    QString context;
+    // The Writing Profiles the term is limited to, by id. Empty for every one.
+    QStringList profiles;
 
     bool operator==(const VocabularyEntry &other) const = default;
 };

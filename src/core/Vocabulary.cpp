@@ -1,4 +1,5 @@
 #include "core/Vocabulary.h"
+#include "core/VocabularyLimit.h"
 
 #include <QRegularExpression>
 #include <QStringList>
@@ -102,6 +103,43 @@ bool containsVocabularyTerm(const QString &text, const QString &term)
     return false;
 }
 
+bool vocabularyEntryApplies(const VocabularyEntry &entry, const QString &writingProfile)
+{
+    return entry.profiles.isEmpty() || entry.profiles.contains(writingProfile);
+}
+
+QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
+                             const QList<LearnedCorrection> &corrections,
+                             const QString &writingProfile)
+{
+    QStringList terms;
+    for (const VocabularyEntry &entry : normalizeVocabularyEntries(entries)) {
+        if (writingProfile.isEmpty() || vocabularyEntryApplies(entry, writingProfile)) {
+            terms.append(entry.term);
+        }
+    }
+    // Corrections sit last, so an over-cap list drops them before any term
+    // the person typed.
+    for (const LearnedCorrection &correction : corrections) {
+        if (correction.enabled && !terms.contains(correction.corrected, Qt::CaseInsensitive)) {
+            terms.append(correction.corrected);
+        }
+    }
+    return VocabularyLimit::limited(terms);
+}
+
+QStringList offeredVocabularyProfiles(const QStringList &ids,
+                                      const QList<WritingProfileSettings> &profiles)
+{
+    QStringList offered;
+    for (const QString &id : ids) {
+        if (!offeredWritingProfile(id, profiles, QString()).isEmpty()) {
+            offered.append(id);
+        }
+    }
+    return offered;
+}
+
 QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &entries)
 {
     QList<VocabularyEntry> normalized;
@@ -113,6 +151,9 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
         }
         entry.frequency = qMax(0, entry.frequency);
         entry.lastUsedMs = qMax<qint64>(0, entry.lastUsedMs);
+        entry.context = entry.context.trimmed();
+        entry.profiles.removeAll(QString());
+        entry.profiles.removeDuplicates();
         if (entry.term.isEmpty()) {
             continue;
         }
@@ -125,6 +166,17 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
             duplicate->starred = duplicate->starred || entry.starred;
             duplicate->frequency = qMax(duplicate->frequency, entry.frequency);
             duplicate->lastUsedMs = qMax(duplicate->lastUsedMs, entry.lastUsedMs);
+            if (duplicate->context.isEmpty()) {
+                duplicate->context = entry.context;
+            }
+            // Either copy unlimited leaves the term unlimited; otherwise it
+            // applies wherever either copy did.
+            if (duplicate->profiles.isEmpty() || entry.profiles.isEmpty()) {
+                duplicate->profiles.clear();
+            } else {
+                duplicate->profiles.append(entry.profiles);
+                duplicate->profiles.removeDuplicates();
+            }
         }
     }
     std::sort(normalized.begin(), normalized.end(), [](const VocabularyEntry &left, const VocabularyEntry &right) {
@@ -168,6 +220,8 @@ QList<VocabularyEntry> parseVocabularyCsv(const QByteArray &csv, QString *error)
     const int lastUsedColumn = hasHeader
         ? column(header, QStringLiteral("last_used_ms"), column(header, QStringLiteral("last_used")))
         : 4;
+    const int contextColumn = hasHeader ? column(header, QStringLiteral("context")) : 5;
+    const int profilesColumn = hasHeader ? column(header, QStringLiteral("profiles")) : 6;
 
     QList<VocabularyEntry> entries;
     for (int index = hasHeader ? 1 : 0; index < rows.size(); ++index) {
@@ -185,6 +239,11 @@ QList<VocabularyEntry> parseVocabularyCsv(const QByteArray &csv, QString *error)
             || starred == QStringLiteral("starred");
         entry.frequency = fieldAt(row, frequencyColumn).toInt();
         entry.lastUsedMs = fieldAt(row, lastUsedColumn).toLongLong();
+        entry.context = fieldAt(row, contextColumn);
+        // Profile ids, separated by semicolons since commas separate fields.
+        for (const QString &profile : fieldAt(row, profilesColumn).split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+            entry.profiles.append(profile.trimmed());
+        }
         entries.append(entry);
     }
     return normalizeVocabularyEntries(entries);

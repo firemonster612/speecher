@@ -46,6 +46,8 @@ const QString kStarColumn = QStringLiteral("starred");
 const QString kTermColumn = QStringLiteral("term");
 const QString kUsesColumn = QStringLiteral("uses");
 const QString kLastUsedColumn = QStringLiteral("lastUsed");
+const QString kContextColumn = QStringLiteral("context");
+const QString kProfilesColumn = QStringLiteral("profiles");
 const QString kHeardColumn = QStringLiteral("original");
 const QString kCorrectedColumn = QStringLiteral("corrected");
 const QString kCorrectedAppColumn = QStringLiteral("applicationId");
@@ -2089,6 +2091,8 @@ QList<QVariantMap> vocabularyRecords(const QList<VocabularyEntry> &entries)
             {kUsesColumn, qMax(0, entry.frequency)},
             {kLastUsedColumn, lastUsedLabel(entry.lastUsedMs)},
             {kLastUsedMsKey, entry.lastUsedMs},
+            {kContextColumn, entry.context},
+            {kProfilesColumn, entry.profiles},
         });
     }
     return records;
@@ -2107,7 +2111,9 @@ QList<VocabularyEntry> vocabularyEntries(const QList<QVariantMap> &records)
                         record.value(kSourceIdKey).toString(),
                         record.value(kStarColumn).toBool(),
                         record.value(kUsesColumn).toInt(),
-                        record.value(kLastUsedMsKey).toLongLong()});
+                        record.value(kLastUsedMsKey).toLongLong(),
+                        record.value(kContextColumn).toString(),
+                        record.value(kProfilesColumn).toStringList()});
     }
     return normalizeVocabularyEntries(entries);
 }
@@ -2116,9 +2122,27 @@ SettingsPage vocabularyPage()
 {
     CollectionDescriptor terms;
     terms.identityColumn = kTermColumn;
+    CollectionColumn term{kTermColumn, QStringLiteral("Term"), ColumnKind::Text, {}, true};
+    term.detailColumn = kContextColumn;
+    CollectionColumn context{kContextColumn, QStringLiteral("Context"), ColumnKind::Text};
+    context.multiline = true;
+    context.dialogOnly = true;
+    context.placeholder = QStringLiteral("What it means and when it applies, such as "
+                                         "\"the container platform, when I talk about clusters or deploys\".");
+    context.help = QStringLiteral("Refinement reads this to decide when the words you said mean this term.");
+    CollectionColumn profiles{kProfilesColumn, QStringLiteral("Profiles"), ColumnKind::ChoiceSet,
+                              [](const AppSettings &settings) {
+                                  return writingProfileChoices(settings.refinement.writingProfiles);
+                              }};
+    profiles.everyLabel = QStringLiteral("All");
+    profiles.everyChoice = QStringLiteral("Every Writing Profile");
+    profiles.someChoice = QStringLiteral("Only these Writing Profiles:");
+    profiles.help = QStringLiteral("Under any other profile, neither refinement nor the speech service gets this term.");
     terms.columns = {
         {kStarColumn, QStringLiteral("Key term"), ColumnKind::Toggle},
-        {kTermColumn, QStringLiteral("Term"), ColumnKind::Text, {}, true},
+        term,
+        context,
+        profiles,
         {kSourceColumn, QStringLiteral("Source"), ColumnKind::ReadOnly},
         {kUsesColumn, QStringLiteral("Uses"), ColumnKind::ReadOnly},
         {kLastUsedColumn, QStringLiteral("Last used"), ColumnKind::ReadOnly},
@@ -2137,7 +2161,9 @@ SettingsPage vocabularyPage()
                          {kSourceIdKey, QStringLiteral("manual")},
                          {kUsesColumn, 0},
                          {kLastUsedColumn, lastUsedLabel(0)},
-                         {kLastUsedMsKey, qint64(0)}};
+                         {kLastUsedMsKey, qint64(0)},
+                         {kContextColumn, QString()},
+                         {kProfilesColumn, QStringList()}};
     terms.badges = [](const QList<QVariantMap> &records, const AppSettings &settings) {
         QStringList badges(records.size());
         // The same entries the settings would store, so the badges follow
@@ -2155,6 +2181,7 @@ SettingsPage vocabularyPage()
     };
     terms.addLabel = QStringLiteral("Add");
     terms.addDialogTitle = QStringLiteral("New term");
+    terms.editLabel = QStringLiteral("Edit…");
     terms.emptyTitle = QStringLiteral("No vocabulary terms");
     terms.emptyHelp = QStringLiteral("Add names and words the speech service should spell your way.");
     terms.supportsImport = {
@@ -2179,7 +2206,8 @@ SettingsPage vocabularyPage()
             settings.speech.providerId));
     };
 
-    const QString help = QStringLiteral("Refinement uses every term. Key terms also go to the speech service.");
+    const QString help = QStringLiteral("Refinement uses the terms for the dictation's Writing Profile. "
+                                        "Key terms also go to the speech service.");
     // The view names it, so the table needs no label of its own.
     SettingsRow entries = collectionRow(QStringLiteral("vocabularyEntries"),
                                         QString(),
@@ -2192,7 +2220,7 @@ SettingsPage vocabularyPage()
             : provider == QStringLiteral("endpoint")
             ? QStringLiteral("Key terms also go to the Custom Endpoint, as its prompt.")
             : QStringLiteral("This speech service takes no key terms.");
-        return QStringLiteral("Refinement uses every term. ") + speech;
+        return QStringLiteral("Refinement uses the terms for the dictation's Writing Profile. ") + speech;
     };
 
     return {
@@ -3393,6 +3421,17 @@ QString customChoiceId(const QString &name, const QStringList &taken)
         id = base + QStringLiteral("_%1").arg(suffix);
     }
     return id;
+}
+
+QString choiceSetText(const CollectionColumn &column, const QStringList &ids, const AppSettings &settings)
+{
+    QStringList labels;
+    for (const RowOption &option : column.options(settings)) {
+        if (ids.contains(option.id)) {
+            labels.append(option.label);
+        }
+    }
+    return labels.isEmpty() ? column.everyLabel : labels.join(QStringLiteral(", "));
 }
 
 QList<RowOption> writingProfileChoices(const QList<WritingProfileSettings> &profiles)
