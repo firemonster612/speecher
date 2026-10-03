@@ -60,6 +60,9 @@ constexpr int kPreviewStripSpacing = 8;
 // rounded everywhere.
 constexpr qreal kContourFillet = 12.0;   // the concave turn from shoulder into lobe
 constexpr qreal kLobePad = 10.0;         // lobe air either side of the strip's ink
+// The gap between each session button and the dots, and from each button to
+// the tab's rounded end, as on the macOS and Windows popups.
+constexpr int kSessionButtonGap = 12;
 // The shoulder sits as far below the text as the pill's top sits above it,
 // so the wide bar reads evenly padded around the preview line.
 constexpr qreal kShoulderDrop = kPreviewMargins.top();
@@ -129,12 +132,12 @@ private:
         qreal lobeLeft = stripCenter - lobeHalf;
         qreal lobeRight = stripCenter + lobeHalf;
         // The buttons either side of the strip sit inside the lobe too,
-        // with the same air beside them as the strip's ink has.
+        // as far from its rounded ends as from the dots.
         for (const QWidget *button : m_beside) {
             if (button->isVisible()) {
                 const qreal left = button->mapTo(this, QPoint(0, 0)).x();
-                lobeLeft = std::min(lobeLeft, left - kLobePad);
-                lobeRight = std::max(lobeRight, left + button->width() + kLobePad);
+                lobeLeft = std::min(lobeLeft, left - kSessionButtonGap);
+                lobeRight = std::max(lobeRight, left + button->width() + kSessionButtonGap);
             }
         }
         const qreal lobeHeight = pillRect.bottom() - shoulderY;
@@ -450,8 +453,8 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     auto *waveformRow = new QHBoxLayout;
     // Clear of the capsule's rounded ends when there are no words, by the
     // same air the lobe leaves beside them under words.
-    waveformRow->setContentsMargins(int(kLobePad), 0, int(kLobePad), 0);
-    waveformRow->setSpacing(4);
+    waveformRow->setContentsMargins(kSessionButtonGap, 0, kSessionButtonGap, 0);
+    waveformRow->setSpacing(kSessionButtonGap);
     waveformRow->addStretch();
     waveformRow->addWidget(m_pauseButton, 0, Qt::AlignVCenter);
     waveformRow->addWidget(m_waveform, 0, Qt::AlignVCenter);
@@ -986,6 +989,9 @@ void TranscriberPopup::applySessionControls()
     m_pauseButton->setToolTip(pauseText);
     m_pauseButton->setAccessibleName(pauseText);
     m_cancelButton->setVisible(controls.cancelVisible);
+    // Beside the buttons the strip is only as wide as its dots, so the tab
+    // hugs them.
+    m_waveform->setHugsInk(controls.pauseVisible || controls.cancelVisible);
 }
 
 void TranscriberPopup::restoreStandardLayout()

@@ -85,9 +85,9 @@ void WaveformWidget::applyGeometry()
     const int height = m_compact
         ? (showsText ? fontMetrics().height() + 6 : compactStripHeight)
         : std::max(pillHeight, fontMetrics().height() + 10);
-    const int width = m_message.isEmpty()
-        ? pillWidth
-        : std::max(pillWidth, contentWidth() + 32);
+    const int width = !m_message.isEmpty() ? std::max(pillWidth, contentWidth() + 32)
+        : m_hugsInk ? contentWidth()
+                    : pillWidth;
     setFixedSize(width, height);
 }
 
@@ -107,6 +107,16 @@ void WaveformWidget::setCompact(bool compact)
         return;
     }
     m_compact = compact;
+    applyGeometry();
+    update();
+}
+
+void WaveformWidget::setHugsInk(bool hugs)
+{
+    if (m_hugsInk == hugs) {
+        return;
+    }
+    m_hugsInk = hugs;
     applyGeometry();
     update();
 }
