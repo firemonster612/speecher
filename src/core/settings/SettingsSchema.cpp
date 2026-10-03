@@ -48,6 +48,7 @@ const QString kUsesColumn = QStringLiteral("uses");
 const QString kLastUsedColumn = QStringLiteral("lastUsed");
 const QString kContextColumn = QStringLiteral("context");
 const QString kKeyTermColumn = QStringLiteral("keyTerm");
+const QString kSpeechColumn = QStringLiteral("speech");
 const QString kProfilesColumn = QStringLiteral("profiles");
 const QString kHeardColumn = QStringLiteral("original");
 const QString kCorrectedColumn = QStringLiteral("corrected");
@@ -2162,9 +2163,10 @@ SettingsPage vocabularyPage()
     priority.enabledBy = kKeyTermColumn;
     priority.help = QStringLiteral("Puts the key term first in line for the speech service, so it stays "
                                    "in when the list is longer than the service takes.");
-    // The table shows both as badges, so neither takes a column.
+    // The table shows both as badges in a column of their own.
     terms.columns = {
         term,
+        {kSpeechColumn, QStringLiteral("Speech"), ColumnKind::Badges},
         keyTerm,
         priority,
         context,
@@ -2207,7 +2209,7 @@ SettingsPage vocabularyPage()
         return badges;
     };
     // Priority only means anything for a key term.
-    terms.detailBadges = [](const QList<QVariantMap> &records, const AppSettings &) {
+    terms.secondBadges = [](const QList<QVariantMap> &records, const AppSettings &) {
         QStringList badges(records.size());
         for (int index = 0; index < records.size(); ++index) {
             const QVariantMap &record = records.at(index);

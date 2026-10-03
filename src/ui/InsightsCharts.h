@@ -121,7 +121,7 @@ private:
 // DetailRole adds one more line under the text, elided, which the style draws
 // in the placeholder colour, such as a vocabulary term's context.
 // DetailBadgeRole starts that line with a second, Neutral pill, such as a
-// vocabulary term's priority.
+// vocabulary term's priority. With no text, the cell holds only the pills.
 class BadgeDelegate final : public QStyledItemDelegate {
 public:
     static constexpr int TextRole = Qt::UserRole + 16;

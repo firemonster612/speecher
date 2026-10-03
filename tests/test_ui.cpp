@@ -1063,8 +1063,9 @@ private slots:
 
         auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
         QVERIFY(table);
+        // The Speech column holds the pills.
         const auto badge = [table](int row, int role = BadgeDelegate::TextRole) {
-            return table->item(row, 0)->data(role).toString();
+            return table->item(row, 1)->data(role).toString();
         };
         QCOMPARE(badge(0), QStringLiteral("Key term"));
         QCOMPARE(badge(100), QString());
@@ -1189,7 +1190,7 @@ private slots:
         QVERIFY(ok->isEnabled());
         acceptRecordDialog(dialog);
 
-        QCOMPARE(table->item(0, 1)->text(), QStringLiteral("Work"));
+        QCOMPARE(table->item(0, 2)->text(), QStringLiteral("Work"));
         AppSettings applied;
         page->appendToDraft(applied);
         QCOMPARE(applied.vocabulary.first().context, QStringLiteral("The container platform."));

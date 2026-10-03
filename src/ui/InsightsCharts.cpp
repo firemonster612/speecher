@@ -537,6 +537,23 @@ void BadgeDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
     const int margin = style->pixelMetric(QStyle::PM_FocusFrameHMargin, &item, widget) + 1;
     const QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &item, widget)
                                .adjusted(margin, 0, -margin, 0);
+    if (item.text.isEmpty() && detail.isEmpty()) {
+        // Pills alone: one block, the second under the first, centred in the
+        // row the way a line of text would be.
+        style->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
+        const QSize first = Badge::sizeFor(item.font, text);
+        const QSize second = detailBadge.isEmpty() ? QSize() : Badge::sizeFor(item.font, detailBadge);
+        const int gap = detailBadge.isEmpty() ? 0 : badgeGap() / 2;
+        int top = textRect.center().y() - (first.height() + gap + second.height()) / 2;
+        Badge::paint(*painter, QRect(QPoint(textRect.left(), top), first), text,
+                     Badge::Tone(index.data(ToneRole).toInt()), item.palette);
+        if (!detailBadge.isEmpty()) {
+            top += first.height() + gap;
+            Badge::paint(*painter, QRect(QPoint(textRect.left(), top), second), detailBadge,
+                         Badge::Tone::Neutral, item.palette);
+        }
+        return;
+    }
     // A blank last line the style lays out with the rest, for the detail.
     const bool detailed = !detail.isEmpty() || !detailBadge.isEmpty();
     if (detailed) {
@@ -596,8 +613,12 @@ QSize BadgeDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIn
     for (const QString &line : lines) {
         widest = std::max(widest, item.fontMetrics.horizontalAdvance(line));
     }
-    const int badged = item.fontMetrics.horizontalAdvance(lines.first()) + badgeGap()
-        + Badge::sizeFor(item.font, text).width();
+    // Room for the pill after the text, or for the wider pill where the cell
+    // holds only pills.
+    const int pill = Badge::sizeFor(item.font, text).width();
+    const int badged = lines.first().isEmpty()
+        ? std::max(pill, Badge::sizeFor(item.font, index.data(DetailBadgeRole).toString()).width())
+        : item.fontMetrics.horizontalAdvance(lines.first()) + badgeGap() + pill;
     size.rwidth() += std::max(0, badged - widest);
     return size;
 }

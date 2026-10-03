@@ -34,6 +34,9 @@ enum class ColumnKind {
     Choice,
     // Any number of the options, held as a QStringList of their ids.
     ChoiceSet,
+    // The collection's badges and secondBadges for the record, as pills; it
+    // holds no value of its own and is never a field where records are edited.
+    Badges,
     Toggle,
     ReadOnly,
 };
@@ -136,15 +139,15 @@ struct CollectionDescriptor {
     // because both of today's two undo its own edit history.
     QList<RowOption> actions;
     int minimumHeight = 0;
-    // A short label shown as a pill beside a record's stretch column, one per
-    // record in order, empty for none: which vocabulary terms the speech
-    // service receives. It depends on the other records, so a front end asks
-    // again with its current records each time it redraws them.
+    // Short labels shown as pills in the collection's Badges column, one per
+    // record in order, empty for none. badges are in the accent tone, such as
+    // which vocabulary terms the speech service receives; secondBadges sit
+    // under them in a neutral tone, such as which terms have priority. A
+    // record with only one shows it alone. They depend on the other records,
+    // so a front end asks again with its current records each time it redraws
+    // them.
     std::function<QStringList(const QList<QVariantMap> &, const AppSettings &)> badges;
-    // A second pill, at the start of the stretch column's detail line rather
-    // than beside its text, where two would leave the text no room: which
-    // vocabulary terms have priority. Asked for as badges are.
-    std::function<QStringList(const QList<QVariantMap> &, const AppSettings &)> detailBadges;
+    std::function<QStringList(const QList<QVariantMap> &, const AppSettings &)> secondBadges;
 };
 
 struct NumberRange {

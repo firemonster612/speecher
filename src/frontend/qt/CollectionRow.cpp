@@ -236,7 +236,7 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
     bool detailed = false;
     for (int column = 0; column < m_columns.size(); ++column) {
         const CollectionColumn &shown = m_columns.at(column);
-        if ((m_collection.badges && shown.stretch) || !shown.detailColumn.isEmpty()) {
+        if (shown.kind == ColumnKind::Badges || !shown.detailColumn.isEmpty()) {
             m_table->setItemDelegateForColumn(column, new BadgeDelegate(m_table));
         }
         detailed = detailed || !shown.detailColumn.isEmpty();
@@ -412,6 +412,11 @@ void CollectionEditor::appendRecord(const QVariantMap &record, bool locked)
             m_table->setCellWidget(row, index, combo);
             continue;
         }
+        // The pills are item data refresh() sets.
+        if (column.kind == ColumnKind::Badges) {
+            m_table->setItem(row, index, readOnlyItem(QString()));
+            continue;
+        }
         // Text is edited in the record dialog, so its cells only show it.
         QString text = value.toString();
         if (column.kind == ColumnKind::Choice) {
@@ -448,7 +453,8 @@ QList<QVariantMap> CollectionEditor::records() const
                 continue;
             }
             // Its cell only names the options; the ids stay in the record.
-            if (column.kind == ColumnKind::ChoiceSet) {
+            // A Badges cell holds nothing of the record's.
+            if (column.kind == ColumnKind::ChoiceSet || column.kind == ColumnKind::Badges) {
                 continue;
             }
             const QTableWidgetItem *item = m_table->item(row, index);
@@ -495,24 +501,30 @@ void CollectionEditor::refresh(const AppSettings &settings)
 {
     m_settings = settings;
     showChoiceSets();
-    if (!m_collection.badges && !m_collection.detailBadges) {
+    const auto badgeColumn = std::find_if(m_columns.cbegin(), m_columns.cend(), [](const CollectionColumn &column) {
+        return column.kind == ColumnKind::Badges;
+    });
+    if (badgeColumn == m_columns.cend()) {
         return;
     }
-    const auto stretch = std::find_if(m_columns.cbegin(), m_columns.cend(),
-                                      [](const CollectionColumn &column) { return column.stretch; });
-    const int column = int(stretch - m_columns.cbegin());
+    const int column = int(badgeColumn - m_columns.cbegin());
     const QList<QVariantMap> shown = lockedRecords() + records();
     const QStringList badges = m_collection.badges ? m_collection.badges(shown, settings) : QStringList();
-    const QStringList detailBadges =
-        m_collection.detailBadges ? m_collection.detailBadges(shown, settings) : QStringList();
+    const QStringList secondBadges =
+        m_collection.secondBadges ? m_collection.secondBadges(shown, settings) : QStringList();
     // Item data, not text, so it is no edit: nothing announces a change.
     const QSignalBlocker blocker(m_table);
     for (int row = 0; row < m_table->rowCount(); ++row) {
-        if (QTableWidgetItem *item = m_table->item(row, column)) {
-            item->setData(BadgeDelegate::TextRole, badges.value(row));
-            item->setData(BadgeDelegate::ToneRole, int(Badge::Tone::Accent));
-            item->setData(BadgeDelegate::DetailBadgeRole, detailBadges.value(row));
+        QTableWidgetItem *item = m_table->item(row, column);
+        if (!item) {
+            continue;
         }
+        // The accent pill above the neutral one; a lone pill takes the top.
+        const QString first = badges.value(row);
+        const QString second = secondBadges.value(row);
+        item->setData(BadgeDelegate::TextRole, first.isEmpty() ? second : first);
+        item->setData(BadgeDelegate::ToneRole, int(first.isEmpty() ? Badge::Tone::Neutral : Badge::Tone::Accent));
+        item->setData(BadgeDelegate::DetailBadgeRole, first.isEmpty() ? QString() : second);
     }
 }
 
