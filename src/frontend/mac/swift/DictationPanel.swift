@@ -410,15 +410,15 @@ struct DictationPanelView: View {
     /// A round button beside the waveform; the panel never becomes key, so
     /// clicking it leaves the Target focused.
     private func sessionButton(_ caption: String, symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .imageScale(.small)
-        }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.circle)
-        .frame(width: sessionButtonSize, height: sessionButtonSize)
-        .help(caption)
-        .accessibilityLabel(caption)
+        // A titled Label shown icon-only, so the button carries its name for
+        // VoiceOver and automation, as Home's buttons do.
+        Button(caption, systemImage: symbol, action: action)
+            .labelStyle(.iconOnly)
+            .imageScale(.small)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
+            .frame(width: sessionButtonSize, height: sessionButtonSize)
+            .help(caption)
     }
 
     /// Whether the dictation has ended in an outcome ("Input sent") rather
