@@ -832,24 +832,20 @@ QPushButton *HomePage::buildShareButton(QWidget *parent)
             button->setToolTip(QString());
         });
     };
-    const auto current = [this] {
-        return summarize(m_controller->insightsLog()->records(), currentRange(), m_summarizedDay,
-                         m_controller->settings()->writingProfileSettings());
-    };
     auto *menu = new QMenu(button);
     connect(menu->addAction(themedIcon(QStringLiteral("image-x-generic")), labels.copyImage),
-            &QAction::triggered, this, [this, current, report, labels] {
-                QGuiApplication::clipboard()->setImage(statsImage(current(), currentRange(), m_measure));
+            &QAction::triggered, this, [this, report, labels] {
+                copyStatsImage();
                 report(labels.copied);
             });
     connect(menu->addAction(themedIcon(QStringLiteral("edit-copy")), labels.copyText),
-            &QAction::triggered, this, [this, current, report, labels] {
-                QGuiApplication::clipboard()->setText(insightsShareText(current(), currentRange()));
+            &QAction::triggered, this, [this, report, labels] {
+                QGuiApplication::clipboard()->setText(insightsShareText(currentSummary(), currentRange()));
                 report(labels.copied);
             });
     menu->addSeparator();
     connect(menu->addAction(themedIcon(QStringLiteral("document-save-as")), labels.saveJson),
-            &QAction::triggered, this, [this, current, report, labels] {
+            &QAction::triggered, this, [this, report, labels] {
                 const QString suggested =
                     QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
                         .filePath(insightsJsonFileName(m_summarizedDay));
@@ -858,7 +854,7 @@ QPushButton *HomePage::buildShareButton(QWidget *parent)
                 if (path.isEmpty()) return;
                 QSaveFile file(path);
                 if (file.open(QIODevice::WriteOnly)
-                    && file.write(insightsJson(current(), currentRange(), m_summarizedDay)) >= 0
+                    && file.write(insightsJson(currentSummary(), currentRange(), m_summarizedDay)) >= 0
                     && file.commit()) {
                     report(labels.saved);
                 } else {
@@ -867,6 +863,17 @@ QPushButton *HomePage::buildShareButton(QWidget *parent)
             });
     button->setMenu(menu);
     return button;
+}
+
+void HomePage::copyStatsImage()
+{
+    QGuiApplication::clipboard()->setImage(statsImage(currentSummary(), currentRange(), m_measure));
+}
+
+InsightsSummary HomePage::currentSummary() const
+{
+    return summarize(m_controller->insightsLog()->records(), currentRange(), m_summarizedDay,
+                     m_controller->settings()->writingProfileSettings());
 }
 
 InsightsRange HomePage::currentRange() const

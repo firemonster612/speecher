@@ -184,10 +184,15 @@ struct HomePane: View {
         }
     }
 
-    /// Share: the stats as text on the clipboard, or saved as JSON. The
-    /// image the Linux Home also copies is left out here.
+    /// Share: the stats as an image or text on the clipboard, or saved as
+    /// JSON.
     private var shareMenu: some View {
         Menu(shareReport ?? model.homeLabel("share"), systemImage: "square.and.arrow.up") {
+            Button(model.homeLabel("copyImage"), systemImage: "photo") {
+                if model.copyStatsImage(measure: measure) {
+                    report(model.homeLabel("copied"))
+                }
+            }
             Button(model.homeLabel("copyText"), systemImage: "doc.on.doc") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(insights.shareText, forType: .string)
@@ -323,17 +328,7 @@ struct HomePane: View {
                 .fixedSize()
             }
         } footer: {
-            HStack {
-                Text(insights.activeDaysLastYearText)
-                Spacer()
-                Text(model.homeLabel("legendLess"))
-                ForEach(0..<5) { level in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(heatColor(level, insights.heatStrengths))
-                        .frame(width: ActivityHeatmap.cell, height: ActivityHeatmap.cell)
-                }
-                Text(model.homeLabel("legendMore"))
-            }
+            HeatFooter(model: model)
         }
     }
 
@@ -514,6 +509,8 @@ private struct ActivityHeatmap: View {
     let rowLabels: [String]
     let strengths: [NSNumber]
     let measure: HeatMeasure
+    /// Every week, whatever the width: the shared image has no width to fit.
+    var showsAllWeeks = false
     @State private var width: CGFloat = 0
     /// The day under the pointer, outlined and described at once rather than
     /// after the system's tooltip delay.
@@ -529,7 +526,7 @@ private struct ActivityHeatmap: View {
 
     var body: some View {
         // Whole weeks only: the gap follows every column but the last.
-        let fitting = Int((width - Self.labelWidth + gap) / (Self.cell + gap))
+        let fitting = showsAllWeeks ? weeks.count : Int((width - Self.labelWidth + gap) / (Self.cell + gap))
         let columns = Array(weeks.suffix(max(fitting, 1)))
         let months = Array(monthLabels.suffix(columns.count))
         HStack(alignment: .top, spacing: 0) {
@@ -593,6 +590,104 @@ private struct ActivityHeatmap: View {
 
     private func tooltip(_ day: SpeecherInsightsDayModel) -> String {
         day.tips.indices.contains(measure.rawValue) ? day.tips[measure.rawValue] : ""
+    }
+}
+
+/// Under the heatmap: the active days, then the Less-to-More legend.
+private struct HeatFooter: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        HStack {
+            Text(model.insights.activeDaysLastYearText)
+            Spacer()
+            Text(model.homeLabel("legendLess"))
+            ForEach(0..<5) { level in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(heatColor(level, model.insights.heatStrengths))
+                    .frame(width: ActivityHeatmap.cell, height: ActivityHeatmap.cell)
+            }
+            Text(model.homeLabel("legendMore"))
+        }
+    }
+}
+
+// MARK: Shared image
+
+/// The picture "Copy image with stats" puts on the pasteboard, as on Linux
+/// and Windows: the period's four figures over the year's heatmap. ImageRenderer
+/// cannot draw a grouped Form, which AppKit backs, so the card is the Form
+/// section's look in the system's own colours.
+private struct StatsImage: View {
+    @ObservedObject var model: AppModel
+    let measure: HeatMeasure
+
+    var body: some View {
+        let insights = model.insights
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(model.homeLabel("imageTitle")).font(.headline)
+                Spacer(minLength: 24)
+                Text(model.bridge.insightsRangeLabel(model.insightsRange)).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .top, spacing: 32) {
+                // The tiles' figures, in their order and under their titles.
+                ForEach(insights.tiles, id: \.title) { tile in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(tile.title).foregroundStyle(.secondary)
+                        Text(tile.unit.isEmpty ? tile.value : "\(tile.value) \(tile.unit)")
+                            .font(.title2.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                }
+            }
+            if !insights.imagePaceLine.isEmpty {
+                Text(insights.imagePaceLine).foregroundStyle(.secondary)
+            }
+            ActivityHeatmap(days: insights.heatmap, monthLabels: insights.weekMonthLabels,
+                            rowLabels: insights.heatmapRowLabels, strengths: insights.heatStrengths,
+                            measure: measure, showsAllWeeks: true)
+            HeatFooter(model: model)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .fixedSize()
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(nsColor: .separatorColor)))
+        .padding(24)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+extension AppModel {
+    /// What Home's "Copy image with stats" does: the period's stats as a
+    /// picture on the pasteboard, at twice the scale as on Linux and Windows
+    /// so it stays sharp wherever it is pasted. False if it could not be drawn.
+    @MainActor
+    fileprivate func copyStatsImage(measure: HeatMeasure) -> Bool {
+        let appearance = NSApp.effectiveAppearance
+        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let renderer = ImageRenderer(content: StatsImage(model: self, measure: measure)
+            .environment(\.colorScheme, dark ? .dark : .light))
+        renderer.scale = 2
+        // The system colours resolve against the drawing appearance.
+        var image: CGImage?
+        appearance.performAsCurrentDrawingAppearance { image = renderer.cgImage }
+        guard let image else { return false }
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        guard let png = bitmap.representation(using: .png, properties: [:]), let tiff = bitmap.tiffRepresentation
+        else { return false }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        return pasteboard.setData(png, forType: .png) && pasteboard.setData(tiff, forType: .tiff)
+    }
+
+    /// The stats-image grab: Home's picture at its default measure.
+    @MainActor
+    func copyStatsImage() -> Bool {
+        refreshInsights()
+        return copyStatsImage(measure: .dictations)
     }
 }
 

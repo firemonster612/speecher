@@ -7,6 +7,7 @@
 #include "app/UpdateController.h"
 #include "dictation/DictationSession.h"
 #include "ui/AppWindow.h"
+#include "ui/HomePage.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscribePage.h"
 #include "ui/TranscribeWindow.h"
@@ -19,6 +20,8 @@
 
 #include <QApplication>
 #include <QAbstractButton>
+#include <QClipboard>
+#include <QImage>
 #include <QListWidget>
 #include <QPushButton>
 #include <QScrollArea>
@@ -251,6 +254,18 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
         const bool saved = assistant->grab().save(path);
         assistant->deleteLater();
         return saved;
+    }
+    // "stats-image" saves the picture Home's Share menu copies, read back
+    // from the clipboard.
+    if (request.first() == QStringLiteral("stats-image")) {
+        m_appWindow->showPage(QStringLiteral("home"));
+        QCoreApplication::processEvents();
+        auto *home = m_appWindow->findChild<HomePage *>();
+        if (!home) {
+            return false;
+        }
+        home->copyStatsImage();
+        return QGuiApplication::clipboard()->image().save(path);
     }
     QWidget *target = m_appWindow;
     if (request.first() == QStringLiteral("transcribe-window")) {
