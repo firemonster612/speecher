@@ -460,13 +460,14 @@ struct RecordSheet: View {
     }
 
     /// A line per field, more for a multi-line field, a ChoiceSet's options and
-    /// help under a field, plus the header and the buttons.
+    /// help under a field, plus the header, the grouped form's margins and the
+    /// buttons. Short of it, the form scrolls inside a sheet with room to spare.
     private var idealHeight: CGFloat {
         let lines = columns.reduce(0) { lines, column in
             let field = column.kind == .choiceSet ? 2 + column.options.count : column.multiline ? 4 : 1
             return lines + field + (column.help.isEmpty ? 0 : 2)
         }
-        return CGFloat(lines) * 24 + 120
+        return CGFloat(lines) * 24 + 150
     }
 
     @ViewBuilder private func field(_ column: CollectionColumnModel) -> some View {
