@@ -898,6 +898,12 @@ SettingsPage generalPage(const SchemaContext &context)
 #endif
     activationMode.sinceVersion = QStringLiteral("0.1.6");
     shortcutRows.append(activationMode);
+    SettingsRow cancelShortcut = customRow(
+        QStringLiteral("cancelShortcut"),
+        QStringLiteral("Cancel Shortcut"),
+        QStringLiteral("Throw away the dictation in progress. Nothing is pasted or copied."));
+    cancelShortcut.sinceVersion = QStringLiteral("0.2.1");
+    shortcutRows.append(cancelShortcut);
     // No clipboard status row here: the Output page's Paste with choice says
     // how text is delivered, and a platform's "clipboard path" is not a setting.
 
@@ -2889,6 +2895,22 @@ QString globalShortcutChooseCaption()
 QString globalShortcutClearCaption()
 {
     return QStringLiteral("Clear");
+}
+
+QString globalShortcutTakenText(GlobalShortcutRole takenBy)
+{
+    return takenBy == GlobalShortcutRole::Cancel
+        ? QStringLiteral("That is already the Cancel Shortcut.")
+        : QStringLiteral("That is already the Global Shortcut for dictation.");
+}
+
+QString keyHelperBusyText(GlobalShortcutRole heldBy)
+{
+    return heldBy == GlobalShortcutRole::Cancel
+        ? QStringLiteral("The Cancel Shortcut already uses the one key Speecher's key helper can "
+                         "watch. Use a key combination here instead.")
+        : QStringLiteral("The Global Shortcut for dictation already uses the one key Speecher's "
+                         "key helper can watch. Use a key combination here instead.");
 }
 
 QString globalShortcutBindFailedText()

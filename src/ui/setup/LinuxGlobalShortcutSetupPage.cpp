@@ -250,9 +250,11 @@ QString linuxGlobalShortcutCommand()
 LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     ApplicationController &controller,
     QWidget *parent,
-    Placement placement)
+    Placement placement,
+    GlobalShortcutRole role)
     : QWidget(parent)
     , m_controller(controller)
+    , m_role(role)
     , m_homePath(QDir::homePath())
     , m_appImagePath(QString::fromLocal8Bit(qgetenv("APPIMAGE")))
     , m_binaryPath(resolvedPath(QCoreApplication::applicationFilePath()))
@@ -315,7 +317,6 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     // button records the whole range: a key combination or a single key, a
     // bare modifier included, which QKeySequenceEdit cannot report. Portal
     // desktops pick combinations through their own dialog instead.
-    const SettingsRow &shortcutRow = setupSchemaRow(QStringLiteral("globalShortcut"));
     auto *trailing = new QWidget(rowHost);
     auto *buttons = new QHBoxLayout(trailing);
     buttons->setContentsMargins(0, 0, 0, 0);
@@ -337,7 +338,7 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     m_clearShortcut = new QPushButton(globalShortcutClearCaption(), trailing);
     m_clearShortcut->setObjectName(QStringLiteral("clearGlobalShortcut"));
     buttons->addWidget(m_clearShortcut);
-    m_captureControls = settings::makeRow(shortcutRow.label, shortcutRow.help, trailing, rowHost);
+    m_captureControls = settings::makeRow(shortcutRow().label, shortcutRow().help, trailing, rowHost);
     m_captureControls->setObjectName(QStringLiteral("shortcutCapture"));
     m_description = m_captureControls->findChild<QLabel *>(QStringLiteral("rowDescription"));
     m_description->setObjectName(QStringLiteral("globalShortcutStatus"));
@@ -488,8 +489,10 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     connect(&m_controller,
             &ApplicationController::globalShortcutRegistrationFinished,
             this,
-            [this](bool bound, const QString &detail) {
-                showRegistrationResult(bound, detail);
+            [this](bool bound, const QString &detail, GlobalShortcutRole role) {
+                if (role == m_role) {
+                    showRegistrationResult(bound, detail);
+                }
             });
 
     refresh();
@@ -518,13 +521,13 @@ bool LinuxGlobalShortcutSetupPage::stepComplete() const
     if (installRequired()) {
         return false;
     }
-    if (!m_controller.globalShortcutSupportKnown()) {
+    if (!m_controller.globalShortcutSupportKnown(m_role)) {
         return false;
     }
-    if (!m_controller.globalShortcutsSupported()) {
+    if (!m_controller.globalShortcutsSupported(m_role)) {
         return true;
     }
-    return !m_controller.globalShortcutDisplay().isEmpty();
+    return !m_controller.globalShortcutDisplay(m_role).isEmpty();
 }
 
 QString LinuxGlobalShortcutSetupPage::blockedReason() const
@@ -533,7 +536,7 @@ QString LinuxGlobalShortcutSetupPage::blockedReason() const
         return QStringLiteral(
             "Speecher is not installed yet, so a shortcut would point at the wrong file.");
     }
-    if (!m_controller.globalShortcutSupportKnown()) {
+    if (!m_controller.globalShortcutSupportKnown(m_role)) {
         return QStringLiteral("Speecher is still checking what your desktop supports.");
     }
     return findSetupStep(QStringLiteral("shortcut"))->blocked;
@@ -555,7 +558,7 @@ void LinuxGlobalShortcutSetupPage::refreshDescription()
 {
     m_description->setText(m_setShortcut->armed()      ? captureLead(m_combinationsAvailable)
                            : !m_statusText.isEmpty() ? m_statusText
-                                                     : setupSchemaRow(QStringLiteral("globalShortcut")).help);
+                                                     : shortcutRow().help);
 }
 
 void LinuxGlobalShortcutSetupPage::installIntegration()
@@ -587,19 +590,19 @@ void LinuxGlobalShortcutSetupPage::applyBinding(const ShortcutBinding &binding)
 {
     // A refusal is shown, never saved: a Wayland user asking for a letter is
     // told why rather than getting a binding that never fires.
-    const QString reason = m_controller.globalShortcutUnsupportedBindingReason(binding);
+    const QString reason = m_controller.globalShortcutUnsupportedBindingReason(binding, m_role);
     if (!reason.isEmpty()) {
         showCaptureFeedback(reason);
         return;
     }
     QString error;
-    if (!m_controller.setGlobalShortcut(binding, &error)) {
+    if (!m_controller.setGlobalShortcut(binding, &error, m_role)) {
         showCaptureFeedback(
             error.isEmpty() ? QStringLiteral("Couldn't set the shortcut.") : error);
         return;
     }
     showCaptureFeedback(binding.isSingleKey() ? singleKeyTypingWarning(binding) : QString());
-    setStatus(shortcutSetStatus(m_controller.globalShortcutDisplay()));
+    setStatus(shortcutSetStatus(m_controller.globalShortcutDisplay(m_role)));
     refreshControls();
 }
 
@@ -614,7 +617,11 @@ void LinuxGlobalShortcutSetupPage::resetShortcut()
 // was already given up when the single key took over, so its answer is moot.
 void LinuxGlobalShortcutSetupPage::clearShortcut()
 {
-    m_controller.removeGlobalShortcutRegistration();
+    if (m_role == GlobalShortcutRole::Cancel) {
+        m_controller.setGlobalShortcut({}, nullptr, m_role);
+    } else {
+        m_controller.removeGlobalShortcutRegistration();
+    }
     showCaptureFeedback(QString());
     m_displayedShortcut.clear();
     setStatus(QString());
@@ -650,7 +657,7 @@ void LinuxGlobalShortcutSetupPage::chooseShortcut()
 {
     m_chooseShortcut->setEnabled(false);
     setStatus(QStringLiteral("Waiting for your desktop…"));
-    m_controller.registerGlobalShortcut();
+    m_controller.registerGlobalShortcut(m_role);
 }
 
 void LinuxGlobalShortcutSetupPage::refresh()
@@ -688,9 +695,9 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
         m_integrationButton->setEnabled(!installed);
     }
 
-    const bool known = m_controller.globalShortcutSupportKnown();
-    const bool supported = m_controller.globalShortcutsSupported();
-    const bool desktopChooser = m_controller.globalShortcutUsesDesktopChooser();
+    const bool known = m_controller.globalShortcutSupportKnown(m_role);
+    const bool supported = m_controller.globalShortcutsSupported(m_role);
+    const bool desktopChooser = m_controller.globalShortcutUsesDesktopChooser(m_role);
     // Until the install has moved the image, every shortcut control is
     // premature: the manual command would quote a path the install is about
     // to remove.
@@ -699,14 +706,15 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     m_combinationsAvailable = known && supported && !desktopChooser;
     const bool manualCommand = ready && known && !supported;
     settings::setCardRowVisible(m_captureControls, ready);
-    settings::setCardRowVisible(m_manualControls, manualCommand);
+    settings::setCardRowVisible(m_manualControls, manualCommand && m_role == GlobalShortcutRole::Dictation);
     m_chooseShortcut->setVisible(portal);
     // The capture handles combinations only where the desktop registers them;
     // a single key is watched by Speecher itself, so it records whenever the
     // desktop's answer is in.
     m_setShortcut->setCombinationsAvailable(m_combinationsAvailable);
     m_setShortcut->setVisible(known);
-    settings::setCardRowVisible(m_keyHelperControls, ready && known && m_waylandSession);
+    settings::setCardRowVisible(m_keyHelperControls,
+                                ready && known && m_waylandSession && m_role == GlobalShortcutRole::Dictation);
     if (m_waylandSession && ready && known) {
         refreshKeyHelper();
     }
@@ -730,8 +738,8 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     }
     // The portal binder's shortcut() is a placeholder; only its display text
     // carries what the desktop actually assigned.
-    const QString display = desktopChooser ? m_controller.globalShortcutDisplay()
-                                           : m_controller.globalShortcut().displayText();
+    const QString display = desktopChooser ? m_controller.globalShortcutDisplay(m_role)
+                                           : m_controller.globalShortcut(m_role).displayText();
     // A manual desktop's own shortcut is out of Speecher's sight, so only
     // where the binding is Speecher's to know does an empty one read as such.
     m_binding->setText(display.isEmpty() ? globalShortcutUnsetText() : display);
@@ -739,8 +747,14 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     m_binding->setVisible(!display.isEmpty() || supported);
     m_setShortcut->setShortcutDisplay(display);
     const QString defaultDisplay = ShortcutBinding(GlobalShortcutBinder::defaultShortcut()).displayText();
-    m_resetShortcut->setVisible(m_combinationsAvailable && display != defaultDisplay);
-    m_clearShortcut->setVisible(!m_combinationsAvailable && m_controller.globalShortcut().isSingleKey());
+    if (m_role == GlobalShortcutRole::Cancel) {
+        m_resetShortcut->hide();
+        m_clearShortcut->setVisible(!display.isEmpty());
+    } else {
+        m_resetShortcut->setVisible(m_combinationsAvailable && display != defaultDisplay);
+        m_clearShortcut->setVisible(!m_combinationsAvailable
+                                    && m_controller.globalShortcut(m_role).isSingleKey());
+    }
     if (m_statusText == checkingDesktopStatus()) {
         setStatus(QString());
     }
@@ -751,6 +765,12 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
             setStatus(display.isEmpty() ? QString() : shortcutSetStatus(display));
         }
     }
+}
+
+const SettingsRow &LinuxGlobalShortcutSetupPage::shortcutRow() const
+{
+    return setupSchemaRow(m_role == GlobalShortcutRole::Cancel ? QStringLiteral("cancelShortcut")
+                                                               : QStringLiteral("globalShortcut"));
 }
 
 void LinuxGlobalShortcutSetupPage::refreshKeyHelper()
@@ -765,8 +785,8 @@ void LinuxGlobalShortcutSetupPage::refreshKeyHelper()
 void LinuxGlobalShortcutSetupPage::showRegistrationResult(bool bound,
                                                            const QString &detail)
 {
-    m_chooseShortcut->setEnabled(m_controller.globalShortcutsSupported());
-    const QString display = m_controller.globalShortcutDisplay();
+    m_chooseShortcut->setEnabled(m_controller.globalShortcutsSupported(m_role));
+    const QString display = m_controller.globalShortcutDisplay(m_role);
     if (bound && !display.isEmpty()) {
         m_displayedShortcut = display;
         setStatus(shortcutSetStatus(display));

@@ -305,6 +305,11 @@ void QtAudioInput::stop()
     }
 }
 
+void QtAudioInput::clearPreRoll()
+{
+    m_preRollBuffer.clear();
+}
+
 bool QtAudioInput::isActive() const
 {
     return m_captureActive;

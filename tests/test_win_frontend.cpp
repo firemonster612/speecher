@@ -347,6 +347,14 @@ private slots:
             QTest::qWait(24);
         }
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-listening.png")));
+        // The pause and cancel buttons either side of the waveform, and Paused.
+        controller->session()->stateChanged(QStringLiteral("listening"));
+        QTest::qWait(150);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-listening-controls.png")));
+        controller->session()->stateChanged(QStringLiteral("paused"));
+        QTest::qWait(150);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-paused.png")));
+        controller->session()->stateChanged(QStringLiteral("listening"));
         controller->session()->popupFrozenChanged(true);
         QTest::qWait(150);
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-frozen.png")));
@@ -374,6 +382,9 @@ private slots:
         controller->session()->popupMessageRequested(QStringLiteral("Copied"), PopupOutcome::Copied);
         QTest::qWait(150);
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-receipt-copied.png")));
+        controller->session()->popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
+        QTest::qWait(150);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-receipt-canceled.png")));
         controller->session()->popupMessageRequested(QStringLiteral("Input sent"),
                                                      PopupOutcome::Inserted);
         QTest::qWait(150);

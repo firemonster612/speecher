@@ -1,6 +1,7 @@
 #include "platform/win/WinGlobalShortcutBinder.h"
 
 #include "core/settings/SettingsKeys.h"
+#include "platform/win/WinRawKeyboard.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -10,9 +11,10 @@
 namespace speecher {
 namespace {
 
-constexpr int firstHotKeyId = 0x5350;
-constexpr int secondHotKeyId = 0x5351;
-constexpr auto messageWindowClass = L"SpeecherShortcutRawInput";
+// Each binder takes two hot-key ids from here, alternating between them so a
+// replacement registers before the old one goes. The dictation and cancel
+// binders share the thread's hot-key table, so their ids must differ.
+int nextHotKeyId = 0x5350;
 
 // The one sentence opener that marks a conflict with another application, so
 // describesConflict and the message that reports it agree by construction.
@@ -80,36 +82,32 @@ int qtKeyForVirtualKey(quint32 key)
     return QChar(char16_t(character & 0xFFFF)).toUpper().unicode();
 }
 
-QKeySequence savedShortcut()
+QKeySequence savedShortcut(const GlobalShortcutAction &action)
 {
     QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
                        QString::fromLatin1(SettingsKeys::Application));
     // The stored value can be a single key ("key:…"), which belongs to the
     // single-key binder and must not parse as a sequence here.
     const ShortcutBinding stored =
-        ShortcutBinding::fromString(settings.value(SettingsKeys::GlobalShortcut).toString());
-    return stored.combination().isEmpty() ? WinGlobalShortcutBinder::defaultShortcut()
-                                          : stored.combination();
+        ShortcutBinding::fromString(settings.value(action.settingsKey).toString());
+    return stored.combination().isEmpty() ? action.defaultShortcut : stored.combination();
 }
 
-void storeShortcut(const QKeySequence &shortcut)
+void storeShortcut(const QString &key, const QKeySequence &shortcut)
 {
     QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
                        QString::fromLatin1(SettingsKeys::Application));
-    settings.setValue(SettingsKeys::GlobalShortcut, shortcut.toString());
+    settings.setValue(key, shortcut.toString());
 }
 
 } // namespace
 
-QKeySequence WinGlobalShortcutBinder::defaultShortcut()
+WinGlobalShortcutBinder::WinGlobalShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : GlobalShortcutBinder(std::move(action), parent)
+    , m_shortcut(savedShortcut(this->action()))
+    , m_firstHotKeyId(nextHotKeyId)
 {
-    return QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_D);
-}
-
-WinGlobalShortcutBinder::WinGlobalShortcutBinder(QObject *parent)
-    : GlobalShortcutBinder(parent)
-    , m_shortcut(savedShortcut())
-{
+    nextHotKeyId += 2;
     if (QCoreApplication::instance()) {
         QCoreApplication::instance()->installNativeEventFilter(this);
     }
@@ -121,9 +119,6 @@ WinGlobalShortcutBinder::~WinGlobalShortcutBinder()
         QCoreApplication::instance()->removeNativeEventFilter(this);
     }
     unregisterShortcut();
-    if (m_messageWindow) {
-        DestroyWindow(m_messageWindow);
-    }
 }
 
 bool WinGlobalShortcutBinder::supported() const
@@ -138,6 +133,9 @@ QString WinGlobalShortcutBinder::unsupportedReason() const
 
 void WinGlobalShortcutBinder::bind()
 {
+    if (m_shortcut.isEmpty()) {
+        return;
+    }
     if (m_suspensionCount > 0) {
         m_resumeBinding = true;
         return;
@@ -162,6 +160,13 @@ bool WinGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
         }
         return false;
     }
+    if (shortcut.isEmpty()) {
+        removeRegistration();
+        m_shortcut = {};
+        storeShortcut(action().settingsKey, m_shortcut);
+        emit bindingChanged();
+        return true;
+    }
     if (!registerShortcut(shortcut.combination(), error)) {
         return false;
     }
@@ -171,7 +176,7 @@ bool WinGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
         unregisterShortcut();
     }
     m_shortcut = shortcut.combination();
-    storeShortcut(m_shortcut);
+    storeShortcut(action().settingsKey, m_shortcut);
     emit bindingChanged();
     return true;
 }
@@ -310,27 +315,23 @@ bool WinGlobalShortcutBinder::nativeEventFilter(const QByteArray &eventType,
 bool WinGlobalShortcutBinder::registerShortcut(const QKeySequence &shortcut, QString *error)
 {
     const auto hotKey = nativeHotKey(shortcut, error);
-    if (!hotKey || !ensureMessageWindow(error)) {
+    if (!hotKey) {
+        return false;
+    }
+    // The release, which WM_HOTKEY never reports, arrives as raw input.
+    if (!win::listenToRawKeyboard(this, [this](const RAWINPUT &input) { handleRawInput(input); },
+                                  error)) {
         return false;
     }
     if (m_hotKeyId && shortcut == m_shortcut) {
         return true;
     }
 
-    const int newId = m_hotKeyId == firstHotKeyId ? secondHotKeyId : firstHotKeyId;
+    const int newId = m_hotKeyId == m_firstHotKeyId ? m_firstHotKeyId + 1 : m_firstHotKeyId;
     if (!RegisterHotKey(nullptr, newId, hotKey->modifiers, hotKey->virtualKey)) {
         if (error) {
             *error = conflictErrorPrefix()
                 + shortcut.toString(QKeySequence::NativeText);
-        }
-        return false;
-    }
-
-    RAWINPUTDEVICE keyboard{0x01, 0x06, RIDEV_INPUTSINK, m_messageWindow};
-    if (!RegisterRawInputDevices(&keyboard, 1, sizeof(keyboard))) {
-        UnregisterHotKey(nullptr, newId);
-        if (error) {
-            *error = QStringLiteral("Windows could not watch for the Global Shortcut release");
         }
         return false;
     }
@@ -346,69 +347,8 @@ void WinGlobalShortcutBinder::unregisterShortcut()
         UnregisterHotKey(nullptr, m_hotKeyId);
         m_hotKeyId = 0;
     }
-    // Raw input remains registered so an outstanding press still receives
+    // The raw input listener stays so an outstanding press still receives
     // its release while recording a replacement shortcut.
-}
-
-bool WinGlobalShortcutBinder::ensureMessageWindow(QString *error)
-{
-    if (m_messageWindow) {
-        return true;
-    }
-    const HINSTANCE instance = GetModuleHandleW(nullptr);
-    WNDCLASSW windowClass{};
-    windowClass.lpfnWndProc = messageWindowProc;
-    windowClass.hInstance = instance;
-    windowClass.lpszClassName = messageWindowClass;
-    if (!RegisterClassW(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-        if (error) {
-            *error = QStringLiteral("Windows could not create the Global Shortcut listener");
-        }
-        return false;
-    }
-    m_messageWindow = CreateWindowExW(0,
-                                      messageWindowClass,
-                                      L"",
-                                      0,
-                                      0,
-                                      0,
-                                      0,
-                                      0,
-                                      HWND_MESSAGE,
-                                      nullptr,
-                                      instance,
-                                      this);
-    if (!m_messageWindow && error) {
-        *error = QStringLiteral("Windows could not create the Global Shortcut listener");
-    }
-    return m_messageWindow;
-}
-
-LRESULT CALLBACK WinGlobalShortcutBinder::messageWindowProc(HWND window,
-                                                             UINT message,
-                                                             WPARAM wParam,
-                                                             LPARAM lParam)
-{
-    auto *binder = reinterpret_cast<WinGlobalShortcutBinder *>(
-        GetWindowLongPtrW(window, GWLP_USERDATA));
-    if (message == WM_NCCREATE) {
-        const auto *create = reinterpret_cast<CREATESTRUCTW *>(lParam);
-        binder = static_cast<WinGlobalShortcutBinder *>(create->lpCreateParams);
-        SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(binder));
-    } else if (message == WM_INPUT && binder) {
-        binder->handleRawInput(reinterpret_cast<HRAWINPUT>(lParam));
-    }
-    return DefWindowProcW(window, message, wParam, lParam);
-}
-
-void WinGlobalShortcutBinder::handleRawInput(HRAWINPUT handle)
-{
-    RAWINPUT input{};
-    UINT size = sizeof(input);
-    if (GetRawInputData(handle, RID_INPUT, &input, &size, sizeof(RAWINPUTHEADER)) == UINT(-1)) {
-        return;
-    }
-    handleRawInput(input);
 }
 
 void WinGlobalShortcutBinder::handleRawInput(const RAWINPUT &input)

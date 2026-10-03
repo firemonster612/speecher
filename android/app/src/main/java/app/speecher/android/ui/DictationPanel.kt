@@ -108,6 +108,8 @@ fun DictationPanel(
     onInsertRefined: () -> Unit,
     onRecover: () -> Unit,
     modifier: Modifier = Modifier,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
 ) {
     // Sized from the display, not from incoming constraints: inside the IME those are the IME
     // window's own height, so a fraction of them shrinks the panel below the window it sized,
@@ -116,7 +118,12 @@ fun DictationPanel(
     val height = panelHeight(size, display.height)
     val status =
         when (state) {
-            is DictationState.Listening -> if (state.reconnecting) "Reconnecting" else "Listening"
+            is DictationState.Listening ->
+                when {
+                    state.paused -> "Paused"
+                    state.reconnecting -> "Reconnecting"
+                    else -> "Listening"
+                }
             is DictationState.Refining -> "Refining transcript"
             is DictationState.Failed -> state.title
         }
@@ -174,8 +181,28 @@ fun DictationPanel(
                 contentAlignment = Alignment.Center,
             ) {
                 if (state is DictationState.Listening) {
+                    // Pause, which resumes while paused, to the left of the waveform; the panel's
+                    // Cancel button already throws the dictation away.
+                    IconButton(
+                        if (state.paused) onResume else onPause,
+                        Modifier.align(Alignment.CenterStart),
+                    ) {
+                        Icon(
+                            painterResource(
+                                if (state.paused) R.drawable.ic_play else R.drawable.ic_pause
+                            ),
+                            contentDescription = if (state.paused) "Resume" else "Pause",
+                        )
+                    }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         LiveBars(state.level)
+                        if (state.paused) {
+                            Text(
+                                "Paused",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         if (state.reconnecting) {
                             Text(
                                 "Reconnecting…",

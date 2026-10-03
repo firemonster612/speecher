@@ -24,6 +24,7 @@ public:
     bool start(QString *error = nullptr) override;
     void stop() override;
     bool isActive() const override;
+    void clearPreRoll() override;
 
 public slots:
     void applySettings(const AudioCaptureSettings &settings);

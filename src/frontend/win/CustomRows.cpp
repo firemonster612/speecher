@@ -514,7 +514,8 @@ bool customRowIsFullWidth(const QString &rowId)
     return rowId == QStringLiteral("writingProfileBehavior")
         || rowId == QStringLiteral("whatsNewNotes")
         || rowId == QStringLiteral("localModelBrowser")
-        || rowId == QStringLiteral("globalShortcut");
+        || rowId == QStringLiteral("globalShortcut")
+        || rowId == QStringLiteral("cancelShortcut");
 }
 
 UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
@@ -525,7 +526,7 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     if (row.id == QStringLiteral("whatsNewNotes")) {
         return releaseNotes(row);
     }
-    if (row.id == QStringLiteral("globalShortcut")) {
+    if (row.id == QStringLiteral("globalShortcut") || row.id == QStringLiteral("cancelShortcut")) {
         return ShortcutRecorder::element(row, host);
     }
     if (row.id == QStringLiteral("localModelBrowser")) {

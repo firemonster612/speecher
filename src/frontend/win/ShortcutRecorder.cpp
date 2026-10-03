@@ -38,7 +38,7 @@ struct Capture {
     QString notice;
 };
 
-Capture combinationCapture(PaneHost &host, const VirtualKey key)
+Capture combinationCapture(PaneHost &host, const VirtualKey key, GlobalShortcutRole role)
 {
     const int qtKey = ShortcutRecorder::qtKeyForVirtualKey(static_cast<int>(key));
     if (qtKey == 0) {
@@ -46,21 +46,21 @@ Capture combinationCapture(PaneHost &host, const VirtualKey key)
     }
     const Qt::KeyboardModifiers modifiers = ShortcutRecorder::heldModifiers();
     const ShortcutBinding binding(QKeySequence(QKeyCombination(modifiers, Qt::Key(qtKey))));
-    const QString reason = host.controller->globalShortcutUnsupportedBindingReason(binding);
+    const QString reason = host.controller->globalShortcutUnsupportedBindingReason(binding, role);
     return reason.isEmpty() ? Capture{binding, {}, {}} : Capture{{}, reason, {}};
 }
 
 // The physical key, not the layout's meaning of it: the scancode plus the
 // extended byte is the vocabulary's win column, so bare modifiers record and
 // left is told from right. Saving is not gated on the typing warning.
-Capture singleKeyCapture(PaneHost &host, int scanCode)
+Capture singleKeyCapture(PaneHost &host, int scanCode, GlobalShortcutRole role)
 {
     const PhysicalKey *key = physicalKeyForWin(scanCode);
     if (!key) {
         return {{}, QStringLiteral("That key cannot be a dictation key."), {}};
     }
     const ShortcutBinding binding = ShortcutBinding::singleKey(QString::fromLatin1(key->code));
-    const QString reason = host.controller->globalShortcutUnsupportedBindingReason(binding);
+    const QString reason = host.controller->globalShortcutUnsupportedBindingReason(binding, role);
     if (!reason.isEmpty()) {
         return {{}, reason, {}};
     }
@@ -112,10 +112,12 @@ bool leftToDialog(const VirtualKey key)
 }
 
 // Binds `binding`, saying in host.shortcutProblem why when the binder refuses.
-void bind(PaneHost &host, const ShortcutBinding &binding)
+void bind(PaneHost &host, const ShortcutBinding &binding,
+          GlobalShortcutRole role = GlobalShortcutRole::Dictation)
 {
+    host.shortcutNoteRole = role;
     QString error;
-    if (!host.controller->setGlobalShortcut(binding, &error)) {
+    if (!host.controller->setGlobalShortcut(binding, &error, role)) {
         host.shortcutNotice.clear();
         host.shortcutProblem = error.isEmpty() ? globalShortcutBindFailedText() : error;
     }
@@ -123,7 +125,8 @@ void bind(PaneHost &host, const ShortcutBinding &binding)
 
 } // namespace
 
-void ShortcutRecorder::record(PaneHost &host, const QString &title, std::function<void()> changed)
+void ShortcutRecorder::record(PaneHost &host, const QString &title, std::function<void()> changed,
+                              GlobalShortcutRole role)
 {
     if (host.shortcutRecording || !host.xamlRoot || !host.xamlRoot()) {
         return;
@@ -186,7 +189,7 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
     };
 
     // Escape is not recordable as a single key, like the mac recorder.
-    keys.PreviewKeyDown([&host, recording, show](const IInspectable &,
+    keys.PreviewKeyDown([&host, recording, show, role](const IInspectable &,
                                                  const Input::KeyRoutedEventArgs &args) {
         if (leftToDialog(args.Key())) {
             return;
@@ -210,11 +213,11 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
         recording->pendingModifier = -1;
         const bool combination = ShortcutRecorder::heldModifiers() != Qt::NoModifier;
         recording->chordKeyed = combination;
-        recording->capture = combination ? combinationCapture(host, args.Key())
-                                         : singleKeyCapture(host, scanCode);
+        recording->capture = combination ? combinationCapture(host, args.Key(), role)
+                                         : singleKeyCapture(host, scanCode, role);
         show();
     });
-    keys.PreviewKeyUp([&host, recording, show](const IInspectable &,
+    keys.PreviewKeyUp([&host, recording, show, role](const IInspectable &,
                                                const Input::KeyRoutedEventArgs &args) {
         if (leftToDialog(args.Key())) {
             return;
@@ -223,7 +226,7 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
         const auto keyStatus = args.KeyStatus();
         const int scanCode = int(keyStatus.ScanCode) | (keyStatus.IsExtendedKey ? 0xE000 : 0);
         if (recording->pendingModifier == scanCode) {
-            recording->capture = singleKeyCapture(host, scanCode);
+            recording->capture = singleKeyCapture(host, scanCode, role);
         }
         if (ShortcutRecorder::heldModifiers() == Qt::NoModifier) {
             recording->pendingModifier = 0;
@@ -235,14 +238,14 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
     // Cancel, Escape and the window closing apply none. The binding changes
     // before the hotkey comes back, so what comes back, and any error it
     // reports, is the binding now in force.
-    dialog.Closed([&host, recording, changed, weak = std::weak_ptr<bool>(host.alive)](
+    dialog.Closed([&host, recording, changed, role, weak = std::weak_ptr<bool>(host.alive)](
                       const ContentDialog &, const ContentDialogClosedEventArgs &args) {
         if (gone(weak)) {
             return;
         }
         if (args.Result() == ContentDialogResult::Primary) {
             host.shortcutNotice = recording->capture.notice;
-            bind(host, recording->capture.binding);
+            bind(host, recording->capture.binding, role);
         }
         ShortcutRecorder::setRecording(host, false);
         changed();
@@ -338,17 +341,23 @@ void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
         host.controller->suspendGlobalShortcut();
         return;
     }
-    const QString error = host.controller->resumeGlobalShortcut();
+    GlobalShortcutRole failedRole = GlobalShortcutRole::Dictation;
+    const QString error = host.controller->resumeGlobalShortcut(&failedRole);
     // A binding the dialog could not apply says more than the old one failing
     // to come back.
     if (!error.isEmpty() && host.shortcutProblem.isEmpty()) {
         host.shortcutProblem = error;
+        host.shortcutNoteRole = failedRole;
     }
 }
 
 StackPanel ShortcutRecorder::element(const RowSnapshot &row, PaneHost &host)
 {
-    const QString current = host.controller->globalShortcut().displayText();
+    const GlobalShortcutRole role = row.id == QStringLiteral("cancelShortcut")
+        ? GlobalShortcutRole::Cancel
+        : GlobalShortcutRole::Dictation;
+    const ShortcutBinding bound = host.controller->globalShortcut(role);
+    const QString current = bound.displayText();
     const ShortcutBinding standard = WinGlobalShortcutBinder::defaultShortcut();
     StackPanel control;
     control.Orientation(Orientation::Horizontal);
@@ -358,15 +367,25 @@ StackPanel ShortcutRecorder::element(const RowSnapshot &row, PaneHost &host)
     binding.VerticalAlignment(VerticalAlignment::Center);
     binding.Margin({0, 0, 4, 0});
     control.Children().Append(binding);
-    const bool supported = host.controller->globalShortcutsSupported();
+    const bool supported = host.controller->globalShortcutsSupported(role);
     Button change;
     change.Content(box_value(hs(globalShortcutChangeCaption())));
     change.IsEnabled(supported);
-    change.Click([&host, title = row.label](const auto &, const auto &) {
-        record(host, title, [&host] { host.refresh(); });
+    change.Click([&host, title = row.label, role](const auto &, const auto &) {
+        record(host, title, [&host] { host.refresh(); }, role);
     });
     control.Children().Append(change);
-    if (host.controller->globalShortcut() != standard) {
+    if (role == GlobalShortcutRole::Cancel && !bound.isEmpty()) {
+        Button clear;
+        clear.Content(box_value(hs(globalShortcutClearCaption())));
+        clear.Click([&host](const auto &, const auto &) {
+            host.shortcutProblem.clear();
+            host.shortcutNotice.clear();
+            bind(host, ShortcutBinding(), GlobalShortcutRole::Cancel);
+            host.refresh();
+        });
+        control.Children().Append(clear);
+    } else if (role == GlobalShortcutRole::Dictation && bound != standard) {
         Button reset;
         reset.Content(box_value(hs(globalShortcutResetCaption(standard.displayText()))));
         reset.IsEnabled(supported);
@@ -383,7 +402,7 @@ StackPanel ShortcutRecorder::element(const RowSnapshot &row, PaneHost &host)
     // cost of a single key that did save. Absent, not just closed, while there
     // is nothing to say, so it leaves no gap under the row.
     const bool problem = !host.shortcutProblem.isEmpty();
-    if (problem || !host.shortcutNotice.isEmpty()) {
+    if (host.shortcutNoteRole == role && (problem || !host.shortcutNotice.isEmpty())) {
         InfoBar note;
         note.IsClosable(false);
         note.Margin({16, 0, 16, 12});

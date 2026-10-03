@@ -18,7 +18,8 @@ class WaveformWidget : public QWidget {
     Q_OBJECT
 
 public:
-    enum class Mode { Waveform, Frozen, Message, Status };
+    // Paused: a still, flat row of dots in the colour scheme's caution colour.
+    enum class Mode { Waveform, Frozen, Paused, Message, Status };
 
     explicit WaveformWidget(QWidget *parent = nullptr);
     void setBackgroundVisible(bool visible);
@@ -30,6 +31,9 @@ public:
     // the transcript line rather than standing alone. Off by default; the
     // Dictation page keeps the full-height pill.
     void setCompact(bool compact);
+    // Only as wide as the dots, for the popup's tab beside its buttons;
+    // text modes keep their own width.
+    void setHugsInk(bool hugs);
 
 public slots:
     void setLevel(float level);
@@ -47,7 +51,7 @@ private:
     void applyGeometry();
     int iconSize() const;
     int iconSpacing() const;
-    void paintWaveform(QPainter &painter, const QColor &bar);
+    void paintWaveform(QPainter &painter, const QColor &bar, bool flat = false);
     void paintMessage(QPainter &painter, const QColor &bar);
     void paintStatus(QPainter &painter, const QColor &bar);
 
@@ -64,6 +68,7 @@ private:
     Mode m_mode = Mode::Waveform;
     bool m_backgroundVisible = true;
     bool m_compact = false;
+    bool m_hugsInk = false;
 };
 
 } // namespace speecher

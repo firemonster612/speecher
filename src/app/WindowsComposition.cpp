@@ -6,6 +6,7 @@
 #include "platform/FallbackPopupPositioner.h"
 #include "platform/audio/QtAudioInput.h"
 #include "platform/RoutingShortcutBinder.h"
+#include "platform/win/WinCancelKeyGrab.h"
 #include "platform/win/WinGlobalShortcutBinder.h"
 #include "platform/win/WinMediaController.h"
 #include "platform/win/WinScreenshotContextProvider.h"
@@ -96,11 +97,18 @@ PopupPositioner *WindowsComposition::createPopupPositioner(QObject *parent) cons
     return new FallbackPopupPositioner(parent);
 }
 
-GlobalShortcutBinder *WindowsComposition::createGlobalShortcutBinder(QObject *parent) const
+GlobalShortcutBinder *WindowsComposition::createGlobalShortcutBinder(GlobalShortcutRole role,
+                                                                     QObject *parent) const
 {
-    return new RoutingShortcutBinder(new WinGlobalShortcutBinder,
-                                     new WinSingleKeyShortcutBinder,
+    const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
+    return new RoutingShortcutBinder(new WinGlobalShortcutBinder(action),
+                                     new WinSingleKeyShortcutBinder(action),
                                      parent);
+}
+
+CancelKeyGrab *WindowsComposition::createCancelKeyGrab(QObject *parent) const
+{
+    return new WinCancelKeyGrab(parent);
 }
 
 AccessibilityState WindowsComposition::accessibilityState() const

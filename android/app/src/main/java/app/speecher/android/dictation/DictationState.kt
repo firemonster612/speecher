@@ -37,13 +37,15 @@ sealed interface DictationState {
      * is the finalised text and [interim] the recogniser's current guess for the word in progress;
      * keeping them apart lets the preview grow append-only instead of reflowing whenever an interim
      * shrinks. [level] is the input loudness from 0 to 1. [reconnecting] is set while a dropped
-     * speech stream is being reopened; the microphone keeps recording meanwhile.
+     * speech stream is being reopened; the microphone keeps recording meanwhile. [paused] is set
+     * while the person paused: the microphone is off and the words so far are kept.
      */
     data class Listening(
         val committed: String = "",
         val interim: String = "",
         val level: Float = 0f,
         val reconnecting: Boolean = false,
+        val paused: Boolean = false,
     ) : DictationState {
         /** The whole live preview: committed text with the interim word appended. */
         val text: String

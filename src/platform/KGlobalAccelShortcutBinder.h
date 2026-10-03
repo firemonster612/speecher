@@ -10,7 +10,9 @@ class KGlobalAccelShortcutBinder final : public GlobalShortcutBinder {
     Q_OBJECT
 
 public:
-    explicit KGlobalAccelShortcutBinder(QObject *parent = nullptr);
+    explicit KGlobalAccelShortcutBinder(
+        GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
+        QObject *parent = nullptr);
 
     bool supported() const override;
     QString unsupportedReason() const override;

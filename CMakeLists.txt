@@ -399,6 +399,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
   src/platform/AccessibilityState.h
+  src/platform/CancelKeyGrab.h
   src/platform/CorrectionDiff.h
   src/platform/FallbackPopupPositioner.h
   src/platform/GlobalShortcutBinder.h
@@ -464,6 +465,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
 
 set(SPEECHER_PLATFORM_MAC_SOURCES
   src/output/mac/MacPasteDelivery.mm
+  src/platform/mac/MacCancelKeyGrab.mm
   src/platform/mac/MacCorrectionObserver.mm
   src/platform/mac/MacGlobalShortcutBinder.mm
   src/platform/mac/MacKeyCode.mm
@@ -477,6 +479,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
   src/output/mac/MacPasteDelivery.h
+  src/platform/mac/MacCancelKeyGrab.h
   src/platform/mac/MacCorrectionObserver.h
   src/platform/mac/MacGlobalShortcutBinder.h
   src/platform/mac/MacKeyCode.h
@@ -489,19 +492,23 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
 
 set(SPEECHER_PLATFORM_WIN_SOURCES
   src/output/win/WinPasteDelivery.cpp
+  src/platform/win/WinCancelKeyGrab.cpp
   src/platform/win/WinCorrectionObserver.cpp
   src/platform/win/WinGlobalShortcutBinder.cpp
   src/platform/win/WinMediaController.cpp
+  src/platform/win/WinRawKeyboard.cpp
   src/platform/win/WinScreenshotContextProvider.cpp
   src/platform/win/WinSingleKeyShortcutBinder.cpp
   src/platform/win/WinTargetProvider.cpp
 )
 set(SPEECHER_PLATFORM_WIN_HEADERS
   src/output/win/WinPasteDelivery.h
+  src/platform/win/WinCancelKeyGrab.h
   src/platform/win/WinCorrectionObserver.h
   src/platform/win/WinGlobalShortcutBinder.h
   src/platform/win/WinInjectedInput.h
   src/platform/win/WinMediaController.h
+  src/platform/win/WinRawKeyboard.h
   src/platform/win/WinScreenshotContextProvider.h
   src/platform/win/WinSingleKeyShortcutBinder.h
   src/platform/win/WinTargetProvider.h
@@ -705,6 +712,7 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/TrayIcon.cpp
   src/frontend/win/TranscribePane.cpp
   src/frontend/win/TranscribeWindow.cpp
+  src/frontend/win/WaveformBars.cpp
   src/frontend/win/WinFrontEnd.cpp
   src/frontend/win/WinUiHost.cpp
 )

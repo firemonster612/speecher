@@ -7,7 +7,7 @@
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"
 #include "frontend/win/SettingsPage.h"
-#include "ui/WaveformModel.h"
+#include "frontend/win/WaveformBars.h"
 
 #include <windows.h>
 #include <dwmapi.h>
@@ -73,12 +73,11 @@ constexpr int problemChromeWidth = 150;
 constexpr int buttonChromeWidth = 36;
 // The countdown bar under a problem and its margin.
 constexpr int problemBarHeight = 16;
+// The pause and cancel buttons either side of the waveform, round like the
+// notices' close button, and the gap beside each.
+constexpr int sessionButtonSize = 28;
+constexpr int sessionButtonGap = 10;
 constexpr auto windowClassName = L"SpeecherDictationPanel";
-
-// Same dot geometry as the Linux waveform; the travelling crest and level
-// mapping come from the shared model in ui/WaveformModel.h.
-constexpr int levelBarCount = waveform::barCount;
-constexpr float barDotHeight = 3.2f;
 
 // Whether every pixel is the same colour, which is what a capture with no
 // desktop behind it looks like.
@@ -99,7 +98,7 @@ bool isUniform(const QImage &image)
 }
 
 // Segoe Fluent Icons for each receipt: sent into the Target, left on the
-// clipboard, or delivered raw because refinement failed.
+// clipboard, delivered raw because refinement failed, or cancelled.
 QString outcomeGlyph(PopupOutcome outcome)
 {
     switch (outcome) {
@@ -107,6 +106,7 @@ QString outcomeGlyph(PopupOutcome outcome)
     case PopupOutcome::Copied: return QString::fromUtf16(u"\uF0E3");
     case PopupOutcome::Fallback: return QString::fromUtf16(u"\uE946");
     case PopupOutcome::Error: return QString::fromUtf16(u"\uE7BA");
+    case PopupOutcome::Cancelled: return QString::fromUtf16(u"\uE711");
     }
     return QString::fromUtf16(u"\uE946");
 }
@@ -150,9 +150,6 @@ struct DictationPanel::Native : QObject {
         , controller(owner)
         , panel(q)
     {
-        barTimer.setInterval(waveform::frameIntervalMs);
-        barClock.start();
-        connect(&barTimer, &QTimer::timeout, this, &Native::animateBars);
         // The countdown every platform shows; Dismiss stays the early way out.
         problemAutoDismiss.setSingleShot(true);
         connect(&problemAutoDismiss, &QTimer::timeout, this, &Native::dismissProblem);
@@ -171,7 +168,10 @@ struct DictationPanel::Native : QObject {
             refresh();
         });
         DictationSession *session = controller->session();
-        connect(session, &DictationSession::stateChanged, this, &Native::refresh);
+        connect(session, &DictationSession::stateChanged, this, [this](const QString &name) {
+            sessionState = name;
+            refresh();
+        });
         connect(session, &DictationSession::previewDisplayChanged, this,
                 [this](const QString &text) { setPreview(text); });
         connect(session, &DictationSession::popupRefinementPreviewChanged, this,
@@ -192,7 +192,7 @@ struct DictationPanel::Native : QObject {
         connect(session, &DictationSession::popupFrozenChanged, this,
                 [this](bool value) {
                     frozen = value;
-                    if (bars) { bars.Opacity(frozen ? 0.4 : 1.0); }
+                    if (wave) { wave->setFrozen(frozen); }
                     // Unfreezing at session start returns to the live phase,
                     // like the Qt and mac panels, so a preview clear emitted
                     // before show() is never dropped by a stale phase.
@@ -244,6 +244,10 @@ struct DictationPanel::Native : QObject {
             const auto *create = reinterpret_cast<CREATESTRUCTW *>(lParam);
             SetWindowLongPtrW(window, GWLP_USERDATA,
                               reinterpret_cast<LONG_PTR>(create->lpCreateParams));
+        }
+        // Clicking the pause or cancel button must leave the Target focused.
+        if (message == WM_MOUSEACTIVATE) {
+            return MA_NOACTIVATE;
         }
         if (message == WM_DISPLAYCHANGE || message == WM_DPICHANGED) {
             auto *native = reinterpret_cast<Native *>(GetWindowLongPtrW(window, GWLP_USERDATA));
@@ -310,30 +314,44 @@ struct DictationPanel::Native : QObject {
         text.Width(panelWidth);
         probe = TextBlock();
 
-        bars = StackPanel();
-        bars.Orientation(Orientation::Horizontal);
-        bars.Spacing(3.2);
-        bars.Width(92.8);
-        bars.Height(panelHeight);
-        bars.VerticalAlignment(VerticalAlignment::Center);
-        bars.HorizontalAlignment(HorizontalAlignment::Center);
-        for (int i = 0; i < levelBarCount; ++i) {
-            Microsoft::UI::Xaml::Shapes::Rectangle bar;
-            bar.Width(3.2);
-            bar.RadiusX(0.8);
-            bar.RadiusY(0.8);
-            bar.Height(barDotHeight);
-            bar.VerticalAlignment(VerticalAlignment::Center);
-            bar.Fill(text.Foreground());
-            bars.Children().Append(bar);
-            barRects.push_back(bar);
-        }
-        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(bars, win::hs(inputLevelLabel()));
+        wave = new win::WaveformBars(this);
+        wave->element().Height(panelHeight);
+        wave->setInk(text.Foreground());
         waveform = Border();
         waveform.Width(panelWidth);
-        waveform.Child(bars);
+        waveform.Child(wave->element());
+        const auto sessionButton = [](const wchar_t *glyphText) {
+            Button button;
+            button.Width(sessionButtonSize);
+            button.Height(sessionButtonSize);
+            button.Padding({0, 0, 0, 0});
+            button.CornerRadius({sessionButtonSize / 2.0, sessionButtonSize / 2.0,
+                                 sessionButtonSize / 2.0, sessionButtonSize / 2.0});
+            button.VerticalAlignment(VerticalAlignment::Center);
+            // Never focused: the Target keeps the keyboard.
+            button.IsTabStop(false);
+            button.AllowFocusOnInteraction(false);
+            FontIcon icon;
+            icon.Glyph(glyphText);
+            icon.FontSize(12);
+            button.Content(icon);
+            button.Visibility(Visibility::Collapsed);
+            return button;
+        };
+        pauseButton = sessionButton(L"\uE769");
+        pauseButton.Click([this](const auto &, const auto &) {
+            controller->session()->togglePause();
+        });
+        cancelButton = sessionButton(L"\uE711");
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(cancelButton, win::hs(cancelCaption()));
+        ToolTipService::SetToolTip(cancelButton, box_value(win::hs(cancelCaption())));
+        cancelButton.Click([this](const auto &, const auto &) { controller->cancel(); });
+        // A status in place of the bars (Transcribing…) sits between the two
+        // buttons as the bars do.
+        row.Children().Append(pauseButton);
         row.Children().Append(waveform);
         row.Children().Append(text);
+        row.Children().Append(cancelButton);
 
         previewText = TextBlock();
         previewText.VerticalAlignment(VerticalAlignment::Center);
@@ -561,8 +579,8 @@ struct DictationPanel::Native : QObject {
         completed = false;
         phase = Phase::Live;
         pendingGeneration = generation;
-        level.restart(barClock.elapsed());
         ensureWindow();
+        wave->restart();
         applyTheme();
         // Each dictation starts back at the floor, like the mac panel's
         // empty-preview reset, instead of inheriting the last one's width.
@@ -618,7 +636,9 @@ struct DictationPanel::Native : QObject {
         problemAutoDismiss.stop();
         countdownTick.stop();
         pausedRemainingMs = 0;
-        barTimer.stop();
+        if (wave) {
+            wave->setRunning(false);
+        }
         setShimmer(false);
         if (banner) {
             ShowWindow(banner, SW_HIDE);
@@ -638,10 +658,7 @@ struct DictationPanel::Native : QObject {
             // change hands them the newly resolved one. While the status text
             // shimmers its foreground is the animated gradient, which would
             // freeze into the bars as a half-swept smear.
-            const auto ink = shimmering ? normalForeground : text.Foreground();
-            for (auto &bar : barRects) {
-                bar.Fill(ink);
-            }
+            wave->setInk(shimmering ? normalForeground : text.Foreground());
         }
     }
 
@@ -680,26 +697,16 @@ struct DictationPanel::Native : QObject {
     void setLevel(float value)
     {
         ensureWindow();
-        level.addChunk(value);
+        wave->setLevel(value);
     }
 
-    void animateBars()
+    // The caution colour a paused dictation's bars lie flat in, for the
+    // panel's current theme.
+    Brush pausedFill() const
     {
-        const qint64 now = barClock.elapsed();
-        const float elapsed = std::clamp((now - lastFrame) / 1000.0f, 0.0f, 0.1f);
-        lastFrame = now;
-        if (frozen) {
-            return;
-        }
-        barPhase = std::fmod(barPhase + elapsed, 1.0f);
-        level.advance(now);
-        for (int i = 0; i < int(barRects.size()); ++i) {
-            const float phase = barPhase - float(i) / levelBarCount;
-            const float height = float(barDotHeight * level.audioScale() * waveform::bulge(i)
-                                       * waveform::waveMultiplier(phase - std::floor(phase)));
-            barRects[i].Height(height);
-            barRects[i].RadiusY(height / 4);
-        }
+        win::PaneHost theme;
+        theme.effectiveTheme = [this] { return chrome.ActualTheme(); };
+        return win::themeBrush(L"PausedForeground", theme);
     }
 
     void setRefining(bool value)
@@ -764,16 +771,23 @@ struct DictationPanel::Native : QObject {
             return;
         }
         const bool hasProblem = !problem.isEmpty();
-        // Only errors have controls. The transparent space around a live
-        // capsule must not intercept clicks in the target application.
-        const LONG_PTR style = GetWindowLongPtrW(window, GWL_EXSTYLE);
-        const LONG_PTR wantedStyle = hasProblem ? style & ~WS_EX_TRANSPARENT : style | WS_EX_TRANSPARENT;
-        if (style != wantedStyle) {
-            SetWindowLongPtrW(window, GWL_EXSTYLE, wantedStyle);
-        }
         // A finished delivery: the outcome message is the whole story, so the
         // spent preview words go and the icon and message centre in the pill.
         const bool finished = completed && !hasProblem;
+        const SessionControls controls = hasProblem || finished ? SessionControls{}
+                                                                : sessionControls(sessionState);
+        const int controlsWidth = (controls.pauseVisible ? sessionButtonSize + sessionButtonGap : 0)
+            + (controls.cancelVisible ? sessionButtonSize + sessionButtonGap : 0);
+        const bool paused = controls.paused;
+        // Only errors and the session buttons take clicks. Otherwise the
+        // transparent space around a live capsule must not intercept clicks in
+        // the target application.
+        const bool interactive = hasProblem || controlsWidth > 0;
+        const LONG_PTR style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+        const LONG_PTR wantedStyle = interactive ? style & ~WS_EX_TRANSPARENT : style | WS_EX_TRANSPARENT;
+        if (style != wantedStyle) {
+            SetWindowLongPtrW(window, GWL_EXSTYLE, wantedStyle);
+        }
         // A receipt outranks the refining flag, which can still be set when
         // the delivery lands.
         glyph.Glyph(hstring((finished                   ? outcomeGlyph(outcome)
@@ -782,6 +796,8 @@ struct DictationPanel::Native : QObject {
                                 .toStdWString()));
         const bool renewing = status == renewingSignInText();
         const bool waiting = !hasProblem && !finished && (phase != Phase::Live || renewing);
+        // The bars show while listening and, flat in the caution colour, while
+        // paused.
         const bool listening = !hasProblem && !finished && !waiting;
         const bool showPreview = !hasProblem && !finished && !preview.isEmpty();
         setShimmer(waiting);
@@ -804,14 +820,15 @@ struct DictationPanel::Native : QObject {
         int wantedWidth = hasProblem ? std::clamp(measuredTextWidth(shown) + chromeWidth,
                                                   panelWidth, maximumWidth)
             : finished ? std::clamp(measuredTextWidth(shown) + 68, panelWidth, maximumWidth)
-            : waiting ? std::max(panelWidth, measuredTextWidth(shown) + 32) : panelWidth;
+            : waiting ? std::max(panelWidth, measuredTextWidth(shown) + 32) + controlsWidth
+                      : panelWidth + controlsWidth;
         if (showPreview) {
             const int transcriptMaximum = std::min(maximumPreviewWidth, maximumWidth);
             const QString visible = fitPreview(preview, transcriptMaximum - previewChromeWidth);
             // Match macOS: hug the transcript until it reaches the width cap.
             // Measuring the elided tail would make the width twitch at overflow.
             wantedWidth = std::min(transcriptMaximum,
-                std::max(panelWidth + previewChromeWidth,
+                std::max(panelWidth + controlsWidth + previewChromeWidth,
                          measuredTextWidth(preview) + previewChromeWidth));
             previewText.Text(hstring(visible.toStdWString()));
             previewText.Width(wantedWidth - previewChromeWidth);
@@ -823,20 +840,32 @@ struct DictationPanel::Native : QObject {
         text.Text(hstring(shown.toStdWString()));
         text.Visibility(listening ? Visibility::Collapsed : Visibility::Visible);
         text.Width(hasProblem ? wantedWidth - chromeWidth
-                   : finished ? wantedWidth - 68 : wantedWidth);
+                   : finished ? wantedWidth - 68
+                   // Hugging the status keeps the buttons beside it, inside the lobe.
+                   : controlsWidth > 0 ? std::max(panelWidth, measuredTextWidth(shown) + 32)
+                                       : wantedWidth);
         text.TextWrapping(hasProblem ? TextWrapping::Wrap : TextWrapping::NoWrap);
         text.MaxLines(hasProblem ? 0 : 1);
         text.TextAlignment(TextAlignment::Center);
         row.HorizontalAlignment(HorizontalAlignment::Center);
         glyph.Visibility(hasProblem || finished ? Visibility::Visible : Visibility::Collapsed);
         waveform.Visibility(listening ? Visibility::Visible : Visibility::Collapsed);
-        bars.Opacity(frozen ? 0.4 : 1.0);
-        if (listening && !barTimer.isActive()) {
-            lastFrame = barClock.elapsed();
-            barTimer.start();
-        } else if (!listening) {
-            barTimer.stop();
-        }
+        // Beside the buttons the strip is only as wide as its dots, so the tab
+        // under the words hugs [button][bars][button] with equal gaps.
+        waveform.Width(controlsWidth > 0 ? win::WaveformBars::stripWidth : double(panelWidth));
+        pauseButton.Visibility(controls.pauseVisible ? Visibility::Visible : Visibility::Collapsed);
+        pauseButton.IsEnabled(controls.pauseEnabled);
+        pauseButton.Content().as<FontIcon>().Glyph(paused ? L"\uE768" : L"\uE769");
+        const QString pauseText = paused ? resumeCaption() : pauseCaption();
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(pauseButton, win::hs(pauseText));
+        ToolTipService::SetToolTip(pauseButton, box_value(win::hs(pauseText)));
+        cancelButton.Visibility(controls.cancelVisible ? Visibility::Visible : Visibility::Collapsed);
+        wave->setFrozen(frozen);
+        wave->setPaused(paused, paused ? pausedFill() : Brush{nullptr});
+        wave->setRunning(listening);
+        const QString waveName = paused ? dictationStatusLabel(QStringLiteral("paused")) : inputLevelLabel();
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(wave->element(), win::hs(waveName));
+        ToolTipService::SetToolTip(waveform, paused ? box_value(win::hs(waveName)) : nullptr);
         dismiss.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
         fixButton.Visibility(offersFix ? Visibility::Visible : Visibility::Collapsed);
         countdown.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
@@ -854,7 +883,7 @@ struct DictationPanel::Native : QObject {
         const int stripHeight = hasProblem ? problemHeight
             : showPreview ? waiting ? lineHeight + 6 : compactStripHeight : panelHeight;
         row.Height(stripHeight);
-        bars.Height(stripHeight);
+        wave->element().Height(stripHeight);
         const int wantedHeight = hasProblem ? problemHeight + problemBarHeight
             : showPreview
             ? previewTopPadding + lineHeight + previewStripSpacing + stripHeight + previewBottomPadding
@@ -866,13 +895,59 @@ struct DictationPanel::Native : QObject {
             : previewTopPadding + lineHeight + previewStripSpacing
                 + std::max(compactStripHeight, lineHeight + 6) + previewBottomPadding;
         resize(wantedWidth, wantedHeight);
-        updateOutline(showPreview ? previewTopPadding + lineHeight + previewShoulderDrop : 0,
-                      waiting ? measuredTextWidth(shown) : 92.8);
+        // With the buttons showing, the lobe holds the whole row: the bars or
+        // the status text, with a button either side.
+        const double inkWidth = controlsWidth == 0 ? (waiting ? measuredTextWidth(shown) : win::WaveformBars::stripWidth)
+            : (listening ? win::WaveformBars::stripWidth : std::max(panelWidth, measuredTextWidth(shown) + 32))
+                + controlsWidth;
+        updateOutline(showPreview ? previewTopPadding + lineHeight + previewShoulderDrop : 0, inkWidth);
         chrome.UpdateLayout();
         if (IsWindowVisible(window)) {
             reposition();
         }
+        limitClicksToCapsule(interactive);
         refreshBanner();
+    }
+
+    // The surface is sized for the widest preview, so while the panel takes
+    // clicks the empty band beside the capsule would swallow clicks meant for
+    // the application below. A window region keeps hit testing, child island
+    // included, to the capsule's rectangle; everything the panel draws is
+    // inside it.
+    void limitClicksToCapsule(bool interactive)
+    {
+        // The words bar across the top, and under it only the tab's width
+        // when the outline carves one, so clicks beside the tab go through.
+        RECT bar{};
+        RECT tab{};
+        if (interactive) {
+            const auto bounds = chrome.TransformToVisual(nullptr).TransformBounds(
+                {0, 0, float(chrome.ActualWidth()), float(chrome.ActualHeight())});
+            const auto px = [this](double dip) { return int(std::lround(dip * scale())); };
+            bar = {px(bounds.X), px(bounds.Y), px(bounds.X + bounds.Width), px(bounds.Y + bounds.Height)};
+            if (outlineTabHalf > 0) {
+                const double middle = bounds.X + bounds.Width / 2.0;
+                tab = {px(middle - outlineTabHalf), px(bounds.Y + outlineShoulder),
+                       px(middle + outlineTabHalf), bar.bottom};
+                bar.bottom = tab.top;
+            }
+        }
+        if (EqualRect(&bar, &clickRegion) && EqualRect(&tab, &clickTab)) {
+            return;
+        }
+        clickRegion = bar;
+        clickTab = tab;
+        HRGN region = nullptr;
+        if (interactive) {
+            region = CreateRectRgnIndirect(&bar);
+            if (!IsRectEmpty(&tab)) {
+                HRGN lobe = CreateRectRgnIndirect(&tab);
+                CombineRgn(region, region, lobe, RGN_OR);
+                DeleteObject(lobe);
+            }
+        }
+        // The system owns the region once it is set.
+        SetWindowRgn(window, region, IsWindowVisible(window));
     }
 
     bool pointerOverChrome() const
@@ -997,9 +1072,13 @@ struct DictationPanel::Native : QObject {
             figure.Segments().Append(segment);
         };
         if (shoulder <= 0 || lobeHeight <= 0 || fillet < 4) {
+            outlineShoulder = 0;
+            outlineTabHalf = 0;
             outline.Data(capsuleGeometry(width, height));
             return;
         }
+        outlineShoulder = shoulder;
+        outlineTabHalf = half;
         figure.StartPoint({float(cap), 0});
         line(width - cap, 0);
         arc(width - cap, shoulder, cap, SweepDirection::Clockwise);
@@ -1075,6 +1154,10 @@ struct DictationPanel::Native : QObject {
     HWND window = nullptr;
     TextBlock previewText{nullptr};
     Border waveform{nullptr};
+    Button pauseButton{nullptr};
+    Button cancelButton{nullptr};
+    // The session's state name, from its stateChanged signal.
+    QString sessionState;
     HWND banner = nullptr;
     DesktopWindowXamlSource source{nullptr};
     DesktopWindowXamlSource bannerSource{nullptr};
@@ -1098,13 +1181,7 @@ struct DictationPanel::Native : QObject {
     FontIcon glyph{nullptr};
     TextBlock text{nullptr};
     TextBlock probe{nullptr};
-    StackPanel bars{nullptr};
-    std::vector<Microsoft::UI::Xaml::Shapes::Rectangle> barRects;
-    QTimer barTimer;
-    QElapsedTimer barClock;
-    qint64 lastFrame = 0;
-    waveform::LevelModel level;
-    float barPhase = 0.0f;
+    win::WaveformBars *wave = nullptr;
     QTimer problemAutoDismiss;
     QTimer countdownTick;
     // What the countdown had left when the pointer arrived; 0 while it runs.
@@ -1126,6 +1203,14 @@ struct DictationPanel::Native : QObject {
     Phase phase = Phase::Live;
     Brush normalForeground{nullptr};
     Microsoft::UI::Xaml::Media::Animation::Storyboard shimmer{nullptr};
+    // The window region limitClicksToCapsule() last set, as the words bar and
+    // the tab under it; empty for none.
+    RECT clickRegion{};
+    RECT clickTab{};
+    // The carved outline's shoulder and the tab's half width in DIPs, which
+    // the click region follows; 0 while the outline is a plain capsule.
+    double outlineShoulder = 0;
+    double outlineTabHalf = 0;
     bool shimmering = false;
     bool frozen = false;
     bool completed = false;
@@ -1191,7 +1276,7 @@ void DictationPanel::driveLevelForTest(float level)
 
 int DictationPanel::levelBarCountForTest() const
 {
-    return int(m_native->barRects.size());
+    return m_native->wave ? m_native->wave->count() : 0;
 }
 
 QRect DictationPanel::capsuleGeometryForTest() const

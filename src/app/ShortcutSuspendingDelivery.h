@@ -3,23 +3,27 @@
 #include "dictation/DictationPorts.h"
 #include "platform/GlobalShortcutBinder.h"
 
+#include <QList>
+
 namespace speecher {
 
 // Text delivery injects keystrokes, and a single-key binder watching the
 // injected key would take them for the user's finger. Suspending exactly for
 // the duration of the delivery call closes that loop: the single-key binders
 // gate events while suspended and drain their sources before the suspension
-// lifts, so nothing injected leaks through after resume either.
+// lifts, so nothing injected leaks through after resume either. Every Global
+// Shortcut is suspended: an injected key can match the cancel shortcut as
+// easily as the dictation one.
 class ShortcutSuspendingDelivery : public TextDeliveryAdapter {
     Q_OBJECT
 
 public:
     ShortcutSuspendingDelivery(TextDeliveryAdapter *inner,
-                               GlobalShortcutBinder *binder,
+                               QList<GlobalShortcutBinder *> binders,
                                QObject *parent = nullptr)
         : TextDeliveryAdapter(parent)
         , m_inner(inner)
-        , m_binder(binder)
+        , m_binders(std::move(binders))
     {
     }
 
@@ -27,15 +31,19 @@ public:
                            const DeliveryContent &content,
                            const Target &target) override
     {
-        m_binder->suspend();
+        for (GlobalShortcutBinder *binder : m_binders) {
+            binder->suspend();
+        }
         const DeliveryResult result = m_inner->deliver(settings, content, target);
-        m_binder->resume();
+        for (GlobalShortcutBinder *binder : m_binders) {
+            binder->resume();
+        }
         return result;
     }
 
 private:
     TextDeliveryAdapter *m_inner;
-    GlobalShortcutBinder *m_binder;
+    QList<GlobalShortcutBinder *> m_binders;
 };
 
 } // namespace speecher

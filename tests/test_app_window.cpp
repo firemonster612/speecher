@@ -375,6 +375,55 @@ private slots:
         QCOMPARE(QGuiApplication::clipboard()->text(), QStringLiteral("hello transcript"));
     }
 
+    // While dictating, Pause (Resume while paused) and Cancel sit beside the
+    // toggle as push buttons; the waveform stays beside the status, flat
+    // while paused.
+    void homeListeningRowPutsItsActionsBesideTheToggle()
+    {
+        ApplicationController controller(true);
+        controller.session()->findChild<TranscriptState *>()->commitFinal(
+            QStringLiteral("Please send the quarterly report to the team"));
+        HomePage page(&controller);
+        page.resize(720, 360);
+        page.show();
+        const auto present = [&](const char *state) {
+            const QString name = QLatin1String(state);
+            emit controller.stateChanged(name);
+            emit controller.statusChanged(dictationStatusLabel(name));
+        };
+        auto *pause = page.findChild<QPushButton *>(QStringLiteral("dictationPause"));
+        auto *cancel = page.findChild<QPushButton *>(QStringLiteral("dictationCancel"));
+        auto *toggle = page.findChild<QPushButton *>(QStringLiteral("dictationToggle"));
+        QVERIFY(pause && cancel && toggle);
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+
+        present("listening");
+        QCOMPARE(pause->text(), QStringLiteral("Pause"));
+        QCOMPARE(cancel->text(), QStringLiteral("Cancel"));
+        QVERIFY(pause->isVisibleTo(&page));
+        QVERIFY(pause->x() < cancel->x());
+        QVERIFY(cancel->x() < toggle->x());
+        if (!grabDir.isEmpty()) {
+            for (int frame = 0; frame < 60; ++frame) {
+                emit controller.audioLevelChanged(frame % 6 < 3 ? 0.02f : 0.4f);
+                QTest::qWait(16);
+            }
+            QVERIFY(page.grab().save(grabDir + QStringLiteral("/linux-home-listening.png")));
+        }
+
+        present("paused");
+        QCOMPARE(pause->text(), QStringLiteral("Resume"));
+        QVERIFY(cancel->isVisibleTo(&page));
+        if (!grabDir.isEmpty()) {
+            QTest::qWait(50);
+            QVERIFY(page.grab().save(grabDir + QStringLiteral("/linux-home-paused.png")));
+        }
+
+        present("idle");
+        QVERIFY(!pause->isVisibleTo(&page));
+        QVERIFY(!cancel->isVisibleTo(&page));
+    }
+
     void homeShowsInsightsOnlyWhenOnAndRecorded()
     {
         QTemporaryDir dir;

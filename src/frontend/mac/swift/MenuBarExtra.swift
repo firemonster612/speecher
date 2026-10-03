@@ -43,6 +43,9 @@ struct MenuBarPanel: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(!model.toggleEnabled)
+            if model.cancelable {
+                Button(SpeecherBridge.cancelDictationCaption) { model.bridge.cancel() }
+            }
             if model.accessibilitySupported && !model.accessibilityEnabled {
                 Divider()
                 AccessibilityNotice(model: model)

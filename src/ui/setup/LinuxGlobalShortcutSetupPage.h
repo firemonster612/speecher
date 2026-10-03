@@ -18,6 +18,7 @@ class QShowEvent;
 namespace speecher {
 
 class ApplicationController;
+struct SettingsRow;
 
 // Records the dictation shortcut as one button: click to arm, press a key
 // combination or a single key, and it applies immediately; click again or
@@ -95,9 +96,13 @@ public:
         SettingsCard,
     };
 
+    // The Cancel Shortcut's row is a settings card row with only the
+    // recorder: no default to reset to, no helper install and no manual
+    // command, which the dictation row beside it already offers.
     explicit LinuxGlobalShortcutSetupPage(ApplicationController &controller,
                                           QWidget *parent = nullptr,
-                                          Placement placement = Placement::SetupStep);
+                                          Placement placement = Placement::SetupStep,
+                                          GlobalShortcutRole role = GlobalShortcutRole::Dictation);
 
     // True while this AppImage run still needs the user to click Install
     // Speecher.
@@ -135,8 +140,10 @@ private:
     // status, else what the shortcut is for.
     void refreshDescription();
     void showRegistrationResult(bool bound, const QString &detail);
+    const SettingsRow &shortcutRow() const;
 
     ApplicationController &m_controller;
+    GlobalShortcutRole m_role = GlobalShortcutRole::Dictation;
     QString m_homePath;
     QString m_appImagePath;
     QString m_binaryPath;

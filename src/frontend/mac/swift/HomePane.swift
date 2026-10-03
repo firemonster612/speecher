@@ -39,6 +39,8 @@ struct HomePane: View {
     @State private var measure = HeatMeasure.dictations
     /// What the Share button says for a moment after a choice, or nil.
     @State private var shareReport: String?
+    /// The quietest level Home's waveform has heard, which its range starts from.
+    @State private var waveformFloor: Float = 0
 
     private var insights: SpeecherInsightsModel { model.insights }
 
@@ -91,14 +93,39 @@ struct HomePane: View {
     @ViewBuilder private var dictationCard: some View {
         Section {
             LabeledContent {
-                // Labelled and enabled by what toggle() would do, as in the
-                // menu bar panel.
-                Button(model.toggleLabel) {
-                    model.bridge.toggle()
+                HStack {
+                    // While dictating, Pause (Resume while paused) and Cancel
+                    // join the toggle, buttons like it.
+                    if model.pauseVisible {
+                        Button(model.paused ? SpeecherBridge.resumeCaption : SpeecherBridge.pauseCaption,
+                               systemImage: model.paused ? "play.fill" : "pause.fill") {
+                            model.togglePause()
+                        }
+                        .disabled(!model.pauseEnabled)
+                    }
+                    if model.cancelVisible {
+                        Button(SpeecherBridge.cancelCaption, systemImage: "xmark") { model.bridge.cancel() }
+                    }
+                    // Labelled and enabled by what toggle() would do, as in the
+                    // menu bar panel.
+                    Button(model.toggleLabel) {
+                        model.bridge.toggle()
+                    }
+                    .disabled(!model.toggleEnabled)
                 }
-                .disabled(!model.toggleEnabled)
             } label: {
-                Label(model.status, systemImage: model.listening ? "mic.fill" : "mic")
+                // The status, and while dictating the popup's waveform beside
+                // it; paused, both in the caution colour.
+                HStack(spacing: 10) {
+                    Label(model.status, systemImage: model.listening ? "mic.fill" : "mic")
+                        .foregroundStyle(model.paused ? Color(nsColor: .systemOrange) : Color.primary)
+                    if model.listening || model.paused {
+                        DotWaveform(level: model.$level, paused: model.paused, height: 20,
+                                    floor: $waveformFloor)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(model.paused ? model.status : model.bridge.inputLevelLabel)
+                    }
+                }
                 Text(model.bridge.dictationShortcutHint(model.shortcut))
             }
             // With no shortcut the hint asks for one, and this is the way there.

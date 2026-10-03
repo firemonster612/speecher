@@ -43,6 +43,8 @@ public:
 
     DictationState state() const;
     QString stateName() const;
+    // A start that arrived while the microphone was stopping and waits for it.
+    bool startPending() const;
     QString lastMessage() const;
     // Why the last session failed, kept after it goes back to idle so Home
     // can still say it; empty once the next session starts.
@@ -61,6 +63,18 @@ public slots:
     // media without ever delivering text — quitting mid-dictation must not
     // paste into whatever window has focus.
     void cancelForShutdown();
+    // Throws the session away from Starting through Refining: nothing is
+    // pasted, copied or recorded, and the popup says "Canceled" for a moment.
+    // Dismisses an error; does nothing while idle or delivering, when the text
+    // is already out.
+    void cancel();
+    // Pause turns the microphone off and lets the speech provider finish the
+    // words already spoken; they stay in the transcript. Resume listens on in
+    // a fresh speech attempt. Stop while paused delivers what was said.
+    void pause();
+    void resume();
+    // The pause button: pauses, or resumes while paused.
+    void togglePause();
     void popupPresented(quint64 generation);
     // How long startup waits for the popup to paint before proceeding without
     // it. Tests raise it so a slow runner cannot fire it under an assertion.
@@ -109,9 +123,19 @@ private:
     void handleSpeechFailure(const SpeechFailure &failure);
     void rollOverSpeechAttempt();
     void startNextAttempt();
+    // Opens the attempt after a pause once the paused one has finished, and
+    // sends it the audio heard in between.
+    void resumeAttempt();
+    void refineAfterLastAttempt();
+    void attemptEndedWhileStopping();
+    // QtAudioInput::stop() spins a nested event loop for the post-roll, during
+    // which commands and provider signals are dispatched. Callers settle the
+    // session before stopping and recheck it afterwards.
+    void stopAudio();
     void refillReconnectsIfAttemptWasStable();
     bool attemptWasStable() const;
     void deliverFinal(const QString &text);
+    void discard();
     void clearScreenshotContext();
     void resumePausedMedia();
     bool selectSpeechTranscriber(const QString &providerId, QString *error);
@@ -161,6 +185,18 @@ private:
     // Committed text carried over from before the current speech attempt; a
     // whole-attempt transcript replaces only what followed it.
     QString m_attemptBaseText;
+    // The current attempt is finishing because of a pause. Its end is not a
+    // rollover, and the next attempt may only open once it has come.
+    bool m_finishingPausedAttempt = false;
+    // Audio heard after a resume while the paused attempt still finishes.
+    QList<QByteArray> m_resumeAudio;
+    // Inside stopAudio(); a session start waits in m_pendingStart until it
+    // returns, unless a stop or cancel drops it first.
+    int m_audioStopDepth = 0;
+    std::optional<SessionOverrides> m_pendingStart;
+    // The last attempt ended while the microphone was stopping; the post-roll
+    // since waits in m_resumeAudio for stopListening().
+    bool m_attemptEndedDuringStop = false;
 };
 
 } // namespace speecher

@@ -10,6 +10,7 @@
 #include <QDBusVariant>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QSettings>
 #include <QTimer>
 #include <QUuid>
 
@@ -23,7 +24,6 @@ constexpr auto requestInterface = "org.freedesktop.portal.Request";
 constexpr auto registryInterface = "org.freedesktop.host.portal.Registry";
 constexpr auto sessionInterface = "org.freedesktop.portal.Session";
 constexpr auto appId = "io.github.firemonster612.speecher";
-constexpr auto shortcutId = "toggle-dictation";
 constexpr int createTimeoutMs = 5000;
 constexpr int registrationTimeoutMs = 120000;
 
@@ -51,6 +51,34 @@ QString portalTrigger(const QKeySequence &sequence)
     return trigger + key;
 }
 
+// The portal keeps an app's bound shortcuts across sessions and ListShortcuts
+// hands them back whenever a session is restored, so a shortcut the person let
+// go of would return on the next launch, or after a chooser they cancelled.
+// Speecher remembers the removal and restores nothing until a newly chosen
+// shortcut is bound.
+QString clearedKey(const GlobalShortcutAction &action)
+{
+    return action.settingsKey + QStringLiteral("PortalCleared");
+}
+
+void rememberCleared(const GlobalShortcutAction &action, bool cleared)
+{
+    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+                       QString::fromLatin1(SettingsKeys::Application));
+    if (cleared) {
+        settings.setValue(clearedKey(action), true);
+    } else {
+        settings.remove(clearedKey(action));
+    }
+}
+
+bool wasCleared(const GlobalShortcutAction &action)
+{
+    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+                       QString::fromLatin1(SettingsKeys::Application));
+    return settings.value(clearedKey(action)).toBool();
+}
+
 bool isUnknownRegistryCall(const QDBusError &error)
 {
     return error.type() == QDBusError::UnknownInterface
@@ -75,8 +103,8 @@ const QDBusArgument &operator>>(const QDBusArgument &argument, PortalShortcut &s
     return argument;
 }
 
-PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(QObject *parent)
-    : GlobalShortcutBinder(parent)
+PortalGlobalShortcutBinder::PortalGlobalShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : GlobalShortcutBinder(std::move(action), parent)
     , m_requestTimer(new QTimer(this))
 {
     qDBusRegisterMetaType<PortalShortcut>();
@@ -205,8 +233,11 @@ QString PortalGlobalShortcutBinder::shortcutDisplay() const
     return m_triggerDescription;
 }
 
-bool PortalGlobalShortcutBinder::setShortcut(const ShortcutBinding &, QString *error)
+bool PortalGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString *error)
 {
+    if (shortcut.isEmpty()) {
+        return removeRegistration(error);
+    }
     if (error) {
         *error = QStringLiteral(
             "Your desktop picks this key combination itself. Use Choose shortcut instead.");
@@ -219,6 +250,7 @@ bool PortalGlobalShortcutBinder::setShortcut(const ShortcutBinding &, QString *e
 // old combination starting dictation. Closing the session is the removal.
 bool PortalGlobalShortcutBinder::removeRegistration(QString *)
 {
+    rememberCleared(action(), true);
     m_bindWhenSupported = false;
     // An in-flight host-identity Register keeps its watcher, whose
     // continuation would recreate the session this removal closes. Cancel
@@ -302,6 +334,9 @@ bool PortalGlobalShortcutBinder::ensureHostIdentity(bool registration)
 
 void PortalGlobalShortcutBinder::createSession(bool registration)
 {
+    if (!registration && wasCleared(action())) {
+        return;
+    }
     if (!m_supported) {
         if (registration) {
             emit registrationFinished(false, m_unsupportedReason);
@@ -342,11 +377,12 @@ void PortalGlobalShortcutBinder::listShortcuts()
 void PortalGlobalShortcutBinder::bindShortcuts()
 {
     PortalShortcut shortcut;
-    shortcut.id = QString::fromLatin1(shortcutId);
-    shortcut.properties.insert(QStringLiteral("description"),
-                               QStringLiteral("Toggle dictation"));
-    shortcut.properties.insert(QStringLiteral("preferred_trigger"),
-                               portalTrigger(GlobalShortcutBinder::defaultShortcut()));
+    shortcut.id = action().id;
+    shortcut.properties.insert(QStringLiteral("description"), action().description);
+    if (!action().defaultShortcut.isEmpty()) {
+        shortcut.properties.insert(QStringLiteral("preferred_trigger"),
+                                   portalTrigger(action().defaultShortcut));
+    }
     sendRequest(QStringLiteral("BindShortcuts"),
                 {QVariant::fromValue(m_pendingSessionPath),
                  QVariant::fromValue(PortalShortcuts{shortcut}),
@@ -466,6 +502,7 @@ void PortalGlobalShortcutBinder::processRequestResponse(const PortalResponse &re
             requestFailed(QStringLiteral("Your desktop didn't say which keys it assigned."));
             return;
         }
+        rememberCleared(action(), false);
         activatePendingSession(trigger);
         emit registrationFinished(true, m_triggerDescription);
     }
@@ -477,7 +514,7 @@ void PortalGlobalShortcutBinder::handleActivated(const QDBusObjectPath &sessionH
                                                   const QVariantMap &)
 {
     if (sessionHandle.path() == m_sessionPath.path()
-        && id == QString::fromLatin1(shortcutId)) {
+        && id == action().id) {
         emit activated();
     }
 }
@@ -488,7 +525,7 @@ void PortalGlobalShortcutBinder::handleDeactivated(const QDBusObjectPath &sessio
                                                     const QVariantMap &)
 {
     if (sessionHandle.path() == m_sessionPath.path()
-        && id == QString::fromLatin1(shortcutId)) {
+        && id == action().id) {
         emit deactivated();
     }
 }
@@ -515,7 +552,7 @@ bool PortalGlobalShortcutBinder::shortcutTrigger(const QVariantMap &results,
     const PortalShortcuts shortcuts = qdbus_cast<PortalShortcuts>(
         results.value(QStringLiteral("shortcuts")));
     for (const PortalShortcut &shortcut : shortcuts) {
-        if (shortcut.id == QString::fromLatin1(shortcutId)) {
+        if (shortcut.id == action().id) {
             *trigger = shortcut.properties.value(
                 QStringLiteral("trigger_description")).toString();
             return !trigger->isEmpty();

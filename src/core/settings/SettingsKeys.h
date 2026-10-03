@@ -40,6 +40,8 @@ inline const QString BindingRules = QStringLiteral("bindings/rules");
 // Only platforms without a desktop-wide shortcut registry of their own store the
 // dictation binding here; KGlobalAccel owns it on KDE.
 inline const QString GlobalShortcut = QStringLiteral("shortcuts/toggleDictation");
+// The optional Global Shortcut that cancels dictation, kept the same way.
+inline const QString CancelShortcut = QStringLiteral("shortcuts/cancelDictation");
 inline const QString ShortcutActivationMode = QStringLiteral("shortcuts/activationMode");
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");

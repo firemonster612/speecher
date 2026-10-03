@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/InsightsSummary.h"
+#include "core/ShortcutBinding.h"
 #include "frontend/win/SettingsModel.h"
 
 #include <QHash>
@@ -26,6 +27,7 @@ namespace win {
 
 class CollectionEditor;
 class LocalModelBrowser;
+class WaveformBars;
 class SettingsModel;
 
 // The widest of the three control widths a settings row uses, for text that
@@ -92,6 +94,10 @@ struct PaneHost {
     // The Local models list and detail, kept for the same reason: its
     // selection outlives the rebuild each LocalSetup change causes.
     std::shared_ptr<LocalModelBrowser> localModels;
+    // Home's waveform while dictating, and the connection feeding it the
+    // level; both replaced each time Home is rebuilt.
+    std::shared_ptr<WaveformBars> homeWaveform;
+    QMetaObject::Connection homeLevel;
     // The Test microphone row's test, kept for the same reason. Reset, which
     // closes the microphone, on a pane change and when the window closes.
     std::shared_ptr<MicrophoneTest> microphoneTest;
@@ -101,10 +107,12 @@ struct PaneHost {
     int apiKeyEdits = 0;
     bool apiKeyLoaded = false;
     QString credentialProblem;
-    // What the Global Shortcut dialog left for the Dictation row to say.
+    // What the Global Shortcut dialog left for the Dictation row to say, and
+    // which of the two shortcut rows it is about.
     QString shortcutProblem;
     // The single-key typing cost, shown inline after a save; not an error.
     QString shortcutNotice;
+    GlobalShortcutRole shortcutNoteRole = GlobalShortcutRole::Dictation;
     bool shortcutRecording = false;
     // A row a search found, which the next pane build scrolls to.
     QString revealRow;

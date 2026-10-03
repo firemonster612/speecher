@@ -8,6 +8,7 @@ QString dictationStateName(DictationState state)
     case DictationState::Idle: return QStringLiteral("idle");
     case DictationState::Starting: return QStringLiteral("starting");
     case DictationState::Listening: return QStringLiteral("listening");
+    case DictationState::Paused: return QStringLiteral("paused");
     case DictationState::Stopping: return QStringLiteral("stopping");
     case DictationState::Refining: return QStringLiteral("refining");
     case DictationState::Delivering: return QStringLiteral("delivering");
@@ -19,7 +20,8 @@ QString dictationStateName(DictationState state)
 DictationToggleAction dictationToggleAction(const QString &stateName)
 {
     const QString lowered = stateName.toLower();
-    if (lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")) {
+    if (lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")
+        || lowered == QStringLiteral("paused")) {
         return {QStringLiteral("Stop dictation"), true};
     }
     if (lowered == QStringLiteral("refining")) {
@@ -41,6 +43,9 @@ QString dictationStatusLabel(const QString &stateName, const QString &message)
     const QString lowered = stateName.toLower();
     if (lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")) {
         return QStringLiteral("Listening…");
+    }
+    if (lowered == QStringLiteral("paused")) {
+        return QStringLiteral("Paused");
     }
     if (lowered == QStringLiteral("stopping")) {
         return QStringLiteral("Transcribing…");
@@ -73,6 +78,45 @@ bool dictationListeningPresentation(const QString &stateName)
 {
     const QString lowered = stateName.toLower();
     return lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening");
+}
+
+bool dictationCancelable(const QString &stateName)
+{
+    const QString lowered = stateName.toLower();
+    return lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")
+        || lowered == QStringLiteral("paused") || lowered == QStringLiteral("stopping")
+        || lowered == QStringLiteral("refining");
+}
+
+QString cancelDictationCaption()
+{
+    return QStringLiteral("Cancel dictation");
+}
+
+SessionControls sessionControls(const QString &stateName)
+{
+    const QString lowered = stateName.toLower();
+    const bool paused = lowered == QStringLiteral("paused");
+    const bool listening = lowered == QStringLiteral("listening");
+    return {lowered == QStringLiteral("starting") || listening || paused,
+            listening || paused,
+            paused,
+            dictationCancelable(lowered)};
+}
+
+QString pauseCaption()
+{
+    return QStringLiteral("Pause");
+}
+
+QString resumeCaption()
+{
+    return QStringLiteral("Resume");
+}
+
+QString cancelCaption()
+{
+    return QStringLiteral("Cancel");
 }
 
 QString trayToolTip(bool listening)

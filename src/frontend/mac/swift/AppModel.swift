@@ -23,6 +23,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var listening: Bool
     @Published private(set) var toggleLabel: String
     @Published private(set) var toggleEnabled: Bool
+    /// The buttons either side of the waveform, and whether the menu bar
+    /// panel offers Cancel.
+    @Published private(set) var pauseVisible: Bool
+    @Published private(set) var pauseEnabled: Bool
+    @Published private(set) var paused: Bool
+    @Published private(set) var cancelVisible: Bool
+    @Published private(set) var cancelable: Bool
     @Published private(set) var level: Float = 0
     /// The last thing Speecher heard, which the menu bar panel offers to copy.
     @Published private(set) var transcript: String
@@ -55,6 +62,9 @@ final class AppModel: ObservableObject {
     // retained collection editors can reload from the fresh snapshot.
     @Published private(set) var draftGeneration = 0
     @Published private(set) var shortcut: String
+    @Published private(set) var cancelShortcut: String
+    /// Why the last Cancel Shortcut change was refused, until the next one.
+    @Published private(set) var cancelShortcutProblem = ""
     /// The Test microphone row's test, which the bridge runs. Mirrored here
     /// rather than in the row, which a Form drops when it scrolls off; the
     /// window ends the test on a pane change and on close.
@@ -70,6 +80,8 @@ final class AppModel: ObservableObject {
     /// The last single-key binding was refused for the missing Accessibility
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
+    /// The same, for the Cancel Shortcut row.
+    @Published private(set) var cancelShortcutNeedsAccessibility = false
     /// The pane the sidebar is on. A window opened from closed starts on
     /// reopenPane.
     @Published var pane = "home" {
@@ -151,10 +163,16 @@ final class AppModel: ObservableObject {
         listening = bridge.listening
         toggleLabel = bridge.toggleLabel
         toggleEnabled = bridge.toggleEnabled
+        pauseVisible = bridge.pauseVisible
+        pauseEnabled = bridge.pauseEnabled
+        paused = bridge.paused
+        cancelVisible = bridge.cancelVisible
+        cancelable = bridge.cancelable
         transcript = bridge.lastTranscript
         failureNote = bridge.failureNote
         local = bridge.localSetupState
         shortcut = bridge.shortcutDisplay
+        cancelShortcut = bridge.cancelShortcutDisplay
         microphoneTestCaption = bridge.microphoneTestCaption
         microphoneTestEnabled = bridge.microphoneTestEnabled
         accessibilityEnabled = bridge.accessibilityEnabled
@@ -172,6 +190,11 @@ final class AppModel: ObservableObject {
             listening = self.bridge.listening
             toggleLabel = self.bridge.toggleLabel
             toggleEnabled = self.bridge.toggleEnabled
+            pauseVisible = self.bridge.pauseVisible
+            pauseEnabled = self.bridge.pauseEnabled
+            paused = self.bridge.paused
+            cancelVisible = self.bridge.cancelVisible
+            cancelable = self.bridge.cancelable
         }
         bridge.microphoneTestChanged = { [weak self] in
             guard let self else { return }
@@ -518,7 +541,12 @@ final class AppModel: ObservableObject {
     }
 
     func endShortcutRecording() {
-        shortcutProblem = bridge.endShortcutRecording() ?? ""
+        var cancelShortcutFailed: ObjCBool = false
+        let problem = bridge.endShortcutRecording(cancelShortcutFailed: &cancelShortcutFailed) ?? ""
+        shortcutProblem = cancelShortcutFailed.boolValue ? "" : problem
+        if cancelShortcutFailed.boolValue {
+            cancelShortcutProblem = problem
+        }
     }
 
     /// Ends the recording in progress, if any, and restores the hotkey.
@@ -555,6 +583,34 @@ final class AppModel: ObservableObject {
         guard let code = keyCodeName(forMacKeyCode: keyCode) else { return false }
         bindSingleKey(code: code)
         return true
+    }
+
+    func bindCancelShortcut(characters: String, modifierFlags: NSEvent.ModifierFlags) {
+        cancelShortcutProblem = bridge.bindCancelShortcut(characters: characters,
+                                                          modifierFlags: modifierFlags.rawValue) ?? ""
+        cancelShortcutNeedsAccessibility = false
+        cancelShortcut = bridge.cancelShortcutDisplay
+    }
+
+    /// The Cancel Shortcut recorder's single-key entry point; says whether the
+    /// key was one it could take.
+    func bindCancelSingleKey(macKeyCode keyCode: UInt16) -> Bool {
+        guard let code = keyCodeName(forMacKeyCode: keyCode) else { return false }
+        cancelShortcutProblem = bridge.bindCancelSingleKey(code: code) ?? ""
+        cancelShortcutNeedsAccessibility = !cancelShortcutProblem.isEmpty && !bridge.accessibilityEnabled
+        cancelShortcut = bridge.cancelShortcutDisplay
+        return true
+    }
+
+    func clearCancelShortcut() {
+        cancelShortcutProblem = bridge.clearCancelShortcut() ?? ""
+        cancelShortcutNeedsAccessibility = false
+        cancelShortcut = bridge.cancelShortcutDisplay
+    }
+
+    /// The pause button: pauses, or resumes while paused.
+    func togglePause() {
+        bridge.togglePause()
     }
 
     /// Goes back to the binder's built-in default.

@@ -30,6 +30,13 @@ const PhysicalKey *physicalKeyForMac(int mac);
 // The row for a Windows scancode, or nullptr when the vocabulary lacks it.
 const PhysicalKey *physicalKeyForWin(int win);
 
+// The two Global Shortcuts: the one that toggles dictation, and the optional
+// Cancel Shortcut.
+enum class GlobalShortcutRole {
+    Dictation,
+    Cancel,
+};
+
 // The Global Shortcut: a key combination, which every desktop shortcut service
 // accepts, or one physical key, which none does and a platform backend has to
 // observe itself. QKeySequence cannot name a single key: Qt folds Alt_L and

@@ -15,12 +15,9 @@ namespace speecher {
 namespace {
 
 constexpr UInt32 hotKeySignature = 'spch';
-constexpr UInt32 hotKeyIdentifier = 1;
-
-QKeySequence defaultShortcut()
-{
-    return QKeySequence(Qt::META | Qt::ALT | Qt::Key_D);
-}
+// Each binder registers its hot key under its own identifier, so the
+// dictation and cancel binders each handle only their own presses.
+UInt32 nextHotKeyIdentifier = 1;
 
 // Function and control keys have fixed positions. Printable keys must follow
 // the current input source because QKeySequence stores logical characters.
@@ -101,30 +98,29 @@ OSStatus handleHotKeyEvent(EventHandlerCallRef, EventRef event, void *userData)
                              nullptr,
                              &pressed) != noErr
         || pressed.signature != hotKeySignature
-        || pressed.id != hotKeyIdentifier) {
+        || pressed.id != binder->hotKeyIdentifier()) {
         return eventNotHandledErr;
     }
 
     // Carbon dispatches on the main runloop, so a release can be handled long
     // after it happened while the main thread is busy; GetEventTime() is when
-    // it happened. One hot key is registered at a time, so one press time is
-    // enough.
-    static EventTime pressedAt = -1;
+    // it happened. Each binder has one hot key, so one press time per binder.
+    static QHash<UInt32, EventTime> pressedAt;
     if (GetEventKind(event) == kEventHotKeyPressed) {
-        pressedAt = GetEventTime(event);
+        pressedAt.insert(pressed.id, GetEventTime(event));
         emit binder->activated();
     } else {
+        const EventTime pressedTime = pressedAt.take(pressed.id);
         const EventTime releasedAt = GetEventTime(event);
-        const qint64 heldMs = pressedAt >= 0 && releasedAt >= pressedAt
-            ? qint64((releasedAt - pressedAt) * 1000.0)
+        const qint64 heldMs = pressedTime > 0 && releasedAt >= pressedTime
+            ? qint64((releasedAt - pressedTime) * 1000.0)
             : -1;
-        pressedAt = -1;
         emit binder->deactivated(heldMs);
     }
     return noErr;
 }
 
-QKeySequence savedShortcut()
+QKeySequence savedShortcut(const GlobalShortcutAction &action)
 {
     QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
                        QString::fromLatin1(SettingsKeys::Organization),
@@ -132,23 +128,24 @@ QKeySequence savedShortcut()
     // The stored value can be a single key ("key:…"), which belongs to the
     // single-key binder and must not parse as a sequence here.
     const ShortcutBinding stored =
-        ShortcutBinding::fromString(settings.value(SettingsKeys::GlobalShortcut).toString());
-    return stored.combination().isEmpty() ? defaultShortcut() : stored.combination();
+        ShortcutBinding::fromString(settings.value(action.settingsKey).toString());
+    return stored.combination().isEmpty() ? action.defaultShortcut : stored.combination();
 }
 
-void storeShortcut(const QKeySequence &shortcut)
+void storeShortcut(const QString &key, const QKeySequence &shortcut)
 {
     QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
                        QString::fromLatin1(SettingsKeys::Organization),
                        QString::fromLatin1(SettingsKeys::Application));
-    settings.setValue(SettingsKeys::GlobalShortcut, shortcut.toString());
+    settings.setValue(key, shortcut.toString());
 }
 
 } // namespace
 
-MacGlobalShortcutBinder::MacGlobalShortcutBinder(QObject *parent)
-    : GlobalShortcutBinder(parent)
-    , m_shortcut(savedShortcut())
+MacGlobalShortcutBinder::MacGlobalShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : GlobalShortcutBinder(std::move(action), parent)
+    , m_shortcut(savedShortcut(this->action()))
+    , m_hotKeyIdentifier(nextHotKeyIdentifier++)
 {
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDistributedCenter(), this,
@@ -188,6 +185,9 @@ QString MacGlobalShortcutBinder::unsupportedReason() const
 
 void MacGlobalShortcutBinder::bind()
 {
+    if (m_shortcut.isEmpty()) {
+        return;
+    }
     if (m_suspensionCount > 0) {
         m_resumeBinding = true;
         return;
@@ -212,6 +212,12 @@ bool MacGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
         }
         return false;
     }
+    if (shortcut.isEmpty()) {
+        removeRegistration();
+        m_shortcut = {};
+        storeShortcut(action().settingsKey, m_shortcut);
+        return true;
+    }
     if (!registerHotKey(shortcut.combination(), error)) {
         return false;
     }
@@ -221,8 +227,13 @@ bool MacGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
         unregisterHotKey();
     }
     m_shortcut = shortcut.combination();
-    storeShortcut(m_shortcut);
+    storeShortcut(action().settingsKey, m_shortcut);
     return true;
+}
+
+quint32 MacGlobalShortcutBinder::hotKeyIdentifier() const
+{
+    return m_hotKeyIdentifier;
 }
 
 // A Carbon hotkey is consumed system-wide and never arrives as an app key
@@ -319,7 +330,7 @@ bool MacGlobalShortcutBinder::registerHotKey(const QKeySequence &shortcut, QStri
         return true;
     }
 
-    const EventHotKeyID identifier{hotKeySignature, hotKeyIdentifier};
+    const EventHotKeyID identifier{hotKeySignature, m_hotKeyIdentifier};
     EventHotKeyRef hotKey = nullptr;
     if (RegisterEventHotKey(keyCode, modifiers, identifier, GetApplicationEventTarget(), 0, &hotKey)
         != noErr) {

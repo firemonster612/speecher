@@ -1,5 +1,7 @@
 #include "ui/WaveformWidget.h"
 
+#include "ui/settings/SettingsPageSupport.h"
+
 #include <QApplication>
 #include <QFont>
 #include <QFontMetrics>
@@ -54,7 +56,7 @@ WaveformWidget::WaveformWidget(QWidget *parent)
     m_clock.start();
     m_timer.setInterval(waveform::frameIntervalMs);
     connect(&m_timer, &QTimer::timeout, this, [this] {
-        if (m_mode == Mode::Frozen) {
+        if (m_mode == Mode::Frozen || m_mode == Mode::Paused) {
             return;
         }
         const qint64 now = m_clock.elapsed();
@@ -83,9 +85,9 @@ void WaveformWidget::applyGeometry()
     const int height = m_compact
         ? (showsText ? fontMetrics().height() + 6 : compactStripHeight)
         : std::max(pillHeight, fontMetrics().height() + 10);
-    const int width = m_message.isEmpty()
-        ? pillWidth
-        : std::max(pillWidth, contentWidth() + 32);
+    const int width = !m_message.isEmpty() ? std::max(pillWidth, contentWidth() + 32)
+        : m_hugsInk ? contentWidth()
+                    : pillWidth;
     setFixedSize(width, height);
 }
 
@@ -105,6 +107,16 @@ void WaveformWidget::setCompact(bool compact)
         return;
     }
     m_compact = compact;
+    applyGeometry();
+    update();
+}
+
+void WaveformWidget::setHugsInk(bool hugs)
+{
+    if (m_hugsInk == hugs) {
+        return;
+    }
+    m_hugsInk = hugs;
     applyGeometry();
     update();
 }
@@ -216,6 +228,8 @@ void WaveformWidget::paintEvent(QPaintEvent *)
         paintMessage(painter, bar);
     } else if (m_mode == Mode::Status) {
         paintStatus(painter, bar);
+    } else if (m_mode == Mode::Paused) {
+        paintWaveform(painter, settings::neutralTextColor(p), true);
     } else {
         // Frozen keeps the bars at their last heights but drops them to the
         // 40% alpha Wispr Flow uses once the mic is no longer capturing.
@@ -223,7 +237,7 @@ void WaveformWidget::paintEvent(QPaintEvent *)
     }
 }
 
-void WaveformWidget::paintWaveform(QPainter &painter, const QColor &bar)
+void WaveformWidget::paintWaveform(QPainter &painter, const QColor &bar, bool flat)
 {
     const qreal audioScale = m_level.audioScale();
     const qreal totalWidth = barCount * barWidth + (barCount - 1) * barGap;
@@ -237,7 +251,7 @@ void WaveformWidget::paintWaveform(QPainter &painter, const QColor &bar)
         // are. At Wispr Flow's ten this is its own 0.1s delay.
         const qreal barPhase = m_wavePhase - qreal(i) / barCount;
         const qreal wave = waveform::waveMultiplier(barPhase - std::floor(barPhase));
-        const qreal h = barDotHeight * audioScale * bulge * wave;
+        const qreal h = flat ? barDotHeight : barDotHeight * audioScale * bulge * wave;
         const qreal x = startX + i * (barWidth + barGap);
         // scaleY on the reference bar stretches its corners too, which tapers
         // the tips as the bar grows; the radius scales by the same factor.

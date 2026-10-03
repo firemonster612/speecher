@@ -12,12 +12,17 @@ namespace {
 
 constexpr auto shortcutComponent = "io.github.firemonster612.speecher";
 constexpr auto legacyShortcutComponent = "local.speecher";
-constexpr auto shortcutAction = "toggle-dictation";
+
+// KGlobalAccel's key list for one sequence; an unbound shortcut has none.
+QList<QKeySequence> keyList(const QKeySequence &sequence)
+{
+    return sequence.isEmpty() ? QList<QKeySequence>{} : QList<QKeySequence>{sequence};
+}
 
 } // namespace
 
-KGlobalAccelShortcutBinder::KGlobalAccelShortcutBinder(QObject *parent)
-    : GlobalShortcutBinder(parent)
+KGlobalAccelShortcutBinder::KGlobalAccelShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : GlobalShortcutBinder(std::move(action), parent)
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
     // Press arrives through QAction::triggered; the daemon reports release
@@ -52,11 +57,11 @@ QString KGlobalAccelShortcutBinder::unsupportedReason() const
 QAction *KGlobalAccelShortcutBinder::makeShortcutAction()
 {
     delete m_action;
-    m_action = new QAction(QStringLiteral("Toggle dictation"), this);
+    m_action = new QAction(action().description, this);
     // Holding the keys must not re-trigger: kglobalaccel drops its Repeated
     // states when the action opts out of auto-repeat.
     m_action->setAutoRepeat(false);
-    m_action->setObjectName(QString::fromLatin1(shortcutAction));
+    m_action->setObjectName(action().id);
     m_action->setProperty("componentName", QString::fromLatin1(shortcutComponent));
     m_action->setProperty("componentDisplayName", QStringLiteral("Speecher"));
     connect(m_action, &QAction::triggered, this, &GlobalShortcutBinder::activated);
@@ -69,24 +74,24 @@ void KGlobalAccelShortcutBinder::bind()
     QKeySequence savedShortcut = shortcut().combination();
     const QList<QKeySequence> legacyShortcuts = KGlobalAccel::self()->globalShortcut(
         QString::fromLatin1(legacyShortcutComponent),
-        QString::fromLatin1(shortcutAction));
+        action().id);
     if (savedShortcut.isEmpty() && !legacyShortcuts.isEmpty()) {
         savedShortcut = legacyShortcuts.first();
     }
     KGlobalAccel::self()->cleanComponent(QString::fromLatin1(legacyShortcutComponent));
     makeShortcutAction();
-    const QKeySequence defaultShortcut = GlobalShortcutBinder::defaultShortcut();
-    if (!KGlobalAccel::self()->setDefaultShortcut(m_action, {defaultShortcut})) {
+    const QKeySequence defaultShortcut = action().defaultShortcut;
+    if (!KGlobalAccel::self()->setDefaultShortcut(m_action, keyList(defaultShortcut))) {
         qWarning() << "Could not set the default Global Shortcut"
                    << QString::fromLatin1(shortcutComponent) << defaultShortcut;
     }
     const QKeySequence wanted = savedShortcut.isEmpty() ? defaultShortcut : savedShortcut;
-    if (!KGlobalAccel::self()->setShortcut(m_action, {wanted}, KGlobalAccel::Autoloading)) {
+    if (!KGlobalAccel::self()->setShortcut(m_action, keyList(wanted), KGlobalAccel::Autoloading)) {
         qWarning() << "Could not activate the Global Shortcut" << wanted;
     }
     // The daemon reports success but stores no key when another component owns it.
     const QList<QKeySequence> active = KGlobalAccel::self()->shortcut(m_action);
-    if (active.isEmpty() || active.first() != wanted) {
+    if (!wanted.isEmpty() && (active.isEmpty() || active.first() != wanted)) {
         qWarning() << "Global Shortcut differs from the requested keys: wanted" << wanted
                    << "active" << (active.isEmpty() ? QKeySequence() : active.first());
     }
@@ -99,7 +104,7 @@ ShortcutBinding KGlobalAccelShortcutBinder::shortcut() const
 #ifdef SPEECHER_WITH_KGLOBALACCEL
     const QList<QKeySequence> shortcuts = KGlobalAccel::self()->globalShortcut(
         QString::fromLatin1(shortcutComponent),
-        QString::fromLatin1(shortcutAction));
+        action().id);
     return shortcuts.isEmpty() ? ShortcutBinding() : ShortcutBinding(shortcuts.first());
 #else
     return {};
@@ -116,12 +121,6 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
         }
         return false;
     }
-    if (shortcut.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("Choose a key sequence");
-        }
-        return false;
-    }
     // removeRegistration() deletes the action when a single key takes over;
     // choosing a combination again arrives here without a bind() in between,
     // so recreate the action (and its activation connection) on demand.
@@ -129,9 +128,7 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
         makeShortcutAction();
     }
     if (!KGlobalAccel::self()->setShortcut(
-            m_action,
-            {shortcut.combination()},
-            KGlobalAccel::NoAutoloading)) {
+            m_action, keyList(shortcut.combination()), KGlobalAccel::NoAutoloading)) {
         if (error) {
             *error = QStringLiteral("The desktop global-shortcut service rejected the key sequence");
         }

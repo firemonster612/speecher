@@ -66,6 +66,11 @@ QString popupDismissCaption()
     return QStringLiteral("Dismiss");
 }
 
+QString cancelledOutcomeText()
+{
+    return QStringLiteral("Canceled");
+}
+
 QString renewingSignInText()
 {
     return QStringLiteral("Renewing sign-in\u2026");

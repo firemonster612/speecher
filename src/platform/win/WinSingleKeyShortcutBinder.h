@@ -15,17 +15,16 @@ namespace speecher {
 // (RIDEV_INPUTSINK), and involves no hook or grab, so the key keeps doing
 // its normal job as well.
 //
-// Raw input registration is per process and usage: registering the keyboard
-// usage here retargets the WM_INPUT stream the combination binder registered
-// for its release detection, and vice versa. That is safe because there is
-// one binding — whichever binder bound last is the one that needs the
-// stream — and it is why unwatch() must never call RIDEV_REMOVE.
+// Raw input registration is per process and usage, so the stream comes from
+// the shared listener in WinRawKeyboard, which the combination binders' release
+// detection also reads.
 class WinSingleKeyShortcutBinder final : public SingleKeyShortcutBinder {
     Q_OBJECT
 
 public:
-    explicit WinSingleKeyShortcutBinder(QObject *parent = nullptr);
-    ~WinSingleKeyShortcutBinder() override;
+    explicit WinSingleKeyShortcutBinder(
+        GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
+        QObject *parent = nullptr);
 
     bool supported() const override;
     QString unsupportedBindingReason(const ShortcutBinding &binding) const override;
@@ -36,15 +35,8 @@ protected:
 
 private:
     friend class ::WinPlatformTests;
-    static LRESULT CALLBACK messageWindowProc(HWND window,
-                                               UINT message,
-                                               WPARAM wParam,
-                                               LPARAM lParam);
-    bool registerRawInput(QString *error);
-    void handleRawInput(HRAWINPUT handle);
     void handleRawInput(const RAWINPUT &input);
 
-    HWND m_messageWindow = nullptr;
     // The vocabulary's win value while watching, 0 while not.
     int m_scancode = 0;
 };

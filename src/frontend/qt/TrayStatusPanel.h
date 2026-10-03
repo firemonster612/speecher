@@ -11,9 +11,10 @@ namespace speecher {
 
 class ApplicationController;
 
-// What clicking the tray icon opens: what dictation is doing, Start/Stop, the
-// last transcript to copy again, Settings… and Quit Speecher. The Linux
-// counterpart of the macOS menu bar popover and the Windows tray flyout.
+// What clicking the tray icon opens: what dictation is doing, Start/Stop,
+// Cancel while a session can be cancelled, the last transcript to copy again,
+// Settings… and Quit Speecher. The Linux counterpart of the macOS menu bar
+// popover and the Windows tray flyout.
 class TrayStatusPanel final : public QFrame {
     Q_OBJECT
 
@@ -41,6 +42,7 @@ private:
     QLabel *m_heading;
     QProgressBar *m_level;
     QPushButton *m_toggle;
+    QPushButton *m_cancel;
     QLabel *m_transcript;
     QPushButton *m_copy;
 };

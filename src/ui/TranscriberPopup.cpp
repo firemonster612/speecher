@@ -11,6 +11,7 @@
 #include <QFrame>
 #include <QEvent>
 #include <QHBoxLayout>
+#include <QToolButton>
 #include <QFontMetrics>
 #include <QPalette>
 #include <QPaintEvent>
@@ -59,6 +60,9 @@ constexpr int kPreviewStripSpacing = 8;
 // rounded everywhere.
 constexpr qreal kContourFillet = 12.0;   // the concave turn from shoulder into lobe
 constexpr qreal kLobePad = 10.0;         // lobe air either side of the strip's ink
+// The gap between each session button and the dots, and from each button to
+// the tab's rounded end, as on the macOS and Windows popups.
+constexpr int kSessionButtonGap = 12;
 // The shoulder sits as far below the text as the pill's top sits above it,
 // so the wide bar reads evenly padded around the preview line.
 constexpr qreal kShoulderDrop = kPreviewMargins.top();
@@ -74,10 +78,11 @@ public:
     // Only the popup's preview pill sets these; banners and the error capsule
     // keep the plain outline. With both widgets visible the frame carves the
     // preview contour around them instead of a full rounded rectangle.
-    void setContourWidgets(QWidget *text, WaveformWidget *strip)
+    void setContourWidgets(QWidget *text, WaveformWidget *strip, QList<QWidget *> beside)
     {
         m_text = text;
         m_strip = strip;
+        m_beside = std::move(beside);
     }
 
 protected:
@@ -124,8 +129,17 @@ private:
         // wider than the ink they hold.
         const qreal stripCenter = m_strip->x() + m_strip->width() / 2.0;
         const qreal lobeHalf = m_strip->contentWidth() / 2.0 + kLobePad;
-        const qreal lobeLeft = stripCenter - lobeHalf;
-        const qreal lobeRight = stripCenter + lobeHalf;
+        qreal lobeLeft = stripCenter - lobeHalf;
+        qreal lobeRight = stripCenter + lobeHalf;
+        // The buttons either side of the strip sit inside the lobe too,
+        // as far from its rounded ends as from the dots.
+        for (const QWidget *button : m_beside) {
+            if (button->isVisible()) {
+                const qreal left = button->mapTo(this, QPoint(0, 0)).x();
+                lobeLeft = std::min(lobeLeft, left - kSessionButtonGap);
+                lobeRight = std::max(lobeRight, left + button->width() + kSessionButtonGap);
+            }
+        }
         const qreal lobeHeight = pillRect.bottom() - shoulderY;
         // Radii yield to the room available: the fillet takes what the shelf
         // between end cap and lobe leaves it, and fillet plus bottom corner
@@ -176,6 +190,52 @@ private:
 
     QWidget *m_text = nullptr;
     WaveformWidget *m_strip = nullptr;
+    QList<QWidget *> m_beside;
+};
+
+QColor mixed(const QColor &from, const QColor &to, int percent)
+{
+    return QColor(from.red() + (to.red() - from.red()) * percent / 100,
+                  from.green() + (to.green() - from.green()) * percent / 100,
+                  from.blue() + (to.blue() - from.blue()) * percent / 100);
+}
+
+// The pause and X beside the waveform, as circles: the popup is a painted
+// rounded capsule, and the style's square tool buttons clash with it. Only
+// the background is painted, from palette colours: the Button colour inside
+// a ring at Kirigami's frame contrast, with more of the text colour mixed in
+// on hover and press. The icon, focus, accessibility and clicks stay the
+// tool button's.
+class CircleButton final : public QToolButton {
+public:
+    explicit CircleButton(QWidget *parent)
+        : QToolButton(parent)
+    {
+        setAttribute(Qt::WA_Hover);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QPalette p = QApplication::palette();
+        const QColor button = p.color(QPalette::Button);
+        const QColor text = p.color(QPalette::ButtonText);
+        const int emphasis = isDown() ? 16 : underMouse() && isEnabled() ? 8 : 0;
+        const qreal dpr = devicePixelRatioF() > 0 ? devicePixelRatioF() : 1.0;
+        const qreal penWidth = 1.0 / dpr;
+        const qreal side = std::min(width(), height()) - penWidth;
+        const QRectF circle((width() - side) / 2.0, (height() - side) / 2.0, side, side);
+        painter.setPen(QPen(mixed(button, text, 20), penWidth));
+        painter.setBrush(mixed(button, text, emphasis));
+        painter.drawEllipse(circle);
+        const QSize icon = iconSize();
+        const QRect iconRect((width() - icon.width()) / 2, (height() - icon.height()) / 2,
+                             icon.width(), icon.height());
+        this->icon().paint(&painter, iconRect, Qt::AlignCenter,
+                           isEnabled() ? QIcon::Normal : QIcon::Disabled);
+    }
 };
 
 // The popup's action chips: capsule buttons in the pill's own visual language,
@@ -296,7 +356,9 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAutoFillBackground(false);
-    setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
+    // Never focused, even when its buttons are clicked: the Target keeps it.
+    setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool
+                   | Qt::WindowDoesNotAcceptFocus);
     setAttribute(Qt::WA_ShowWithoutActivating);
     m_positioner->configurePopup(m_surface);
 #ifdef Q_OS_MACOS
@@ -366,8 +428,41 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     // error being read does not disappear under it.
     m_previewPill->installEventFilter(this);
     m_pillLayout->addLayout(previewRow, 1);
-    m_pillLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
-    static_cast<PillFrame *>(m_previewPill)->setContourWidgets(m_preview, m_waveform);
+    // Pause (resume while paused) and cancel either side of the waveform,
+    // round buttons the size of the style's framed tool button. They never
+    // take focus, so a click leaves the Target focused.
+    const auto sessionButton = [this, iconSize](const char *name) {
+        auto *button = new CircleButton(m_previewPill);
+        button->setObjectName(QLatin1String(name));
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        button->setIconSize(QSize(iconSize, iconSize));
+        const QSize hint = button->sizeHint();
+        const int side = std::max(hint.width(), hint.height());
+        button->setFixedSize(side, side);
+        button->hide();
+        return button;
+    };
+    m_pauseButton = sessionButton("pauseButton");
+    m_cancelButton = sessionButton("cancelButton");
+    m_cancelButton->setIcon(QIcon::fromTheme(QStringLiteral("window-close")));
+    m_cancelButton->setToolTip(cancelCaption());
+    m_cancelButton->setAccessibleName(cancelCaption());
+    connect(m_pauseButton, &QToolButton::clicked, this, &TranscriberPopup::pauseToggled);
+    connect(m_cancelButton, &QToolButton::clicked, this, &TranscriberPopup::cancelRequested);
+    auto *waveformRow = new QHBoxLayout;
+    // Clear of the capsule's rounded ends when there are no words, by the
+    // same air the lobe leaves beside them under words.
+    waveformRow->setContentsMargins(kSessionButtonGap, 0, kSessionButtonGap, 0);
+    waveformRow->setSpacing(kSessionButtonGap);
+    waveformRow->addStretch();
+    waveformRow->addWidget(m_pauseButton, 0, Qt::AlignVCenter);
+    waveformRow->addWidget(m_waveform, 0, Qt::AlignVCenter);
+    waveformRow->addWidget(m_cancelButton, 0, Qt::AlignVCenter);
+    waveformRow->addStretch();
+    m_pillLayout->addLayout(waveformRow);
+    static_cast<PillFrame *>(m_previewPill)
+        ->setContourWidgets(m_preview, m_waveform, {m_pauseButton, m_cancelButton});
 
     m_errorDismissProgress->setObjectName(QStringLiteral("errorDismissProgress"));
     m_errorDismissProgress->setRange(0, 1000);
@@ -480,6 +575,23 @@ QSize TranscriberPopup::sizeHint() const
 
 void TranscriberPopup::setSessionState(DictationState state)
 {
+    const DictationState previous = std::exchange(m_sessionState, state);
+    applySessionControls();
+    // The buttons set the strip's height; an error capsule sizes itself.
+    if (m_errorDismiss->isHidden()) {
+        applyPillGeometry();
+    }
+    // Paused stills the bars into a flat row in the caution colour; resuming
+    // brings them back.
+    if (state == DictationState::Paused) {
+        m_waveform->setMode(WaveformWidget::Mode::Paused);
+    } else if (previous == DictationState::Paused && state == DictationState::Listening) {
+        m_waveform->setMode(WaveformWidget::Mode::Waveform);
+    }
+    const QString pausedLabel =
+        state == DictationState::Paused ? dictationStatusLabel(dictationStateName(state)) : QString();
+    m_waveform->setToolTip(pausedLabel);
+    m_waveform->setAccessibleName(pausedLabel);
     // Stopping is the one state that drives this popup directly: the mic is
     // closed but the provider is still finalising, so the waveform gives way
     // to a shimmering "Transcribing…" and the stale speech preview goes away.
@@ -499,7 +611,11 @@ void TranscriberPopup::setPreview(const QString &preview)
         return;
     }
     restoreStandardLayout();
-    m_waveform->setMode(WaveformWidget::Mode::Waveform);
+    // The paused attempt's last words land after the pause; the strip stays
+    // paused.
+    if (m_sessionState != DictationState::Paused) {
+        m_waveform->setMode(WaveformWidget::Mode::Waveform);
+    }
     applyPreviewText(preview);
 }
 
@@ -560,15 +676,22 @@ void TranscriberPopup::applyPillGeometry()
     const bool hasWords = !m_preview->isHidden();
     m_waveform->setCompact(hasWords);
     m_pillLayout->setSpacing(hasWords ? kPreviewStripSpacing : 0);
+    // The strip's row is as tall as the taller of the bars and the buttons.
+    int stripHeight = m_waveform->height();
+    for (const QToolButton *button : {m_pauseButton, m_cancelButton}) {
+        if (!button->isHidden()) {
+            stripHeight = std::max(stripHeight, button->sizeHint().height());
+        }
+    }
     if (!hasWords) {
         m_pillLayout->setContentsMargins(0, 0, 0, 0);
-        m_previewPill->setFixedHeight(m_waveform->height());
+        m_previewPill->setFixedHeight(stripHeight);
         return;
     }
     m_pillLayout->setContentsMargins(kPreviewMargins);
     m_previewPill->setFixedHeight(kPreviewMargins.top() + m_preview->sizeHint().height()
                                   + kPreviewStripSpacing
-                                  + m_waveform->height() + kPreviewMargins.bottom());
+                                  + stripHeight + kPreviewMargins.bottom());
 }
 
 void TranscriberPopup::setLevel(float level)
@@ -645,7 +768,8 @@ static QString breakableRuns(const QString &text, const QFontMetrics &metrics, i
 }
 
 // The theme icon for each receipt: the document went out, or it sits on the
-// clipboard. A fallback delivered text, but not the text asked for.
+// clipboard. A fallback delivered text, but not the text asked for; a cancel
+// delivered nothing.
 static QIcon outcomeIcon(PopupOutcome outcome)
 {
     switch (outcome) {
@@ -657,6 +781,8 @@ static QIcon outcomeIcon(PopupOutcome outcome)
         return QIcon::fromTheme(QStringLiteral("dialog-information"));
     case PopupOutcome::Error:
         return QIcon::fromTheme(QStringLiteral("dialog-warning"));
+    case PopupOutcome::Cancelled:
+        return QIcon::fromTheme(QStringLiteral("dialog-cancel"));
     }
     return {};
 }
@@ -850,6 +976,22 @@ void TranscriberPopup::applyTheme()
         m_errorDismissProgress->update();
     }
     m_applyingTheme = false;
+}
+
+void TranscriberPopup::applySessionControls()
+{
+    const SessionControls controls = sessionControls(dictationStateName(m_sessionState));
+    m_pauseButton->setVisible(controls.pauseVisible);
+    m_pauseButton->setEnabled(controls.pauseEnabled);
+    m_pauseButton->setIcon(QIcon::fromTheme(controls.paused ? QStringLiteral("media-playback-start")
+                                                            : QStringLiteral("media-playback-pause")));
+    const QString pauseText = controls.paused ? resumeCaption() : pauseCaption();
+    m_pauseButton->setToolTip(pauseText);
+    m_pauseButton->setAccessibleName(pauseText);
+    m_cancelButton->setVisible(controls.cancelVisible);
+    // Beside the buttons the strip is only as wide as its dots, so the tab
+    // hugs them.
+    m_waveform->setHugsInk(controls.pauseVisible || controls.cancelVisible);
 }
 
 void TranscriberPopup::restoreStandardLayout()

@@ -1,24 +1,13 @@
 #include "platform/win/WinSingleKeyShortcutBinder.h"
 
 #include "platform/win/WinInjectedInput.h"
+#include "platform/win/WinRawKeyboard.h"
 
 namespace speecher {
-namespace {
 
-constexpr auto messageWindowClass = L"SpeecherSingleKeyRawInput";
-
-} // namespace
-
-WinSingleKeyShortcutBinder::WinSingleKeyShortcutBinder(QObject *parent)
-    : SingleKeyShortcutBinder(parent)
+WinSingleKeyShortcutBinder::WinSingleKeyShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : SingleKeyShortcutBinder(std::move(action), parent)
 {
-}
-
-WinSingleKeyShortcutBinder::~WinSingleKeyShortcutBinder()
-{
-    if (m_messageWindow) {
-        DestroyWindow(m_messageWindow);
-    }
 }
 
 bool WinSingleKeyShortcutBinder::supported() const
@@ -41,7 +30,8 @@ QString WinSingleKeyShortcutBinder::unsupportedBindingReason(const ShortcutBindi
 QString WinSingleKeyShortcutBinder::watch(const PhysicalKey &key)
 {
     QString error;
-    if (!registerRawInput(&error)) {
+    if (!win::listenToRawKeyboard(this, [this](const RAWINPUT &input) { handleRawInput(input); },
+                                  &error)) {
         return error;
     }
     m_scancode = key.win;
@@ -50,79 +40,8 @@ QString WinSingleKeyShortcutBinder::watch(const PhysicalKey &key)
 
 void WinSingleKeyShortcutBinder::unwatch()
 {
-    // Raw input stays registered: removing the keyboard usage would also cut
-    // off the combination binder's release detection (see the header).
+    // The raw input listener stays: the stream is shared (see the header).
     m_scancode = 0;
-}
-
-bool WinSingleKeyShortcutBinder::registerRawInput(QString *error)
-{
-    if (!m_messageWindow) {
-        const HINSTANCE instance = GetModuleHandleW(nullptr);
-        WNDCLASSW windowClass{};
-        windowClass.lpfnWndProc = messageWindowProc;
-        windowClass.hInstance = instance;
-        windowClass.lpszClassName = messageWindowClass;
-        if (!RegisterClassW(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-            if (error) {
-                *error = QStringLiteral("Windows could not create the key listener");
-            }
-            return false;
-        }
-        m_messageWindow = CreateWindowExW(0,
-                                          messageWindowClass,
-                                          L"",
-                                          0,
-                                          0,
-                                          0,
-                                          0,
-                                          0,
-                                          HWND_MESSAGE,
-                                          nullptr,
-                                          instance,
-                                          this);
-        if (!m_messageWindow) {
-            if (error) {
-                *error = QStringLiteral("Windows could not create the key listener");
-            }
-            return false;
-        }
-    }
-    RAWINPUTDEVICE keyboard{0x01, 0x06, RIDEV_INPUTSINK, m_messageWindow};
-    if (!RegisterRawInputDevices(&keyboard, 1, sizeof(keyboard))) {
-        if (error) {
-            *error = QStringLiteral("Windows could not watch the key");
-        }
-        return false;
-    }
-    return true;
-}
-
-LRESULT CALLBACK WinSingleKeyShortcutBinder::messageWindowProc(HWND window,
-                                                                UINT message,
-                                                                WPARAM wParam,
-                                                                LPARAM lParam)
-{
-    auto *binder = reinterpret_cast<WinSingleKeyShortcutBinder *>(
-        GetWindowLongPtrW(window, GWLP_USERDATA));
-    if (message == WM_NCCREATE) {
-        const auto *create = reinterpret_cast<CREATESTRUCTW *>(lParam);
-        binder = static_cast<WinSingleKeyShortcutBinder *>(create->lpCreateParams);
-        SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(binder));
-    } else if (message == WM_INPUT && binder) {
-        binder->handleRawInput(reinterpret_cast<HRAWINPUT>(lParam));
-    }
-    return DefWindowProcW(window, message, wParam, lParam);
-}
-
-void WinSingleKeyShortcutBinder::handleRawInput(HRAWINPUT handle)
-{
-    RAWINPUT input{};
-    UINT size = sizeof(input);
-    if (GetRawInputData(handle, RID_INPUT, &input, &size, sizeof(RAWINPUTHEADER)) == UINT(-1)) {
-        return;
-    }
-    handleRawInput(input);
 }
 
 void WinSingleKeyShortcutBinder::handleRawInput(const RAWINPUT &input)

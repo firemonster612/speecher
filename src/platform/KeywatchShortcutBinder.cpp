@@ -1,5 +1,6 @@
 #include "platform/KeywatchShortcutBinder.h"
 
+#include "core/settings/SettingsSchema.h"
 #include "platform/KeywatchSetup.h"
 #include "setup/KeywatchProtocol.h"
 
@@ -30,8 +31,8 @@ const char *refusalText(keywatch::Refusal refusal)
 
 } // namespace
 
-KeywatchShortcutBinder::KeywatchShortcutBinder(QObject *parent)
-    : SingleKeyShortcutBinder(parent)
+KeywatchShortcutBinder::KeywatchShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : SingleKeyShortcutBinder(std::move(action), parent)
     , m_socket(new QLocalSocket(this))
 {
     // The async slots serve reconnects after the daemon restarts; the initial
@@ -73,10 +74,13 @@ QString KeywatchShortcutBinder::unsupportedBindingReason(const ShortcutBinding &
 // session not in its group) starts a probe poll, as the mac binder polls its
 // Accessibility grant: installing the helper later revives the shortcut
 // without a restart.
+//
+// A refusal because our other Global Shortcut holds the helper's one watch
+// does not poll: no number of retries succeeds while it does.
 void KeywatchShortcutBinder::bind()
 {
     SingleKeyShortcutBinder::bind();
-    if (shortcut().isSingleKey()) {
+    if (shortcut().isSingleKey() || m_helperBusy) {
         if (m_recoveryPoll) {
             m_recoveryPoll->stop();
         }
@@ -100,6 +104,8 @@ void KeywatchShortcutBinder::startRecoveryPoll()
             if (shortcut().isSingleKey()) {
                 m_recoveryPoll->stop();
                 emit supportChanged();
+            } else if (m_helperBusy) {
+                m_recoveryPoll->stop();
             }
         });
     }
@@ -113,6 +119,7 @@ void KeywatchShortcutBinder::startRecoveryPoll()
 QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
 {
     unwatch();
+    m_helperBusy = false;
     m_keyId = keywatch::permittedKeyByCode(key.code)->id;
     const QSignalBlocker blocker(m_socket);
     m_socket->connectToServer(QString::fromLatin1(keywatch::socketPath));
@@ -132,6 +139,13 @@ QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
     }
     keywatch::WatchReply reply{};
     m_socket->read(reinterpret_cast<char *>(&reply), sizeof(reply));
+    if (reply.refusal == quint8(keywatch::Refusal::AlreadyWatching)) {
+        unwatch();
+        m_helperBusy = true;
+        const bool isCancel = action().id == actionFor(GlobalShortcutRole::Cancel).id;
+        return keyHelperBusyText(isCancel ? GlobalShortcutRole::Dictation
+                                          : GlobalShortcutRole::Cancel);
+    }
     if (reply.refusal != quint8(keywatch::Refusal::None)) {
         const QString reason = QString::fromLatin1(refusalText(keywatch::Refusal(reply.refusal)));
         unwatch();

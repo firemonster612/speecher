@@ -83,6 +83,8 @@ class SpeecherImeService : InputMethodService() {
                             )
                         },
                         onRecover = ::recover,
+                        onPause = { ActiveDictation.engine?.pause() },
+                        onResume = { ActiveDictation.engine?.resume() },
                     )
                 }
             }

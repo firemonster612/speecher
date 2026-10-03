@@ -12,7 +12,9 @@ class MacGlobalShortcutBinder : public GlobalShortcutBinder {
     Q_OBJECT
 
 public:
-    explicit MacGlobalShortcutBinder(QObject *parent = nullptr);
+    explicit MacGlobalShortcutBinder(
+        GlobalShortcutAction action = actionFor(GlobalShortcutRole::Dictation),
+        QObject *parent = nullptr);
     ~MacGlobalShortcutBinder() override;
 
     bool supported() const override;
@@ -23,6 +25,8 @@ public:
     void suspend() override;
     QString resume() override;
     bool removeRegistration(QString *error = nullptr) override;
+    // What this binder's Carbon hot key is registered under.
+    quint32 hotKeyIdentifier() const;
 
 private:
     bool registerHotKey(const QKeySequence &shortcut, QString *error);
@@ -30,6 +34,7 @@ private:
     void refreshKeyboardLayout();
 
     QKeySequence m_shortcut;
+    quint32 m_hotKeyIdentifier = 0;
     // Setup and settings can record concurrently; only the last resume binds.
     int m_suspensionCount = 0;
     bool m_resumeBinding = false;
