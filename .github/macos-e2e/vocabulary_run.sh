@@ -88,16 +88,18 @@ dump() {
 
 value_is() { [[ "$(ax value "$1" "$2" '' "$3")" == "$4" ]]; }
 priority_enabled_is() { [[ "$(ax enabled sheet AXCheckBox '' "$CHECK_PRIORITY")" == "$1" ]]; }
-pill() { [[ "$1" == *"| $2 |"* ]] && echo yes || echo no; }
 # badges_are TERM KEY PRIORITY: whether TERM's row shows the Key term and
-# Priority pills as KEY and PRIORITY (yes or no) say.
+# Priority pills as KEY and PRIORITY (yes or no) say, Key term over Priority
+# in the Speech column after the term's.
 badges_are() {
-  local row
-  row="$(ax row "$1") |"
-  [[ "$(pill "$row" 'Key term') $(pill "$row" Priority)" == "$2 $3" ]]
+  local expected=''
+  [[ "$2" == yes ]] && expected='Key term'
+  [[ "$3" == yes ]] && expected="${expected:+$expected,}Priority"
+  [[ "$(ax pills "$1")" == "$expected" ]]
 }
 expect_badges() {
-  badges_are "$@" || fail "$1's row does not show Key term=$2 Priority=$3: $(ax row "$1")"
+  badges_are "$@" \
+    || fail "$1's row does not show Key term=$2 Priority=$3 in the Speech column: $(ax pills "$1")"
 }
 sheets_are() { [[ "$(ax sheets)" == "$1" ]]; }
 edit_enabled() { [[ "$(ax enabled window unnamed '' "$BAR_EDIT")" == true ]]; }
