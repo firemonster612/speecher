@@ -938,7 +938,33 @@ struct DictationPanel::Native : QObject {
         if (IsWindowVisible(window)) {
             reposition();
         }
+        limitClicksToCapsule(interactive);
         refreshBanner();
+    }
+
+    // The surface is sized for the widest preview, so while the panel takes
+    // clicks the empty band beside the capsule would swallow clicks meant for
+    // the application below. A window region keeps hit testing, child island
+    // included, to the capsule's rectangle; everything the panel draws is
+    // inside it.
+    void limitClicksToCapsule(bool interactive)
+    {
+        RECT wanted{};
+        if (interactive) {
+            const auto bounds = chrome.TransformToVisual(nullptr).TransformBounds(
+                {0, 0, float(chrome.ActualWidth()), float(chrome.ActualHeight())});
+            wanted = {int(std::floor(bounds.X * scale())), int(std::floor(bounds.Y * scale())),
+                      int(std::ceil((bounds.X + bounds.Width) * scale())),
+                      int(std::ceil((bounds.Y + bounds.Height) * scale()))};
+        }
+        if (EqualRect(&wanted, &clickRegion)) {
+            return;
+        }
+        clickRegion = wanted;
+        // The system owns the region once it is set.
+        SetWindowRgn(window,
+                     interactive ? CreateRectRgnIndirect(&wanted) : nullptr,
+                     IsWindowVisible(window));
     }
 
     bool pointerOverChrome() const
@@ -1196,6 +1222,8 @@ struct DictationPanel::Native : QObject {
     Phase phase = Phase::Live;
     Brush normalForeground{nullptr};
     Microsoft::UI::Xaml::Media::Animation::Storyboard shimmer{nullptr};
+    // The window region limitClicksToCapsule() last set; empty for none.
+    RECT clickRegion{};
     bool shimmering = false;
     bool frozen = false;
     bool completed = false;
