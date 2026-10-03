@@ -45,7 +45,13 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   `BadgeDelegate` paints the same pill in list and table items. All of these
   live in `src/ui/InsightsCharts.cpp`. Home's progress bars use the
   same tint: every bar but the leading one gets a palette whose Highlight and
-  Accent are that mix (`makeBar` in `src/ui/HomePage.cpp`).
+  Accent are that mix (`makeBar` in `src/ui/HomePage.cpp`). The dictation
+  popup's pause and cancel buttons are the last: the popup is a painted
+  rounded capsule and the style's square tool buttons clash with it, so
+  `CircleButton` in `src/ui/TranscriberPopup.cpp` paints them as circles in
+  palette colours (Button inside a ring at the frame contrast, more ButtonText
+  mixed in on hover and press), leaving the icon and behaviour to the tool
+  button.
 - **Settings pages follow Kirigami Addons FormCard.** Bold header above the
   card, title and small grey description on the left, control on the right,
   inset separators, button rows with a trailing arrow, cards capped at 30

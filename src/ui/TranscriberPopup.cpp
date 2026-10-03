@@ -190,6 +190,51 @@ private:
     QList<QWidget *> m_beside;
 };
 
+QColor mixed(const QColor &from, const QColor &to, int percent)
+{
+    return QColor(from.red() + (to.red() - from.red()) * percent / 100,
+                  from.green() + (to.green() - from.green()) * percent / 100,
+                  from.blue() + (to.blue() - from.blue()) * percent / 100);
+}
+
+// The pause and X beside the waveform, as circles: the popup is a painted
+// rounded capsule, and the style's square tool buttons clash with it. Only
+// the background is painted, from palette colours: the Button colour inside
+// a ring at Kirigami's frame contrast, with more of the text colour mixed in
+// on hover and press. The icon, focus, accessibility and clicks stay the
+// tool button's.
+class CircleButton final : public QToolButton {
+public:
+    explicit CircleButton(QWidget *parent)
+        : QToolButton(parent)
+    {
+        setAttribute(Qt::WA_Hover);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QPalette p = QApplication::palette();
+        const QColor button = p.color(QPalette::Button);
+        const QColor text = p.color(QPalette::ButtonText);
+        const int emphasis = isDown() ? 16 : underMouse() && isEnabled() ? 8 : 0;
+        const qreal dpr = devicePixelRatioF() > 0 ? devicePixelRatioF() : 1.0;
+        const qreal penWidth = 1.0 / dpr;
+        const qreal side = std::min(width(), height()) - penWidth;
+        const QRectF circle((width() - side) / 2.0, (height() - side) / 2.0, side, side);
+        painter.setPen(QPen(mixed(button, text, 20), penWidth));
+        painter.setBrush(mixed(button, text, emphasis));
+        painter.drawEllipse(circle);
+        const QSize icon = iconSize();
+        const QRect iconRect((width() - icon.width()) / 2, (height() - icon.height()) / 2,
+                             icon.width(), icon.height());
+        this->icon().paint(&painter, iconRect, Qt::AlignCenter,
+                           isEnabled() ? QIcon::Normal : QIcon::Disabled);
+    }
+};
+
 // The popup's action chips: capsule buttons in the pill's own visual language,
 // painted like PillFrame because the popup floats on a translucent window
 // where a rectangular style-drawn button would not fit. Clickable chips fill
@@ -381,14 +426,17 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_previewPill->installEventFilter(this);
     m_pillLayout->addLayout(previewRow, 1);
     // Pause (resume while paused) and cancel either side of the waveform,
-    // tool buttons the style draws with their frame, the same size on both
-    // sides. They never take focus, so a click leaves the Target focused.
+    // round buttons the size of the style's framed tool button. They never
+    // take focus, so a click leaves the Target focused.
     const auto sessionButton = [this, iconSize](const char *name) {
-        auto *button = new QToolButton(m_previewPill);
+        auto *button = new CircleButton(m_previewPill);
         button->setObjectName(QLatin1String(name));
         button->setFocusPolicy(Qt::NoFocus);
         button->setToolButtonStyle(Qt::ToolButtonIconOnly);
         button->setIconSize(QSize(iconSize, iconSize));
+        const QSize hint = button->sizeHint();
+        const int side = std::max(hint.width(), hint.height());
+        button->setFixedSize(side, side);
         button->hide();
         return button;
     };
