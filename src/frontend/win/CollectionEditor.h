@@ -44,7 +44,8 @@ private:
     void showProblems(const QStringList &problems, const QString &title = {});
     winrt::Microsoft::UI::Xaml::UIElement cellFor(const CollectionColumnSnapshot &column,
                                                   int recordIndex,
-                                                  const QString &badgeText);
+                                                  const QString &badgeText,
+                                                  const QString &detailBadgeText);
     // The record dialog: a new record for -1, otherwise the record at index.
     void openRecordDialog(int recordIndex);
     // The record whose row holds element, or -1 when element is inside one of

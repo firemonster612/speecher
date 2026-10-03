@@ -32,6 +32,9 @@ struct CollectionColumnSnapshot {
     bool dialogOnly = false;
     // Said under the field in the record dialog.
     QString help;
+    // Toggle columns only: the Toggle column this one's dialog field is
+    // disabled beside while it is off.
+    QString enabledBy;
     // Text columns only: the column whose value the cell shows as a muted
     // second line.
     QString detailColumn;
@@ -153,6 +156,8 @@ public:
     // The pill beside each record's stretch column, empty for none, for these
     // records as they stand and the draft's other settings.
     QStringList badgesFor(const QList<QVariantMap> &records, const QString &rowId) const;
+    // The pill at the start of each record's detail line, asked for the same way.
+    QStringList detailBadgesFor(const QList<QVariantMap> &records, const QString &rowId) const;
     // What a cell says on hover, which a learned correction answers per record.
     QString tooltipForColumn(const QString &columnId,
                              const QString &rowId,

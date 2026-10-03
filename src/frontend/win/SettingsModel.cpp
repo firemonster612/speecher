@@ -261,6 +261,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
             shown.placeholder = column.placeholder;
             shown.dialogOnly = column.dialogOnly;
             shown.help = column.help;
+            shown.enabledBy = column.enabledBy;
             shown.detailColumn = column.detailColumn;
             shown.everyChoice = column.everyChoice;
             shown.someChoice = column.someChoice;
@@ -445,6 +446,17 @@ QStringList SettingsModel::badgesFor(const QList<QVariantMap> &records,
         return {};
     }
     return collection->badges(records, m_draft);
+}
+
+QStringList SettingsModel::detailBadgesFor(const QList<QVariantMap> &records,
+                                           const QString &rowId) const
+{
+    const SettingsRow *row = rowWithId(rowId);
+    const CollectionDescriptor *collection = row ? collectionForRow(*row) : nullptr;
+    if (!collection || !collection->detailBadges) {
+        return {};
+    }
+    return collection->detailBadges(records, m_draft);
 }
 
 const CollectionColumn *SettingsModel::columnWithId(const QString &rowId,

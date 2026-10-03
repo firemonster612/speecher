@@ -132,26 +132,31 @@ QString displayText(const CollectionColumnSnapshot &column, const QVariant &valu
     return value.toString();
 }
 
-// The pill after a cell, as Home's Writing Profiles sit after a name.
-Grid besideBadge(const UIElement &cell, const QString &badgeText, const PaneHost &host)
+// A pill in one of the rating badges' tones, named for screen readers.
+Grid namedBadge(const QString &text, const wchar_t *brushKey, const PaneHost &host)
 {
-    Grid pill = badge(badgeText, themeBrush(L"RatingBadgeAccent", host));
-    AutomationProperties::SetName(pill, hs(badgeText));
-    // A Grid, not a horizontal StackPanel, so the cell still fills the
-    // column and the pill takes only its own width.
-    Grid withBadge;
-    withBadge.ColumnSpacing(8);
+    Grid pill = badge(text, themeBrush(brushKey, host));
+    AutomationProperties::SetName(pill, hs(text));
+    return pill;
+}
+
+// A cell and a pill on one line. A Grid, not a horizontal StackPanel, so the
+// cell still fills the column and the pill takes only its own width.
+Grid withBadge(const UIElement &cell, const Grid &pill, bool pillFirst)
+{
+    Grid line;
+    line.ColumnSpacing(8);
     ColumnDefinition field;
     field.Width({1, GridUnitType::Star});
     ColumnDefinition label;
     label.Width({0, GridUnitType::Auto});
-    withBadge.ColumnDefinitions().Append(field);
-    withBadge.ColumnDefinitions().Append(label);
-    Grid::SetColumn(cell.as<FrameworkElement>(), 0);
-    Grid::SetColumn(pill, 1);
-    withBadge.Children().Append(cell);
-    withBadge.Children().Append(pill);
-    return withBadge;
+    line.ColumnDefinitions().Append(pillFirst ? label : field);
+    line.ColumnDefinitions().Append(pillFirst ? field : label);
+    Grid::SetColumn(cell.as<FrameworkElement>(), pillFirst ? 1 : 0);
+    Grid::SetColumn(pill, pillFirst ? 0 : 1);
+    line.Children().Append(cell);
+    line.Children().Append(pill);
+    return line;
 }
 
 } // namespace
@@ -325,6 +330,7 @@ void CollectionEditor::rebuildRows()
         values.append(record.values);
     }
     const QStringList badges = m_host.model->badgesFor(values, m_rowId);
+    const QStringList detailBadges = m_host.model->detailBadgesFor(values, m_rowId);
     const QList<CollectionColumnSnapshot> columns = tableColumns(m_collection);
     for (qsizetype index = 0; index < m_records.size(); ++index) {
         Grid row = columnGrid(columns);
@@ -333,7 +339,8 @@ void CollectionEditor::rebuildRows()
             const CollectionColumnSnapshot &column = columns.at(columnIndex);
             const UIElement cell = cellFor(column,
                                            static_cast<int>(index),
-                                           column.stretch ? badges.value(index) : QString());
+                                           column.stretch ? badges.value(index) : QString(),
+                                           column.stretch ? detailBadges.value(index) : QString());
             Grid::SetColumn(cell.as<FrameworkElement>(), static_cast<int32_t>(columnIndex));
             row.Children().Append(cell);
         }
@@ -344,7 +351,8 @@ void CollectionEditor::rebuildRows()
 
 UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
                                    int recordIndex,
-                                   const QString &badgeText)
+                                   const QString &badgeText,
+                                   const QString &detailBadgeText)
 {
     const Record &record = m_records.at(recordIndex);
     const QVariant value = record.values.value(column.id);
@@ -441,15 +449,22 @@ UIElement CollectionEditor::cellFor(const CollectionColumnSnapshot &column,
         cell = box;
     }
     if (!badgeText.isEmpty()) {
-        cell = besideBadge(cell, badgeText, m_host);
+        // After the cell, as Home's Writing Profiles sit after a name.
+        cell = withBadge(cell, namedBadge(badgeText, L"RatingBadgeAccent", m_host), false);
     }
     const QString detailLine = detail.simplified();
-    if (!detailLine.isEmpty()) {
-        // The detail's one line under the cell's own, muted and cut at the end.
+    if (!detailLine.isEmpty() || !detailBadgeText.isEmpty()) {
+        // The detail's one line under the cell's own, muted and cut at the
+        // end, starting with its own pill in the neutral tone where there is
+        // one; a pill with no detail still gets the line.
+        UIElement second = cellText(detailLine, L"CaptionTextBlockStyle", &m_host);
+        if (!detailBadgeText.isEmpty()) {
+            second = withBadge(second, namedBadge(detailBadgeText, L"RatingBadgeNeutral", m_host), true);
+        }
         StackPanel lines;
         lines.VerticalAlignment(VerticalAlignment::Center);
         lines.Children().Append(cell);
-        lines.Children().Append(cellText(detailLine, L"CaptionTextBlockStyle", &m_host));
+        lines.Children().Append(second);
         cell = lines;
     }
     if (!tooltip.isEmpty()) {
@@ -585,6 +600,8 @@ void CollectionEditor::openRecordDialog(int recordIndex)
     // One field per column a person may fill, so the record is checked before
     // it is kept.
     QList<QPair<QString, std::function<QVariant()>>> readers;
+    // The checkboxes so far, by column, for a later one enabled by them.
+    QList<QPair<QString, CheckBox>> toggles;
     bool named = false;
     for (const CollectionColumnSnapshot &column : m_collection.columns) {
         if (column.kind == ColumnKind::ReadOnly) {
@@ -596,6 +613,19 @@ void CollectionEditor::openRecordDialog(int recordIndex)
             CheckBox box;
             box.Content(box_value(hs(column.title)));
             box.IsChecked(value.toBool());
+            const auto enabler = std::find_if(toggles.cbegin(), toggles.cend(), [&](const auto &toggle) {
+                return toggle.first == column.enabledBy;
+            });
+            if (enabler != toggles.cend()) {
+                const CheckBox &other = enabler->second;
+                box.IsEnabled(other.IsChecked().GetBoolean());
+                const auto follow = [box](const IInspectable &sender, const RoutedEventArgs &) {
+                    box.IsEnabled(sender.as<CheckBox>().IsChecked().GetBoolean());
+                };
+                other.Checked(follow);
+                other.Unchecked(follow);
+            }
+            toggles.append({column.id, box});
             readers.append({column.id, [box] {
                                 return QVariant(box.IsChecked().GetBoolean());
                             }});
