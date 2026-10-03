@@ -463,6 +463,12 @@ private slots:
         const auto restoreFont = qScopeGuard([originalFont] { QApplication::setFont(originalFont); });
         ApplicationController controller(true);
         controller.settings()->setInsightsEnabled(true);
+        // The controller's deferred startup publishes accessibility, which
+        // rebuilds Home's tiles; left to its two-second fallback it can land
+        // in the middle of the scan below on a slow runner. Run it first.
+        QSignalSpy startedUp(&controller, &ApplicationController::accessibilityStateChanged);
+        controller.frontEndReady();
+        QTRY_COMPARE_WITH_TIMEOUT(startedUp.count(), 1, 5000);
         HomePage page(&controller);
         // The page caps Home's column at a width that, with some platforms'
         // fonts, never fits four tiles. Lift the cap so the column follows
