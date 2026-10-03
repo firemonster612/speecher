@@ -78,6 +78,8 @@ private:
     QLabel *m_hint = nullptr;
     QLabel *m_errorText = nullptr;
     WaveformWidget *m_waveform = nullptr;
+    QToolButton *m_pause = nullptr;
+    QToolButton *m_cancel = nullptr;
     QWidget *m_lastRow = nullptr;
     QLabel *m_lastText = nullptr;
     QLabel *m_lastMeta = nullptr;

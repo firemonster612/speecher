@@ -208,3 +208,51 @@ struct ShortcutRecorderRow: View {
         return model.row("globalShortcut")?.help ?? ""
     }
 }
+
+/// The Cancel Shortcut row under the Global Shortcut: the binding, Change to
+/// record one with the same recorder, and Clear while one is set, since it has
+/// no default.
+struct CancelShortcutRecorderRow: View {
+    @ObservedObject var model: AppModel
+    @StateObject private var recorder = ShortcutRecorder()
+    @State private var captureProblem = ""
+
+    var body: some View {
+        LabeledContent {
+            HStack {
+                if !recorder.recording {
+                    Text(model.cancelShortcut.isEmpty ? SpeecherBridge.globalShortcutUnsetText
+                                                      : model.cancelShortcut)
+                }
+                Button(SpeecherBridge.globalShortcutChangeCaption) { record() }
+                    .disabled(!model.shortcutSupported || recorder.recording)
+                if !recorder.recording, !model.cancelShortcut.isEmpty {
+                    Button(SpeecherBridge.globalShortcutClearCaption) { model.clearCancelShortcut() }
+                }
+            }
+        } label: {
+            RowView.label(model.row("cancelShortcut")?.label ?? "", help: description)
+        }
+    }
+
+    private func record() {
+        captureProblem = ""
+        recorder.record(suspending: model, combination: { characters, flags in
+            model.bindCancelShortcut(characters: characters, modifierFlags: flags)
+        }, singleKey: { keyCode in
+            if model.bindCancelSingleKey(macKeyCode: keyCode) { return true }
+            captureProblem = "That key cannot be a dictation key."
+            return false
+        })
+    }
+
+    private var description: String {
+        if recorder.recording {
+            return captureProblem.isEmpty
+                ? SpeecherBridge.globalShortcutPrompt
+                : captureProblem + " " + SpeecherBridge.globalShortcutPrompt
+        }
+        if !model.cancelShortcutProblem.isEmpty { return model.cancelShortcutProblem }
+        return model.row("cancelShortcut")?.help ?? ""
+    }
+}

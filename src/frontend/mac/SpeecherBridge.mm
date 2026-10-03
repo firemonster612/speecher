@@ -2053,6 +2053,18 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 - (NSString *)bindShortcutWithCharacters:(NSString *)characters modifierFlags:(NSUInteger)flags
 {
+    return [self bindCombination:characters modifierFlags:flags role:speecher::GlobalShortcutRole::Dictation];
+}
+
+- (NSString *)bindCancelShortcutWithCharacters:(NSString *)characters modifierFlags:(NSUInteger)flags
+{
+    return [self bindCombination:characters modifierFlags:flags role:speecher::GlobalShortcutRole::Cancel];
+}
+
+- (NSString *)bindCombination:(NSString *)characters
+                modifierFlags:(NSUInteger)flags
+                         role:(speecher::GlobalShortcutRole)role
+{
     const int key = qtKeyForCharacters(characters);
     if (key == 0) {
         return @"That key cannot be part of a shortcut.";
@@ -2065,10 +2077,44 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     }
     QString error;
     const QKeySequence sequence(QKeyCombination(modifiers, Qt::Key(key)));
-    if (_state->controller->setGlobalShortcut(sequence, &error)) {
+    if (_state->controller->setGlobalShortcut(sequence, &error, role)) {
         return nil;
     }
     return error.isEmpty() ? speecher::globalShortcutBindFailedText().toNSString() : error.toNSString();
+}
+
+- (NSString *)cancelShortcutDisplay
+{
+    return _state->controller->globalShortcut(speecher::GlobalShortcutRole::Cancel).displayText().toNSString();
+}
+
+- (NSString *)bindCancelSingleKeyCode:(NSString *)code
+{
+    QString error;
+    if (_state->controller->setGlobalShortcut(speecher::ShortcutBinding::singleKey(QString::fromNSString(code)),
+                                              &error, speecher::GlobalShortcutRole::Cancel)) {
+        return nil;
+    }
+    return error.isEmpty() ? @"That key could not be bound." : error.toNSString();
+}
+
+- (NSString *)clearCancelShortcut
+{
+    QString error;
+    if (_state->controller->setGlobalShortcut({}, &error, speecher::GlobalShortcutRole::Cancel)) {
+        return nil;
+    }
+    return error.isEmpty() ? speecher::globalShortcutBindFailedText().toNSString() : error.toNSString();
+}
+
++ (NSString *)globalShortcutClearCaption
+{
+    return speecher::globalShortcutClearCaption().toNSString();
+}
+
++ (NSString *)globalShortcutUnsetText
+{
+    return speecher::globalShortcutUnsetText().toNSString();
 }
 
 - (NSString *)defaultShortcutDisplay
@@ -2333,6 +2379,66 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     _state->controller->toggle();
 }
 
+- (void)cancel
+{
+    _state->controller->cancel();
+}
+
+- (void)pause
+{
+    _state->controller->session()->pause();
+}
+
+- (void)resume
+{
+    _state->controller->session()->resume();
+}
+
+- (BOOL)pauseVisible
+{
+    return speecher::sessionControls(_state->controller->stateName()).pauseVisible;
+}
+
+- (BOOL)pauseEnabled
+{
+    return speecher::sessionControls(_state->controller->stateName()).pauseEnabled;
+}
+
+- (BOOL)paused
+{
+    return speecher::sessionControls(_state->controller->stateName()).paused;
+}
+
+- (BOOL)cancelVisible
+{
+    return speecher::sessionControls(_state->controller->stateName()).cancelVisible;
+}
+
+- (BOOL)cancelable
+{
+    return speecher::dictationCancelable(_state->controller->stateName());
+}
+
++ (NSString *)pauseCaption
+{
+    return speecher::pauseCaption().toNSString();
+}
+
++ (NSString *)resumeCaption
+{
+    return speecher::resumeCaption().toNSString();
+}
+
++ (NSString *)cancelCaption
+{
+    return speecher::cancelCaption().toNSString();
+}
+
++ (NSString *)cancelDictationCaption
+{
+    return speecher::cancelDictationCaption().toNSString();
+}
+
 - (void)startListening
 {
     _state->controller->startListening();
@@ -2435,6 +2541,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     static_assert(int(SpeecherDictationStateIdle) == int(speecher::DictationState::Idle));
     static_assert(int(SpeecherDictationStateStarting) == int(speecher::DictationState::Starting));
     static_assert(int(SpeecherDictationStateListening) == int(speecher::DictationState::Listening));
+    static_assert(int(SpeecherDictationStatePaused) == int(speecher::DictationState::Paused));
     static_assert(int(SpeecherDictationStateStopping) == int(speecher::DictationState::Stopping));
     static_assert(int(SpeecherDictationStateRefining) == int(speecher::DictationState::Refining));
     static_assert(int(SpeecherDictationStateDelivering) == int(speecher::DictationState::Delivering));

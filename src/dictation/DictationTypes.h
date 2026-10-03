@@ -20,6 +20,8 @@ enum class DictationState {
     Idle,
     Starting,
     Listening,
+    // The microphone is off and the words so far are kept; resume listens on.
+    Paused,
     Stopping,
     Refining,
     Delivering,
@@ -62,6 +64,23 @@ bool dictationListeningPresentation(const QString &stateName);
 bool dictationCancelable(const QString &stateName);
 // The trays' Cancel item.
 QString cancelDictationCaption();
+
+// The buttons either side of the waveform, in the popup and on Home's
+// listening row: pause on the left, which resumes while paused, and cancel on
+// the right. Pause shows from Starting to Paused and works once listening;
+// cancel shows while a cancel would throw the session away.
+struct SessionControls {
+    bool pauseVisible = false;
+    bool pauseEnabled = false;
+    // The pause button resumes instead.
+    bool paused = false;
+    bool cancelVisible = false;
+};
+SessionControls sessionControls(const QString &stateName);
+// The buttons' tooltips and accessible names.
+QString pauseCaption();
+QString resumeCaption();
+QString cancelCaption();
 
 // The captions every tray menu, tray panel and menu bar panel shares.
 QString trayToolTip(bool listening);

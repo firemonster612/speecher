@@ -707,11 +707,20 @@ private slots:
             QVERIFY(popup.grab().save(grabDir + QStringLiteral("/linux-%1.png").arg(QLatin1String(name))));
         };
         popup.showPopup(1);
+        popup.setSessionState(DictationState::Listening);
         popup.showListeningIndicator();
         grab("listening");
+        popup.setSessionState(DictationState::Paused);
+        grab("paused");
+        popup.setSessionState(DictationState::Listening);
         popup.setPreview(QStringLiteral("so the hiring plan for next quarter should come before "
                                         "the budget review and then we can talk about the offsite"));
         grab("long-preview");
+        popup.setSessionState(DictationState::Paused);
+        grab("paused-preview");
+        popup.setSessionState(DictationState::Idle);
+        popup.showMessage(cancelledOutcomeText(), PopupOutcome::Cancelled);
+        grab("receipt-canceled");
         popup.showMessage(QStringLiteral("Input sent"), PopupOutcome::Inserted);
         grab("receipt-inserted");
         popup.showMessage(QStringLiteral("Copied"), PopupOutcome::Copied);

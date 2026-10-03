@@ -8,6 +8,12 @@ import SwiftUI
 
 private let pillHeight: CGFloat = 48
 private let minimumPillWidth: CGFloat = 126
+/// The pause and cancel buttons either side of the waveform, and the gap
+/// beside each.
+private let sessionButtonSize: CGFloat = 28
+private let sessionButtonGap: CGFloat = 10
+/// Clear of the capsule's rounded ends when there are no words.
+private let sessionButtonInset: CGFloat = 6
 private let previewChromeWidth: CGFloat = 48
 private let compactStripHeight: CGFloat = 28
 private let previewTopPadding: CGFloat = 12
@@ -131,6 +137,11 @@ final class DictationPanelState: ObservableObject {
     @Published var phase = Phase.live
     @Published var frozen = false
     @Published var pillWidth: CGFloat = minimumPillWidth
+    /// The buttons either side of the waveform (speecher::sessionControls).
+    @Published var pauseVisible = false
+    @Published var pauseEnabled = false
+    @Published var paused = false
+    @Published var cancelVisible = false
     var waveformFloor: Float = 0
     @Published var problem = ""
     /// What the problem offers to fix it; nil when it offers nothing.
@@ -200,6 +211,20 @@ final class DictationPanelState: ObservableObject {
         }
     }
 
+    /// The buttons show while the session is live, never over a problem or a
+    /// receipt.
+    var showsControls: Bool { problem.isEmpty && !finished && (pauseVisible || cancelVisible) }
+    var controlsWidth: CGFloat {
+        guard showsControls else { return 0 }
+        return (pauseVisible ? sessionButtonSize + sessionButtonGap : 0)
+            + (cancelVisible ? sessionButtonSize + sessionButtonGap : 0)
+            + 2 * sessionButtonInset
+    }
+    /// Paused shows its status, still, in place of the bars.
+    var pausedLabel: String? {
+        showsControls && paused ? SpeecherBridge.statusLabel(for: .paused) : nil
+    }
+
     var lineHeight: CGFloat {
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         return ceil(font.ascender - font.descender + font.leading)
@@ -212,10 +237,10 @@ final class DictationPanelState: ObservableObject {
             : pillHeight
     }
     var inkWidth: CGFloat {
-        guard let label = waitingLabel else { return 92.8 }
+        guard let label = waitingLabel ?? pausedLabel else { return 92.8 + controlsWidth }
         return (label as NSString).size(withAttributes: [
             .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-        ]).width
+        ]).width + controlsWidth
     }
 }
 
@@ -268,6 +293,8 @@ struct DictationPanelView: View {
     let installUpdate: () -> Void
     let openWhatsNew: () -> Void
     let dismissWhatsNew: () -> Void
+    var togglePause: () -> Void = {}
+    var cancelSession: () -> Void = {}
     var whatsNew = SpeecherWhatsNewBanner.preview(forVersion: "")
 
     var body: some View {
@@ -323,17 +350,34 @@ struct DictationPanelView: View {
                     Label(state.status, systemImage: symbol)
                         .font(.body)
                         .lineLimit(1)
-                } else if let waiting = state.waitingLabel {
-                    ShimmerText(text: waiting)
-                        .fixedSize()
                 } else {
-                    PanelWaveform(state: state)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(phaseLabel)
-                        .accessibilityValue(Text(Double(state.level), format: .percent.precision(.fractionLength(0))))
+                    if state.showsControls, state.pauseVisible {
+                        sessionButton(state.paused ? SpeecherBridge.resumeCaption : SpeecherBridge.pauseCaption,
+                                      symbol: state.paused ? "play.fill" : "pause.fill",
+                                      action: togglePause)
+                            .disabled(!state.pauseEnabled)
+                    }
+                    if let waiting = state.waitingLabel {
+                        ShimmerText(text: waiting)
+                            .fixedSize()
+                    } else if let paused = state.pausedLabel {
+                        Text(paused)
+                            .font(.body)
+                            .lineLimit(1)
+                            .fixedSize()
+                    } else {
+                        PanelWaveform(state: state)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(phaseLabel)
+                            .accessibilityValue(Text(Double(state.level), format: .percent.precision(.fractionLength(0))))
+                    }
+                    if state.showsControls, state.cancelVisible {
+                        sessionButton(SpeecherBridge.cancelCaption, symbol: "xmark", action: cancelSession)
+                    }
                 }
             }
-            .padding(.horizontal, state.problem.isEmpty && !finished ? 0 : 24)
+            .padding(.horizontal, !state.problem.isEmpty || finished ? 24
+                     : state.showsControls ? sessionButtonInset : 0)
             .frame(height: state.problem.isEmpty ? state.stripHeight : nil)
             .padding(.vertical, state.problem.isEmpty ? 0 : 10)
             .padding(.top, state.showsPreview ? previewStripSpacing : 0)
@@ -362,6 +406,20 @@ struct DictationPanelView: View {
     }
 
     private var symbol: String { state.presentation.symbol }
+
+    /// A round button beside the waveform; the panel never becomes key, so
+    /// clicking it leaves the Target focused.
+    private func sessionButton(_ caption: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .imageScale(.small)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.circle)
+        .frame(width: sessionButtonSize, height: sessionButtonSize)
+        .help(caption)
+        .accessibilityLabel(caption)
+    }
 
     /// Whether the dictation has ended in an outcome ("Input sent") rather
     /// than a live phase, so the panel shows the receipt and nothing live.
@@ -559,6 +617,8 @@ final class SpeecherDictationPanel {
                 self?.setWhatsNewMessage("")
                 self?.bridge.clearPendingWhatsNew()
             },
+            togglePause: { [weak self] in self?.model.togglePause() },
+            cancelSession: { [weak self] in self?.bridge.cancel() },
             whatsNew: model.whatsNewBanner))
         wire()
         installE2ECaptureSeam()
@@ -594,6 +654,10 @@ final class SpeecherDictationPanel {
                 announce(SpeecherBridge.statusLabel(for: sessionState))
             }
             state.sessionState = sessionState
+            state.pauseVisible = bridge.pauseVisible
+            state.pauseEnabled = bridge.pauseEnabled
+            state.paused = bridge.paused
+            state.cancelVisible = bridge.cancelVisible
             // The mic is closed but the provider is still finalising, so the
             // shimmer takes the line and the stale speech preview goes away.
             if sessionState == .stopping {
@@ -850,7 +914,7 @@ final class SpeecherDictationPanel {
         let banners = (state.updateMessage.isEmpty ? 0 : 1)
             + (state.whatsNewMessage.isEmpty ? 0 : 1)
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        let message = !state.problem.isEmpty ? state.problem : state.finished ? state.status : state.showsPreview ? state.preview : state.waitingLabel ?? ""
+        let message = !state.problem.isEmpty ? state.problem : state.finished ? state.status : state.showsPreview ? state.preview : state.waitingLabel ?? state.pausedLabel ?? ""
         let screenArea = (panel.screen ?? NSScreen.main)?.visibleFrame
         let availableWidth = screenArea?.width ?? maximumPreviewWidth + screenEdgeMargin
         // A problem wraps at the width every platform shares, and the capsule
@@ -873,8 +937,10 @@ final class SpeecherDictationPanel {
         }
         let height = state.height + CGFloat(banners) * (bannerHeight + bannerSpacing)
         let chrome = !state.problem.isEmpty ? problemChrome : state.finished ? 78
-            : state.showsPreview ? previewChromeWidth : state.waitingLabel == nil ? 0 : 32
-        let minimumWidth = state.showsPreview ? minimumPillWidth + previewChromeWidth : minimumPillWidth
+            : state.showsPreview ? previewChromeWidth
+            : (state.waitingLabel ?? state.pausedLabel) == nil ? state.controlsWidth : 32 + state.controlsWidth
+        let minimumWidth = (state.showsPreview ? minimumPillWidth + previewChromeWidth : minimumPillWidth)
+            + state.controlsWidth
         let contentWidth = min(max(minimumWidth, textWidth + chrome), maximumWidth)
         state.pillWidth = contentWidth
         // Each banner is one line sized to its message and buttons, so the

@@ -7,20 +7,23 @@ namespace speecher::win {
 // The Global Shortcut row at the top of Dictation: the current binding, a
 // Change… button that records the next one in a modal dialog — a key
 // combination, a bare key, or a lone modifier committed on its release — and
-// a reset to the default while another is bound. The row says afterwards when
+// a reset to the default while another is bound. The Cancel Shortcut row is
+// the same with Clear in place of the reset, since it has no default. The row says afterwards when
 // the binder refused a binding or when a single key also types. The setup
 // assistant's Global Shortcut page shows the same row.
 class ShortcutRecorder {
 public:
-    // The schema's "globalShortcut" custom row, which its card holds; the
-    // row's label titles the dialog. A change rebuilds through host.refresh.
+    // The schema's "globalShortcut" or "cancelShortcut" custom row, which its
+    // card holds; the row's label titles the dialog. A change rebuilds
+    // through host.refresh.
     static winrt::Microsoft::UI::Xaml::Controls::StackPanel element(const RowSnapshot &row,
                                                                     PaneHost &host);
 
     // Records the next binding in a modal dialog and binds it on Save, with
     // the hotkey suspended while the dialog is open. `changed` runs once it
     // closes; host.shortcutProblem and host.shortcutNotice say how it went.
-    static void record(PaneHost &host, const QString &title, std::function<void()> changed);
+    static void record(PaneHost &host, const QString &title, std::function<void()> changed,
+                       GlobalShortcutRole role = GlobalShortcutRole::Dictation);
     // Binds the binder's default, with a refusal in host.shortcutProblem.
     static void reset(PaneHost &host);
 

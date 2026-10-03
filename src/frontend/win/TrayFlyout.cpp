@@ -179,6 +179,12 @@ struct TrayFlyout::Native {
             controller->toggle();
         });
         root.Children().Append(toggle);
+        cancel = textButton(cancelDictationCaption());
+        cancel.Click([this](const auto &, const auto &) {
+            hide();
+            controller->cancel();
+        });
+        root.Children().Append(cancel);
 
         transcript = TextBlock();
         transcript.TextWrapping(TextWrapping::Wrap);
@@ -233,6 +239,7 @@ struct TrayFlyout::Native {
         const DictationToggleAction toggleAction = dictationToggleAction(state);
         toggle.Content(box_value(hstring(toggleAction.label.toStdWString())));
         toggle.IsEnabled(toggleAction.enabled);
+        cancel.Visibility(dictationCancelable(state) ? Visibility::Visible : Visibility::Collapsed);
         const QString lastTranscript = controller->lastTranscript();
         transcript.Text(hstring((lastTranscript.isEmpty() ? noTranscriptYetText() : lastTranscript)
                                     .toStdWString()));
@@ -295,6 +302,7 @@ struct TrayFlyout::Native {
     TextBlock statusText{nullptr};
     ProgressBar level{nullptr};
     Button toggle{nullptr};
+    Button cancel{nullptr};
     TextBlock transcript{nullptr};
     Button copy{nullptr};
     TextBlock shortcut{nullptr};

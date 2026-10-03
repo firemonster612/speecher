@@ -97,6 +97,8 @@ struct RowView: View {
             LocalModelBrowser(row: row, model: model)
         } else if row.rowId == "globalShortcut" {
             ShortcutRecorderRow(model: model)
+        } else if row.rowId == "cancelShortcut" {
+            CancelShortcutRecorderRow(model: model)
         } else if row.rowId == "microphoneTest" {
             microphoneTest
         } else if row.rowId == "openAiAuth" {

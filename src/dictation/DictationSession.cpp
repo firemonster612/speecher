@@ -90,9 +90,14 @@ DictationSession::DictationSession(SettingsStore *settings,
         const bool acceptsAudio = m_state == DictationState::Starting
             || m_state == DictationState::Listening
             || m_state == DictationState::Stopping;
-        if (m_transcriber && m_sessionSettings && acceptsAudio) {
-            m_transcriber->sendAudio(m_attemptId, pcm);
+        if (!m_transcriber || !m_sessionSettings || !acceptsAudio) {
+            return;
         }
+        if (m_finishingPausedAttempt) {
+            m_resumeAudio.append(pcm);
+            return;
+        }
+        m_transcriber->sendAudio(m_attemptId, pcm);
     });
     connect(m_audio, &AudioInput::failed, this, [this](const QString &message) {
         if (m_state != DictationState::Starting && m_state != DictationState::Listening) {
@@ -214,6 +219,7 @@ void DictationSession::toggleSession(const SessionOverrides &overrides)
         startSession(overrides);
     } else if (m_state == DictationState::Starting
                || m_state == DictationState::Listening
+               || m_state == DictationState::Paused
                || m_state == DictationState::Refining) {
         stopListening();
     }
@@ -258,6 +264,9 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_heardSpeech = false;
     m_speechReconnectsLeft = kSpeechReconnectsPerSession;
     m_target = {};
+    m_finishingPausedAttempt = false;
+    m_resumeAudio.clear();
+    m_listeningMs = 0;
     setState(DictationState::Starting);
     qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
                       << "credentialsPath=" + settings.speech.claudeCredentialsPath
@@ -403,6 +412,17 @@ void DictationSession::stopListening()
         }
         return;
     }
+    if (m_state == DictationState::Paused) {
+        // The microphone is already off; deliver once the paused attempt's
+        // words are in.
+        setState(DictationState::Stopping, m_lastMessage);
+        resumePausedMedia();
+        if (!m_finishingPausedAttempt) {
+            emit popupFrozenChanged(true);
+            beginRefinement(m_generation);
+        }
+        return;
+    }
     if (m_state != DictationState::Starting && m_state != DictationState::Listening) {
         return;
     }
@@ -480,6 +500,8 @@ void DictationSession::discard()
         m_refiner->cancel();
     }
     m_refinementGeneration = 0;
+    m_finishingPausedAttempt = false;
+    m_resumeAudio.clear();
     m_completionTimer->stop();
     clearScreenshotContext();
     m_sessionSettings.reset();
@@ -489,12 +511,57 @@ void DictationSession::discard()
     emit popupRefiningChanged(false);
 }
 
+// Media the session paused stays paused: the person is still mid-dictation.
+void DictationSession::pause()
+{
+    if (m_state != DictationState::Listening) {
+        return;
+    }
+    qInfo() << "pause requested transcriptLength=" << m_transcript->text().size();
+    m_audio->stop();
+    m_audioGeneration = 0;
+    m_finishingPausedAttempt = true;
+    // Paused first: a provider may report the attempt finished from inside
+    // finishInput(), and that must not read as a rollover.
+    setState(DictationState::Paused);
+    emit audioLevelChanged(0.0f);
+    m_transcriber->finishInput(m_attemptId);
+}
+
+void DictationSession::resume()
+{
+    if (m_state != DictationState::Paused || !m_sessionSettings) {
+        return;
+    }
+    qInfo() << "resume requested pausedAttemptFinished=" << !m_finishingPausedAttempt;
+    QString audioError;
+    m_audioGeneration = m_generation;
+    if (!m_audio->start(&audioError)) {
+        m_audioGeneration = 0;
+        qWarning().noquote() << "audio restart after pause failed message=" + audioError;
+        stopListening();
+        return;
+    }
+    setState(DictationState::Listening);
+    if (!m_finishingPausedAttempt) {
+        resumeAttempt();
+    }
+}
+
+void DictationSession::resumeAttempt()
+{
+    startNextAttempt();
+    for (const QByteArray &pcm : std::exchange(m_resumeAudio, {})) {
+        m_transcriber->sendAudio(m_attemptId, pcm);
+    }
+}
+
 void DictationSession::setState(DictationState state, const QString &message, const PopupErrorAction &fix)
 {
     if (state == DictationState::Listening) {
         m_listeningClock.start();
-    } else if (state == DictationState::Stopping && m_state == DictationState::Listening) {
-        m_listeningMs = int(m_listeningClock.elapsed());
+    } else if (m_state == DictationState::Listening) {
+        m_listeningMs += int(m_listeningClock.elapsed());
     }
     m_state = state;
     m_lastMessage = message;
@@ -800,6 +867,18 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         qInfo() << "ignored failure from retired speech attempt" << failure.attemptId;
         return;
     }
+    // A paused attempt that fails to finish (a stream closed during a long
+    // pause) has still ended: resume opens a fresh one.
+    if (std::exchange(m_finishingPausedAttempt, false)) {
+        qInfo().noquote() << "paused speech attempt ended without finishing reason=" + failure.message;
+        if (m_state == DictationState::Paused) {
+            return;
+        }
+        if (m_state == DictationState::Listening) {
+            resumeAttempt();
+            return;
+        }
+    }
     if (m_state != DictationState::Starting
         && m_state != DictationState::Listening
         && m_state != DictationState::Stopping) {
@@ -947,6 +1026,7 @@ void DictationSession::connectSpeechTranscriber(SpeechTranscriber *transcriber)
         if (attemptId == m_attemptId
             && (m_state == DictationState::Starting
                 || m_state == DictationState::Listening
+                || m_state == DictationState::Paused
                 || m_state == DictationState::Stopping)) {
             m_transcript->commitFinal(text);
         }
@@ -955,6 +1035,7 @@ void DictationSession::connectSpeechTranscriber(SpeechTranscriber *transcriber)
         if (attemptId == m_attemptId
             && (m_state == DictationState::Starting
                 || m_state == DictationState::Listening
+                || m_state == DictationState::Paused
                 || m_state == DictationState::Stopping)) {
             m_transcript->replaceFinals(m_attemptBaseText.isEmpty()
                                             ? text
@@ -965,12 +1046,14 @@ void DictationSession::connectSpeechTranscriber(SpeechTranscriber *transcriber)
         if (attemptId != m_attemptId) {
             return;
         }
+        const bool pausedAttempt = std::exchange(m_finishingPausedAttempt, false);
         if (m_state == DictationState::Stopping) {
             emit popupFrozenChanged(true);
             beginRefinement(m_generation);
         } else if (m_state == DictationState::Listening) {
-            rollOverSpeechAttempt();
+            pausedAttempt ? resumeAttempt() : rollOverSpeechAttempt();
         }
+        // While still paused the words are in; resume opens the next attempt.
     });
     m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::failed, this, &DictationSession::handleSpeechFailure);
 }

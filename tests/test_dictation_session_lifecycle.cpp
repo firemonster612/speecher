@@ -943,7 +943,8 @@ private slots:
     void cancelDiscardsTheSessionInEveryActiveState()
     {
         for (const DictationState target : {DictationState::Starting, DictationState::Listening,
-                                            DictationState::Stopping, DictationState::Refining}) {
+                                            DictationState::Paused, DictationState::Stopping,
+                                            DictationState::Refining}) {
             SettingsStore settings;
             settings.raw().clear();
             settings.setPauseMediaDuringTranscription(true);
@@ -972,6 +973,9 @@ private slots:
             }
             if (target == DictationState::Stopping || target == DictationState::Refining) {
                 session.stopListening();
+            }
+            if (target == DictationState::Paused) {
+                session.pause();
             }
             QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(target), 250);
 
@@ -1034,6 +1038,88 @@ private slots:
         session.cancel();
         QCOMPARE(int(session.state()), int(DictationState::Idle));
         QCOMPARE(message.count(), 0);
+    }
+
+    // Pause finishes the attempt in flight and keeps its words, including a
+    // final that lands after resume; the next attempt opens only once the
+    // paused one has finished, gets the audio heard in between, and a final
+    // from the paused attempt arriving later still is not counted twice.
+    void pauseKeepsTheWordsAndResumesInAFreshAttempt()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setPauseMediaDuringTranscription(true);
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("first"));
+        speech->autoCompleteOnFinish = false;
+        const quint64 pausedAttempt = speech->currentAttemptId;
+
+        session.pause();
+        QCOMPARE(int(session.state()), int(DictationState::Paused));
+        QCOMPARE(speech->stopCalls, 1);
+        QVERIFY(!audio->isActive());
+        QCOMPARE(media->resumeCalls, 0);
+
+        session.resume();
+        QCOMPARE(int(session.state()), int(DictationState::Listening));
+        QVERIFY(audio->isActive());
+        QCOMPARE(speech->startCalls, 1);
+        audio->pushAudio(QByteArrayLiteral("heard in between"));
+        speech->emitFinalText(QStringLiteral("second"));
+        speech->emitCompletion();
+        QCOMPARE(speech->startCalls, 2);
+        QVERIFY(speech->currentAttemptId != pausedAttempt);
+        QCOMPARE(speech->audioChunks.last(), QByteArrayLiteral("heard in between"));
+        emit speech->finalTranscript(pausedAttempt, QStringLiteral("second"));
+        speech->emitFinalText(QStringLiteral("third"));
+        speech->autoCompleteOnFinish = true;
+        session.stopListening();
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("first second third"));
+    }
+
+    // Stop while paused delivers what was said, once the paused attempt's
+    // words are in; the time spent paused is not counted as dictation.
+    void stopWhilePausedDeliversTheWordsSoFar()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setInsightsEnabled(true);
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+
+        session.startListening();
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        speech->emitFinalText(QStringLiteral("before the pause"));
+        speech->autoCompleteOnFinish = false;
+        session.pause();
+        QTest::qWait(400);
+        session.stopListening();
+        QCOMPARE(int(session.state()), int(DictationState::Stopping));
+        QCOMPARE(delivery->calls, 0);
+
+        speech->emitFinalText(QStringLiteral("and its tail"));
+        speech->emitCompletion();
+        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 250);
+        QCOMPARE(delivery->lastText, QStringLiteral("before the pause and its tail"));
+        QCOMPARE(recorded.count(), 1);
+        QVERIFY(recorded.first().first().value<DictationRecord>().audioMs < 400);
     }
 
     void dictationSessionNeverCapturesScreenshotForSecureTarget()

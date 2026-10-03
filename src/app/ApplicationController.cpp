@@ -260,8 +260,11 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_session, &DictationSession::previewChanged, this, keepTranscript);
     connect(m_session, &DictationSession::transcriptDelivered, this, keepTranscript);
     connect(m_session, &DictationSession::audioLevelChanged, this, &ApplicationController::audioLevelChanged);
-    connect(m_session, &DictationSession::statusChanged, this, [this](const QString &status) {
-        if (m_settings->soundsEnabled()
+    // Pause and resume make no sound; only starting and stopping do.
+    connect(m_session, &DictationSession::statusChanged, this, [this, wasPaused = false](const QString &status) mutable {
+        const bool resumed = std::exchange(wasPaused, m_session->state() == DictationState::Paused)
+            && status == QStringLiteral("Listening");
+        if (m_settings->soundsEnabled() && !resumed
             && (status == QStringLiteral("Listening")
                 || status == QStringLiteral("Stopping"))) {
             if (m_frontEnd) {
@@ -740,7 +743,8 @@ void ApplicationController::startWithMicrophone(std::function<void()> start)
 bool ApplicationController::sessionActive() const
 {
     const DictationState state = m_session->state();
-    return state == DictationState::Starting || state == DictationState::Listening;
+    return state == DictationState::Starting || state == DictationState::Listening
+        || state == DictationState::Paused;
 }
 
 // One binding drives every activation mode; the mode decides what a press and
@@ -1041,6 +1045,12 @@ void ApplicationController::handleIpcCommand(const QString &command,
                      m_updates->bannerVisible() ? QStringLiteral("true") : QStringLiteral("false"))
                 .arg(QCoreApplication::applicationPid()),
         });
+    } else if (command == QStringLiteral("e2ePause")) {
+        m_session->pause();
+        SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("e2eResume")) {
+        m_session->resume();
+        SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("e2eUpdateAccept")) {
         SingleInstanceIpc::writeResponse(socket, response());
         m_updates->installAndRestart();

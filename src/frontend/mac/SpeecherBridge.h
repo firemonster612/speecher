@@ -457,6 +457,7 @@ typedef NS_ENUM(NSInteger, SpeecherDictationState) {
     SpeecherDictationStateIdle,
     SpeecherDictationStateStarting,
     SpeecherDictationStateListening,
+    SpeecherDictationStatePaused,
     SpeecherDictationStateStopping,
     SpeecherDictationStateRefining,
     SpeecherDictationStateDelivering,
@@ -870,6 +871,23 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (void)toggle;
 - (void)startListening;
 - (void)stopListening;
+// Throws the dictation away (speecher::ApplicationController::cancel), and
+// pauses or resumes it (speecher::DictationSession).
+- (void)cancel;
+- (void)pause;
+- (void)resume;
+// The buttons either side of the waveform for the current state
+// (speecher::sessionControls), and whether Cancel belongs in the menu bar
+// panel (speecher::dictationCancelable). Re-read on every statusChanged.
+@property (nonatomic, readonly) BOOL pauseVisible;
+@property (nonatomic, readonly) BOOL pauseEnabled;
+@property (nonatomic, readonly) BOOL paused;
+@property (nonatomic, readonly) BOOL cancelVisible;
+@property (nonatomic, readonly) BOOL cancelable;
+@property (class, nonatomic, readonly, copy) NSString *pauseCaption;
+@property (class, nonatomic, readonly, copy) NSString *resumeCaption;
+@property (class, nonatomic, readonly, copy) NSString *cancelCaption;
+@property (class, nonatomic, readonly, copy) NSString *cancelDictationCaption;
 
 // The dictation panel's own state. It is a floating window rather than a
 // settings pane, so it reads these rather than the schema.
@@ -957,6 +975,18 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // registration first; ending it restores the bound sequence.
 - (void)beginShortcutRecording;
 - (nullable NSString *)endShortcutRecording;
+
+// The Cancel Shortcut: the same recorder's two kinds of binding, and Clear,
+// since it has no default. Each returns nil once done, otherwise why not.
+@property (nonatomic, readonly, copy) NSString *cancelShortcutDisplay;
+- (nullable NSString *)bindCancelShortcutWithCharacters:(NSString *)characters
+                                          modifierFlags:(NSUInteger)modifierFlags
+    NS_SWIFT_NAME(bindCancelShortcut(characters:modifierFlags:));
+- (nullable NSString *)bindCancelSingleKeyCode:(NSString *)code
+    NS_SWIFT_NAME(bindCancelSingleKey(code:));
+- (nullable NSString *)clearCancelShortcut;
+@property (class, nonatomic, readonly, copy) NSString *globalShortcutClearCaption;
+@property (class, nonatomic, readonly, copy) NSString *globalShortcutUnsetText;
 
 // The single-key half of the binding: one physical key on its own, which
 // Speecher watches itself rather than registers as a hotkey. The recorder

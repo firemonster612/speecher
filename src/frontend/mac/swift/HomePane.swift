@@ -101,6 +101,29 @@ struct HomePane: View {
                 Label(model.status, systemImage: model.listening ? "mic.fill" : "mic")
                 Text(model.bridge.dictationShortcutHint(model.shortcut))
             }
+            // While dictating: pause (resume while paused), the input level and
+            // cancel, as either side of the popup's waveform.
+            if model.pauseVisible || model.cancelVisible {
+                HStack {
+                    if model.pauseVisible {
+                        let caption = model.paused ? SpeecherBridge.resumeCaption : SpeecherBridge.pauseCaption
+                        Button(caption, systemImage: model.paused ? "play.fill" : "pause.fill") {
+                            model.togglePause()
+                        }
+                        .labelStyle(.iconOnly)
+                        .help(caption)
+                        .disabled(!model.pauseEnabled)
+                        Gauge(value: Double(min(max(model.level, 0), 1))) { EmptyView() }
+                            .gaugeStyle(.linearCapacity)
+                            .accessibilityLabel(model.bridge.inputLevelLabel)
+                    }
+                    if model.cancelVisible {
+                        Button(SpeecherBridge.cancelCaption, systemImage: "xmark") { model.bridge.cancel() }
+                            .labelStyle(.iconOnly)
+                            .help(SpeecherBridge.cancelCaption)
+                    }
+                }
+            }
             // With no shortcut the hint asks for one, and this is the way there.
             if model.shortcut.isEmpty {
                 let openDictation = SpeecherErrorAction(fix: .settingsPage, pageId: "dictation")

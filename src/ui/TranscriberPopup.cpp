@@ -11,6 +11,7 @@
 #include <QFrame>
 #include <QEvent>
 #include <QHBoxLayout>
+#include <QToolButton>
 #include <QFontMetrics>
 #include <QPalette>
 #include <QPaintEvent>
@@ -74,10 +75,11 @@ public:
     // Only the popup's preview pill sets these; banners and the error capsule
     // keep the plain outline. With both widgets visible the frame carves the
     // preview contour around them instead of a full rounded rectangle.
-    void setContourWidgets(QWidget *text, WaveformWidget *strip)
+    void setContourWidgets(QWidget *text, WaveformWidget *strip, QList<QWidget *> beside)
     {
         m_text = text;
         m_strip = strip;
+        m_beside = std::move(beside);
     }
 
 protected:
@@ -124,8 +126,16 @@ private:
         // wider than the ink they hold.
         const qreal stripCenter = m_strip->x() + m_strip->width() / 2.0;
         const qreal lobeHalf = m_strip->contentWidth() / 2.0 + kLobePad;
-        const qreal lobeLeft = stripCenter - lobeHalf;
-        const qreal lobeRight = stripCenter + lobeHalf;
+        qreal lobeLeft = stripCenter - lobeHalf;
+        qreal lobeRight = stripCenter + lobeHalf;
+        // The buttons either side of the strip sit inside the lobe too.
+        for (const QWidget *button : m_beside) {
+            if (button->isVisible()) {
+                const qreal left = button->mapTo(this, QPoint(0, 0)).x();
+                lobeLeft = std::min(lobeLeft, left);
+                lobeRight = std::max(lobeRight, left + button->width());
+            }
+        }
         const qreal lobeHeight = pillRect.bottom() - shoulderY;
         // Radii yield to the room available: the fillet takes what the shelf
         // between end cap and lobe leaves it, and fillet plus bottom corner
@@ -176,6 +186,7 @@ private:
 
     QWidget *m_text = nullptr;
     WaveformWidget *m_strip = nullptr;
+    QList<QWidget *> m_beside;
 };
 
 // The popup's action chips: capsule buttons in the pill's own visual language,
@@ -296,7 +307,9 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAutoFillBackground(false);
-    setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
+    // Never focused, even when its buttons are clicked: the Target keeps it.
+    setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool
+                   | Qt::WindowDoesNotAcceptFocus);
     setAttribute(Qt::WA_ShowWithoutActivating);
     m_positioner->configurePopup(m_surface);
 #ifdef Q_OS_MACOS
@@ -366,8 +379,43 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     // error being read does not disappear under it.
     m_previewPill->installEventFilter(this);
     m_pillLayout->addLayout(previewRow, 1);
-    m_pillLayout->addWidget(m_waveform, 0, Qt::AlignHCenter);
-    static_cast<PillFrame *>(m_previewPill)->setContourWidgets(m_preview, m_waveform);
+    // Pause (resume while paused) and cancel either side of the waveform,
+    // flat tool buttons the style draws. They never take focus, so a click
+    // leaves the Target focused.
+    const auto sessionButton = [this, iconSize](const char *name) {
+        auto *button = new QToolButton(m_previewPill);
+        button->setObjectName(QLatin1String(name));
+        button->setAutoRaise(true);
+        button->setFocusPolicy(Qt::NoFocus);
+        button->setIconSize(QSize(iconSize, iconSize));
+        button->hide();
+        return button;
+    };
+    m_pauseButton = sessionButton("pauseButton");
+    m_cancelButton = sessionButton("cancelButton");
+    m_cancelButton->setIcon(QIcon::fromTheme(QStringLiteral("window-close")));
+    m_cancelButton->setToolTip(cancelCaption());
+    m_cancelButton->setAccessibleName(cancelCaption());
+    connect(m_pauseButton, &QToolButton::clicked, this, [this] {
+        if (m_sessionState == DictationState::Paused) {
+            emit resumeRequested();
+        } else {
+            emit pauseRequested();
+        }
+    });
+    connect(m_cancelButton, &QToolButton::clicked, this, &TranscriberPopup::cancelRequested);
+    auto *waveformRow = new QHBoxLayout;
+    // Clear of the capsule's rounded ends when there are no words.
+    waveformRow->setContentsMargins(6, 0, 6, 0);
+    waveformRow->setSpacing(4);
+    waveformRow->addStretch();
+    waveformRow->addWidget(m_pauseButton, 0, Qt::AlignVCenter);
+    waveformRow->addWidget(m_waveform, 0, Qt::AlignVCenter);
+    waveformRow->addWidget(m_cancelButton, 0, Qt::AlignVCenter);
+    waveformRow->addStretch();
+    m_pillLayout->addLayout(waveformRow);
+    static_cast<PillFrame *>(m_previewPill)
+        ->setContourWidgets(m_preview, m_waveform, {m_pauseButton, m_cancelButton});
 
     m_errorDismissProgress->setObjectName(QStringLiteral("errorDismissProgress"));
     m_errorDismissProgress->setRange(0, 1000);
@@ -480,6 +528,14 @@ QSize TranscriberPopup::sizeHint() const
 
 void TranscriberPopup::setSessionState(DictationState state)
 {
+    const DictationState previous = std::exchange(m_sessionState, state);
+    applySessionControls();
+    // Paused holds a flat strip that says so; resuming brings the bars back.
+    if (state == DictationState::Paused) {
+        m_waveform->setMessage(dictationStatusLabel(dictationStateName(state)));
+    } else if (previous == DictationState::Paused && state == DictationState::Listening) {
+        m_waveform->setMode(WaveformWidget::Mode::Waveform);
+    }
     // Stopping is the one state that drives this popup directly: the mic is
     // closed but the provider is still finalising, so the waveform gives way
     // to a shimmering "Transcribing…" and the stale speech preview goes away.
@@ -853,6 +909,19 @@ void TranscriberPopup::applyTheme()
         m_errorDismissProgress->update();
     }
     m_applyingTheme = false;
+}
+
+void TranscriberPopup::applySessionControls()
+{
+    const SessionControls controls = sessionControls(dictationStateName(m_sessionState));
+    m_pauseButton->setVisible(controls.pauseVisible);
+    m_pauseButton->setEnabled(controls.pauseEnabled);
+    m_pauseButton->setIcon(QIcon::fromTheme(controls.paused ? QStringLiteral("media-playback-start")
+                                                            : QStringLiteral("media-playback-pause")));
+    const QString pauseText = controls.paused ? resumeCaption() : pauseCaption();
+    m_pauseButton->setToolTip(pauseText);
+    m_pauseButton->setAccessibleName(pauseText);
+    m_cancelButton->setVisible(controls.cancelVisible);
 }
 
 void TranscriberPopup::restoreStandardLayout()

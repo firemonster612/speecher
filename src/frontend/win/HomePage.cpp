@@ -341,6 +341,61 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
     StackPanel status;
     status.Spacing(2);
     status.Children().Append(styledTextBlock(controller->statusLabel(), L"BodyStrongTextBlockStyle"));
+    // While dictating: pause (resume while paused), the input level, and
+    // cancel, as either side of the popup's waveform.
+    QObject::disconnect(host.homeLevel);
+    const SessionControls controls = sessionControls(controller->stateName());
+    if (controls.pauseVisible || controls.cancelVisible) {
+        StackPanel listening;
+        listening.Orientation(Orientation::Horizontal);
+        listening.Spacing(8);
+        listening.Margin({0, 4, 0, 4});
+        const auto sessionButton = [](const wchar_t *glyphText, const QString &caption) {
+            Button button;
+            FontIcon icon;
+            icon.Glyph(glyphText);
+            icon.FontSize(12);
+            button.Content(icon);
+            button.VerticalAlignment(VerticalAlignment::Center);
+            Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(button, hs(caption));
+            ToolTipService::SetToolTip(button, box_value(hs(caption)));
+            return button;
+        };
+        if (controls.pauseVisible) {
+            Button pause = sessionButton(controls.paused ? L"\uE768" : L"\uE769",
+                                         controls.paused ? resumeCaption() : pauseCaption());
+            pause.IsEnabled(controls.pauseEnabled);
+            pause.Click([controller](const auto &, const auto &) {
+                DictationSession *session = controller->session();
+                if (session->state() == DictationState::Paused) {
+                    session->resume();
+                } else {
+                    session->pause();
+                }
+            });
+            listening.Children().Append(pause);
+            ProgressBar level;
+            level.Minimum(0);
+            level.Maximum(1);
+            level.Width(160);
+            level.VerticalAlignment(VerticalAlignment::Center);
+            Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(level, hs(inputLevelLabel()));
+            host.homeLevel = QObject::connect(
+                controller, &ApplicationController::audioLevelChanged, controller,
+                [weak = winrt::make_weak(level)](float value) {
+                    if (const ProgressBar bar = weak.get()) {
+                        bar.Value(std::clamp(value, 0.0f, 1.0f));
+                    }
+                });
+            listening.Children().Append(level);
+        }
+        if (controls.cancelVisible) {
+            Button cancel = sessionButton(L"\uE711", cancelCaption());
+            cancel.Click([controller](const auto &, const auto &) { controller->cancel(); });
+            listening.Children().Append(cancel);
+        }
+        status.Children().Append(listening);
+    }
     const QString shortcut = controller->globalShortcutDisplay();
     status.Children().Append(secondaryCaption(dictationShortcutHint(shortcut), host));
     // The popup shows a failure for five seconds and cannot take focus, so the

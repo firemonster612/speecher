@@ -15,6 +15,7 @@ class QPushButton;
 class QPropertyAnimation;
 class QPaintEvent;
 class QTimer;
+class QToolButton;
 class QVBoxLayout;
 
 namespace speecher {
@@ -59,6 +60,10 @@ signals:
     void updateDismissRequested();
     void whatsNewRequested();
     void whatsNewDismissed();
+    // The buttons beside the waveform.
+    void pauseRequested();
+    void resumeRequested();
+    void cancelRequested();
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -76,6 +81,7 @@ private:
     void applyPillGeometry();
     void repositionIfVisible();
     void restoreStandardLayout();
+    void applySessionControls();
 
     QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;
@@ -87,6 +93,9 @@ private:
     QProgressBar *m_errorDismissProgress = nullptr;
     QPropertyAnimation *m_errorDismissAnimation = nullptr;
     WaveformWidget *m_waveform = nullptr;
+    QToolButton *m_pauseButton = nullptr;
+    QToolButton *m_cancelButton = nullptr;
+    DictationState m_sessionState = DictationState::Idle;
     QFrame *m_updateBanner = nullptr;
     QLabel *m_updateBannerText = nullptr;
     QLabel *m_updateBannerIcon = nullptr;

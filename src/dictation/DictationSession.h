@@ -66,6 +66,11 @@ public slots:
     // Dismisses an error; does nothing while idle or delivering, when the text
     // is already out.
     void cancel();
+    // Pause turns the microphone off and lets the speech provider finish the
+    // words already spoken; they stay in the transcript. Resume listens on in
+    // a fresh speech attempt. Stop while paused delivers what was said.
+    void pause();
+    void resume();
     void popupPresented(quint64 generation);
     // How long startup waits for the popup to paint before proceeding without
     // it. Tests raise it so a slow runner cannot fire it under an assertion.
@@ -114,6 +119,9 @@ private:
     void handleSpeechFailure(const SpeechFailure &failure);
     void rollOverSpeechAttempt();
     void startNextAttempt();
+    // Opens the attempt after a pause once the paused one has finished, and
+    // sends it the audio heard in between.
+    void resumeAttempt();
     void refillReconnectsIfAttemptWasStable();
     bool attemptWasStable() const;
     void deliverFinal(const QString &text);
@@ -167,6 +175,11 @@ private:
     // Committed text carried over from before the current speech attempt; a
     // whole-attempt transcript replaces only what followed it.
     QString m_attemptBaseText;
+    // The current attempt is finishing because of a pause. Its end is not a
+    // rollover, and the next attempt may only open once it has come.
+    bool m_finishingPausedAttempt = false;
+    // Audio heard after a resume while the paused attempt still finishes.
+    QList<QByteArray> m_resumeAudio;
 };
 
 } // namespace speecher

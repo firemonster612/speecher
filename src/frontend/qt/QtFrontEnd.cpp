@@ -443,6 +443,9 @@ void QtFrontEnd::wireSessionToPopup()
     connect(session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
     connect(session, &DictationSession::popupErrorRequested, this, &QtFrontEnd::showPopupError);
     connect(m_popup, &TranscriberPopup::errorActionRequested, this, &QtFrontEnd::applyErrorFix);
+    connect(m_popup, &TranscriberPopup::pauseRequested, session, &DictationSession::pause);
+    connect(m_popup, &TranscriberPopup::resumeRequested, session, &DictationSession::resume);
+    connect(m_popup, &TranscriberPopup::cancelRequested, m_controller, &ApplicationController::cancel);
     connect(m_popup, &TranscriberPopup::errorDismissed, session, [session] {
         if (session->state() == DictationState::Error) {
             session->stopListening();
