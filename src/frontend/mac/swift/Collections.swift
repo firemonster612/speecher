@@ -525,10 +525,14 @@ struct ChoiceSetField: View {
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
+            // Named for themselves: the row's LabeledContent would otherwise
+            // give each control its title, so VoiceOver read "Profiles" for all.
+            .accessibilityLabel(column.title)
             VStack(alignment: .leading) {
                 ForEach(column.options, id: \.rowOptionId) { option in
                     Toggle(option.label, isOn: tick(option.rowOptionId))
                         .toggleStyle(.checkbox)
+                        .accessibilityLabel(option.label)
                 }
             }
             .padding(.leading)
