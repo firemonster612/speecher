@@ -1,5 +1,7 @@
 #include "providers/CodexDictationClient.h"
 
+#include "core/settings/SpokenLanguages.h"
+
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkRequest>
@@ -70,7 +72,7 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs, 
     connect(this, &CodexDictationClient::partialTranscript, this, &CodexDictationClient::extendCloseWait);
     connect(this, &CodexDictationClient::finalTranscript, this, &CodexDictationClient::extendCloseWait);
     connect(&m_socket, &QWebSocket::connected, this, [this] {
-        sendSessionStart(m_socket.property("sampleRateHz").toInt());
+        sendSessionStart(m_socket.property("sampleRateHz").toInt(), m_socket.property("language").toString());
     });
     connect(&m_socket, &QWebSocket::textMessageReceived,
             this, &CodexDictationClient::handleTextMessage);
@@ -119,7 +121,8 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs, 
 
 void CodexDictationClient::start(const QUrl &url,
                                  const QString &accessToken,
-                                 int sampleRateHz)
+                                 int sampleRateHz,
+                                 const QString &spokenLanguage)
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     m_pendingAudio.clear();
@@ -135,6 +138,7 @@ void CodexDictationClient::start(const QUrl &url,
     ++m_sessionId;
 
     m_socket.setProperty("sampleRateHz", sampleRateHz);
+    m_socket.setProperty("language", requestedSpokenLanguage(spokenLanguage));
     QWebSocketHandshakeOptions options;
     options.setSubprotocols({QStringLiteral("chatgpt-dictation"),
                              QStringLiteral("openai-bearer.%1").arg(accessToken)});
@@ -159,13 +163,14 @@ void CodexDictationClient::start(const QUrl &url,
     Q_UNUSED(url)
     Q_UNUSED(accessToken)
     Q_UNUSED(sampleRateHz)
+    Q_UNUSED(spokenLanguage)
     emit failed(QStringLiteral("Qt WebSockets support was not built; install Qt6 WebSockets development files and rebuild"),
                 false,
                 QStringLiteral("protocol"));
 #endif
 }
 
-void CodexDictationClient::sendSessionStart(int sampleRateHz)
+void CodexDictationClient::sendSessionStart(int sampleRateHz, const QString &language)
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     const QJsonObject vad{
@@ -174,7 +179,7 @@ void CodexDictationClient::sendSessionStart(int sampleRateHz)
         {QStringLiteral("prefix_padding_ms"), 300},
         {QStringLiteral("silence_duration_ms"), 500},
     };
-    const QJsonObject config{
+    QJsonObject config{
         {QStringLiteral("input_audio_format"), QStringLiteral("pcm16")},
         {QStringLiteral("sample_rate_hz"), sampleRateHz},
         {QStringLiteral("num_channels"), 1},
@@ -185,12 +190,16 @@ void CodexDictationClient::sendSessionStart(int sampleRateHz)
         {QStringLiteral("transcript_delivery_mode"), QStringLiteral("segment")},
         {QStringLiteral("vad"), vad},
     };
+    if (!language.isEmpty()) {
+        config.insert(QStringLiteral("language"), language);
+    }
     m_socket.sendTextMessage(QString::fromUtf8(QJsonDocument(QJsonObject{
         {QStringLiteral("type"), QStringLiteral("session.start")},
         {QStringLiteral("config"), config},
     }).toJson(QJsonDocument::Compact)));
 #else
     Q_UNUSED(sampleRateHz)
+    Q_UNUSED(language)
 #endif
 }
 

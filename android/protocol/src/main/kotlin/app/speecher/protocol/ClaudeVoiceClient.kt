@@ -8,6 +8,7 @@ class ClaudeVoiceClient(
     private val transport: WebSocketTransport,
     token: String,
     vocabulary: List<String>,
+    language: String,
     private val events: (SpeechEvent) -> Unit,
     endpoint: String = "wss://claude.ai/api/ws/speech_to_text/voice_stream",
 ) : WebSocketTransport.Listener, SpeechClient {
@@ -34,7 +35,7 @@ class ClaudeVoiceClient(
                 .toHttpUrl()
                 .newBuilder()
                 .apply {
-                    claudeVoiceStreamQuery().forEach { (key, value) ->
+                    claudeVoiceStreamQuery(language).forEach { (key, value) ->
                         addQueryParameter(key, value)
                     }
                 }

@@ -254,6 +254,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/settings/CorrectionSettingsCodec.cpp
   src/core/settings/SettingsCodecs.cpp
   src/core/settings/SettingsSchema.cpp
+  src/core/settings/SpokenLanguages.cpp
   src/core/settings/VocabularySettingsCodec.cpp
   src/core/SecretStore.cpp
   src/core/TranscriptState.cpp
@@ -287,6 +288,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SettingsSchema.h
+  src/core/settings/SpokenLanguages.h
   src/core/settings/VocabularySettingsCodec.h
   src/core/SecretStore.h
   src/core/TranscriptState.h

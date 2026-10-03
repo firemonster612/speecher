@@ -38,6 +38,7 @@ TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options, const
         settings.refinement.writingProfiles, writingProfileFromName(resolved.writingProfile));
     resolved.cleanupStrength = options.cleanupStrength.value_or(profile.cleanupStrength);
     resolved.tone = options.tone.value_or(profile.tone);
+    resolved.spokenLanguage = options.spokenLanguage;
     resolved.destination = options.destination;
     resolved.folder = options.folder;
     return resolved;

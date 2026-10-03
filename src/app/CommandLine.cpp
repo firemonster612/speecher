@@ -5,6 +5,7 @@
 #include "app/SingleInstanceIpc.h"
 #include "core/settings/SettingsCodecs.h"
 #include "core/settings/SettingsSchema.h"
+#include "core/settings/SpokenLanguages.h"
 #include "providers/ProviderRegistry.h"
 #include "transcribe/FileTranscriptionSession.h"
 
@@ -113,6 +114,7 @@ Transcribe without a window, printing the results:
   --cleanup <level>        %3
   --profile <name>         writing profile; seeds cleanup and tone: %4
   --tone <name>            %5
+  --language <code>        spoken language: a code such as de, or auto
   --output <beside|none|DIR>
                            where to save <name>-transcribed.txt (default beside)
   --stdout                 also print each transcript
@@ -123,6 +125,8 @@ Transcribe without a window, printing the results:
 Options:
   --format plain|html      output format for toggle and start
   --profile <name>         writing profile for toggle and start: %4
+  --language <code>        spoken language for toggle and start: a code such
+                           as de, or auto
   --daemon                 run without a window
   --version                print the version
   --help                   print this help
@@ -264,6 +268,30 @@ std::optional<QString> storedId(const CliNames &choices, const QString &name)
     return index < 0 ? std::nullopt : std::optional(choices.at(index).first);
 }
 
+// A Spoken Language a command line names, by code.
+std::optional<QString> spokenLanguageNamed(const QString &value, QString *error)
+{
+    const QString code = value.trimmed().toLower();
+    if (isKnownSpokenLanguage(code)) {
+        return code;
+    }
+    *error = QStringLiteral("Unknown spoken language: %1 (expected a language code such as de, or auto)").arg(value);
+    return std::nullopt;
+}
+
+std::optional<QString> spokenLanguageOption(const QStringList &arguments, QString *error)
+{
+    const qsizetype optionIndex = arguments.indexOf(QStringLiteral("--language"));
+    if (optionIndex < 0) {
+        return std::nullopt;
+    }
+    if (optionIndex + 1 >= arguments.size()) {
+        *error = QStringLiteral("--language requires a language code such as de, or auto");
+        return std::nullopt;
+    }
+    return spokenLanguageNamed(arguments.at(optionIndex + 1), error);
+}
+
 std::optional<QString> requestedWritingProfile(const QStringList &arguments, QString *error)
 {
     const qsizetype optionIndex = arguments.indexOf(QStringLiteral("--profile"));
@@ -286,6 +314,9 @@ QStringList sessionOverrideArguments(const SessionOverrides &overrides)
     }
     if (overrides.writingProfile) {
         arguments << QStringLiteral("--profile") << *overrides.writingProfile;
+    }
+    if (overrides.spokenLanguage) {
+        arguments << QStringLiteral("--language") << *overrides.spokenLanguage;
     }
     return arguments;
 }
@@ -360,6 +391,13 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
                 error = QStringLiteral("--profile requires a value");
             } else {
                 options.writingProfile = writingProfileNamed(*given, &error);
+            }
+        } else if (argument == QStringLiteral("--language")) {
+            const std::optional<QString> given = value();
+            if (!given) {
+                error = QStringLiteral("--language requires a value");
+            } else {
+                options.spokenLanguage = spokenLanguageNamed(*given, &error);
             }
         } else if (argument == QStringLiteral("--tone")) {
             error = choice(toneNames(), &options.tone);
@@ -441,9 +479,12 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     QString overrideError;
     SessionOverrides &overrides = decision.sessionOverrides;
     overrides.outputFormat = requestedOutputFormat(arguments, &overrideError);
-    // transcribe reads its own --profile.
+    // transcribe reads its own --profile and --language.
     if (overrideError.isEmpty() && verb != QStringLiteral("transcribe")) {
         overrides.writingProfile = requestedWritingProfile(arguments, &overrideError);
+        if (overrideError.isEmpty()) {
+            overrides.spokenLanguage = spokenLanguageOption(arguments, &overrideError);
+        }
     }
     if (!overrideError.isEmpty()) {
         std::cerr << overrideError.toStdString() << "\n";
@@ -458,6 +499,10 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
             }
             if (overrides.writingProfile) {
                 std::cerr << "--profile can only be used with toggle or start\n";
+                return {LaunchMode::Exit, 2};
+            }
+            if (overrides.spokenLanguage) {
+                std::cerr << "--language can only be used with toggle or start\n";
                 return {LaunchMode::Exit, 2};
             }
         }
@@ -505,7 +550,8 @@ QStringList argumentsWithoutStartupActions(const QStringList &arguments)
                                             QStringLiteral("--show-setup")};
     // The session overrides only go with --start-listening, and a deleted
     // profile would make the relaunch refuse to start.
-    static const QStringList startupOptions{QStringLiteral("--format"), QStringLiteral("--profile")};
+    static const QStringList startupOptions{QStringLiteral("--format"), QStringLiteral("--profile"),
+                                            QStringLiteral("--language")};
     QStringList kept;
     kept.reserve(arguments.size());
     for (qsizetype index = 0; index < arguments.size(); ++index) {
@@ -541,10 +587,12 @@ int runCliCommand(const CommandLineDecision &decision,
                                                                               platform,
                                                                               &ipcError);
     if (ipcResult == IpcCommandResult::Sent) {
-        const std::optional<QString> &profile = decision.sessionOverrides.writingProfile;
-        if (response.ok && profile && response.writingProfile != *profile) {
-            std::cerr << "The running Speecher is older and ignored --profile. Quit it with `speecher quit` and "
-                         "run the command again.\n";
+        const SessionOverrides &overrides = decision.sessionOverrides;
+        const bool ignoredProfile = overrides.writingProfile && response.writingProfile != *overrides.writingProfile;
+        const bool ignoredLanguage = overrides.spokenLanguage && response.spokenLanguage != *overrides.spokenLanguage;
+        if (response.ok && (ignoredProfile || ignoredLanguage)) {
+            std::cerr << "The running Speecher is older and ignored " << (ignoredProfile ? "--profile" : "--language")
+                      << ". Quit it with `speecher quit` and run the command again.\n";
             return 1;
         }
         std::cout << response.state.toStdString() << "\n";

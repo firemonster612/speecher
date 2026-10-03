@@ -1,6 +1,7 @@
 #include "providers/ClaudeVoiceProtocol.h"
 
 #include "core/VocabularyLimit.h"
+#include "core/settings/SpokenLanguages.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -71,7 +72,7 @@ ClaudeVoiceEvent parseClaudeVoiceEvent(const QString &message)
     return {};
 }
 
-QUrlQuery claudeVoiceStreamQuery()
+QUrlQuery claudeVoiceStreamQuery(const QString &spokenLanguage)
 {
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("encoding"), QStringLiteral("linear16"));
@@ -79,7 +80,9 @@ QUrlQuery claudeVoiceStreamQuery()
     query.addQueryItem(QStringLiteral("channels"), QStringLiteral("1"));
     query.addQueryItem(QStringLiteral("endpointing_ms"), QStringLiteral("300"));
     query.addQueryItem(QStringLiteral("utterance_end_ms"), QStringLiteral("1000"));
-    query.addQueryItem(QStringLiteral("language"), QStringLiteral("en"));
+    if (const QString language = requestedSpokenLanguage(spokenLanguage); !language.isEmpty()) {
+        query.addQueryItem(QStringLiteral("language"), language);
+    }
     query.addQueryItem(QStringLiteral("use_conversation_engine"), QStringLiteral("true"));
     if (typedInterimsEnabled()) {
         query.addQueryItem(QStringLiteral("forward_interims"), QStringLiteral("typed"));
@@ -90,7 +93,7 @@ QUrlQuery claudeVoiceStreamQuery()
 
 QByteArray claudeVoiceKeytermsHeader(const QStringList &vocabulary)
 {
-    return VocabularyLimit::claudeVoiceKeyterms(vocabulary).join(QLatin1Char(',')).toLatin1();
+    return VocabularyLimit::claudeVoiceKeyterms(vocabulary).join(QLatin1Char(',')).toUtf8();
 }
 
 } // namespace speecher

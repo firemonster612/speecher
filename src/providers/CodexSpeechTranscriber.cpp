@@ -165,7 +165,7 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
                     emit failed({attemptId, message, retryable, phase});
                 }
             });
-    client->start(QUrl(dictationEndpoint()), m_accessToken, sampleRateHz);
+    client->start(QUrl(dictationEndpoint()), m_accessToken, sampleRateHz, settings.language);
 }
 
 void CodexSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &pcm)

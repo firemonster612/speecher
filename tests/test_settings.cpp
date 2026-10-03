@@ -329,6 +329,7 @@ private slots:
         QCOMPARE(settings.codexFinalRetranscribe(), true);
         settings.setCodexFinalRetranscribe(false);
         QCOMPARE(settings.codexFinalRetranscribe(), false);
+        QCOMPARE(settings.snapshot().speech.language, QStringLiteral("en"));
         QCOMPARE(settings.outputMethod(), QString::fromLatin1(OutputMethod::Automatic));
         QCOMPARE(settings.outputFormat(), OutputFormat::PlainText);
         QCOMPARE(settings.pasteRules(), defaultPasteRules());
@@ -538,6 +539,17 @@ private slots:
         settings.setShortcutActivationMode(ShortcutActivationMode::PushToTalk);
         QCOMPARE(settings.shortcutActivationMode(), ShortcutActivationMode::PushToTalk);
         QCOMPARE(settings.snapshot().shortcutActivationMode, ShortcutActivationMode::PushToTalk);
+    }
+
+    void spokenLanguageRoundTrips()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.speech.language = QStringLiteral("de");
+        settings.applySnapshot(draft);
+        QCOMPARE(SettingsStore().snapshot().speech.language, QStringLiteral("de"));
+        settings.raw().clear();
     }
 
     void localSpeechSettingsRoundTrip()

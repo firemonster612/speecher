@@ -115,11 +115,14 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent, int connectionTimeoutMs)
 #endif
 }
 
-void ClaudeVoiceClient::start(const QUrl &url, const QString &accessToken, const QStringList &vocabulary)
+void ClaudeVoiceClient::start(const QUrl &url,
+                              const QString &accessToken,
+                              const QStringList &vocabulary,
+                              const QString &spokenLanguage)
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     QUrl streamUrl(url);
-    streamUrl.setQuery(claudeVoiceStreamQuery());
+    streamUrl.setQuery(claudeVoiceStreamQuery(spokenLanguage));
 
     m_lastInterim.clear();
     m_finishRequested = false;
@@ -149,6 +152,7 @@ void ClaudeVoiceClient::start(const QUrl &url, const QString &accessToken, const
     Q_UNUSED(url)
     Q_UNUSED(accessToken)
     Q_UNUSED(vocabulary)
+    Q_UNUSED(spokenLanguage)
     emit failed(QStringLiteral("Qt WebSockets support was not built; install Qt6 WebSockets development files and rebuild"),
                 false,
                 QStringLiteral("protocol"));

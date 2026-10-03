@@ -62,6 +62,7 @@ class DictationEngineTest {
                             webSocketTransport(server.url("/").toString()),
                             "fake",
                             emptyList(),
+                            "en",
                             events,
                             server.url("/voice").toString().replaceFirst("http", "ws"),
                         )
@@ -282,6 +283,19 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `a spoken language the provider can't listen for fails in the panel`() {
+        val message = "Claude can't listen for Welsh. Choose another spoken language."
+        val run = Reconnects { throw SpokenLanguageUnsupported(message) }
+        run.engine.start(Provider.Claude)
+        run.tasks.removeFirst().run() // The microphone.
+        run.tasks.removeFirst().run() // The connection.
+        assertEquals(
+            DictationState.Failed(FailureReason.SpokenLanguage, message, "", Provider.Claude),
+            run.engine.state,
+        )
+    }
+
+    @Test
     fun `Insert during a reconnect that cannot connect inserts what was heard`() {
         val run = Reconnects { opened -> if (opened == 2) throw IOException("network down") }
         run.dropAfter("heard so far")
@@ -358,7 +372,7 @@ class DictationEngineTest {
         val transports =
             rollOver(
                 Provider.ChatGpt,
-                { transport, events -> CodexDictationClient(transport, "token", events) },
+                { transport, events -> CodexDictationClient(transport, "token", "en", events) },
             ) { server, words ->
                 server.onOpen()
                 server.onText("""{"type":"session.started"}""")
@@ -382,7 +396,9 @@ class DictationEngineTest {
         val transports =
             rollOver(
                 Provider.Claude,
-                { transport, events -> ClaudeVoiceClient(transport, "token", emptyList(), events) },
+                { transport, events ->
+                    ClaudeVoiceClient(transport, "token", emptyList(), "en", events)
+                },
             ) { server, words ->
                 server.onOpen()
                 server.onText("""{"type":"TranscriptEndpoint","data":"$words"}""")

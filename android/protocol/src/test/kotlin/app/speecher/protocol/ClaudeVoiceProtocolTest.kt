@@ -28,7 +28,33 @@ class ClaudeVoiceProtocolTest {
         private val withoutTypedInterims = withTypedInterims - ("forward_interims" to "typed")
 
         private fun query(vararg env: Pair<String, String>) =
-            claudeVoiceStreamQuery(env.toMap()::get)
+            claudeVoiceStreamQuery("en", env.toMap()::get)
+
+        @Test
+        fun `a fixed spoken language takes English's place`() {
+            assertEquals(
+                listOf(
+                    "encoding" to "linear16",
+                    "sample_rate" to "16000",
+                    "channels" to "1",
+                    "endpointing_ms" to "300",
+                    "utterance_end_ms" to "1000",
+                    "language" to "de",
+                    "use_conversation_engine" to "true",
+                    "forward_interims" to "typed",
+                    "stt_provider" to "deepgram-nova3",
+                ),
+                claudeVoiceStreamQuery("de") { null },
+            )
+        }
+
+        @Test
+        fun `Automatic sends no language`() {
+            assertEquals(
+                withTypedInterims - ("language" to "en"),
+                claudeVoiceStreamQuery("auto") { null },
+            )
+        }
 
         @Test
         fun `typed interims are on when no variable is set`() {
@@ -118,19 +144,17 @@ class ClaudeVoiceProtocolTest {
         }
 
         @Test
-        fun `terms outside Latin-1 are dropped`() {
+        fun `terms outside Latin-1 are kept`() {
             assertEquals(
-                "café,Straße,naïve",
-                claudeVoiceKeytermsHeader(
-                    listOf("café", "東京", "Straße", "€uro", "emoji 😀", "Ā", "naïve")
-                ),
+                "café,東京,Straße,€uro,emoji 😀",
+                claudeVoiceKeytermsHeader(listOf("café", "東京", "Straße", "€uro", "emoji 😀")),
             )
         }
 
         @Test
         fun `the terms are the ones the header carries`() {
             assertEquals(
-                listOf("Gradle", "Kotlin Coroutines"),
+                listOf("Gradle", "Kotlin Coroutines", "東京"),
                 claudeVoiceKeyterms(listOf("Gradle", "gradle", " Kotlin  Coroutines ", "東京")),
             )
         }
@@ -147,8 +171,14 @@ class ClaudeVoiceProtocolTest {
         }
 
         @Test
+        fun `the limit counts UTF-8 bytes`() {
+            // 342 characters, but 1026 bytes.
+            assertEquals("y", claudeVoiceKeytermsHeader(listOf("東".repeat(342), "y")))
+        }
+
+        @Test
         fun `the separator counts towards the limit and later shorter terms still fit`() {
-            val first = "é".repeat(1022)
+            val first = "é".repeat(511) // 1022 bytes
             assertEquals("$first,c", claudeVoiceKeytermsHeader(listOf(first, "bb", "c", "d")))
         }
     }

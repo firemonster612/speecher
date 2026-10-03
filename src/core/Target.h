@@ -178,6 +178,8 @@ struct RefinementContext {
     QString profileInstructions;
     // The writing profile's output language; empty keeps the spoken one.
     QString outputLanguage;
+    // The session's Spoken Language. English, or empty, adds no rule.
+    QString spokenLanguage;
     // Replaces the built-in dictation rules when not blank.
     QString customSystemPrompt;
     // Set when the tone or the cleanup level is one the user defined. The

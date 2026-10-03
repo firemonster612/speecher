@@ -70,7 +70,8 @@ private:
     // Worker thread only.
     bool ensureLoaded(const QString &modelPath, const LocalRunsOn &runsOn, QString *error);
     void announceRunsOn();
-    void begin(quint64 attemptId, const QString &modelPath, const LocalRunsOn &runsOn, bool timed);
+    void begin(quint64 attemptId, const QString &modelPath, const LocalRunsOn &runsOn, bool timed,
+               const QString &spokenLanguage);
     void feedPending();
     void finish(quint64 attemptId);
     bool attemptRunning(quint64 attemptId) const;
@@ -100,6 +101,7 @@ private:
     bool m_workerAttemptFailed = false;
     // Whether the attempt asked for segment timings.
     bool m_workerAttemptTimed = false;
+    QString m_workerAttemptLanguage;
     QByteArray m_batchPcm;
     qsizetype m_emittedCommittedChars = 0;
 };

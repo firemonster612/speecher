@@ -168,7 +168,8 @@ public slots:
                           const QString &outputFormat,
                           QLocalSocket *socket,
                           const QStringList &files = {},
-                          const QString &writingProfile = {});
+                          const QString &writingProfile = {},
+                          const QString &spokenLanguage = {});
 
 signals:
     void stateChanged(const QString &stateName);

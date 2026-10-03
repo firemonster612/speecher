@@ -7,6 +7,7 @@
 #include "core/VocabularyLimit.h"
 #include "core/ReleaseNotesPresentation.h"
 #include "core/settings/SettingsSchema.h"
+#include "core/settings/SpokenLanguages.h"
 #include "transcribe/TranscribePresentation.h"
 
 #include <QRegularExpression>
@@ -59,6 +60,63 @@ class SettingsSchemaTests : public QObject {
     Q_OBJECT
 
 private slots:
+    // Each service lists what the 2026-10-03 probe found it accepts, and a
+    // Local Model what transcribe.cpp's catalog says it takes.
+    void eachSpeechServiceListsTheSpokenLanguagesItListensFor()
+    {
+        SpeechSettings speech;
+        QVERIFY(spokenLanguages(speech).contains(QStringLiteral("de")));
+        QVERIFY(spokenLanguages(speech).contains(QStringLiteral("auto")));
+        QVERIFY(!spokenLanguages(speech).contains(QStringLiteral("cy")));
+        speech.providerId = QStringLiteral("codex");
+        QVERIFY(spokenLanguages(speech).contains(QStringLiteral("cy")));
+        speech.providerId = QStringLiteral("local");
+        speech.local.modelId = QStringLiteral("parakeet");
+        QCOMPARE(spokenLanguages(speech), QStringList{QStringLiteral("en")});
+        speech.local.modelId = QStringLiteral("cohere");
+        QCOMPARE(spokenLanguages(speech).size(), 14);
+        speech.local.modelId = QStringLiteral("qwen3-asr");
+        QCOMPARE(spokenLanguages(speech).size(), 31);
+        speech.providerId = QStringLiteral("endpoint");
+        QCOMPARE(spokenLanguages(speech).size(), 101);
+    }
+
+    void spokenLanguagesReadInEnglishThenTheirOwnName()
+    {
+        QCOMPARE(spokenLanguageLabel(QStringLiteral("de")), QStringLiteral("German (Deutsch)"));
+        QCOMPARE(spokenLanguageLabel(QStringLiteral("ja")), QString::fromUtf8("Japanese (日本語)"));
+        QCOMPARE(spokenLanguageLabel(QStringLiteral("es")), QString::fromUtf8("Spanish (español)"));
+        QCOMPARE(spokenLanguageLabel(QStringLiteral("en")), QStringLiteral("English"));
+        QCOMPARE(spokenLanguageLabel(QStringLiteral("auto")), QStringLiteral("Automatic"));
+    }
+
+    // A saved language the service lacks stays saved and shown, disabled,
+    // with a caution naming the service; nothing turns it into English.
+    void aSpokenLanguageTheServiceLacksStaysWithACaution()
+    {
+        const SettingsPage page = buildSettingsSchema(fakeContext()).page(QStringLiteral("audio"));
+        const SettingsRow &row = rowById(page, QStringLiteral("spokenLanguage"));
+        const SettingsRow &caution = rowById(page, QStringLiteral("spokenLanguageCaution"));
+        AppSettings settings;
+        QCOMPARE(row.options(settings).first().label, QStringLiteral("Automatic"));
+        QVERIFY(!caution.visible(settings, {}));
+
+        settings.speech.language = QStringLiteral("cy");
+        const RowOption saved = row.options(settings).last();
+        QCOMPARE(saved.id, QStringLiteral("cy"));
+        QCOMPARE(saved.label, QStringLiteral("Welsh (Cymraeg)"));
+        QVERIFY(!saved.enabled);
+        QVERIFY(caution.visible(settings, {}));
+        QCOMPARE(caution.value(settings).toString(),
+                 QStringLiteral("Claude Voice can't listen for Welsh. Choose another Spoken Language."));
+
+        settings.speech.providerId = QStringLiteral("local");
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        settings.speech.language = QStringLiteral("auto");
+        QCOMPARE(spokenLanguageProblem(settings.speech, QStringLiteral("Local Model")),
+                 QStringLiteral("Parakeet 0.6B can't detect the language. Choose the language you speak."));
+    }
+
     void refinementServerChoiceSelectsTheCliProxyPreset()
     {
         const auto schema = buildSettingsSchema(fakeContext());
@@ -1623,7 +1681,8 @@ private slots:
             }
             return QStringList();
         };
-        QCOMPARE(idsAfter(audio, QStringLiteral("speechProvider")).mid(1, 7),
+        // After the Spoken language and its caution, and Codex's second pass.
+        QCOMPARE(idsAfter(audio, QStringLiteral("speechProvider")).mid(3, 7),
                  QStringList({QStringLiteral("speechLocalModel"), QStringLiteral("speechLocalModelDownload"),
                               QStringLiteral("speechEndpointUrl"), QStringLiteral("speechEndpointPath"),
                               QStringLiteral("speechEndpointApiKey"), QStringLiteral("speechEndpointModel"),

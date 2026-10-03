@@ -38,7 +38,7 @@ private slots:
         client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
                               .arg(server.serverPort())),
                      QStringLiteral("test-token"),
-                     16000);
+                     16000, QStringLiteral("auto"));
 
         QTRY_VERIFY_WITH_TIMEOUT(peer, 1000);
         QCOMPARE(peer->subprotocol(), QStringLiteral("openai-bearer.test-token"));
@@ -56,6 +56,7 @@ private slots:
         QCOMPARE(config.value(QStringLiteral("session_ttl_ms")).toInt(), 300000);
         QCOMPARE(config.value(QStringLiteral("provider_mode")).toString(), QStringLiteral("streaming_sse"));
         QCOMPARE(config.value(QStringLiteral("transcript_delivery_mode")).toString(), QStringLiteral("segment"));
+        QVERIFY(!config.contains(QStringLiteral("language")));
         const QJsonObject vad = config.value(QStringLiteral("vad")).toObject();
         QCOMPARE(vad.value(QStringLiteral("type")).toString(), QStringLiteral("server_vad"));
         QCOMPARE(vad.value(QStringLiteral("threshold")).toDouble(), 0.5);
@@ -110,6 +111,25 @@ private slots:
         peer->deleteLater();
     }
 
+    void codexSessionStartNamesAFixedSpokenLanguage()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        server.setSupportedSubprotocols({QStringLiteral("openai-bearer.test-token")});
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        QStringList messages;
+        connect(&server, &QWebSocketServer::newConnection, this, [&] {
+            connect(server.nextPendingConnection(), &QWebSocket::textMessageReceived, this,
+                    [&messages](const QString &message) { messages.append(message); });
+        });
+        CodexDictationClient client;
+        client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream").arg(server.serverPort())),
+                     QStringLiteral("test-token"), 16000, QStringLiteral("de"));
+        QTRY_COMPARE_WITH_TIMEOUT(messages.size(), 1, 1000);
+        const QJsonObject config =
+            QJsonDocument::fromJson(messages.first().toUtf8()).object().value(QStringLiteral("config")).toObject();
+        QCOMPARE(config.value(QStringLiteral("language")).toString(), QStringLiteral("de"));
+    }
+
     // A file is sent faster than real time, so the service is still
     // transcribing it when the client asks to close. Text arriving meanwhile
     // keeps the close waiting; only a service that goes quiet times out.
@@ -122,7 +142,7 @@ private slots:
         QSignalSpy connected(&client, &CodexDictationClient::connected);
         QSignalSpy failed(&client, &CodexDictationClient::failed);
         client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream").arg(server.serverPort())),
-                     QStringLiteral("test-token"), 16000);
+                     QStringLiteral("test-token"), 16000, QStringLiteral("auto"));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
         peer->sendTextMessage(QStringLiteral(
@@ -155,7 +175,7 @@ private slots:
         CodexDictationClient client(nullptr, 8000, 300);
         QSignalSpy connected(&client, &CodexDictationClient::connected);
         client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream").arg(server.serverPort())),
-                     QStringLiteral("test-token"), 16000);
+                     QStringLiteral("test-token"), 16000, QStringLiteral("auto"));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
         QList<QByteArray> audio;
@@ -229,7 +249,7 @@ private slots:
         client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
                               .arg(server.serverPort())),
                      QStringLiteral("test-token"),
-                     16000);
+                     16000, QStringLiteral("auto"));
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
         QSignalSpy serverMessages(peer.get(), &QWebSocket::textMessageReceived);
@@ -278,7 +298,8 @@ private slots:
         client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream")
                               .arg(server.serverPort())),
                      QStringLiteral("invalid-token"),
-                     16000);
+                     16000,
+                     QStringLiteral("auto"));
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
         QCOMPARE(failed.first().at(1).toBool(), false);

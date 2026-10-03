@@ -15,6 +15,7 @@
 #include <QVector>
 
 #include <functional>
+#include <optional>
 
 class QAudioDecoder;
 
@@ -40,6 +41,8 @@ struct TranscribeOptions {
     QString cleanupStrength = QStringLiteral("none");
     QString tone = QStringLiteral("none");
     QString writingProfile = WritingProfile::Other;
+    // Replaces the Spoken Language setting for this batch.
+    std::optional<QString> spokenLanguage;
     TranscriptDestination destination = TranscriptDestination::BesideInput;
     QString folder;
 };

@@ -3,6 +3,7 @@
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
 #include "core/WordPreview.h"
+#include "core/settings/SpokenLanguages.h"
 #include "providers/ProviderRegistry.h"
 
 #include <QDebug>
@@ -242,9 +243,17 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     if (overrides.writingProfile) {
         settings.refinement.sessionWritingProfile = *overrides.writingProfile;
     }
+    if (overrides.spokenLanguage) {
+        settings.speech.language = *overrides.spokenLanguage;
+    }
     QString providerError;
     if (!selectSpeechTranscriber(settings.speech.providerId, &providerError)) {
         setState(DictationState::Error, providerError, speechSetupAction(settings.speech.providerId));
+        return;
+    }
+    if (const QString problem = spokenLanguageProblem(settings.speech, m_providers->speechProviderLabel(settings.speech.providerId));
+        !problem.isEmpty()) {
+        setState(DictationState::Error, problem, {ErrorFix::SettingsPage, QStringLiteral("dictation")});
         return;
     }
     if (settings.refinement.providerId != QStringLiteral("none")) {

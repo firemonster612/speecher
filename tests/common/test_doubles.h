@@ -233,6 +233,7 @@ public:
         ++startCalls;
         currentAttemptId = attemptId;
         lastVocabulary = settings.vocabulary;
+        lastLanguage = settings.language;
     }
 
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override
@@ -293,6 +294,7 @@ public:
     QList<quint64> cancelledAttempts;
     QList<QByteArray> audioChunks;
     QStringList lastVocabulary;
+    QString lastLanguage;
 };
 
 class FakeRefiner final : public TranscriptRefiner {
