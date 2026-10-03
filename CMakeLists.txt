@@ -512,6 +512,7 @@ set(SPEECHER_APP_SOURCES
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
   src/app/ManifestUpdater.cpp
+  src/app/MicrophoneTest.cpp
   src/app/PlatformSelection.cpp
   src/app/ProviderSetup.cpp
   src/app/AccessibilityPresentation.cpp
@@ -526,6 +527,7 @@ set(SPEECHER_APP_HEADERS
   src/app/AppFrontEnd.h
   src/app/ApplicationController.h
   src/app/LocalSetup.h
+  src/app/MicrophoneTest.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
   src/app/HeadlessTranscribe.h
@@ -574,6 +576,7 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/frontend/qt/BindingRows.cpp
   src/frontend/qt/CollectionRow.cpp
   src/frontend/qt/LocalModelRows.cpp
+  src/frontend/qt/MicrophoneTestRow.cpp
   src/frontend/qt/OutputCustomRows.cpp
   src/frontend/qt/ProviderCustomRows.cpp
   src/frontend/qt/QtFrontEnd.cpp
@@ -603,6 +606,7 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/frontend/qt/BindingRows.h
   src/frontend/qt/CollectionRow.h
   src/frontend/qt/LocalModelRows.h
+  src/frontend/qt/MicrophoneTestRow.h
   src/frontend/qt/OutputCustomRows.h
   src/frontend/qt/ProviderCustomRows.h
   src/frontend/qt/QtFrontEnd.h

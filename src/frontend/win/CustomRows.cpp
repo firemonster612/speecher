@@ -1,8 +1,11 @@
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/ShortcutRecorder.h"
 
+#include "app/ApplicationController.h"
+#include "app/MicrophoneTest.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
+#include "dictation/DictationTypes.h"
 #include "frontend/win/LocalModelBrowser.h"
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
@@ -11,6 +14,7 @@
 
 #include <QRegularExpression>
 
+#include <algorithm>
 #include <optional>
 
 #pragma push_macro("GetCurrentTime")
@@ -427,6 +431,84 @@ QString anthropicCredentialStatus(const AppSettings &draft, const SettingsStore 
     return credentials.ok ? QStringLiteral("Signed in with Claude Code") : credentials.error;
 }
 
+namespace {
+
+// The Test microphone row: the input device's live level beside the button
+// that starts and stops the test, and under them why the device would not
+// open. The test lives on the host, so a rebuild of the pane redraws it
+// rather than ending it; the window ends it on a pane change and on close.
+UIElement microphoneTestElement(const RowSnapshot &row, PaneHost &host)
+{
+    if (!host.microphoneTest) {
+        host.microphoneTest = std::make_shared<MicrophoneTest>(*host.controller);
+    }
+    MicrophoneTest *test = host.microphoneTest.get();
+    // Only the newest drawing of the row listens.
+    test->disconnect();
+
+    ProgressBar level;
+    level.Minimum(0);
+    level.Maximum(1);
+    level.Width(160);
+    level.VerticalAlignment(VerticalAlignment::Center);
+    Automation::AutomationProperties::SetName(level, hs(inputLevelLabel()));
+    Button button;
+    StackPanel controls;
+    controls.Orientation(Orientation::Horizontal);
+    controls.Spacing(8);
+    controls.Children().Append(level);
+    controls.Children().Append(button);
+    TextBlock problem = secondaryText(QString(), host);
+    problem.TextWrapping(TextWrapping::Wrap);
+    problem.Visibility(Visibility::Collapsed);
+    StackPanel element;
+    element.Spacing(4);
+    element.Children().Append(controls);
+    element.Children().Append(problem);
+
+    // Not a Control, so the row cannot close its gate on this element; the
+    // button takes the gate along with the test's own state.
+    const auto follow = [test, level, button, problem, gateOpen = row.enabled] {
+        button.Content(box_value(hs(microphoneTestCaption(test->state()))));
+        button.IsEnabled(gateOpen && test->canToggle());
+        if (test->state() != MicrophoneTestState::Running) {
+            level.Value(0);
+        }
+        if (test->state() == MicrophoneTestState::Starting) {
+            problem.Visibility(Visibility::Collapsed);
+        }
+    };
+    follow();
+    QObject::connect(test, &MicrophoneTest::changed, test, follow);
+    QObject::connect(test, &MicrophoneTest::levelChanged, test, [level](float value) {
+        level.Value(std::clamp(value, 0.0f, 1.0f));
+    });
+    QObject::connect(test, &MicrophoneTest::failed, test, [problem](const QString &message) {
+        problem.Text(hs(message));
+        problem.Visibility(Visibility::Visible);
+    });
+    // The device row saves as it is chosen, so the saved device is the one shown.
+    button.Click([weak = std::weak_ptr<MicrophoneTest>(host.microphoneTest),
+                  controller = host.controller](const auto &, const auto &) {
+        if (const auto test = weak.lock()) {
+            test->toggle(controller->settings()->audioInputDeviceId());
+        }
+    });
+    return element;
+}
+
+} // namespace
+
+void endMicrophoneTest(PaneHost &host)
+{
+    if (!host.microphoneTest) {
+        return;
+    }
+    host.microphoneTest->stop();
+    host.microphoneTest->disconnect();
+    host.microphoneTest.reset();
+}
+
 bool customRowIsFullWidth(const QString &rowId)
 {
     return rowId == QStringLiteral("writingProfileBehavior")
@@ -454,6 +536,9 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     }
     if (row.id == QStringLiteral("openAiAuth")) {
         return credentialField(host);
+    }
+    if (row.id == QStringLiteral("microphoneTest")) {
+        return microphoneTestElement(row, host);
     }
     if (row.id == QStringLiteral("anthropicAuth")) {
         return secondaryText(host.model->anthropicCredentialStatus(), host);

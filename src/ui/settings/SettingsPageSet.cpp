@@ -10,6 +10,7 @@
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
 #include "frontend/qt/LocalModelRows.h"
+#include "frontend/qt/MicrophoneTestRow.h"
 #include "frontend/qt/SchemaSettingsPage.h"
 #include "providers/LocalModelStore.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -189,6 +190,7 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
         m_outputRows.factory(),
         m_bindingRows.factory(),
         m_providerRows.factory(),
+        microphoneTestRow(*controller),
         m_schema.hasPage(QStringLiteral("localModels")) ? localModelRows(*controller->localSetup())
                                                         : SchemaCustomRowFactory(),
         whatsNewCustomRow,

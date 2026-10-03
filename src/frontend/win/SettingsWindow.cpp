@@ -2,6 +2,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
+#include "frontend/win/CustomRows.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
 #include "core/InsightsLog.h"
@@ -188,6 +189,7 @@ struct SettingsWindow::Native {
         // they hold a weak copy of this token and bail once it is cleared.
         *alive = false;
         transcribe->forget(host);
+        endMicrophoneTest(host);
         // The Closed token is revoked before Close(), so windowClosed() never
         // runs on this path; quitting with the window open must still save its
         // geometry and give a suspended hotkey back.
@@ -408,6 +410,7 @@ struct SettingsWindow::Native {
         // The editors hold XAML trees of the window that is going away.
         host.editors.clear();
         host.localModels.reset();
+        endMicrophoneTest(host);
         ShortcutRecorder::setRecording(host, false);
         transcribe->forget(host);
         window = nullptr;
@@ -528,6 +531,7 @@ struct SettingsWindow::Native {
         // pane opens at its top, not at the scroll offset of this one.
         if (id != currentPane) {
             host.localModels.reset();
+            endMicrophoneTest(host);
             scrollToTop = true;
         }
         if (id == kTranscribePane) {

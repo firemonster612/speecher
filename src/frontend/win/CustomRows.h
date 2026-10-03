@@ -36,6 +36,11 @@ QString anthropicCredentialStatus(const AppSettings &draft,
 winrt::Microsoft::UI::Xaml::UIElement customRowElement(const RowSnapshot &row,
                                                        PaneHost &host);
 
+// Ends the Test microphone row's test and cuts it off from the pane it drew
+// into. A click may still hold the test inside its start(), so dropping the
+// host's reference alone would leave it running.
+void endMicrophoneTest(PaneHost &host);
+
 // Whether a Custom row takes the whole card width instead of the control
 // column: the profile grid, the release notes and the Local models browser.
 bool customRowIsFullWidth(const QString &rowId);

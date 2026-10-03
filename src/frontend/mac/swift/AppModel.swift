@@ -55,6 +55,14 @@ final class AppModel: ObservableObject {
     // retained collection editors can reload from the fresh snapshot.
     @Published private(set) var draftGeneration = 0
     @Published private(set) var shortcut: String
+    /// The Test microphone row's test, which the bridge runs. Mirrored here
+    /// rather than in the row, which a Form drops when it scrolls off; the
+    /// window ends the test on a pane change and on close.
+    @Published private(set) var microphoneTestCaption: String
+    @Published private(set) var microphoneTestEnabled: Bool
+    @Published private(set) var microphoneTestLevel: Float = 0
+    /// Why the device would not open, until the next test starts.
+    @Published private(set) var microphoneTestProblem = ""
     @Published private(set) var shortcutProblem = ""
     /// The non-blocking caveat the last single-key binding earned, such as
     /// "E still types". Saved anyway; this only informs.
@@ -68,6 +76,7 @@ final class AppModel: ObservableObject {
         didSet {
             guard pane != oldValue else { return }
             activeShortcutRecorder?.stop()
+            bridge.stopMicrophoneTest()
             if pane != "whatsNew", !Self.screenshotRun {
                 UserDefaults.standard.set(pane, forKey: Self.lastPaneKey)
             }
@@ -146,6 +155,8 @@ final class AppModel: ObservableObject {
         failureNote = bridge.failureNote
         local = bridge.localSetupState
         shortcut = bridge.shortcutDisplay
+        microphoneTestCaption = bridge.microphoneTestCaption
+        microphoneTestEnabled = bridge.microphoneTestEnabled
         accessibilityEnabled = bridge.accessibilityEnabled
         whatsNewPending = bridge.whatsNewPending
         update = bridge.updateBanner
@@ -161,6 +172,22 @@ final class AppModel: ObservableObject {
             listening = self.bridge.listening
             toggleLabel = self.bridge.toggleLabel
             toggleEnabled = self.bridge.toggleEnabled
+        }
+        bridge.microphoneTestChanged = { [weak self] in
+            guard let self else { return }
+            microphoneTestCaption = self.bridge.microphoneTestCaption
+            microphoneTestEnabled = self.bridge.microphoneTestEnabled
+            switch self.bridge.microphoneTestState {
+            case .starting: microphoneTestProblem = ""
+            case .running: break
+            default: microphoneTestLevel = 0
+            }
+        }
+        bridge.microphoneTestLevelChanged = { [weak self] level in
+            self?.microphoneTestLevel = level
+        }
+        bridge.microphoneTestFailed = { [weak self] message in
+            self?.microphoneTestProblem = message
         }
         bridge.audioLevelChanged = { [weak self] level in
             self?.level = level

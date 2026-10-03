@@ -455,6 +455,13 @@ typedef NS_ENUM(NSInteger, SpeecherDictationState) {
     SpeecherDictationStateError,
 };
 
+// Mirrors speecher::MicrophoneTestState.
+typedef NS_ENUM(NSInteger, SpeecherMicrophoneTestState) {
+    SpeecherMicrophoneTestStateStopped,
+    SpeecherMicrophoneTestStateStarting,
+    SpeecherMicrophoneTestStateRunning,
+};
+
 // Mirrors speecher::LocalModelText.
 typedef NS_ENUM(NSInteger, SpeecherLocalModelText) {
     SpeecherLocalModelTextUseModel,
@@ -1099,6 +1106,23 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
                             failure:(void (^)(NSString *message))onFailure
     NS_SWIFT_NAME(startMicrophoneMeter(onLevel:failure:));
 - (void)stopMicrophoneMeter;
+
+// The Test microphone row's test (speecher::MicrophoneTest), apart from the
+// meter above, so the setup assistant and the row never share a device. It
+// ends itself when a Dictation Session starts or another device is saved.
+@property (nonatomic, readonly) SpeecherMicrophoneTestState microphoneTestState;
+// The button's caption (speecher::microphoneTestCaption) and whether it may
+// be clicked (speecher::MicrophoneTest::canToggle).
+@property (nonatomic, readonly, copy) NSString *microphoneTestCaption;
+@property (nonatomic, readonly) BOOL microphoneTestEnabled;
+// Each called on the main thread: the state or enabled moved, a level, and
+// why the device would not open.
+@property (nonatomic, copy, nullable) void (^microphoneTestChanged)(void);
+@property (nonatomic, copy, nullable) void (^microphoneTestLevelChanged)(float level);
+@property (nonatomic, copy, nullable) void (^microphoneTestFailed)(NSString *message);
+// Starts the test on the saved Input device, or stops it.
+- (void)toggleMicrophoneTest;
+- (void)stopMicrophoneTest;
 // The system input volume of the default microphone, 0 to 1, or -1 when macOS
 // does not say.
 - (float)microphoneInputVolume;
