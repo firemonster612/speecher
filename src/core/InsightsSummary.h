@@ -23,7 +23,7 @@ enum class InsightsRange {
 struct HeatmapDay {
     QDate date;
     int dictations = 0;
-    int words = 0;
+    qint64 words = 0;
     qint64 audioMs = 0;
 };
 
@@ -32,7 +32,7 @@ struct AppShare {
     // Writing Profile label of the app's latest dictation; empty on the
     // "N other apps" fold.
     QString profileLabel;
-    int words = 0;
+    qint64 words = 0;
     int percent = 0;
 };
 
@@ -50,14 +50,15 @@ struct BusiestDay {
 
 struct WordiestDay {
     QDate date;
-    int words = 0;
+    qint64 words = 0;
 };
 
 // Every number Home shows, for one period and one `today`. Streaks, the
 // heatmap and the records ignore the period; the rest cover only it.
 struct InsightsSummary {
-    // The period.
-    int words = 0;
+    // The period. Word counts add up in 64 bits: a log can hold more than
+    // an int's worth, if only by editing it.
+    qint64 words = 0;
     int dictations = 0;
     qint64 audioMs = 0;
     int activeDays = 0;
@@ -65,8 +66,8 @@ struct InsightsSummary {
     double dictationsPerActiveDay = 0;
     // Percent change against the previous period of equal length. Only for
     // the 7 and 30 day periods, and only when that period has data.
-    std::optional<int> wordsDelta;
-    std::optional<int> dictationsDelta;
+    std::optional<qint64> wordsDelta;
+    std::optional<qint64> dictationsDelta;
     QString deltaPeriodLabel; // "week" or "30 days"; empty for the other periods
     // "About half of Hamlet", plain text; "Nothing yet" with no words.
     QString bookComparison;
@@ -96,10 +97,10 @@ struct InsightsSummary {
     QString persona; // "Morning talker", "Night owl", ...
     bool hasHourData = false;
 
-    int wordsPerMinute = 0;
+    qint64 wordsPerMinute = 0;
     // The typing pace the saving and the speed-up are measured against.
     int typingWordsPerMinute = 0;
-    int minutesSavedVersusTyping = 0;
+    qint64 minutesSavedVersusTyping = 0;
     // "That's 3.6× faster than typing at 40 words per minute."; empty with no audio.
     QString speedupText;
 
@@ -107,7 +108,7 @@ struct InsightsSummary {
     QList<AppShare> apps;
 
     // Records, all time.
-    int allTimeWords = 0; // the milestone progress
+    qint64 allTimeWords = 0; // the milestone progress
     int nextMilestone = 0; // 0 once every milestone is passed
     std::optional<int> passedMilestone;
     LongestDictation longest;
@@ -158,7 +159,7 @@ QMap<int, QString> monthLabels(const QList<HeatmapDay> &heatmap, int weeksShown)
 QString relativeDay(const QDate &date, const QDate &today);
 // "▲ 29% vs previous 30 days", "▼ 4% vs previous week", "Same as previous
 // week"; empty without a delta.
-QString deltaText(const std::optional<int> &delta, const QString &period);
+QString deltaText(const std::optional<qint64> &delta, const QString &period);
 // The line under the streak: "Your longest yet", "Best: 12 days", "Dictate
 // today to keep it going", "3-day run ended Tuesday"; empty with no history.
 QString streakText(const InsightsSummary &summary, const QDate &today);
@@ -192,7 +193,7 @@ struct InsightTileText {
 QList<InsightTileText> insightTiles(const InsightsSummary &summary, const QDate &today);
 
 // "1 word", "12 words", and so on, the number localised.
-QString wordCountText(int words);
+QString wordCountText(qint64 words);
 QString dictationCountText(int dictations);
 QString dayCountText(int days);
 // A weekday's first letter as one grapheme (Monday is 1), whatever the
@@ -264,7 +265,7 @@ enum class HomeText {
 };
 QString homeText(HomeText text);
 // "45 min", "2 h", "2 h 5 min": the time Pace says dictation saved.
-QString minutesText(int minutes);
+QString minutesText(qint64 minutes);
 // The heatmap's measure picker: "Dictations", "Words", "Minutes of audio".
 QString heatMeasureLabel(HeatMeasure measure);
 // A heatmap day's tip: what it held under the measure, over its date.

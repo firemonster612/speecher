@@ -2,6 +2,8 @@
 # Grabs each page id in $PAGES from build/speecher into pages/linux-<page>.png:
 # offscreen, KDE platform theme, Breeze Light in an isolated XDG_CONFIG_HOME,
 # as AGENTS.md's "Look before you claim" describes. Run from the source root.
+# SPEECHER_INSIGHTS_SEED picks another seed log, and PAGES_SUFFIX goes after
+# the page id in the file name.
 set -euo pipefail
 : "${PAGES:?set PAGES to the page ids to grab}"
 exe="${1:-build/speecher}"
@@ -11,7 +13,8 @@ export QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=kde XDG_CURRENT_DESKTOP=KD
 export LANG=en_US.UTF-8
 XDG_CONFIG_HOME="$(mktemp -d)" XDG_DATA_HOME="$(mktemp -d)" logs="$(mktemp -d)"
 export XDG_CONFIG_HOME XDG_DATA_HOME
-export SPEECHER_INSIGHTS_SEED="$PWD/docs/insights-mockup/seed-active.jsonl"
+export SPEECHER_INSIGHTS_SEED="${SPEECHER_INSIGHTS_SEED:-$PWD/docs/insights-mockup/seed-active.jsonl}"
+suffix="${PAGES_SUFFIX:-}"
 config="$XDG_CONFIG_HOME/io.github.firemonster612"
 mkdir -p "$config" pages
 {
@@ -26,8 +29,9 @@ printf '[updates]\nautoCheck=false\nlastRunVersion=%s\nlastRunBuildNumber=%s\n' 
   "$number" "$build" > "$config/speecher.conf"
 failed=0
 for page in $PAGES; do
-  if ! SPEECHER_GRAB_PAGE="$page" dbus-run-session -- "$exe" --grab "pages/linux-$page.png" \
-    > "$logs/$page.log" 2>&1 || [ ! -s "pages/linux-$page.png" ]; then
+  out="pages/linux-$page$suffix.png"
+  if ! SPEECHER_GRAB_PAGE="$page" dbus-run-session -- "$exe" --grab "$out" \
+    > "$logs/$page.log" 2>&1 || [ ! -s "$out" ]; then
     echo "linux-$page failed:"
     tail -20 "$logs/$page.log"
     failed=1

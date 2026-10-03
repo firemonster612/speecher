@@ -73,7 +73,7 @@ const std::array<InsightsRange, 4> kRanges{InsightsRange::Last7Days,
                                            InsightsRange::ThisYear,
                                            InsightsRange::AllTime};
 
-QString number(int value)
+QString number(qint64 value)
 {
     return QLocale().toString(value);
 }
@@ -779,7 +779,7 @@ UIElement paceCard(const InsightsSummary &summary, const PaneHost &host)
     figures.Children().Append(figure(minutesText(summary.minutesSavedVersusTyping),
                                      homeText(HomeText::SavedOverTyping), host));
     body.Children().Append(figures);
-    const double scale = std::max(summary.wordsPerMinute, 160);
+    const double scale = std::max<double>(summary.wordsPerMinute, 160);
     body.Children().Append(barTable(
         {{styledTextBlock(homeText(HomeText::YouSpeaking), L"SettingsCardBodyStyle"),
           double(summary.wordsPerMinute), scale, number(summary.wordsPerMinute), {}},

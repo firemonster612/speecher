@@ -5,6 +5,10 @@ name: Insights evidence
 # (docs/insights-mockup/seed-active.jsonl) with today pinned so the numbers
 # match the mockup. Uploads evidence/.
 #
+# stats-image is the picture Home's Share menu copies, read back from the
+# clipboard; stats-image-large is the same from seed-large.jsonl, whose
+# totals run past what an int holds.
+#
 # Linux, macOS and Windows also grab the same $PAGES into
 # pages/<platform>-<page>.png, merged into one "pages" artifact, so a pull
 # request shows each page on all three side by side (docs/adr/0007).
@@ -28,7 +32,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PAGES: home general dictation refinement writingProfiles vocabulary output accounts transcribe
+  PAGES: home general dictation refinement writingProfiles vocabulary output accounts transcribe stats-image
   # Every platform grabs $PAGES at this window content size, WxH in logical pixels.
   PAGES_SIZE: 900x640
 
@@ -81,7 +85,9 @@ jobs:
             bash -lc 'git config --global --add safe.directory "*" \
               && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=OFF -DSPEECHER_WITH_KDE=ON \
               && cmake --build build --parallel --target speecher \
-              && .github/grab-linux-pages.sh build/speecher'
+              && .github/grab-linux-pages.sh build/speecher \
+              && PAGES=stats-image PAGES_SUFFIX=-large SPEECHER_INSIGHTS_SEED=$PWD/docs/insights-mockup/seed-large.jsonl \
+                 .github/grab-linux-pages.sh build/speecher'
 
       - name: Upload Linux pages
         if: always()
@@ -234,6 +240,15 @@ jobs:
             pkill -9 -x speecher || true
             find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
           done
+          SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-large.jsonl" \
+            SPEECHER_GRAB_PAGE=stats-image build/speecher.app/Contents/MacOS/speecher \
+            --grab pages/macos-stats-image-large.png > "$RUNNER_TEMP/macos-large.log" 2>&1 || true
+          if [ ! -s pages/macos-stats-image-large.png ]; then
+            echo "macos-stats-image-large failed:"
+            tail -20 "$RUNNER_TEMP/macos-large.log"
+            failed=1
+          fi
+          pkill -9 -x speecher || true
           exit $failed
 
       - name: Upload macOS pages
@@ -437,6 +452,13 @@ jobs:
             if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
               $failed += "$page ($($process.ExitCode))"
             }
+          }
+          $env:SPEECHER_INSIGHTS_SEED = (Resolve-Path docs/insights-mockup/seed-large.jsonl).Path
+          $env:SPEECHER_GRAB_PAGE = "stats-image"
+          $out = Join-Path (Resolve-Path pages).Path "windows-stats-image-large.png"
+          $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+            $failed += "stats-image-large ($($process.ExitCode))"
           }
           if ($failed) {
             throw "speecher --grab failed for $($failed -join ', ')"

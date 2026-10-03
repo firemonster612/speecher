@@ -263,7 +263,10 @@ private slots:
                                                    "Changes to about 7 times the length of War and Peace "
                                                    "at 3,648,476 words");
         QTest::newRow("negative") << -5 << QString();
-        QTest::newRow("INT_MAX") << INT_MAX << QStringLiteral("War and Peace is about 561,304 words");
+        QTest::newRow("INT_MAX") << INT_MAX
+                                 << QStringLiteral("War and Peace is about 561,304 words\n"
+                                                   "Changes to about 3,827 times the length of War and "
+                                                   "Peace at 2,147,829,756 words");
     }
 
     void bookComparisonTipSaysWhenItChanges()
@@ -273,6 +276,15 @@ private slots:
         const InsightsSummary summary =
             summarize({recordOn(kToday, words)}, InsightsRange::AllTime, kToday);
         QCOMPARE(summary.bookComparisonTip, tip);
+    }
+
+    void wordsAddUpPastAnInt()
+    {
+        const InsightsSummary summary = summarize(
+            {recordOn(kToday, 2000000000), recordOn(kToday, 2000000000)}, InsightsRange::AllTime, kToday);
+        QCOMPARE(summary.words, 4000000000);
+        QCOMPARE(summary.allTimeWords, 4000000000);
+        QCOMPARE(insightTiles(summary, kToday).first().value, QStringLiteral("4,000,000,000"));
     }
 
     void streakSurvivesAnIdleToday()
@@ -330,8 +342,8 @@ private slots:
                                              recordOn(kToday, 40)};
         const InsightsSummary week = summarize(records, InsightsRange::Last7Days, kToday);
         QCOMPARE(week.words, 60);
-        QCOMPARE(week.wordsDelta, std::optional<int>(50));
-        QCOMPARE(week.dictationsDelta, std::optional<int>(100));
+        QCOMPARE(week.wordsDelta, std::optional<qint64>(50));
+        QCOMPARE(week.dictationsDelta, std::optional<qint64>(100));
         QCOMPARE(week.deltaPeriodLabel, QStringLiteral("week"));
 
         const InsightsSummary year = summarize(records, InsightsRange::ThisYear, kToday);

@@ -8,9 +8,9 @@
 #include <QTextBoundaryFinder>
 
 #include <algorithm>
-#include <climits>
 #include <cmath>
 #include <iterator>
+#include <limits>
 
 namespace speecher {
 namespace {
@@ -68,14 +68,14 @@ constexpr Share kShares[] = {
 constexpr int kMilestones[] = {1000, 10000, 50000, 100000, 250000, 500000, 1000000};
 
 // JavaScript's Math.round, which the mockup's numbers come from: halves go up.
-int roundHalfUp(double value)
+qint64 roundHalfUp(double value)
 {
-    return int(std::floor(value + 0.5));
+    return qint64(std::floor(value + 0.5));
 }
 
 struct DayTotals {
     int dictations = 0;
-    int words = 0;
+    qint64 words = 0;
     qint64 audioMs = 0;
 };
 
@@ -108,7 +108,7 @@ QString formatNumber(qint64 value)
     return QLocale().toString(value);
 }
 
-QString plural(int count, const QString &noun)
+QString plural(qint64 count, const QString &noun)
 {
     return QStringLiteral("%1 %2").arg(formatNumber(count), count == 1 ? noun : noun + u's');
 }
@@ -119,7 +119,7 @@ struct Comparison {
 };
 
 // "About half of Hamlet": the book and plain fraction closest to the count.
-Comparison compareToBook(int words)
+Comparison compareToBook(qint64 words)
 {
     if (words < kBooks[0].words * kShares[0].of) {
         return {QStringLiteral("A few sentences so far")};
@@ -140,29 +140,30 @@ Comparison compareToBook(int words)
     const Book &last = kBooks[std::size(kBooks) - 1];
     if (words > last.words * 5.0) {
         bestBook = &last;
-        say = QStringLiteral("%1 times the length of").arg(roundHalfUp(double(words) / last.words));
+        say = QStringLiteral("%1 times the length of").arg(formatNumber(roundHalfUp(double(words) / last.words)));
     }
     return {QStringLiteral("About %1 %2").arg(say, QLatin1String(bestBook->title)), bestBook};
 }
 
 // The smallest count above `words` that reads differently, or 0 if none does.
 // Each text covers a single run of counts, so a binary search finds its end.
-int nextChange(int words)
+qint64 nextChange(qint64 words)
 {
-    if (words < 0 || words == INT_MAX) return 0;
+    constexpr qint64 most = std::numeric_limits<qint64>::max();
+    if (words < 0 || words == most) return 0;
     const QString now = compareToBook(words).text;
     qint64 same = words;
     qint64 other = words + 1;
-    while (compareToBook(int(other)).text == now) {
-        if (other == INT_MAX) return 0;
+    while (compareToBook(other).text == now) {
+        if (other == most) return 0;
         same = other;
-        other = std::min<qint64>(other * 2, INT_MAX);
+        other = other > most / 2 ? most : other * 2;
     }
     while (other - same > 1) {
-        const qint64 middle = (same + other) / 2;
-        (compareToBook(int(middle)).text == now ? same : other) = middle;
+        const qint64 middle = same + (other - same) / 2;
+        (compareToBook(middle).text == now ? same : other) = middle;
     }
-    return int(other);
+    return other;
 }
 
 QString capitalized(QString text)
@@ -171,7 +172,7 @@ QString capitalized(QString text)
     return text;
 }
 
-void describeAsBook(int words, InsightsSummary &summary)
+void describeAsBook(qint64 words, InsightsSummary &summary)
 {
     if (words == 0) {
         summary.bookComparison = QStringLiteral("Nothing yet");
@@ -185,7 +186,7 @@ void describeAsBook(int words, InsightsSummary &summary)
                    .arg(capitalized(QLatin1String(comparison.book->title)),
                         formatNumber(comparison.book->words));
     }
-    if (const int next = nextChange(words)) {
+    if (const qint64 next = nextChange(words)) {
         QString nextText = compareToBook(next).text;
         nextText[0] = nextText[0].toLower();
         tip << QStringLiteral("Changes to %1 at %2 words").arg(nextText, formatNumber(next));
@@ -193,7 +194,7 @@ void describeAsBook(int words, InsightsSummary &summary)
     summary.bookComparisonTip = tip.join(u'\n');
 }
 
-std::optional<int> percentChange(qint64 current, qint64 previous)
+std::optional<qint64> percentChange(qint64 current, qint64 previous)
 {
     if (previous == 0) {
         return std::nullopt;
@@ -302,7 +303,7 @@ void summarizeApps(const QList<DictationRecord> &period,
     std::stable_sort(totals.begin(), totals.end(),
                      [](const AppShare &a, const AppShare &b) { return a.words > b.words; });
     summary.apps = totals.mid(0, kTopApps);
-    int rest = 0;
+    qint64 rest = 0;
     for (qsizetype i = kTopApps; i < totals.size(); ++i) {
         rest += totals[i].words;
     }
@@ -393,7 +394,7 @@ InsightsSummary summarize(const QList<DictationRecord> &records,
     if (!summary.deltaPeriodLabel.isEmpty()) {
         const qint64 span = from.daysTo(today) + 1;
         const QList<DictationRecord> previous = between(records, from.addDays(-span), from.addDays(-1));
-        int previousWords = 0;
+        qint64 previousWords = 0;
         for (const DictationRecord &record : previous) {
             previousWords += record.words;
         }
@@ -488,7 +489,7 @@ QString relativeDay(const QDate &date, const QDate &today)
     return locale.toString(date, QStringLiteral("MMM d, yyyy"));
 }
 
-QString deltaText(const std::optional<int> &delta, const QString &period)
+QString deltaText(const std::optional<qint64> &delta, const QString &period)
 {
     if (!delta) return {};
     if (*delta == 0) return QStringLiteral("Same as previous %1").arg(period);
@@ -586,7 +587,7 @@ QList<InsightTileText> insightTiles(const InsightsSummary &summary, const QDate 
     };
 }
 
-QString wordCountText(int words)
+QString wordCountText(qint64 words)
 {
     return plural(words, QStringLiteral("word"));
 }
@@ -765,7 +766,7 @@ QString homeText(HomeText text)
     return {};
 }
 
-QString minutesText(int minutes)
+QString minutesText(qint64 minutes)
 {
     if (minutes < 60) return QStringLiteral("%1 min").arg(minutes);
     return minutes % 60 ? QStringLiteral("%1 h %2 min").arg(minutes / 60).arg(minutes % 60)
@@ -791,7 +792,7 @@ namespace {
 QString dayAudioText(qint64 audioMs)
 {
     const qint64 seconds = (audioMs + 500) / 1000;
-    return seconds < 60 ? QStringLiteral("%1 s").arg(seconds) : minutesText(int((seconds + 30) / 60));
+    return seconds < 60 ? QStringLiteral("%1 s").arg(seconds) : minutesText((seconds + 30) / 60);
 }
 
 QString dayValueText(const HeatmapDay &day, HeatMeasure measure)
