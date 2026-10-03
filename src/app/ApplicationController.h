@@ -210,6 +210,7 @@ private:
     GlobalShortcutBinder *shortcutBinder(GlobalShortcutRole role) const;
     // Escape is taken while a session can be cancelled and nothing records keys.
     void updateCancelKeyGrab();
+    void dropPendingStart();
     void setLaunchAtLoginAccepted(bool accepted);
 
     bool m_popupOnly = false;

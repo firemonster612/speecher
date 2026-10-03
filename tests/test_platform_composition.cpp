@@ -118,7 +118,7 @@ public:
     QString resume() override
     {
         resumeCount += 1;
-        return {};
+        return resumeError;
     }
 
     void publishShortcut(const ShortcutBinding &shortcut)
@@ -148,6 +148,7 @@ public:
     bool desktopChooser = false;
     QString unsupported;
     QString setShortcutError;
+    QString resumeError;
 
 private:
     ShortcutBinding m_shortcut;
@@ -685,6 +686,21 @@ private slots:
         QVERIFY(!controller.setGlobalShortcut(keys, &error, GlobalShortcutRole::Cancel));
         QCOMPARE(error, QStringLiteral("That is already the Global Shortcut for dictation."));
         QVERIFY(controller.globalShortcut(GlobalShortcutRole::Cancel).isEmpty());
+    }
+
+    // A Cancel Shortcut that could not be taken back after recording is
+    // reported like the dictation one, which wins when both fail.
+    void resumingTheShortcutsReportsTheCancelShortcutsError()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        platform->cancelBinder->resumeError = QStringLiteral("cancel taken");
+        controller.suspendGlobalShortcut();
+        QCOMPARE(controller.resumeGlobalShortcut(), QStringLiteral("cancel taken"));
+
+        platform->binder->resumeError = QStringLiteral("dictation taken");
+        controller.suspendGlobalShortcut();
+        QCOMPARE(controller.resumeGlobalShortcut(), QStringLiteral("dictation taken"));
     }
 
     // The Cancel Shortcut keeps its binding under its own key, next to the
@@ -2144,32 +2160,38 @@ private slots:
         QCOMPARE(controller.globalShortcut().combination(), chosen);
     }
 
-    // Delivery injects keystrokes, so the shortcut must look away for exactly
-    // the deliver() call: a single-key binding on an injected key would
+    // Delivery injects keystrokes, so both shortcuts must look away for
+    // exactly the deliver() call: a single-key binding on an injected key would
     // otherwise take the paste for the user's finger.
-    void deliverySuspendsTheShortcutForExactlyItsDuration()
+    void deliverySuspendsBothShortcutsForExactlyItsDuration()
     {
-        FakeGlobalShortcutBinder binder;
+        FakeGlobalShortcutBinder dictation;
+        FakeGlobalShortcutBinder cancel;
         struct ProbingDelivery final : TextDeliveryAdapter {
-            FakeGlobalShortcutBinder *binder = nullptr;
-            int suspensionsDuringDeliver = -1;
+            FakeGlobalShortcutBinder *dictation = nullptr;
+            FakeGlobalShortcutBinder *cancel = nullptr;
+            int dictationSuspensions = -1;
+            int cancelSuspensions = -1;
             DeliveryResult deliver(const OutputSettings &,
                                    const DeliveryContent &,
                                    const Target &) override
             {
-                suspensionsDuringDeliver = binder->suspendCount - binder->resumeCount;
+                dictationSuspensions = dictation->suspendCount - dictation->resumeCount;
+                cancelSuspensions = cancel->suspendCount - cancel->resumeCount;
                 DeliveryResult result;
                 result.ok = true;
                 return result;
             }
         };
         ProbingDelivery inner;
-        inner.binder = &binder;
-        ShortcutSuspendingDelivery delivery(&inner, &binder);
+        inner.dictation = &dictation;
+        inner.cancel = &cancel;
+        ShortcutSuspendingDelivery delivery(&inner, {&dictation, &cancel});
         QVERIFY(delivery.deliver({}, {}, {}).ok);
-        QCOMPARE(inner.suspensionsDuringDeliver, 1);
-        QCOMPARE(binder.suspendCount, 1);
-        QCOMPARE(binder.resumeCount, 1);
+        QCOMPARE(inner.dictationSuspensions, 1);
+        QCOMPARE(inner.cancelSuspensions, 1);
+        QCOMPARE(dictation.resumeCount, 1);
+        QCOMPARE(cancel.resumeCount, 1);
     }
 
 #ifdef Q_OS_LINUX

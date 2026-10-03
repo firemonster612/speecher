@@ -187,7 +187,7 @@ ApplicationController::ApplicationController(bool popupOnly,
                                      targetProvider,
                                      new ShortcutSuspendingDelivery(
                                          m_platform->createTextDelivery(targetProvider, this),
-                                         m_shortcutBinder,
+                                         {m_shortcutBinder, m_cancelShortcutBinder},
                                          this),
                                      m_providers,
                                      this);
@@ -603,10 +603,10 @@ void ApplicationController::suspendGlobalShortcut()
 QString ApplicationController::resumeGlobalShortcut()
 {
     m_shortcutSuspensions = std::max(0, m_shortcutSuspensions - 1);
-    m_cancelShortcutBinder->resume();
+    const QString cancelError = m_cancelShortcutBinder->resume();
     const QString error = m_shortcutBinder->resume();
     updateCancelKeyGrab();
-    return error;
+    return error.isEmpty() ? cancelError : error;
 }
 
 void ApplicationController::updateCancelKeyGrab()
@@ -888,19 +888,24 @@ void ApplicationController::startListening()
     startWithMicrophone([this] { m_session->startListening(); });
 }
 
-void ApplicationController::stopListening()
+// A start still waiting for the push-to-talk delay or the microphone grant
+// must not begin after the session it belongs to was stopped or cancelled.
+void ApplicationController::dropPendingStart()
 {
     m_pushToTalkStart->stop();
     ++m_microphoneStartGeneration;
     m_microphoneStartPending = false;
+}
+
+void ApplicationController::stopListening()
+{
+    dropPendingStart();
     m_session->stopListening();
 }
 
 void ApplicationController::cancel()
 {
-    m_pushToTalkStart->stop();
-    ++m_microphoneStartGeneration;
-    m_microphoneStartPending = false;
+    dropPendingStart();
     // The push-to-talk key that started the session may still be down; its
     // release must not act on a session that is already gone.
     m_shortcutStartedSession = false;
@@ -943,10 +948,8 @@ void ApplicationController::quitApplication()
     // pump the event loop briefly: the media controllers resume players over
     // async D-Bus calls that would otherwise still be queued when the process
     // exits.
+    dropPendingStart();
     if (m_session->state() != DictationState::Idle) {
-        m_pushToTalkStart->stop();
-        ++m_microphoneStartGeneration;
-        m_microphoneStartPending = false;
         m_session->cancelForShutdown();
         QEventLoop resumeWindow;
         QTimer::singleShot(mediaResumeGraceMs, &resumeWindow, &QEventLoop::quit);
