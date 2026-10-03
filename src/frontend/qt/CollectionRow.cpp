@@ -642,10 +642,6 @@ void openRecordDialog(QWidget *parent,
     dialog->setWindowTitle(row < 0 ? collection.addDialogTitle : recordName(collection, original));
     dialog->setMinimumWidth(settings::gridUnit() * 30);
     auto *layout = new QVBoxLayout(dialog);
-    // Never shorter than its fields: wrapped help settles its height after
-    // the dialog first sizes itself, and a list of options must not be
-    // squeezed under it.
-    layout->setSizeConstraint(QLayout::SetMinimumSize);
     auto *form = new QFormLayout;
     layout->addLayout(form, 1);
 
@@ -741,8 +737,11 @@ void openRecordDialog(QWidget *parent,
                 item->setCheckState(chosen.contains(option.id) ? Qt::Checked : Qt::Unchecked);
                 limited = limited || chosen.contains(option.id);
             }
-            // Every option in view, so none hides behind a scroll bar.
-            list->setFixedHeight(list->sizeHintForRow(0) * list->count() + 2 * list->frameWidth());
+            // Every option in view where the screen has room; on a short one
+            // the list scrolls, still showing a few.
+            const int rows = list->sizeHintForRow(0);
+            list->setMinimumHeight(rows * std::min(3, int(list->count())) + 2 * list->frameWidth());
+            list->setMaximumHeight(rows * list->count() + 2 * list->frameWidth());
             (limited ? some : every)->setChecked(true);
             list->setEnabled(limited);
             QObject::connect(some, &QRadioButton::toggled, list, &QWidget::setEnabled);
