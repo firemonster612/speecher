@@ -88,18 +88,13 @@ dump() {
 
 value_is() { [[ "$(ax value "$1" "$2" '' "$3")" == "$4" ]]; }
 priority_enabled_is() { [[ "$(ax enabled sheet AXCheckBox '' "$CHECK_PRIORITY")" == "$1" ]]; }
-# badges_are TERM KEY PRIORITY: whether TERM's row shows the Key term and
-# Priority pills as KEY and PRIORITY (yes or no) say, Key term over Priority
-# in the Speech column after the term's.
-badges_are() {
-  local expected=''
-  [[ "$2" == yes ]] && expected='Key term'
-  [[ "$3" == yes ]] && expected="${expected:+$expected,}Priority"
-  [[ "$(ax pills "$1")" == "$expected" ]]
-}
-expect_badges() {
-  badges_are "$@" \
-    || fail "$1's row does not show Key term=$2 Priority=$3 in the Speech column: $(ax pills "$1")"
+# expect_icons TERM KEY PRIORITY: TERM's row shows the Key term icon as KEY
+# (sent, faint or off) and the Priority icon as PRIORITY (star or none), in
+# the two cells before the term's.
+expect_icons() {
+  local icons
+  icons="$(ax icons "$1")"
+  [[ "$icons" == "$2 $3" ]] || fail "$1's row does not show Key term=$2 Priority=$3: $icons"
 }
 sheets_are() { [[ "$(ax sheets)" == "$1" ]]; }
 edit_enabled() { [[ "$(ax enabled window unnamed '' "$BAR_EDIT")" == true ]]; }
@@ -242,11 +237,11 @@ log "Kubernetes row: $row"
 [[ "$row" == *"| $KUBERNETES_CONTEXT |"* && "$row" == *"| Work, AI coding |"* ]] \
   || fail "the Kubernetes row does not show its context line and Work, AI coding"
 # Seeded: Kubernetes, Aoife Byrne and Speecher have priority; Grafana is no key term.
-expect_badges Kubernetes yes yes
-expect_badges 'Aoife Byrne' yes yes
-expect_badges Speecher yes yes
-expect_badges PR yes no
-expect_badges Grafana no no
+expect_icons Kubernetes sent star
+expect_icons 'Aoife Byrne' sent star
+expect_icons Speecher sent star
+expect_icons PR sent none
+expect_icons Grafana off none
 [[ "$(ax enabled window unnamed '' "$BAR_EDIT")" == false ]] \
   || fail "Edit… is not in the bar, or is enabled with nothing selected"
 shot table
@@ -293,7 +288,7 @@ if activate window unnamed "$BAR_ADD" sheets_are 1; then
   log "Sev1 row: $row"
   [[ "$row" == *"| $SEV1_CONTEXT |"* && "$row" == *"| Work, AI coding |"* ]] \
     || fail "the table's Sev1 row does not show its context and Work, AI coding: $row"
-  expect_badges Sev1 yes yes
+  expect_icons Sev1 sent star
   wait_until 20 saved_is Sev1 "{\"context\": \"$SEV1_CONTEXT\", \"profiles\": [\"work\", \"ai_coding\"], \"starred\": true, \"keyTerm\": true}" \
     || fail "Sev1 was not saved with its context and Work, AI coding: $(saved_entry Sev1)"
   shot table-with-sev1

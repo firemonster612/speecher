@@ -192,26 +192,30 @@ function run(argv) {
         return rowShowing(args[0]).cells
             .filter(cell => typeof cell.value === 'string' && cell.value !== '')
             .map(cell => cell.value).join(' | ');
-    // pills TERM: the pills in the cell after TERM's, top to bottom, joined
-    // with ","; or, when a pill is elsewhere in the row, wider than that cell,
-    // or out of one left-aligned stack, where they are.
-    case 'pills': {
+    // icons TERM: what the Key term and Priority icons before TERM's cell
+    // say, as "KEY PRIORITY": KEY is sent, faint or off (their tooltips), and
+    // PRIORITY star or none. "misplaced: ..." when the term's cell is not the
+    // third or an icon stands outside its own cell.
+    case 'icons': {
         const { cells } = rowShowing(args[0]);
         const within = (inner, outer) => inner.position[0] >= outer.position[0]
             && inner.position[0] + inner.size[0] <= outer.position[0] + outer.size[0];
         const term = cells.find(cell => cell.value === args[0]);
-        const columns = cells.filter(cell => cell.role === 'AXCell');
-        const speech = columns[columns.findIndex(column => within(term, column)) + 1];
-        const pills = cells
-            .filter(cell => cell.role === 'AXStaticText'
-                    && (cell.value === 'Key term' || cell.value === 'Priority'))
-            .sort((a, b) => a.position[1] - b.position[1]);
-        const stacked = pills.every((pill, index) => pill.position[0] === pills[0].position[0]
-            && (index === 0 || pill.position[1] >= pills[index - 1].position[1] + pills[index - 1].size[1]));
-        if (!speech || !stacked || !pills.every(pill => within(pill, speech))) {
-            return `misplaced: ${pills.map(line).join('; ')} in ${speech ? line(speech) : 'no cell'}`;
+        const columns = cells.filter(cell => cell.role === 'AXCell')
+            .sort((a, b) => a.position[0] - b.position[0]);
+        const saying = prefix => cells.filter(cell => labels(cell).some(text => text.startsWith(prefix)));
+        const key = [['sent', 'Key term:'], ['faint', 'Key term, but'], ['off', 'Not a key term']]
+            .map(([state, prefix]) => ({ state, found: saying(prefix) }))
+            .find(({ found }) => found.length > 0);
+        const star = saying('Priority:');
+        const misplaced = columns.findIndex(column => within(term, column)) !== 2
+            || (key && !key.found.every(cell => within(cell, columns[0])))
+            || !star.every(cell => within(cell, columns[1]));
+        if (misplaced) {
+            return `misplaced: ${[...(key ? key.found : []), ...star].map(line).join('; ')} in `
+                + columns.map(line).join('; ');
         }
-        return pills.map(pill => pill.value).join(',');
+        return `${key ? key.state : 'missing'} ${star.length ? 'star' : 'none'}`;
     }
     // rowof TERM: the centre of the row's last static text still in view (a
     // read-only cell, away from the editable term field).
