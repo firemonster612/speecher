@@ -193,8 +193,8 @@ function run(argv) {
             .filter(cell => typeof cell.value === 'string' && cell.value !== '')
             .map(cell => cell.value).join(' | ');
     // icons TERM: what the Key term and Priority icons before TERM's cell
-    // say, as "KEY PRIORITY": KEY is sent, faint or off (their tooltips), and
-    // PRIORITY star or none. "misplaced: ..." when the term's cell is not the
+    // say, as "KEY PRIORITY": KEY is sent, faint (by the icon's label, its
+    // tooltip) or none, and PRIORITY star or none. "misplaced: ..." when the term's cell is not the
     // third or an icon stands outside its own cell.
     case 'icons': {
         const { cells } = rowShowing(args[0]);
@@ -204,7 +204,7 @@ function run(argv) {
         const columns = cells.filter(cell => cell.role === 'AXCell')
             .sort((a, b) => a.position[0] - b.position[0]);
         const saying = prefix => cells.filter(cell => labels(cell).some(text => text.startsWith(prefix)));
-        const key = [['sent', 'Key term:'], ['faint', 'Key term, but'], ['off', 'Not a key term']]
+        const key = [['sent', 'Key term:'], ['faint', 'Key term, but']]
             .map(([state, prefix]) => ({ state, found: saying(prefix) }))
             .find(({ found }) => found.length > 0);
         const star = saying('Priority:');
@@ -215,7 +215,7 @@ function run(argv) {
             return `misplaced: ${[...(key ? key.found : []), ...star].map(line).join('; ')} in `
                 + columns.map(line).join('; ');
         }
-        return `${key ? key.state : 'missing'} ${star.length ? 'star' : 'none'}`;
+        return `${key ? key.state : 'none'} ${star.length ? 'star' : 'none'}`;
     }
     // rowof TERM: the centre of the row's last static text still in view (a
     // read-only cell, away from the editable term field).

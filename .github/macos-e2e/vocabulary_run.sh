@@ -89,7 +89,7 @@ dump() {
 value_is() { [[ "$(ax value "$1" "$2" '' "$3")" == "$4" ]]; }
 priority_enabled_is() { [[ "$(ax enabled sheet AXCheckBox '' "$CHECK_PRIORITY")" == "$1" ]]; }
 # expect_icons TERM KEY PRIORITY: TERM's row shows the Key term icon as KEY
-# (sent, faint or off) and the Priority icon as PRIORITY (star or none), in
+# (sent, faint or none) and the Priority icon as PRIORITY (star or none), in
 # the two cells before the term's.
 expect_icons() {
   local icons
@@ -241,7 +241,7 @@ expect_icons Kubernetes sent star
 expect_icons 'Aoife Byrne' sent star
 expect_icons Speecher sent star
 expect_icons PR sent none
-expect_icons Grafana off none
+expect_icons Grafana none none
 [[ "$(ax enabled window unnamed '' "$BAR_EDIT")" == false ]] \
   || fail "Edit… is not in the bar, or is enabled with nothing selected"
 shot table
