@@ -1,5 +1,6 @@
 #include "ui/WaveformWidget.h"
 
+#include "dictation/PopupGeometry.h"
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QApplication>
@@ -26,30 +27,43 @@ QColor withAlpha(QColor color, int alpha)
 
 // One pill for every state, so it never changes size between listening, the
 // delivery receipt and the status shimmer. Wispr Flow's own pill is 50x30 and
-// stands alone against a screen edge; Speecher's sits directly above the
-// transcript pill, so it takes that pill's size instead.
-constexpr int pillWidth = 126;
-constexpr int pillHeight = 48;
-// Bar geometry is Wispr Flow's 2px scaled by the pill's height ratio (48/30).
-constexpr qreal referencePillHeight = 30.0;
-constexpr qreal pillScale = pillHeight / referencePillHeight;
+// stands alone against a screen edge; Home's row keeps Speecher's original
+// 48px take on it, and the popup uses the slimmer one every platform shares.
+struct Geometry {
+    int barCount;
+    qreal barWidth;
+    qreal barGap;
+    qreal barDotHeight;
+    // The standalone pill, and the low strip under the popup's transcript
+    // line: just enough for the bars at full shout (barDotHeight * audioGain
+    // * the 1.5 wave crest).
+    int pillWidth;
+    int pillHeight;
+    int compactStripHeight;
+};
 
-// The waveform is a port of Wispr Flow's status-bar bars: rounded dots,
-// 2x2px before pillScale, animated by the motion model in WaveformModel.h
-// (shared with the Windows panel; the model comment there is the full story).
-// The compact strip under the popup's transcript line: just enough for the
-// bars at full shout (barDotHeight * audioGain * the 1.5 wave crest = 24px).
-constexpr int compactStripHeight = 28;
-constexpr qreal barWidth = 2.0 * pillScale;
-constexpr qreal barGap = 2.0 * pillScale;
-constexpr qreal barDotHeight = 2.0 * pillScale;
-constexpr qreal barRadius = 0.5 * pillScale;
-constexpr int barCount = waveform::barCount;
+// Wispr Flow's 2px bars scaled by the pill's height ratio (48/30), as rounded
+// dots animated by the motion model in WaveformModel.h (shared with the
+// Windows panel; the model comment there is the full story).
+constexpr qreal standardScale = 48 / 30.0;
+constexpr Geometry standardGeometry{waveform::barCount, 2.0 * standardScale, 2.0 * standardScale,
+                                    2.0 * standardScale, 126, 48, 28};
+// The popup's dots at Wispr Flow's own 2px, in a pill the dots and its
+// rounded ends fill.
+constexpr Geometry popupGeometry{popup::kBarCount, popup::kBarWidth, popup::kBarGap,
+                                 popup::kBarDotHeight, 64, popup::kPillHeight,
+                                 popup::kCompactStripHeight};
+
+const Geometry &geometryFor(WaveformWidget::Size size)
+{
+    return size == WaveformWidget::Size::Popup ? popupGeometry : standardGeometry;
+}
 
 } // namespace
 
-WaveformWidget::WaveformWidget(QWidget *parent)
+WaveformWidget::WaveformWidget(QWidget *parent, Size size)
     : QWidget(parent)
+    , m_size(size)
 {
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     applyGeometry();
@@ -81,13 +95,14 @@ void WaveformWidget::applyGeometry()
     // font cannot clip the receipt; a long message widens the pill. Compact
     // trades the standalone pill's air for a low strip, keeping the font's
     // height only when the strip carries text (the status shimmer).
+    const Geometry &g = geometryFor(m_size);
     const bool showsText = m_mode == Mode::Message || m_mode == Mode::Status;
     const int height = m_compact
-        ? (showsText ? fontMetrics().height() + 6 : compactStripHeight)
-        : std::max(pillHeight, fontMetrics().height() + 10);
-    const int width = !m_message.isEmpty() ? std::max(pillWidth, contentWidth() + 32)
-        : m_hugsInk ? contentWidth()
-                    : pillWidth;
+        ? (showsText ? fontMetrics().height() + 6 : g.compactStripHeight)
+        : std::max(g.pillHeight, fontMetrics().height() + 10);
+    const int width = m_hugsInk ? contentWidth()
+        : !m_message.isEmpty()  ? std::max(g.pillWidth, contentWidth() + 32)
+                                : g.pillWidth;
     setFixedSize(width, height);
 }
 
@@ -194,7 +209,8 @@ int WaveformWidget::contentWidth() const
         const int text = fontMetrics().horizontalAdvance(m_message);
         return m_icon.isNull() ? text : iconSize() + iconSpacing() + text;
     }
-    return int(std::ceil(barCount * barWidth + (barCount - 1) * barGap));
+    const Geometry &g = geometryFor(m_size);
+    return int(std::ceil(g.barCount * g.barWidth + (g.barCount - 1) * g.barGap));
 }
 
 void WaveformWidget::setBackgroundVisible(bool visible)
@@ -239,24 +255,26 @@ void WaveformWidget::paintEvent(QPaintEvent *)
 
 void WaveformWidget::paintWaveform(QPainter &painter, const QColor &bar, bool flat)
 {
+    const Geometry &g = geometryFor(m_size);
     const qreal audioScale = m_level.audioScale();
-    const qreal totalWidth = barCount * barWidth + (barCount - 1) * barGap;
+    const qreal totalWidth = g.barCount * g.barWidth + (g.barCount - 1) * g.barGap;
     const qreal startX = (width() - totalWidth) / 2.0;
+    const qreal barRadius = g.barWidth / 4.0;
     painter.setPen(Qt::NoPen);
     painter.setBrush(bar);
-    for (int i = 0; i < barCount; ++i) {
-        const qreal bulge = waveform::bulge(i);
+    for (int i = 0; i < g.barCount; ++i) {
+        const qreal bulge = waveform::bulge(i, g.barCount);
         // Each bar trails its neighbour by one bar's share of the loop, so the
         // crest crosses the row exactly once per cycle however many bars there
         // are. At Wispr Flow's ten this is its own 0.1s delay.
-        const qreal barPhase = m_wavePhase - qreal(i) / barCount;
+        const qreal barPhase = m_wavePhase - qreal(i) / g.barCount;
         const qreal wave = waveform::waveMultiplier(barPhase - std::floor(barPhase));
-        const qreal h = flat ? barDotHeight : barDotHeight * audioScale * bulge * wave;
-        const qreal x = startX + i * (barWidth + barGap);
+        const qreal h = flat ? g.barDotHeight : g.barDotHeight * audioScale * bulge * wave;
+        const qreal x = startX + i * (g.barWidth + g.barGap);
         // scaleY on the reference bar stretches its corners too, which tapers
         // the tips as the bar grows; the radius scales by the same factor.
-        const qreal radiusY = barRadius * h / barDotHeight;
-        painter.drawRoundedRect(QRectF(x, (height() - h) / 2.0, barWidth, h),
+        const qreal radiusY = barRadius * h / g.barDotHeight;
+        painter.drawRoundedRect(QRectF(x, (height() - h) / 2.0, g.barWidth, h),
                                 barRadius, radiusY);
     }
 }
@@ -266,7 +284,8 @@ void WaveformWidget::paintStatus(QPainter &painter, const QColor &bar)
     QFont font = this->font();
     font.setWeight(QFont::Normal);
     painter.setFont(font);
-    const QRect textRect = rect().adjusted(12, 0, -12, 0);
+    // Beside the popup's buttons the strip is exactly as wide as the label.
+    const QRect textRect = m_hugsInk ? rect() : rect().adjusted(12, 0, -12, 0);
 
     // The palette's own secondary text colour, so the words stay readable
     // between passes of the highlight.

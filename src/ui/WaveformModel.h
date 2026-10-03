@@ -89,9 +89,10 @@ inline qreal waveMultiplier(qreal phase)
     return waveKeyframes[segments].value;
 }
 
-inline qreal bulge(int barIndex)
+// count is the row's bar count: Home's barCount, or the popup's own.
+inline qreal bulge(int barIndex, int count = barCount)
 {
-    const qreal distance = std::abs((barCount - 1) / 2.0 - barIndex);
+    const qreal distance = std::abs((count - 1) / 2.0 - barIndex);
     return std::max(0.0, 1.0 - distance * (bulgeCoefficient / 48.0));
 }
 

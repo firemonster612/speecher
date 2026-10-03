@@ -349,6 +349,43 @@ typedef NS_ENUM(NSInteger, SpeecherErrorFix) {
 @property (nonatomic, readonly) BOOL ready;
 @end
 
+// speecher::SessionControls: the popup's buttons for a session state.
+@interface SpeecherSessionControls : NSObject
+@property (nonatomic, readonly) BOOL pauseVisible;
+@property (nonatomic, readonly) BOOL pauseEnabled;
+@property (nonatomic, readonly) BOOL paused;
+@property (nonatomic, readonly) BOOL cancelVisible;
+// A spinner in pause's place while transcribing and refining.
+@property (nonatomic, readonly) BOOL busyVisible;
+@end
+
+// The dictation popup's measurements (speecher::popup), shared with the Linux
+// and Windows popups. Points.
+@interface SpeecherPopupGeometry : NSObject
+@property (class, nonatomic, readonly) CGFloat pillHeight;
+@property (class, nonatomic, readonly) CGFloat buttonSize;
+@property (class, nonatomic, readonly) CGFloat buttonIconSize;
+@property (class, nonatomic, readonly) CGFloat buttonGap;
+@property (class, nonatomic, readonly) CGFloat lobeAir;
+@property (class, nonatomic, readonly) NSInteger barCount;
+@property (class, nonatomic, readonly) CGFloat barWidth;
+@property (class, nonatomic, readonly) CGFloat barGap;
+@property (class, nonatomic, readonly) CGFloat barDotHeight;
+@property (class, nonatomic, readonly) CGFloat compactStripHeight;
+@property (class, nonatomic, readonly) CGFloat previewTopMargin;
+@property (class, nonatomic, readonly) CGFloat previewSideMargin;
+@property (class, nonatomic, readonly) CGFloat previewBottomMargin;
+@property (class, nonatomic, readonly) CGFloat previewStripSpacing;
+@property (class, nonatomic, readonly) CGFloat shoulderDrop;
+@property (class, nonatomic, readonly) CGFloat fillet;
+@property (class, nonatomic, readonly) CGFloat lobeRadius;
+@property (class, nonatomic, readonly) CGFloat maxPreviewWidth;
+@property (class, nonatomic, readonly) CGFloat previewFontScale;
+@property (class, nonatomic, readonly) CGFloat previewFadeWidth;
++ (CGFloat)minimumPreviewBarWidthForLobeWidth:(CGFloat)lobeWidth shoulderHeight:(CGFloat)shoulderHeight
+    NS_SWIFT_NAME(minimumPreviewBarWidth(lobeWidth:shoulderHeight:));
+@end
+
 // speecher::PopupOutcome: how a dictation ended, which picks the receipt's symbol.
 typedef NS_ENUM(NSInteger, SpeecherPopupOutcome) {
     SpeecherPopupOutcomeInserted,
@@ -960,6 +997,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (class, nonatomic, readonly, copy) NSString *popupDismissCaption;
 @property (class, nonatomic, readonly, copy) NSString *renewingSignInText;
 + (NSString *)statusLabelFor:(SpeecherDictationState)state NS_SWIFT_NAME(statusLabel(for:));
+// The popup's buttons for the state its status was reported with.
++ (SpeecherSessionControls *)sessionControlsFor:(SpeecherDictationState)state NS_SWIFT_NAME(sessionControls(for:));
 // speecher::kPopupErrorWrapWidth, and popupErrorDismissMs for a message.
 @property (class, nonatomic, readonly) CGFloat popupErrorWrapWidth;
 + (NSTimeInterval)popupErrorDismissSecondsFor:(NSString *)message NS_SWIFT_NAME(popupErrorDismissSeconds(for:));

@@ -6,26 +6,23 @@ import SwiftUI
 // is being dictated into. A non-activating NSPanel, so showing it never takes
 // focus away from the app the text is going to.
 
-private let pillHeight: CGFloat = 48
-private let minimumPillWidth: CGFloat = 126
-/// The pause and cancel buttons either side of the waveform, large round
-/// controls as on the Windows panel, and the gap between each and the dots.
-/// The tab under the words hugs them: its rounded ends sit the same gap
-/// beyond the buttons (PanelContour's lobe padding).
-private let sessionButtonSize: CGFloat = 30
-private let sessionButtonGap: CGFloat = 10
+/// The popup's measurements, which the Linux and Windows popups share.
+private typealias PopupGeometry = SpeecherPopupGeometry
+/// The error capsule's corners, which it keeps as a wrapped problem makes it
+/// taller; the pill, shorter than twice this, is a stadium.
+private let capsuleCornerRadius: CGFloat = 24
 /// The dots' own width, which the strip shrinks to beside the buttons.
-private let waveformInkWidth: CGFloat = 92.8
-private let previewChromeWidth: CGFloat = 48
-private let compactStripHeight: CGFloat = 28
-private let previewTopPadding: CGFloat = 12
-private let previewStripSpacing: CGFloat = 8
-private let previewBottomPadding: CGFloat = 8
-// The shoulder sits as far below the text as the pill's top sits above it,
-// so the wide bar reads evenly padded around the preview line.
-private let previewShoulderDrop: CGFloat = previewTopPadding
-private let maximumPreviewWidth: CGFloat = 488
+private let waveformInkWidth = CGFloat(PopupGeometry.barCount) * PopupGeometry.barWidth
+    + CGFloat(PopupGeometry.barCount - 1) * PopupGeometry.barGap
+/// The widest text bar: the longest preview line and the margins beside it.
+private let maximumPreviewBarWidth = PopupGeometry.maxPreviewWidth + 2 * PopupGeometry.previewSideMargin
 private let screenEdgeMargin: CGFloat = 80
+/// The preview line, the status and the receipt: the system font scaled as
+/// on every platform. Measured and drawn with the same font.
+private var popupTextFont: NSFont {
+    NSFont.systemFont(ofSize: NSFont.systemFontSize * PopupGeometry.previewFontScale)
+}
+private var popupFont: Font { Font(popupTextFont as CTFont) }
 /// The update and what's-new banners stacked above the pill.
 private let bannerHeight: CGFloat = 36
 private let bannerSpacing: CGFloat = 8
@@ -60,23 +57,23 @@ private enum E2EPanelEvidence {
 /// The preview bar and its compact status strip share one outline.
 private struct PanelContour: Shape {
     var shoulder: CGFloat
-    var inkWidth: CGFloat
+    var lobeWidth: CGFloat
 
     func path(in rect: CGRect) -> Path {
         let cap = shoulder / 2
-        let half = inkWidth / 2 + 10
+        let half = lobeWidth / 2
         let left = rect.midX - half
         let right = rect.midX + half
         let lobeHeight = rect.height - shoulder
-        var fillet = min(12, left - rect.minX - cap)
-        var radius = min(24, half)
+        var fillet = min(PopupGeometry.fillet, left - rect.minX - cap)
+        var radius = min(PopupGeometry.lobeRadius, half)
         if fillet + radius > lobeHeight {
             let scale = lobeHeight / (fillet + radius)
             fillet *= scale
             radius *= scale
         }
         guard shoulder > 0, lobeHeight > 0, fillet >= 4 else {
-            let radius = min(24, rect.height / 2)
+            let radius = min(capsuleCornerRadius, rect.height / 2)
             return Path(roundedRect: rect, cornerSize: CGSize(width: radius, height: radius))
         }
         let top = rect.minY
@@ -108,16 +105,15 @@ private struct PanelContour: Shape {
 
 private struct DictationPanelBackground: View {
     let shape: PanelContour
+    let cornerRadius: CGFloat
 
     @ViewBuilder
     var body: some View {
         // Liquid Glass cannot render the concave preview contour reliably.
         // Only the background branches, so waveform state survives preview changes.
-        // A 24pt radius is the capsule at the pill's 48pt height, and keeps the
-        // same corners when a wrapped problem makes it taller.
         if #available(macOS 26.0, *), shape.shoulder == 0 {
-            RoundedRectangle(cornerRadius: 24).fill(.regularMaterial)
-                .glassEffect(in: .rect(cornerRadius: 24))
+            RoundedRectangle(cornerRadius: cornerRadius).fill(.regularMaterial)
+                .glassEffect(in: .rect(cornerRadius: cornerRadius))
         } else {
             shape.fill(.regularMaterial)
         }
@@ -138,12 +134,14 @@ final class DictationPanelState: ObservableObject {
     @Published var level: Float = 0
     @Published var phase = Phase.live
     @Published var frozen = false
-    @Published var pillWidth: CGFloat = minimumPillWidth
+    @Published var pillWidth: CGFloat = PopupGeometry.pillHeight
     /// The buttons either side of the waveform (speecher::sessionControls).
     @Published var pauseVisible = false
     @Published var pauseEnabled = false
     @Published var paused = false
     @Published var cancelVisible = false
+    /// A spinner in pause's place while transcribing and refining.
+    @Published var busyVisible = false
     var waveformFloor: Float = 0
     @Published var problem = ""
     /// What the problem offers to fix it; nil when it offers nothing.
@@ -154,7 +152,7 @@ final class DictationPanelState: ObservableObject {
     /// it runs.
     @Published var problemPausedAt: Double?
     /// The problem's height once wrapped at the shared width.
-    @Published var problemHeight: CGFloat = pillHeight
+    @Published var problemHeight: CGFloat = PopupGeometry.pillHeight
     /// How the delivery ended, once it has; nil while the session is live.
     @Published var outcome: SpeecherPopupOutcome?
     /// The update banner's message, empty while there is nothing to offer, and
@@ -203,6 +201,14 @@ final class DictationPanelState: ObservableObject {
     var finished: Bool { presentation.finished }
 
     var showsPreview: Bool { problem.isEmpty && !finished && !preview.isEmpty }
+    /// The preview as the line shows it: its newest words, the oldest cut
+    /// from the front when they do not fit.
+    var shownPreview: String {
+        SpeecherBridge.trimPreview(preview, toWidth: pillWidth - 2 * PopupGeometry.previewSideMargin,
+                                   font: popupTextFont)
+    }
+    /// Words were cut from the preview's front, so its start fades out.
+    var previewFades: Bool { showsPreview && shownPreview.count < preview.count }
 
     var waitingLabel: String? {
         if status == SpeecherBridge.renewingSignInText { return status }
@@ -215,36 +221,55 @@ final class DictationPanelState: ObservableObject {
 
     /// The buttons show while the session is live, never over a problem or a
     /// receipt.
-    var showsControls: Bool { problem.isEmpty && !finished && (pauseVisible || cancelVisible) }
+    var showsControls: Bool {
+        problem.isEmpty && !finished && (pauseVisible || busyVisible || cancelVisible)
+    }
     var controlsWidth: CGFloat {
         guard showsControls else { return 0 }
-        return (pauseVisible ? sessionButtonSize + sessionButtonGap : 0)
-            + (cancelVisible ? sessionButtonSize + sessionButtonGap : 0)
+        let slot = PopupGeometry.buttonSize + PopupGeometry.buttonGap
+        return (pauseVisible || busyVisible ? slot : 0) + (cancelVisible ? slot : 0)
     }
     /// Paused keeps the bars, flat and still in the caution colour.
     var showsPaused: Bool { showsControls && paused }
 
     var lineHeight: CGFloat {
-        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let font = popupTextFont
         return ceil(font.ascender - font.descender + font.leading)
     }
+    /// The text bar down to where the lobe leaves it.
+    var shoulderHeight: CGFloat {
+        PopupGeometry.previewTopMargin + lineHeight + PopupGeometry.shoulderDrop
+    }
     var stripHeight: CGFloat {
-        guard showsPreview else { return pillHeight }
-        if waitingLabel != nil { return lineHeight + 6 }
-        // Room for the buttons as well as the bars.
-        return showsControls ? max(compactStripHeight, sessionButtonSize + 4) : compactStripHeight
+        guard showsPreview else { return PopupGeometry.pillHeight }
+        // Room for the buttons as well as the bars or the label.
+        return showsControls ? max(PopupGeometry.compactStripHeight, PopupGeometry.buttonSize)
+            : PopupGeometry.compactStripHeight
     }
     var height: CGFloat {
         if !problem.isEmpty { return problemHeight }
         return showsPreview
-            ? previewTopPadding + lineHeight + previewStripSpacing + stripHeight + previewBottomPadding
-            : pillHeight
+            ? PopupGeometry.previewTopMargin + lineHeight + PopupGeometry.previewStripSpacing
+                + stripHeight + PopupGeometry.previewBottomMargin
+            : PopupGeometry.pillHeight
     }
+    /// The strip's row: the buttons, the gaps beside them and the dots or the
+    /// label.
     var inkWidth: CGFloat {
         guard let label = waitingLabel else { return waveformInkWidth + controlsWidth }
-        return (label as NSString).size(withAttributes: [
-            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
-        ]).width + controlsWidth
+        return ceil((label as NSString).size(withAttributes: [.font: popupTextFont]).width)
+            + controlsWidth
+    }
+    /// The row and the air before the rounded ends around it: the lobe under
+    /// words and the whole pill without them. Without buttons the ends are
+    /// the pill's own caps.
+    var lobeWidth: CGFloat {
+        inkWidth + 2 * (showsControls ? PopupGeometry.lobeAir : PopupGeometry.pillHeight / 2)
+    }
+    /// However few the words, the text bar stays wide enough to carve the
+    /// contour around the lobe rather than becoming a plain rounded box.
+    var minimumPreviewBarWidth: CGFloat {
+        PopupGeometry.minimumPreviewBarWidth(lobeWidth: lobeWidth, shoulderHeight: shoulderHeight)
     }
 }
 
@@ -324,20 +349,28 @@ struct DictationPanelView: View {
     }
 
     private var pill: some View {
-        let shape = PanelContour(shoulder: state.showsPreview ? previewTopPadding + state.lineHeight + previewShoulderDrop : 0,
-                                 inkWidth: state.inkWidth)
+        let shape = PanelContour(shoulder: state.showsPreview ? state.shoulderHeight : 0,
+                                 lobeWidth: state.lobeWidth)
         return VStack(spacing: 0) {
             if state.showsPreview {
-                Text(SpeecherBridge.trimPreview(state.preview,
-                                                toWidth: state.pillWidth - previewChromeWidth,
-                                                font: .systemFont(ofSize: NSFont.systemFontSize)))
-                    .font(.body)
+                Text(state.shownPreview)
+                    .font(popupFont)
                     .lineLimit(1)
+                    // Words cut from the front fade in from the text's own
+                    // left edge; the newest stay fully opaque.
+                    .mask(alignment: .leading) {
+                        HStack(spacing: 0) {
+                            LinearGradient(colors: [state.previewFades ? .clear : .black, .black],
+                                           startPoint: .leading, endPoint: .trailing)
+                                .frame(width: PopupGeometry.previewFadeWidth)
+                            Color.black
+                        }
+                    }
                     .frame(height: state.lineHeight)
-                    .padding(.horizontal, 24)
-                    .padding(.top, previewTopPadding)
+                    .padding(.horizontal, PopupGeometry.previewSideMargin)
+                    .padding(.top, PopupGeometry.previewTopMargin)
             }
-            HStack(spacing: state.showsControls ? sessionButtonGap : 10) {
+            HStack(spacing: state.showsControls ? PopupGeometry.buttonGap : 10) {
                 if !state.problem.isEmpty {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .symbolRenderingMode(.multicolor)
@@ -352,7 +385,7 @@ struct DictationPanelView: View {
                     Button(SpeecherBridge.popupDismissCaption, action: dismiss)
                 } else if finished {
                     Label(state.status, systemImage: symbol)
-                        .font(.body)
+                        .font(popupFont)
                         .lineLimit(1)
                 } else {
                     if state.showsControls, state.pauseVisible {
@@ -360,14 +393,23 @@ struct DictationPanelView: View {
                                       symbol: state.paused ? "play.fill" : "pause.fill",
                                       action: togglePause)
                             .disabled(!state.pauseEnabled)
+                    } else if state.showsControls, state.busyVisible {
+                        // In pause's place, so the status sits between two
+                        // circles of the same size.
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .controlSize(.small)
+                            .frame(width: PopupGeometry.buttonSize, height: PopupGeometry.buttonSize)
                     }
                     if let waiting = state.waitingLabel {
                         ShimmerText(text: waiting)
                             .fixedSize()
                     } else {
                         DotWaveform(level: state.$level, frozen: state.frozen, paused: state.showsPaused,
-                                    width: state.showsControls ? waveformInkWidth : minimumPillWidth,
-                                    height: state.stripHeight, floor: $state.waveformFloor)
+                                    barCount: PopupGeometry.barCount, barWidth: PopupGeometry.barWidth,
+                                    barGap: PopupGeometry.barGap, dotHeight: PopupGeometry.barDotHeight,
+                                    width: waveformInkWidth, height: state.stripHeight,
+                                    floor: $state.waveformFloor)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(state.showsPaused ? SpeecherBridge.statusLabel(for: .paused) : phaseLabel)
                             .accessibilityValue(Text(Double(state.level), format: .percent.precision(.fractionLength(0))))
@@ -381,8 +423,8 @@ struct DictationPanelView: View {
             .padding(.horizontal, !state.problem.isEmpty || finished ? 24 : 0)
             .frame(height: state.problem.isEmpty ? state.stripHeight : nil)
             .padding(.vertical, state.problem.isEmpty ? 0 : 10)
-            .padding(.top, state.showsPreview ? previewStripSpacing : 0)
-            .padding(.bottom, state.showsPreview ? previewBottomPadding : 0)
+            .padding(.top, state.showsPreview ? PopupGeometry.previewStripSpacing : 0)
+            .padding(.bottom, state.showsPreview ? PopupGeometry.previewBottomMargin : 0)
             if !state.problem.isEmpty {
                 // The time left before the problem dismisses itself, held
                 // while the pointer is over the panel.
@@ -403,7 +445,8 @@ struct DictationPanelView: View {
             }
         }
         .frame(width: state.pillWidth, height: state.height)
-        .background(DictationPanelBackground(shape: shape))
+        .background(DictationPanelBackground(shape: shape,
+                                             cornerRadius: min(capsuleCornerRadius, state.height / 2)))
     }
 
     private var symbol: String { state.presentation.symbol }
@@ -417,8 +460,9 @@ struct DictationPanelView: View {
             .labelStyle(.iconOnly)
             .buttonStyle(.bordered)
             .buttonBorderShape(.circle)
-            .controlSize(.large)
-            .frame(width: sessionButtonSize, height: sessionButtonSize)
+            .controlSize(.regular)
+            .font(.system(size: PopupGeometry.buttonIconSize))
+            .frame(width: PopupGeometry.buttonSize, height: PopupGeometry.buttonSize)
             .help(caption)
     }
 
@@ -430,14 +474,20 @@ struct DictationPanelView: View {
     private var phaseLabel: String { state.presentation.label }
 }
 
-/// The Linux waveform's fifteen dots, adaptive level and one-second travelling
-/// crest, as the panel and Home draw them. Paused, the row lies flat and still
-/// in the system's caution colour.
+/// The Linux waveform's dots, adaptive level and one-second travelling crest,
+/// as the panel and Home draw them. Paused, the row lies flat and still in the
+/// system's caution colour.
 struct DotWaveform: View {
     let level: Published<Float>.Publisher
     var frozen = false
     var paused = false
-    var width = minimumPillWidth
+    /// Home's row by default: fifteen dots in a 126-point frame. The popup
+    /// passes its own, fewer and finer.
+    var barCount = 15
+    var barWidth: CGFloat = 3.2
+    var barGap: CGFloat = 3.2
+    var dotHeight: CGFloat = 3.2
+    var width: CGFloat = 126
     var height: CGFloat
     /// The quietest level heard, which the bars' range starts from; its owner
     /// keeps it so it outlives this view.
@@ -455,15 +505,16 @@ struct DotWaveform: View {
 
     var body: some View {
         Canvas { context, size in
-            for index in 0..<15 {
-                let bulge = paused ? 1 : 1 - abs(7 - Double(index)) / 24
-                let offset = phase - Double(index) / 15
+            let inkWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barGap
+            for index in 0..<barCount {
+                let bulge = paused ? 1 : 1 - abs(Double(barCount - 1) / 2 - Double(index)) / 24
+                let offset = phase - Double(index) / Double(barCount)
                 let wave = reduceMotion || paused ? 1 : multiplier(offset - Foundation.floor(offset))
                 let scale = paused ? 1 : Double(max(1, smoothed * 5))
-                let height = 3.2 * scale * bulge * wave
-                let rect = CGRect(x: (size.width - waveformInkWidth) / 2 + Double(index) * 6.4,
-                                  y: (size.height - height) / 2, width: 3.2, height: height)
-                context.fill(Path(roundedRect: rect, cornerSize: CGSize(width: 0.8, height: height / 4)),
+                let height = dotHeight * scale * bulge * wave
+                let rect = CGRect(x: (size.width - inkWidth) / 2 + Double(index) * (barWidth + barGap),
+                                  y: (size.height - height) / 2, width: barWidth, height: height)
+                context.fill(Path(roundedRect: rect, cornerSize: CGSize(width: barWidth / 4, height: height / 4)),
                              with: .foreground)
             }
         }
@@ -528,7 +579,7 @@ private struct ShimmerText: View {
     var body: some View {
         if reduceMotion {
             Text(text)
-                .font(.body)
+                .font(popupFont)
                 .lineLimit(1)
                 .foregroundStyle(.secondary)
         } else {
@@ -541,12 +592,12 @@ private struct ShimmerText: View {
             let progress = context.date.timeIntervalSinceReferenceDate
                 .truncatingRemainder(dividingBy: loop) / loop
             Text(text)
-                .font(.body)
+                .font(popupFont)
                 .lineLimit(1)
                 .foregroundStyle(.secondary)
                 .overlay(
                     Text(text)
-                        .font(.body)
+                        .font(popupFont)
                         .lineLimit(1)
                         .mask(alignment: .leading) {
                             GeometryReader { geometry in
@@ -603,8 +654,8 @@ final class SpeecherDictationPanel {
         // style mask. Borderless because the pill is the window: a titlebar
         // over a floating status readout would be chrome nobody asked for.
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0,
-                                            width: minimumPillWidth,
-                                            height: pillHeight),
+                                            width: PopupGeometry.pillHeight,
+                                            height: PopupGeometry.pillHeight),
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered,
                         defer: false)
@@ -666,10 +717,12 @@ final class SpeecherDictationPanel {
                 announce(SpeecherBridge.statusLabel(for: sessionState))
             }
             state.sessionState = sessionState
-            state.pauseVisible = bridge.pauseVisible
-            state.pauseEnabled = bridge.pauseEnabled
-            state.paused = bridge.paused
-            state.cancelVisible = bridge.cancelVisible
+            let controls = SpeecherBridge.sessionControls(for: sessionState)
+            state.pauseVisible = controls.pauseVisible
+            state.pauseEnabled = controls.pauseEnabled
+            state.paused = controls.paused
+            state.cancelVisible = controls.cancelVisible
+            state.busyVisible = controls.busyVisible
             // The mic is closed but the provider is still finalising, so the
             // shimmer takes the line and the stale speech preview goes away.
             if sessionState == .stopping {
@@ -833,6 +886,7 @@ final class SpeecherDictationPanel {
     }
 
     var isVisible: Bool { panel.isVisible }
+    var previewFades: Bool { state.previewFades }
     var level: NSWindow.Level { panel.level }
 
     private func setPreview(_ preview: String) {
@@ -926,39 +980,41 @@ final class SpeecherDictationPanel {
         let banners = (state.updateMessage.isEmpty ? 0 : 1)
             + (state.whatsNewMessage.isEmpty ? 0 : 1)
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        let message = !state.problem.isEmpty ? state.problem : state.finished ? state.status : state.showsPreview ? state.preview : state.waitingLabel ?? ""
         let screenArea = (panel.screen ?? NSScreen.main)?.visibleFrame
-        let availableWidth = screenArea?.width ?? maximumPreviewWidth + screenEdgeMargin
+        let availableWidth = screenArea?.width ?? maximumPreviewBarWidth + screenEdgeMargin
         // A problem wraps at the width every platform shares, and the capsule
         // grows taller rather than wider.
         let wrapWidth = SpeecherBridge.popupErrorWrapWidth
         let problemChrome = problemChromeWidth(font: font)
         let widthLimit: CGFloat = !state.problem.isEmpty ? wrapWidth + problemChrome
-            : state.showsPreview ? maximumPreviewWidth : 568
-        let maximumWidth = max(minimumPillWidth, min(widthLimit, availableWidth - screenEdgeMargin))
-        let textWidth: CGFloat
-        if state.problem.isEmpty {
-            textWidth = (message as NSString).size(withAttributes: [.font: font]).width
-        } else {
-            let bounds = (message as NSString).boundingRect(
+            : state.showsPreview ? maximumPreviewBarWidth : 568
+        let maximumWidth = min(widthLimit, availableWidth - screenEdgeMargin)
+        let textWidth = { (text: String) in
+            ceil((text as NSString).size(withAttributes: [.font: popupTextFont]).width)
+        }
+        let contentWidth: CGFloat
+        if !state.problem.isEmpty {
+            let bounds = (state.problem as NSString).boundingRect(
                 with: NSSize(width: maximumWidth - problemChrome, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin], attributes: [.font: font])
-            textWidth = ceil(bounds.width)
             // Text, the air around it and the countdown bar beneath.
-            state.problemHeight = max(pillHeight, ceil(bounds.height) + 20 + 14)
+            state.problemHeight = max(PopupGeometry.pillHeight, ceil(bounds.height) + 20 + 14)
+            contentWidth = ceil(bounds.width) + problemChrome
+        } else if state.finished {
+            contentWidth = textWidth(state.status) + 78
+        } else if state.showsPreview {
+            contentWidth = max(state.minimumPreviewBarWidth,
+                               textWidth(state.preview) + 2 * PopupGeometry.previewSideMargin)
+        } else {
+            // The status hugs its label and the pill hugs the row.
+            contentWidth = state.lobeWidth
         }
+        state.pillWidth = min(contentWidth, maximumWidth)
         let height = state.height + CGFloat(banners) * (bannerHeight + bannerSpacing)
-        let chrome = !state.problem.isEmpty ? problemChrome : state.finished ? 78
-            : state.showsPreview ? previewChromeWidth
-            : state.waitingLabel == nil ? state.controlsWidth : 32 + state.controlsWidth
-        let minimumWidth = (state.showsPreview ? minimumPillWidth + previewChromeWidth : minimumPillWidth)
-            + state.controlsWidth
-        let contentWidth = min(max(minimumWidth, textWidth + chrome), maximumWidth)
-        state.pillWidth = contentWidth
         // Each banner is one line sized to its message and buttons, so the
         // window is as wide as the widest, within the screen.
-        let width = min(max(contentWidth, bannerWidth(font: font)),
-                        max(minimumPillWidth, availableWidth - screenEdgeMargin))
+        let width = min(max(state.pillWidth, bannerWidth(font: font)),
+                        availableWidth - screenEdgeMargin)
         var frame = panel.frame
         guard abs(frame.width - width) >= 1 || abs(frame.height - height) >= 1 else { return }
         // AppKit rounds window frames. Reusing the previous frame's center
@@ -982,7 +1038,7 @@ final class SpeecherDictationPanel {
         return rows.filter { !$0.0.isEmpty }.map { message, action, closes in
             ceil((message as NSString).size(withAttributes: [.font: callout]).width)
                 + button(action) + (closes ? 38 : 0) + 16 + 5 + 10 * 2 + 4
-        }.max() ?? minimumPillWidth
+        }.max() ?? 0
     }
 
     /// What sits beside a problem's text: the padding, the warning symbol and

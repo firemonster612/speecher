@@ -77,6 +77,10 @@ struct SessionControls {
     // The pause button resumes instead.
     bool paused = false;
     bool cancelVisible = false;
+    // While transcribing and refining, when cancel shows without pause, the
+    // popup puts a spinner in pause's place so its status sits between two
+    // circles. Home's row shows only the buttons.
+    bool busyVisible = false;
 };
 SessionControls sessionControls(const QString &stateName);
 // The buttons' tooltips and accessible names.

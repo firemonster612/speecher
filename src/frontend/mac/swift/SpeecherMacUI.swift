@@ -226,6 +226,11 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc public var dictationPanelPresentedGeneration: UInt64 { panel.presentedGeneration }
 
+    /// Whether the panel's preview fades in at its start because words were
+    /// cut from its front.
+    @MainActor
+    @objc public var dictationPreviewFades: Bool { panel.previewFades }
+
     @MainActor
     @objc public var whatsNewOfferVisible: Bool { model.whatsNewPending }
 

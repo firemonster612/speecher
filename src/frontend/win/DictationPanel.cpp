@@ -5,6 +5,7 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
+#include "dictation/PopupGeometry.h"
 #include "dictation/PopupPresentation.h"
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/WaveformBars.h"
@@ -52,18 +53,27 @@ using namespace Microsoft::UI::Xaml::Hosting;
 using namespace Microsoft::UI::Xaml::Media;
 
 // The panel's layout constants are DIPs, as the XAML content measures them;
-// every HWND move and resize scales them by the window's DPI.
+// every HWND move and resize scales them by the window's DPI. The capsule's
+// own measurements are the ones every platform shares (PopupGeometry.h).
 constexpr int panelWidth = 126;
-constexpr int panelHeight = 48;
-constexpr int previewChromeWidth = 48;
-constexpr int compactStripHeight = 28;
-constexpr int previewTopPadding = 12;
-constexpr int previewStripSpacing = 8;
-constexpr int previewBottomPadding = 8;
-// The shoulder sits as far below the text as the pill's top sits above it,
-// so the wide bar reads evenly padded around the preview line.
-constexpr int previewShoulderDrop = previewTopPadding;
-constexpr int maximumPreviewWidth = 488;
+constexpr int panelHeight = popup::kPillHeight;
+constexpr int previewChromeWidth = 2 * popup::kPreviewSideMargin;
+constexpr int compactStripHeight = popup::kCompactStripHeight;
+constexpr int previewTopPadding = popup::kPreviewTopMargin;
+constexpr int previewStripSpacing = popup::kPreviewStripSpacing;
+constexpr int previewBottomPadding = popup::kPreviewBottomMargin;
+constexpr int previewShoulderDrop = popup::kShoulderDrop;
+constexpr int maximumPreviewWidth = popup::kMaxPreviewWidth + previewChromeWidth;
+// WinUI's body text, and the smaller size of the preview line and the status
+// beside the buttons.
+constexpr double bodyFontSize = 14;
+constexpr double previewFontSize = bodyFontSize * popup::kPreviewFontScale;
+// An error keeps its own, roomier capsule: at least this tall, its message
+// padded this much above and below, and its parts this far apart. Receipts
+// share the gap.
+constexpr int problemMinimumHeight = 48;
+constexpr int problemPadding = 12;
+constexpr int messageRowSpacing = 10;
 constexpr int screenEdgeMargin = 80;
 constexpr int bottomMargin = 28;
 constexpr int bannerGap = 12;
@@ -75,9 +85,21 @@ constexpr int buttonChromeWidth = 36;
 constexpr int problemBarHeight = 16;
 // The pause and cancel buttons either side of the waveform, round like the
 // notices' close button, and the gap beside each.
-constexpr int sessionButtonSize = 28;
-constexpr int sessionButtonGap = 10;
+constexpr int sessionButtonSize = popup::kButtonSize;
+constexpr int sessionButtonGap = popup::kButtonGap;
+// The spinner in pause's slot, a little inside the slot as the icons are.
+constexpr int spinnerSize = 16;
+constexpr win::WaveformGeometry panelBars{popup::kBarCount, popup::kBarWidth, popup::kBarGap,
+                                          popup::kBarDotHeight};
 constexpr auto windowClassName = L"SpeecherDictationPanel";
+
+// A brush's colour, for brushes built from the theme's text. High-contrast
+// themes can hand out a non-solid foreground brush.
+winrt::Windows::UI::Color solidColor(const Brush &brush)
+{
+    const auto solid = brush.try_as<SolidColorBrush>();
+    return solid ? solid.Color() : winrt::Windows::UI::Color{255, 128, 128, 128};
+}
 
 // Whether every pixel is the same colour, which is what a capture with no
 // desktop behind it looks like.
@@ -300,7 +322,6 @@ struct DictationPanel::Native : QObject {
         content.VerticalAlignment(VerticalAlignment::Center);
         row = StackPanel();
         row.Orientation(Orientation::Horizontal);
-        row.Spacing(10);
         row.VerticalAlignment(VerticalAlignment::Center);
 
         glyph = FontIcon();
@@ -314,7 +335,7 @@ struct DictationPanel::Native : QObject {
         text.Width(panelWidth);
         probe = TextBlock();
 
-        wave = new win::WaveformBars(this);
+        wave = new win::WaveformBars(panelBars, this);
         wave->element().Height(panelHeight);
         wave->setInk(text.Foreground());
         waveform = Border();
@@ -333,7 +354,7 @@ struct DictationPanel::Native : QObject {
             button.AllowFocusOnInteraction(false);
             FontIcon icon;
             icon.Glyph(glyphText);
-            icon.FontSize(12);
+            icon.FontSize(popup::kButtonIconSize);
             button.Content(icon);
             button.Visibility(Visibility::Collapsed);
             return button;
@@ -346,9 +367,20 @@ struct DictationPanel::Native : QObject {
         Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(cancelButton, win::hs(cancelCaption()));
         ToolTipService::SetToolTip(cancelButton, box_value(win::hs(cancelCaption())));
         cancelButton.Click([this](const auto &, const auto &) { controller->cancel(); });
-        // A status in place of the bars (Transcribing…) sits between the two
-        // buttons as the bars do.
+        // While transcribing and refining a spinner takes pause's slot, so the
+        // status (Transcribing…) sits between two circles as the bars do.
+        ProgressRing spinner;
+        spinner.IsIndeterminate(true);
+        spinner.Width(spinnerSize);
+        spinner.Height(spinnerSize);
+        busySlot = Border();
+        busySlot.Width(sessionButtonSize);
+        busySlot.Height(sessionButtonSize);
+        busySlot.VerticalAlignment(VerticalAlignment::Center);
+        busySlot.Child(spinner);
+        busySlot.Visibility(Visibility::Collapsed);
         row.Children().Append(pauseButton);
+        row.Children().Append(busySlot);
         row.Children().Append(waveform);
         row.Children().Append(text);
         row.Children().Append(cancelButton);
@@ -358,7 +390,8 @@ struct DictationPanel::Native : QObject {
         previewText.TextAlignment(TextAlignment::Center);
         previewText.MaxLines(1);
         previewText.TextTrimming(TextTrimming::CharacterEllipsis);
-        previewText.Margin({24, previewTopPadding, 24, 0});
+        previewText.FontSize(previewFontSize);
+        previewText.Margin({popup::kPreviewSideMargin, previewTopPadding, popup::kPreviewSideMargin, 0});
         content.Children().Append(previewText);
 
         // The error's one fix, ahead of Dismiss as the way forward.
@@ -732,10 +765,7 @@ struct DictationPanel::Native : QObject {
         }
         using namespace Microsoft::UI::Xaml::Media::Animation;
         normalForeground = text.Foreground();
-        // High-contrast themes can hand out a non-solid foreground brush.
-        const auto solid = normalForeground.try_as<SolidColorBrush>();
-        const auto color = solid ? solid.Color()
-                                 : winrt::Windows::UI::Color{255, 128, 128, 128};
+        const auto color = solidColor(normalForeground);
         LinearGradientBrush brush;
         brush.StartPoint({0, 0});
         brush.EndPoint({1, 0});
@@ -776,7 +806,9 @@ struct DictationPanel::Native : QObject {
         const bool finished = completed && !hasProblem;
         const SessionControls controls = hasProblem || finished ? SessionControls{}
                                                                 : sessionControls(sessionState);
-        const int controlsWidth = (controls.pauseVisible ? sessionButtonSize + sessionButtonGap : 0)
+        // The spinner takes pause's slot, so either one fills the left of the row.
+        const bool leftSlotVisible = controls.pauseVisible || controls.busyVisible;
+        const int controlsWidth = (leftSlotVisible ? sessionButtonSize + sessionButtonGap : 0)
             + (controls.cancelVisible ? sessionButtonSize + sessionButtonGap : 0);
         const bool paused = controls.paused;
         // Only errors and the session buttons take clicks. Otherwise the
@@ -813,6 +845,18 @@ struct DictationPanel::Native : QObject {
         const bool offersFix = hasProblem && fix.fix != ErrorFix::None;
         const int chromeWidth = problemChromeWidth
             + (offersFix ? measuredTextWidth(popupErrorActionLabel(fix)) + buttonChromeWidth : 0);
+        // Measure the native font so both the contour and strip clear its ink.
+        probe.FontSize(previewFontSize);
+        probe.Text(L"Ag");
+        probe.Measure({std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()});
+        const int lineHeight = int(std::ceil(probe.DesiredSize().Height));
+        // The status beside the buttons hugs its text, so it sits centred
+        // between them.
+        const int statusWidth = waiting ? measuredTextWidth(shown, previewFontSize) : 0;
+        // The lobe holds the whole row: the bars or the status, with a button
+        // either side when they show.
+        const double inkWidth = (listening ? wave->stripWidth() : statusWidth) + controlsWidth;
+        const int lobeWidth = int(std::ceil(inkWidth)) + 2 * popup::kLobeAir;
         // A problem wraps at the width every platform shares and grows taller.
         const int maximumWidth = hasProblem
             ? std::min(kPopupErrorWrapWidth + chromeWidth, screenWidth)
@@ -820,29 +864,38 @@ struct DictationPanel::Native : QObject {
         int wantedWidth = hasProblem ? std::clamp(measuredTextWidth(shown) + chromeWidth,
                                                   panelWidth, maximumWidth)
             : finished ? std::clamp(measuredTextWidth(shown) + 68, panelWidth, maximumWidth)
-            : waiting ? std::max(panelWidth, measuredTextWidth(shown) + 32) + controlsWidth
-                      : panelWidth + controlsWidth;
+            : controlsWidth > 0 ? lobeWidth
+            : waiting ? std::max(panelWidth, statusWidth + 32)
+                      : panelWidth;
         if (showPreview) {
             const int transcriptMaximum = std::min(maximumPreviewWidth, maximumWidth);
             const QString visible = fitPreview(preview, transcriptMaximum - previewChromeWidth);
+            // A short preview still carves the text bar around the lobe,
+            // centred in the narrowest bar that does.
+            const int shortestBar = int(std::ceil(popup::minimumPreviewBarWidth(
+                lobeWidth, previewTopPadding + lineHeight + previewShoulderDrop)));
             // Match macOS: hug the transcript until it reaches the width cap.
-            // Measuring the elided tail would make the width twitch at overflow.
+            // Measuring the trimmed tail would make the width twitch at overflow.
             wantedWidth = std::min(transcriptMaximum,
-                std::max(panelWidth + controlsWidth + previewChromeWidth,
-                         measuredTextWidth(preview) + previewChromeWidth));
+                std::max(shortestBar, measuredTextWidth(preview, previewFontSize) + previewChromeWidth));
+            const int lineWidth = wantedWidth - previewChromeWidth;
             previewText.Text(hstring(visible.toStdWString()));
-            previewText.Width(wantedWidth - previewChromeWidth);
+            previewText.Width(lineWidth);
+            // trimPreviewToFit only shortens a preview by cutting its front.
+            const bool cut = visible.size() < preview.size();
+            setPreviewFade(cut, (lineWidth - measuredTextWidth(visible, previewFontSize)) / 2.0);
         }
         previewText.Visibility(showPreview ? Visibility::Visible : Visibility::Collapsed);
+        row.Spacing(hasProblem || finished ? messageRowSpacing : sessionButtonGap);
         row.Padding(hasProblem || finished ? Thickness{12, 0, 12, 0} : Thickness{});
         row.Margin({0, showPreview ? double(previewStripSpacing) : 0.0, 0, 0});
         content.Padding({0, 0, 0, showPreview ? double(previewBottomPadding) : 0.0});
         text.Text(hstring(shown.toStdWString()));
+        text.FontSize(waiting ? previewFontSize : bodyFontSize);
         text.Visibility(listening ? Visibility::Collapsed : Visibility::Visible);
         text.Width(hasProblem ? wantedWidth - chromeWidth
                    : finished ? wantedWidth - 68
-                   // Hugging the status keeps the buttons beside it, inside the lobe.
-                   : controlsWidth > 0 ? std::max(panelWidth, measuredTextWidth(shown) + 32)
+                   : controlsWidth > 0 ? statusWidth
                                        : wantedWidth);
         text.TextWrapping(hasProblem ? TextWrapping::Wrap : TextWrapping::NoWrap);
         text.MaxLines(hasProblem ? 0 : 1);
@@ -852,13 +905,16 @@ struct DictationPanel::Native : QObject {
         waveform.Visibility(listening ? Visibility::Visible : Visibility::Collapsed);
         // Beside the buttons the strip is only as wide as its dots, so the tab
         // under the words hugs [button][bars][button] with equal gaps.
-        waveform.Width(controlsWidth > 0 ? win::WaveformBars::stripWidth : double(panelWidth));
+        waveform.Width(controlsWidth > 0 ? wave->stripWidth() : double(panelWidth));
         pauseButton.Visibility(controls.pauseVisible ? Visibility::Visible : Visibility::Collapsed);
         pauseButton.IsEnabled(controls.pauseEnabled);
         pauseButton.Content().as<FontIcon>().Glyph(paused ? L"\uE768" : L"\uE769");
         const QString pauseText = paused ? resumeCaption() : pauseCaption();
         Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(pauseButton, win::hs(pauseText));
         ToolTipService::SetToolTip(pauseButton, box_value(win::hs(pauseText)));
+        busySlot.Visibility(controls.busyVisible ? Visibility::Visible : Visibility::Collapsed);
+        // A hidden spinner stops, as a hidden strip does.
+        busySlot.Child().as<ProgressRing>().IsActive(controls.busyVisible);
         cancelButton.Visibility(controls.cancelVisible ? Visibility::Visible : Visibility::Collapsed);
         wave->setFrozen(frozen);
         wave->setPaused(paused, paused ? pausedFill() : Brush{nullptr});
@@ -869,19 +925,18 @@ struct DictationPanel::Native : QObject {
         dismiss.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
         fixButton.Visibility(offersFix ? Visibility::Visible : Visibility::Collapsed);
         countdown.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
-        // Measure the native font so both the contour and strip clear its ink.
-        probe.Text(L"Ag");
-        probe.Measure({std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()});
-        const int lineHeight = int(std::ceil(probe.DesiredSize().Height));
         int problemHeight = 0;
         if (hasProblem) {
             text.Measure({float(wantedWidth - chromeWidth),
                           std::numeric_limits<float>::infinity()});
-            problemHeight = std::max(panelHeight - problemBarHeight,
-                                     int(std::ceil(text.DesiredSize().Height)) + 2 * previewTopPadding);
+            problemHeight = std::max(problemMinimumHeight - problemBarHeight,
+                                     int(std::ceil(text.DesiredSize().Height)) + 2 * problemPadding);
         }
+        // Under the words the strip is still as tall as the buttons beside it.
+        const int buttonRowHeight = controlsWidth > 0 ? sessionButtonSize : 0;
         const int stripHeight = hasProblem ? problemHeight
-            : showPreview ? waiting ? lineHeight + 6 : compactStripHeight : panelHeight;
+            : showPreview ? std::max(buttonRowHeight, waiting ? lineHeight + 6 : compactStripHeight)
+                          : panelHeight;
         row.Height(stripHeight);
         wave->element().Height(stripHeight);
         const int wantedHeight = hasProblem ? problemHeight + problemBarHeight
@@ -893,13 +948,8 @@ struct DictationPanel::Native : QObject {
         surfaceWidth = hasProblem ? wantedWidth : std::max(wantedWidth, std::min(maximumPreviewWidth, maximumWidth));
         surfaceHeight = hasProblem ? wantedHeight
             : previewTopPadding + lineHeight + previewStripSpacing
-                + std::max(compactStripHeight, lineHeight + 6) + previewBottomPadding;
+                + std::max({compactStripHeight, sessionButtonSize, lineHeight + 6}) + previewBottomPadding;
         resize(wantedWidth, wantedHeight);
-        // With the buttons showing, the lobe holds the whole row: the bars or
-        // the status text, with a button either side.
-        const double inkWidth = controlsWidth == 0 ? (waiting ? measuredTextWidth(shown) : win::WaveformBars::stripWidth)
-            : (listening ? win::WaveformBars::stripWidth : std::max(panelWidth, measuredTextWidth(shown) + 32))
-                + controlsWidth;
         updateOutline(showPreview ? previewTopPadding + lineHeight + previewShoulderDrop : 0, inkWidth);
         chrome.UpdateLayout();
         if (IsWindowVisible(window)) {
@@ -975,11 +1025,12 @@ struct DictationPanel::Native : QObject {
         return int(dip * scale() + 0.5);
     }
 
-    // Desired width of the line in the pill's font, the way the mac panel
+    // Desired width of the line at this font size, the way the mac panel
     // measures its NSString. A detached TextBlock measures fine; if XAML
     // ever hands back nothing, the 7px-per-character estimate stands in.
-    int measuredTextWidth(const QString &value)
+    int measuredTextWidth(const QString &value, double fontSize = bodyFontSize)
     {
+        probe.FontSize(fontSize);
         probe.Text(hstring(value.toStdWString()));
         constexpr float unbounded = std::numeric_limits<float>::infinity();
         probe.Measure({unbounded, unbounded});
@@ -990,8 +1041,34 @@ struct DictationPanel::Native : QObject {
     QString fitPreview(const QString &value, int maximumWidth)
     {
         return trimPreviewToFit(value, [this, maximumWidth](const QString &candidate) {
-            return measuredTextWidth(candidate) <= maximumWidth;
+            return measuredTextWidth(candidate, previewFontSize) <= maximumWidth;
         });
+    }
+
+    // Words cut from the front fade in over the line's first stretch, from
+    // the text's own left edge, so the newest words stay whole. Rebuilt on
+    // every refresh from the theme's text colour, so it follows a theme
+    // change as the plain foreground does.
+    void setPreviewFade(bool cut, double textLeft)
+    {
+        previewText.ClearValue(TextBlock::ForegroundProperty());
+        if (!cut) {
+            return;
+        }
+        const auto color = solidColor(previewText.Foreground());
+        auto clear = color;
+        clear.A = 0;
+        LinearGradientBrush fade;
+        fade.MappingMode(BrushMappingMode::Absolute);
+        fade.StartPoint({float(textLeft), 0});
+        fade.EndPoint({float(textLeft + popup::kPreviewFadeWidth), 0});
+        for (const auto &[shade, offset] : {std::pair{clear, 0.0}, std::pair{color, 1.0}}) {
+            GradientStop stop;
+            stop.Color(shade);
+            stop.Offset(offset);
+            fade.GradientStops().Append(stop);
+        }
+        previewText.Foreground(fade);
     }
 
     // The pill's own surface: the theme's acrylic fill and strong stroke,
@@ -1046,12 +1123,12 @@ struct DictationPanel::Native : QObject {
         const double width = this->width - 1;
         const double height = this->height - 1;
         const double cap = shoulder / 2;
-        const double half = inkWidth / 2 + 10;
+        const double half = inkWidth / 2 + popup::kLobeAir;
         const double left = width / 2.0 - half;
         const double right = width / 2.0 + half;
         const double lobeHeight = height - shoulder;
-        double fillet = std::min(12.0, left - cap);
-        double radius = std::min(24.0, half);
+        double fillet = std::min(popup::kFillet, left - cap);
+        double radius = std::min(popup::kLobeRadius, half);
         if (fillet + radius > lobeHeight) {
             const double scale = lobeHeight / (fillet + radius);
             fillet *= scale;
@@ -1155,6 +1232,8 @@ struct DictationPanel::Native : QObject {
     TextBlock previewText{nullptr};
     Border waveform{nullptr};
     Button pauseButton{nullptr};
+    // The spinner in pause's slot while transcribing and refining.
+    Border busySlot{nullptr};
     Button cancelButton{nullptr};
     // The session's state name, from its stateChanged signal.
     QString sessionState;
@@ -1294,6 +1373,21 @@ QRect DictationPanel::previewGeometryForTest() const
     return m_native->controlGeometry(m_native->previewText);
 }
 
+QRect DictationPanel::statusGeometryForTest() const
+{
+    return m_native->controlGeometry(m_native->text);
+}
+
+QRect DictationPanel::spinnerGeometryForTest() const
+{
+    return m_native->controlGeometry(m_native->busySlot);
+}
+
+QRect DictationPanel::cancelGeometryForTest() const
+{
+    return m_native->controlGeometry(m_native->cancelButton);
+}
+
 QString DictationPanel::previewTextForTest() const
 {
     return QString::fromStdWString(std::wstring(m_native->previewText.Text()));
@@ -1301,7 +1395,23 @@ QString DictationPanel::previewTextForTest() const
 
 bool DictationPanel::previewTextFitsForTest() const
 {
-    return m_native->measuredTextWidth(previewTextForTest()) <= m_native->chrome.ActualWidth() - previewChromeWidth;
+    return m_native->measuredTextWidth(previewTextForTest(), previewFontSize)
+        <= m_native->chrome.ActualWidth() - previewChromeWidth;
+}
+
+bool DictationPanel::previewFadesForTest() const
+{
+    return m_native->previewText.Foreground().try_as<LinearGradientBrush>() != nullptr;
+}
+
+double DictationPanel::outlineShoulderForTest() const
+{
+    return m_native->outlineShoulder;
+}
+
+double DictationPanel::outlineLobeWidthForTest() const
+{
+    return 2 * m_native->outlineTabHalf;
 }
 
 // Copies the panel's screen rectangle, DWM-composed, so the picture carries

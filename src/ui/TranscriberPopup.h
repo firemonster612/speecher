@@ -9,6 +9,8 @@
 
 class QFrame;
 class QEvent;
+class QGraphicsOpacityEffect;
+class QHBoxLayout;
 class QHideEvent;
 class QProgressBar;
 class QPushButton;
@@ -81,6 +83,8 @@ private:
     void repositionIfVisible();
     void restoreStandardLayout();
     void applySessionControls();
+    void applyFonts();
+    void updatePreviewFade();
 
     QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;
@@ -94,6 +98,11 @@ private:
     WaveformWidget *m_waveform = nullptr;
     QToolButton *m_pauseButton = nullptr;
     QToolButton *m_cancelButton = nullptr;
+    QWidget *m_busy = nullptr;
+    QHBoxLayout *m_waveformRow = nullptr;
+    QGraphicsOpacityEffect *m_previewFade = nullptr;
+    // The preview lost words from its front, so its start fades.
+    bool m_previewCut = false;
     DictationState m_sessionState = DictationState::Idle;
     QFrame *m_updateBanner = nullptr;
     QLabel *m_updateBannerText = nullptr;

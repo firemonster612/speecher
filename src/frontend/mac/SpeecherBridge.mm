@@ -17,6 +17,7 @@
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
+#include "dictation/PopupGeometry.h"
 #include "dictation/PopupPresentation.h"
 #include "frontend/mac/MacCustomRows.h"
 // The schema context: what this machine can offer the descriptors. Shared with
@@ -798,6 +799,126 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @end
 
 @implementation SpeecherCredentialStatus
+@end
+
+@interface SpeecherSessionControls ()
+@property (nonatomic) BOOL pauseVisible;
+@property (nonatomic) BOOL pauseEnabled;
+@property (nonatomic) BOOL paused;
+@property (nonatomic) BOOL cancelVisible;
+@property (nonatomic) BOOL busyVisible;
+@end
+
+@implementation SpeecherSessionControls
+@end
+
+@implementation SpeecherPopupGeometry
+
++ (CGFloat)pillHeight
+{
+    return speecher::popup::kPillHeight;
+}
+
++ (CGFloat)buttonSize
+{
+    return speecher::popup::kButtonSize;
+}
+
++ (CGFloat)buttonIconSize
+{
+    return speecher::popup::kButtonIconSize;
+}
+
++ (CGFloat)buttonGap
+{
+    return speecher::popup::kButtonGap;
+}
+
++ (CGFloat)lobeAir
+{
+    return speecher::popup::kLobeAir;
+}
+
++ (NSInteger)barCount
+{
+    return speecher::popup::kBarCount;
+}
+
++ (CGFloat)barWidth
+{
+    return speecher::popup::kBarWidth;
+}
+
++ (CGFloat)barGap
+{
+    return speecher::popup::kBarGap;
+}
+
++ (CGFloat)barDotHeight
+{
+    return speecher::popup::kBarDotHeight;
+}
+
++ (CGFloat)compactStripHeight
+{
+    return speecher::popup::kCompactStripHeight;
+}
+
++ (CGFloat)previewTopMargin
+{
+    return speecher::popup::kPreviewTopMargin;
+}
+
++ (CGFloat)previewSideMargin
+{
+    return speecher::popup::kPreviewSideMargin;
+}
+
++ (CGFloat)previewBottomMargin
+{
+    return speecher::popup::kPreviewBottomMargin;
+}
+
++ (CGFloat)previewStripSpacing
+{
+    return speecher::popup::kPreviewStripSpacing;
+}
+
++ (CGFloat)shoulderDrop
+{
+    return speecher::popup::kShoulderDrop;
+}
+
++ (CGFloat)fillet
+{
+    return speecher::popup::kFillet;
+}
+
++ (CGFloat)lobeRadius
+{
+    return speecher::popup::kLobeRadius;
+}
+
++ (CGFloat)maxPreviewWidth
+{
+    return speecher::popup::kMaxPreviewWidth;
+}
+
++ (CGFloat)previewFontScale
+{
+    return speecher::popup::kPreviewFontScale;
+}
+
++ (CGFloat)previewFadeWidth
+{
+    return speecher::popup::kPreviewFadeWidth;
+}
+
++ (CGFloat)minimumPreviewBarWidthForLobeWidth:(CGFloat)lobeWidth shoulderHeight:(CGFloat)shoulderHeight
+{
+    return speecher::popup::minimumPreviewBarWidth(lobeWidth, shoulderHeight);
+}
+
 @end
 
 @interface LocalModelInfo ()
@@ -2623,6 +2744,19 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::dictationStatusLabel(
                speecher::dictationStateName(static_cast<speecher::DictationState>(state)))
         .toNSString();
+}
+
++ (SpeecherSessionControls *)sessionControlsFor:(SpeecherDictationState)state
+{
+    const speecher::SessionControls core = speecher::sessionControls(
+        speecher::dictationStateName(static_cast<speecher::DictationState>(state)));
+    SpeecherSessionControls *controls = [[SpeecherSessionControls alloc] init];
+    controls.pauseVisible = core.pauseVisible;
+    controls.pauseEnabled = core.pauseEnabled;
+    controls.paused = core.paused;
+    controls.cancelVisible = core.cancelVisible;
+    controls.busyVisible = core.busyVisible;
+    return controls;
 }
 
 + (NSTimeInterval)popupErrorDismissSecondsFor:(NSString *)message

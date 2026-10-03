@@ -75,6 +75,25 @@ bool hotKeyComboIsFree(UInt32 keyCode = kVK_F9)
     return status == noErr;
 }
 
+// Where on screen SwiftUI laid out the first element under element with one
+// of these roles and, when given, this label or value; empty when none has.
+NSRect laidOutFrame(id<NSAccessibility> element, NSArray<NSString *> *roles,
+                    NSString *label = nil)
+{
+    for (id<NSAccessibility> child in element.accessibilityChildren) {
+        const bool named = !label || [child.accessibilityLabel isEqualToString:label]
+                           || [child.accessibilityValue isEqual:label];
+        if (named && [roles containsObject:child.accessibilityRole]) {
+            return child.accessibilityFrame;
+        }
+        const NSRect found = laidOutFrame(child, roles, label);
+        if (!NSIsEmptyRect(found)) {
+            return found;
+        }
+    }
+    return NSZeroRect;
+}
+
 } // namespace
 
 class MacFrontEndTests : public QObject {
@@ -207,7 +226,7 @@ private slots:
         QVERIFY(panel);
         const auto cleanup = qScopeGuard([&] { [ui dismissDictationPanel]; });
         const NSRect initial = panel.frame;
-        QCOMPARE(initial.size.height, CGFloat(48));
+        QCOMPARE(initial.size.height, SpeecherPopupGeometry.pillHeight);
         const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
         const auto capture = [&](const QString &name) {
             if (directory.isEmpty()) return true;
@@ -221,15 +240,40 @@ private slots:
                               atomically:YES]);
         };
         QVERIFY(capture("listening"));
+        // Paused keeps the pill, its bars flat in the caution colour.
+        bridge.popupStatusChanged(@"Paused", SpeecherDictationStatePaused);
+        settle();
+        QCOMPARE(panel.frame.size.height, initial.size.height);
+        QVERIFY(capture("paused"));
+        bridge.popupStatusChanged(@"Listening", SpeecherDictationStateListening);
         bridge.popupPreviewChanged(@"short preview");
         settle();
         QVERIFY(panel.frame.size.height > initial.size.height);
         QCOMPARE(panel.frame.origin.y, initial.origin.y);
+        // However few the words, the text bar stays wide enough to carve the
+        // contour around the lobe of pause, dots and cancel, and nothing was
+        // cut, so nothing fades.
+        NSFont *font = [NSFont systemFontOfSize:NSFont.systemFontSize
+                                                * SpeecherPopupGeometry.previewFontScale];
+        const CGFloat dots = SpeecherPopupGeometry.barCount * SpeecherPopupGeometry.barWidth
+                             + (SpeecherPopupGeometry.barCount - 1) * SpeecherPopupGeometry.barGap;
+        const CGFloat lobe = 2 * (SpeecherPopupGeometry.lobeAir + SpeecherPopupGeometry.buttonSize
+                                  + SpeecherPopupGeometry.buttonGap)
+                             + dots;
+        const CGFloat shoulder = SpeecherPopupGeometry.previewTopMargin
+                                 + ceil(font.ascender - font.descender + font.leading)
+                                 + SpeecherPopupGeometry.shoulderDrop;
+        QVERIFY(panel.frame.size.width + 1
+                >= [SpeecherPopupGeometry minimumPreviewBarWidthForLobeWidth:lobe shoulderHeight:shoulder]);
+        QVERIFY(!ui.dictationPreviewFades);
         QVERIFY(capture("short-preview"));
         bridge.popupPreviewChanged(@"We should probably move the meeting to Thursday afternoon, after everyone has reviewed the latest draft.");
         settle();
-        QVERIFY(panel.frame.size.width <= 488);
+        QVERIFY(panel.frame.size.width
+                <= SpeecherPopupGeometry.maxPreviewWidth + 2 * SpeecherPopupGeometry.previewSideMargin);
         QCOMPARE(panel.frame.origin.y, initial.origin.y);
+        // The oldest words were cut, so the line's start fades out.
+        QVERIFY(ui.dictationPreviewFades);
         QVERIFY(capture("long-preview"));
         // Streaming text repeatedly changes the width; the palette must keep
         // its original center rather than accumulate rounding or layout drift.
@@ -250,7 +294,22 @@ private slots:
         settle();
         QCOMPARE(panel.frame.size.height, initial.size.height);
         QVERIFY(capture("transcribing"));
+        // The label hugs its text, centred between the spinner in pause's
+        // place and the cancel button.
+        bridge.popupStatusChanged(@"Refining", SpeecherDictationStateRefining);
         bridge.popupRefiningChanged(true);
+        settle();
+        QCOMPARE(panel.frame.size.height, initial.size.height);
+        const NSRect label = laidOutFrame(panel.contentView, @[NSAccessibilityStaticTextRole],
+                                          [SpeecherBridge statusLabelFor:SpeecherDictationStateRefining]);
+        const NSRect spinner = laidOutFrame(
+            panel.contentView, @[NSAccessibilityProgressIndicatorRole, NSAccessibilityBusyIndicatorRole]);
+        const NSRect cancel = laidOutFrame(panel.contentView, @[NSAccessibilityButtonRole],
+                                           SpeecherBridge.cancelCaption);
+        QVERIFY(!NSIsEmptyRect(label) && !NSIsEmptyRect(spinner) && !NSIsEmptyRect(cancel));
+        QVERIFY(qAbs(NSMidX(label) - NSMidX(panel.frame)) <= 1);
+        QVERIFY(qAbs((NSMidX(label) - NSMidX(spinner)) - (NSMidX(cancel) - NSMidX(label))) <= 1);
+        QVERIFY(capture("refining-no-text"));
         bridge.popupRefinementPreviewChanged(@"Move the meeting to Thursday afternoon.");
         settle();
         QVERIFY(panel.frame.size.height > initial.size.height);
@@ -273,6 +332,8 @@ private slots:
         QVERIFY(bridge.popupMessageRequested);
         bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted);
         settle();
+        // A receipt shares the waveform's pill.
+        QCOMPARE(panel.frame.size.height, SpeecherPopupGeometry.pillHeight);
         QVERIFY(capture("receipt-inserted"));
         bridge.popupMessageRequested(@"Copied", SpeecherPopupOutcomeCopied);
         settle();

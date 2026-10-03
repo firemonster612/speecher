@@ -31,7 +31,6 @@ QList<qsizetype> boundaries(QTextBoundaryFinder::BoundaryType type, const QStrin
 // The longest tail from these cut points that fits, or empty. Never the whole
 // text (the first cut point), which the caller already found too wide.
 QString longestFittingTail(const QString &text, const QList<qsizetype> &starts,
-                           const QString &prefix,
                            const std::function<bool(const QString &)> &fits)
 {
     // Later starts are shorter tails, so the first that fits is the longest.
@@ -39,14 +38,14 @@ QString longestFittingTail(const QString &text, const QList<qsizetype> &starts,
     qsizetype high = starts.size();
     while (low < high) {
         const qsizetype middle = (low + high) / 2;
-        if (fits(prefix + text.mid(starts[middle]).trimmed())) {
+        if (fits(text.mid(starts[middle]).trimmed())) {
             high = middle;
         } else {
             low = middle + 1;
         }
     }
     if (low < starts.size()) {
-        const QString tail = prefix + text.mid(starts[low]).trimmed();
+        const QString tail = text.mid(starts[low]).trimmed();
         if (fits(tail)) {
             return tail;
         }
@@ -117,14 +116,12 @@ QString trimPreviewToFit(const QString &preview, const std::function<bool(const 
         return whole;
     }
     const QString atWord = longestFittingTail(
-        whole, boundaries(QTextBoundaryFinder::Word, whole, true), QStringLiteral("… "), fits);
+        whole, boundaries(QTextBoundaryFinder::Word, whole, true), fits);
     if (!atWord.isEmpty()) {
         return atWord;
     }
     // Not even the last word fits: keep as much of its end as does.
-    const QString atGrapheme = longestFittingTail(
-        whole, boundaries(QTextBoundaryFinder::Grapheme, whole, false), QStringLiteral("…"), fits);
-    return atGrapheme.isEmpty() ? QStringLiteral("…") : atGrapheme;
+    return longestFittingTail(whole, boundaries(QTextBoundaryFinder::Grapheme, whole, false), fits);
 }
 
 } // namespace speecher
