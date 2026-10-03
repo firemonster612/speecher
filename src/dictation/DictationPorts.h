@@ -89,6 +89,9 @@ public:
     virtual bool start(QString *error = nullptr) = 0;
     virtual void stop() = 0;
     virtual bool isActive() const = 0;
+    // Forgets the audio a warm input keeps rolling for the next start, so a
+    // resume after a pause does not send what was said during it.
+    virtual void clearPreRoll() {}
 
 signals:
     void audioChunk(const QByteArray &pcm);

@@ -71,6 +71,8 @@ public slots:
     // a fresh speech attempt. Stop while paused delivers what was said.
     void pause();
     void resume();
+    // The pause button: pauses, or resumes while paused.
+    void togglePause();
     void popupPresented(quint64 generation);
     // How long startup waits for the popup to paint before proceeding without
     // it. Tests raise it so a slow runner cannot fire it under an assertion.
@@ -122,6 +124,11 @@ private:
     // Opens the attempt after a pause once the paused one has finished, and
     // sends it the audio heard in between.
     void resumeAttempt();
+    void refineAfterLastAttempt();
+    // QtAudioInput::stop() spins a nested event loop for the post-roll, during
+    // which commands and provider signals are dispatched. Callers settle the
+    // session before stopping and recheck it afterwards.
+    void stopAudio();
     void refillReconnectsIfAttemptWasStable();
     bool attemptWasStable() const;
     void deliverFinal(const QString &text);
@@ -180,6 +187,8 @@ private:
     bool m_finishingPausedAttempt = false;
     // Audio heard after a resume while the paused attempt still finishes.
     QList<QByteArray> m_resumeAudio;
+    // Inside stopAudio(); a session start waits until it returns.
+    int m_audioStopDepth = 0;
 };
 
 } // namespace speecher
