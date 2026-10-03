@@ -653,11 +653,13 @@ class DictationEngineTest {
         val clients = mutableListOf<Client>()
         val events = mutableListOf<(SpeechEvent) -> Unit>()
         val commits = mutableListOf<String>()
+        var failConnect = false
         val engine =
             DictationEngine(
                 capture::capture,
                 capture::stop,
                 { _, onEvent ->
+                    if (failConnect) throw IOException("offline")
                     events.add(onEvent)
                     Client().also(clients::add)
                 },
@@ -712,6 +714,31 @@ class DictationEngineTest {
         t.events[1](SpeechEvent.Final("brief"))
         t.events[1](SpeechEvent.Completed)
         assertEquals(listOf("before pause brief"), t.commits)
+    }
+
+    @Test
+    fun `a stream that cannot open while paused keeps the words and waits for the resume`() {
+        val t = PausingEngine()
+        t.engine.start(Provider.Claude)
+        t.events[0](SpeechEvent.Connected)
+        t.events[0](SpeechEvent.Final("before"))
+        t.engine.pause()
+        t.engine.resume()
+        t.hear(7)
+        t.engine.pause()
+        t.failConnect = true
+        t.events[0](SpeechEvent.Final("pause"))
+        t.events[0](SpeechEvent.Completed)
+
+        assertEquals(
+            DictationState.Listening("before pause", "", 0f, paused = true),
+            t.engine.state,
+        )
+        t.failConnect = false
+        t.engine.resume()
+        assertEquals(2, t.clients.size)
+        assertEquals(listOf(7.toByte()), t.clients[1].audio.single().toList())
+        assertFalse(t.clients[1].stopped)
     }
 
     @Test

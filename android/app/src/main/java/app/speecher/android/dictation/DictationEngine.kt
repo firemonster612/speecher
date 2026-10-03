@@ -158,7 +158,11 @@ class DictationEngine(
                 fail(current, FailureReason.SignedOut, "Sign in to continue")
             } catch (_: Exception) {
                 synchronized(this) {
-                    if (isCurrent(current, opening))
+                    if (!isCurrent(current, opening)) return@synchronized
+                    // A stream opened while a pause finishes, after this dictation has streamed:
+                    // a blip ends it like a paused stream that failed, and the words stay.
+                    if (finishingPause && streamed) pausedStreamEnded(current, opened = false)
+                    else
                         streamFailed(
                             current,
                             retryable = true,
@@ -389,14 +393,15 @@ class DictationEngine(
     /**
      * The paused stream ended. What was heard after a resume goes to the next stream: one that
      * keeps listening, or, with the microphone off again, one that ends as it opens and is waited
-     * on like the paused one. Only then does an Insert go ahead.
+     * on like the paused one. Only then does an Insert go ahead. A stream that never [opened]
+     * leaves that audio in [unsent] for the next resume rather than retrying while paused.
      */
-    private fun pausedStreamEnded(current: Int) {
+    private fun pausedStreamEnded(current: Int, opened: Boolean = true) {
         finishingPause = false
         client = null
         unsent.addAll(heardAfterResume)
         heardAfterResume.clear()
-        if (!recording && unsent.isNotEmpty()) {
+        if (opened && !recording && unsent.isNotEmpty()) {
             finishingPause = true
             reopen(current)
         } else if (pendingInsert != null) finishPendingInsert()
