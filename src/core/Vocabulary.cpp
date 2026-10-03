@@ -1,4 +1,5 @@
 #include "core/Vocabulary.h"
+#include "core/VocabularyLimit.h"
 
 #include <QRegularExpression>
 #include <QStringList>
@@ -102,6 +103,58 @@ bool containsVocabularyTerm(const QString &text, const QString &term)
     return false;
 }
 
+bool vocabularyEntryApplies(const VocabularyEntry &entry, const QString &writingProfile)
+{
+    return entry.profiles.isEmpty() || entry.profiles.contains(writingProfile);
+}
+
+bool vocabularyTermExcluded(const QList<VocabularyEntry> &entries,
+                            const QString &term,
+                            const QString &writingProfile)
+{
+    return std::any_of(entries.cbegin(), entries.cend(), [&](const VocabularyEntry &entry) {
+        return entry.term.compare(term.simplified(), Qt::CaseInsensitive) == 0
+            && !vocabularyEntryApplies(entry, writingProfile);
+    });
+}
+
+QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
+                             const QList<LearnedCorrection> &corrections,
+                             const QString &writingProfile)
+{
+    const QList<VocabularyEntry> normalized = normalizeVocabularyEntries(entries);
+    QStringList terms;
+    for (const VocabularyEntry &entry : normalized) {
+        if (entry.keyTerm && (writingProfile.isEmpty() || vocabularyEntryApplies(entry, writingProfile))) {
+            terms.append(entry.term);
+        }
+    }
+    // Corrections sit last, so an over-cap list drops them before any term
+    // the person typed. One whose text is a listed term adds nothing: that
+    // entry's own profiles and Key term decide whether it goes.
+    for (const LearnedCorrection &correction : corrections) {
+        const bool listed = std::any_of(normalized.cbegin(), normalized.cend(), [&](const VocabularyEntry &entry) {
+            return entry.term.compare(correction.corrected.simplified(), Qt::CaseInsensitive) == 0;
+        });
+        if (correction.enabled && !listed && !terms.contains(correction.corrected, Qt::CaseInsensitive)) {
+            terms.append(correction.corrected);
+        }
+    }
+    return VocabularyLimit::limited(terms);
+}
+
+QStringList offeredVocabularyProfiles(const QStringList &ids,
+                                      const QList<WritingProfileSettings> &profiles)
+{
+    QStringList offered;
+    for (const QString &id : ids) {
+        if (!offeredWritingProfile(id, profiles, QString()).isEmpty()) {
+            offered.append(id);
+        }
+    }
+    return offered;
+}
+
 QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &entries)
 {
     QList<VocabularyEntry> normalized;
@@ -113,6 +166,9 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
         }
         entry.frequency = qMax(0, entry.frequency);
         entry.lastUsedMs = qMax<qint64>(0, entry.lastUsedMs);
+        entry.context = entry.context.trimmed();
+        entry.profiles.removeAll(QString());
+        entry.profiles.removeDuplicates();
         if (entry.term.isEmpty()) {
             continue;
         }
@@ -125,11 +181,22 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
             duplicate->starred = duplicate->starred || entry.starred;
             duplicate->frequency = qMax(duplicate->frequency, entry.frequency);
             duplicate->lastUsedMs = qMax(duplicate->lastUsedMs, entry.lastUsedMs);
+            // The copy already listed keeps its Key term, context and
+            // profiles, so an imported row naming the term cannot send it to
+            // the speech service or lift its limit. A context
+            // it lacks comes from the later copy.
+            if (duplicate->context.isEmpty()) {
+                duplicate->context = entry.context;
+            }
         }
     }
+    // Priority only counts for a key term; one whose Key term is off keeps
+    // its Priority stored but takes its place among the rest.
     std::sort(normalized.begin(), normalized.end(), [](const VocabularyEntry &left, const VocabularyEntry &right) {
-        if (left.starred != right.starred) {
-            return left.starred;
+        const bool leftFirst = left.starred && left.keyTerm;
+        const bool rightFirst = right.starred && right.keyTerm;
+        if (leftFirst != rightFirst) {
+            return leftFirst;
         }
         if (left.frequency != right.frequency) {
             return left.frequency > right.frequency;
@@ -141,7 +208,7 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
     });
 
     // Every entry is kept. The service cap applies to the subset sent with a
-    // request (SettingsCodecs::customVocabulary), not to what we store, so a
+    // request (speechVocabulary), not to what we store, so a
     // term that does not fit today is still here when the list gets shorter.
     return normalized;
 }
@@ -168,6 +235,7 @@ QList<VocabularyEntry> parseVocabularyCsv(const QByteArray &csv, QString *error)
     const int lastUsedColumn = hasHeader
         ? column(header, QStringLiteral("last_used_ms"), column(header, QStringLiteral("last_used")))
         : 4;
+    const int contextColumn = hasHeader ? column(header, QStringLiteral("context")) : 5;
 
     QList<VocabularyEntry> entries;
     for (int index = hasHeader ? 1 : 0; index < rows.size(); ++index) {
@@ -185,6 +253,7 @@ QList<VocabularyEntry> parseVocabularyCsv(const QByteArray &csv, QString *error)
             || starred == QStringLiteral("starred");
         entry.frequency = fieldAt(row, frequencyColumn).toInt();
         entry.lastUsedMs = fieldAt(row, lastUsedColumn).toLongLong();
+        entry.context = fieldAt(row, contextColumn);
         entries.append(entry);
     }
     return normalizeVocabularyEntries(entries);

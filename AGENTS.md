@@ -42,7 +42,9 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   Qt Widgets has no badge widget, so `Badge` paints Kirigami.Badge's pill, a
   border in a palette role (Highlight, the frame colour, or the colour
   scheme's NegativeText) with a fifth of it over Base inside, and
-  `BadgeDelegate` paints the same pill in list and table items. All of these
+  `BadgeDelegate` paints the same pill in list and table items, and under an item's text it
+  has the style draw one more line in the PlaceholderText role, such as a vocabulary term's
+  context. All of these
   live in `src/ui/InsightsCharts.cpp`. Home's progress bars use the
   same tint: every bar but the leading one gets a palette whose Highlight and
   Accent are that mix (`makeBar` in `src/ui/HomePage.cpp`). The dictation

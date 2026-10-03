@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher: showing Key term and Priority in the vocabulary table (mockup)</title>
+<style>
+  :root {
+    --window: #eff0f1; --base: #ffffff; --frame: #c6c8ca; --frame-soft: #dcdde0;
+    --text: #232629; --muted: #707d8a; --highlight: #3daee9; --highlight-tint: #dff1fb;
+    --font: "Noto Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--window); font: 13px/1.4 var(--font); color: var(--text); }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 18px; max-width: 1100px; }
+  .grid { display: grid; grid-template-columns: 542px 542px; gap: 28px 32px; }
+  .variant h2 { font-size: 13px; margin: 0 0 2px; }
+  .variant p { margin: 0 0 8px; color: var(--muted); min-height: 36px; }
+  .card { width: 542px; background: var(--base); border: 1px solid var(--frame-soft); border-radius: 6px; padding: 10px 14px 12px; }
+  .help { color: var(--muted); margin: 0 0 6px; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--frame); }
+  th { font-weight: 400; padding: 5px 4px; border-right: 1px solid var(--frame-soft); border-bottom: 1px solid var(--frame); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  th:last-child { border-right: none; }
+  td { padding: 0 6px; height: 44px; border-bottom: 1px solid var(--frame-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  td.term div { overflow: hidden; text-overflow: ellipsis; }
+  .context { color: var(--muted); font-size: 12px; }
+  .muted { color: var(--muted); }
+  .center { text-align: center; }
+  .icon { width: 16px; height: 16px; vertical-align: middle; }
+  .on { color: var(--highlight); } .off { color: #b0b4b8; }
+  .box { width: 16px; height: 16px; border: 1px solid #a6a9ad; border-radius: 3px; background: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; vertical-align: middle; }
+  .box.on { background: var(--highlight); border-color: #2a95cc; }
+  .box.on::after { content: "✓"; }
+  .box.disabled { opacity: .4; }
+  .flags { float: right; display: inline-flex; gap: 6px; margin-left: 6px; }
+  .limit { display: flex; justify-content: space-between; border-top: 1px solid var(--frame-soft); margin-top: 10px; padding-top: 8px; }
+  .reco { color: #2c7a4b; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Showing Key term and Priority in the vocabulary table</h1>
+<p class="lead">Four ways to show the two settings, each in the real card width (30 grid units). The data is the same in each. Jira is a key term that does not fit in what the speech service takes, so it is not sent; Grafana is not a key term. Both settings are still changed in the Add and Edit dialog.</p>
+
+<div class="grid" id="grid"></div>
+
+<template id="mic"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2M5.5 14.5h5"/></svg></template>
+<template id="micFill"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="5.5" y="1.5" width="5" height="8.5" rx="2.5" fill="currentColor"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2M5.5 14.5h5"/></svg></template>
+<template id="star"><svg class="icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.3l1.9 4.1 4.5.5-3.4 3 1 4.4L8 11l-4 2.3 1-4.4-3.4-3 4.5-.5z"/></svg></template>
+
+<script>
+const terms = [
+  { term: "Kubernetes", context: "The container platform, when I talk about clusters, pods or deploys.", key: true, sent: true, priority: true, profiles: "Work, AI coding", source: "Added", uses: 41 },
+  { term: "Aoife Byrne", context: "My manager.", key: true, sent: true, priority: true, profiles: "Work, Email", source: "Added", uses: 18 },
+  { term: "Speecher", context: "", key: true, sent: true, priority: true, profiles: "All", source: "Added", uses: 12 },
+  { term: "PR", context: "Pull request, in code review talk.", key: true, sent: true, priority: false, profiles: "AI coding", source: "Added", uses: 63 },
+  { term: "Jira", context: "The issue tracker.", key: true, sent: false, priority: false, profiles: "All", source: "Added", uses: 2 },
+  { term: "Grafana", context: "", key: false, sent: false, priority: false, profiles: "Work", source: "Imported", uses: 3 },
+];
+const svg = id => document.getElementById(id).innerHTML;
+const termCell = t => `<td class="term"><div>${t.term}</div>${t.context ? `<div class="context">${t.context}</div>` : ""}</td>`;
+const tail = t => `<td>${t.profiles}</td><td>${t.source}</td><td>${t.uses}</td><td>Never</td>`;
+const tailHead = `<th style="width:76px">Profiles</th><th style="width:66px">Source</th><th style="width:42px">Uses</th><th style="width:72px">Last used</th>`;
+const micCell = t => !t.key ? "" : t.sent
+  ? `<span class="on" title="Key term: sent to the speech service">${svg("micFill")}</span>`
+  : `<span class="off" title="Key term, but over the limit: not sent">${svg("mic")}</span>`;
+const starCell = t => t.key && t.priority ? `<span class="on" title="Priority">${svg("star")}</span>` : "";
+const speechText = t => !t.key ? `<span class="muted">Refinement only</span>`
+  : !t.sent ? `<span class="muted">Over the limit</span>`
+  : t.priority ? "Key term, priority" : "Key term";
+
+const variants = [
+  {
+    title: "A. Icon columns",
+    text: "Two narrow columns, as a mail client shows starred and flagged. Microphone: sent to the speech service; faint: a key term the service does not take. Star: priority. Tooltips name them. (Built in the text colour, not the accent drawn here.)",
+    head: `<th style="width:30px" class="center" title="Key term">${svg("micFill")}</th><th style="width:30px" class="center" title="Priority">${svg("star")}</th><th>Term</th>${tailHead}`,
+    row: t => `<td class="center">${micCell(t)}</td><td class="center">${starCell(t)}</td>${termCell(t)}${tail(t)}`,
+  },
+  {
+    title: "B. Checkbox columns",
+    text: "The settings as checkboxes in the table, changed in place as well as in the dialog. Priority is greyed out where Key term is off. Says nothing about the limit.",
+    head: `<th style="width:72px">Key term</th><th style="width:62px">Priority</th><th>Term</th>${tailHead}`,
+    row: t => `<td class="center"><span class="box ${t.key ? "on" : ""}"></span></td><td class="center"><span class="box ${t.priority ? "on" : ""} ${t.key ? "" : "disabled"}"></span></td>${termCell(t)}${tail(t)}`,
+  },
+  {
+    title: "C. A Speech text column",
+    text: "One column of plain text, like Source beside it: \"Key term\", \"Key term, priority\", \"Over the limit\", or \"Refinement only\".",
+    head: `<th>Term</th><th style="width:132px">Speech</th>${tailHead}`,
+    row: t => `${termCell(t)}<td>${speechText(t)}</td>${tail(t)}`,
+  },
+  {
+    title: "D. Icons at the end of the term",
+    text: "The same two icons as A, right-aligned on the term's own line, so they cost no column. Nothing shows for a term that is neither.",
+    head: `<th>Term</th>${tailHead}`,
+    row: t => `<td class="term"><div><span class="flags">${starCell(t)}${micCell(t)}</span>${t.term}</div>${t.context ? `<div class="context">${t.context}</div>` : ""}</td>${tail(t)}`,
+  },
+];
+const grid = document.getElementById("grid");
+for (const v of variants) {
+  const el = document.createElement("section");
+  el.className = "variant";
+  el.innerHTML = `<h2>${v.title}</h2><p>${v.text}</p>
+    <div class="card"><p class="help">Refinement uses the terms for the dictation's Writing Profile. Key terms also go to Claude Voice.</p>
+    <table><thead><tr>${v.head}</tr></thead><tbody>${terms.map(t => `<tr>${v.row(t)}</tr>`).join("")}</tbody></table>
+    <div class="limit"><span>Limit</span><span>6 terms. 4 are key terms, and all are used for refinement.</span></div></div>`;
+  grid.appendChild(el);
+}
+</script>
+</body>
+</html>

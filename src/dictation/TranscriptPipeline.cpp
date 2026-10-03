@@ -55,31 +55,47 @@ QString writingProfileFor(const AppSettings &settings, const Target &target)
                                  writingProfileFromName(settings.refinement.defaultWritingProfile));
 }
 
-// Every stored term in priority order, not the speech request's capped list:
-// the speech service takes a hundred hints, while refinement reads the list as
-// prompt text and can use the rest.
-QStringList refinementVocabulary(const AppSettings &settings)
+// Every stored term for the Writing Profile in priority order, not the speech
+// request's capped list: the speech service takes a hundred hints, while
+// refinement reads the list as prompt text and can use the rest. The terms'
+// contexts go into `context`.
+QStringList refinementVocabulary(const AppSettings &settings,
+                                 const QString &writingProfile,
+                                 QHash<QString, QString> &context)
 {
-    QSet<QString> seen;
+    // The spelling kept for each term, by its case-folded form, so a context
+    // follows its term onto whichever spelling won.
+    QHash<QString, QString> kept;
     QStringList deduplicated;
-    const auto append = [&seen, &deduplicated](const QString &term) {
+    const auto append = [&kept, &deduplicated](const QString &term) {
         const QString cleaned = term.simplified();
         const QString key = cleaned.toCaseFolded();
-        if (!cleaned.isEmpty() && !seen.contains(key)
-            && deduplicated.size() < VocabularyLimit::maxRefinementTerms) {
-            seen.insert(key);
-            deduplicated.append(cleaned);
+        if (cleaned.isEmpty() || kept.contains(key)) {
+            return kept.value(key);
         }
+        if (deduplicated.size() >= VocabularyLimit::maxRefinementTerms) {
+            return QString();
+        }
+        kept.insert(key, cleaned);
+        deduplicated.append(cleaned);
+        return cleaned;
     };
+    const QList<VocabularyEntry> entries = normalizeVocabularyEntries(settings.vocabulary);
     // Learned corrections first: there are few of them, each came from a
-    // real edit, and a full list must not push them out.
+    // real edit, and a full list must not push them out. One whose text is a
+    // term limited to other profiles stays out with it.
     for (const LearnedCorrection &correction : settings.learnedCorrections) {
-        if (correction.enabled) {
+        if (correction.enabled && !vocabularyTermExcluded(entries, correction.corrected, writingProfile)) {
             append(correction.corrected);
         }
     }
-    for (const VocabularyEntry &entry : normalizeVocabularyEntries(settings.vocabulary)) {
-        append(entry.term);
+    for (const VocabularyEntry &entry : entries) {
+        if (vocabularyEntryApplies(entry, writingProfile)) {
+            const QString spelling = append(entry.term);
+            if (!spelling.isEmpty() && !entry.context.isEmpty()) {
+                context.insert(spelling, entry.context);
+            }
+        }
     }
     return deduplicated;
 }
@@ -146,6 +162,13 @@ void TranscriptPipeline::resolveCustomChoices(TranscriptPipelineResult &pipeline
     }
 }
 
+QStringList TranscriptPipeline::speechVocabulary(const AppSettings &settings, const Target &target)
+{
+    return speecher::speechVocabulary(settings.vocabulary,
+                                      settings.learnedCorrections,
+                                      writingProfileFor(settings, target));
+}
+
 RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSettings &settings,
                                                                    const Target &target)
 {
@@ -180,11 +203,12 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
         result.allowPostRefinementBindings = false;
     }
     result.refinementSettings = effectiveRefinementSettings(settings, target);
-    result.refinementVocabulary = refinementVocabulary(settings);
-
     result.refinementContext.target = target;
     result.refinementContext.spokenLanguage = settings.speech.language;
     result.refinementContext.writingProfile = writingProfileFor(settings, target);
+    result.refinementVocabulary = refinementVocabulary(settings,
+                                                       result.refinementContext.writingProfile,
+                                                       result.refinementContext.vocabularyContext);
     result.refinementContext.tone = result.refinementSettings.tone;
     fillUserInstructions(result.refinementContext, result.refinementSettings,
                          writingProfileSettingsFor(result.refinementSettings.writingProfiles,

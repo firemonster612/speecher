@@ -119,6 +119,7 @@ private val states: Map<String, @Composable () -> Unit> =
         "settings" to { SettingsPreview() },
         "settings-signed-out" to { SettingsSignedOutPreview() },
         "settings-refinement" to { SettingsRefinementPreview() },
+        "settings-vocabulary" to { SettingsVocabularyPreview() },
         "button-layouts" to { ButtonLayoutPickerPreview() },
         "panel-sizes" to { PanelSizePickerPreview() },
         "restricted-settings-illustrations" to { RestrictedSettingsIllustrationsPreview() },

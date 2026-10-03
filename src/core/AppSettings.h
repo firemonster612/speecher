@@ -74,9 +74,17 @@ struct BindingRule {
 struct VocabularyEntry {
     QString term;
     QString source = QStringLiteral("manual");
+    // First in line for the speech service among key terms. No longer shown
+    // or edited; a term starred before keeps its place.
     bool starred = false;
     int frequency = 0;
     qint64 lastUsedMs = 0;
+    // What the term means and when it applies, for refinement. Empty for none.
+    QString context;
+    // The Writing Profiles the term is limited to, by id. Empty for every one.
+    QStringList profiles;
+    // Sent to the speech service as a hint. Refinement uses every term.
+    bool keyTerm = true;
 
     bool operator==(const VocabularyEntry &other) const = default;
 };

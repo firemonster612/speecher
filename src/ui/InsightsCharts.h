@@ -118,10 +118,13 @@ private:
 // font: its words from TextRole, its Badge::Tone from ToneRole. Items without
 // words get none. The size hint makes room, so a view sized to its contents
 // widens instead of eliding; in a narrower one the name elides first.
+// DetailRole adds one more line under the text, elided, which the style draws
+// in the placeholder colour, such as a vocabulary term's context.
 class BadgeDelegate final : public QStyledItemDelegate {
 public:
     static constexpr int TextRole = Qt::UserRole + 16;
     static constexpr int ToneRole = Qt::UserRole + 17;
+    static constexpr int DetailRole = Qt::UserRole + 18;
 
     using QStyledItemDelegate::QStyledItemDelegate;
 

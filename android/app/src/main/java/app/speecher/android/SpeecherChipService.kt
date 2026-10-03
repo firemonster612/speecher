@@ -30,6 +30,7 @@ import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.screenCapture
 import app.speecher.android.dictation.screenshotJpeg
 import app.speecher.android.dictation.sharedExecutor
+import app.speecher.android.dictation.targetApp
 import app.speecher.android.dictation.uncoveredRows
 import app.speecher.android.ui.ChipMargin
 import app.speecher.android.ui.ChipSize
@@ -342,6 +343,12 @@ class SpeecherChipService : AccessibilityService() {
         ActiveDictation.state = DictationState.Listening()
         ActiveDictation.end()
         ActiveDictation.observe?.invoke(DictationState.Listening())
+        // Speech connects before the keyboard swap lands and the IME reads the field, so the app
+        // comes from the focused field here, for the speech hints to follow its Writing Profile.
+        ActiveDictation.target =
+            findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.packageName?.let {
+                targetApp(it.toString(), packageManager, passwordFocused)
+            }
         val engine =
             createDictationEngine(
                 this,

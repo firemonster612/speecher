@@ -77,6 +77,10 @@ private slots:
 
         QCOMPARE(VocabularyLimit::summary(vocabularyTermsOf(settings.vocabularyEntries()), QStringLiteral("claude")),
                  QStringLiteral("183 terms. 100 are key terms, and all are used for refinement."));
+        // Only key terms go to the speech service, and one is said in the singular.
+        QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")},
+                                          {QStringLiteral("KWin")}, QStringLiteral("claude")),
+                 QStringLiteral("2 terms. 1 is a key term, and all are used for refinement."));
         QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}, QStringLiteral("claude")),
                  QStringLiteral("2 of 100 key terms"));
         QCOMPARE(VocabularyLimit::summary({QStringLiteral("Speecher"), QStringLiteral("KWin")}, QStringLiteral("codex")),
@@ -191,6 +195,56 @@ private slots:
         QVERIFY(imported.first().starred);
         QCOMPARE(imported.first().source, QStringLiteral("research"));
         QCOMPARE(imported.first().frequency, 4);
+    }
+
+    // A term keeps its context and profiles, a second spelling of it cannot
+    // lift its limit, and a deleted profile leaves every term it limited.
+    void contextAndProfilesPersistMergeAndImport()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        QList<WritingProfileSettings> profiles = defaultWritingProfileSettings();
+        profiles.append({QStringLiteral("custom_standup"), QStringLiteral("balanced"), QStringLiteral("none"),
+                         QString(), QStringLiteral("Standup")});
+        settings.setWritingProfileSettings(profiles);
+        VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
+        kubernetes.context = QStringLiteral("  The container platform.\n");
+        kubernetes.profiles = {QStringLiteral("work"), QStringLiteral("custom_standup")};
+        // As an imported row naming the term would arrive.
+        VocabularyEntry lowercase{QStringLiteral("kubernetes")};
+        VocabularyEntry grafana{QStringLiteral("Grafana")};
+        grafana.profiles = {QStringLiteral("custom_standup")};
+        settings.setVocabularyEntries({kubernetes, lowercase, grafana});
+
+        QList<VocabularyEntry> entries = settings.vocabularyEntries();
+        QCOMPARE(vocabularyTermsOf(entries), (QStringList{QStringLiteral("Grafana"), QStringLiteral("Kubernetes")}));
+        QCOMPARE(entries.at(1).context, QStringLiteral("The container platform."));
+        QCOMPARE(entries.at(1).profiles, (QStringList{QStringLiteral("work"), QStringLiteral("custom_standup")}));
+
+        // Every term saved before Key term existed is one; one turned off
+        // stays off, even when an import names it again.
+        QVERIFY(entries.at(0).keyTerm);
+        entries[0].keyTerm = false;
+        settings.setVocabularyEntries(entries + QList<VocabularyEntry>{{QStringLiteral("grafana")}});
+        QVERIFY(!settings.vocabularyEntries().at(0).keyTerm);
+
+        settings.setWritingProfileSettings(defaultWritingProfileSettings());
+        entries = settings.vocabularyEntries();
+        QCOMPARE(entries.at(0).profiles, QStringList());
+        // Recreated under the same id, the profile starts with no terms.
+        settings.setWritingProfileSettings(profiles);
+        entries = settings.vocabularyEntries();
+        QCOMPARE(entries.at(0).profiles, QStringList());
+        QCOMPARE(entries.at(1).profiles, QStringList{QStringLiteral("work")});
+
+        QString error;
+        const QList<VocabularyEntry> imported = parseVocabularyCsv(
+            QByteArrayLiteral("term,context\n"
+                              "Sev1,\"Incident severity, in on-call chats.\"\n"),
+            &error);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(imported.size(), 1);
+        QCOMPARE(imported.first().context, QStringLiteral("Incident severity, in on-call chats."));
     }
 
     void vocabularyUsageRequiresTermBoundaries()

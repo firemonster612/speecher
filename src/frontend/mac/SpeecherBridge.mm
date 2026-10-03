@@ -60,6 +60,7 @@ using speecher::Capabilities;
 using speecher::CollectionColumn;
 using speecher::CollectionDescriptor;
 using speecher::ColumnKind;
+using speecher::IconCell;
 using speecher::ModelRating;
 using speecher::PaneLayout;
 using speecher::RowKind;
@@ -101,6 +102,10 @@ SpeecherColumnKind bridgedColumnKind(ColumnKind kind)
         return SpeecherColumnKindText;
     case ColumnKind::Choice:
         return SpeecherColumnKindChoice;
+    case ColumnKind::ChoiceSet:
+        return SpeecherColumnKindChoiceSet;
+    case ColumnKind::Icon:
+        return SpeecherColumnKindIcon;
     case ColumnKind::Toggle:
         return SpeecherColumnKindToggle;
     case ColumnKind::ReadOnly:
@@ -161,6 +166,8 @@ id bridgedRecordValue(const QVariant &value)
     case QMetaType::Double:
     case QMetaType::Float:
         return @(value.toDouble());
+    case QMetaType::QStringList:
+        return bridgedStrings(value.toStringList());
     default:
         return value.toString().toNSString();
     }
@@ -177,6 +184,13 @@ QVariant coreRecordValue(id value)
             return QVariant([value doubleValue]);
         }
         return QVariant(static_cast<qlonglong>([value longLongValue]));
+    }
+    if ([value isKindOfClass:[NSArray class]]) {
+        QStringList strings;
+        for (id string in (NSArray *)value) {
+            strings.append(QString::fromNSString([string description]));
+        }
+        return QVariant(strings);
     }
     return QVariant(QString::fromNSString([value description]));
 }
@@ -534,9 +548,24 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSArray<RowOptionModel *> *options;
 @property (nonatomic) BOOL stretch;
 @property (nonatomic) BOOL multiline;
+@property (nonatomic, copy) NSString *placeholder;
+@property (nonatomic) BOOL dialogOnly;
+@property (nonatomic, copy) NSString *help;
+@property (nonatomic, copy) NSString *detailColumn;
+@property (nonatomic, copy) NSString *everyChoice;
+@property (nonatomic, copy) NSString *someChoice;
+@property (nonatomic, copy) NSString *iconId;
 @end
 
 @implementation CollectionColumnModel
+@end
+
+@interface CollectionIconCell ()
+@property (nonatomic) SpeecherIconState state;
+@property (nonatomic, copy) NSString *tooltip;
+@end
+
+@implementation CollectionIconCell
 @end
 
 @interface CollectionModel ()
@@ -545,6 +574,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) SpeecherRecord *blankRecord;
 @property (nonatomic, copy) NSString *addLabel;
 @property (nonatomic, copy) NSString *addDialogTitle;
+@property (nonatomic, copy) NSString *editLabel;
 @property (nonatomic, copy) NSString *deleteLabel;
 @property (nonatomic, copy) NSString *emptyTitle;
 @property (nonatomic, copy) NSString *emptyHelp;
@@ -1258,6 +1288,13 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         model.options = column.options ? [self bridgedOptions:column.options(_state->draft)] : @[];
         model.stretch = column.stretch;
         model.multiline = column.multiline;
+        model.placeholder = column.placeholder.toNSString();
+        model.dialogOnly = column.dialogOnly;
+        model.help = column.help.toNSString();
+        model.detailColumn = column.detailColumn.toNSString();
+        model.everyChoice = column.everyChoice.toNSString();
+        model.someChoice = column.someChoice.toNSString();
+        model.iconId = column.iconId.toNSString();
         [columns addObject:model];
     }
     CollectionModel *model = [[CollectionModel alloc] init];
@@ -1266,6 +1303,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.blankRecord = bridgedRecord(collection.blankRecord);
     model.addLabel = collection.addLabel.toNSString();
     model.addDialogTitle = collection.addDialogTitle.toNSString();
+    model.editLabel = collection.editLabel.toNSString();
     model.deleteLabel = collection.deleteLabel.toNSString();
     model.emptyTitle = collection.emptyTitle.toNSString();
     model.emptyHelp = collection.emptyHelp.toNSString();
@@ -1530,38 +1568,75 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return result;
 }
 
-- (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
+- (const CollectionColumn *)column:(NSString *)columnId inRowId:(NSString *)rowId
 {
     const SettingsRow *row = [self rowWithId:rowId];
     const CollectionDescriptor *collection = row ? [self collectionForRow:*row] : nullptr;
-    if (!collection || !collection->badges) {
+    if (!collection) {
+        return nullptr;
+    }
+    const QString id = QString::fromNSString(columnId);
+    for (const CollectionColumn &column : collection->columns) {
+        if (column.id == id) {
+            return &column;
+        }
+    }
+    return nullptr;
+}
+
+- (NSString *)choiceSetTextForColumn:(NSString *)columnId
+                             inRowId:(NSString *)rowId
+                                 ids:(NSArray<NSString *> *)ids
+{
+    const CollectionColumn *column = [self column:columnId inRowId:rowId];
+    if (!column || column->kind != ColumnKind::ChoiceSet) {
+        return @"";
+    }
+    QStringList coreIds;
+    for (NSString *optionId in ids) {
+        coreIds.append(QString::fromNSString(optionId));
+    }
+    return speecher::choiceSetText(*column, coreIds, _state->draft).toNSString();
+}
+
+- (NSArray<CollectionIconCell *> *)iconsForColumn:(NSString *)columnId
+                                          inRowId:(NSString *)rowId
+                                          records:(NSArray<SpeecherRecord *> *)records
+{
+    const CollectionColumn *column = [self column:columnId inRowId:rowId];
+    if (!column || !column->icons) {
         return @[];
     }
-    NSMutableArray<NSString *> *badges = [NSMutableArray array];
-    for (const QString &badge : collection->badges(coreRecords(records), _state->draft)) {
-        [badges addObject:badge.toNSString()];
+    NSMutableArray<CollectionIconCell *> *cells = [NSMutableArray array];
+    for (const IconCell &cell : column->icons(coreRecords(records), _state->draft)) {
+        CollectionIconCell *bridged = [[CollectionIconCell alloc] init];
+        switch (cell.state) {
+        case IconCell::State::None:
+            bridged.state = SpeecherIconStateNone;
+            break;
+        case IconCell::State::Shown:
+            bridged.state = SpeecherIconStateShown;
+            break;
+        case IconCell::State::Faint:
+            bridged.state = SpeecherIconStateFaint;
+            break;
+        }
+        bridged.tooltip = cell.tooltip.toNSString();
+        [cells addObject:bridged];
     }
-    return badges;
+    return cells;
 }
 
 - (NSString *)tooltipForColumn:(NSString *)columnId
                       inRowId:(NSString *)rowId
                        record:(SpeecherRecord *)record
 {
-    const SettingsRow *row = [self rowWithId:rowId];
-    const CollectionDescriptor *collection = row ? [self collectionForRow:*row] : nullptr;
-    if (!collection) {
+    const CollectionColumn *column = [self column:columnId inRowId:rowId];
+    if (!column) {
         return @"";
     }
-    const QString id = QString::fromNSString(columnId);
-    for (const CollectionColumn &column : collection->columns) {
-        if (column.id != id) {
-            continue;
-        }
-        return column.recordTooltip ? column.recordTooltip(coreRecord(record)).toNSString()
-                                    : column.tooltip.toNSString();
-    }
-    return @"";
+    return column->recordTooltip ? column->recordTooltip(coreRecord(record)).toNSString()
+                                 : column->tooltip.toNSString();
 }
 
 - (const AppSettings &)draft

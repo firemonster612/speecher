@@ -382,14 +382,20 @@ private fun AddInSheet(action: String, form: @Composable ColumnScope.(close: () 
     }
 }
 
+/** Cancel and the sheet's [confirm] action, which is enabled once the form [canConfirm]. */
 @Composable
-private fun SheetActions(canAdd: Boolean, onCancel: () -> Unit, onAdd: () -> Unit) {
+internal fun SheetActions(
+    canConfirm: Boolean,
+    onCancel: () -> Unit,
+    confirm: String = "Add",
+    onConfirm: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
     ) {
         TextButton(onCancel) { Text("Cancel") }
-        Button(onAdd, enabled = canAdd) { Text("Add") }
+        Button(onConfirm, enabled = canConfirm) { Text(confirm) }
     }
 }
 

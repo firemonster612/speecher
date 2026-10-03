@@ -51,6 +51,7 @@
 #include <QPlainTextEdit>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QListWidget>
 #include <QRadioButton>
 #include <QScopeGuard>
 #include <QScreen>
@@ -1066,7 +1067,7 @@ private slots:
                                            QStringLiteral("Speecher")}, QStringLiteral("claude")));
     }
 
-    void starringATermMakesItAKeyTermAtOnce()
+    void unmarkingAKeyTermLetsTheNextOneIn()
     {
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
@@ -1081,17 +1082,29 @@ private slots:
 
         auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
         QVERIFY(table);
-        const auto badge = [table](int row) {
-            return table->item(row, 1)->data(BadgeDelegate::TextRole).toString();
+        // The first column is the Key term icon. The offscreen platform has
+        // no icon theme, so the tooltips say which state each cell is in.
+        const auto sent = [table](int row) {
+            return table->item(row, 0)->toolTip().startsWith(QStringLiteral("Key term: sent"));
         };
-        QCOMPARE(badge(0), QStringLiteral("Key term"));
-        QCOMPARE(badge(100), QString());
+        QVERIFY(sent(0));
+        QVERIFY(!sent(100));
+        // A screen reader reads the same words.
+        QCOMPARE(table->item(0, 0)->data(Qt::AccessibleTextRole).toString(), table->item(0, 0)->toolTip());
 
-        // Starring the last term pulls it into the key terms and pushes the
-        // 100th out, before anything is saved.
-        table->item(100, 0)->setCheckState(Qt::Checked);
-        QCOMPARE(badge(100), QStringLiteral("Key term"));
-        QCOMPARE(badge(99), QString());
+        // Turning the first term's Key term off lets the 101st in, before
+        // anything is saved. The dialog has no Priority.
+        table->selectRow(0);
+        page->findChild<QPushButton *>(QStringLiteral("editVocabularyEntries"))->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QVERIFY(!dialog->findChild<QCheckBox *>(QStringLiteral("starred")));
+        auto *keyTerm = dialog->findChild<QCheckBox *>(QStringLiteral("keyTerm"));
+        QVERIFY(keyTerm->isChecked());
+        keyTerm->setChecked(false);
+        acceptRecordDialog(dialog);
+        QVERIFY(!sent(0));
+        QVERIFY(sent(100));
     }
 
     void addingAVocabularyTermSurvivesTheSettingsRoundTrip()
@@ -1150,6 +1163,54 @@ private slots:
         QVERIFY(dialog);
         QCOMPARE(dialog->windowTitle(), QStringLiteral("Speecher"));
         QCOMPARE(page->findChildren<QDialog *>(QStringLiteral("collectionRecordDialog")).size(), 1);
+    }
+
+    // Edit… opens the selected term; its profiles can be limited, but not to
+    // none, and its context is kept with it.
+    void aTermsContextAndProfilesAreEditedInItsDialog()
+    {
+        ProviderRegistry providers;
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("vocabulary"), *platform, providers);
+        AppSettings settings;
+        settings.vocabulary = {{QStringLiteral("Kubernetes")}};
+        page->load(settings);
+
+        auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
+        auto *edit = page->findChild<QPushButton *>(QStringLiteral("editVocabularyEntries"));
+        QVERIFY(table && edit);
+        QVERIFY(!edit->isEnabled());
+        table->selectRow(0);
+        QVERIFY(edit->isEnabled());
+        edit->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        QCOMPARE(dialog->windowTitle(), QStringLiteral("Kubernetes"));
+        // The Key term box says what it does.
+        QVERIFY(!dialog->findChild<QLabel *>(QStringLiteral("keyTermHelp"))->text().isEmpty());
+        dialog->findChild<QPlainTextEdit *>(QStringLiteral("context"))
+            ->setPlainText(QStringLiteral("The container platform."));
+        QList<QRadioButton *> choices = dialog->findChild<QWidget *>(QStringLiteral("profiles"))
+                                            ->findChildren<QRadioButton *>();
+        QCOMPARE(choices.size(), 2);
+        QVERIFY(choices.at(0)->isChecked());
+        auto *options = dialog->findChild<QListWidget *>(QStringLiteral("profilesOptions"));
+        QVERIFY(!options->isEnabled());
+        choices.at(1)->setChecked(true);
+        QPushButton *ok = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok);
+        QVERIFY(options->isEnabled());
+        QVERIFY(!ok->isEnabled());
+        options->item(0)->setCheckState(Qt::Checked);
+        QCOMPARE(options->item(0)->text(), QStringLiteral("Work"));
+        QVERIFY(ok->isEnabled());
+        acceptRecordDialog(dialog);
+
+        QCOMPARE(table->item(0, 2)->text(), QStringLiteral("Work"));
+        AppSettings applied;
+        page->appendToDraft(applied);
+        QCOMPARE(applied.vocabulary.first().context, QStringLiteral("The container platform."));
+        QCOMPARE(applied.vocabulary.first().profiles, QStringList{QStringLiteral("work")});
     }
 
     void aToneIsAddedAndEditedInItsDialog()

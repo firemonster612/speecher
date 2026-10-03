@@ -185,6 +185,10 @@ bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeO
     if (options.spokenLanguage) {
         m_batchSettings.speech.language = *options.spokenLanguage;
     }
+    // The page's profile stands in for the one a target would have implied,
+    // for the terms that apply as for everything else.
+    m_batchSettings.refinement.sessionWritingProfile = writingProfileFromName(options.writingProfile);
+    m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, Target{});
     if (!options.applyVocabulary) {
         m_batchSettings.speech.vocabulary.clear();
         m_batchSettings.vocabulary.clear();

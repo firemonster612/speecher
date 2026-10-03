@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QList>
+#include <QHash>
 #include <QString>
 
 #include <optional>
@@ -178,6 +179,9 @@ struct RefinementContext {
     QString profileInstructions;
     // The writing profile's output language; empty keeps the spoken one.
     QString outputLanguage;
+    // What a vocabulary term means and when it applies, by term, for the
+    // terms that have a context.
+    QHash<QString, QString> vocabularyContext;
     // The session's Spoken Language. English, or empty, adds no rule.
     QString spokenLanguage;
     // Replaces the built-in dictation rules when not blank.

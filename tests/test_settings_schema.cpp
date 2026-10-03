@@ -1123,23 +1123,31 @@ private slots:
         settings.speech.providerId = QStringLiteral("local");
         QCOMPARE(limit.value(settings).toString(), QStringLiteral("1 term, used for refinement"));
 
-        // The badges follow the terms the speech request is cut from: the
-        // starred one is a key term even at the bottom, and takes a slot, so
-        // the 100th unstarred term is left out.
+        // The Key term icon follows the terms the speech request is cut from:
+        // the starred one is sent even at the bottom, and takes a slot, so
+        // the 100th unstarred term is faint. A term that is not a key term
+        // has none.
         settings.speech.providerId = QStringLiteral("claude");
         QList<QVariantMap> shown;
         for (int index = 0; index < 101; ++index) {
             shown.append({{QStringLiteral("term"), QStringLiteral("term%1").arg(index, 3, 10, QLatin1Char('0'))}});
         }
         shown.append({{QStringLiteral("term"), QStringLiteral("late")}, {QStringLiteral("starred"), true}});
-        QStringList badges = row.collection.badges(shown, settings);
-        QCOMPARE(badges.size(), 102);
-        QCOMPARE(badges.first(), QStringLiteral("Key term"));
-        QCOMPARE(badges.at(98), QStringLiteral("Key term"));
-        QCOMPARE(badges.at(99), QString());
-        QCOMPARE(badges.last(), QStringLiteral("Key term"));
+        shown.append({{QStringLiteral("term"), QStringLiteral("refined")}, {QStringLiteral("keyTerm"), false}});
+        const auto column = [&row](const QString &id) {
+            return *std::find_if(row.collection.columns.cbegin(), row.collection.columns.cend(),
+                                 [&id](const CollectionColumn &column) { return column.id == id; });
+        };
+        const QList<IconCell> sent = column(QStringLiteral("keyTermIcon")).icons(shown, settings);
+        QCOMPARE(sent.size(), 103);
+        QCOMPARE(sent.first().state, IconCell::State::Shown);
+        QCOMPARE(sent.at(98).state, IconCell::State::Shown);
+        QCOMPARE(sent.at(99).state, IconCell::State::Faint);
+        QCOMPARE(sent.at(101).state, IconCell::State::Shown);
+        QCOMPARE(sent.last().state, IconCell::State::None);
+        // A speech service that takes no key terms sends none of them.
         settings.speech.providerId = QStringLiteral("codex");
-        QCOMPARE(row.collection.badges(shown, settings).first(), QString());
+        QCOMPARE(column(QStringLiteral("keyTermIcon")).icons(shown, settings).first().state, IconCell::State::Faint);
 
     }
 

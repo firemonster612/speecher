@@ -165,6 +165,9 @@ jobs:
           defaults write com.io-github-firemonster612.speecher updates.lastRunVersion -string "$number"
           defaults write com.io-github-firemonster612.speecher updates.lastRunBuildNumber -int "$build"
           defaults delete com.io-github-firemonster612.speecher updates.pendingWhatsNewVersion 2>/dev/null || true
+          # Vocabulary terms with context and profile limits, as on Linux and Windows.
+          defaults write com.io-github-firemonster612.speecher stt.vocabularyEntries -string \
+            "$(cat docs/vocabulary-context-mockup/seed-vocabulary.json)"
 
       - name: Grab Home and General
         run: |
@@ -426,6 +429,11 @@ jobs:
           # snippet, and What's New with notes pending, whose nightly bullets
           # link their pull requests.
           $root = "HKCU:\Software\io.github.firemonster612\speecher"
+          # Vocabulary terms with context and profile limits, as on Linux and
+          # macOS. Left in place for the pages grabbed below.
+          New-Item -Path "$root\stt" -Force | Out-Null
+          New-ItemProperty -Path "$root\stt" -Name vocabularyEntries -PropertyType String -Force `
+            -Value (Get-Content -Raw docs/vocabulary-context-mockup/seed-vocabulary.json).Trim() | Out-Null
           New-Item -Path "$root\bindings" -Force | Out-Null
           New-ItemProperty -Path "$root\bindings" -Name rules -PropertyType String -Force `
             -Value '[{"phrase":"sign off","replacement":"Thanks,\nEnzo\nSpeecher"}]' | Out-Null

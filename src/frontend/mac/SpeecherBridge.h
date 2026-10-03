@@ -28,6 +28,11 @@ typedef NS_ENUM(NSInteger, SpeecherRowKind) {
 typedef NS_ENUM(NSInteger, SpeecherColumnKind) {
     SpeecherColumnKindText,
     SpeecherColumnKindChoice,
+    // Any number of the options, held as an array of their ids; none means all.
+    SpeecherColumnKindChoiceSet,
+    // An icon per record that says something about it; it holds no value of
+    // the record's and is never a field in the sheet.
+    SpeecherColumnKindIcon,
     SpeecherColumnKindToggle,
     SpeecherColumnKindReadOnly,
 };
@@ -48,12 +53,38 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSString *columnId;
 @property (nonatomic, readonly, copy) NSString *title;
 @property (nonatomic, readonly) SpeecherColumnKind kind;
-// Choice columns only.
+// Choice and ChoiceSet columns only.
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *options;
 // The column that takes the leftover width; the others size to content.
 @property (nonatomic, readonly) BOOL stretch;
 // Text columns only: the value may hold several lines.
 @property (nonatomic, readonly) BOOL multiline;
+// Text columns only: an example shown in an empty field of the sheet.
+@property (nonatomic, readonly, copy) NSString *placeholder;
+// A field of the sheet that adds or edits a record, but not a column of the table.
+@property (nonatomic, readonly) BOOL dialogOnly;
+// Said under the field in the sheet.
+@property (nonatomic, readonly, copy) NSString *help;
+// Text columns only: the column whose value the cell shows as a muted second line.
+@property (nonatomic, readonly, copy) NSString *detailColumn;
+// ChoiceSet columns only: the sheet's two choices, every option or the ticked ones.
+@property (nonatomic, readonly, copy) NSString *everyChoice;
+@property (nonatomic, readonly, copy) NSString *someChoice;
+// Icon columns only: the schema's platform-neutral icon ("microphone", "star").
+@property (nonatomic, readonly, copy) NSString *iconId;
+@end
+
+// What an Icon column shows for one record (speecher::IconCell).
+typedef NS_ENUM(NSInteger, SpeecherIconState) {
+    SpeecherIconStateNone,
+    SpeecherIconStateShown,
+    // The icon in the secondary style.
+    SpeecherIconStateFaint,
+};
+
+@interface CollectionIconCell : NSObject
+@property (nonatomic, readonly) SpeecherIconState state;
+@property (nonatomic, readonly, copy) NSString *tooltip;
 @end
 
 // A table of records with typed columns. Everything about it that does not
@@ -66,6 +97,9 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 // Empty on a collection nothing may be added to by hand.
 @property (nonatomic, readonly, copy) NSString *addLabel;
 @property (nonatomic, readonly, copy) NSString *addDialogTitle;
+// Opens the selected record in the add sheet, titled after it; empty where
+// records are only edited in place.
+@property (nonatomic, readonly, copy) NSString *editLabel;
 // Deletes the selection with no confirmation; Undo delete puts it back.
 @property (nonatomic, readonly, copy) NSString *deleteLabel;
 // What an empty editor says; empty on a collection that always has records.
@@ -232,10 +266,15 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 - (CollectionImportResult *)recordsImportedFrom:(NSData *)data
                                            into:(NSArray<SpeecherRecord *> *)records
                                        forRowId:(NSString *)rowId;
-// The pill beside each record's stretch column, empty for none, for these
-// records as they stand and the draft's other settings.
-- (NSArray<NSString *> *)badgesFor:(NSArray<SpeecherRecord *> *)records forRowId:(NSString *)rowId
-    NS_SWIFT_NAME(badges(for:forRowId:));
+// An Icon column's cell for each of these records, as they stand with the
+// draft's other settings.
+- (NSArray<CollectionIconCell *> *)iconsForColumn:(NSString *)columnId
+                                          inRowId:(NSString *)rowId
+                                          records:(NSArray<SpeecherRecord *> *)records;
+// What a ChoiceSet cell says for these option ids, speecher::choiceSetText.
+- (NSString *)choiceSetTextForColumn:(NSString *)columnId
+                             inRowId:(NSString *)rowId
+                                 ids:(NSArray<NSString *> *)ids;
 // What a cell says on hover, which a learned correction answers per record.
 - (NSString *)tooltipForColumn:(NSString *)columnId
                       inRowId:(NSString *)rowId

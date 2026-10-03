@@ -7,6 +7,7 @@
 #include "core/BindingProcessor.h"
 #include "core/CliToolDiscovery.h"
 #include "core/OutputMethod.h"
+#include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/VocabularySettingsCodec.h"
@@ -322,7 +323,9 @@ QStringList SettingsCodecs::customVocabulary() const
 {
     QStringList terms;
     for (const VocabularyEntry &entry : vocabularyEntries()) {
-        terms.append(entry.term);
+        if (entry.keyTerm) {
+            terms.append(entry.term);
+        }
     }
     return VocabularyLimit::limited(terms);
 }
@@ -336,14 +339,25 @@ void SettingsCodecs::setCustomVocabulary(const QStringList &value)
     setVocabularyEntries(entries);
 }
 
+// Terms lose the profiles the settings no longer hold, on the way in and out,
+// so a profile recreated under a deleted one's id does not inherit its terms.
+static QList<VocabularyEntry> withOfferedProfiles(QList<VocabularyEntry> entries,
+                                                  const QList<WritingProfileSettings> &profiles)
+{
+    for (VocabularyEntry &entry : entries) {
+        entry.profiles = offeredVocabularyProfiles(entry.profiles, profiles);
+    }
+    return entries;
+}
+
 QList<VocabularyEntry> SettingsCodecs::vocabularyEntries() const
 {
-    return VocabularySettingsCodec::load(m_settings);
+    return withOfferedProfiles(VocabularySettingsCodec::load(m_settings), writingProfileSettings());
 }
 
 void SettingsCodecs::setVocabularyEntries(const QList<VocabularyEntry> &entries)
 {
-    VocabularySettingsCodec::store(m_settings, entries);
+    VocabularySettingsCodec::store(m_settings, withOfferedProfiles(entries, writingProfileSettings()));
 }
 
 void SettingsCodecs::recordVocabularyUsage(const QString &text)
@@ -689,6 +703,9 @@ void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSetting
     }
     m_settings.setValue(SettingsKeys::WritingProfiles,
                         QJsonDocument(array).toJson(QJsonDocument::Compact));
+    // A deleted profile leaves the stored terms it limited now, not only
+    // when they are next read.
+    setVocabularyEntries(vocabularyEntries());
 }
 
 QList<WritingProfileOverride> SettingsCodecs::writingProfileOverrides() const
@@ -1320,7 +1337,6 @@ AppSettings SettingsCodecs::snapshot() const
     settings.speech.local = localSpeechSettings();
     settings.speech.claudeAuthMode = anthropicAuthMode();
     settings.speech.codexAuthMode = openAiAuthMode();
-    settings.speech.vocabulary = customVocabulary();
     settings.speech.claudeCredentialsPath = claudeCredentialsPath();
     settings.speech.claudeEndpointBase = claudeEndpointBase();
     settings.speech.claudeVoicePath = claudeVoicePath();
@@ -1335,18 +1351,8 @@ AppSettings SettingsCodecs::snapshot() const
     settings.correctionLearningEnabled = correctionLearningEnabled();
     settings.insightsEnabled = insightsEnabled();
     settings.learnedCorrections = learnedCorrections();
-    for (const LearnedCorrection &correction : settings.learnedCorrections) {
-        if (!correction.enabled) {
-            continue;
-        }
-        if (!settings.speech.vocabulary.contains(correction.corrected, Qt::CaseInsensitive)) {
-            settings.speech.vocabulary.append(correction.corrected);
-        }
-    }
-    // The corrections joined after customVocabulary() applied the caps, so the
-    // combined request list must be capped again. Corrections sit last, so an
-    // over-cap list drops them before any term the person typed.
-    settings.speech.vocabulary = VocabularyLimit::limited(settings.speech.vocabulary);
+    // A dictation narrows this to its Writing Profile once it knows the target.
+    settings.speech.vocabulary = speechVocabulary(settings.vocabulary, settings.learnedCorrections, QString());
 
     settings.refinement.providerId = refinementProvider();
     settings.refinement.style = refinementStyle();

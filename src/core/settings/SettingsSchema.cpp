@@ -47,6 +47,10 @@ const QString kStarColumn = QStringLiteral("starred");
 const QString kTermColumn = QStringLiteral("term");
 const QString kUsesColumn = QStringLiteral("uses");
 const QString kLastUsedColumn = QStringLiteral("lastUsed");
+const QString kContextColumn = QStringLiteral("context");
+const QString kKeyTermColumn = QStringLiteral("keyTerm");
+const QString kKeyTermIconColumn = QStringLiteral("keyTermIcon");
+const QString kProfilesColumn = QStringLiteral("profiles");
 const QString kHeardColumn = QStringLiteral("original");
 const QString kCorrectedColumn = QStringLiteral("corrected");
 const QString kCorrectedAppColumn = QStringLiteral("applicationId");
@@ -2116,6 +2120,18 @@ QStringList vocabularyTerms(const QList<VocabularyEntry> &entries)
     return terms;
 }
 
+// The terms marked to go to the speech service, in the order they would.
+QStringList vocabularyKeyTerms(const QList<VocabularyEntry> &entries)
+{
+    QStringList terms;
+    for (const VocabularyEntry &entry : entries) {
+        if (entry.keyTerm) {
+            terms.append(entry.term);
+        }
+    }
+    return terms;
+}
+
 // Where a term came from, as the Source column says it. The stored id stays
 // under kSourceIdKey, since the column only shows it.
 QString vocabularySourceLabel(const QString &source)
@@ -2142,6 +2158,9 @@ QList<QVariantMap> vocabularyRecords(const QList<VocabularyEntry> &entries)
             {kUsesColumn, qMax(0, entry.frequency)},
             {kLastUsedColumn, lastUsedLabel(entry.lastUsedMs)},
             {kLastUsedMsKey, entry.lastUsedMs},
+            {kContextColumn, entry.context},
+            {kProfilesColumn, entry.profiles},
+            {kKeyTermColumn, entry.keyTerm},
         });
     }
     return records;
@@ -2160,7 +2179,10 @@ QList<VocabularyEntry> vocabularyEntries(const QList<QVariantMap> &records)
                         record.value(kSourceIdKey).toString(),
                         record.value(kStarColumn).toBool(),
                         record.value(kUsesColumn).toInt(),
-                        record.value(kLastUsedMsKey).toLongLong()});
+                        record.value(kLastUsedMsKey).toLongLong(),
+                        record.value(kContextColumn).toString(),
+                        record.value(kProfilesColumn).toStringList(),
+                        record.value(kKeyTermColumn, true).toBool()});
     }
     return normalizeVocabularyEntries(entries);
 }
@@ -2169,9 +2191,60 @@ SettingsPage vocabularyPage()
 {
     CollectionDescriptor terms;
     terms.identityColumn = kTermColumn;
+    CollectionColumn term{kTermColumn, QStringLiteral("Term"), ColumnKind::Text, {}, true};
+    term.detailColumn = kContextColumn;
+    CollectionColumn context{kContextColumn, QStringLiteral("Context"), ColumnKind::Text};
+    context.multiline = true;
+    context.dialogOnly = true;
+    context.placeholder = QStringLiteral("What it means and when it applies, such as "
+                                         "\"the container platform, when I talk about clusters or deploys\".");
+    context.help = QStringLiteral("Refinement reads this to decide when the words you said mean this term.");
+    CollectionColumn profiles{kProfilesColumn, QStringLiteral("Profiles"), ColumnKind::ChoiceSet,
+                              [](const AppSettings &settings) {
+                                  return writingProfileChoices(settings.refinement.writingProfiles);
+                              }};
+    profiles.everyLabel = QStringLiteral("All");
+    profiles.everyChoice = QStringLiteral("Every Writing Profile");
+    profiles.someChoice = QStringLiteral("Only these Writing Profiles:");
+    profiles.help = QStringLiteral("Under any other profile, neither refinement nor the speech service gets this term.");
+    CollectionColumn keyTerm{kKeyTermColumn, QStringLiteral("Key term"), ColumnKind::Toggle};
+    keyTerm.dialogOnly = true;
+    keyTerm.help = QStringLiteral("Sent to the speech service as a hint, so it hears the term. "
+                                  "Refinement uses every term either way.");
+    // The table shows it as an icon before the term, as a mail client shows
+    // a flag.
+    CollectionColumn keyTermIcon{kKeyTermIconColumn, QStringLiteral("Key term"), ColumnKind::Icon};
+    keyTermIcon.iconId = QStringLiteral("microphone");
+    keyTermIcon.icons = [](const QList<QVariantMap> &records, const AppSettings &settings) {
+        // The same entries the settings would store, so the icons follow the
+        // priority order the speech request is cut from.
+        const QString &provider = settings.speech.providerId;
+        const bool takesKeyTerms = provider == QStringLiteral("claude") || provider == QStringLiteral("endpoint");
+        const QStringList hints = VocabularyLimit::speechKeyterms(
+            vocabularyKeyTerms(vocabularyEntries(records)), provider);
+        QList<IconCell> cells;
+        for (const QVariantMap &record : records) {
+            if (!record.value(kKeyTermColumn, true).toBool()) {
+                cells.append({IconCell::State::None, QStringLiteral("Not a key term: refinement only.")});
+            } else if (hints.contains(record.value(kTermColumn).toString().simplified(), Qt::CaseInsensitive)) {
+                cells.append({IconCell::State::Shown, QStringLiteral("Key term: sent to the speech service as a hint.")});
+            } else if (takesKeyTerms) {
+                // Past what the service takes, or spelt in characters it
+                // does not accept, as Claude Voice refuses non-Latin-1 ones.
+                cells.append({IconCell::State::Faint,
+                              QStringLiteral("Key term, but the speech service does not take it, so it is not sent.")});
+            } else {
+                cells.append({IconCell::State::Faint, QStringLiteral("Key term, but this speech service takes none.")});
+            }
+        }
+        return cells;
+    };
     terms.columns = {
-        {kStarColumn, QStringLiteral("Key term"), ColumnKind::Toggle},
-        {kTermColumn, QStringLiteral("Term"), ColumnKind::Text, {}, true},
+        keyTermIcon,
+        term,
+        keyTerm,
+        context,
+        profiles,
         {kSourceColumn, QStringLiteral("Source"), ColumnKind::ReadOnly},
         {kUsesColumn, QStringLiteral("Uses"), ColumnKind::ReadOnly},
         {kLastUsedColumn, QStringLiteral("Last used"), ColumnKind::ReadOnly},
@@ -2185,29 +2258,18 @@ SettingsPage vocabularyPage()
         settings.vocabulary = vocabularyEntries(records);
     };
     terms.blankRecord = {{kStarColumn, false},
+                         {kKeyTermColumn, true},
                          {kTermColumn, QString()},
                          {kSourceColumn, vocabularySourceLabel(QStringLiteral("manual"))},
                          {kSourceIdKey, QStringLiteral("manual")},
                          {kUsesColumn, 0},
                          {kLastUsedColumn, lastUsedLabel(0)},
-                         {kLastUsedMsKey, qint64(0)}};
-    terms.badges = [](const QList<QVariantMap> &records, const AppSettings &settings) {
-        QStringList badges(records.size());
-        // The same entries the settings would store, so the badges follow
-        // the priority order the speech request is cut from.
-        const QList<VocabularyEntry> entries = vocabularyEntries(records);
-        const QStringList hints = VocabularyLimit::speechKeyterms(vocabularyTerms(entries),
-                                                                  settings.speech.providerId);
-        for (int index = 0; index < records.size(); ++index) {
-            if (hints.contains(records.at(index).value(kTermColumn).toString().simplified(),
-                               Qt::CaseInsensitive)) {
-                badges[index] = QStringLiteral("Key term");
-            }
-        }
-        return badges;
-    };
+                         {kLastUsedMsKey, qint64(0)},
+                         {kContextColumn, QString()},
+                         {kProfilesColumn, QStringList()}};
     terms.addLabel = QStringLiteral("Add");
     terms.addDialogTitle = QStringLiteral("New term");
+    terms.editLabel = QStringLiteral("Edit…");
     terms.emptyTitle = QStringLiteral("No vocabulary terms");
     terms.emptyHelp = QStringLiteral("Add names and words the speech service should spell your way.");
     terms.supportsImport = {
@@ -2227,12 +2289,13 @@ SettingsPage vocabularyPage()
     limit.label = QStringLiteral("Limit");
     limit.kind = RowKind::Info;
     limit.value = [](const AppSettings &settings) {
+        const QList<VocabularyEntry> entries = normalizeVocabularyEntries(settings.vocabulary);
         return QVariant(VocabularyLimit::summary(
-            vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary)),
-            settings.speech.providerId));
+            vocabularyTerms(entries), vocabularyKeyTerms(entries), settings.speech.providerId));
     };
 
-    const QString help = QStringLiteral("Refinement uses every term. Key terms also go to the speech service.");
+    const QString help = QStringLiteral("Refinement uses the terms for the dictation's Writing Profile. "
+                                        "Key terms also go to the speech service.");
     // The view names it, so the table needs no label of its own.
     SettingsRow entries = collectionRow(QStringLiteral("vocabularyEntries"),
                                         QString(),
@@ -2245,7 +2308,7 @@ SettingsPage vocabularyPage()
             : provider == QStringLiteral("endpoint")
             ? QStringLiteral("Key terms also go to the Custom Endpoint, as its prompt.")
             : QStringLiteral("This speech service takes no key terms.");
-        return QStringLiteral("Refinement uses every term. ") + speech;
+        return QStringLiteral("Refinement uses the terms for the dictation's Writing Profile. ") + speech;
     };
 
     return {
@@ -3462,6 +3525,17 @@ QString customChoiceId(const QString &name, const QStringList &taken)
         id = base + QStringLiteral("_%1").arg(suffix);
     }
     return id;
+}
+
+QString choiceSetText(const CollectionColumn &column, const QStringList &ids, const AppSettings &settings)
+{
+    QStringList labels;
+    for (const RowOption &option : column.options(settings)) {
+        if (ids.contains(option.id)) {
+            labels.append(option.label);
+        }
+    }
+    return labels.isEmpty() ? column.everyLabel : labels.join(QStringLiteral(", "));
 }
 
 QList<RowOption> writingProfileChoices(const QList<WritingProfileSettings> &profiles)
