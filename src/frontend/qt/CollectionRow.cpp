@@ -92,9 +92,12 @@ public:
         item.icon = QIcon();
         item.features &= ~QStyleOptionViewItem::HasDecoration;
         const QWidget *widget = option.widget;
-        (widget ? widget->style() : QApplication::style())->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
-        icon.paint(painter, item.rect, Qt::AlignCenter,
-                   item.state & QStyle::State_Selected ? QIcon::Selected : QIcon::Normal);
+        QStyle *style = widget ? widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
+        // At the style's small icon size, as the header draws it.
+        const int size = style->pixelMetric(QStyle::PM_SmallIconSize, &item, widget);
+        icon.paint(painter, QStyle::alignedRect(item.direction, Qt::AlignCenter, QSize(size, size), item.rect),
+                   Qt::AlignCenter, item.state & QStyle::State_Selected ? QIcon::Selected : QIcon::Normal);
     }
 };
 
