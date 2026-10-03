@@ -744,7 +744,7 @@ bool ApplicationController::sessionActive() const
 {
     const DictationState state = m_session->state();
     return state == DictationState::Starting || state == DictationState::Listening
-        || state == DictationState::Paused;
+        || state == DictationState::Paused || m_session->startPending();
 }
 
 // One binding drives every activation mode; the mode decides what a press and

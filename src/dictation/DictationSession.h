@@ -43,6 +43,8 @@ public:
 
     DictationState state() const;
     QString stateName() const;
+    // A start that arrived while the microphone was stopping and waits for it.
+    bool startPending() const;
     QString lastMessage() const;
     // Why the last session failed, kept after it goes back to idle so Home
     // can still say it; empty once the next session starts.
@@ -125,6 +127,7 @@ private:
     // sends it the audio heard in between.
     void resumeAttempt();
     void refineAfterLastAttempt();
+    void attemptEndedWhileStopping();
     // QtAudioInput::stop() spins a nested event loop for the post-roll, during
     // which commands and provider signals are dispatched. Callers settle the
     // session before stopping and recheck it afterwards.
@@ -187,8 +190,13 @@ private:
     bool m_finishingPausedAttempt = false;
     // Audio heard after a resume while the paused attempt still finishes.
     QList<QByteArray> m_resumeAudio;
-    // Inside stopAudio(); a session start waits until it returns.
+    // Inside stopAudio(); a session start waits in m_pendingStart until it
+    // returns, unless a stop or cancel drops it first.
     int m_audioStopDepth = 0;
+    std::optional<SessionOverrides> m_pendingStart;
+    // The last attempt ended while the microphone was stopping; the post-roll
+    // since waits in m_resumeAudio for stopListening().
+    bool m_attemptEndedDuringStop = false;
 };
 
 } // namespace speecher

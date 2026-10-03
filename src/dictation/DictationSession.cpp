@@ -18,9 +18,6 @@ namespace {
 constexpr int kSpeechReconnectsPerSession = 2;
 // How long a speech attempt must stream before its end counts as healthy.
 constexpr int kDefaultStableAttemptMs = 10000;
-// How long a start waits before trying again while the microphone stops.
-constexpr int kStartRetryMs = 20;
-
 QString partMissingWarning(const SpeechFailure &failure)
 {
     return failure.phase == QStringLiteral("finalize")
@@ -102,7 +99,7 @@ DictationSession::DictationSession(SettingsStore *settings,
         if (!m_transcriber || !m_sessionSettings || !acceptsAudio) {
             return;
         }
-        if (m_finishingPausedAttempt) {
+        if (m_finishingPausedAttempt || m_attemptEndedDuringStop) {
             m_resumeAudio.append(pcm);
             return;
         }
@@ -187,7 +184,12 @@ DictationState DictationSession::state() const
 
 QString DictationSession::stateName() const
 {
-    return dictationStateName(m_state);
+    return m_pendingStart ? dictationStateName(DictationState::Starting) : dictationStateName(m_state);
+}
+
+bool DictationSession::startPending() const
+{
+    return m_pendingStart.has_value();
 }
 
 QString DictationSession::lastTranscript() const
@@ -223,7 +225,9 @@ void DictationSession::toggleWith(const SessionOverrides &overrides)
 void DictationSession::toggleSession(const SessionOverrides &overrides)
 {
     qInfo().noquote() << "toggle requested state=" + stateName();
-    if (m_state == DictationState::Idle || m_state == DictationState::Error) {
+    if (m_pendingStart) {
+        stopListening();
+    } else if (m_state == DictationState::Idle || m_state == DictationState::Error) {
         startSession(overrides);
     } else if (m_state == DictationState::Starting
                || m_state == DictationState::Listening
@@ -250,8 +254,9 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     }
     if (m_audioStopDepth > 0) {
         // A start that lands inside the microphone's stop (a cancel's nested
-        // event loop) would open it only for the stop to close it again.
-        QTimer::singleShot(kStartRetryMs, this, [this, overrides] { startSession(overrides); });
+        // event loop) would open it only for the stop to close it again. It
+        // waits for the stop instead, and a stop or cancel meanwhile drops it.
+        m_pendingStart = overrides;
         return;
     }
 
@@ -279,6 +284,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_speechReconnectsLeft = kSpeechReconnectsPerSession;
     m_target = {};
     m_finishingPausedAttempt = false;
+    m_attemptEndedDuringStop = false;
     m_resumeAudio.clear();
     m_listeningMs = 0;
     setState(DictationState::Starting);
@@ -401,6 +407,7 @@ void DictationSession::prepareProviders(quint64 generation)
 
 void DictationSession::stopListening()
 {
+    m_pendingStart.reset();
     if (m_state == DictationState::Error) {
         ++m_generation;
         emit popupHideRequested();
@@ -448,11 +455,19 @@ void DictationSession::stopListening()
     }
     setState(DictationState::Stopping, m_lastMessage);
     qInfo() << "stopListening transcriptLength=" << m_transcript->text().size();
-    resumePausedMedia();
     const quint64 generation = m_generation;
-    // Stopping still takes the post-roll that arrives while the microphone stops.
+    // Stopping still takes the post-roll that arrives while the microphone
+    // stops. Paused media resumes only after it, so the post-roll does not
+    // pick it up from the speakers.
     stopAudio();
+    resumePausedMedia();
     if (generation != m_generation || m_state != DictationState::Stopping) {
+        return;
+    }
+    // The last attempt ended during the stop and the post-roll since waits:
+    // it gets an attempt of its own before refinement.
+    if (std::exchange(m_attemptEndedDuringStop, false)) {
+        refineAfterLastAttempt();
         return;
     }
     // A paused attempt still finishing was already told; its end, or the next
@@ -467,6 +482,7 @@ void DictationSession::stopListening()
 // the popup goes away with the process.
 void DictationSession::cancelForShutdown()
 {
+    m_pendingStart.reset();
     if (m_state == DictationState::Idle) {
         return;
     }
@@ -478,6 +494,7 @@ void DictationSession::cancelForShutdown()
 
 void DictationSession::cancel()
 {
+    m_pendingStart.reset();
     if (m_state == DictationState::Idle || m_state == DictationState::Delivering) {
         return;
     }
@@ -515,6 +532,7 @@ void DictationSession::discard()
     }
     m_refinementGeneration = 0;
     m_finishingPausedAttempt = false;
+    m_attemptEndedDuringStop = false;
     m_resumeAudio.clear();
     m_completionTimer->stop();
     clearScreenshotContext();
@@ -570,6 +588,7 @@ void DictationSession::resume()
     // Listening, with the next attempt open, before the microphone starts:
     // its first samples arrive while it starts.
     setState(DictationState::Listening);
+    const bool openedEmptyAttempt = !m_finishingPausedAttempt && m_resumeAudio.isEmpty();
     if (!m_finishingPausedAttempt) {
         resumeAttempt();
     }
@@ -589,6 +608,16 @@ void DictationSession::resume()
     if (!started) {
         m_audioGeneration = 0;
         qWarning().noquote() << "audio restart after pause failed message=" + audioError;
+        if (openedEmptyAttempt) {
+            // Nothing reached the attempt this resume opened: let it go and
+            // deliver what the pause kept, as a stop while paused would.
+            m_transcriber->cancelAttempt(m_attemptId);
+            ++m_attemptId;
+            setState(DictationState::Stopping, m_lastMessage);
+            resumePausedMedia();
+            refineAfterLastAttempt();
+            return;
+        }
         stopListening();
     }
 }
@@ -620,6 +649,26 @@ void DictationSession::stopAudio()
     ++m_audioStopDepth;
     m_audio->stop();
     --m_audioStopDepth;
+    if (m_audioStopDepth == 0 && m_pendingStart) {
+        // After the caller has settled the session it stopped the microphone for.
+        QTimer::singleShot(0, this, [this] {
+            if (const auto overrides = std::exchange(m_pendingStart, std::nullopt)) {
+                startSession(*overrides);
+            }
+        });
+    }
+}
+
+// In Stopping, the last attempt before refinement ended. While the microphone
+// is still stopping its post-roll keeps arriving, so stopListening() takes
+// over once the stop returns.
+void DictationSession::attemptEndedWhileStopping()
+{
+    if (m_audioStopDepth > 0) {
+        m_attemptEndedDuringStop = true;
+        return;
+    }
+    refineAfterLastAttempt();
 }
 
 void DictationSession::setState(DictationState state, const QString &message, const PopupErrorAction &fix)
@@ -946,7 +995,7 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
             return;
         }
         if (m_state == DictationState::Stopping) {
-            refineAfterLastAttempt();
+            attemptEndedWhileStopping();
             return;
         }
     }
@@ -977,11 +1026,11 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         m_speechWarning = partMissingWarning(failure);
         if (m_state == DictationState::Listening) {
             m_transcriber->cancelAttempt(m_attemptId);
-            resumePausedMedia();
             setState(DictationState::Stopping, failure.message);
             emit popupFrozenChanged(true);
             const quint64 generation = m_generation;
             stopAudio();
+            resumePausedMedia();
             if (generation == m_generation && m_state == DictationState::Stopping) {
                 beginRefinement(m_generation);
             }
@@ -1118,7 +1167,7 @@ void DictationSession::connectSpeechTranscriber(SpeechTranscriber *transcriber)
         }
         const bool pausedAttempt = std::exchange(m_finishingPausedAttempt, false);
         if (m_state == DictationState::Stopping) {
-            refineAfterLastAttempt();
+            attemptEndedWhileStopping();
         } else if (m_state == DictationState::Listening) {
             pausedAttempt ? resumeAttempt() : rollOverSpeechAttempt();
         }
