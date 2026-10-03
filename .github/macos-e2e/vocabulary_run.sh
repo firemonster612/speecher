@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
-# Vocabulary terms with context and Writing Profile limits, driven through the
-# settings window's Terms view: add Sev1 limited to Work and AI coding, then
-# edit Kubernetes down to Work. AX finds the controls; clicks and typing are
-# real input events. Screenshots are screencapture of the real screen (the
+# Vocabulary terms with context, Writing Profile limits, Key term and
+# Priority, driven through the settings window's Terms view: add Sev1 as a
+# priority key term limited to Work and AI coding (Priority disables while Key
+# term is off), then edit Kubernetes down to Work. AX finds the controls;
+# clicks and typing are real input events. Screenshots are screencapture of the real screen (the
 # backing-store grab has no sheets), and the whole walk is filmed as frames
 # assembled into an mp4. Scratch-branch-only.
 #
@@ -34,13 +35,15 @@ SEV1_CONTEXT='Incident severity level, in on-call and incident chats.'
 # The controls by order. Accessory bar: Add, Remove, Edit…, Import CSV…,
 # Undo delete. Sheet buttons: Cancel, then Add or OK. Sheet radio buttons:
 # Every Writing Profile, Only these Writing Profiles:. Sheet checkboxes: Key
-# term, then Work, Email, Personal, AI coding, Other, Standup notes.
+# term, Priority, then Work, Email, Personal, AI coding, Other, Standup notes.
 BAR_ADD=0
 BAR_EDIT=2
 SHEET_CONFIRM=1
 RADIO_ONLY=1
-CHECK_WORK=1
-CHECK_AI_CODING=4
+CHECK_KEY_TERM=0
+CHECK_PRIORITY=1
+CHECK_WORK=2
+CHECK_AI_CODING=5
 mkdir -p "$SHOTS" "$FRAMES" "$EVIDENCE/ax"
 : >"$LOG"
 errors=()
@@ -84,6 +87,18 @@ dump() {
 }
 
 value_is() { [[ "$(ax value "$1" "$2" '' "$3")" == "$4" ]]; }
+priority_enabled_is() { [[ "$(ax enabled sheet AXCheckBox '' "$CHECK_PRIORITY")" == "$1" ]]; }
+pill() { [[ "$1" == *"| $2 |"* ]] && echo yes || echo no; }
+# badges_are TERM KEY PRIORITY: whether TERM's row shows the Key term and
+# Priority pills as KEY and PRIORITY (yes or no) say.
+badges_are() {
+  local row
+  row="$(ax row "$1") |"
+  [[ "$(pill "$row" 'Key term') $(pill "$row" Priority)" == "$2 $3" ]]
+}
+expect_badges() {
+  badges_are "$@" || fail "$1's row does not show Key term=$2 Priority=$3: $(ax row "$1")"
+}
 sheets_are() { [[ "$(ax sheets)" == "$1" ]]; }
 edit_enabled() { [[ "$(ax enabled window unnamed '' "$BAR_EDIT")" == true ]]; }
 
@@ -148,7 +163,8 @@ if isinstance(stored, bytes):
     stored = stored.decode()
 for entry in json.loads(stored):
     if entry.get("term") == term:
-        print(json.dumps({"context": entry.get("context", ""), "profiles": entry.get("profiles", [])}))
+        print(json.dumps({"context": entry.get("context", ""), "profiles": entry.get("profiles", []),
+                          "starred": entry.get("starred", False), "keyTerm": entry.get("keyTerm", True)}))
 ' "$1"
 }
 
@@ -223,6 +239,12 @@ row="$(ax row Kubernetes)"
 log "Kubernetes row: $row"
 [[ "$row" == *"| $KUBERNETES_CONTEXT |"* && "$row" == *"| Work, AI coding |"* ]] \
   || fail "the Kubernetes row does not show its context line and Work, AI coding"
+# Seeded: Kubernetes, Aoife Byrne and Speecher have priority; Grafana is no key term.
+expect_badges Kubernetes yes yes
+expect_badges 'Aoife Byrne' yes yes
+expect_badges Speecher yes yes
+expect_badges PR yes no
+expect_badges Grafana no no
 [[ "$(ax enabled window unnamed '' "$BAR_EDIT")" == false ]] \
   || fail "Edit… is not in the bar, or is enabled with nothing selected"
 shot table
@@ -234,6 +256,23 @@ if activate window unnamed "$BAR_ADD" sheets_are 1; then
   dump sheet add-sheet-open
   type_into 0 Sev1 || fail "could not type the term Sev1"
   type_into 1 "$SEV1_CONTEXT" || fail "could not type Sev1's context"
+  value_is sheet AXCheckBox "$CHECK_KEY_TERM" 1 || fail "a new term is not a key term"
+  value_is sheet AXCheckBox "$CHECK_PRIORITY" 0 || fail "a new term already has priority"
+  activate sheet AXCheckBox "$CHECK_PRIORITY" value_is sheet AXCheckBox "$CHECK_PRIORITY" 1 \
+    || fail "could not tick Priority"
+  activate sheet AXCheckBox "$CHECK_KEY_TERM" value_is sheet AXCheckBox "$CHECK_KEY_TERM" 0 \
+    || fail "could not untick Key term"
+  wait_until 3 priority_enabled_is false || fail "Priority stayed enabled with Key term off"
+  xy="$(ax find sheet AXCheckBox '' "$CHECK_PRIORITY")"
+  # shellcheck disable=SC2086
+  [[ -n "$xy" ]] && "$TOOL" click $xy
+  sleep 1
+  value_is sheet AXCheckBox "$CHECK_PRIORITY" 1 || fail "a click changed the disabled Priority box"
+  dump sheet add-sheet-key-term-off
+  shot add-sheet-key-term-off
+  activate sheet AXCheckBox "$CHECK_KEY_TERM" value_is sheet AXCheckBox "$CHECK_KEY_TERM" 1 \
+    || fail "could not tick Key term again"
+  wait_until 3 priority_enabled_is true || fail "Priority stayed disabled with Key term on"
   activate sheet AXRadioButton "$RADIO_ONLY" value_is sheet AXRadioButton "$RADIO_ONLY" 1 \
     || fail "could not choose 'Only these Writing Profiles:'"
   activate sheet AXCheckBox "$CHECK_WORK" value_is sheet AXCheckBox "$CHECK_WORK" 1 \
@@ -252,7 +291,8 @@ if activate window unnamed "$BAR_ADD" sheets_are 1; then
   log "Sev1 row: $row"
   [[ "$row" == *"| $SEV1_CONTEXT |"* && "$row" == *"| Work, AI coding |"* ]] \
     || fail "the table's Sev1 row does not show its context and Work, AI coding: $row"
-  wait_until 20 saved_is Sev1 "{\"context\": \"$SEV1_CONTEXT\", \"profiles\": [\"work\", \"ai_coding\"]}" \
+  expect_badges Sev1 yes yes
+  wait_until 20 saved_is Sev1 "{\"context\": \"$SEV1_CONTEXT\", \"profiles\": [\"work\", \"ai_coding\"], \"starred\": true, \"keyTerm\": true}" \
     || fail "Sev1 was not saved with its context and Work, AI coding: $(saved_entry Sev1)"
   shot table-with-sev1
 else
@@ -279,6 +319,9 @@ elif activate window unnamed "$BAR_EDIT" sheets_are 1; then
   value_is sheet AXRadioButton "$RADIO_ONLY" 1 || fail "the edit sheet is not on 'Only these Writing Profiles:'"
   value_is sheet AXCheckBox "$CHECK_WORK" 1 || fail "Work is not ticked in the edit sheet"
   value_is sheet AXCheckBox "$CHECK_AI_CODING" 1 || fail "AI coding is not ticked in the edit sheet"
+  value_is sheet AXCheckBox "$CHECK_KEY_TERM" 1 || fail "Key term is not ticked in the edit sheet"
+  value_is sheet AXCheckBox "$CHECK_PRIORITY" 1 || fail "Priority is not ticked in the edit sheet"
+  priority_enabled_is true || fail "Priority is disabled in the edit sheet of a key term"
   shot edit-sheet
   title="$(sheet_title)"
   log "edit sheet title: $title"
@@ -293,7 +336,7 @@ elif activate window unnamed "$BAR_EDIT" sheets_are 1; then
   log "Kubernetes row: $row"
   [[ "$row" == *"| Work |"* && "$row" != *"AI coding"* ]] \
     || fail "the table's Kubernetes row does not read Work alone: $row"
-  wait_until 20 saved_is Kubernetes "{\"context\": \"$KUBERNETES_CONTEXT\", \"profiles\": [\"work\"]}" \
+  wait_until 20 saved_is Kubernetes "{\"context\": \"$KUBERNETES_CONTEXT\", \"profiles\": [\"work\"], \"starred\": true, \"keyTerm\": true}" \
     || fail "Kubernetes was not saved limited to Work: $(saved_entry Kubernetes)"
   shot table-after-edit
 else
