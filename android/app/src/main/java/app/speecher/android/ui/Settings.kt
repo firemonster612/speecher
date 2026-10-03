@@ -515,17 +515,19 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                     Arrangement.spacedBy(8.dp),
                     Alignment.CenterVertically,
                 ) {
+                    // Without case, as the desktop matches: Claude keeps one
+                    // spelling of a word an earlier release let in twice.
+                    val sent = keyTerms.any { it.equals(word.term, ignoreCase = true) }
                     IconSlot(
                         R.drawable.ic_mic,
                         when {
                             !word.keyTerm -> null
-                            word.term in keyTerms ->
-                                "Key term: sent to the speech service as a hint."
+                            sent -> "Key term: sent to the speech service as a hint."
                             settings.transcriptionProvider == Provider.Claude ->
                                 "Key term, but the speech service does not take it, so it is not sent."
                             else -> "Key term, but this speech service takes none."
                         },
-                        faint = word.term !in keyTerms,
+                        faint = !sent,
                     )
                     // Priority only means anything for a key term.
                     IconSlot(
