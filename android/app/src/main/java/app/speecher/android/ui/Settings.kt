@@ -5,8 +5,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -488,43 +491,11 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
     var editing by remember { mutableStateOf<VocabularyWord?>(null) }
     settings.vocabulary.forEach { word ->
         ListItem(
-            headlineContent = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(word.term)
-                    if (word.term in keyTerms) {
-                        Badge(
-                            Modifier.padding(start = 8.dp),
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ) {
-                            Text("Key term")
-                        }
-                    }
-                }
-            },
+            headlineContent = { Text(word.term) },
             supportingContent = {
                 Column {
-                    // Priority only means anything for a key term.
-                    val priority = word.priority && word.keyTerm
-                    if (word.context.isNotEmpty() || priority) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (priority) {
-                                Badge(
-                                    Modifier.padding(end = 8.dp)
-                                        .border(
-                                            1.dp,
-                                            MaterialTheme.colorScheme.outline,
-                                            CircleShape,
-                                        ),
-                                    containerColor = Color.Transparent,
-                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                ) {
-                                    Text("Priority")
-                                }
-                            }
-                            Text(word.context, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
+                    if (word.context.isNotEmpty())
+                        Text(word.context, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (word.profiles.isEmpty()) Text("All profiles")
                     else
                         Text(
@@ -533,15 +504,45 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                         )
                 }
             },
+            // The Speech column: Key term over Priority, centred in the row. ListItem tops the
+            // trailing slot of a three-line row, so the slot fills the row's height instead.
             trailingContent = {
-                IconButton({ onChange(settings.copy(vocabulary = settings.vocabulary - word)) }) {
-                    Icon(
-                        painterResource(R.drawable.ic_close),
-                        contentDescription = "Remove ${word.term}",
-                    )
+                Row(Modifier.fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (word.term in keyTerms) {
+                            Badge(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ) {
+                                Text("Key term")
+                            }
+                        }
+                        // Priority only means anything for a key term.
+                        if (word.priority && word.keyTerm) {
+                            Badge(
+                                Modifier.border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.outline,
+                                    CircleShape,
+                                ),
+                                containerColor = Color.Transparent,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ) {
+                                Text("Priority")
+                            }
+                        }
+                    }
+                    IconButton({
+                        onChange(settings.copy(vocabulary = settings.vocabulary - word))
+                    }) {
+                        Icon(
+                            painterResource(R.drawable.ic_close),
+                            contentDescription = "Remove ${word.term}",
+                        )
+                    }
                 }
             },
-            modifier = Modifier.clickable { editing = word },
+            modifier = Modifier.height(IntrinsicSize.Min).clickable { editing = word },
             colors = rowColors(),
         )
     }
