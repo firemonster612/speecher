@@ -54,6 +54,11 @@ ax() {
   return "$status"
 }
 
+# A System Events click at screen point X Y.
+click_at() {
+  osascript -e "tell application \"System Events\" to click at {$1, $2}" >>"$LOG" 2>&1
+}
+
 shot() {
   shot_index=$((shot_index + 1))
   local file
@@ -69,16 +74,26 @@ dump() {
 value_is() { [[ "$(ax value "$1" "$2" "$3" "${5:-0}")" == "$4" ]]; }
 sheets_are() { [[ "$(ax sheets)" == "$1" ]]; }
 
-# button SCOPE LABEL INDEX: "ROLE<TAB>LABEL<TAB>INDEX" for the button titled
-# LABEL, or, where the runner's AX tree leaves SwiftUI's buttons unnamed, the
-# INDEXth unnamed button.
-button() {
-  if ax find "$1" AXButton "$2" 0 >/dev/null; then
-    printf 'AXButton\t%s\t0\n' "$2"
+# control SCOPE ROLE LABEL INDEX: "ROLE|LABEL|INDEX" for the control
+# labelled LABEL or, where the runner's AX tree leaves SwiftUI's controls
+# unnamed, the INDEXth of its role (of the unnamed ones, for a button).
+control() {
+  if ax find "$1" "$2" "$3" 0 >/dev/null; then
+    printf '%s|%s|0\n' "$2" "$3"
   else
-    log "no button labelled '$2' in $1; using unnamed button #$3"
-    printf 'unnamed\t\t%s\n' "$3"
+    log "no $2 labelled '$3' in $1; using #$4 by order" >&2
+    [[ "$2" == AXButton ]] && printf 'unnamed||%s\n' "$4" || printf '%s||%s\n' "$2" "$4"
   fi
+}
+
+# profile_controls: the sheet's "Only these" radio button and the Work and AI
+# coding checkboxes, as only_*, work_* and ai_*. By order, the checkboxes are
+# Key term, then the profiles: Work, Email, Personal, AI coding, Other.
+profile_controls() {
+  IFS='|' read -r only_role only_label only_index \
+    < <(control sheet AXRadioButton 'Only these Writing Profiles:' 1)
+  IFS='|' read -r work_role work_label work_index < <(control sheet AXCheckBox Work 1)
+  IFS='|' read -r ai_role ai_label ai_index < <(control sheet AXCheckBox 'AI coding' 4)
 }
 
 wait_until() {
@@ -98,7 +113,7 @@ activate() {
   shift 4
   xy="$(ax find "$scope" "$role" "$label" "$index")" || { log "no $role '$label' in $scope"; return 1; }
   # shellcheck disable=SC2086
-  ax click $xy >/dev/null
+  click_at $xy
   wait_until 3 "$@" && { log "'$label': System Events click worked"; return 0; }
   ax press "$scope" "$role" "$label" "$index" >/dev/null
   wait_until 3 "$@" && { log "'$label': AXPress worked"; return 0; }
@@ -114,7 +129,7 @@ type_into() {
   local scope="$1" index="$2" text="$3" xy
   xy="$(ax find "$scope" input '' "$index")" || { log "no text input #$index"; return 1; }
   # shellcheck disable=SC2086
-  ax click $xy >/dev/null
+  click_at $xy
   sleep 0.4
   ax type "$text" >/dev/null
   wait_until 3 value_is "$scope" input '' "\"$text\"" "$index" && return 0
@@ -213,8 +228,8 @@ dump window window-start
   || fail "the Profiles column does not read 'Work, AI coding' for Kubernetes"
 [[ "$(ax hastext window "$KUBERNETES_CONTEXT")" == yes ]] \
   || fail "Kubernetes' context line is not in the table"
-IFS=$'\t' read -r add_role add_label add_index < <(button window Add 0)
-IFS=$'\t' read -r edit_role edit_label edit_index < <(button window 'Edit*' 2)
+IFS='|' read -r add_role add_label add_index < <(control window AXButton Add 0)
+IFS='|' read -r edit_role edit_label edit_index < <(control window AXButton 'Edit*' 2)
 edit_enabled() { [[ "$(ax enabled window "$edit_role" "$edit_label" "$edit_index")" == true ]]; }
 ax find window "$edit_role" "$edit_label" "$edit_index" >/dev/null \
   || fail "the accessory bar has no Edit… button"
@@ -228,16 +243,18 @@ if activate window "$add_role" "$add_label" "$add_index" sheets_are 1; then
   [[ "$(ax hastext sheet 'New term')" == yes ]] || fail "the add sheet is not titled New term"
   type_into sheet 0 Sev1 || fail "could not type the term Sev1"
   type_into sheet 1 "$SEV1_CONTEXT" || fail "could not type Sev1's context"
-  activate sheet AXRadioButton 'Only these Writing Profiles:' 0 \
-    value_is sheet AXRadioButton 'Only these Writing Profiles:' 1 \
+  profile_controls
+  activate sheet "$only_role" "$only_label" "$only_index" \
+    value_is sheet "$only_role" "$only_label" 1 "$only_index" \
     || fail "could not choose 'Only these Writing Profiles:'"
-  activate sheet AXCheckBox Work 0 value_is sheet AXCheckBox Work 1 || fail "could not tick Work"
-  activate sheet AXCheckBox 'AI coding' 0 value_is sheet AXCheckBox 'AI coding' 1 \
-    || fail "could not tick AI coding"
+  activate sheet "$work_role" "$work_label" "$work_index" \
+    value_is sheet "$work_role" "$work_label" 1 "$work_index" || fail "could not tick Work"
+  activate sheet "$ai_role" "$ai_label" "$ai_index" \
+    value_is sheet "$ai_role" "$ai_label" 1 "$ai_index" || fail "could not tick AI coding"
   sleep 0.5
   dump sheet add-sheet-filled
   shot add-sheet
-  IFS=$'\t' read -r role label index < <(button sheet Add -1)
+  IFS='|' read -r role label index < <(control sheet AXButton Add -1)
   activate sheet "$role" "$label" "$index" sheets_are 0 || fail "the sheet's Add did not close it"
   sleep 1
   row="$(ax row Sev1)"
@@ -256,7 +273,7 @@ fi
 
 xy="$(ax rowof Kubernetes)"
 # shellcheck disable=SC2086
-[[ -n "$xy" ]] && ax click $xy >/dev/null
+[[ -n "$xy" ]] && click_at $xy
 if ! wait_until 3 edit_enabled; then
   log "clicking the Kubernetes row did not select it; trying AXSelected, then a CGEvent click"
   ax selectrow Kubernetes >/dev/null
@@ -271,16 +288,17 @@ elif activate window "$edit_role" "$edit_label" "$edit_index" sheets_are 1; then
   [[ "$(ax hastext sheet Kubernetes)" == yes ]] || fail "the edit sheet is not titled Kubernetes"
   value_is sheet input '' '"Kubernetes"' 0 || fail "the edit sheet's term field is not Kubernetes"
   value_is sheet input '' "\"$KUBERNETES_CONTEXT\"" 1 || fail "the edit sheet does not show Kubernetes' context"
-  value_is sheet AXRadioButton 'Only these Writing Profiles:' 1 \
+  profile_controls
+  value_is sheet "$only_role" "$only_label" 1 "$only_index" \
     || fail "the edit sheet is not on 'Only these Writing Profiles:'"
-  value_is sheet AXCheckBox Work 1 || fail "Work is not ticked in the edit sheet"
-  value_is sheet AXCheckBox 'AI coding' 1 || fail "AI coding is not ticked in the edit sheet"
+  value_is sheet "$work_role" "$work_label" 1 "$work_index" || fail "Work is not ticked in the edit sheet"
+  value_is sheet "$ai_role" "$ai_label" 1 "$ai_index" || fail "AI coding is not ticked in the edit sheet"
   shot edit-sheet
-  activate sheet AXCheckBox 'AI coding' 0 value_is sheet AXCheckBox 'AI coding' 0 \
-    || fail "could not untick AI coding"
+  activate sheet "$ai_role" "$ai_label" "$ai_index" \
+    value_is sheet "$ai_role" "$ai_label" 0 "$ai_index" || fail "could not untick AI coding"
   sleep 0.5
   shot edit-sheet-unticked
-  IFS=$'\t' read -r role label index < <(button sheet OK -1)
+  IFS='|' read -r role label index < <(control sheet AXButton OK -1)
   activate sheet "$role" "$label" "$index" sheets_are 0 || fail "the sheet's OK did not close it"
   sleep 1
   row="$(ax row Kubernetes)"

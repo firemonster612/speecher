@@ -109,7 +109,10 @@ function rowShowing(text) {
         if (axAttr(table, 'AXDescription') === 'Sidebar') continue;
         for (const row of table.rows()) {
             const cells = row.entireContents().map(describe);
-            if (cells.some(cell => cell.value === text)) return { row, cells };
+            if (cells.some(cell => cell.value === text)) {
+                const clip = describe(axAttr(table, 'AXParent') || table);
+                return { row, cells, right: clip.position[0] + clip.size[0] };
+            }
         }
     }
     throw new Error(`no table row shows ${text}`);
@@ -161,18 +164,16 @@ function run(argv) {
         return rowShowing(args[0]).cells
             .filter(cell => typeof cell.value === 'string' && cell.value !== '')
             .map(cell => cell.value).join(' | ');
-    // rowof TERM: the centre of the row's last static text (a read-only cell,
-    // away from the editable term field).
+    // rowof TERM: the centre of the row's last static text still in view (a
+    // read-only cell, away from the editable term field).
     case 'rowof': {
-        const { row, cells } = rowShowing(args[0]);
-        const texts = cells.filter(cell => cell.role === 'AXStaticText' && cell.size && cell.size[0] > 0);
+        const { row, cells, right } = rowShowing(args[0]);
+        const texts = cells.filter(cell => cell.role === 'AXStaticText' && cell.size
+                                   && cell.size[0] > 0 && centre(cell)[0] < right - 4);
         return centre(texts.length ? texts[texts.length - 1] : describe(row)).join(' ');
     }
     case 'selectrow':
         rowShowing(args[0]).row.selected = true;
-        return 'ok';
-    case 'click':
-        se.click({ at: [Number(args[0]), Number(args[1])] });
         return 'ok';
     case 'type':
         for (const character of args[0]) {
