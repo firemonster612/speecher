@@ -1189,6 +1189,9 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (const AppSettings &)draft;
 @end
 
+// One of a collection's per-record pill lists: its badges or detail badges.
+using RecordPills = decltype(&CollectionDescriptor::badges);
+
 @implementation SettingsSchemaModel {
     SchemaState *_state;
 }
@@ -1564,8 +1567,8 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return [self pills:&CollectionDescriptor::detailBadges ofRecords:records forRowId:rowId];
 }
 
-// One of a collection's per-record pill lists, for these records.
-- (NSArray<NSString *> *)pills:(decltype(&CollectionDescriptor::badges))which
+// Those pills for these records.
+- (NSArray<NSString *> *)pills:(RecordPills)which
                      ofRecords:(NSArray<SpeecherRecord *> *)records
                       forRowId:(NSString *)rowId
 {
