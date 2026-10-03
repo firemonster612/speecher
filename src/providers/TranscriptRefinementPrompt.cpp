@@ -355,14 +355,15 @@ static void appendOutputLanguageRule(QStringList &parts, const RefinementContext
                  .arg(language);
 }
 
-// Keeps a dictation in the language it was spoken in. Nothing for English, so
-// an English prompt is exactly the built-in one. It yields to the output
-// language rule, which comes after it.
+// The language rules add nothing for English, so an English prompt is
+// exactly the built-in one.
 static bool spokenOffEnglish(const RefinementContext &context)
 {
     return !context.spokenLanguage.isEmpty() && context.spokenLanguage != QStringLiteral("en");
 }
 
+// Keeps a dictation in the language it was spoken in. It yields to the output
+// language rule, which comes after it.
 static void appendSpokenLanguageRule(QStringList &parts, const RefinementContext &context)
 {
     if (!spokenOffEnglish(context)) {
