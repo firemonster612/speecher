@@ -18,6 +18,24 @@ function axAttr(element, name) {
     try { return element.attributes.byName(name).value(); } catch (error) { return null; }
 }
 
+// Every element under ROOT, depth first, each addressed by index. System
+// Events' entire contents names its elements by title, so siblings sharing one
+// (the sheet's profile checkboxes are all "Profiles") resolve to the first.
+function walk(root) {
+    const found = [];
+    const visit = element => {
+        let count = 0;
+        try { count = element.uiElements.length; } catch (error) { return; }
+        for (let index = 0; index < count; index++) {
+            const child = element.uiElements[index];
+            found.push(child);
+            visit(child);
+        }
+    };
+    visit(root);
+    return found;
+}
+
 function settingsWindow() {
     let best = null;
     let bestArea = 0;
@@ -70,7 +88,7 @@ function roleMatches(info, role) {
 
 function matches(scopeName, role, label) {
     const found = [];
-    for (const element of scope(scopeName).entireContents()) {
+    for (const element of walk(scope(scopeName))) {
         const kind = attr(element, 'role');
         if (role !== 'input' && role !== 'unnamed' && kind !== role) continue;
         if (role === 'unnamed' && kind !== 'AXButton') continue;
@@ -103,12 +121,12 @@ function line(info) {
 // The table's row (an outline row on the runner) that shows TEXT, as
 // { row, cells }.
 function rowShowing(text) {
-    for (const table of scope('window').entireContents()) {
+    for (const table of walk(scope('window'))) {
         const role = attr(table, 'role');
         if (role !== 'AXOutline' && role !== 'AXTable') continue;
         if (axAttr(table, 'AXDescription') === 'Sidebar') continue;
         for (const row of table.rows()) {
-            const cells = row.entireContents().map(describe);
+            const cells = walk(row).map(describe);
             if (cells.some(cell => cell.value === text)) {
                 const clip = describe(axAttr(table, 'AXParent') || table);
                 return { row, cells, right: clip.position[0] + clip.size[0] };
@@ -131,10 +149,15 @@ function run(argv) {
     case 'sheets':
         return String(settingsWindow().sheets().length);
     case 'dump':
-        return scope(args[0]).entireContents().map(element => line(describe(element))).join('\n');
+        return walk(scope(args[0])).map(element => line(describe(element))).join('\n');
     // find SCOPE ROLE LABEL [INDEX]: the match's centre, "x y".
     case 'find':
         return centre(only(args[0], args[1], args[2], args[3]).info).join(' ');
+    // frameof SCOPE ROLE LABEL [INDEX]: the match's frame, "x,y,w,h".
+    case 'frameof': {
+        const info = only(args[0], args[1], args[2], args[3]).info;
+        return [...info.position, ...info.size].map(Math.round).join(',');
+    }
     case 'value':
         return JSON.stringify(only(args[0], args[1], args[2], args[3]).info.value);
     case 'enabled':
@@ -147,18 +170,23 @@ function run(argv) {
         return 'ok';
     // has SCOPE TEXT: whether any element holds TEXT as its value or a label.
     case 'has':
-        for (const element of scope(args[0]).entireContents()) {
+        for (const element of walk(scope(args[0]))) {
             const info = describe(element);
             if (info.value === args[1] || labels(info).includes(args[1])) return 'yes';
         }
         return 'no';
-    // hastext SCOPE TEXT: whether a static text reads TEXT, as a title does.
+    // hastext SCOPE TEXT: whether a static text reads TEXT.
     case 'hastext':
-        for (const element of scope(args[0]).entireContents()) {
+        for (const element of walk(scope(args[0]))) {
             if (attr(element, 'role') !== 'AXStaticText') continue;
             if (attr(element, 'value') === args[1]) return 'yes';
         }
         return 'no';
+    // bounds SCOPE: the scope's frame, "x,y,w,h".
+    case 'bounds': {
+        const info = describe(scope(args[0]));
+        return [...info.position, ...info.size].map(Math.round).join(',');
+    }
     // row TERM: the texts the row showing TERM holds, joined with " | ".
     case 'row':
         return rowShowing(args[0]).cells

@@ -65,8 +65,8 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
-      - name: Compile CGEvent clicker
-        run: swiftc .github/macos-e2e/click_at.swift -o "$RUNNER_TEMP/click_at"
+      - name: Compile input and OCR tool
+        run: swiftc .github/macos-e2e/vocabulary_tool.swift -o "$RUNNER_TEMP/vocabulary_tool"
 
       - name: Ensure ffmpeg
         run: ffmpeg -version >/dev/null 2>&1 || brew install ffmpeg
@@ -76,7 +76,7 @@ jobs:
         env:
           APP_BUNDLE: ${{ github.workspace }}/build/speecher.app
           EVIDENCE_ROOT: ${{ runner.temp }}/vocabulary-e2e
-          CLICKER: ${{ runner.temp }}/click_at
+          TOOL: ${{ runner.temp }}/vocabulary_tool
           SEED_JSON: ${{ github.workspace }}/docs/vocabulary-context-mockup/seed-vocabulary.json
         run: bash .github/macos-e2e/vocabulary_run.sh
 
