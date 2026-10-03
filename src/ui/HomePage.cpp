@@ -377,8 +377,8 @@ HomePage::HomePage(ApplicationController *controller, QWidget *parent)
 
     connect(controller->insightsLog(), &InsightsLog::changed, this, &HomePage::refresh);
     connect(m_toggle, &QPushButton::clicked, controller, &ApplicationController::toggle);
-    connect(m_pause, &QToolButton::clicked, controller->session(), &DictationSession::togglePause);
-    connect(m_cancel, &QToolButton::clicked, controller, &ApplicationController::cancel);
+    connect(m_pause, &QPushButton::clicked, controller->session(), &DictationSession::togglePause);
+    connect(m_cancel, &QPushButton::clicked, controller, &ApplicationController::cancel);
     connect(controller, &ApplicationController::stateChanged, this, &HomePage::applyState);
     connect(controller, &ApplicationController::statusChanged, m_status, &QLabel::setText);
     connect(controller, &ApplicationController::audioLevelChanged, m_waveform, &WaveformWidget::setLevel);
@@ -438,24 +438,8 @@ QFrame *HomePage::buildDictationCard(QWidget *parent)
     m_status->setObjectName(QStringLiteral("dictationStatus"));
     m_waveform = new WaveformWidget(host);
     m_waveform->setCompact(true);
-    // Pause (resume while paused) and cancel either side of the waveform, as
-    // in the popup.
-    const auto sessionButton = [host](const char *name) {
-        auto *button = new QToolButton(host);
-        button->setObjectName(QLatin1String(name));
-        button->setAutoRaise(true);
-        button->hide();
-        return button;
-    };
-    m_pause = sessionButton("dictationPause");
-    m_cancel = sessionButton("dictationCancel");
-    m_cancel->setIcon(QIcon::fromTheme(QStringLiteral("window-close")));
-    m_cancel->setToolTip(cancelCaption());
-    m_cancel->setAccessibleName(cancelCaption());
     statusRow->addWidget(m_status);
-    statusRow->addWidget(m_pause, 0, Qt::AlignVCenter);
     statusRow->addWidget(m_waveform, 0, Qt::AlignVCenter);
-    statusRow->addWidget(m_cancel, 0, Qt::AlignVCenter);
     statusRow->addStretch();
     text->addLayout(statusRow);
     m_hint = mutedLabel(QString(), host, false);
@@ -472,6 +456,20 @@ QFrame *HomePage::buildDictationCard(QWidget *parent)
     m_errorText->hide();
     text->addWidget(m_errorText);
     top->addLayout(text, 1);
+    // Pause (resume while paused) and Cancel join the toggle on the right,
+    // push buttons like it, while a dictation runs.
+    const auto sessionButton = [host](const char *name) {
+        auto *button = new QPushButton(host);
+        button->setObjectName(QLatin1String(name));
+        button->hide();
+        return button;
+    };
+    m_pause = sessionButton("dictationPause");
+    m_cancel = sessionButton("dictationCancel");
+    m_cancel->setText(cancelCaption());
+    m_cancel->setIcon(QIcon::fromTheme(QStringLiteral("dialog-cancel")));
+    top->addWidget(m_pause, 0, Qt::AlignVCenter);
+    top->addWidget(m_cancel, 0, Qt::AlignVCenter);
     m_toggle = new QPushButton(host);
     m_toggle->setObjectName(QStringLiteral("dictationToggle"));
     top->addWidget(m_toggle, 0, Qt::AlignVCenter);
@@ -1027,15 +1025,20 @@ void HomePage::applyState(const QString &stateName)
     m_toggle->setIcon(QIcon::fromTheme(active || controls.paused || state == QStringLiteral("refining")
                                            ? QStringLiteral("media-playback-stop")
                                            : QStringLiteral("media-record")));
-    // Paused keeps the strip, flat, between its buttons.
+    // Paused keeps the strip, still and flat in the caution colour, and says
+    // so in that colour.
     m_waveform->setVisible(active || controls.paused);
+    m_waveform->setMode(controls.paused ? WaveformWidget::Mode::Paused : WaveformWidget::Mode::Waveform);
+    QPalette statusPalette;
+    if (controls.paused) {
+        statusPalette.setColor(QPalette::WindowText, settings::neutralTextColor(palette()));
+    }
+    m_status->setPalette(statusPalette);
     m_pause->setVisible(controls.pauseVisible);
     m_pause->setEnabled(controls.pauseEnabled);
     m_pause->setIcon(QIcon::fromTheme(controls.paused ? QStringLiteral("media-playback-start")
                                                       : QStringLiteral("media-playback-pause")));
-    const QString pauseText = controls.paused ? resumeCaption() : pauseCaption();
-    m_pause->setToolTip(pauseText);
-    m_pause->setAccessibleName(pauseText);
+    m_pause->setText(controls.paused ? resumeCaption() : pauseCaption());
     m_cancel->setVisible(controls.cancelVisible);
     const QString failure = dictationFailureNote(stateName, m_controller->session()->lastFailure());
     m_errorText->setText(failure);

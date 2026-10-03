@@ -8,6 +8,7 @@
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
 #include "frontend/win/SettingsPage.h"
+#include "frontend/win/WaveformBars.h"
 
 #include <QClipboard>
 #include <QDebug>
@@ -328,7 +329,7 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
     ApplicationController *controller = host.controller;
     StackPanel body = cardBody();
 
-    // The status and hint on the left, the toggle on the right, as a
+    // The status and hint on the left, the actions on the right, as a
     // settings row lays out its control.
     Grid top;
     top.ColumnSpacing(12);
@@ -340,57 +341,38 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
     top.ColumnDefinitions().Append(toggleColumn);
     StackPanel status;
     status.Spacing(2);
-    status.Children().Append(styledTextBlock(controller->statusLabel(), L"BodyStrongTextBlockStyle"));
-    // While dictating: pause (resume while paused), the input level, and
-    // cancel, as either side of the popup's waveform.
+    status.VerticalAlignment(VerticalAlignment::Center);
+    // The status, and while dictating the popup's waveform beside it: moving
+    // while listening, flat and still in the caution colour while paused,
+    // when the status says so in that colour too.
     QObject::disconnect(host.homeLevel);
+    host.homeWaveform.reset();
     const SessionControls controls = sessionControls(controller->stateName());
-    if (controls.pauseVisible || controls.cancelVisible) {
-        StackPanel listening;
-        listening.Orientation(Orientation::Horizontal);
-        listening.Spacing(8);
-        listening.Margin({0, 4, 0, 4});
-        const auto sessionButton = [](const wchar_t *glyphText, const QString &caption) {
-            Button button;
-            FontIcon icon;
-            icon.Glyph(glyphText);
-            icon.FontSize(12);
-            button.Content(icon);
-            button.VerticalAlignment(VerticalAlignment::Center);
-            Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(button, hs(caption));
-            ToolTipService::SetToolTip(button, box_value(hs(caption)));
-            return button;
-        };
-        if (controls.pauseVisible) {
-            Button pause = sessionButton(controls.paused ? L"\uE768" : L"\uE769",
-                                         controls.paused ? resumeCaption() : pauseCaption());
-            pause.IsEnabled(controls.pauseEnabled);
-            pause.Click([controller](const auto &, const auto &) {
-                controller->session()->togglePause();
-            });
-            listening.Children().Append(pause);
-            ProgressBar level;
-            level.Minimum(0);
-            level.Maximum(1);
-            level.Width(160);
-            level.VerticalAlignment(VerticalAlignment::Center);
-            Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(level, hs(inputLevelLabel()));
-            host.homeLevel = QObject::connect(
-                controller, &ApplicationController::audioLevelChanged, controller,
-                [weak = winrt::make_weak(level)](float value) {
-                    if (const ProgressBar bar = weak.get()) {
-                        bar.Value(std::clamp(value, 0.0f, 1.0f));
-                    }
-                });
-            listening.Children().Append(level);
-        }
-        if (controls.cancelVisible) {
-            Button cancel = sessionButton(L"\uE711", cancelCaption());
-            cancel.Click([controller](const auto &, const auto &) { controller->cancel(); });
-            listening.Children().Append(cancel);
-        }
-        status.Children().Append(listening);
+    const bool listening = dictationListeningPresentation(controller->stateName());
+    StackPanel heading;
+    heading.Orientation(Orientation::Horizontal);
+    heading.Spacing(12);
+    TextBlock statusText = styledTextBlock(controller->statusLabel(), L"BodyStrongTextBlockStyle");
+    statusText.VerticalAlignment(VerticalAlignment::Center);
+    const Brush pausedFill = controls.paused ? themeBrush(L"PausedForeground", host) : Brush{nullptr};
+    if (pausedFill) {
+        statusText.Foreground(pausedFill);
     }
+    heading.Children().Append(statusText);
+    if (listening || controls.paused) {
+        auto bars = std::make_shared<WaveformBars>();
+        bars->element().Height(28);
+        bars->setInk(statusText.Foreground());
+        bars->setPaused(controls.paused, pausedFill);
+        bars->setRunning(!controls.paused);
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(
+            bars->element(), hs(controls.paused ? controller->statusLabel() : inputLevelLabel()));
+        host.homeLevel = QObject::connect(controller, &ApplicationController::audioLevelChanged,
+                                          bars.get(), &WaveformBars::setLevel);
+        heading.Children().Append(bars->element());
+        host.homeWaveform = std::move(bars);
+    }
+    status.Children().Append(heading);
     const QString shortcut = controller->globalShortcutDisplay();
     status.Children().Append(secondaryCaption(dictationShortcutHint(shortcut), host));
     // The popup shows a failure for five seconds and cannot take focus, so the
@@ -404,15 +386,52 @@ UIElement dictationCard(PaneHost &host, const QDate &today)
     }
     top.Children().Append(status);
 
+    // While dictating, Pause (Resume while paused) and Cancel join the toggle,
+    // buttons like it with a glyph before the caption.
+    StackPanel actions;
+    actions.Orientation(Orientation::Horizontal);
+    actions.Spacing(8);
+    actions.VerticalAlignment(VerticalAlignment::Center);
+    const auto actionButton = [](const wchar_t *glyphText, const QString &caption) {
+        StackPanel content;
+        content.Orientation(Orientation::Horizontal);
+        content.Spacing(8);
+        FontIcon icon;
+        icon.Glyph(glyphText);
+        icon.FontSize(14);
+        content.Children().Append(icon);
+        TextBlock label;
+        label.Text(hs(caption));
+        content.Children().Append(label);
+        Button button;
+        button.Content(content);
+        button.VerticalAlignment(VerticalAlignment::Stretch);
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(button, hs(caption));
+        return button;
+    };
+    if (controls.pauseVisible) {
+        Button pause = actionButton(controls.paused ? L"\uE768" : L"\uE769",
+                                    controls.paused ? resumeCaption() : pauseCaption());
+        pause.IsEnabled(controls.pauseEnabled);
+        pause.Click([controller](const auto &, const auto &) {
+            controller->session()->togglePause();
+        });
+        actions.Children().Append(pause);
+    }
+    if (controls.cancelVisible) {
+        Button cancel = actionButton(L"\uE711", cancelCaption());
+        cancel.Click([controller](const auto &, const auto &) { controller->cancel(); });
+        actions.Children().Append(cancel);
+    }
     const DictationToggleAction toggleAction = dictationToggleAction(controller->stateName());
     Button toggle;
     toggle.Content(box_value(hs(toggleAction.label)));
     toggle.Style(Application::Current().Resources().Lookup(box_value(L"AccentButtonStyle")).as<Style>());
     toggle.IsEnabled(toggleAction.enabled);
-    toggle.VerticalAlignment(VerticalAlignment::Center);
     toggle.Click([controller](const auto &, const auto &) { controller->toggle(); });
-    Grid::SetColumn(toggle, 1);
-    top.Children().Append(toggle);
+    actions.Children().Append(toggle);
+    Grid::SetColumn(actions, 1);
+    top.Children().Append(actions);
     body.Children().Append(top);
 
     const QString transcript = controller->session()->lastTranscript();

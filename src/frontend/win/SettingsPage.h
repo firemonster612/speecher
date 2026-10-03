@@ -27,6 +27,7 @@ namespace win {
 
 class CollectionEditor;
 class LocalModelBrowser;
+class WaveformBars;
 class SettingsModel;
 
 // The widest of the three control widths a settings row uses, for text that
@@ -93,7 +94,9 @@ struct PaneHost {
     // The Local models list and detail, kept for the same reason: its
     // selection outlives the rebuild each LocalSetup change causes.
     std::shared_ptr<LocalModelBrowser> localModels;
-    // Feeds Home's level meter; replaced each time Home is rebuilt.
+    // Home's waveform while dictating, and the connection feeding it the
+    // level; both replaced each time Home is rebuilt.
+    std::shared_ptr<WaveformBars> homeWaveform;
     QMetaObject::Connection homeLevel;
     // The Test microphone row's test, kept for the same reason. Reset, which
     // closes the microphone, on a pane change and when the window closes.

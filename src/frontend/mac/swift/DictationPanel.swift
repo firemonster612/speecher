@@ -8,12 +8,12 @@ import SwiftUI
 
 private let pillHeight: CGFloat = 48
 private let minimumPillWidth: CGFloat = 126
-/// The pause and cancel buttons either side of the waveform, and the gap
-/// beside each.
-private let sessionButtonSize: CGFloat = 28
+/// The pause and cancel buttons either side of the waveform, large round
+/// controls as on the Windows panel, and the gap beside each.
+private let sessionButtonSize: CGFloat = 30
 private let sessionButtonGap: CGFloat = 10
 /// Clear of the capsule's rounded ends when there are no words.
-private let sessionButtonInset: CGFloat = 6
+private let sessionButtonInset: CGFloat = 10
 private let previewChromeWidth: CGFloat = 48
 private let compactStripHeight: CGFloat = 28
 private let previewTopPadding: CGFloat = 12
@@ -220,16 +220,19 @@ final class DictationPanelState: ObservableObject {
             + (cancelVisible ? sessionButtonSize + sessionButtonGap : 0)
             + 2 * sessionButtonInset
     }
-    /// Paused shows its status, still, in place of the bars.
-    var pausedLabel: String? {
-        showsControls && paused ? SpeecherBridge.statusLabel(for: .paused) : nil
-    }
+    /// Paused keeps the bars, flat and still in the caution colour.
+    var showsPaused: Bool { showsControls && paused }
 
     var lineHeight: CGFloat {
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         return ceil(font.ascender - font.descender + font.leading)
     }
-    var stripHeight: CGFloat { showsPreview ? waitingLabel == nil ? compactStripHeight : lineHeight + 6 : pillHeight }
+    var stripHeight: CGFloat {
+        guard showsPreview else { return pillHeight }
+        if waitingLabel != nil { return lineHeight + 6 }
+        // Room for the buttons as well as the bars.
+        return showsControls ? max(compactStripHeight, sessionButtonSize + 4) : compactStripHeight
+    }
     var height: CGFloat {
         if !problem.isEmpty { return problemHeight }
         return showsPreview
@@ -237,7 +240,7 @@ final class DictationPanelState: ObservableObject {
             : pillHeight
     }
     var inkWidth: CGFloat {
-        guard let label = waitingLabel ?? pausedLabel else { return 92.8 + controlsWidth }
+        guard let label = waitingLabel else { return 92.8 + controlsWidth }
         return (label as NSString).size(withAttributes: [
             .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
         ]).width + controlsWidth
@@ -360,16 +363,13 @@ struct DictationPanelView: View {
                     if let waiting = state.waitingLabel {
                         ShimmerText(text: waiting)
                             .fixedSize()
-                    } else if let paused = state.pausedLabel {
-                        Text(paused)
-                            .font(.body)
-                            .lineLimit(1)
-                            .fixedSize()
                     } else {
-                        PanelWaveform(state: state)
+                        DotWaveform(level: state.$level, frozen: state.frozen, paused: state.showsPaused,
+                                    height: state.stripHeight, floor: $state.waveformFloor)
                             .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(phaseLabel)
+                            .accessibilityLabel(state.showsPaused ? SpeecherBridge.statusLabel(for: .paused) : phaseLabel)
                             .accessibilityValue(Text(Double(state.level), format: .percent.precision(.fractionLength(0))))
+                            .help(state.showsPaused ? SpeecherBridge.statusLabel(for: .paused) : "")
                     }
                     if state.showsControls, state.cancelVisible {
                         sessionButton(SpeecherBridge.cancelCaption, symbol: "xmark", action: cancelSession)
@@ -407,16 +407,16 @@ struct DictationPanelView: View {
 
     private var symbol: String { state.presentation.symbol }
 
-    /// A round button beside the waveform; the panel never becomes key, so
-    /// clicking it leaves the Target focused.
+    /// A round button beside the waveform, the same size on both sides; the
+    /// panel never becomes key, so clicking it leaves the Target focused.
     private func sessionButton(_ caption: String, symbol: String, action: @escaping () -> Void) -> some View {
         // A titled Label shown icon-only, so the button carries its name for
         // VoiceOver and automation, as Home's buttons do.
         Button(caption, systemImage: symbol, action: action)
             .labelStyle(.iconOnly)
-            .imageScale(.small)
             .buttonStyle(.bordered)
             .buttonBorderShape(.circle)
+            .controlSize(.large)
             .frame(width: sessionButtonSize, height: sessionButtonSize)
             .help(caption)
     }
@@ -429,9 +429,17 @@ struct DictationPanelView: View {
     private var phaseLabel: String { state.presentation.label }
 }
 
-/// The Linux waveform's fifteen dots, adaptive level and one-second travelling crest.
-private struct PanelWaveform: View {
-    @ObservedObject var state: DictationPanelState
+/// The Linux waveform's fifteen dots, adaptive level and one-second travelling
+/// crest, as the panel and Home draw them. Paused, the row lies flat and still
+/// in the system's caution colour.
+struct DotWaveform: View {
+    let level: Published<Float>.Publisher
+    var frozen = false
+    var paused = false
+    var height: CGFloat
+    /// The quietest level heard, which the bars' range starts from; its owner
+    /// keeps it so it outlives this view.
+    @Binding var floor: Float
     /// The bars still follow the voice, but no crest travels across them.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sum: Float = 0
@@ -446,24 +454,26 @@ private struct PanelWaveform: View {
     var body: some View {
         Canvas { context, size in
             for index in 0..<15 {
-                let bulge = 1 - abs(7 - Double(index)) / 24
+                let bulge = paused ? 1 : 1 - abs(7 - Double(index)) / 24
                 let offset = phase - Double(index) / 15
-                let wave = reduceMotion ? 1 : multiplier(offset - Foundation.floor(offset))
-                let height = 3.2 * Double(max(1, smoothed * 5)) * bulge * wave
+                let wave = reduceMotion || paused ? 1 : multiplier(offset - Foundation.floor(offset))
+                let scale = paused ? 1 : Double(max(1, smoothed * 5))
+                let height = 3.2 * scale * bulge * wave
                 let rect = CGRect(x: (size.width - 92.8) / 2 + Double(index) * 6.4,
                                   y: (size.height - height) / 2, width: 3.2, height: height)
                 context.fill(Path(roundedRect: rect, cornerSize: CGSize(width: 0.8, height: height / 4)),
                              with: .foreground)
             }
         }
-        .opacity(state.frozen ? 0.4 : 1)
-        .frame(width: minimumPillWidth, height: state.stripHeight)
-        .onReceive(state.$level) { value in
+        .foregroundStyle(paused ? Color(nsColor: .systemOrange) : Color.primary)
+        .opacity(frozen && !paused ? 0.4 : 1)
+        .frame(width: minimumPillWidth, height: height)
+        .onReceive(level) { value in
             var mapped: Float = 0
             if value > 0 {
                 let db = 20 * log10(value)
-                state.waveformFloor = max(-46, min(state.waveformFloor, db))
-                mapped = min(1, max(0, (db - state.waveformFloor) / 20))
+                floor = max(-46, min(floor, db))
+                mapped = min(1, max(0, (db - floor) / 20))
             }
             sum += mapped
             chunks += 1
@@ -471,7 +481,7 @@ private struct PanelWaveform: View {
         .onReceive(timer) { now in
             let elapsed = min(0.1, max(0, now.timeIntervalSince(lastFrame)))
             lastFrame = now
-            guard !state.frozen else { return }
+            guard !frozen, !paused else { return }
             phase = (phase + elapsed).truncatingRemainder(dividingBy: 1)
             if now.timeIntervalSince(windowStart) >= 0.15 {
                 if chunks > 0 { target = sum / Float(chunks) }
@@ -914,7 +924,7 @@ final class SpeecherDictationPanel {
         let banners = (state.updateMessage.isEmpty ? 0 : 1)
             + (state.whatsNewMessage.isEmpty ? 0 : 1)
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        let message = !state.problem.isEmpty ? state.problem : state.finished ? state.status : state.showsPreview ? state.preview : state.waitingLabel ?? state.pausedLabel ?? ""
+        let message = !state.problem.isEmpty ? state.problem : state.finished ? state.status : state.showsPreview ? state.preview : state.waitingLabel ?? ""
         let screenArea = (panel.screen ?? NSScreen.main)?.visibleFrame
         let availableWidth = screenArea?.width ?? maximumPreviewWidth + screenEdgeMargin
         // A problem wraps at the width every platform shares, and the capsule
@@ -938,7 +948,7 @@ final class SpeecherDictationPanel {
         let height = state.height + CGFloat(banners) * (bannerHeight + bannerSpacing)
         let chrome = !state.problem.isEmpty ? problemChrome : state.finished ? 78
             : state.showsPreview ? previewChromeWidth
-            : (state.waitingLabel ?? state.pausedLabel) == nil ? state.controlsWidth : 32 + state.controlsWidth
+            : state.waitingLabel == nil ? state.controlsWidth : 32 + state.controlsWidth
         let minimumWidth = (state.showsPreview ? minimumPillWidth + previewChromeWidth : minimumPillWidth)
             + state.controlsWidth
         let contentWidth = min(max(minimumWidth, textWidth + chrome), maximumWidth)

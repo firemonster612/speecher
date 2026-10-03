@@ -18,7 +18,8 @@ class WaveformWidget : public QWidget {
     Q_OBJECT
 
 public:
-    enum class Mode { Waveform, Frozen, Message, Status };
+    // Paused: a still, flat row of dots in the colour scheme's caution colour.
+    enum class Mode { Waveform, Frozen, Paused, Message, Status };
 
     explicit WaveformWidget(QWidget *parent = nullptr);
     void setBackgroundVisible(bool visible);
@@ -47,7 +48,7 @@ private:
     void applyGeometry();
     int iconSize() const;
     int iconSpacing() const;
-    void paintWaveform(QPainter &painter, const QColor &bar);
+    void paintWaveform(QPainter &painter, const QColor &bar, bool flat = false);
     void paintMessage(QPainter &painter, const QColor &bar);
     void paintStatus(QPainter &painter, const QColor &bar);
 

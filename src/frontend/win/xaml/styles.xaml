@@ -36,6 +36,8 @@
       <!-- SolidBackgroundFillColorBase: the opaque window colour behind the
            card in the copied stats image, which has no Mica to show. -->
       <SolidColorBrush x:Key="StatsImageBackground" Color="#F3F3F3"/>
+      <!-- SystemFillColorCaution: a paused dictation's waveform and status. -->
+      <SolidColorBrush x:Key="PausedForeground" Color="#9D5D00"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <SolidColorBrush x:Key="SettingsCardBackground" Color="#0DFFFFFF"/>
@@ -48,6 +50,7 @@
       <SolidColorBrush x:Key="PositiveTextForeground" Color="#6CCB5F"/>
       <SolidColorBrush x:Key="NegativeTextForeground" Color="#FF99A4"/>
       <SolidColorBrush x:Key="StatsImageBackground" Color="#202020"/>
+      <SolidColorBrush x:Key="PausedForeground" Color="#FCE100"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="HighContrast">
       <SolidColorBrush x:Key="SettingsCardBackground" Color="{ThemeResource SystemColorButtonFaceColor}"/>
@@ -60,6 +63,7 @@
       <SolidColorBrush x:Key="PositiveTextForeground" Color="{ThemeResource SystemColorWindowTextColor}"/>
       <SolidColorBrush x:Key="NegativeTextForeground" Color="{ThemeResource SystemColorWindowTextColor}"/>
       <SolidColorBrush x:Key="StatsImageBackground" Color="{ThemeResource SystemColorWindowColor}"/>
+      <SolidColorBrush x:Key="PausedForeground" Color="{ThemeResource SystemColorWindowTextColor}"/>
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 

@@ -710,6 +710,7 @@ set(SPEECHER_FRONTEND_WIN_SOURCES
   src/frontend/win/TrayIcon.cpp
   src/frontend/win/TranscribePane.cpp
   src/frontend/win/TranscribeWindow.cpp
+  src/frontend/win/WaveformBars.cpp
   src/frontend/win/WinFrontEnd.cpp
   src/frontend/win/WinUiHost.cpp
 )

@@ -128,12 +128,13 @@ private:
         const qreal lobeHalf = m_strip->contentWidth() / 2.0 + kLobePad;
         qreal lobeLeft = stripCenter - lobeHalf;
         qreal lobeRight = stripCenter + lobeHalf;
-        // The buttons either side of the strip sit inside the lobe too.
+        // The buttons either side of the strip sit inside the lobe too,
+        // with the same air beside them as the strip's ink has.
         for (const QWidget *button : m_beside) {
             if (button->isVisible()) {
                 const qreal left = button->mapTo(this, QPoint(0, 0)).x();
-                lobeLeft = std::min(lobeLeft, left);
-                lobeRight = std::max(lobeRight, left + button->width());
+                lobeLeft = std::min(lobeLeft, left - kLobePad);
+                lobeRight = std::max(lobeRight, left + button->width() + kLobePad);
             }
         }
         const qreal lobeHeight = pillRect.bottom() - shoulderY;
@@ -380,13 +381,13 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_previewPill->installEventFilter(this);
     m_pillLayout->addLayout(previewRow, 1);
     // Pause (resume while paused) and cancel either side of the waveform,
-    // flat tool buttons the style draws. They never take focus, so a click
-    // leaves the Target focused.
+    // tool buttons the style draws with their frame, the same size on both
+    // sides. They never take focus, so a click leaves the Target focused.
     const auto sessionButton = [this, iconSize](const char *name) {
         auto *button = new QToolButton(m_previewPill);
         button->setObjectName(QLatin1String(name));
-        button->setAutoRaise(true);
         button->setFocusPolicy(Qt::NoFocus);
+        button->setToolButtonStyle(Qt::ToolButtonIconOnly);
         button->setIconSize(QSize(iconSize, iconSize));
         button->hide();
         return button;
@@ -399,8 +400,9 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     connect(m_pauseButton, &QToolButton::clicked, this, &TranscriberPopup::pauseToggled);
     connect(m_cancelButton, &QToolButton::clicked, this, &TranscriberPopup::cancelRequested);
     auto *waveformRow = new QHBoxLayout;
-    // Clear of the capsule's rounded ends when there are no words.
-    waveformRow->setContentsMargins(6, 0, 6, 0);
+    // Clear of the capsule's rounded ends when there are no words, by the
+    // same air the lobe leaves beside them under words.
+    waveformRow->setContentsMargins(int(kLobePad), 0, int(kLobePad), 0);
     waveformRow->setSpacing(4);
     waveformRow->addStretch();
     waveformRow->addWidget(m_pauseButton, 0, Qt::AlignVCenter);
@@ -524,12 +526,21 @@ void TranscriberPopup::setSessionState(DictationState state)
 {
     const DictationState previous = std::exchange(m_sessionState, state);
     applySessionControls();
-    // Paused holds a flat strip that says so; resuming brings the bars back.
+    // The buttons set the strip's height; an error capsule sizes itself.
+    if (m_errorDismiss->isHidden()) {
+        applyPillGeometry();
+    }
+    // Paused stills the bars into a flat row in the caution colour; resuming
+    // brings them back.
     if (state == DictationState::Paused) {
-        m_waveform->setMessage(dictationStatusLabel(dictationStateName(state)));
+        m_waveform->setMode(WaveformWidget::Mode::Paused);
     } else if (previous == DictationState::Paused && state == DictationState::Listening) {
         m_waveform->setMode(WaveformWidget::Mode::Waveform);
     }
+    const QString pausedLabel =
+        state == DictationState::Paused ? dictationStatusLabel(dictationStateName(state)) : QString();
+    m_waveform->setToolTip(pausedLabel);
+    m_waveform->setAccessibleName(pausedLabel);
     // Stopping is the one state that drives this popup directly: the mic is
     // closed but the provider is still finalising, so the waveform gives way
     // to a shimmering "Transcribing…" and the stale speech preview goes away.
@@ -549,8 +560,8 @@ void TranscriberPopup::setPreview(const QString &preview)
         return;
     }
     restoreStandardLayout();
-    // The paused attempt's last words land after the pause; the strip keeps
-    // saying Paused.
+    // The paused attempt's last words land after the pause; the strip stays
+    // paused.
     if (m_sessionState != DictationState::Paused) {
         m_waveform->setMode(WaveformWidget::Mode::Waveform);
     }
@@ -614,15 +625,22 @@ void TranscriberPopup::applyPillGeometry()
     const bool hasWords = !m_preview->isHidden();
     m_waveform->setCompact(hasWords);
     m_pillLayout->setSpacing(hasWords ? kPreviewStripSpacing : 0);
+    // The strip's row is as tall as the taller of the bars and the buttons.
+    int stripHeight = m_waveform->height();
+    for (const QToolButton *button : {m_pauseButton, m_cancelButton}) {
+        if (!button->isHidden()) {
+            stripHeight = std::max(stripHeight, button->sizeHint().height());
+        }
+    }
     if (!hasWords) {
         m_pillLayout->setContentsMargins(0, 0, 0, 0);
-        m_previewPill->setFixedHeight(m_waveform->height());
+        m_previewPill->setFixedHeight(stripHeight);
         return;
     }
     m_pillLayout->setContentsMargins(kPreviewMargins);
     m_previewPill->setFixedHeight(kPreviewMargins.top() + m_preview->sizeHint().height()
                                   + kPreviewStripSpacing
-                                  + m_waveform->height() + kPreviewMargins.bottom());
+                                  + stripHeight + kPreviewMargins.bottom());
 }
 
 void TranscriberPopup::setLevel(float level)

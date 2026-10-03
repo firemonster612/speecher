@@ -706,15 +706,24 @@ private slots:
             QTest::qWait(50);
             QVERIFY(popup.grab().save(grabDir + QStringLiteral("/linux-%1.png").arg(QLatin1String(name))));
         };
+        // A voice's rise and fall, so the listening grabs show the bars moving.
+        const auto speak = [&popup] {
+            for (int frame = 0; frame < 60; ++frame) {
+                popup.setLevel(frame % 6 < 3 ? 0.02f : 0.4f);
+                QTest::qWait(16);
+            }
+        };
         popup.showPopup(1);
         popup.setSessionState(DictationState::Listening);
         popup.showListeningIndicator();
+        speak();
         grab("listening");
         popup.setSessionState(DictationState::Paused);
         grab("paused");
         popup.setSessionState(DictationState::Listening);
         popup.setPreview(QStringLiteral("so the hiring plan for next quarter should come before "
                                         "the budget review and then we can talk about the offsite"));
+        speak();
         grab("long-preview");
         popup.setSessionState(DictationState::Paused);
         grab("paused-preview");
