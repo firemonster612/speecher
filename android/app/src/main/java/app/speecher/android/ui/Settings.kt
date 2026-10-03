@@ -1,25 +1,34 @@
 package app.speecher.android.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -27,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,7 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
@@ -51,6 +61,9 @@ import app.speecher.android.dictation.refinementEfforts
 import app.speecher.android.dictation.refinementModels
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
+import app.speecher.protocol.VocabularyWord
+import app.speecher.protocol.WritingProfile
+import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.claudeVoiceKeytermIndices
 import app.speecher.protocol.claudeVoiceKeyterms
 import app.speecher.protocol.modelSupportsFastMode
@@ -466,12 +479,15 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     val keyTerms = keyTerms(settings)
+    val profiles = profileChoices(settings)
+    // The word open in the editor; one not in the list yet is being added.
+    var editing by remember { mutableStateOf<VocabularyWord?>(null) }
     settings.vocabulary.forEach { word ->
         ListItem(
             headlineContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(word)
-                    if (word in keyTerms) {
+                    Text(word.term)
+                    if (word.term in keyTerms) {
                         Badge(
                             Modifier.padding(start = 8.dp),
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -482,18 +498,165 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                     }
                 }
             },
-            trailingContent = {
-                IconButton({ onChange(settings.copy(vocabulary = settings.vocabulary - word)) }) {
-                    Icon(painterResource(R.drawable.ic_close), contentDescription = "Remove $word")
+            supportingContent = {
+                Column {
+                    if (word.context.isNotEmpty()) {
+                        Text(word.context, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (word.profiles.isEmpty()) Text("All profiles")
+                    else
+                        Text(
+                            profiles.filterKeys { it in word.profiles }.values.joinToString(", "),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
                 }
             },
+            trailingContent = {
+                IconButton({ onChange(settings.copy(vocabulary = settings.vocabulary - word)) }) {
+                    Icon(
+                        painterResource(R.drawable.ic_close),
+                        contentDescription = "Remove ${word.term}",
+                    )
+                }
+            },
+            modifier = Modifier.clickable { editing = word },
             colors = rowColors(),
         )
     }
-    AddWord { word ->
-        if (word !in settings.vocabulary) {
-            onChange(settings.copy(vocabulary = settings.vocabulary + word))
+    FilledTonalButton({ editing = VocabularyWord("") }, Modifier.padding(16.dp)) {
+        Text("Add word")
+    }
+    editing?.let { word ->
+        WordEditor(
+            word,
+            profiles,
+            settings.vocabulary.filter { it != word }.map { it.term },
+            onDismiss = { editing = null },
+        ) { next ->
+            val vocabulary =
+                if (word in settings.vocabulary)
+                    settings.vocabulary.map { if (it == word) next else it }
+                else settings.vocabulary + next
+            onChange(settings.copy(vocabulary = vocabulary))
+            editing = null
         }
+    }
+}
+
+/**
+ * A word's term, its context and the profiles it is limited to, in a sheet. Saved once the term is
+ * set and none of [taken], ignoring case, and a limit names at least one profile.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WordEditor(
+    word: VocabularyWord,
+    profiles: Map<WritingProfile, String>,
+    taken: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (VocabularyWord) -> Unit,
+) {
+    var term by rememberSaveable { mutableStateOf(word.term) }
+    var context by rememberSaveable { mutableStateOf(word.context) }
+    var limited by rememberSaveable { mutableStateOf(word.profiles.isNotEmpty()) }
+    var chosen by remember { mutableStateOf(word.profiles) }
+    val duplicate = taken.any { it.equals(term.trim(), ignoreCase = true) }
+    ModalBottomSheet(onDismiss, sheetState = rememberModalBottomSheetState(true)) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                word.term.ifEmpty { "Add word" },
+                Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            OutlinedTextField(
+                term,
+                { term = it },
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                label = { Text("Term") },
+                singleLine = true,
+                isError = duplicate,
+                supportingText =
+                    if (duplicate) ({ Text("That word is already listed.") }) else null,
+            )
+            OutlinedTextField(
+                context,
+                { context = it },
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                label = { Text("Context") },
+                supportingText = {
+                    Text("Refinement reads this to decide when the words you said mean this term.")
+                },
+                minLines = 2,
+                maxLines = 6,
+            )
+            Column(Modifier.selectableGroup()) {
+                Text(
+                    "Profiles",
+                    Modifier.padding(horizontal = 16.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                ChoiceRow("Every Writing Profile", Role.RadioButton, !limited) { limited = false }
+                ChoiceRow("Only these Writing Profiles:", Role.RadioButton, limited) {
+                    limited = true
+                }
+            }
+            Column(Modifier.padding(start = 40.dp)) {
+                profiles.forEach { (profile, label) ->
+                    ChoiceRow(label, Role.Checkbox, profile in chosen, enabled = limited) {
+                        chosen = if (profile in chosen) chosen - profile else chosen + profile
+                    }
+                }
+            }
+            Text(
+                "Under any other profile, neither refinement nor Claude Voice gets this term.",
+                Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SheetActions(
+                term.isNotBlank() && !duplicate && (!limited || chosen.isNotEmpty()),
+                onDismiss,
+                "Save",
+            ) {
+                onSave(
+                    VocabularyWord(term.trim(), context.trim(), if (limited) chosen else emptySet())
+                )
+            }
+        }
+    }
+}
+
+/** A radio button or checkbox and its label, the whole row the target. */
+@Composable
+private fun ChoiceRow(
+    label: String,
+    role: Role,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val target =
+        if (role == Role.RadioButton)
+            Modifier.selectable(selected, enabled = enabled, role = role, onClick = onClick)
+        else Modifier.toggleable(selected, enabled = enabled, role = role) { onClick() }
+    Row(
+        Modifier.fillMaxWidth().then(target).padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (role == Role.RadioButton) RadioButton(selected, null, enabled = enabled)
+        else Checkbox(selected, null, enabled = enabled)
+        Text(
+            label,
+            Modifier.padding(start = 16.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            // Material's disabled content opacity, as the control beside it uses.
+            color =
+                if (enabled) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+        )
     }
 }
 
@@ -627,9 +790,11 @@ internal fun PasteCode(
 }
 
 /** The words Claude Voice receives as key terms: as many as fit its header, in list order. */
-internal fun keyTerms(settings: SpeecherSettings): Set<String> =
-    if (settings.transcriptionProvider != Provider.Claude) emptySet()
-    else claudeVoiceKeytermIndices(settings.vocabulary).map { settings.vocabulary[it] }.toSet()
+internal fun keyTerms(settings: SpeecherSettings): Set<String> {
+    if (settings.transcriptionProvider != Provider.Claude) return emptySet()
+    val terms = settings.vocabulary.map { it.term }
+    return claudeVoiceKeytermIndices(terms).map { terms[it] }.toSet()
+}
 
 /**
  * What the list amounts to: refinement uses every term up to its ceiling, and only Claude takes key
@@ -639,38 +804,14 @@ internal fun vocabularySummary(settings: SpeecherSettings): String {
     val count = settings.vocabulary.size
     val refinement =
         if (count > MAX_REFINEMENT_TERMS) "the first $MAX_REFINEMENT_TERMS are used for refinement"
-        else "all are used for refinement"
+        else "refinement uses those for the dictation's Writing Profile"
     if (settings.transcriptionProvider != Provider.Claude) {
         return "Names and terms Speecher should spell your way. ChatGPT dictation takes no " +
             "key terms, and $refinement."
     }
-    val hints = claudeVoiceKeyterms(settings.vocabulary).size
+    val hints = claudeVoiceKeyterms(settings.vocabulary.map { it.term }).size
     return "Names and terms Speecher should spell your way. Claude takes the $hints marked Key " +
         "term, and $refinement."
-}
-
-@Composable
-private fun AddWord(onAdd: (String) -> Unit) {
-    var word by rememberSaveable { mutableStateOf("") }
-    val submit = {
-        if (word.isNotBlank()) onAdd(word.trim())
-        word = ""
-    }
-    Row(
-        Modifier.padding(start = 16.dp, end = 4.dp, top = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedTextField(
-            word,
-            { word = it },
-            Modifier.weight(1f),
-            placeholder = { Text("Add a word") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { submit() }),
-        )
-        TextButton(submit, enabled = word.isNotBlank()) { Text("Add") }
-    }
 }
 
 @Composable
@@ -682,7 +823,9 @@ private fun SettingsPreview(settings: SpeecherSettings, signedIn: Set<Provider>)
 @Composable
 internal fun SettingsPreview() =
     SettingsPreview(
-        SpeecherSettings(vocabulary = listOf("Speecher", "Kirigami", "Priya Raman")),
+        SpeecherSettings(
+            vocabulary = listOf("Speecher", "Kirigami", "Priya Raman").map(::VocabularyWord)
+        ),
         Provider.entries.toSet(),
     )
 
@@ -704,5 +847,42 @@ internal fun SettingsRefinementPreview() = SpeecherTheme {
                 {},
             )
         }
+    }
+}
+
+@PreviewLightDark
+@Composable
+internal fun SettingsVocabularyPreview() = SpeecherTheme {
+    val standup = WritingProfile("custom_standup")
+    var settings by remember {
+        mutableStateOf(
+            SpeecherSettings(
+                transcriptionProvider = Provider.Claude,
+                writingProfiles =
+                    SpeecherSettings().writingProfiles +
+                        (standup to WritingProfileSettings(name = "Standup notes")),
+                vocabulary =
+                    listOf(
+                        VocabularyWord(
+                            "Kubernetes",
+                            "The container platform, when I talk about clusters, pods or deploys.",
+                            setOf(WritingProfile.Work, WritingProfile.AiCoding),
+                        ),
+                        VocabularyWord("Speecher"),
+                        VocabularyWord("Lúcia", "My sister.", setOf(WritingProfile.Personal)),
+                        VocabularyWord("Grafana", "", setOf(WritingProfile.Work, standup)),
+                    ),
+            )
+        )
+    }
+    SpeecherScreen(SettingsPage.Vocabulary.title, onBack = {}) {
+        SettingsPageContent(
+            SettingsPage.Vocabulary,
+            settings,
+            Provider.entries.toSet(),
+            { settings = it },
+            {},
+            {},
+        )
     }
 }

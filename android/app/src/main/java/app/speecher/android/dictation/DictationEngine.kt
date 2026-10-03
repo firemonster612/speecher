@@ -503,7 +503,9 @@ fun createDictationEngine(
                 ClaudeVoiceClient(
                     webSocketTransport(endpoints.getValue(selected).speech),
                     access,
-                    settings.vocabulary,
+                    settings.vocabularyFor(writingProfile(settings, ActiveDictation.target)).map {
+                        it.term
+                    },
                     events,
                     endpoints.getValue(selected).speech,
                 )
@@ -542,7 +544,7 @@ fun createDictationEngine(
                         selected.oauth,
                         token(selected),
                         raw,
-                        settings.vocabulary,
+                        settings.vocabularyFor(context.profile),
                         choice.model,
                         choice.effort,
                         context,

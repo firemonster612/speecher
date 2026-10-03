@@ -8,6 +8,7 @@ import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.NearbyText
 import app.speecher.protocol.RefinementContext
+import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.resolveRefinementContext
 
 /** The app and field the IME is typing into, read once per field in onStartInput. */
@@ -68,22 +69,28 @@ fun controlRole(inputType: Int): String =
  * also holds note and to-do apps, which the desktop would leave General; they take Office and the
  * Work profile too, a deliberate trade for recognising office suites that no name rule catches.
  */
-fun targetApp(editor: EditorInfo, packages: PackageManager): TargetApp {
-    val name = editor.packageName.orEmpty()
+fun targetApp(editor: EditorInfo, packages: PackageManager): TargetApp =
+    targetApp(
+            editor.packageName.orEmpty(),
+            packages,
+            editor.inputType and (InputType.TYPE_MASK_CLASS or InputType.TYPE_MASK_VARIATION) in
+                passwordTypes,
+        )
+        .copy(role = controlRole(editor.inputType), hint = editor.hintText?.toString().orEmpty())
+
+/** The app [packageName] names, with nothing yet known of its field but whether it is [secure]. */
+fun targetApp(packageName: String, packages: PackageManager, secure: Boolean): TargetApp {
     val info =
         try {
-            packages.getApplicationInfo(name, 0)
+            packages.getApplicationInfo(packageName, 0)
         } catch (_: PackageManager.NameNotFoundException) {
             null
         }
     return TargetApp(
-        name,
+        packageName,
         info?.let { packages.getApplicationLabel(it).toString() }.orEmpty(),
         if (info?.category == ApplicationInfo.CATEGORY_PRODUCTIVITY) AppCategory.Office else null,
-        editor.inputType and (InputType.TYPE_MASK_CLASS or InputType.TYPE_MASK_VARIATION) in
-            passwordTypes,
-        controlRole(editor.inputType),
-        editor.hintText?.toString().orEmpty(),
+        secure,
     )
 }
 
@@ -124,17 +131,7 @@ fun refinementContext(
 ): RefinementContext {
     val includeText = settings.useTargetContext && target != null && !target.secure
     val context =
-        resolveRefinementContext(
-                target?.packageName.orEmpty(),
-                target?.label.orEmpty(),
-                target?.category,
-                null,
-                settings.defaultWritingProfile,
-                settings.writingProfiles,
-                settings.customTones,
-                settings.customCleanupLevels,
-                settings.appRules,
-            )
+        resolvedContext(settings, target)
             .copy(
                 controlRole = target?.role.orEmpty(),
                 additionalInstructions = settings.additionalInstructions,
@@ -152,3 +149,20 @@ fun refinementContext(
         screenshotJpeg = screenshotJpeg,
     )
 }
+
+/** The Writing Profile a dictation into [target] uses, the one [refinementContext] resolves. */
+fun writingProfile(settings: SpeecherSettings, target: TargetApp?): WritingProfile =
+    resolvedContext(settings, target).profile
+
+private fun resolvedContext(settings: SpeecherSettings, target: TargetApp?): RefinementContext =
+    resolveRefinementContext(
+        target?.packageName.orEmpty(),
+        target?.label.orEmpty(),
+        target?.category,
+        null,
+        settings.defaultWritingProfile,
+        settings.writingProfiles,
+        settings.customTones,
+        settings.customCleanupLevels,
+        settings.appRules,
+    )

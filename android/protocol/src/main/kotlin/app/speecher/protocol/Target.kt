@@ -31,6 +31,16 @@ value class WritingProfile(val id: String) {
     }
 }
 
+/**
+ * A vocabulary word: the [term] speech hints and refinement spell, what it means and when it
+ * applies for refinement, and the profiles it is limited to. No profiles means every profile.
+ */
+data class VocabularyWord(
+    val term: String,
+    val context: String = "",
+    val profiles: Set<WritingProfile> = emptySet(),
+)
+
 enum class CleanupStrength(val id: String) {
     /** Skips refinement entirely, as the desktop does. */
     None("none"),

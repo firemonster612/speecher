@@ -4,6 +4,7 @@ import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.withoutDeleted
@@ -210,7 +211,7 @@ data class SpeecherSettings(
      */
     val chatGptSpeed: OpenAiSpeed = OpenAiSpeed.Fast,
     val claudeFastMode: Boolean = true,
-    val vocabulary: List<String> = emptyList(),
+    val vocabulary: List<VocabularyWord> = emptyList(),
     /** Place the chip on the keyboard's mic key; off uses the custom position below. */
     val chipDockOnMic: Boolean = true,
     /** The custom chip position, as a pixel offset from the keyboard's bottom-right corner. */
@@ -259,6 +260,14 @@ data class SpeecherSettings(
         if (provider == Provider.Claude) copy(claudeRefinement = choice)
         else copy(chatGptRefinement = choice)
 
+    /**
+     * The words a dictation under [profile] uses, for both its speech hints and its refinement:
+     * those limited to no profile or to this one.
+     */
+    fun vocabularyFor(profile: WritingProfile): List<VocabularyWord> = vocabulary.filter {
+        it.profiles.isEmpty() || profile in it.profiles
+    }
+
     fun fastMode(provider: Provider): Boolean =
         if (provider == Provider.Claude) claudeFastMode else chatGptSpeed != OpenAiSpeed.Standard
 
@@ -279,7 +288,8 @@ data class SpeecherSettings(
     /**
      * With these profiles in place of the old ones. A rule that pointed at a deleted profile loses
      * it, and is dropped when it sets no app type either; a fallback that named one becomes Other,
-     * as on the desktop.
+     * as on the desktop. A word limited to a deleted profile loses it, so a word left with none
+     * applies to every profile.
      */
     fun withWritingProfiles(
         profiles: Map<WritingProfile, WritingProfileSettings> = writingProfiles
@@ -292,6 +302,7 @@ data class SpeecherSettings(
                     .filter { it.category != null || it.profile != null },
             defaultWritingProfile =
                 defaultWritingProfile.takeIf { it in profiles } ?: WritingProfile.Other,
+            vocabulary = vocabulary.map { it.copy(profiles = it.profiles intersect profiles.keys) },
         )
 }
 

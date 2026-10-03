@@ -8,6 +8,7 @@ import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import kotlin.enums.enumEntries
@@ -43,7 +44,20 @@ class SettingsStore(private val context: Context) {
                 claudeFastMode = preferences.getBoolean("anthropicFastMode", true),
                 vocabulary =
                     JSONArray(preferences.getString("vocabulary", "[]")).let { items ->
-                        List(items.length()) { index -> items.getString(index) }
+                        // Earlier releases stored each word as its bare term.
+                        List(items.length()) { index ->
+                            val word = items.optJSONObject(index)
+                            if (word == null) VocabularyWord(items.getString(index))
+                            else
+                                VocabularyWord(
+                                    word.getString("term"),
+                                    word.optString("context"),
+                                    (word.optJSONArray("profiles") ?: JSONArray()).let { ids ->
+                                        List(ids.length()) { WritingProfile(ids.getString(it)) }
+                                            .toSet()
+                                    },
+                                )
+                        }
                     },
                 chipDockOnMic = preferences.getBoolean("chipDockOnMic", true),
                 chipOffsetX =
@@ -130,7 +144,21 @@ class SettingsStore(private val context: Context) {
             }
             putString("openAiSpeed", settings.chatGptSpeed.name)
             putBoolean("anthropicFastMode", settings.claudeFastMode)
-            putString("vocabulary", JSONArray(settings.vocabulary).toString())
+            putString(
+                "vocabulary",
+                JSONArray(
+                        settings.vocabulary.map { word ->
+                            JSONObject(
+                                mapOf(
+                                    "term" to word.term,
+                                    "context" to word.context,
+                                    "profiles" to JSONArray(word.profiles.map { it.id }),
+                                )
+                            )
+                        }
+                    )
+                    .toString(),
+            )
             putBoolean("chipDockOnMic", settings.chipDockOnMic)
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")

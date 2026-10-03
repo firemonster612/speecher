@@ -22,7 +22,7 @@ fun refineTranscript(
     provider: OAuthProvider,
     tokens: OAuthTokens,
     rawTranscript: String,
-    vocabulary: List<String>,
+    vocabulary: List<VocabularyWord>,
     /** The API model id, and the effort sent as `reasoning.effort` or `output_config.effort`. */
     model: String,
     effort: String,
@@ -123,7 +123,7 @@ private fun refineOnce(
     provider: OAuthProvider,
     tokens: OAuthTokens,
     rawTranscript: String,
-    vocabulary: List<String>,
+    vocabulary: List<VocabularyWord>,
     model: String,
     effort: String,
     context: RefinementContext,
@@ -213,7 +213,7 @@ private fun readRefinement(
 private fun claudeRequest(
     token: String,
     raw: String,
-    vocabulary: List<String>,
+    vocabulary: List<VocabularyWord>,
     model: String,
     effort: String,
     context: RefinementContext,
@@ -286,7 +286,7 @@ private fun claudeRequest(
 
 private fun chatGptBody(
     raw: String,
-    vocabulary: List<String>,
+    vocabulary: List<VocabularyWord>,
     model: String,
     effort: String,
     context: RefinementContext,
