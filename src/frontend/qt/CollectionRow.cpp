@@ -80,8 +80,11 @@ QIcon collectionIcon(const QString &iconId)
 
 // An Icon column's cell: the style draws the cell, selection included, and
 // the icon sits centred in it, where an item view would put it at the left.
+// A faint icon is the icon's disabled mode, drawn at the screen's scale.
 class IconCellDelegate final : public QStyledItemDelegate {
 public:
+    static constexpr int FaintRole = Qt::UserRole + 1;
+
     using QStyledItemDelegate::QStyledItemDelegate;
 
     void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
@@ -96,8 +99,11 @@ public:
         style->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
         // At the style's small icon size, as the header draws it.
         const int size = style->pixelMetric(QStyle::PM_SmallIconSize, &item, widget);
+        const QIcon::Mode mode = index.data(FaintRole).toBool()            ? QIcon::Disabled
+                                 : item.state & QStyle::State_Selected ? QIcon::Selected
+                                                                       : QIcon::Normal;
         icon.paint(painter, QStyle::alignedRect(item.direction, Qt::AlignCenter, QSize(size, size), item.rect),
-                   Qt::AlignCenter, item.state & QStyle::State_Selected ? QIcon::Selected : QIcon::Normal);
+                   Qt::AlignCenter, mode);
     }
 };
 
@@ -150,7 +156,7 @@ public:
     // What the settings hold, which starts the editor's history over.
     void setRecords(const QList<QVariantMap> &records);
     // Keeps the settings a choice column's options come from, and re-derives
-    // the badges beside each record for them.
+    // the icons each record shows for them.
     void refresh(const AppSettings &settings);
     // A collection whose gate is closed keeps its records readable and stops
     // taking edits.
@@ -553,6 +559,7 @@ void CollectionEditor::showRecords(const QList<QVariantMap> &records)
     for (int index = 0; index < records.size(); ++index) {
         appendRecord(records.at(index), index < m_lockedCount);
     }
+    showIcons();
     m_table->clearSelection();
     updateButtons();
 }
@@ -569,15 +576,12 @@ void CollectionEditor::showIcons()
     const QList<QVariantMap> shown = lockedRecords() + records();
     // Item data, not text, so it is no edit: nothing announces a change.
     const QSignalBlocker blocker(m_table);
-    const int size = m_table->style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, m_table);
     for (int index = 0; index < m_columns.size(); ++index) {
         const CollectionColumn &column = m_columns.at(index);
         if (column.kind != ColumnKind::Icon || !column.icons) {
             continue;
         }
         const QIcon icon = collectionIcon(column.iconId);
-        // Faint is the style's own disabled look of the icon.
-        const QIcon faint(icon.pixmap(QSize(size, size), m_table->devicePixelRatio(), QIcon::Disabled));
         const QList<IconCell> cells = column.icons(shown, m_settings);
         for (int row = 0; row < m_table->rowCount() && row < cells.size(); ++row) {
             QTableWidgetItem *item = m_table->item(row, index);
@@ -585,10 +589,11 @@ void CollectionEditor::showIcons()
                 continue;
             }
             const IconCell &cell = cells.at(row);
-            item->setIcon(cell.state == IconCell::State::Shown   ? icon
-                          : cell.state == IconCell::State::Faint ? faint
-                                                                 : QIcon());
+            item->setIcon(cell.state == IconCell::State::None ? QIcon() : icon);
+            item->setData(IconCellDelegate::FaintRole, cell.state == IconCell::State::Faint);
             item->setToolTip(cell.tooltip);
+            // A screen reader reads this, not the tooltip.
+            item->setData(Qt::AccessibleTextRole, cell.tooltip);
         }
     }
 }

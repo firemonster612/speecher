@@ -152,14 +152,17 @@ FontIcon columnIcon(const QString &iconId)
 }
 
 // What an Icon cell shows: its icon, faint in the disabled text colour, or
-// nothing. The tooltip is also what a screen reader says.
+// nothing. The tooltip is also what a screen reader says; a cell with no icon
+// but something to say keeps the icon unseen, so it can still be hovered.
 UIElement iconCell(const QString &iconId, const IconCell &cell, const PaneHost &host)
 {
-    if (cell.state == IconCell::State::None) {
+    if (cell.state == IconCell::State::None && cell.tooltip.isEmpty()) {
         return Grid();
     }
     FontIcon icon = columnIcon(iconId);
-    if (cell.state == IconCell::State::Faint) {
+    if (cell.state == IconCell::State::None) {
+        icon.Opacity(0);
+    } else if (cell.state == IconCell::State::Faint) {
         if (const auto brush = themeBrush(L"SettingsCardDisabledForeground", host)) {
             icon.Foreground(brush);
         }

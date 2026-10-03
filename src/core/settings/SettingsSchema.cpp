@@ -48,7 +48,7 @@ const QString kUsesColumn = QStringLiteral("uses");
 const QString kLastUsedColumn = QStringLiteral("lastUsed");
 const QString kContextColumn = QStringLiteral("context");
 const QString kKeyTermColumn = QStringLiteral("keyTerm");
-const QString kSpeechColumn = QStringLiteral("speech");
+const QString kKeyTermIconColumn = QStringLiteral("keyTermIcon");
 const QString kPriorityIconColumn = QStringLiteral("priorityIcon");
 const QString kProfilesColumn = QStringLiteral("profiles");
 const QString kHeardColumn = QStringLiteral("original");
@@ -2166,9 +2166,9 @@ SettingsPage vocabularyPage()
                                    "in when the list is longer than the service takes.");
     // The table shows both as icons, as a mail client shows starred and
     // flagged: a column each, before the term.
-    CollectionColumn sent{kSpeechColumn, QStringLiteral("Key term"), ColumnKind::Icon};
-    sent.iconId = QStringLiteral("microphone");
-    sent.icons = [](const QList<QVariantMap> &records, const AppSettings &settings) {
+    CollectionColumn keyTermIcon{kKeyTermIconColumn, QStringLiteral("Key term"), ColumnKind::Icon};
+    keyTermIcon.iconId = QStringLiteral("microphone");
+    keyTermIcon.icons = [](const QList<QVariantMap> &records, const AppSettings &settings) {
         // The same entries the settings would store, so the icons follow the
         // priority order the speech request is cut from.
         const QString &provider = settings.speech.providerId;
@@ -2182,18 +2182,20 @@ SettingsPage vocabularyPage()
             } else if (hints.contains(record.value(kTermColumn).toString().simplified(), Qt::CaseInsensitive)) {
                 cells.append({IconCell::State::Shown, QStringLiteral("Key term: sent to the speech service as a hint.")});
             } else if (takesKeyTerms) {
+                // Past what the service takes, or spelt in characters it
+                // does not accept, as Claude Voice refuses non-Latin-1 ones.
                 cells.append({IconCell::State::Faint,
-                              QStringLiteral("Key term, but past what the speech service takes, so not sent.")});
+                              QStringLiteral("Key term, but the speech service does not take it, so it is not sent.")});
             } else {
                 cells.append({IconCell::State::Faint, QStringLiteral("Key term, but this speech service takes none.")});
             }
         }
         return cells;
     };
-    CollectionColumn first{kPriorityIconColumn, QStringLiteral("Priority"), ColumnKind::Icon};
-    first.iconId = QStringLiteral("star");
+    CollectionColumn priorityIcon{kPriorityIconColumn, QStringLiteral("Priority"), ColumnKind::Icon};
+    priorityIcon.iconId = QStringLiteral("star");
     // Priority only means anything for a key term.
-    first.icons = [](const QList<QVariantMap> &records, const AppSettings &) {
+    priorityIcon.icons = [](const QList<QVariantMap> &records, const AppSettings &) {
         QList<IconCell> cells;
         for (const QVariantMap &record : records) {
             cells.append(record.value(kStarColumn).toBool() && record.value(kKeyTermColumn, true).toBool()
@@ -2204,8 +2206,8 @@ SettingsPage vocabularyPage()
         return cells;
     };
     terms.columns = {
-        sent,
-        first,
+        keyTermIcon,
+        priorityIcon,
         term,
         keyTerm,
         priority,

@@ -71,7 +71,7 @@ const speechText = t => !t.key ? `<span class="muted">Refinement only</span>`
 const variants = [
   {
     title: "A. Icon columns",
-    text: "Two narrow columns, as a mail client shows starred and flagged. Filled microphone: sent to the speech service. Outline: a key term over the limit. Star: priority. Tooltips name them.",
+    text: "Two narrow columns, as a mail client shows starred and flagged. Microphone: sent to the speech service; faint: a key term the service does not take. Star: priority. Tooltips name them. (Built in the text colour, not the accent drawn here.)",
     head: `<th style="width:30px" class="center" title="Key term">${svg("micFill")}</th><th style="width:30px" class="center" title="Priority">${svg("star")}</th><th>Term</th>${tailHead}`,
     row: t => `<td class="center">${micCell(t)}</td><td class="center">${starCell(t)}</td>${termCell(t)}${tail(t)}`,
   },

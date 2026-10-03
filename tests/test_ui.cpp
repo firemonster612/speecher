@@ -1073,6 +1073,8 @@ private slots:
         };
         QVERIFY(sent(0));
         QVERIFY(!sent(100));
+        // A screen reader reads the same words.
+        QCOMPARE(table->item(0, 0)->data(Qt::AccessibleTextRole).toString(), table->item(0, 0)->toolTip());
 
         // Giving the last term priority pulls it into the key terms and
         // pushes the 100th out, before anything is saved. Priority waits on

@@ -522,7 +522,7 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                             word.term in keyTerms ->
                                 "Key term: sent to the speech service as a hint."
                             settings.transcriptionProvider == Provider.Claude ->
-                                "Key term, but past what the speech service takes, so not sent."
+                                "Key term, but the speech service does not take it, so it is not sent."
                             else -> "Key term, but this speech service takes none."
                         },
                         faint = word.term !in keyTerms,
@@ -911,8 +911,8 @@ internal fun vocabularySummary(settings: SpeecherSettings): String {
     }
     val hints = claudeVoiceKeyterms(speechTerms(settings.vocabulary)).size
     val keyTerms = if (hints == 1) "1 key term" else "$hints key terms"
-    return "Names and terms Speecher should spell your way. Claude takes $keyTerms, shown by " +
-        "the microphone, and $refinement."
+    return "Names and terms Speecher should spell your way. Claude takes $keyTerms, and " +
+        "$refinement."
 }
 
 @Composable

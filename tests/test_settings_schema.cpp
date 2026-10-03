@@ -1080,7 +1080,7 @@ private slots:
             return *std::find_if(row.collection.columns.cbegin(), row.collection.columns.cend(),
                                  [&id](const CollectionColumn &column) { return column.id == id; });
         };
-        const QList<IconCell> sent = column(QStringLiteral("speech")).icons(shown, settings);
+        const QList<IconCell> sent = column(QStringLiteral("keyTermIcon")).icons(shown, settings);
         QCOMPARE(sent.size(), 103);
         QCOMPARE(sent.first().state, IconCell::State::Shown);
         QCOMPARE(sent.at(98).state, IconCell::State::Shown);
@@ -1092,7 +1092,7 @@ private slots:
         QCOMPARE(priority.at(101).state, IconCell::State::Shown);
         // A speech service that takes no key terms sends none of them.
         settings.speech.providerId = QStringLiteral("codex");
-        QCOMPARE(column(QStringLiteral("speech")).icons(shown, settings).first().state, IconCell::State::Faint);
+        QCOMPARE(column(QStringLiteral("keyTermIcon")).icons(shown, settings).first().state, IconCell::State::Faint);
 
     }
 
