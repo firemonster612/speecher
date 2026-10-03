@@ -2,6 +2,7 @@ package app.speecher.android.dictation
 
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
+import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.WritingProfile
@@ -87,6 +88,9 @@ enum class FailureReason {
 
     /** The provider refused or failed. Recovery: retry. */
     Provider,
+
+    /** The provider can't listen for the saved spoken language. Recovery: open the app. */
+    SpokenLanguage,
 }
 
 /**
@@ -203,6 +207,11 @@ data class SpeecherSettings(
      * default, as on the desktop: it is more accurate, though slower and an extra request.
      */
     val transcribePassEnabled: Boolean = true,
+    /**
+     * The language code the speech service listens for, or
+     * [app.speecher.protocol.AUTOMATIC_LANGUAGE] to have it detect the language.
+     */
+    val spokenLanguage: String = ENGLISH_LANGUAGE,
     val chatGptRefinement: RefinementChoice = Provider.ChatGpt.defaultRefinement,
     val claudeRefinement: RefinementChoice = Provider.Claude.defaultRefinement,
     /**

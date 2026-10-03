@@ -1,5 +1,11 @@
 package app.speecher.protocol
 
+/** The spoken language code that lets the speech service detect the language itself. */
+const val AUTOMATIC_LANGUAGE = "auto"
+
+/** English's spoken language code, every install's default. */
+const val ENGLISH_LANGUAGE = "en"
+
 internal fun isAuthenticationError(detail: String): Boolean =
     listOf("401", "403", "unauthorized", "forbidden").any { detail.contains(it, ignoreCase = true) }
 

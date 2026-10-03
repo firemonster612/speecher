@@ -1,6 +1,7 @@
 package app.speecher.protocol
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 
 /** Expected prompts are dictationRefinementSystemPrompt output from the desktop build. */
@@ -105,6 +106,21 @@ class TargetTest {
                 "{\"application_category\":\"unknown\",\"application_id\":\"\",\"application_name\":\"\",\"control_role\":\"\",\"document_url\":\"\",\"refinement_style\":\"strong_polish\",\"requested_tone\":\"formal\",\"screenshot_supplied\":false,\"window_title\":\"\",\"writing_profile\":\"other\"}",
             dictationSystemPrompt(context),
         )
+    }
+
+    @Test
+    fun `a spoken language other than English adds its rule before the user's instructions`() {
+        val english = RefinementContext(additionalInstructions = "Spell it Speecher.")
+        val rule =
+            "Rule: spoken_language.\nThe dictation may be in a language other than English. Keep the refined text in the language it was spoken in and never translate it, unless the output_language rule asks for another language. Follow that language's punctuation, spacing, quotation marks, and typography rather than English conventions."
+        val prompt = dictationSystemPrompt(english)
+        assertFalse(rule in prompt)
+        listOf("de", "auto").forEach {
+            assertEquals(
+                prompt.replace("\n\nUser instructions.", "\n\n$rule\n\nUser instructions."),
+                dictationSystemPrompt(english.copy(spokenLanguage = it)),
+            )
+        }
     }
 
     private val terse =

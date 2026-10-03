@@ -27,31 +27,40 @@ sealed interface ClaudeVoiceEvent {
     data object Unknown : ClaudeVoiceEvent
 }
 
+/** The spoken languages Claude Voice listens for, as codes, Automatic first. */
+val claudeVoiceLanguages: List<String> =
+    listOf(AUTOMATIC_LANGUAGE) +
+        ("am ar be bg bn bs ca cs da de el en es et fa fi fr he hi hr hu id it ja kn ko lt lv mk " +
+                "mr ms nl no pl pt ro ru sk sl sr sv sw ta te th tl tr uk ur vi yue zh")
+            .split(' ')
+
 /**
- * Query parameters for the stream URL, in the order they are sent.
+ * Query parameters for the stream URL, in the order they are sent. Automatic [language] sends no
+ * `language` item, so the service detects it.
  *
  * `forward_interims=typed` is on by default. `SPEECHER_CLAUDE_FORWARD_INTERIMS_TYPED` can turn it
  * off, unless `CLAUDE_CODE_VOICE_FORWARD_INTERIMS_TYPED` forces it on.
  */
-fun claudeVoiceStreamQuery(env: (String) -> String? = System::getenv): List<Pair<String, String>> =
-    buildList {
-        add("encoding" to "linear16")
-        add("sample_rate" to "16000")
-        add("channels" to "1")
-        add("endpointing_ms" to "300")
-        add("utterance_end_ms" to "1000")
-        add("language" to "en")
-        add("use_conversation_engine" to "true")
-        if (typedInterimsEnabled(env)) add("forward_interims" to "typed")
-        add("stt_provider" to "deepgram-nova3")
-    }
+fun claudeVoiceStreamQuery(
+    language: String,
+    env: (String) -> String? = System::getenv,
+): List<Pair<String, String>> = buildList {
+    add("encoding" to "linear16")
+    add("sample_rate" to "16000")
+    add("channels" to "1")
+    add("endpointing_ms" to "300")
+    add("utterance_end_ms" to "1000")
+    if (language != AUTOMATIC_LANGUAGE) add("language" to language)
+    add("use_conversation_engine" to "true")
+    if (typedInterimsEnabled(env)) add("forward_interims" to "typed")
+    add("stt_provider" to "deepgram-nova3")
+}
 
 /**
  * The `x-config-keyterms` header value: whitespace-collapsed terms joined by commas, first spelling
- * wins among case-insensitive duplicates. Terms with characters outside Latin-1 are dropped, as are
- * terms that would push the header past 1024 bytes; shorter terms after them can still fit.
- *
- * Every character is in U+0000..U+00FF, so the length is the byte count when sent as ISO-8859-1.
+ * wins among case-insensitive duplicates. Terms that would push the header past 1024 bytes of
+ * UTF-8, the encoding the server decodes it with, are dropped; shorter terms after them can still
+ * fit.
  */
 fun claudeVoiceKeytermsHeader(vocabulary: Iterable<String>): String =
     claudeVoiceKeyterms(vocabulary).joinToString(",")
@@ -65,17 +74,18 @@ fun claudeVoiceKeyterms(vocabulary: Iterable<String>): List<String> =
 /** Which of [vocabulary]'s words the header carries, by position. */
 fun claudeVoiceKeytermIndices(vocabulary: List<String>): List<Int> {
     val kept = mutableListOf<Int>()
-    var length = 0
+    var bytes = 0
     val seen = mutableSetOf<String>()
     vocabulary.forEachIndexed { index, value ->
         val term = value.simplified()
         val key = term.lowercaseAscii()
-        if (term.isEmpty() || term.any { it > 'ÿ' } || key in seen) return@forEachIndexed
+        if (term.isEmpty() || key in seen) return@forEachIndexed
         val separator = if (kept.isEmpty()) 0 else 1
-        if (length + separator + term.length > MAX_KEYTERMS_BYTES) return@forEachIndexed
+        val size = term.toByteArray(Charsets.UTF_8).size
+        if (bytes + separator + size > MAX_KEYTERMS_BYTES) return@forEachIndexed
         seen += key
         kept += index
-        length += separator + term.length
+        bytes += separator + size
     }
     return kept
 }

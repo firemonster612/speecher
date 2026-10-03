@@ -173,12 +173,16 @@ class SpeecherImeService : InputMethodService() {
         else panel.clearFlags(flag)
     }
 
-    /** A denied microphone and an ended sign-in need the app; the other failures retry in place. */
+    /**
+     * A denied microphone, an ended sign-in and an unsupported spoken language need the app; the
+     * other failures retry in place.
+     */
     private fun recover() {
         val failed = panelState.value as? DictationState.Failed ?: return
         if (
             failed.reason != FailureReason.MicrophoneDenied &&
-                failed.reason != FailureReason.SignedOut
+                failed.reason != FailureReason.SignedOut &&
+                failed.reason != FailureReason.SpokenLanguage
         ) {
             ActiveDictation.engine?.retry()
             return
