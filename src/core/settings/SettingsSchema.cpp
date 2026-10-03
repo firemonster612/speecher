@@ -2857,6 +2857,15 @@ QString globalShortcutTakenText(GlobalShortcutRole takenBy)
         : QStringLiteral("That is already the Global Shortcut for dictation.");
 }
 
+QString keyHelperBusyText(GlobalShortcutRole heldBy)
+{
+    return heldBy == GlobalShortcutRole::Cancel
+        ? QStringLiteral("The Cancel Shortcut already uses the one key Speecher's key helper can "
+                         "watch. Use a key combination here instead.")
+        : QStringLiteral("The Global Shortcut for dictation already uses the one key Speecher's "
+                         "key helper can watch. Use a key combination here instead.");
+}
+
 QString globalShortcutBindFailedText()
 {
     return QStringLiteral("That shortcut could not be bound.");

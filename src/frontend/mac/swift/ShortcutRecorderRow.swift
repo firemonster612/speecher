@@ -218,20 +218,25 @@ struct CancelShortcutRecorderRow: View {
     @State private var captureProblem = ""
 
     var body: some View {
-        LabeledContent {
-            HStack {
-                if !recorder.recording {
-                    Text(model.cancelShortcut.isEmpty ? SpeecherBridge.globalShortcutUnsetText
-                                                      : model.cancelShortcut)
+        VStack(alignment: .leading) {
+            LabeledContent {
+                HStack {
+                    if !recorder.recording {
+                        Text(model.cancelShortcut.isEmpty ? SpeecherBridge.globalShortcutUnsetText
+                                                          : model.cancelShortcut)
+                    }
+                    Button(SpeecherBridge.globalShortcutChangeCaption) { record() }
+                        .disabled(!model.shortcutSupported || recorder.recording)
+                    if !recorder.recording, !model.cancelShortcut.isEmpty {
+                        Button(SpeecherBridge.globalShortcutClearCaption) { model.clearCancelShortcut() }
+                    }
                 }
-                Button(SpeecherBridge.globalShortcutChangeCaption) { record() }
-                    .disabled(!model.shortcutSupported || recorder.recording)
-                if !recorder.recording, !model.cancelShortcut.isEmpty {
-                    Button(SpeecherBridge.globalShortcutClearCaption) { model.clearCancelShortcut() }
-                }
+            } label: {
+                RowView.label(model.row("cancelShortcut")?.label ?? "", help: description)
             }
-        } label: {
-            RowView.label(model.row("cancelShortcut")?.label ?? "", help: description)
+            if model.cancelShortcutNeedsAccessibility, !model.accessibilityEnabled {
+                Button(SpeecherBridge.accessibilityGrantActionLabel) { model.requestAccessibility() }
+            }
         }
     }
 

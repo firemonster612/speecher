@@ -10,6 +10,7 @@
 #include <QDBusVariant>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QSettings>
 #include <QTimer>
 #include <QUuid>
 
@@ -48,6 +49,33 @@ QString portalTrigger(const QKeySequence &sequence)
         else if (part == QStringLiteral("Meta")) trigger += QStringLiteral("<Super>");
     }
     return trigger + key;
+}
+
+// The portal keeps an app's bound shortcuts across sessions and ListShortcuts
+// hands them back at startup, so a shortcut the person let go of would return
+// on the next launch. Speecher remembers the removal and skips that restore
+// until they choose a shortcut again.
+QString clearedKey(const GlobalShortcutAction &action)
+{
+    return action.settingsKey + QStringLiteral("PortalCleared");
+}
+
+void rememberCleared(const GlobalShortcutAction &action, bool cleared)
+{
+    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+                       QString::fromLatin1(SettingsKeys::Application));
+    if (cleared) {
+        settings.setValue(clearedKey(action), true);
+    } else {
+        settings.remove(clearedKey(action));
+    }
+}
+
+bool wasCleared(const GlobalShortcutAction &action)
+{
+    QSettings settings(QString::fromLatin1(SettingsKeys::Organization),
+                       QString::fromLatin1(SettingsKeys::Application));
+    return settings.value(clearedKey(action)).toBool();
 }
 
 bool isUnknownRegistryCall(const QDBusError &error)
@@ -171,6 +199,9 @@ QString PortalGlobalShortcutBinder::unsupportedReason() const
 
 void PortalGlobalShortcutBinder::bind()
 {
+    if (wasCleared(action())) {
+        return;
+    }
     if (!m_supportKnown) {
         m_bindWhenSupported = true;
         return;
@@ -190,6 +221,7 @@ void PortalGlobalShortcutBinder::registerShortcut()
         emit registrationFinished(false, m_unsupportedReason);
         return;
     }
+    rememberCleared(action(), false);
     createSession(true);
 }
 
@@ -221,6 +253,7 @@ bool PortalGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
 // old combination starting dictation. Closing the session is the removal.
 bool PortalGlobalShortcutBinder::removeRegistration(QString *)
 {
+    rememberCleared(action(), true);
     m_bindWhenSupported = false;
     // An in-flight host-identity Register keeps its watcher, whose
     // continuation would recreate the session this removal closes. Cancel

@@ -80,6 +80,8 @@ final class AppModel: ObservableObject {
     /// The last single-key binding was refused for the missing Accessibility
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
+    /// The same, for the Cancel Shortcut row.
+    @Published private(set) var cancelShortcutNeedsAccessibility = false
     /// The pane the sidebar is on. A window opened from closed starts on
     /// reopenPane.
     @Published var pane = "home" {
@@ -581,6 +583,7 @@ final class AppModel: ObservableObject {
     func bindCancelShortcut(characters: String, modifierFlags: NSEvent.ModifierFlags) {
         cancelShortcutProblem = bridge.bindCancelShortcut(characters: characters,
                                                           modifierFlags: modifierFlags.rawValue) ?? ""
+        cancelShortcutNeedsAccessibility = false
         cancelShortcut = bridge.cancelShortcutDisplay
     }
 
@@ -589,12 +592,14 @@ final class AppModel: ObservableObject {
     func bindCancelSingleKey(macKeyCode keyCode: UInt16) -> Bool {
         guard let code = keyCodeName(forMacKeyCode: keyCode) else { return false }
         cancelShortcutProblem = bridge.bindCancelSingleKey(code: code) ?? ""
+        cancelShortcutNeedsAccessibility = !cancelShortcutProblem.isEmpty && !bridge.accessibilityEnabled
         cancelShortcut = bridge.cancelShortcutDisplay
         return true
     }
 
     func clearCancelShortcut() {
         cancelShortcutProblem = bridge.clearCancelShortcut() ?? ""
+        cancelShortcutNeedsAccessibility = false
         cancelShortcut = bridge.cancelShortcutDisplay
     }
 

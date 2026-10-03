@@ -37,6 +37,9 @@ private:
     quint8 m_keyId = 0;
     bool m_replied = false;
     bool m_reconnectPending = false;
+    // The helper watches one key per person and our other Global Shortcut
+    // holds it. Retrying cannot succeed until that one lets its key go.
+    bool m_helperBusy = false;
 };
 
 } // namespace speecher

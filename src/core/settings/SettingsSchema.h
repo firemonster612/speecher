@@ -526,6 +526,9 @@ QString globalShortcutChooseCaption();
 QString globalShortcutClearCaption();
 // Why a Global Shortcut cannot take the binding the other one already has.
 QString globalShortcutTakenText(GlobalShortcutRole takenBy);
+// Why a single key cannot be watched on Wayland while the other Global
+// Shortcut already holds the one key the key helper watches per person.
+QString keyHelperBusyText(GlobalShortcutRole heldBy);
 // What the Global Shortcut row says when the binder refused a binding without
 // saying why.
 QString globalShortcutBindFailedText();
