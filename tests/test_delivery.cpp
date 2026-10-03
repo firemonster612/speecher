@@ -617,6 +617,13 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         settings.vocabulary.removeLast();
         settings.learnedCorrections.removeLast();
 
+        // A term that is not a key term goes to refinement only.
+        settings.vocabulary[2].keyTerm = false;
+        QVERIFY(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{})
+                    .refinementVocabulary.contains(QStringLiteral("Speecher")));
+        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, Target{}).contains(QStringLiteral("Speecher")));
+        settings.vocabulary[2].keyTerm = true;
+
         settings.refinement.sessionWritingProfile = WritingProfile::Personal;
         const TranscriptPipelineResult personal =
             TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{});

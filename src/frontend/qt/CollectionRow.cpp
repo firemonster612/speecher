@@ -13,6 +13,7 @@
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QHeaderView>
 #include <QKeyEvent>
 #include <QLabel>
@@ -494,19 +495,23 @@ void CollectionEditor::refresh(const AppSettings &settings)
 {
     m_settings = settings;
     showChoiceSets();
-    if (!m_collection.badges) {
+    if (!m_collection.badges && !m_collection.detailBadges) {
         return;
     }
     const auto stretch = std::find_if(m_columns.cbegin(), m_columns.cend(),
                                       [](const CollectionColumn &column) { return column.stretch; });
     const int column = int(stretch - m_columns.cbegin());
-    const QStringList badges = m_collection.badges(lockedRecords() + records(), settings);
+    const QList<QVariantMap> shown = lockedRecords() + records();
+    const QStringList badges = m_collection.badges ? m_collection.badges(shown, settings) : QStringList();
+    const QStringList detailBadges =
+        m_collection.detailBadges ? m_collection.detailBadges(shown, settings) : QStringList();
     // Item data, not text, so it is no edit: nothing announces a change.
     const QSignalBlocker blocker(m_table);
-    for (int row = 0; row < m_table->rowCount() && row < badges.size(); ++row) {
+    for (int row = 0; row < m_table->rowCount(); ++row) {
         if (QTableWidgetItem *item = m_table->item(row, column)) {
-            item->setData(BadgeDelegate::TextRole, badges.at(row));
+            item->setData(BadgeDelegate::TextRole, badges.value(row));
             item->setData(BadgeDelegate::ToneRole, int(Badge::Tone::Accent));
+            item->setData(BadgeDelegate::DetailBadgeRole, detailBadges.value(row));
         }
     }
 }
@@ -651,6 +656,8 @@ void openRecordDialog(QWidget *parent,
     // What must hold before OK takes the record, rechecked as fields change.
     QList<std::function<bool()>> checks;
     const auto recheck = std::make_shared<std::function<void()>>();
+    // The checkboxes so far, by column, for a later one enabled by them.
+    QHash<QString, QCheckBox *> toggles;
     QWidget *firstText = nullptr;
     // A field with help gets it underneath, in one widget with the field: a
     // wrapped label as a row of its own is sized too narrow and clipped.
@@ -688,6 +695,11 @@ void openRecordDialog(QWidget *parent,
         if (column.kind == ColumnKind::Toggle) {
             auto *box = new QCheckBox(column.title, dialog);
             box->setChecked(value.toBool());
+            if (QCheckBox *enabler = toggles.value(column.enabledBy)) {
+                box->setEnabled(enabler->isChecked());
+                QObject::connect(enabler, &QCheckBox::toggled, box, &QWidget::setEnabled);
+            }
+            toggles.insert(column.id, box);
             addField(column, box);
             readers.append([box, id = column.id](QVariantMap &record) {
                 record.insert(id, box->isChecked());

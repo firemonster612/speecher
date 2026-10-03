@@ -1042,13 +1042,13 @@ private slots:
         QCOMPARE(limit->text(),
                  VocabularyLimit::summary({QStringLiteral("Deepgram"), QStringLiteral("Speecher")}, QStringLiteral("claude")));
 
-        table->item(0, 1)->setText(QStringLiteral("Deepgram Nova 3"));
+        table->item(0, 0)->setText(QStringLiteral("Deepgram Nova 3"));
         QCOMPARE(limit->text(),
                  VocabularyLimit::summary({QStringLiteral("Deepgram Nova 3"),
                                            QStringLiteral("Speecher")}, QStringLiteral("claude")));
     }
 
-    void starringATermMakesItAKeyTermAtOnce()
+    void prioritisingATermMakesItAKeyTermAtOnce()
     {
         ProviderRegistry providers;
         const std::shared_ptr<const PlatformComposition> platform = platformComposition();
@@ -1063,16 +1063,29 @@ private slots:
 
         auto *table = page->findChild<QTableWidget *>(QStringLiteral("vocabularyEntries"));
         QVERIFY(table);
-        const auto badge = [table](int row) {
-            return table->item(row, 1)->data(BadgeDelegate::TextRole).toString();
+        const auto badge = [table](int row, int role = BadgeDelegate::TextRole) {
+            return table->item(row, 0)->data(role).toString();
         };
         QCOMPARE(badge(0), QStringLiteral("Key term"));
         QCOMPARE(badge(100), QString());
 
-        // Starring the last term pulls it into the key terms and pushes the
-        // 100th out, before anything is saved.
-        table->item(100, 0)->setCheckState(Qt::Checked);
+        // Giving the last term priority pulls it into the key terms and
+        // pushes the 100th out, before anything is saved. Priority waits on
+        // Key term.
+        table->selectRow(100);
+        page->findChild<QPushButton *>(QStringLiteral("editVocabularyEntries"))->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        auto *keyTerm = dialog->findChild<QCheckBox *>(QStringLiteral("keyTerm"));
+        auto *priority = dialog->findChild<QCheckBox *>(QStringLiteral("starred"));
+        QVERIFY(keyTerm->isChecked() && priority->isEnabled());
+        keyTerm->setChecked(false);
+        QVERIFY(!priority->isEnabled());
+        keyTerm->setChecked(true);
+        priority->setChecked(true);
+        acceptRecordDialog(dialog);
         QCOMPARE(badge(100), QStringLiteral("Key term"));
+        QCOMPARE(badge(100, BadgeDelegate::DetailBadgeRole), QStringLiteral("Priority"));
         QCOMPARE(badge(99), QString());
     }
 
@@ -1156,7 +1169,8 @@ private slots:
         QDialog *dialog = shownRecordDialog(*page);
         QVERIFY(dialog);
         QCOMPARE(dialog->windowTitle(), QStringLiteral("Kubernetes"));
-        // The Priority box says what it does.
+        // Both boxes say what they do.
+        QVERIFY(!dialog->findChild<QLabel *>(QStringLiteral("keyTermHelp"))->text().isEmpty());
         QVERIFY(!dialog->findChild<QLabel *>(QStringLiteral("starredHelp"))->text().isEmpty());
         dialog->findChild<QPlainTextEdit *>(QStringLiteral("context"))
             ->setPlainText(QStringLiteral("The container platform."));
@@ -1175,7 +1189,7 @@ private slots:
         QVERIFY(ok->isEnabled());
         acceptRecordDialog(dialog);
 
-        QCOMPARE(table->item(0, 2)->text(), QStringLiteral("Work"));
+        QCOMPARE(table->item(0, 1)->text(), QStringLiteral("Work"));
         AppSettings applied;
         page->appendToDraft(applied);
         QCOMPARE(applied.vocabulary.first().context, QStringLiteral("The container platform."));

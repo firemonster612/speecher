@@ -523,7 +523,8 @@ void BadgeDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
 {
     const QString text = index.data(TextRole).toString();
     const QString detail = index.data(DetailRole).toString().simplified();
-    if (text.isEmpty() && detail.isEmpty()) {
+    const QString detailBadge = index.data(DetailBadgeRole).toString();
+    if (text.isEmpty() && detail.isEmpty() && detailBadge.isEmpty()) {
         QStyledItemDelegate::paint(painter, option, index);
         return;
     }
@@ -537,7 +538,8 @@ void BadgeDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
     const QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &item, widget)
                                .adjusted(margin, 0, -margin, 0);
     // A blank last line the style lays out with the rest, for the detail.
-    if (!detail.isEmpty()) {
+    const bool detailed = !detail.isEmpty() || !detailBadge.isEmpty();
+    if (detailed) {
         item.text += QChar::LineSeparator + QStringLiteral(" ");
     }
     QStringList lines = item.text.split(QChar::LineSeparator);
@@ -557,8 +559,15 @@ void BadgeDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
         const QRect pill(QPoint(x, top + (lineHeight - size.height()) / 2), size);
         Badge::paint(*painter, pill, text, Badge::Tone(index.data(ToneRole).toInt()), item.palette);
     }
-    if (!detail.isEmpty()) {
-        const QRect line(textRect.left(), top + int(lines.size() - 1) * lineHeight, textRect.width(), lineHeight);
+    if (detailed) {
+        QRect line(textRect.left(), top + int(lines.size() - 1) * lineHeight, textRect.width(), lineHeight);
+        if (!detailBadge.isEmpty()) {
+            const QSize badgeSize = Badge::sizeFor(item.font, detailBadge);
+            Badge::paint(*painter,
+                         QRect(QPoint(line.left(), line.top() + (lineHeight - badgeSize.height()) / 2), badgeSize),
+                         detailBadge, Badge::Tone::Neutral, item.palette);
+            line.setLeft(line.left() + badgeSize.width() + badgeGap());
+        }
         const bool selected = item.state & QStyle::State_Selected;
         painter->save();
         painter->setFont(item.font);
@@ -573,7 +582,7 @@ void BadgeDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
 QSize BadgeDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const
 {
     QSize size = QStyledItemDelegate::sizeHint(option, index);
-    if (!index.data(DetailRole).toString().isEmpty()) {
+    if (!index.data(DetailRole).toString().isEmpty() || !index.data(DetailBadgeRole).toString().isEmpty()) {
         size.rheight() += option.fontMetrics.height();
     }
     const QString text = index.data(TextRole).toString();

@@ -64,6 +64,11 @@ struct CollectionColumn {
     bool dialogOnly = false;
     // Said under the field where a record is added or edited.
     QString help;
+    // Toggle columns only: the id of another Toggle column this one only
+    // means anything beside, such as a term's priority beside its being a key
+    // term. Where a record is added or edited, this field is disabled while
+    // that one is off.
+    QString enabledBy;
     // Text columns only: the id of another column whose value the table shows
     // as a muted second line under this one's, such as a term's context.
     QString detailColumn;
@@ -136,6 +141,10 @@ struct CollectionDescriptor {
     // service receives. It depends on the other records, so a front end asks
     // again with its current records each time it redraws them.
     std::function<QStringList(const QList<QVariantMap> &, const AppSettings &)> badges;
+    // A second pill, at the start of the stretch column's detail line rather
+    // than beside its text, where two would leave the text no room: which
+    // vocabulary terms have priority. Asked for as badges are.
+    std::function<QStringList(const QList<QVariantMap> &, const AppSettings &)> detailBadges;
 };
 
 struct NumberRange {

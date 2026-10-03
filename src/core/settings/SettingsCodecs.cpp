@@ -313,7 +313,9 @@ QStringList SettingsCodecs::customVocabulary() const
 {
     QStringList terms;
     for (const VocabularyEntry &entry : vocabularyEntries()) {
-        terms.append(entry.term);
+        if (entry.keyTerm) {
+            terms.append(entry.term);
+        }
     }
     return VocabularyLimit::limited(terms);
 }

@@ -47,6 +47,7 @@ const QString kTermColumn = QStringLiteral("term");
 const QString kUsesColumn = QStringLiteral("uses");
 const QString kLastUsedColumn = QStringLiteral("lastUsed");
 const QString kContextColumn = QStringLiteral("context");
+const QString kKeyTermColumn = QStringLiteral("keyTerm");
 const QString kProfilesColumn = QStringLiteral("profiles");
 const QString kHeardColumn = QStringLiteral("original");
 const QString kCorrectedColumn = QStringLiteral("corrected");
@@ -2067,6 +2068,18 @@ QStringList vocabularyTerms(const QList<VocabularyEntry> &entries)
 
 // Where a term came from, as the Source column says it. The stored id stays
 // under kSourceIdKey, since the column only shows it.
+// The terms marked to go to the speech service, in the order they would.
+QStringList vocabularyKeyTerms(const QList<VocabularyEntry> &entries)
+{
+    QStringList terms;
+    for (const VocabularyEntry &entry : entries) {
+        if (entry.keyTerm) {
+            terms.append(entry.term);
+        }
+    }
+    return terms;
+}
+
 QString vocabularySourceLabel(const QString &source)
 {
     if (source == QStringLiteral("csv")) {
@@ -2093,6 +2106,7 @@ QList<QVariantMap> vocabularyRecords(const QList<VocabularyEntry> &entries)
             {kLastUsedMsKey, entry.lastUsedMs},
             {kContextColumn, entry.context},
             {kProfilesColumn, entry.profiles},
+            {kKeyTermColumn, entry.keyTerm},
         });
     }
     return records;
@@ -2113,7 +2127,8 @@ QList<VocabularyEntry> vocabularyEntries(const QList<QVariantMap> &records)
                         record.value(kUsesColumn).toInt(),
                         record.value(kLastUsedMsKey).toLongLong(),
                         record.value(kContextColumn).toString(),
-                        record.value(kProfilesColumn).toStringList()});
+                        record.value(kProfilesColumn).toStringList(),
+                        record.value(kKeyTermColumn, true).toBool()});
     }
     return normalizeVocabularyEntries(entries);
 }
@@ -2138,15 +2153,20 @@ SettingsPage vocabularyPage()
     profiles.everyChoice = QStringLiteral("Every Writing Profile");
     profiles.someChoice = QStringLiteral("Only these Writing Profiles:");
     profiles.help = QStringLiteral("Under any other profile, neither refinement nor the speech service gets this term.");
-    // Not "Key term": that is what the badge calls every term the speech
-    // service receives, ticked or not.
-    CollectionColumn key{kStarColumn, QStringLiteral("Priority"), ColumnKind::Toggle};
-    key.help = QStringLiteral("Puts the term first in line for the speech service, so it stays a key "
-                              "term when the list is longer than the service takes.");
-    key.tooltip = key.help;
+    CollectionColumn keyTerm{kKeyTermColumn, QStringLiteral("Key term"), ColumnKind::Toggle};
+    keyTerm.dialogOnly = true;
+    keyTerm.help = QStringLiteral("Sent to the speech service as a hint, so it hears the term. "
+                                  "Refinement uses every term either way.");
+    CollectionColumn priority{kStarColumn, QStringLiteral("Priority"), ColumnKind::Toggle};
+    priority.dialogOnly = true;
+    priority.enabledBy = kKeyTermColumn;
+    priority.help = QStringLiteral("Puts the key term first in line for the speech service, so it stays "
+                                   "in when the list is longer than the service takes.");
+    // The table shows both as badges, so neither takes a column.
     terms.columns = {
-        key,
         term,
+        keyTerm,
+        priority,
         context,
         profiles,
         {kSourceColumn, QStringLiteral("Source"), ColumnKind::ReadOnly},
@@ -2162,6 +2182,7 @@ SettingsPage vocabularyPage()
         settings.vocabulary = vocabularyEntries(records);
     };
     terms.blankRecord = {{kStarColumn, false},
+                         {kKeyTermColumn, true},
                          {kTermColumn, QString()},
                          {kSourceColumn, vocabularySourceLabel(QStringLiteral("manual"))},
                          {kSourceIdKey, QStringLiteral("manual")},
@@ -2173,14 +2194,25 @@ SettingsPage vocabularyPage()
     terms.badges = [](const QList<QVariantMap> &records, const AppSettings &settings) {
         QStringList badges(records.size());
         // The same entries the settings would store, so the badges follow
-        // the priority order the speech request is cut from.
-        const QList<VocabularyEntry> entries = vocabularyEntries(records);
-        const QStringList hints = VocabularyLimit::speechKeyterms(vocabularyTerms(entries),
-                                                                  settings.speech.providerId);
+        // the priority order the speech request is cut from: a key term
+        // past what the service takes gets none.
+        const QStringList hints = VocabularyLimit::speechKeyterms(
+            vocabularyKeyTerms(vocabularyEntries(records)), settings.speech.providerId);
         for (int index = 0; index < records.size(); ++index) {
             if (hints.contains(records.at(index).value(kTermColumn).toString().simplified(),
                                Qt::CaseInsensitive)) {
                 badges[index] = QStringLiteral("Key term");
+            }
+        }
+        return badges;
+    };
+    // Priority only means anything for a key term.
+    terms.detailBadges = [](const QList<QVariantMap> &records, const AppSettings &) {
+        QStringList badges(records.size());
+        for (int index = 0; index < records.size(); ++index) {
+            const QVariantMap &record = records.at(index);
+            if (record.value(kStarColumn).toBool() && record.value(kKeyTermColumn, true).toBool()) {
+                badges[index] = QStringLiteral("Priority");
             }
         }
         return badges;
@@ -2207,9 +2239,9 @@ SettingsPage vocabularyPage()
     limit.label = QStringLiteral("Limit");
     limit.kind = RowKind::Info;
     limit.value = [](const AppSettings &settings) {
+        const QList<VocabularyEntry> entries = normalizeVocabularyEntries(settings.vocabulary);
         return QVariant(VocabularyLimit::summary(
-            vocabularyTerms(normalizeVocabularyEntries(settings.vocabulary)),
-            settings.speech.providerId));
+            vocabularyTerms(entries), vocabularyKeyTerms(entries), settings.speech.providerId));
     };
 
     const QString help = QStringLiteral("Refinement uses the terms for the dictation's Writing Profile. "

@@ -28,6 +28,9 @@ QList<VocabularyEntry> load(const QSettings &settings)
                 qint64(object.value(QStringLiteral("lastUsedMs")).toDouble()),
                 object.value(QStringLiteral("context")).toString(),
                 profiles,
+                // Stored only when off, so every term saved before the
+                // setting existed stays a key term.
+                object.value(QStringLiteral("keyTerm")).toBool(true),
             });
         }
     } else {
@@ -58,6 +61,9 @@ void store(QSettings &settings, const QList<VocabularyEntry> &entries)
         }
         if (!entry.profiles.isEmpty()) {
             object.insert(QStringLiteral("profiles"), QJsonArray::fromStringList(entry.profiles));
+        }
+        if (!entry.keyTerm) {
+            object.insert(QStringLiteral("keyTerm"), false);
         }
         array.append(object);
         legacyTerms.append(entry.term);

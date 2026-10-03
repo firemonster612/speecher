@@ -125,7 +125,7 @@ QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
     const QList<VocabularyEntry> normalized = normalizeVocabularyEntries(entries);
     QStringList terms;
     for (const VocabularyEntry &entry : normalized) {
-        if (writingProfile.isEmpty() || vocabularyEntryApplies(entry, writingProfile)) {
+        if (entry.keyTerm && (writingProfile.isEmpty() || vocabularyEntryApplies(entry, writingProfile))) {
             terms.append(entry.term);
         }
     }
@@ -177,6 +177,7 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
             normalized.append(entry);
         } else {
             duplicate->starred = duplicate->starred || entry.starred;
+            duplicate->keyTerm = duplicate->keyTerm || entry.keyTerm;
             duplicate->frequency = qMax(duplicate->frequency, entry.frequency);
             duplicate->lastUsedMs = qMax(duplicate->lastUsedMs, entry.lastUsedMs);
             // The copy already listed keeps its context and profiles, so an

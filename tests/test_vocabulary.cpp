@@ -216,6 +216,12 @@ private slots:
         QCOMPARE(entries.at(1).context, QStringLiteral("The container platform."));
         QCOMPARE(entries.at(1).profiles, (QStringList{QStringLiteral("work"), QStringLiteral("custom_standup")}));
 
+        // Every term saved before Key term existed is one; one turned off stays off.
+        QVERIFY(entries.at(0).keyTerm);
+        entries[0].keyTerm = false;
+        settings.setVocabularyEntries(entries);
+        QVERIFY(!settings.vocabularyEntries().at(0).keyTerm);
+
         settings.setWritingProfileSettings(defaultWritingProfileSettings());
         entries = settings.vocabularyEntries();
         QCOMPARE(entries.at(0).profiles, QStringList());

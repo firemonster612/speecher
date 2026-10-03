@@ -77,6 +77,11 @@ QStringList speechKeyterms(const QStringList &terms, const QString &speechProvid
 
 QString summary(const QStringList &terms, const QString &speechProviderId)
 {
+    return summary(terms, terms, speechProviderId);
+}
+
+QString summary(const QStringList &terms, const QStringList &keyTerms, const QString &speechProviderId)
+{
     // `terms` is the whole stored list. Saying how many of them each consumer
     // actually receives is the point of the row, so the over-cap sentences
     // name the sent counts rather than pretending the rest are gone.
@@ -87,7 +92,7 @@ QString summary(const QStringList &terms, const QString &speechProviderId)
         return (terms.size() == 1 ? QStringLiteral("1 term, used for refinement")
                                   : QStringLiteral("%1 terms, %2").arg(terms.size()).arg(refinement));
     }
-    const QStringList sent = speechKeyterms(terms, speechProviderId);
+    const QStringList sent = speechKeyterms(keyTerms, speechProviderId);
     if (sent.size() < terms.size()) {
         return QStringLiteral("%1 terms. %2 are key terms, and %3.")
             .arg(terms.size())
