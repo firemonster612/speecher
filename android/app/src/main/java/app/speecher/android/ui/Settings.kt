@@ -545,7 +545,9 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
 
 /**
  * A word's term, its context and the profiles it is limited to, in a sheet. Saved once the term is
- * set and none of [taken], ignoring case, and a limit names at least one profile.
+ * set and, unless it is the word's own term, none of [taken], ignoring case, and a limit names at
+ * least one profile. Its own term passes so a list that earlier releases let hold two spellings of
+ * a word can still be edited.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -560,7 +562,8 @@ private fun WordEditor(
     var context by rememberSaveable { mutableStateOf(word.context) }
     var limited by rememberSaveable { mutableStateOf(word.profiles.isNotEmpty()) }
     var chosen by remember { mutableStateOf(word.profiles) }
-    val duplicate = taken.any { it.equals(term.trim(), ignoreCase = true) }
+    val duplicate =
+        term.trim() != word.term && taken.any { it.equals(term.trim(), ignoreCase = true) }
     ModalBottomSheet(onDismiss, sheetState = rememberModalBottomSheetState(true)) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp),

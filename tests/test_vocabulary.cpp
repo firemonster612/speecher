@@ -192,8 +192,8 @@ private slots:
         QCOMPARE(imported.first().frequency, 4);
     }
 
-    // A term keeps its context and profiles, two spellings of it apply
-    // wherever either did, and a deleted profile leaves every term it limited.
+    // A term keeps its context and profiles, a second spelling of it cannot
+    // lift its limit, and a deleted profile leaves every term it limited.
     void contextAndProfilesPersistMergeAndImport()
     {
         SettingsStore settings;
@@ -205,8 +205,8 @@ private slots:
         VocabularyEntry kubernetes{QStringLiteral("Kubernetes")};
         kubernetes.context = QStringLiteral("  The container platform.\n");
         kubernetes.profiles = {QStringLiteral("work"), QStringLiteral("custom_standup")};
+        // As an imported row naming the term would arrive.
         VocabularyEntry lowercase{QStringLiteral("kubernetes")};
-        lowercase.profiles = {QStringLiteral("ai_coding")};
         VocabularyEntry grafana{QStringLiteral("Grafana")};
         grafana.profiles = {QStringLiteral("custom_standup")};
         settings.setVocabularyEntries({kubernetes, lowercase, grafana});
@@ -214,23 +214,24 @@ private slots:
         QList<VocabularyEntry> entries = settings.vocabularyEntries();
         QCOMPARE(vocabularyTermsOf(entries), (QStringList{QStringLiteral("Grafana"), QStringLiteral("Kubernetes")}));
         QCOMPARE(entries.at(1).context, QStringLiteral("The container platform."));
-        QCOMPARE(entries.at(1).profiles,
-                 (QStringList{QStringLiteral("work"), QStringLiteral("custom_standup"), QStringLiteral("ai_coding")}));
+        QCOMPARE(entries.at(1).profiles, (QStringList{QStringLiteral("work"), QStringLiteral("custom_standup")}));
 
         settings.setWritingProfileSettings(defaultWritingProfileSettings());
         entries = settings.vocabularyEntries();
         QCOMPARE(entries.at(0).profiles, QStringList());
-        QCOMPARE(entries.at(1).profiles, (QStringList{QStringLiteral("work"), QStringLiteral("ai_coding")}));
+        // Recreated under the same id, the profile starts with no terms.
+        settings.setWritingProfileSettings(profiles);
+        QCOMPARE(settings.vocabularyEntries().at(0).profiles, QStringList());
+        QCOMPARE(entries.at(1).profiles, QStringList{QStringLiteral("work")});
 
         QString error;
         const QList<VocabularyEntry> imported = parseVocabularyCsv(
-            QByteArrayLiteral("term,context,profiles\n"
-                              "Sev1,\"Incident severity, in on-call chats.\",work; email\n"),
+            QByteArrayLiteral("term,context\n"
+                              "Sev1,\"Incident severity, in on-call chats.\"\n"),
             &error);
         QVERIFY2(error.isEmpty(), qPrintable(error));
         QCOMPARE(imported.size(), 1);
         QCOMPARE(imported.first().context, QStringLiteral("Incident severity, in on-call chats."));
-        QCOMPARE(imported.first().profiles, (QStringList{QStringLiteral("work"), QStringLiteral("email")}));
     }
 
     void vocabularyUsageRequiresTermBoundaries()

@@ -108,6 +108,16 @@ bool vocabularyEntryApplies(const VocabularyEntry &entry, const QString &writing
     return entry.profiles.isEmpty() || entry.profiles.contains(writingProfile);
 }
 
+bool vocabularyTermExcluded(const QList<VocabularyEntry> &entries,
+                            const QString &term,
+                            const QString &writingProfile)
+{
+    return std::any_of(entries.cbegin(), entries.cend(), [&](const VocabularyEntry &entry) {
+        return entry.term.compare(term.simplified(), Qt::CaseInsensitive) == 0
+            && !vocabularyEntryApplies(entry, writingProfile);
+    });
+}
+
 QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
                              const QList<LearnedCorrection> &corrections,
                              const QString &writingProfile)
@@ -121,7 +131,9 @@ QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
     // Corrections sit last, so an over-cap list drops them before any term
     // the person typed.
     for (const LearnedCorrection &correction : corrections) {
-        if (correction.enabled && !terms.contains(correction.corrected, Qt::CaseInsensitive)) {
+        if (correction.enabled && !terms.contains(correction.corrected, Qt::CaseInsensitive)
+            && (writingProfile.isEmpty()
+                || !vocabularyTermExcluded(entries, correction.corrected, writingProfile))) {
             terms.append(correction.corrected);
         }
     }
@@ -166,16 +178,11 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
             duplicate->starred = duplicate->starred || entry.starred;
             duplicate->frequency = qMax(duplicate->frequency, entry.frequency);
             duplicate->lastUsedMs = qMax(duplicate->lastUsedMs, entry.lastUsedMs);
+            // The copy already listed keeps its context and profiles, so an
+            // imported row naming the term cannot lift its limit. A context
+            // it lacks comes from the later copy.
             if (duplicate->context.isEmpty()) {
                 duplicate->context = entry.context;
-            }
-            // Either copy unlimited leaves the term unlimited; otherwise it
-            // applies wherever either copy did.
-            if (duplicate->profiles.isEmpty() || entry.profiles.isEmpty()) {
-                duplicate->profiles.clear();
-            } else {
-                duplicate->profiles.append(entry.profiles);
-                duplicate->profiles.removeDuplicates();
             }
         }
     }
@@ -193,7 +200,7 @@ QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &
     });
 
     // Every entry is kept. The service cap applies to the subset sent with a
-    // request (SettingsCodecs::customVocabulary), not to what we store, so a
+    // request (speechVocabulary), not to what we store, so a
     // term that does not fit today is still here when the list gets shorter.
     return normalized;
 }
@@ -221,7 +228,6 @@ QList<VocabularyEntry> parseVocabularyCsv(const QByteArray &csv, QString *error)
         ? column(header, QStringLiteral("last_used_ms"), column(header, QStringLiteral("last_used")))
         : 4;
     const int contextColumn = hasHeader ? column(header, QStringLiteral("context")) : 5;
-    const int profilesColumn = hasHeader ? column(header, QStringLiteral("profiles")) : 6;
 
     QList<VocabularyEntry> entries;
     for (int index = hasHeader ? 1 : 0; index < rows.size(); ++index) {
@@ -240,10 +246,6 @@ QList<VocabularyEntry> parseVocabularyCsv(const QByteArray &csv, QString *error)
         entry.frequency = fieldAt(row, frequencyColumn).toInt();
         entry.lastUsedMs = fieldAt(row, lastUsedColumn).toLongLong();
         entry.context = fieldAt(row, contextColumn);
-        // Profile ids, separated by semicolons since commas separate fields.
-        for (const QString &profile : fieldAt(row, profilesColumn).split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
-            entry.profiles.append(profile.trimmed());
-        }
         entries.append(entry);
     }
     return normalizeVocabularyEntries(entries);

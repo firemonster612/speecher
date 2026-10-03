@@ -63,29 +63,37 @@ QStringList refinementVocabulary(const AppSettings &settings,
                                  const QString &writingProfile,
                                  QHash<QString, QString> &context)
 {
-    QSet<QString> seen;
+    // The spelling kept for each term, by its case-folded form, so a context
+    // follows its term onto whichever spelling won.
+    QHash<QString, QString> kept;
     QStringList deduplicated;
-    const auto append = [&seen, &deduplicated](const QString &term) {
+    const auto append = [&kept, &deduplicated](const QString &term) {
         const QString cleaned = term.simplified();
         const QString key = cleaned.toCaseFolded();
-        if (!cleaned.isEmpty() && !seen.contains(key)
-            && deduplicated.size() < VocabularyLimit::maxRefinementTerms) {
-            seen.insert(key);
-            deduplicated.append(cleaned);
+        if (cleaned.isEmpty() || kept.contains(key)) {
+            return kept.value(key);
         }
+        if (deduplicated.size() >= VocabularyLimit::maxRefinementTerms) {
+            return QString();
+        }
+        kept.insert(key, cleaned);
+        deduplicated.append(cleaned);
+        return cleaned;
     };
+    const QList<VocabularyEntry> entries = normalizeVocabularyEntries(settings.vocabulary);
     // Learned corrections first: there are few of them, each came from a
-    // real edit, and a full list must not push them out.
+    // real edit, and a full list must not push them out. One whose text is a
+    // term limited to other profiles stays out with it.
     for (const LearnedCorrection &correction : settings.learnedCorrections) {
-        if (correction.enabled) {
+        if (correction.enabled && !vocabularyTermExcluded(entries, correction.corrected, writingProfile)) {
             append(correction.corrected);
         }
     }
-    for (const VocabularyEntry &entry : normalizeVocabularyEntries(settings.vocabulary)) {
+    for (const VocabularyEntry &entry : entries) {
         if (vocabularyEntryApplies(entry, writingProfile)) {
-            append(entry.term);
-            if (!entry.context.isEmpty()) {
-                context.insert(entry.term, entry.context);
+            const QString spelling = append(entry.term);
+            if (!spelling.isEmpty() && !entry.context.isEmpty()) {
+                context.insert(spelling, entry.context);
             }
         }
     }

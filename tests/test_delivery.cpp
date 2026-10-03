@@ -599,6 +599,24 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(TranscriptPipeline::speechVocabulary(settings, Target{}),
                  (QStringList{QStringLiteral("Kubernetes"), QStringLiteral("Speecher"), QStringLiteral("Qt")}));
 
+        // A correction that writes a term limited elsewhere stays out with it,
+        // and one that only differs in case keeps the term's context.
+        VocabularyEntry pr{QStringLiteral("PR")};
+        pr.context = QStringLiteral("Pull request.");
+        pr.profiles = {WritingProfile::AiCoding};
+        settings.vocabulary.append(pr);
+        settings.learnedCorrections.append(
+            {QStringLiteral("1"), QStringLiteral("pee are"), QStringLiteral("pr"), QString(), 1, 0.98, true, 1, 1});
+        QVERIFY(!TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{})
+                     .refinementVocabulary.contains(QStringLiteral("pr")));
+        QVERIFY(!TranscriptPipeline::speechVocabulary(settings, Target{}).contains(QStringLiteral("pr")));
+        settings.refinement.sessionWritingProfile = WritingProfile::AiCoding;
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{})
+                     .refinementContext.vocabularyContext.value(QStringLiteral("pr")),
+                 QStringLiteral("Pull request."));
+        settings.vocabulary.removeLast();
+        settings.learnedCorrections.removeLast();
+
         settings.refinement.sessionWritingProfile = WritingProfile::Personal;
         const TranscriptPipelineResult personal =
             TranscriptPipeline::prepare(QStringLiteral("hello"), settings, Target{});

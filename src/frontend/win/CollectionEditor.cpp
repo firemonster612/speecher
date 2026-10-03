@@ -570,7 +570,7 @@ void CollectionEditor::openRecordDialog(int recordIndex)
         dialog.RequestedTheme(m_host.effectiveTheme());
     }
     dialog.Title(box_value(hs(adding ? m_collection.addDialogTitle : recordName(m_collection, original))));
-    dialog.PrimaryButtonText(adding ? L"Add" : L"Save");
+    dialog.PrimaryButtonText(adding ? L"Add" : L"OK");
     dialog.CloseButtonText(L"Cancel");
     dialog.DefaultButton(ContentDialogButton::Primary);
 
