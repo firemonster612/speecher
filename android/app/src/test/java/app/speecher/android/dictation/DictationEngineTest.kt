@@ -22,6 +22,7 @@ import okhttp3.OkHttpClient
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -645,6 +646,93 @@ class DictationEngineTest {
         engine.insert()
         events[1](SpeechEvent.Completed)
         assertEquals(listOf("before pause after"), commits)
+    }
+
+    private class PausingEngine(executor: Executor = Executor { it.run() }) {
+        val capture = Capture()
+        val clients = mutableListOf<Client>()
+        val events = mutableListOf<(SpeechEvent) -> Unit>()
+        val commits = mutableListOf<String>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, onEvent ->
+                    events.add(onEvent)
+                    Client().also(clients::add)
+                },
+                { _, raw, _ -> raw },
+                null,
+                { commits.add(it) },
+                executor,
+                {},
+            )
+
+        fun hear(vararg audio: Byte) = capture.audio?.invoke(audio, 0.4f)
+    }
+
+    @Test
+    fun `Insert after a resume sends what was heard since to a stream before inserting`() {
+        val t = PausingEngine()
+        t.engine.start(Provider.Claude)
+        t.events[0](SpeechEvent.Final("before"))
+        t.engine.pause()
+        t.engine.resume()
+        t.hear(7)
+        t.engine.insert()
+        t.events[0](SpeechEvent.Final("pause"))
+        t.events[0](SpeechEvent.Completed)
+
+        assertEquals(2, t.clients.size)
+        assertEquals(listOf(7.toByte()), t.clients[1].audio.single().toList())
+        assertTrue(t.clients[1].stopped)
+        assertEquals(emptyList<String>(), t.commits)
+        t.events[1](SpeechEvent.Final("after"))
+        t.events[1](SpeechEvent.Completed)
+        assertEquals(listOf("before pause after"), t.commits)
+    }
+
+    @Test
+    fun `a brief resume between two pauses reaches a stream before Insert`() {
+        val t = PausingEngine()
+        t.engine.start(Provider.Claude)
+        t.events[0](SpeechEvent.Final("before"))
+        t.engine.pause()
+        t.engine.resume()
+        t.hear(7)
+        t.engine.pause()
+        t.events[0](SpeechEvent.Final("pause"))
+        t.events[0](SpeechEvent.Completed)
+
+        assertEquals(2, t.clients.size)
+        assertEquals(listOf(7.toByte()), t.clients[1].audio.single().toList())
+        assertTrue(t.clients[1].stopped)
+        t.engine.insert()
+        assertEquals(emptyList<String>(), t.commits)
+        t.events[1](SpeechEvent.Final("brief"))
+        t.events[1](SpeechEvent.Completed)
+        assertEquals(listOf("before pause brief"), t.commits)
+    }
+
+    @Test
+    fun `pause and resume while the stream connects still end the paused stream`() {
+        val tasks = ArrayDeque<Runnable>()
+        val t = PausingEngine(Executor { tasks.add(it) })
+        t.engine.start(Provider.Claude)
+        tasks.removeFirst().run() // The microphone, started by the tap.
+        t.hear(1)
+        t.engine.pause()
+        t.engine.resume()
+        tasks.removeFirst().run() // The connection, opening after the resume.
+        tasks.removeFirst().run() // The microphone again.
+        t.hear(2)
+
+        assertTrue(t.clients[0].stopped)
+        assertEquals(listOf(1.toByte()), t.clients[0].audio.single().toList())
+        t.events[0](SpeechEvent.Completed)
+        tasks.removeFirst().run() // The next stream.
+        assertEquals(listOf(2.toByte()), t.clients[1].audio.single().toList())
+        assertFalse(t.clients[1].stopped)
     }
 
     @Test

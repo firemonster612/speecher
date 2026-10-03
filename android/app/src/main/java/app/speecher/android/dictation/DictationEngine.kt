@@ -89,10 +89,11 @@ class DictationEngine(
     /** Paused by the person: the microphone is off and the stream finishing its words. */
     private var paused = false
     /**
-     * The paused stream has not ended yet. Audio heard after a resume waits in [unsent] until it
-     * has, since its final words would be dropped by opening the next stream any sooner.
+     * The paused stream has not ended yet. Audio heard after a resume waits in [heardAfterResume]
+     * until it has, since its final words would be dropped by opening the next stream any sooner.
      */
     @Volatile private var finishingPause = false
+    private val heardAfterResume = mutableListOf<ByteArray>()
     private var inserted = false
     private var pendingInsert: PendingInsert? = null
     private var failedRefinement: Provider? = null
@@ -148,7 +149,9 @@ class DictationEngine(
                         client = opened
                         unsent.forEach(opened::sendAudio)
                         unsent.clear()
-                        if (!recording) opened.stop()
+                        // Paused while it connected, or opened only for what a resume heard: it
+                        // ends as it opens, whether or not the microphone is back on.
+                        if (!recording || finishingPause) opened.stop()
                     } else opened.cancel()
                 }
             } catch (_: SignInRequired) {
@@ -186,7 +189,8 @@ class DictationEngine(
         if (!recording) return
         recording = false
         stopCapture()
-        client?.stop()
+        // A stream finishing a pause was already told; its end opens the one for what came after.
+        if (!finishingPause) client?.stop()
         publish(listening(0f))
     }
 
@@ -199,10 +203,12 @@ class DictationEngine(
         if (!recording || state !is DictationState.Listening) return
         recording = false
         paused = true
-        // A stream still connecting is stopped as it opens, and ends like any other.
+        // A stream still connecting is stopped as it opens, and ends like any other. Paused again
+        // before the last pause's stream ended, that stream is still finishing.
+        val alreadyFinishing = finishingPause
         finishingPause = true
         stopCapture()
-        client?.stop()
+        if (!alreadyFinishing) client?.stop()
         publish(listening(0f))
     }
 
@@ -258,7 +264,8 @@ class DictationEngine(
             capture({ current == session && recording }) { audio, level ->
                 synchronized(this) {
                     if (current == session && recording) {
-                        client.takeUnless { finishingPause }?.sendAudio(audio) ?: unsent.add(audio)
+                        if (finishingPause) heardAfterResume.add(audio)
+                        else client?.sendAudio(audio) ?: unsent.add(audio)
                         if (
                             transcribe != null &&
                                 sourceProvider.hasBatchTranscription &&
@@ -379,11 +386,20 @@ class DictationEngine(
         openStream(current, delayMillis)
     }
 
-    /** The paused stream ended: an Insert waiting on it goes ahead, a resume opens the next one. */
+    /**
+     * The paused stream ended. What was heard after a resume goes to the next stream: one that
+     * keeps listening, or, with the microphone off again, one that ends as it opens and is waited
+     * on like the paused one. Only then does an Insert go ahead.
+     */
     private fun pausedStreamEnded(current: Int) {
         finishingPause = false
         client = null
-        if (pendingInsert != null) finishPendingInsert()
+        unsent.addAll(heardAfterResume)
+        heardAfterResume.clear()
+        if (!recording && unsent.isNotEmpty()) {
+            finishingPause = true
+            reopen(current)
+        } else if (pendingInsert != null) finishPendingInsert()
         else if (recording) reopen(current) else publishListening()
     }
 
@@ -488,6 +504,7 @@ class DictationEngine(
         client?.cancel()
         client = null
         unsent.clear()
+        heardAfterResume.clear()
     }
 
     override fun close() {
