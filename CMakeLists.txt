@@ -520,6 +520,7 @@ set(SPEECHER_APP_SOURCES
   src/app/SingleInstanceIpc.cpp
   src/app/UpdateBanner.cpp
   src/transcribe/FileTranscriptionSession.cpp
+  src/transcribe/Subtitles.cpp
   src/transcribe/TranscribePresentation.cpp
 )
 
@@ -541,6 +542,7 @@ set(SPEECHER_APP_HEADERS
   src/app/UpdateBanner.h
   src/app/UpdateController.h
   src/transcribe/FileTranscriptionSession.h
+  src/transcribe/Subtitles.h
   src/transcribe/TranscribePresentation.h
 )
 

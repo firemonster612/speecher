@@ -1,6 +1,7 @@
 #pragma once
 
 #include "transcribe/FileTranscriptionSession.h"
+#include "transcribe/Subtitles.h"
 
 #include <QHash>
 #include <QString>
@@ -143,6 +144,16 @@ bool refinesTranscripts(const TranscribeOptions &options);
 QString shownTranscript(const TranscribeFileResult &result, bool raw);
 // A result's second line: why it failed, or its length and word count.
 QString resultMeta(const TranscribeFileResult &result, qint64 durationMs, bool raw);
+// What exports a transcript in a format: Export… itself for text, and the
+// subtitle choices in its menu. Then the format's file type in the save dialog.
+QString transcriptFormatCaption(TranscriptFormat format);
+QString transcriptFormatFileType(TranscriptFormat format);
+// Whether a finished transcript exports in that format: text always,
+// subtitles only when the speech provider returned timings.
+bool canExportAs(const TranscribeFileResult &result, TranscriptFormat format);
+// What Export writes: the shown transcript as text. Subtitles always come
+// from the Raw Transcript, which the timings belong to.
+QString exportedTranscript(const TranscribeFileResult &result, TranscriptFormat format, bool raw);
 // What Copy all puts on the clipboard: every finished transcript, each under a
 // "# file name" heading when there are several.
 QString allTranscripts(const QList<TranscribeFileResult> &results, bool raw);
@@ -172,5 +183,8 @@ QString batchSummary(const QList<TranscribeFileResult> &results,
                      const QHash<QString, qint64> &durationsMs,
                      const TranscribeOptions &options,
                      const TranscribeBatchLabels &labels);
+// The line under the results summary that says where subtitles come from, or
+// why there are none; empty when no transcript finished.
+QString subtitlesNote(const QList<TranscribeFileResult> &results, const TranscribeBatchLabels &labels);
 
 } // namespace speecher

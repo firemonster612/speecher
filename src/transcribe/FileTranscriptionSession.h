@@ -48,6 +48,9 @@ struct TranscribeFileResult {
     QString path;
     // What the speech provider heard.
     QString raw;
+    // When each part of raw was spoken, in milliseconds from the start of the
+    // file; empty when the speech provider returned no timings.
+    QList<TranscriptSegment> segments;
     // The finished transcript: the model's refinement when it ran, otherwise
     // the raw text after vocabulary corrections. This is what gets saved.
     // Empty means the file failed.
@@ -154,6 +157,8 @@ private:
     quint64 m_preparationGeneration = 0;
     int m_reconnectsLeft = 0;
     QElapsedTimer m_attemptClock;
+    // Where in the file the current attempt's audio starts.
+    qint64 m_attemptStartMs = 0;
     // Text committed before the current attempt; a whole-attempt transcript
     // replaces only what followed it.
     QString m_attemptBaseText;

@@ -222,6 +222,11 @@ QString TranscribeModel::summary() const
     return batchSummary(m_results, int(m_batch.size()), m_cancelled, m_durationsMs, m_batchOptions, m_batchLabels);
 }
 
+QString TranscribeModel::subtitlesNote() const
+{
+    return speecher::subtitlesNote(m_results, m_batchLabels);
+}
+
 void TranscribeModel::retry(int index)
 {
     m_retrying = index;
