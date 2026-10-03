@@ -22,7 +22,7 @@ fun main() {
         BcTlsWebSocketTransport(fingerprint) { bytes ->
             println("ClientHello: " + bytes.joinToString("") { "%02x".format(it) })
         }
-    val client = CodexDictationClient(transport, token, { results.add(it) })
+    val client = CodexDictationClient(transport, token, ENGLISH_LANGUAGE, { results.add(it) })
     try {
         val event = results.poll(15, TimeUnit.SECONDS)
         check(event == SpeechEvent.Connected) { "Live verification failed: $event" }

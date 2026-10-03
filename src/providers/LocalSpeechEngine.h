@@ -65,18 +65,20 @@ public:
     QString runsOnDescription() const;
     bool streams() const;
 
-    // Audio is 16 kHz mono signed 16-bit PCM. A call that fails without
-    // setting error was aborted.
-    std::optional<QString> transcribe(const QByteArray &pcm16, QString *error);
+    // Audio is 16 kHz mono signed 16-bit PCM. spokenLanguage is a
+    // SpeechSettings::language: the model's hint, or none for Automatic, which
+    // the model detects. A call that fails without setting error was aborted.
+    std::optional<QString> transcribe(const QByteArray &pcm16, const QString &spokenLanguage, QString *error);
     // The same, and when each part of the text was spoken. segments stays
     // empty unless the model times whole segments: Whisper-style models do,
     // while one reporting word or token timings gives a single segment for
     // the whole run.
     std::optional<QString> transcribeTimed(const QByteArray &pcm16,
+                                           const QString &spokenLanguage,
                                            QList<TranscriptSegment> *segments,
                                            QString *error);
 
-    bool beginStream(QString *error);
+    bool beginStream(const QString &spokenLanguage, QString *error);
     bool feed(const QByteArray &pcm16, StreamText *text, QString *error);
     // The whole final transcript, preserving committed text if the raw
     // hypothesis shrank below it.
@@ -88,7 +90,7 @@ public:
 
 private:
     static bool abortRequested(void *engine);
-    std::optional<QString> run(const QByteArray &pcm16, bool timed, QString *error);
+    std::optional<QString> run(const QByteArray &pcm16, bool timed, const QString &spokenLanguage, QString *error);
 
     std::function<bool()> m_shouldAbort;
     transcribe_model *m_model = nullptr;
@@ -97,6 +99,8 @@ private:
     LocalRunsOn m_runsOn;
     bool m_streams = false;
     bool m_timesSegments = false;
+    // The language codes the loaded model declares.
+    QStringList m_languages;
 };
 
 } // namespace speecher

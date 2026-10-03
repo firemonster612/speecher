@@ -33,6 +33,10 @@ struct LocalModel {
     double librispeechCleanWer = 0;
     double fleursEnglishWer = 0;
     bool streams = false;
+    // transcribe.cpp's catalog/<variant>.json: the language codes the model
+    // takes as a hint, and whether it detects the language when given none.
+    QStringList languages;
+    bool detectsLanguage = false;
     QString licence;
     // Multiples of real time on transcribe.cpp's reference machines; 0 where
     // it published none.
@@ -44,6 +48,9 @@ struct LocalModel {
     QStringList pros;
     QStringList cons;
 };
+
+// "en fr de" as a list of language codes.
+QStringList languageCodes(const char *spaceSeparated);
 
 const QList<LocalModel> &localModelCatalog();
 const LocalModel *findLocalModel(const QString &id);
@@ -90,8 +97,16 @@ struct SpeedEstimate {
 // figure for that machine.
 std::optional<SpeedEstimate> estimatedSpeed(const LocalModel &model, const HardwareProfile &hardware);
 
-// The model the setup assistant and Local models page put first.
-const LocalModel &suggestedLocalModel(const HardwareProfile &hardware);
+// The model takes the Spoken Language as a hint, or detects it for Automatic.
+bool localModelListensFor(const LocalModel &model, const QString &spokenLanguage);
+// The hint transcribe.cpp wants for the Spoken Language, given the codes the
+// loaded model declares. Speecher stores Filipino as "tl", as the speech
+// services and Whisper do; Qwen3-ASR declares it "fil".
+QString localModelLanguageHint(const QString &spokenLanguage, const QStringList &declared);
+
+// The model the setup assistant and Local models page put first: one that
+// listens for the Spoken Language, when any does.
+const LocalModel &suggestedLocalModel(const HardwareProfile &hardware, const QString &spokenLanguage);
 
 // The words every front end shows for these facts, so the setup assistants
 // and Local models pages agree.
@@ -134,6 +149,9 @@ QString localModelText(LocalModelText text);
 QString deleteModelQuestion(const QString &modelName);
 // "As you speak" for a streaming model, else "After you stop".
 QString textShowsValue(bool streams);
+// The Language fact: the one language a model takes, "English", or how many,
+// "14 languages".
+QString languagesValue(const LocalModel &model);
 // "Download 731 MB".
 QString downloadCaption(qint64 bytes);
 // "Compare 7 other models".

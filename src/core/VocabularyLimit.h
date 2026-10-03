@@ -16,8 +16,8 @@ int tokenCount(const QStringList &terms);
 // The prefix of `terms` a speech request can carry, within both caps.
 QStringList limited(const QStringList &terms);
 // What Claude Voice's x-config-keyterms header carries from `terms`, in
-// order: Latin-1 terms only, each spelling once ignoring case, and no more
-// than fit in its 1024 bytes.
+// order: each spelling once ignoring ASCII case, and no more than fit in its
+// 1024 bytes of UTF-8, which is how the service reads the header.
 QStringList claudeVoiceKeyterms(const QStringList &terms);
 // The terms the chosen speech service receives from `terms`: none for one
 // that takes no hints, the capped prefix for a custom endpoint, and that

@@ -45,21 +45,22 @@ QStringList claudeVoiceKeyterms(const QStringList &terms)
 {
     constexpr qsizetype maxHeaderBytes = 1024;
     QStringList kept;
-    QSet<QString> seen;
+    QSet<QByteArray> seen;
     qsizetype bytes = 0;
     for (const QString &value : terms) {
         const QString term = value.simplified();
-        const QString key = QString::fromLatin1(term.toLatin1().toLower());
-        if (term.isEmpty() || QString::fromLatin1(term.toLatin1()) != term || seen.contains(key)) {
+        const QByteArray utf8 = term.toUtf8();
+        const QByteArray key = utf8.toLower();
+        if (term.isEmpty() || seen.contains(key)) {
             continue;
         }
         const qsizetype separator = kept.isEmpty() ? 0 : 1;
-        if (bytes + separator + term.size() > maxHeaderBytes) {
+        if (bytes + separator + utf8.size() > maxHeaderBytes) {
             continue;
         }
         seen.insert(key);
         kept.append(term);
-        bytes += separator + term.size();
+        bytes += separator + utf8.size();
     }
     return kept;
 }

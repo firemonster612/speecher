@@ -7,7 +7,9 @@
 
 namespace speecher {
 
-QUrlQuery claudeVoiceStreamQuery();
+// spokenLanguage is a SpeechSettings::language; Automatic leaves the
+// language out, which Claude Voice takes as detect.
+QUrlQuery claudeVoiceStreamQuery(const QString &spokenLanguage);
 QByteArray claudeVoiceKeytermsHeader(const QStringList &vocabulary);
 
 enum class ClaudeVoiceEventKind {

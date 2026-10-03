@@ -5,6 +5,11 @@ name: Insights evidence
 # (docs/insights-mockup/seed-active.jsonl) with today pinned so the numbers
 # match the mockup. Uploads evidence/.
 #
+# stats-image is the picture Home's Share menu copies, read back from the
+# clipboard; stats-image-large is the same from seed-large.jsonl, whose
+# totals run past what an int holds, and stats-image-dark is the first in the
+# dark theme.
+#
 # Linux, macOS and Windows also grab the same $PAGES into
 # pages/<platform>-<page>.png, merged into one "pages" artifact, so a pull
 # request shows each page on all three side by side (docs/adr/0007).
@@ -28,7 +33,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PAGES: home general dictation refinement writingProfiles vocabulary output accounts transcribe
+  PAGES: home general dictation refinement writingProfiles vocabulary output accounts transcribe stats-image
   # Every platform grabs $PAGES at this window content size, WxH in logical pixels.
   PAGES_SIZE: 900x640
 
@@ -81,7 +86,11 @@ jobs:
             bash -lc 'git config --global --add safe.directory "*" \
               && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=OFF -DSPEECHER_WITH_KDE=ON \
               && cmake --build build --parallel --target speecher \
-              && .github/grab-linux-pages.sh build/speecher'
+              && { status=0; .github/grab-linux-pages.sh build/speecher || status=1; \
+                   PAGES=stats-image PAGES_SUFFIX=-large SPEECHER_INSIGHTS_SEED=$PWD/docs/insights-mockup/seed-large.jsonl \
+                   .github/grab-linux-pages.sh build/speecher || status=1; \
+                   PAGES=stats-image PAGES_SUFFIX=-dark PAGES_COLOR_SCHEME=BreezeDark \
+                   .github/grab-linux-pages.sh build/speecher || status=1; exit $status; }'
 
       - name: Upload Linux pages
         if: always()
@@ -237,6 +246,41 @@ jobs:
             pkill -9 -x speecher || true
             find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
           done
+          SPEECHER_INSIGHTS_SEED="$GITHUB_WORKSPACE/docs/insights-mockup/seed-large.jsonl" \
+            SPEECHER_GRAB_PAGE=stats-image build/speecher.app/Contents/MacOS/speecher \
+            --grab pages/macos-stats-image-large.png > "$RUNNER_TEMP/macos-large.log" 2>&1 || true
+          if [ ! -s pages/macos-stats-image-large.png ]; then
+            echo "macos-stats-image-large failed:"
+            tail -20 "$RUNNER_TEMP/macos-large.log"
+            failed=1
+          fi
+          pkill -9 -x speecher || true
+          find "${TMPDIR:-/tmp}" -maxdepth 1 \( -type s -o -type f \) -name 'speecher-*' -delete || true
+          # Dark Aqua for the whole session through System Events, as setup-e2e
+          # drives it: the macOS front end has no Theme row and follows System
+          # Settings, and no defaults write moves a running session. The trap
+          # puts Aqua back for the screen captures below, whatever happens.
+          python3 .github/macos-e2e/tcc_seed.py \
+            "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
+            kTCCServiceAppleEvents /usr/bin/osascript 2 com.apple.systemevents 1
+          appearance() {
+            perl -e 'alarm 30; exec @ARGV' osascript -e \
+              "tell application \"System Events\" to tell appearance preferences to set dark mode to $1"
+          }
+          trap 'appearance false || echo "::warning::could not switch back to Aqua"' EXIT
+          if appearance true; then
+            SPEECHER_GRAB_PAGE=stats-image build/speecher.app/Contents/MacOS/speecher \
+              --grab pages/macos-stats-image-dark.png > "$RUNNER_TEMP/macos-dark.log" 2>&1 || true
+            if [ ! -s pages/macos-stats-image-dark.png ]; then
+              echo "macos-stats-image-dark failed:"
+              tail -20 "$RUNNER_TEMP/macos-dark.log"
+              failed=1
+            fi
+            pkill -9 -x speecher || true
+          else
+            echo "::error::System Events would not switch to Dark Aqua"
+            failed=1
+          fi
           exit $failed
 
       - name: Upload macOS pages
@@ -444,6 +488,40 @@ jobs:
             $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
             if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
               $failed += "$page ($($process.ExitCode))"
+            }
+          }
+          $env:SPEECHER_INSIGHTS_SEED = (Resolve-Path docs/insights-mockup/seed-large.jsonl).Path
+          $env:SPEECHER_GRAB_PAGE = "stats-image"
+          $out = Join-Path (Resolve-Path pages).Path "windows-stats-image-large.png"
+          $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+            $failed += "stats-image-large ($($process.ExitCode))"
+          }
+          # The dark theme, through the Theme setting Qt keeps in the registry.
+          $env:SPEECHER_INSIGHTS_SEED = (Resolve-Path docs/insights-mockup/seed-active.jsonl).Path
+          $ui = "HKCU:\Software\io.github.firemonster612\speecher\ui"
+          New-Item -Path $ui -Force | Out-Null
+          New-ItemProperty -Path $ui -Name theme -Value "dark" -PropertyType String -Force | Out-Null
+          $out = Join-Path (Resolve-Path pages).Path "windows-stats-image-dark.png"
+          $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+          Remove-ItemProperty -Path $ui -Name theme
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+            $failed += "stats-image-dark ($($process.ExitCode))"
+          }
+          # Home wider than the pages above, where the cards' columns once
+          # flipped until WinUI gave up with "Layout cycle detected": a year of
+          # use, and a single dictation.
+          $env:SPEECHER_GRAB_PAGE = "home"
+          $env:SPEECHER_GRAB_SIZE = "1240x700"
+          $one = Join-Path $env:RUNNER_TEMP "seed-one.jsonl"
+          Get-Content docs/insights-mockup/seed-active.jsonl -Tail 1 | Set-Content $one
+          foreach ($seed in @{ name = "home-wide"; path = (Resolve-Path docs/insights-mockup/seed-active.jsonl).Path },
+                            @{ name = "home-wide-one"; path = $one }) {
+            $env:SPEECHER_INSIGHTS_SEED = $seed.path
+            $out = Join-Path (Resolve-Path pages).Path "windows-$($seed.name).png"
+            $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+            if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) {
+              $failed += "$($seed.name) ($($process.ExitCode))"
             }
           }
           if ($failed) {

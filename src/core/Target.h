@@ -182,6 +182,8 @@ struct RefinementContext {
     // What a vocabulary term means and when it applies, by term, for the
     // terms that have a context.
     QHash<QString, QString> vocabularyContext;
+    // The session's Spoken Language. English, or empty, adds no rule.
+    QString spokenLanguage;
     // Replaces the built-in dictation rules when not blank.
     QString customSystemPrompt;
     // Set when the tone or the cleanup level is one the user defined. The

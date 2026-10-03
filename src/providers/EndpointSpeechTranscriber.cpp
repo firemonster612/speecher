@@ -2,6 +2,7 @@
 #include "providers/EndpointRequest.h"
 
 #include "core/VocabularyLimit.h"
+#include "core/settings/SpokenLanguages.h"
 #include "providers/PcmWav.h"
 #include "providers/ServerSentEvents.h"
 
@@ -37,7 +38,8 @@ QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
 
 SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint,
                                           const QByteArray &pcm16kMono,
-                                          const QString &prompt)
+                                          const QString &prompt,
+                                          const QString &spokenLanguage)
 {
     QNetworkRequest request = endpointRequest(QUrl(endpoint.baseUrl + endpoint.path));
     if (!endpoint.apiKey.isEmpty()) {
@@ -54,7 +56,9 @@ SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint
         parts->append(formField(QStringLiteral("model"), endpoint.model.toUtf8()));
     }
     parts->append(formField(QStringLiteral("response_format"), "json"));
-    parts->append(formField(QStringLiteral("language"), "en"));
+    if (const QString language = requestedSpokenLanguage(spokenLanguage); !language.isEmpty()) {
+        parts->append(formField(QStringLiteral("language"), language.toUtf8()));
+    }
     if (!prompt.isEmpty()) {
         parts->append(formField(QStringLiteral("prompt"), prompt.toUtf8()));
     }
@@ -115,6 +119,7 @@ void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSett
     cancelAttempt(m_attemptId);
     m_attemptId = attemptId;
     m_endpoint = settings.endpoint;
+    m_spokenLanguage = settings.language;
     // The terms Claude Voice would get, in the same priority order.
     m_prompt = VocabularyLimit::limited(settings.vocabulary).join(QStringLiteral(", "));
     m_pcm.clear();
@@ -136,7 +141,7 @@ void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
         emit attemptCompleted(attemptId);
         return;
     }
-    const SpeechEndpointUpload upload = speechEndpointUpload(m_endpoint, std::exchange(m_pcm, {}), m_prompt);
+    const SpeechEndpointUpload upload = speechEndpointUpload(m_endpoint, std::exchange(m_pcm, {}), m_prompt, m_spokenLanguage);
     m_sseBuffer.clear();
     m_streamedText.clear();
     m_doneText.clear();

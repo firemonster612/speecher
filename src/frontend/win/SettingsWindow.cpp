@@ -15,12 +15,16 @@
 #include "providers/TranscriptRefinementPrompt.h"
 #include "frontend/win/TranscribePane.h"
 
+#include <QClipboard>
 #include <QEventLoop>
+#include <QGuiApplication>
+#include <QImage>
 #include <QMediaDevices>
 #include <QTimer>
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include <windows.h>
@@ -828,6 +832,20 @@ struct SettingsWindow::Native {
                 {int(size.at(0).toInt() * scale), int(size.at(1).toInt() * scale)});
         }
         const QString request = qEnvironmentVariable("SPEECHER_GRAB_PAGE");
+        // "stats-image" saves the picture Home's Share menu copies, read back
+        // from the clipboard.
+        if (request == QStringLiteral("stats-image")) {
+            showPage(QStringLiteral("home"));
+            // Shared, as a draw that outlasts the wait still reports here.
+            const auto copied = std::make_shared<std::optional<bool>>();
+            copyStatsImage(host, [copied](bool ok) { *copied = ok; });
+            QEventLoop drawn;
+            for (int waited = 0; !copied->has_value() && waited < 10000; waited += 50) {
+                QTimer::singleShot(50, &drawn, &QEventLoop::quit);
+                drawn.exec();
+            }
+            return copied->value_or(false) && QGuiApplication::clipboard()->image().save(path);
+        }
         if (!request.isEmpty()) {
             showPage(request);
         }

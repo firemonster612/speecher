@@ -68,6 +68,11 @@ import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
 import app.speecher.android.dictation.refinementModels
 import app.speecher.android.dictation.resolveSignedIn
+import app.speecher.android.dictation.spokenLanguageLabel
+import app.speecher.android.dictation.spokenLanguageMismatch
+import app.speecher.android.dictation.spokenLanguageName
+import app.speecher.android.dictation.spokenLanguages
+import app.speecher.protocol.AUTOMATIC_LANGUAGE
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
@@ -302,6 +307,19 @@ private fun TranscriptionSettings(
     ProviderPicker("Provider", settings.transcriptionProvider, signedIn, onSignIn) {
         onChange(settings.copy(transcriptionProvider = it))
     }
+    val provider = resolveSignedIn(settings.transcriptionProvider, signedIn)
+    DropdownRow(
+        "Spoken language",
+        spokenLanguageChoices(provider),
+        settings.spokenLanguage,
+        description = "The language you dictate in.",
+        selectedLabel = spokenLanguageLabel(settings.spokenLanguage),
+    ) {
+        onChange(settings.copy(spokenLanguage = it))
+    }
+    spokenLanguageMismatch(provider, settings.spokenLanguage)?.let {
+        Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
+    }
     ListItem(
         headlineContent = { Text("Keep screen on") },
         supportingContent = { Text("Stops the screen turning off while you dictate.") },
@@ -310,7 +328,7 @@ private fun TranscriptionSettings(
         },
         colors = rowColors(),
     )
-    if (resolveSignedIn(settings.transcriptionProvider, signedIn).hasBatchTranscription) {
+    if (provider.hasBatchTranscription) {
         ListItem(
             headlineContent = { Text("Extra transcription pass") },
             supportingContent = {
@@ -775,13 +793,17 @@ private fun ProviderPicker(
     }
 }
 
-/** A row named [title] whose value opens a menu of [options]; the whole row is the target. */
+/**
+ * A row named [title] whose value opens a menu of [options]; the whole row is the target. The value
+ * shows as [selectedLabel], which names a [selected] value the menu doesn't offer.
+ */
 @Composable
 internal fun <T> DropdownRow(
     title: String,
     options: Map<T, String>,
     selected: T,
     description: String? = null,
+    selectedLabel: String = options[selected] ?: selected.toString(),
     onSelect: (T) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -792,7 +814,7 @@ internal fun <T> DropdownRow(
             Box {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        options[selected] ?: selected.toString(),
+                        selectedLabel,
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -865,6 +887,12 @@ internal fun PasteCode(
         }
     }
 }
+
+/** The provider's spoken languages as code to label: Automatic, then by English name. */
+private fun spokenLanguageChoices(provider: Provider): Map<String, String> =
+    provider.spokenLanguages
+        .sortedWith(compareBy({ it != AUTOMATIC_LANGUAGE }, ::spokenLanguageName))
+        .associateWith(::spokenLanguageLabel)
 
 /**
  * The words Claude Voice receives as key terms: those marked so, priority first, as many as fit its

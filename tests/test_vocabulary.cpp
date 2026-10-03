@@ -95,19 +95,20 @@ private slots:
 
     void claudeKeyTermsAreWhatItsHeaderCarries()
     {
-        // 90 twelve-byte terms fill 1169 bytes, past the header's 1024: Claude
-        // gets the first 78, a custom endpoint all 90.
+        // 東京 is six bytes of UTF-8, and 90 twelve-byte terms after it fill
+        // 1176 bytes, past the header's 1024: Claude gets 東京 and the first
+        // 78, a custom endpoint all 91.
         QStringList terms{QString::fromUtf8("東京")};
         for (int index = 0; index < 90; ++index) {
             terms << QStringLiteral("project%1").arg(index, 5, 10, QLatin1Char('0'));
         }
         const QStringList claude = VocabularyLimit::speechKeyterms(terms, QStringLiteral("claude"));
-        QCOMPARE(claude.size(), 78);
-        QCOMPARE(claude.first(), QStringLiteral("project00000"));
+        QCOMPARE(claude.size(), 79);
+        QCOMPARE(claude.first(), QString::fromUtf8("東京"));
         QCOMPARE(VocabularyLimit::speechKeyterms(terms, QStringLiteral("endpoint")).size(), 91);
         QCOMPARE(VocabularyLimit::speechKeyterms(terms, QStringLiteral("codex")), QStringList());
         QCOMPARE(VocabularyLimit::summary(terms, QStringLiteral("claude")),
-                 QStringLiteral("91 terms. 78 are key terms, and all are used for refinement."));
+                 QStringLiteral("91 terms. 79 are key terms, and all are used for refinement."));
     }
 
     void learnedCorrectionsRespectTheSendCap()

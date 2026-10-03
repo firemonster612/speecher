@@ -182,6 +182,8 @@ data class RefinementContext(
     /** Set when the tone or level is one the user defined; [style] is then the level's base. */
     val customTone: CustomTone? = null,
     val cleanupLevel: CustomCleanupLevel? = null,
+    /** The language code the user dictates in, or Automatic's; anything but English adds a rule. */
+    val spokenLanguage: String = ENGLISH_LANGUAGE,
 )
 
 /** An app a rule recognises by [match], and the app type and profile it gets. */

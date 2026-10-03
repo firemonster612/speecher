@@ -18,10 +18,13 @@ struct SpeechEndpointUpload {
     QHttpMultiPart *parts = nullptr;
 };
 
-// prompt goes in the OpenAI `prompt` field, left out when empty.
+// prompt goes in the OpenAI `prompt` field, left out when empty, and
+// spokenLanguage, a SpeechSettings::language, in `language`, left out for
+// Automatic.
 SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint,
                                           const QByteArray &pcm16kMono,
-                                          const QString &prompt);
+                                          const QString &prompt,
+                                          const QString &spokenLanguage);
 
 // Transcription through the speech Custom Endpoint: an OpenAI-style
 // POST {base}{path} with the whole attempt's audio once input finishes.
@@ -61,6 +64,7 @@ private:
     QPointer<QNetworkReply> m_reply;
     SpeechEndpointSettings m_endpoint;
     QString m_prompt;
+    QString m_spokenLanguage;
     quint64 m_attemptId = 0;
     QByteArray m_pcm;
     QByteArray m_sseBuffer;

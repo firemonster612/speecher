@@ -3,23 +3,42 @@ package app.speecher.android.update
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
 data class ApkUpdate(val version: String, val downloadUrl: String)
 
+/**
+ * Android releases are tagged `android-v<versionName>` and never marked latest, because the desktop
+ * app's updater owns the repository's latest release.
+ */
+private const val TAG_PREFIX = "android-v"
+
+/** The highest Android release, if it is newer than [installedVersion] and has an APK attached. */
 fun newerApk(
     http: OkHttpClient,
     installedVersion: String,
-    releaseUrl: String = "https://api.github.com/repos/firemonster612/speecher/releases/latest",
+    releasesUrl: String =
+        "https://api.github.com/repos/firemonster612/speecher/releases?per_page=100",
 ): ApkUpdate? {
     val request =
-        Request.Builder().url(releaseUrl).header("Accept", "application/vnd.github+json").build()
+        Request.Builder().url(releasesUrl).header("Accept", "application/vnd.github+json").build()
     http.newCall(request).execute().use { response ->
         if (!response.isSuccessful) error("Could not check releases: HTTP ${response.code}")
-        val release = Json.parseToJsonElement(response.body.string()) as JsonObject
-        val version = release["tag_name"]?.jsonPrimitive?.content?.removePrefix("v") ?: return null
+        // Pick by version: GitHub orders the list by tagged commit date, not by version.
+        val (version, release) =
+            (Json.parseToJsonElement(response.body.string()) as JsonArray)
+                .mapNotNull { it as? JsonObject }
+                .filter { it["prerelease"]?.jsonPrimitive?.booleanOrNull != true }
+                .mapNotNull { release ->
+                    val tag = release["tag_name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    if (tag.startsWith(TAG_PREFIX)) tag.removePrefix(TAG_PREFIX) to release
+                    else null
+                }
+                .reduceOrNull { best, next -> if (isNewer(next.first, best.first)) next else best }
+                ?: return null
         if (!isNewer(version, installedVersion)) return null
         val assets = release["assets"] as? JsonArray ?: return null
         val apk =

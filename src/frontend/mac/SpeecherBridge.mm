@@ -807,6 +807,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *sizeText;
 @property (nonatomic, copy) NSString *downloadCaption;
 @property (nonatomic, copy) NSString *textShowsText;
+@property (nonatomic, copy) NSString *languagesText;
 @property (nonatomic) double librispeechWer;
 @property (nonatomic) double fleursWer;
 @property (nonatomic) BOOL streams;
@@ -986,6 +987,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *personaText;
 @property (nonatomic, copy) NSString *peakText;
 @property (nonatomic, copy) NSString *shareText;
+@property (nonatomic, copy) NSString *imagePaceLine;
 @property (nonatomic, copy) NSData *json;
 @property (nonatomic, copy) NSString *jsonFileName;
 @property (nonatomic, copy) NSArray<SpeecherInsightsDayModel *> *heatmap;
@@ -1103,6 +1105,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.personaText = speecher::personaText(summary).toNSString();
     model.peakText = speecher::peakText(summary).toNSString();
     model.shareText = speecher::insightsShareText(summary, range).toNSString();
+    model.imagePaceLine = speecher::insightsImagePaceLine(summary).toNSString();
     const QByteArray json = speecher::insightsJson(summary, range, today);
     model.json = [NSData dataWithBytes:json.constData() length:NSUInteger(json.size())];
     model.jsonFileName = speecher::insightsJsonFileName(today).toNSString();
@@ -2317,6 +2320,8 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     const speecher::InsightsShareLabels share = speecher::insightsShareLabels();
     return @{
         @"share": share.share.toNSString(),
+        @"copyImage": share.copyImage.toNSString(),
+        @"imageTitle": speecher::insightsImageTitle().toNSString(),
         @"copyText": share.copyText.toNSString(),
         @"saveJson": share.saveJson.toNSString(),
         @"copied": share.copied.toNSString(),
@@ -3204,6 +3209,7 @@ static LocalModelInfo *bridgedLocalModel(const speecher::LocalSetup &setup, cons
     info.fleursWer = model.fleursEnglishWer;
     info.streams = model.streams;
     info.textShowsText = speecher::textShowsValue(model.streams).toNSString();
+    info.languagesText = speecher::languagesValue(model).toNSString();
     info.licence = model.licence.toNSString();
     info.rating = bridgedModelRating(model.rating);
     info.ratingLabel = modelRatingLabel(model.rating).toNSString();

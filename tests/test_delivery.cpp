@@ -679,6 +679,14 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(pipeline.refinementContext.customTone, std::optional(terse));
     }
 
+    void theSessionsSpokenLanguageReachesRefinement()
+    {
+        AppSettings settings;
+        settings.speech.language = QStringLiteral("de");
+        QCOMPARE(TranscriptPipeline::prepare(QStringLiteral("hallo"), settings, Target{}).refinementContext.spokenLanguage,
+                 QStringLiteral("de"));
+    }
+
     // Translating needs refinement, so a profile set to None that has an
     // output language refines at Light, a selection edit too.
     void aProfileThatTranslatesRefinesEvenAtNone()

@@ -145,6 +145,8 @@ class DictationEngine(
                 }
             } catch (_: SignInRequired) {
                 fail(current, FailureReason.SignedOut, "Sign in to continue")
+            } catch (e: SpokenLanguageUnsupported) {
+                fail(current, FailureReason.SpokenLanguage, e.message.orEmpty())
             } catch (_: Exception) {
                 synchronized(this) {
                     if (isCurrent(current, opening))
@@ -450,6 +452,9 @@ private const val MAX_RECORDED_BYTES = 90 * 16000 * 2
 
 class SignInRequired : Exception()
 
+/** The provider can't listen for the saved spoken language; [message] says so for the panel. */
+class SpokenLanguageUnsupported(message: String) : Exception(message)
+
 /** Android wiring; call [DictationEngine.start] on the chip tap before the IME appears. */
 fun createDictationEngine(
     context: Context,
@@ -494,6 +499,9 @@ fun createDictationEngine(
         microphone::capture,
         microphone::stop,
         { selected, onEvent ->
+            spokenLanguageMismatch(selected, settings.spokenLanguage)?.let {
+                throw SpokenLanguageUnsupported(it)
+            }
             val access = token(selected).accessToken
             val events = { event: SpeechEvent ->
                 if (event == SpeechEvent.Connected || event is SpeechEvent.Final)
@@ -507,6 +515,7 @@ fun createDictationEngine(
                     speechTerms(
                         settings.vocabularyFor(writingProfile(settings, ActiveDictation.target))
                     ),
+                    settings.spokenLanguage,
                     events,
                     endpoints.getValue(selected).speech,
                 )
@@ -514,6 +523,7 @@ fun createDictationEngine(
                 CodexDictationClient(
                     webSocketTransport(endpoints.getValue(selected).speech),
                     access,
+                    settings.spokenLanguage,
                     events,
                     endpoints.getValue(selected).speech,
                 )

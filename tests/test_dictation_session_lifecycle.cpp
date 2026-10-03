@@ -722,6 +722,40 @@ private slots:
         }
     }
 
+    // The saved language is one Claude Voice lacks: the popup says so and
+    // offers the Dictation page, and nothing reaches the service. --language
+    // replaces it for one session.
+    void aSpokenLanguageTheServiceLacksStopsTheDictation()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("none"));
+        settings.setSpokenLanguage(QStringLiteral("cy"));
+        auto audio = std::make_unique<FakeAudioInput>();
+        auto media = std::make_unique<FakeMediaController>();
+        auto delivery = std::make_unique<FakeDelivery>();
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
+        QSignalSpy message(&session, &DictationSession::popupErrorRequested);
+
+        session.startListening();
+        QCOMPARE(int(session.state()), int(DictationState::Error));
+        QCOMPARE(message.count(), 1);
+        QCOMPARE(message.first().first().toString(),
+                 QStringLiteral("Fake Speech can't listen for Welsh. Choose another Spoken Language."));
+        QCOMPARE(message.first().at(1).value<PopupErrorAction>().pageId, QStringLiteral("dictation"));
+        QCOMPARE(speech->startCalls, 0);
+
+        session.stopListening();
+        session.startListeningWith({std::nullopt, std::nullopt, QStringLiteral("de")});
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Listening), 250);
+        QCOMPARE(speech->lastLanguage, QStringLiteral("de"));
+        QCOMPARE(settings.spokenLanguage(), QStringLiteral("cy"));
+        settings.raw().clear();
+    }
+
     void aForcedWritingProfileHoldsForTheWholeSession()
     {
         SettingsStore settings;

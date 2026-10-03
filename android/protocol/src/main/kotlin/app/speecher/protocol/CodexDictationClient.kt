@@ -13,9 +13,19 @@ import kotlinx.serialization.json.jsonPrimitive
 internal const val codexBrowserUserAgent =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 
+/** The spoken languages ChatGPT dictation listens for, as codes, Automatic first. */
+val codexDictationLanguages: List<String> =
+    listOf(AUTOMATIC_LANGUAGE) +
+        ("af am ar az be bg bn bs ca cs cy da de el en es et fa fi fr gl gu he hi hr hu hy id is " +
+                "it ja ka kk kn ko lt lv mi mk ml mn mr ms my ne nl no pl pt ro ru sk sl so sr sv sw " +
+                "ta te th tl tr uk ur vi yue zh")
+            .split(' ')
+
 class CodexDictationClient(
     private val transport: WebSocketTransport,
     token: String,
+    /** Sent as the session's `language`; Automatic leaves it out. */
+    private val language: String,
     private val events: (SpeechEvent) -> Unit,
     endpoint: String = "wss://chatgpt.com/backend-api/dictation/stream",
 ) : WebSocketTransport.Listener, SpeechClient {
@@ -63,6 +73,7 @@ class CodexDictationClient(
             put("provider_mode", JsonPrimitive("streaming_sse"))
             put("transcript_delivery_mode", JsonPrimitive("segment"))
             put("vad", vad)
+            if (language != AUTOMATIC_LANGUAGE) put("language", JsonPrimitive(language))
         }
         transport.sendText(
             buildJsonObject {

@@ -204,6 +204,7 @@ TranscriptPipelineResult TranscriptPipeline::prepare(const QString &rawTranscrip
     }
     result.refinementSettings = effectiveRefinementSettings(settings, target);
     result.refinementContext.target = target;
+    result.refinementContext.spokenLanguage = settings.speech.language;
     result.refinementContext.writingProfile = writingProfileFor(settings, target);
     result.refinementVocabulary = refinementVocabulary(settings,
                                                        result.refinementContext.writingProfile,

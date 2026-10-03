@@ -101,8 +101,9 @@ void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSetting
         });
         return;
     }
-    onWorker([this, attemptId, modelPath, runsOn = settings.local.runsOn, timed = settings.timedSegments] {
-        begin(attemptId, modelPath, runsOn, timed);
+    onWorker([this, attemptId, modelPath, runsOn = settings.local.runsOn, timed = settings.timedSegments,
+              language = settings.language] {
+        begin(attemptId, modelPath, runsOn, timed, language);
     });
 }
 
@@ -248,7 +249,11 @@ void LocalSpeechTranscriber::failAttempt(quint64 attemptId, const QString &messa
     });
 }
 
-void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, const LocalRunsOn &runsOn, bool timed)
+void LocalSpeechTranscriber::begin(quint64 attemptId,
+                                   const QString &modelPath,
+                                   const LocalRunsOn &runsOn,
+                                   bool timed,
+                                   const QString &spokenLanguage)
 {
     if (attemptId != m_liveAttempt.load()) {
         return;
@@ -256,11 +261,12 @@ void LocalSpeechTranscriber::begin(quint64 attemptId, const QString &modelPath, 
     m_workerAttempt = attemptId;
     m_workerAttemptFailed = false;
     m_workerAttemptTimed = timed;
+    m_workerAttemptLanguage = spokenLanguage;
     m_batchPcm.clear();
     m_emittedCommittedChars = 0;
     QString error;
     if (!ensureLoaded(modelPath, runsOn, &error)
-        || (m_engine.streams() && !m_engine.beginStream(&error))) {
+        || (m_engine.streams() && !m_engine.beginStream(spokenLanguage, &error))) {
         failAttempt(attemptId, error, QStringLiteral("load"));
         return;
     }
@@ -323,9 +329,9 @@ void LocalSpeechTranscriber::finish(quint64 attemptId)
     if (m_engine.streams()) {
         transcript = m_engine.finalize(&error);
     } else if (m_workerAttemptTimed) {
-        transcript = m_engine.transcribeTimed(m_batchPcm, &segments, &error);
+        transcript = m_engine.transcribeTimed(m_batchPcm, m_workerAttemptLanguage, &segments, &error);
     } else {
-        transcript = m_engine.transcribe(m_batchPcm, &error);
+        transcript = m_engine.transcribe(m_batchPcm, m_workerAttemptLanguage, &error);
     }
     m_batchPcm.clear();
     if (!transcript) {

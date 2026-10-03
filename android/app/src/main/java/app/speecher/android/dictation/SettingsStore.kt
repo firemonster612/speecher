@@ -7,6 +7,7 @@ import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
+import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
@@ -32,6 +33,7 @@ class SettingsStore(private val context: Context) {
                 refinementProvider =
                     enumOf(preferences.getString("refinementProvider", null), default),
                 transcribePassEnabled = preferences.getBoolean("transcribePass", true),
+                spokenLanguage = preferences.getString("spokenLanguage", ENGLISH_LANGUAGE)!!,
                 chatGptRefinement = loadRefinement(Provider.ChatGpt),
                 claudeRefinement = loadRefinement(Provider.Claude),
                 // Before Speed there was only the fast-mode switch.
@@ -140,6 +142,7 @@ class SettingsStore(private val context: Context) {
             putBoolean("refinement", settings.refinementEnabled)
             putString("refinementProvider", settings.refinementProvider.name)
             putBoolean("transcribePass", settings.transcribePassEnabled)
+            putString("spokenLanguage", settings.spokenLanguage)
             Provider.entries.forEach { provider ->
                 val choice = settings.refinement(provider)
                 putString("${provider.name}RefinementModel", choice.model)

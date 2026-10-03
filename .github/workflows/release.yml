@@ -45,6 +45,7 @@ jobs:
               - '!tools/oauth-proof/**'
               - '!AGENTS.md'
               - '!.github/workflows/android.yml'
+              - '!.github/workflows/android-release.yml'
 
   linux:
     needs: changes

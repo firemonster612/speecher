@@ -23,7 +23,8 @@ fun main() {
     val fingerprint = TlsFingerprints.active
     println("TLS profile: ${fingerprint.name}")
     val transport = BcTlsWebSocketTransport(fingerprint)
-    val client = ClaudeVoiceClient(transport, token, emptyList(), { results.add(it) })
+    val client =
+        ClaudeVoiceClient(transport, token, emptyList(), ENGLISH_LANGUAGE, { results.add(it) })
     try {
         val event = results.poll(15, TimeUnit.SECONDS)
         check(event == SpeechEvent.Connected) { "Live Claude verification failed: $event" }

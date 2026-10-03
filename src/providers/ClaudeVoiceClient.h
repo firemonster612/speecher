@@ -22,7 +22,8 @@ class ClaudeVoiceClient : public QObject {
 public:
     explicit ClaudeVoiceClient(QObject *parent = nullptr, int connectionTimeoutMs = 10000);
 
-    void start(const QUrl &url, const QString &accessToken, const QStringList &vocabulary);
+    void start(const QUrl &url, const QString &accessToken, const QStringList &vocabulary,
+               const QString &spokenLanguage);
     void sendAudio(const QByteArray &pcm);
     void stop();
     void cancel();

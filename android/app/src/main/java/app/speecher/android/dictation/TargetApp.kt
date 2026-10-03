@@ -135,6 +135,7 @@ fun refinementContext(
             .copy(
                 controlRole = target?.role.orEmpty(),
                 additionalInstructions = settings.additionalInstructions,
+                spokenLanguage = settings.spokenLanguage,
                 customSystemPrompt =
                     if (settings.customSystemPromptEnabled) settings.customSystemPrompt else "",
             )

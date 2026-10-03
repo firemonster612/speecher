@@ -396,13 +396,14 @@ int main(int argc, char **argv)
         if (decision.startListening) {
             QTimer::singleShot(0, &controller, [&controller, &decision] {
                 const SessionOverrides &overrides = decision.sessionOverrides;
-                if (overrides.outputFormat || overrides.writingProfile) {
+                if (overrides.outputFormat || overrides.writingProfile || overrides.spokenLanguage) {
                     controller.handleIpcCommand(QStringLiteral("start"),
                                                 overrides.outputFormat ? outputFormatName(*overrides.outputFormat)
                                                                        : QString(),
                                                 nullptr,
                                                 {},
-                                                overrides.writingProfile.value_or(QString()));
+                                                overrides.writingProfile.value_or(QString()),
+                                                overrides.spokenLanguage.value_or(QString()));
                 } else {
                     controller.startListening();
                 }

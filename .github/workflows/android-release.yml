@@ -1,0 +1,82 @@
+name: Android release
+
+# Publishes the signed APK when an android-v<versionName> tag is pushed. See
+# docs/android/releasing.md. The release is never marked latest: the desktop updater
+# reads the repository's latest release, and the app finds its own by the tag prefix.
+
+on:
+  push:
+    tags:
+      - "android-v*"
+
+concurrency:
+  group: android-release-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Check the tag matches versionName
+        run: |
+          version="$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)"
+          if [ "android-v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match versionName $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Check
+        run: ./gradlew check
+
+      # Installed after the checks, so the key is on disk only for the release build.
+      - name: Install the signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_RELEASE_KEYSTORE }}
+          PASSWORD: ${{ secrets.ANDROID_RELEASE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE" ] || [ -z "$PASSWORD" ]; then
+            echo "::error::Set the ANDROID_RELEASE_KEYSTORE and ANDROID_RELEASE_PASSWORD secrets"
+            exit 1
+          fi
+          mkdir -p ~/.config/speecher-android
+          printf %s "$KEYSTORE" | base64 -d > ~/.config/speecher-android/release.jks
+          printf %s "$PASSWORD" > ~/.config/speecher-android/release.password
+
+      - name: Build
+        run: ./gradlew :app:assembleRelease
+
+      # Phones only accept an update signed with the key they installed from.
+      - name: Verify the signing certificate
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          "$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk \
+            | grep -q 'SHA-256 digest: 21876ee5a45302d6a268e6dac976d1501698d2a0434397e4a59d623a91cd2205'
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk="Speecher-$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          gh release create "$GITHUB_REF_NAME" "$apk" \
+            --latest=false \
+            --title "Speecher for Android $VERSION" \
+            --notes "Install and update instructions: https://github.com/${GITHUB_REPOSITORY}#android"

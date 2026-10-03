@@ -12,10 +12,12 @@ on:
     paths:
       - android/**
       - .github/workflows/android.yml
+      - .github/workflows/android-release.yml
   pull_request:
     paths:
       - android/**
       - .github/workflows/android.yml
+      - .github/workflows/android-release.yml
   workflow_dispatch:
 
 concurrency:

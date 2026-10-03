@@ -202,7 +202,7 @@ StackPanel LocalModelBrowser::makeDetail()
     m_wer = addFact(names.wordErrorRate);
     ToolTipService::SetToolTip(m_wer, box_value(hs(wordErrorRateSources())));
     m_textShows = addFact(names.textShows);
-    addFact(names.language).Text(L"English");
+    m_language = addFact(names.language);
     m_licence = addFact(names.license);
     detail.Children().Append(facts);
 
@@ -337,6 +337,7 @@ void LocalModelBrowser::showDetail()
     m_wer.Text(hs(QStringLiteral("%1 clear speech\n%2 everyday speech")
                       .arg(werText(model.librispeechCleanWer), werText(model.fleursEnglishWer))));
     m_textShows.Text(hs(textShowsValue(model.streams)));
+    m_language.Text(hs(languagesValue(model)));
     m_licence.Text(hs(model.licence));
     QStringList notes;
     for (const QString &pro : model.pros) {

@@ -645,6 +645,9 @@ typedef NS_ENUM(NSInteger, SpeecherInsightsRange) {
 // What Share copies and saves (speecher::insightsShareText, insightsJson),
 // and the file name a save panel suggests.
 @property (nonatomic, readonly, copy) NSString *shareText;
+// The line under the shared image's figures, empty with no audio
+// (speecher::insightsImagePaceLine).
+@property (nonatomic, readonly, copy) NSString *imagePaceLine;
 @property (nonatomic, readonly, copy) NSData *json;
 @property (nonatomic, readonly, copy) NSString *jsonFileName;
 
@@ -710,6 +713,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // worded (speecher::textShowsValue).
 @property (nonatomic, readonly) BOOL streams;
 @property (nonatomic, readonly, copy) NSString *textShowsText;
+// "English", or "14 languages" (speecher::languagesValue).
+@property (nonatomic, readonly, copy) NSString *languagesText;
 @property (nonatomic, readonly, copy) NSString *licence;
 @property (nonatomic, readonly) SpeecherModelRating rating;
 // The badge's words, "Recommended" to "Not recommended".
@@ -858,7 +863,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // Re-read on every statusChanged.
 @property (nonatomic, readonly, copy) NSString *failureNote;
 // Home's fixed wording (speecher::InsightsShareLabels, speecher::homeText
-// and the heatmap's measures), keyed "share", "copyText", "saveJson",
+// and the heatmap's measures), keyed "share", "copyImage", "imageTitle",
+// "copyText", "saveJson",
 // "copied", "saved", "saveFailed", "saveTitle", "correctionsTitle",
 // "legendLess", "legendMore", "insightsOffTitle", "insightsOffBody",
 // "noInsightsTitle", "noInsightsBody", "insightsSettings", "yourDictation",

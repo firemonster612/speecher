@@ -14,6 +14,8 @@ struct SessionOverrides {
     std::optional<OutputFormat> outputFormat;
     // A Writing Profile id.
     std::optional<QString> writingProfile;
+    // A Spoken Language: a language code, or kAutomaticSpokenLanguage.
+    std::optional<QString> spokenLanguage;
 };
 
 enum class DictationState {
