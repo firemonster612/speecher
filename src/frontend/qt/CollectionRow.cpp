@@ -5,6 +5,8 @@
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
+#include <QPainter>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
@@ -75,6 +77,26 @@ QIcon collectionIcon(const QString &iconId)
     }
     return {};
 }
+
+// An Icon column's cell: the style draws the cell, selection included, and
+// the icon sits centred in it, where an item view would put it at the left.
+class IconCellDelegate final : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem item = option;
+        initStyleOption(&item, index);
+        const QIcon icon = item.icon;
+        item.icon = QIcon();
+        item.features &= ~QStyleOptionViewItem::HasDecoration;
+        const QWidget *widget = option.widget;
+        (widget ? widget->style() : QApplication::style())->drawControl(QStyle::CE_ItemViewItem, &item, painter, widget);
+        icon.paint(painter, item.rect, Qt::AlignCenter,
+                   item.state & QStyle::State_Selected ? QIcon::Selected : QIcon::Normal);
+    }
+};
 
 QTableWidgetItem *readOnlyItem(const QString &text)
 {
@@ -220,6 +242,14 @@ CollectionEditor::CollectionEditor(const SettingsRow &descriptor,
             title->setToolTip(shown.title);
             title->setData(Qt::AccessibleTextRole, shown.title);
             m_table->setHorizontalHeaderItem(column, title);
+            // As wide as its icon and the header's margins, no wider.
+            const int width = m_table->style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, m_table)
+                + 2 * m_table->style()->pixelMetric(QStyle::PM_HeaderMargin, nullptr, header);
+            header->setMinimumSectionSize(std::min(header->minimumSectionSize(), width));
+            header->setSectionResizeMode(column, QHeaderView::Fixed);
+            header->resizeSection(column, width);
+            m_table->setItemDelegateForColumn(column, new IconCellDelegate(m_table));
+            continue;
         }
         if (m_columns.at(column).kind == ColumnKind::ChoiceSet) {
             // It can name every option, so it takes the width of its widest
