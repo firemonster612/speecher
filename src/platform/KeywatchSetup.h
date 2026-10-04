@@ -3,6 +3,8 @@
 #include <QObject>
 #include <QString>
 
+#include <cstdint>
+
 namespace speecher {
 
 // The key-watch helper's installation, as the app can observe it. Mirrors
@@ -13,6 +15,9 @@ enum class KeywatchSetupState {
     // The daemon runs and answers, but with another protocol version: an app
     // update outlived the installed helper. Only a reinstall repairs it.
     NeedsReinstall,
+    // A version 1 helper: it serves one single key, so the dictation shortcut
+    // keeps working, and a reinstall lets it serve the session shortcuts too.
+    Outdated,
     Ready,
 };
 
@@ -27,6 +32,8 @@ struct KeywatchProbeFacts {
     // Whether that answer spoke this build's protocol version. An answer
     // alone proves liveness, not compatibility.
     bool daemonProtocolMatches = false;
+    // Whether it is a version 1 daemon, which still serves one key.
+    bool daemonOutdated = false;
 };
 
 struct KeywatchSetupStatus {
@@ -34,7 +41,11 @@ struct KeywatchSetupStatus {
     QString label;
     QString detail;
 
-    bool ready() const { return state == KeywatchSetupState::Ready; }
+    // Whether a key can be watched now; an outdated helper still watches one.
+    bool ready() const
+    {
+        return state == KeywatchSetupState::Ready || state == KeywatchSetupState::Outdated;
+    }
 };
 
 // Announces that a background liveness exchange finished, so a view that
@@ -53,6 +64,9 @@ public:
     // last background exchange, and a stale one starts the next exchange.
     static KeywatchSetupStatus probe();
     static KeywatchDaemonAnswer *daemonAnswer();
+    // The protocol version to ask the installed daemon in: this build's,
+    // or the oldest one for a daemon from before it.
+    static std::uint8_t requestVersion();
     // Drops the cached daemon answer so the next probe asks the daemon again.
     // Install and remove call this themselves; a caller that changed the
     // helper some other way calls it to see the result without waiting.

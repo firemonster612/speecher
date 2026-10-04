@@ -16,8 +16,11 @@ namespace speecher::keywatch {
 
 constexpr const char *socketPath = "/run/speecher-keywatchd/socket";
 // Version 2 watches up to maxWatchesPerUser keys per user, one per
-// connection; version 1 watched one.
+// connection; version 1 watched one. The messages are the same, so a version 2
+// daemon also answers version 1 requests, in version 1, and an app that finds
+// a version 1 daemon keeps its one watch working by asking in version 1.
 constexpr std::uint8_t protocolVersion = 2;
+constexpr std::uint8_t oldestProtocolVersion = 1;
 // One for each Global Shortcut: dictation, cancel and pause.
 constexpr int maxWatchesPerUser = 3;
 

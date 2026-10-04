@@ -600,7 +600,7 @@ bool ApplicationController::setGlobalShortcut(const ShortcutBinding &shortcut,
     }
 #endif
     for (const GlobalShortcutRole other : globalShortcutRoles) {
-        if (other != role && !shortcut.isEmpty() && shortcut == globalShortcut(other)) {
+        if (other != role && !shortcut.isEmpty() && shortcut.sameKeysAs(globalShortcut(other))) {
             if (error) {
                 *error = globalShortcutTakenText(other);
             }

@@ -3,7 +3,6 @@
 #ifdef SPEECHER_WITH_X11
 
 #include "core/settings/SettingsSchema.h"
-#include "platform/StoredCombination.h"
 
 #include <QSocketNotifier>
 
@@ -17,9 +16,24 @@ namespace {
 
 // The keysym X names a Qt key by, or 0 where this binder has no mapping.
 // Latin-1 keys share their codes; the rest are the ones a person is likely to
-// pick for cancel or pause.
-KeySym keysymFor(Qt::Key key)
+// pick for cancel or pause. Qt marks the numeric keypad with a modifier, X
+// with keysyms of its own.
+KeySym keysymFor(Qt::Key key, bool keypad)
 {
+    if (keypad) {
+        if (key >= Qt::Key_0 && key <= Qt::Key_9) {
+            return XK_KP_0 + (key - Qt::Key_0);
+        }
+        switch (key) {
+        case Qt::Key_Enter: return XK_KP_Enter;
+        case Qt::Key_Plus: return XK_KP_Add;
+        case Qt::Key_Minus: return XK_KP_Subtract;
+        case Qt::Key_Asterisk: return XK_KP_Multiply;
+        case Qt::Key_Slash: return XK_KP_Divide;
+        case Qt::Key_Period: return XK_KP_Decimal;
+        default: return 0;
+        }
+    }
     if (key >= Qt::Key_Space && key <= Qt::Key_AsciiTilde) {
         return KeySym(key);
     }
@@ -53,6 +67,7 @@ KeySym keysymFor(Qt::Key key)
 // being on would otherwise defeat it: grab every combination of the two.
 constexpr unsigned int numLockMask = Mod2Mask;
 constexpr unsigned int lockVariants[] = {0, LockMask, numLockMask, LockMask | numLockMask};
+constexpr unsigned int shortcutModifiers = ShiftMask | ControlMask | Mod1Mask | Mod4Mask;
 
 int grabError = 0;
 
@@ -64,25 +79,79 @@ int recordGrabError(Display *, XErrorEvent *event)
 
 } // namespace
 
-X11KeyGrabShortcutBinder::X11KeyGrabShortcutBinder(GlobalShortcutAction action, QObject *parent)
-    : GlobalShortcutBinder(std::move(action), parent)
-{
-    m_display = XOpenDisplay(nullptr);
-    if (!m_display) {
-        return;
+// One X connection serves every key grab. While a grabbed key is held, the
+// server turns its passive grab into an active grab of the whole keyboard
+// and sends every key pressed meanwhile to the grabbing connection; sharing
+// one connection routes each of those to the binder that holds the key,
+// whichever binder's key started the grab. Opened on first use and kept for
+// the life of the process.
+class X11KeyGrabShortcutBinder::Connection {
+public:
+    static Connection &instance()
+    {
+        static Connection connection;
+        return connection;
     }
-    // Without it a held key repeats as release-press pairs, and each press
-    // would cancel or toggle pause again.
-    XkbSetDetectableAutoRepeat(m_display, True, nullptr);
-    m_notifier = new QSocketNotifier(ConnectionNumber(m_display), QSocketNotifier::Read, this);
-    connect(m_notifier, &QSocketNotifier::activated, this, [this] { readEvents(); });
+
+    Display *display = nullptr;
+    QList<X11KeyGrabShortcutBinder *> binders;
+
+    // Ends an active grab a held key left behind, so keys pressed while it is
+    // still down reach the focused app. Its release goes there too, so no
+    // binder may go on waiting for one.
+    void releaseKeyboard()
+    {
+        bool anyDown = false;
+        for (X11KeyGrabShortcutBinder *binder : std::as_const(binders)) {
+            anyDown = anyDown || binder->m_down;
+            binder->m_down = false;
+        }
+        if (anyDown) {
+            XUngrabKeyboard(display, CurrentTime);
+            XFlush(display);
+        }
+    }
+
+private:
+    Connection()
+    {
+        display = XOpenDisplay(nullptr);
+        if (!display) {
+            return;
+        }
+        // Without it a held key repeats as release-press pairs, and each
+        // press would cancel or toggle pause again.
+        XkbSetDetectableAutoRepeat(display, True, nullptr);
+        auto *notifier = new QSocketNotifier(ConnectionNumber(display), QSocketNotifier::Read);
+        QObject::connect(notifier, &QSocketNotifier::activated, notifier, [this] { readEvents(); });
+    }
+
+    void readEvents()
+    {
+        while (XPending(display)) {
+            XEvent event;
+            XNextEvent(display, &event);
+            if (event.type != KeyPress && event.type != KeyRelease) {
+                continue;
+            }
+            for (X11KeyGrabShortcutBinder *binder : std::as_const(binders)) {
+                binder->keyEvent(event.type == KeyPress, int(event.xkey.keycode), event.xkey.state);
+            }
+        }
+    }
+};
+
+X11KeyGrabShortcutBinder::X11KeyGrabShortcutBinder(GlobalShortcutAction action, QObject *parent)
+    : SessionShortcutBinder(std::move(action), parent)
+    , m_display(Connection::instance().display)
+{
+    Connection::instance().binders.append(this);
 }
 
 X11KeyGrabShortcutBinder::~X11KeyGrabShortcutBinder()
 {
-    if (m_display) {
-        XCloseDisplay(m_display);
-    }
+    letGo();
+    Connection::instance().binders.removeOne(this);
 }
 
 bool X11KeyGrabShortcutBinder::supported() const
@@ -93,21 +162,6 @@ bool X11KeyGrabShortcutBinder::supported() const
 QString X11KeyGrabShortcutBinder::unsupportedReason() const
 {
     return supported() ? QString() : QStringLiteral("Speecher could not reach the X server.");
-}
-
-void X11KeyGrabShortcutBinder::bind()
-{
-    m_binding = storedCombination(action().settingsKey);
-    const QString error = holdWhileArmed();
-    if (!error.isEmpty()) {
-        qWarning("Could not grab %s: %s", qPrintable(action().id), qPrintable(error));
-    }
-    emit bindingChanged();
-}
-
-ShortcutBinding X11KeyGrabShortcutBinder::shortcut() const
-{
-    return m_binding;
 }
 
 QString X11KeyGrabShortcutBinder::unsupportedBindingReason(const ShortcutBinding &binding) const
@@ -125,75 +179,15 @@ QString X11KeyGrabShortcutBinder::unsupportedBindingReason(const ShortcutBinding
     return QString();
 }
 
-bool X11KeyGrabShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString *error)
-{
-    QString reason = unsupportedBindingReason(shortcut);
-    // Grabbing now, armed or not, is what tells another client already holds
-    // the keys while the person is still choosing them.
-    if (reason.isEmpty() && !shortcut.isEmpty()) {
-        ungrab();
-        if (!grab(grabFor(m_display, shortcut.combination()))) {
-            reason = globalShortcutOwnedElsewhereText(shortcut);
-        }
-    }
-    if (!reason.isEmpty()) {
-        holdWhileArmed();
-        if (error) {
-            *error = reason;
-        }
-        return false;
-    }
-    ungrab();
-    m_binding = shortcut;
-    holdWhileArmed();
-    storeCombination(action().settingsKey, m_binding);
-    emit bindingChanged();
-    return true;
-}
-
-bool X11KeyGrabShortcutBinder::removeRegistration(QString *)
-{
-    ungrab();
-    m_binding = {};
-    storeCombination(action().settingsKey, m_binding);
-    emit bindingChanged();
-    return true;
-}
-
-void X11KeyGrabShortcutBinder::setArmed(bool armed)
-{
-    if (armed == m_armed) {
-        return;
-    }
-    m_armed = armed;
-    const QString error = holdWhileArmed();
-    if (!error.isEmpty()) {
-        qWarning("Could not grab %s for this dictation: %s",
-                 qPrintable(action().id), qPrintable(error));
-    }
-}
-
-void X11KeyGrabShortcutBinder::suspend()
-{
-    m_suspended = true;
-    holdWhileArmed();
-}
-
-QString X11KeyGrabShortcutBinder::resume()
-{
-    m_suspended = false;
-    return holdWhileArmed();
-}
-
 X11KeyGrabShortcutBinder::Grab X11KeyGrabShortcutBinder::grabFor(Display *display,
                                                                 const QKeySequence &combination)
 {
     if (combination.isEmpty()) {
         return {};
     }
-    const KeySym keysym = keysymFor(combination[0].key());
-    const int keycode = keysym ? XKeysymToKeycode(display, keysym) : 0;
     const Qt::KeyboardModifiers qtModifiers = combination[0].keyboardModifiers();
+    const KeySym keysym = keysymFor(combination[0].key(), qtModifiers & Qt::KeypadModifier);
+    const int keycode = keysym ? XKeysymToKeycode(display, keysym) : 0;
     unsigned int modifiers = 0;
     if (qtModifiers & Qt::ShiftModifier) modifiers |= ShiftMask;
     if (qtModifiers & Qt::ControlModifier) modifiers |= ControlMask;
@@ -202,23 +196,10 @@ X11KeyGrabShortcutBinder::Grab X11KeyGrabShortcutBinder::grabFor(Display *displa
     return {keycode, modifiers};
 }
 
-QString X11KeyGrabShortcutBinder::holdWhileArmed()
+bool X11KeyGrabShortcutBinder::take(const QKeySequence &combination)
 {
-    if (!m_armed || m_suspended || m_binding.isEmpty() || !m_display) {
-        ungrab();
-        return {};
-    }
-    if (m_held.keycode != 0) {
-        return {};
-    }
-    return grab(grabFor(m_display, m_binding.combination()))
-        ? QString()
-        : globalShortcutOwnedElsewhereText(m_binding);
-}
-
-bool X11KeyGrabShortcutBinder::grab(const Grab &keys)
-{
-    if (!m_display || keys.keycode == 0) {
+    const Grab keys = m_display ? grabFor(m_display, combination) : Grab();
+    if (keys.keycode == 0) {
         return false;
     }
     // X reports a key another client already grabbed as an asynchronous
@@ -234,15 +215,14 @@ bool X11KeyGrabShortcutBinder::grab(const Grab &keys)
     XSync(m_display, False);
     XSetErrorHandler(previous);
     m_held = keys;
-    m_down = false;
     if (grabError != 0) {
-        ungrab();
+        letGo();
         return false;
     }
     return true;
 }
 
-void X11KeyGrabShortcutBinder::ungrab()
+void X11KeyGrabShortcutBinder::letGo()
 {
     if (!m_display || m_held.keycode == 0) {
         return;
@@ -251,24 +231,22 @@ void X11KeyGrabShortcutBinder::ungrab()
     for (const unsigned int lock : lockVariants) {
         XUngrabKey(m_display, m_held.keycode, m_held.modifiers | lock, root);
     }
-    XFlush(m_display);
     m_held = {};
+    // Ungrabbing the key leaves an active grab its press started in place.
+    Connection::instance().releaseKeyboard();
+    XFlush(m_display);
 }
 
-void X11KeyGrabShortcutBinder::readEvents()
+void X11KeyGrabShortcutBinder::keyEvent(bool press, int keycode, unsigned int state)
 {
-    while (XPending(m_display)) {
-        XEvent event;
-        XNextEvent(m_display, &event);
-        if (m_held.keycode == 0 || int(event.xkey.keycode) != m_held.keycode) {
-            continue;
-        }
-        if (event.type == KeyPress && !m_down) {
-            m_down = true;
-            emit activated();
-        } else if (event.type == KeyRelease) {
-            m_down = false;
-        }
+    if (m_held.keycode == 0 || keycode != m_held.keycode) {
+        return;
+    }
+    if (!press) {
+        m_down = false;
+    } else if (!m_down && (state & shortcutModifiers) == m_held.modifiers) {
+        m_down = true;
+        emit activated();
     }
 }
 

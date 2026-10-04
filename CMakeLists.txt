@@ -432,6 +432,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/PortalScreenshotContextProvider.cpp
   src/platform/PortalGlobalShortcutBinder.cpp
   src/platform/WaylandLayerShell.cpp
+  src/platform/SessionShortcutBinder.cpp
   src/platform/X11KeyGrabShortcutBinder.cpp
   src/platform/XInput2ShortcutBinder.cpp
   src/platform/atspi/AtSpiAccess.cpp
@@ -458,7 +459,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/PortalScreenshotContextProvider.h
   src/platform/PortalGlobalShortcutBinder.h
   src/platform/WaylandLayerShell.h
-  src/platform/StoredCombination.h
+  src/platform/SessionShortcutBinder.h
   src/platform/X11KeyGrabShortcutBinder.h
   src/platform/XInput2ShortcutBinder.h
   src/setup/KeywatchProtocol.h

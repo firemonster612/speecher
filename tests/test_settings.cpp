@@ -296,6 +296,21 @@ private slots:
         QVERIFY(!ShortcutBinding().isBareKey());
     }
 
+    // A watched single key and a combination without modifiers can name the
+    // same physical key; two shortcuts must not share it either way.
+    void aSingleKeyAndABareCombinationCanBeTheSameKey()
+    {
+        const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));
+        QVERIFY(f13.sameKeysAs(ShortcutBinding(QKeySequence(Qt::Key_F13))));
+        QVERIFY(ShortcutBinding(QKeySequence(Qt::Key_C))
+                    .sameKeysAs(ShortcutBinding::singleKey(QStringLiteral("KeyC"))));
+        QVERIFY(ShortcutBinding::singleKey(QStringLiteral("Escape"))
+                    .sameKeysAs(ShortcutBinding(QKeySequence(Qt::Key_Escape))));
+        QVERIFY(!f13.sameKeysAs(ShortcutBinding(QKeySequence(Qt::CTRL | Qt::Key_F13))));
+        QVERIFY(!f13.sameKeysAs(ShortcutBinding(QKeySequence(Qt::Key_F14))));
+        QVERIFY(!f13.sameKeysAs(ShortcutBinding()));
+    }
+
     void settingsDefaults()
     {
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");

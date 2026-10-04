@@ -38,7 +38,7 @@ KeywatchShortcutBinder::KeywatchShortcutBinder(GlobalShortcutAction action, QObj
     // The async slots serve reconnects after the daemon restarts; the initial
     // exchange in watch() is synchronous and runs with these signals blocked.
     connect(m_socket, &QLocalSocket::connected, this, [this] {
-        const keywatch::WatchRequest request{keywatch::protocolVersion, m_keyId};
+        const keywatch::WatchRequest request{KeywatchSetup::requestVersion(), m_keyId};
         m_replied = false;
         m_socket->write(reinterpret_cast<const char *>(&request), sizeof(request));
     });
@@ -132,7 +132,7 @@ QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
         return status.ready() ? QStringLiteral("Speecher could not reach the key helper.")
                               : status.detail;
     }
-    const keywatch::WatchRequest request{keywatch::protocolVersion, m_keyId};
+    const keywatch::WatchRequest request{KeywatchSetup::requestVersion(), m_keyId};
     m_socket->write(reinterpret_cast<const char *>(&request), sizeof(request));
     while (m_socket->bytesAvailable() < qint64(sizeof(keywatch::WatchReply))) {
         if (!m_socket->waitForReadyRead(replyTimeoutMs)) {
@@ -145,7 +145,8 @@ QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
     if (reply.refusal == quint8(keywatch::Refusal::AlreadyWatching)) {
         unwatch();
         m_helperBusy = true;
-        return keyHelperBusyText();
+        const KeywatchSetupStatus status = KeywatchSetup::probe();
+        return status.state == KeywatchSetupState::Outdated ? status.detail : keyHelperBusyText();
     }
     if (reply.refusal != quint8(keywatch::Refusal::None)) {
         const QString reason = QString::fromLatin1(refusalText(keywatch::Refusal(reply.refusal)));

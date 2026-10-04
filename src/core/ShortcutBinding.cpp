@@ -201,7 +201,8 @@ bool ShortcutBinding::isSingleKey() const
 bool ShortcutBinding::isBareKey() const
 {
     return !m_combination.isEmpty()
-        && (m_combination[0].keyboardModifiers() & ~Qt::ShiftModifier) == Qt::NoModifier;
+        && (m_combination[0].keyboardModifiers() & ~(Qt::ShiftModifier | Qt::KeypadModifier))
+               == Qt::NoModifier;
 }
 
 QKeySequence ShortcutBinding::combination() const
@@ -212,6 +213,23 @@ QKeySequence ShortcutBinding::combination() const
 QString ShortcutBinding::keyCode() const
 {
     return m_keyCode;
+}
+
+bool ShortcutBinding::sameKeysAs(const ShortcutBinding &other) const
+{
+    if (*this == other) {
+        return true;
+    }
+    const ShortcutBinding &single = isSingleKey() ? *this : other;
+    const ShortcutBinding &combination = isSingleKey() ? other : *this;
+    if (!single.isSingleKey() || combination.isSingleKey() || combination.isEmpty()
+        || combination.m_combination[0].keyboardModifiers() != Qt::NoModifier) {
+        return false;
+    }
+    // The vocabulary's labels read as Qt key names for every key a
+    // combination can hold ("C", "F13", "Escape").
+    const QKeySequence label = QKeySequence::fromString(single.displayText(), QKeySequence::PortableText);
+    return label.count() == 1 && label[0] == combination.m_combination[0];
 }
 
 QString ShortcutBinding::displayText() const

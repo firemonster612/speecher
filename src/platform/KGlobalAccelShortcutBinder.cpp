@@ -1,8 +1,5 @@
 #include "platform/KGlobalAccelShortcutBinder.h"
 
-#include "core/settings/SettingsSchema.h"
-#include "platform/StoredCombination.h"
-
 #include <QAction>
 #include <QDebug>
 
@@ -20,6 +17,17 @@ constexpr auto legacyShortcutComponent = "local.speecher";
 QList<QKeySequence> keyList(const QKeySequence &sequence)
 {
     return sequence.isEmpty() ? QList<QKeySequence>{} : QList<QKeySequence>{sequence};
+}
+
+bool kglobalaccelAvailable()
+{
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(
+        QStringLiteral("KDE"),
+        Qt::CaseInsensitive);
+#else
+    return false;
+#endif
 }
 
 } // namespace
@@ -41,13 +49,7 @@ KGlobalAccelShortcutBinder::KGlobalAccelShortcutBinder(GlobalShortcutAction acti
 
 bool KGlobalAccelShortcutBinder::supported() const
 {
-#ifdef SPEECHER_WITH_KGLOBALACCEL
-    return qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(
-        QStringLiteral("KDE"),
-        Qt::CaseInsensitive);
-#else
-    return false;
-#endif
+    return kglobalaccelAvailable();
 }
 
 QString KGlobalAccelShortcutBinder::unsupportedReason() const
@@ -74,18 +76,6 @@ QAction *KGlobalAccelShortcutBinder::makeShortcutAction()
 void KGlobalAccelShortcutBinder::bind()
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
-    if (action().duringDictationOnly) {
-        m_binding = storedCombination(action().settingsKey);
-        // Nothing stays registered between sessions, including what an older
-        // build left with the daemon for good.
-        releaseFromDaemon();
-        const QString error = holdWhileArmed();
-        if (!error.isEmpty()) {
-            qWarning() << "Could not register" << action().id << error;
-        }
-        emit bindingChanged();
-        return;
-    }
     QKeySequence savedShortcut = shortcut().combination();
     const QList<QKeySequence> legacyShortcuts = KGlobalAccel::self()->globalShortcut(
         QString::fromLatin1(legacyShortcutComponent),
@@ -117,9 +107,6 @@ void KGlobalAccelShortcutBinder::bind()
 ShortcutBinding KGlobalAccelShortcutBinder::shortcut() const
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
-    if (action().duringDictationOnly) {
-        return m_binding;
-    }
     const QList<QKeySequence> shortcuts = KGlobalAccel::self()->globalShortcut(
         QString::fromLatin1(shortcutComponent),
         action().id);
@@ -138,29 +125,6 @@ bool KGlobalAccelShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QS
             *error = reason;
         }
         return false;
-    }
-    if (action().duringDictationOnly) {
-        // Registering now, armed or not, is what tells another component
-        // already owns the keys while the person is still choosing them.
-        const ShortcutBinding previous = m_binding;
-        m_binding = shortcut;
-        if (m_action) {
-            releaseFromDaemon();
-        }
-        QString refusal;
-        if (!shortcut.isEmpty() && !m_suspended
-            && !registerWithDaemon(shortcut.combination(), &refusal)) {
-            m_binding = previous;
-            holdWhileArmed();
-            if (error) {
-                *error = refusal;
-            }
-            return false;
-        }
-        holdWhileArmed();
-        storeCombination(action().settingsKey, m_binding);
-        emit bindingChanged();
-        return true;
     }
     // removeRegistration() deletes the action when a single key takes over;
     // choosing a combination again arrives here without a bind() in between,
@@ -195,13 +159,6 @@ bool KGlobalAccelShortcutBinder::removeRegistration(QString *error)
         }
         return false;
     }
-    if (this->action().duringDictationOnly) {
-        releaseFromDaemon();
-        m_binding = {};
-        storeCombination(this->action().settingsKey, m_binding);
-        emit bindingChanged();
-        return true;
-    }
     QAction *action = m_action ? m_action : makeShortcutAction();
     KGlobalAccel::self()->removeAllShortcuts(action);
     KGlobalAccel::self()->cleanComponent(QString::fromLatin1(shortcutComponent));
@@ -217,83 +174,79 @@ bool KGlobalAccelShortcutBinder::removeRegistration(QString *error)
 #endif
 }
 
-void KGlobalAccelShortcutBinder::setArmed(bool armed)
+KGlobalAccelSessionShortcutBinder::KGlobalAccelSessionShortcutBinder(GlobalShortcutAction action,
+                                                                     QObject *parent)
+    : SessionShortcutBinder(std::move(action), parent)
 {
-    if (!action().duringDictationOnly || armed == m_armed) {
-        return;
-    }
-    m_armed = armed;
-    const QString error = holdWhileArmed();
-    if (!error.isEmpty()) {
-        qWarning() << "Could not register" << action().id << "for this dictation:" << error;
-    }
 }
 
-void KGlobalAccelShortcutBinder::suspend()
+bool KGlobalAccelSessionShortcutBinder::supported() const
 {
-    if (action().duringDictationOnly) {
-        m_suspended = true;
-        holdWhileArmed();
-    }
+    return kglobalaccelAvailable();
 }
 
-QString KGlobalAccelShortcutBinder::resume()
+QString KGlobalAccelSessionShortcutBinder::unsupportedReason() const
 {
-    if (!action().duringDictationOnly) {
-        return {};
-    }
-    m_suspended = false;
-    return holdWhileArmed();
+    return supported() ? QString() : QStringLiteral("KGlobalAccel is unavailable");
 }
 
-QString KGlobalAccelShortcutBinder::holdWhileArmed()
+// Builds before session shortcuts kept the Cancel Shortcut with the daemon
+// for good. Carry it over, then let go of it: nothing stays registered
+// between sessions.
+ShortcutBinding KGlobalAccelSessionShortcutBinder::storedShortcut() const
 {
-    if (!m_armed || m_suspended || m_binding.isEmpty()) {
-        if (m_action) {
-            releaseFromDaemon();
+    const ShortcutBinding stored = SessionShortcutBinder::storedShortcut();
+#ifdef SPEECHER_WITH_KGLOBALACCEL
+    if (stored.isEmpty()) {
+        const QList<QKeySequence> registered = KGlobalAccel::self()->globalShortcut(
+            QString::fromLatin1(shortcutComponent), action().id);
+        if (!registered.isEmpty()) {
+            return ShortcutBinding(registered.first());
         }
-        return {};
     }
-    if (m_action) {
-        return {};
-    }
-    QString error;
-    registerWithDaemon(m_binding.combination(), &error);
-    return error;
+#endif
+    return stored;
 }
 
-bool KGlobalAccelShortcutBinder::registerWithDaemon(const QKeySequence &keys, QString *error)
+void KGlobalAccelSessionShortcutBinder::bind()
+{
+    SessionShortcutBinder::bind();
+    // Also drops what an earlier build or a crashed run left registered.
+    if (!m_action) {
+        take({});
+        letGo();
+    }
+}
+
+bool KGlobalAccelSessionShortcutBinder::take(const QKeySequence &keys)
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
-    makeShortcutAction();
+    delete m_action;
+    m_action = new QAction(action().description, this);
+    m_action->setAutoRepeat(false);
+    m_action->setObjectName(action().id);
+    m_action->setProperty("componentName", QString::fromLatin1(shortcutComponent));
+    m_action->setProperty("componentDisplayName", QStringLiteral("Speecher"));
+    connect(m_action, &QAction::triggered, this, &GlobalShortcutBinder::activated);
     // The daemon reports success but stores no key when another component
     // owns it, so the keys it kept are the answer.
     KGlobalAccel::self()->setShortcut(m_action, keyList(keys), KGlobalAccel::NoAutoloading);
     const QList<QKeySequence> active = KGlobalAccel::self()->shortcut(m_action);
-    if (!active.isEmpty() && active.first() == keys) {
-        return true;
-    }
-    releaseFromDaemon();
-    if (error) {
-        *error = globalShortcutOwnedElsewhereText(ShortcutBinding(keys));
-    }
-    return false;
+    return !active.isEmpty() && active.first() == keys;
 #else
     Q_UNUSED(keys)
-    if (error) {
-        *error = unsupportedReason();
-    }
     return false;
 #endif
 }
 
-void KGlobalAccelShortcutBinder::releaseFromDaemon()
+void KGlobalAccelSessionShortcutBinder::letGo()
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
-    QAction *action = m_action ? m_action : makeShortcutAction();
-    KGlobalAccel::self()->removeAllShortcuts(action);
-    delete m_action;
-    m_action = nullptr;
+    if (m_action) {
+        KGlobalAccel::self()->removeAllShortcuts(m_action);
+        delete m_action;
+        m_action = nullptr;
+    }
 #endif
 }
 

@@ -133,16 +133,24 @@ namespace {
 // keys themselves instead, just while dictating, which the portal cannot.
 GlobalShortcutBinder *createCombinationBinder(const GlobalShortcutAction &action)
 {
+    if (action.duringDictationOnly) {
+        auto *plasma = new KGlobalAccelSessionShortcutBinder(action);
+        if (plasma->supported()) {
+            return plasma;
+        }
+        delete plasma;
+#ifdef SPEECHER_WITH_X11
+        if (!isWaylandSession()) {
+            return new X11KeyGrabShortcutBinder(action);
+        }
+#endif
+        return new PortalGlobalShortcutBinder(action);
+    }
     auto *plasma = new KGlobalAccelShortcutBinder(action);
     if (plasma->supported()) {
         return plasma;
     }
     delete plasma;
-#ifdef SPEECHER_WITH_X11
-    if (action.duringDictationOnly && !isWaylandSession()) {
-        return new X11KeyGrabShortcutBinder(action);
-    }
-#endif
     return new PortalGlobalShortcutBinder(action);
 }
 

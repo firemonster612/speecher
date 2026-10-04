@@ -38,6 +38,7 @@ enum DaemonAnswerState : int {
     NoAnswer = 0,
     AnsweredWrongVersion = 1,
     AnsweredMatching = 2,
+    AnsweredOutdated = 3,
 };
 std::atomic<std::int64_t> cachedAnswerAtMs{0};
 std::atomic<int> cachedAnswerState{NoAnswer};
@@ -55,27 +56,30 @@ std::int64_t monotonicMs()
 // daemon that failed to start leaves systemd's socket accepting and then
 // closing, which shows up here as no answer. The reply's contents matter too:
 // an installed daemon from before a protocol bump answers BadVersion with its
-// own version number, which is alive but unusable.
-bool askDaemon(bool &protocolMatches)
+// own version number. A version 1 daemon still serves one key; any other
+// mismatch is alive but unusable.
+DaemonAnswerState askDaemon()
 {
     QLocalSocket socket;
     socket.connectToServer(QString::fromLatin1(keywatch::socketPath));
     if (!socket.waitForConnected(connectTimeoutMs)) {
-        return false;
+        return NoAnswer;
     }
     const keywatch::WatchRequest ping{keywatch::protocolVersion, 0};
     socket.write(reinterpret_cast<const char *>(&ping), sizeof(ping));
     socket.flush();
     while (socket.bytesAvailable() < qint64(sizeof(keywatch::WatchReply))) {
         if (!socket.waitForReadyRead(replyTimeoutMs)) {
-            return false;
+            return NoAnswer;
         }
     }
     keywatch::WatchReply reply{};
     socket.read(reinterpret_cast<char *>(&reply), sizeof(reply));
-    protocolMatches = reply.version == keywatch::protocolVersion
-        && reply.refusal != std::uint8_t(keywatch::Refusal::BadVersion);
-    return true;
+    if (reply.refusal != std::uint8_t(keywatch::Refusal::BadVersion)) {
+        return AnsweredMatching;
+    }
+    return reply.version == keywatch::oldestProtocolVersion ? AnsweredOutdated
+                                                             : AnsweredWrongVersion;
 }
 
 // A daemon that accepted the connection and then died costs this exchange
@@ -91,11 +95,7 @@ void askDaemonInBackground()
     // whichever pool thread happens to finish the exchange.
     KeywatchSetup::daemonAnswer();
     QThreadPool::globalInstance()->start([] {
-        bool protocolMatches = false;
-        const bool answered = askDaemon(protocolMatches);
-        cachedAnswerState.store(!answered           ? NoAnswer
-                                    : protocolMatches ? AnsweredMatching
-                                                      : AnsweredWrongVersion);
+        cachedAnswerState.store(askDaemon());
         cachedAnswerAtMs.store(monotonicMs());
         askInFlight.store(false);
         QMetaObject::invokeMethod(KeywatchSetup::daemonAnswer(),
@@ -138,6 +138,13 @@ KeywatchSetupStatus KeywatchSetup::evaluate(const KeywatchProbeFacts &facts)
                 QStringLiteral("The key helper is installed but does not answer. "
                                "Set it up again to repair it.")};
     }
+    if (facts.daemonOutdated) {
+        return {KeywatchSetupState::Outdated,
+                QStringLiteral("Ready, needs an update"),
+                QStringLiteral("The key helper is from an older version of Speecher and watches "
+                               "only one key. Set it up again to use single keys for the Cancel "
+                               "and Pause Shortcuts too.")};
+    }
     if (!facts.daemonProtocolMatches) {
         return {KeywatchSetupState::NeedsReinstall,
                 QStringLiteral("Installed, needs an update"),
@@ -162,7 +169,14 @@ KeywatchSetupStatus KeywatchSetup::probe()
         facts.socketWritable ? daemonAnswerState() : NoAnswer;
     facts.daemonAnswers = answer != NoAnswer;
     facts.daemonProtocolMatches = answer == AnsweredMatching;
+    facts.daemonOutdated = answer == AnsweredOutdated;
     return evaluate(facts);
+}
+
+std::uint8_t KeywatchSetup::requestVersion()
+{
+    return cachedAnswerState.load() == AnsweredOutdated ? keywatch::oldestProtocolVersion
+                                                        : keywatch::protocolVersion;
 }
 
 KeywatchDaemonAnswer *KeywatchSetup::daemonAnswer()

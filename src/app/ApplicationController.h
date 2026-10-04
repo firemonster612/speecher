@@ -211,7 +211,9 @@ private:
     void handleShortcutReleased(qint64 heldMs);
     void forgetShortcutGesture();
     GlobalShortcutBinder *shortcutBinder(GlobalShortcutRole role) const;
-    // Escape is taken while a session can be cancelled and nothing records keys.
+    // Arms the Cancel and Pause Shortcuts while their action applies, and
+    // takes Escape while a session can be cancelled, nothing records keys and
+    // neither of them is Escape.
     void updateDictationOnlyShortcuts();
     void dropPendingStart();
     void setLaunchAtLoginAccepted(bool accepted);

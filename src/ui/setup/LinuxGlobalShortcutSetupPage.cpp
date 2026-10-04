@@ -809,9 +809,12 @@ void LinuxGlobalShortcutSetupPage::refreshKeyHelper()
 {
     const KeywatchSetupStatus status = KeywatchSetup::probe();
     m_keyHelperStatus->setText(status.detail);
-    m_keyHelperButton->setEnabled(!status.ready() && !m_keyHelperProgress->isVisible());
-    m_keyHelperButton->setText(status.ready() ? QStringLiteral("Key helper ready")
-                                              : QStringLiteral("Set up single-key helper"));
+    const bool current = status.state == KeywatchSetupState::Ready;
+    m_keyHelperButton->setEnabled(!current && !m_keyHelperProgress->isVisible());
+    m_keyHelperButton->setText(current ? QStringLiteral("Key helper ready")
+                               : status.state == KeywatchSetupState::Outdated
+                               ? QStringLiteral("Update key helper")
+                               : QStringLiteral("Set up single-key helper"));
 }
 
 void LinuxGlobalShortcutSetupPage::showRegistrationResult(bool bound,
