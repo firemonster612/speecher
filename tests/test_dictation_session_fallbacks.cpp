@@ -989,6 +989,38 @@ private slots:
                                 "words may be missing."));
     }
 
+    // The microphone failing after words were heard delivers them, as it
+    // always has: as the raw transcript, unless refinement then cleans them up.
+    void aCaptureFailureAfterWordsDeliversThem_data()
+    {
+        QTest::addColumn<bool>("refines");
+        QTest::addColumn<QString>("message");
+        QTest::addColumn<int>("outcome");
+        QTest::newRow("without refinement")
+            << false << QStringLiteral("Used raw transcript • Input sent") << int(PopupOutcome::Fallback);
+        QTest::newRow("refined") << true << QStringLiteral("Input sent") << int(PopupOutcome::Inserted);
+    }
+
+    void aCaptureFailureAfterWordsDeliversThem()
+    {
+        QFETCH(bool, refines);
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")},
+                     refines ? QStringList{QStringLiteral("openai")} : QStringList{QStringLiteral("none")});
+        if (refines) {
+            rig.refiners[QStringLiteral("openai")]->autoComplete = true;
+            rig.refiners[QStringLiteral("openai")]->autoCompleteText = QStringLiteral("Spoken words.");
+        }
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.audio.emitFailure(QStringLiteral("The microphone was disconnected"));
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(rig.delivery.lastText, refines ? QStringLiteral("Spoken words.") : QStringLiteral("spoken words"));
+        QTEST(outcome.first().at(0).toString(), "message");
+        QTEST(int(outcome.first().at(1).value<PopupOutcome>()), "outcome");
+        QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, 0);
+    }
+
     // A sign-in turned down: a successful outcome with Open Accounts, up
     // for at least as long as an error would be, so the fix can be used.
     void aTurnedDownSignInOffersAccountsAndStaysUpToBeRead()
