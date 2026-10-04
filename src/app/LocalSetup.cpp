@@ -12,6 +12,9 @@
 #include "providers/LocalSpeechTranscriber.h"
 #endif
 
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QScopeGuard>
 #include <QDesktopServices>
 #include <QDir>
 #include <QTimer>
@@ -733,11 +736,20 @@ void LocalSetup::setProviderAvailability(const ProviderAvailability &availabilit
 
 LiveFacts LocalSetup::liveFacts() const
 {
-    return liveFacts(m_settings.dictationSnapshot());
+    QElapsedTimer timer;
+    timer.start();
+    const AppSettings snapshot = m_settings.dictationSnapshot();
+    qInfo() << "[DEBUG-win-slow] snapshot_ns" << timer.nsecsElapsed();
+    return liveFacts(snapshot);
 }
 
 LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
 {
+    QElapsedTimer timer;
+    timer.start();
+    const auto timing = qScopeGuard([&] {
+        qInfo() << "[DEBUG-win-slow] livefacts_ns" << timer.nsecsElapsed();
+    });
     LiveFacts facts;
     if (m_checkedSpeech == connection(draft.speech.endpoint)) {
         facts.speechEndpointStatus = endpointStatus(m_speechEndpoint);
@@ -761,6 +773,7 @@ LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
     }
     qint64 used = 0;
     for (const LocalModel &model : localModelCatalog()) {
+        if (qEnvironmentVariableIsSet("DEBUG_SKIP_MODEL_SCAN")) break;
         if (m_models.isDownloaded(model)) {
             used += model.sizeBytes;
             facts.downloadedModels.append(model.id);

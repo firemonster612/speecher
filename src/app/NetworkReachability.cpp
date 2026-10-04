@@ -1,6 +1,8 @@
 #include "app/NetworkReachability.h"
 
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QScopeGuard>
 
 namespace speecher {
 
@@ -11,6 +13,12 @@ NetworkReachability::NetworkReachability(QObject *parent)
 
 void NetworkReachability::watchSystem()
 {
+    QElapsedTimer timer;
+    timer.start();
+    const auto timing = qScopeGuard([&] {
+        qInfo() << "[DEBUG-win-slow] reachability_ns" << timer.nsecsElapsed();
+    });
+    if (qEnvironmentVariableIsSet("DEBUG_SKIP_REACHABILITY")) return;
     if (!QNetworkInformation::loadBackendByFeatures(QNetworkInformation::Feature::Reachability)) {
         qWarning() << "no network information backend; reachability stays unknown";
         return;

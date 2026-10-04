@@ -419,6 +419,12 @@ LiveFacts liveFacts(const SchemaContext &context)
     return context.liveFacts ? context.liveFacts() : LiveFacts{};
 }
 
+LiveFacts liveFacts(const SchemaContext &context, const AppSettings &settings)
+{
+    return qEnvironmentVariableIsSet("DEBUG_USE_DRAFT_FACTS") && context.liveFactsForDraft
+        ? context.liveFactsForDraft(settings) : liveFacts(context);
+}
+
 QStringList speechChain(const AppSettings &settings)
 {
     return providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
@@ -449,14 +455,14 @@ const QString kRefinementFallbacks = QStringLiteral("refinement:fallbacks");
 
 // The button row under a role's picker that opens its Fallbacks subpage, saying
 // what the fallbacks are and, in the negative tone, why one can't stand in.
-SettingsRow fallbacksRow(ProviderRole role, QList<RowOption> providers, std::function<LiveFacts()> facts)
+SettingsRow fallbacksRow(ProviderRole role, QList<RowOption> providers, std::function<LiveFacts(const AppSettings &)> facts)
 {
     const bool speech = role == ProviderRole::Speech;
     SettingsRow row = actionRow(speech ? QStringLiteral("speechFallbacks") : QStringLiteral("refinementFallbacks"),
                                 QStringLiteral("Fallbacks"), QString(), QStringLiteral("Choose fallbacks"));
     row.targetPage = speech ? kDictationFallbacks : kRefinementFallbacks;
     const auto summary = [role, providers = std::move(providers), facts = std::move(facts)](const AppSettings &settings) {
-        return fallbackSummary(role, settings, facts(), providers);
+        return fallbackSummary(role, settings, facts(settings), providers);
     };
     row.helpValue = [summary](const AppSettings &settings) { return summary(settings).text; };
     row.helpTone = [summary](const AppSettings &settings) { return summary(settings).tone; };
@@ -466,10 +472,10 @@ SettingsRow fallbacksRow(ProviderRole role, QList<RowOption> providers, std::fun
 // A role's primary picker says why the primary can't work right now, in the
 // negative tone, in place of its usual help.
 void showPrimaryStatus(SettingsRow &row, ProviderRole role, QList<RowOption> providers,
-                       std::function<LiveFacts()> facts)
+                       std::function<LiveFacts(const AppSettings &)> facts)
 {
     const auto status = [role, providers = std::move(providers), facts = std::move(facts)](const AppSettings &settings) {
-        return primaryProviderStatus(role, settings, facts(), providers);
+        return primaryProviderStatus(role, settings, facts(settings), providers);
     };
     const std::function<QString(const AppSettings &)> help =
         row.helpValue ? row.helpValue : [text = row.help](const AppSettings &) { return text; };
@@ -1236,7 +1242,8 @@ SettingsPage audioPage(const SchemaContext &context)
         return QStringLiteral("Service used to turn speech into a raw transcript.");
     };
     const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
-    showPrimaryStatus(speechProvider, ProviderRole::Speech, speechChoices, facts);
+    const auto statusFacts = [context](const AppSettings &settings) { return liveFacts(context, settings); };
+    showPrimaryStatus(speechProvider, ProviderRole::Speech, speechChoices, statusFacts);
 
     // Only what the chosen service or Local Model listens for, so a choice
     // here always works; a saved language it lacks stays, disabled, beside a
@@ -1373,7 +1380,7 @@ SettingsPage audioPage(const SchemaContext &context)
         {
             {QStringLiteral("Transcription"),
              QString(),
-             {std::move(speechProvider), fallbacksRow(ProviderRole::Speech, speechChoices, facts),
+             {std::move(speechProvider), fallbacksRow(ProviderRole::Speech, speechChoices, statusFacts),
               std::move(spokenLanguage), std::move(spokenLanguageCaution), std::move(finalRetranscribe)}},
             // On the Fallbacks subpage rather than a pane.
             {QStringLiteral("Fallbacks"), QString(), {fallbackListRow(ProviderRole::Speech)}},
@@ -1675,7 +1682,8 @@ SettingsPage refinementPage(const SchemaContext &context)
     };
 
     const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
-    SettingsRow fallbacks = fallbacksRow(ProviderRole::Refinement, refinementChoices, facts);
+    const auto statusFacts = [context](const AppSettings &settings) { return liveFacts(context, settings); };
+    SettingsRow fallbacks = fallbacksRow(ProviderRole::Refinement, refinementChoices, statusFacts);
     fallbacks.visible = refinementOn;
     SettingsRow refinementProvider = choiceRow(QStringLiteral("refinementProvider"),
                                                QStringLiteral("Provider"),
@@ -1685,7 +1693,7 @@ SettingsPage refinementPage(const SchemaContext &context)
                                                [](AppSettings &settings, const QString &value) {
                                                    setPrimaryProvider(settings, ProviderRole::Refinement, value);
                                                });
-    showPrimaryStatus(refinementProvider, ProviderRole::Refinement, refinementChoices, facts);
+    showPrimaryStatus(refinementProvider, ProviderRole::Refinement, refinementChoices, statusFacts);
     SettingsPage page{
         QStringLiteral("refinement"),
         {

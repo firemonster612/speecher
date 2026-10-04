@@ -15,6 +15,8 @@
 #include "providers/TranscriptRefinementPrompt.h"
 
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QScopeGuard>
 #include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
@@ -151,6 +153,11 @@ SettingsModel::SettingsModel(ApplicationController *controller)
     , m_capabilities{controller->accessibilitySupported() && controller->accessibilityEnabled(),
                      controller->updates()->supportsAutomaticDownloads()}
 {
+    QElapsedTimer debugTimer;
+    debugTimer.start();
+    const auto debugTiming = qScopeGuard([&] {
+        qInfo() << "[DEBUG-win-slow] win_settings_model_body_ns" << debugTimer.nsecsElapsed();
+    });
     bindCheckForUpdatesRow(m_schema, controller->updateBanner());
     m_capabilities.launchAtLoginAccepted = controller->launchAtLoginAccepted();
     const QStringList credentialPaths{m_store->claudeCredentialsPath(), codexCredentialsPath()};

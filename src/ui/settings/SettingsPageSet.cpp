@@ -22,6 +22,9 @@
 #endif
 #include "ui/Theme.h"
 
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QScopeGuard>
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QDir>
@@ -188,6 +191,11 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     , m_outputRows(*controller->settings())
     , m_providerRows(*controller->settings(), *controller->secretStore())
 {
+    QElapsedTimer timer;
+    timer.start();
+    const auto timing = qScopeGuard([&] {
+        qInfo() << "[DEBUG-win-slow] settings_pages_ctor_ns" << timer.nsecsElapsed();
+    });
     const SchemaCustomRowFactory customRows = combinedRows({
         generalCustomRows(controller),
         m_outputRows.factory(),

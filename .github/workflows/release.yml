@@ -27,31 +27,66 @@ jobs:
           Invoke-WebRequest "https://aka.ms/windowsappsdk/2.4/2.4.0/windowsappruntimeinstall-x64.exe" -OutFile "$env:RUNNER_TEMP/runtime.exe"
           $p = Start-Process "$env:RUNNER_TEMP/runtime.exe" -ArgumentList "--quiet" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "runtime failed" }
-      - name: Compare master and stack
+      - name: Build diagnostic source
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=OFF
+          if ($LASTEXITCODE -ne 0) { throw "configure failed" }
+          cmake --build build --target speecher speecher_tests --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+      - name: Isolate the added cost
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_FORCE_STDERR_LOGGING: "1"
+        run: |
+          New-Item -ItemType Directory evidence -Force | Out-Null
+          $focused = @("sidebarListsTheSchemaPanesInTheirGroups", "saveReportsFailedValidator", "controllerKeepsTheRecordOfTheLastTranscript")
+          foreach ($case in @("baseline", "no-backend", "no-model-scan", "draft-facts", "baseline-restored")) {
+            Remove-Item Env:DEBUG_SKIP_REACHABILITY, Env:DEBUG_SKIP_MODEL_SCAN, Env:DEBUG_USE_DRAFT_FACTS -ErrorAction SilentlyContinue
+            if ($case -eq "no-backend") { $env:DEBUG_SKIP_REACHABILITY = "1" }
+            if ($case -eq "no-model-scan") { $env:DEBUG_SKIP_MODEL_SCAN = "1" }
+            if ($case -eq "draft-facts") { $env:DEBUG_USE_DRAFT_FACTS = "1" }
+            $tests = if ($case -in @("baseline", "draft-facts")) { @() } else { $focused }
+            $arguments = @("--suite", "app_window") + $tests + @("-o", "evidence/$case.xml,xml", "-o", "evidence/$case.txt,txt")
+            $timer = [Diagnostics.Stopwatch]::StartNew()
+            & ./build/speecher_tests.exe @arguments
+            $code = $LASTEXITCODE
+            "$case exit=$code wall_ms=$($timer.ElapsedMilliseconds)" | Tee-Object -FilePath evidence/summary.txt -Append
+            if ($code -ne 0) { throw "$case failed" }
+            if ($case -in @("baseline", "draft-facts")) {
+              $key = "HKCU:\Software\io.github.firemonster612\speecher\app"
+              New-Item -Path $key -Force | Out-Null
+              New-ItemProperty -Path $key -Name setupCompleted -Value "true" -PropertyType String -Force | Out-Null
+              $env:SPEECHER_GRAB_PAGE = "general"
+              $exe = (Resolve-Path build/speecher.exe).Path
+              $out = Join-Path (Resolve-Path evidence).Path "$case-startup.png"
+              $timer.Restart()
+              $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -RedirectStandardError "evidence/$case-startup.log" -Wait -PassThru
+              "startup-$case exit=$($process.ExitCode) wall_ms=$($timer.ElapsedMilliseconds)" | Tee-Object -FilePath evidence/summary.txt -Append
+              Remove-Item Env:SPEECHER_GRAB_PAGE -ErrorAction SilentlyContinue
+              if ($process.ExitCode -ne 0) { throw "startup $case failed" }
+            }
+          }
+      - name: Verify only the proposed patch
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          New-Item -ItemType Directory evidence -Force | Out-Null
-          foreach ($case in @(
-              @{ Name = "stack"; Ref = "131ffe2e" },
-              @{ Name = "master"; Ref = "cb97909a93a55d7622f093e98850a4440c390326" }
-          )) {
-            git checkout --detach $case.Ref
-            if ($LASTEXITCODE -ne 0) { throw "checkout failed" }
-            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=OFF
-            if ($LASTEXITCODE -ne 0) { throw "configure failed" }
-            cmake --build build --target speecher speecher_tests --parallel 4
-            if ($LASTEXITCODE -ne 0) { throw "build failed" }
-            $timer = [Diagnostics.Stopwatch]::StartNew()
-            & ./build/speecher_tests.exe --suite app_window -o "evidence/$($case.Name).xml,xml" -o "evidence/$($case.Name).txt,txt"
-            $code = $LASTEXITCODE
-            "$($case.Name) exit=$code wall_ms=$($timer.ElapsedMilliseconds)" | Tee-Object -FilePath evidence/summary.txt -Append
-            Get-Content "evidence/$($case.Name).txt"
-          }
-          exit 0
+          git restore --source=131ffe2e src/app/ApplicationController.cpp src/app/LocalSetup.cpp src/app/NetworkReachability.cpp src/core/settings/SettingsSchema.cpp src/frontend/win/SettingsModel.cpp src/ui/settings/SettingsPageSet.cpp
+          git apply diagnostics/proposed.patch
+          if ($LASTEXITCODE -ne 0) { throw "patch did not apply" }
+          git diff -- src/ > evidence/clean-production.patch
+          cmake --build build --target speecher speecher_tests --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw "clean build failed" }
+          & ./build/speecher_tests.exe --suite app_window -o evidence/clean-patch.xml,xml -o evidence/clean-patch.txt,txt
+          if ($LASTEXITCODE -ne 0) { throw "clean app_window failed" }
+          & ./build/speecher_tests.exe --suite settings_schema -o evidence/settings-schema.txt,txt
+          if ($LASTEXITCODE -ne 0) { throw "settings_schema failed" }
+          ctest --test-dir build -R "^speecher_app_window$" --output-on-failure *> evidence/ctest.txt
+          if ($LASTEXITCODE -ne 0) { throw "ctest timed out or failed" }
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: windows-appwindow-timings
+          name: windows-appwindow-slow-toggle
           path: evidence/

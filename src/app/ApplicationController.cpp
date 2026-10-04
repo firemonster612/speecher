@@ -27,6 +27,9 @@
 #include "platform/GlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
 
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QScopeGuard>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QEventLoop>
@@ -80,6 +83,11 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_ipc(new SingleInstanceIpc(m_platform, this))
     , m_pushToTalkStart(new QTimer(this))
 {
+    QElapsedTimer debugTimer;
+    debugTimer.start();
+    const auto debugTiming = qScopeGuard([&] {
+        qInfo() << "[DEBUG-win-slow] controller_body_ns" << debugTimer.nsecsElapsed();
+    });
     const QString currentVersion = QStringLiteral(SPEECHER_VERSION);
     const qint64 currentBuildNumber = SPEECHER_BUILD_NUMBER;
     const QString previousVersion = m_settings->updatesLastRunVersion();
