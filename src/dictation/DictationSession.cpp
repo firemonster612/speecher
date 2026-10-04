@@ -494,7 +494,11 @@ void DictationSession::speechProviderReady()
     m_speechReconnectsLeft = kSpeechReconnectsPerSession;
     switch (m_state) {
     case DictationState::Starting:
-        continueStartupAfterPreparation(m_generation);
+        if (m_microphoneStartGeneration == m_generation) {
+            resumeAttempt();
+        } else {
+            continueStartupAfterPreparation(m_generation);
+        }
         break;
     case DictationState::Listening:
         resumeAttempt();
@@ -858,8 +862,13 @@ void DictationSession::resume()
 void DictationSession::resumeAttempt()
 {
     startNextAttempt();
-    // A provider that fails on the way makes way for the next, which gets
-    // what is still waiting; what the failed one took is never sent again.
+    sendPendingAudio();
+}
+
+// A provider that fails on the way makes way for the next, which gets what is
+// still waiting; what the failed one took is never sent again.
+void DictationSession::sendPendingAudio()
+{
     while (!m_awaitingSpeechProvider && !m_resumeAudio.isEmpty()) {
         m_transcriber->sendAudio(m_attemptId, m_resumeAudio.takeFirst());
     }
@@ -963,6 +972,7 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
     const QString providerId = m_speechChain.at(m_speechIndex);
     noteRan(ProviderRole::Speech, providerId);
     m_transcriber->startAttempt(attemptId, speechSettingsFor(providerId));
+    sendPendingAudio();
     // A provider can fail inside startAttempt(): the session has moved on to
     // the next one, or ended, and must not open the microphone for this one.
     if (generation != m_generation || m_state != DictationState::Starting || attemptId != m_attemptId) {
@@ -971,7 +981,10 @@ void DictationSession::continueStartupAfterPreparation(quint64 generation)
 
     QString audioError;
     m_audioGeneration = generation;
-    if (!m_audio->start(&audioError)) {
+    m_microphoneStartGeneration = generation;
+    const bool started = m_audio->start(&audioError);
+    m_microphoneStartGeneration = 0;
+    if (!started) {
         if (m_audioGeneration == generation) {
             m_audioGeneration = 0;
         }

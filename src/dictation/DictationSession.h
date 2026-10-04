@@ -157,6 +157,8 @@ private:
     // Opens the attempt after a pause once the paused one has finished, and
     // sends it the audio heard in between.
     void resumeAttempt();
+    // Sends the open attempt the audio that waited for one, in order.
+    void sendPendingAudio();
     void refineAfterLastAttempt();
     void attemptEndedWhileStopping();
     // QtAudioInput::stop() spins a nested event loop for the post-roll, during
@@ -251,6 +253,10 @@ private:
     // Inside stopAudio(); a session start waits in m_pendingStart until it
     // returns, unless a stop or cancel drops it first.
     int m_audioStopDepth = 0;
+    // The generation whose first microphone start is under way; it spins an
+    // event loop too. A provider that becomes ready meanwhile opens only its
+    // attempt, and that start goes on to Listening.
+    quint64 m_microphoneStartGeneration = 0;
     std::optional<SessionOverrides> m_pendingStart;
     // The last attempt ended while the microphone was stopping; the post-roll
     // since waits in m_resumeAudio for stopListening().

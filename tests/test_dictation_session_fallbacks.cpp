@@ -274,6 +274,36 @@ private slots:
         QCOMPARE(rig.microphoneStarts, 1);
     }
 
+    // The primary failing while the microphone starts (its start spins an
+    // event loop): the next provider opens only its attempt there, gets the
+    // audio heard while it prepared, and the one start goes on to Listening.
+    void aProviderFailingWhileTheMicrophoneStartsHandsOverToOneCapture()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->backgroundPrepare = true;
+        local->backgroundPrepareDelayMs = 50;
+        rig.audio.onStart = [&rig, codex, local] {
+            ++rig.microphoneStarts;
+            if (rig.microphoneStarts > 1) {
+                return;
+            }
+            rig.audio.pushAudio("a");
+            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+            rig.audio.pushAudio("b");
+            QTRY_COMPARE(local->startCalls, 1);
+            rig.audio.pushAudio("c");
+        };
+        rig.listen();
+        QCOMPARE(rig.microphoneStarts, 1);
+        QVERIFY(rig.audio.active);
+        QCOMPARE(codex->audioChunks, QList<QByteArray>{"a"});
+        QCOMPARE(local->audioChunks, (QList<QByteArray>{"b", "c"}));
+        rig.audio.pushAudio("d");
+        QCOMPARE(local->audioChunks, (QList<QByteArray>{"b", "c", "d"}));
+    }
+
     // Reconnects on the same provider come first, as without fallbacks; then
     // the next provider opens a fresh attempt with the words so far kept and
     // a reconnect budget of its own.
