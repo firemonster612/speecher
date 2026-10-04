@@ -1,11 +1,10 @@
 #include "platform/KGlobalAccelShortcutBinder.h"
 
-#include "core/settings/SettingsKeys.h"
 #include "core/settings/SettingsSchema.h"
+#include "platform/StoredCombination.h"
 
 #include <QAction>
 #include <QDebug>
-#include <QSettings>
 
 #ifdef SPEECHER_WITH_KGLOBALACCEL
 #include <KGlobalAccel>
@@ -21,24 +20,6 @@ constexpr auto legacyShortcutComponent = "local.speecher";
 QList<QKeySequence> keyList(const QKeySequence &sequence)
 {
     return sequence.isEmpty() ? QList<QKeySequence>{} : QList<QKeySequence>{sequence};
-}
-
-QSettings speecherSettings()
-{
-    return QSettings(QString::fromLatin1(SettingsKeys::Organization),
-                     QString::fromLatin1(SettingsKeys::Application));
-}
-
-// The combination router's single-key backend stores under the same key, so
-// clearing here leaves a stored single key alone.
-void storeCombination(const QString &key, const ShortcutBinding &binding)
-{
-    QSettings settings = speecherSettings();
-    if (!binding.isEmpty()) {
-        settings.setValue(key, binding.toString());
-    } else if (!ShortcutBinding::fromString(settings.value(key).toString()).isSingleKey()) {
-        settings.remove(key);
-    }
 }
 
 } // namespace
@@ -94,9 +75,7 @@ void KGlobalAccelShortcutBinder::bind()
 {
 #ifdef SPEECHER_WITH_KGLOBALACCEL
     if (action().duringDictationOnly) {
-        const ShortcutBinding stored =
-            ShortcutBinding::fromString(speecherSettings().value(action().settingsKey).toString());
-        m_binding = stored.isSingleKey() ? ShortcutBinding() : stored;
+        m_binding = storedCombination(action().settingsKey);
         // Nothing stays registered between sessions, including what an older
         // build left with the daemon for good.
         releaseFromDaemon();

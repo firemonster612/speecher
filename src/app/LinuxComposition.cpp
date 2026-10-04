@@ -11,6 +11,7 @@
 #include "platform/MediaPauseController.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "platform/RoutingShortcutBinder.h"
+#include "platform/X11KeyGrabShortcutBinder.h"
 #include "platform/XInput2ShortcutBinder.h"
 #include "platform/PortalScreenshotContextProvider.h"
 #include "platform/WaylandLayerShell.h"
@@ -128,7 +129,8 @@ PopupPositioner *LinuxComposition::createPopupPositioner(QObject *parent) const
 namespace {
 
 // The desktop shortcut service takes a combination: KGlobalAccel on Plasma,
-// otherwise the portal.
+// otherwise the portal. Under X11 the Cancel and Pause Shortcuts grab their
+// keys themselves instead, just while dictating, which the portal cannot.
 GlobalShortcutBinder *createCombinationBinder(const GlobalShortcutAction &action)
 {
     auto *plasma = new KGlobalAccelShortcutBinder(action);
@@ -136,6 +138,11 @@ GlobalShortcutBinder *createCombinationBinder(const GlobalShortcutAction &action
         return plasma;
     }
     delete plasma;
+#ifdef SPEECHER_WITH_X11
+    if (action.duringDictationOnly && !isWaylandSession()) {
+        return new X11KeyGrabShortcutBinder(action);
+    }
+#endif
     return new PortalGlobalShortcutBinder(action);
 }
 
