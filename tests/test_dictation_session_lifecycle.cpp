@@ -1013,6 +1013,7 @@ private slots:
             settings.setPauseMediaDuringTranscription(true);
             settings.setInsightsEnabled(true);
             settings.setRefinementProvider(QStringLiteral("openai"));
+            settings.setCompletionStatusDurationMs(300);
             auto audio = std::make_unique<FakeAudioInput>();
             auto media = std::make_unique<FakeMediaController>();
             auto delivery = std::make_unique<FakeDelivery>();
@@ -1059,8 +1060,11 @@ private slots:
             QCOMPARE(int(session.state()), int(DictationState::Idle));
             QCOMPARE(delivery->calls, 0);
             QCOMPARE(recorded.count(), 0);
+            // "Canceled" stays up for the result duration setting.
             if (target == DictationState::Listening) {
-                QTRY_COMPARE_WITH_TIMEOUT(hidden.count(), 1, 2000);
+                QTest::qWait(100);
+                QCOMPARE(hidden.count(), 0);
+                QTRY_COMPARE_WITH_TIMEOUT(hidden.count(), 1, 700);
             }
         }
     }

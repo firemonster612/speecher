@@ -520,7 +520,8 @@ void DictationSession::cancel()
     setState(DictationState::Idle);
     emit popupMessageRequested(cancelledOutcomeText(), PopupOutcome::Cancelled);
     const quint64 generation = m_generation;
-    QTimer::singleShot(kCancelledOutcomeMs, this, [this, generation] {
+    // The live setting: discard() has already dropped the session snapshot.
+    QTimer::singleShot(m_settings->completionStatusDurationMs(), Qt::PreciseTimer, this, [this, generation] {
         if (generation == m_generation && m_state == DictationState::Idle) {
             emit popupHideRequested();
         }

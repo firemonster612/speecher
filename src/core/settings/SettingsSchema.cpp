@@ -1056,7 +1056,7 @@ SettingsPage generalPage(const SchemaContext &context)
                  std::move(previewWords),
                  numberRow(QStringLiteral("completionStatusDuration"),
                            QStringLiteral("Show the result for"),
-                           QStringLiteral("How long the popup shows where the text went."),
+                           QStringLiteral("How long the popup shows where the text went, or that the dictation was canceled."),
                            {0, 5000, 50, QStringLiteral(" ms")},
                            [](const AppSettings &settings) { return settings.output.completionStatusDurationMs; },
                            [](AppSettings &settings, int value) {

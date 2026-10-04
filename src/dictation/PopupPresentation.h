@@ -21,9 +21,9 @@ enum class PopupOutcome {
     Cancelled,
 };
 
-// What a cancelled session's popup says, and for how long before it hides.
+// What a cancelled session's popup says. It stays up as long as a delivered
+// result does.
 QString cancelledOutcomeText();
-inline constexpr int kCancelledOutcomeMs = 1000;
 
 // Error text wraps at this width (logical pixels, points or DIPs) and the
 // capsule grows taller rather than wider.
