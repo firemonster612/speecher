@@ -88,7 +88,7 @@ step "Bundling Qt into the app (the slow part)"
 # refuses to launch the copy a user drags out of the image.
 run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY"
 
-step "Verifying the microphone permission plugin"
+step "Verifying the bundled Qt plugins"
 SPEECHER_SYMBOLS="$WORK_DIR/speecher-symbols.txt"
 if ! nm -U "$STAGING_DIR/speecher.app/Contents/MacOS/speecher" \
   > "$SPEECHER_SYMBOLS" 2>> "$LOG"; then
@@ -98,6 +98,12 @@ if ! nm -U "$STAGING_DIR/speecher.app/Contents/MacOS/speecher" \
 fi
 if ! grep -q 'QDarwinMicrophonePermissionPlugin' "$SPEECHER_SYMBOLS"; then
   echo "Speecher does not contain Qt's macOS microphone permission plugin." >&2
+  exit 1
+fi
+# macdeployqt brings it along with QtNetwork; without it Speecher can't tell
+# when the Mac is offline.
+if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqscnetworkreachability.dylib" ]]; then
+  echo "macdeployqt did not bundle Qt's network reachability plugin." >&2
   exit 1
 fi
 

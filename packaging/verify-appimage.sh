@@ -45,6 +45,7 @@ REQUIRED_FILES=(
   usr/plugins/styles/adwaita.so
   usr/plugins/styles/libkvantum.so
   usr/plugins/iconengines/libqsvgicon.so
+  usr/plugins/networkinformation/libqnetworkmanager.so
   usr/lib/libQt6Core.so.6
   usr/lib/libKF6ColorScheme.so.6
   usr/lib/libKF6GlobalAccel.so.6
