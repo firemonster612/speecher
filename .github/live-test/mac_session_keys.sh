@@ -27,7 +27,7 @@ trap cleanup EXIT
 
 # The shared helpers use unbounded AppleEvents; CI must finish if TextEdit is blocked.
 textedit_text() {
-  bounded_osascript -e 'tell application "TextEdit" to return text of document 1'
+  "$KEY_INPUT" text "$(pgrep -x TextEdit | head -1)"
 }
 
 textedit_reset() {
@@ -46,6 +46,8 @@ press_key() {
   log "Hardware-style key code $1"
   "$KEY_INPUT" "$@"
   sleep 0.3
+  screencapture -x "$CASE_DIR/key-$1.png"
+  log "Key code $1 posted"
 }
 
 capture_step() {
@@ -62,6 +64,7 @@ capture_step() {
 
 expect_text() {
   local actual
+  log "Reading TextEdit document text"
   actual="$(textedit_text)"
   printf '%s\n' "$actual" >"$CASE_DIR/editor.txt"
   if [[ "$actual" != "$1" ]]; then
@@ -93,25 +96,49 @@ PY
 }
 
 find_field_count() {
-  bounded_osascript -e '
-tell application "System Events" to tell process "TextEdit"
-    set fieldCount to 0
-    repeat with uiElement in entire contents of front window
-        set elementRole to role of uiElement
-        if elementRole is "AXTextField" or elementRole is "AXSearchField" then
-            set fieldCount to fieldCount + 1
-        end if
-    end repeat
-    return fieldCount
-end tell
-'
+  "$KEY_INPUT" fields "$(pgrep -x TextEdit | head -1)"
 }
 
 case_begin SETUP
 KEY_INPUT="$EVIDENCE_ROOT/key-input"
 cat >"$EVIDENCE_ROOT/key-input.swift" <<'SWIFT'
+import ApplicationServices
 import CoreGraphics
 import Foundation
+
+func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
+    return value
+}
+
+func descendants(_ element: AXUIElement) -> [AXUIElement] {
+    let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+    return [element] + children.flatMap(descendants)
+}
+
+let mode = CommandLine.arguments[1]
+if mode == "text" || mode == "fields" {
+    guard let pid = Int32(CommandLine.arguments[2]) else { exit(2) }
+    let app = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(app, 5)
+    guard let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement],
+          let window = windows.first else { fputs("No accessible TextEdit window\n", stderr); exit(2) }
+    let elements = descendants(window)
+    if mode == "fields" {
+        print(elements.filter {
+            let role = attribute($0, kAXRoleAttribute) as? String
+            return role == kAXTextFieldRole || role == "AXSearchField"
+        }.count)
+    } else {
+        guard let area = elements.first(where: { attribute($0, kAXRoleAttribute) as? String == kAXTextAreaRole }),
+              let text = attribute(area, kAXValueAttribute) as? String else {
+            fputs("No accessible TextEdit document text\n", stderr); exit(2)
+        }
+        print(text)
+    }
+    exit(0)
+}
 
 guard CommandLine.arguments.count >= 2,
       let code = UInt16(CommandLine.arguments[1]),
@@ -152,6 +179,8 @@ sudo python3 "$TCC_SEED" "$system_tcc" kTCCServiceAccessibility "$runner_client"
 sudo python3 "$TCC_SEED" "$system_tcc" kTCCServicePostEvent "$runner_client" 2 UNUSED 1 \
   >>"$EVIDENCE_ROOT/tcc-seeding.log"
 sudo python3 "$TCC_SEED" "$system_tcc" kTCCServicePostEvent "$KEY_INPUT" 2 UNUSED 1 \
+  >>"$EVIDENCE_ROOT/tcc-seeding.log"
+sudo python3 "$TCC_SEED" "$system_tcc" kTCCServiceAccessibility "$KEY_INPUT" 2 UNUSED 1 \
   >>"$EVIDENCE_ROOT/tcc-seeding.log"
 # tcc_seed.py copies a template row, including Terminal's target identity.
 sqlite3 "$user_tcc" \
