@@ -1,9 +1,11 @@
+#include "common/test_local_setup.h"
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
 #include "app/UpdateController.h"
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
+#include "core/settings/FallbackPresentation.h"
 #include "dictation/DictationSession.h"
 #include "dictation/PopupGeometry.h"
 #include "dictation/PopupPresentation.h"
@@ -17,6 +19,7 @@
 #include "frontend/win/WaveformBars.h"
 #include "frontend/win/WinFrontEnd.h"
 #include "frontend/win/WinUiHost.h"
+#include "providers/ProviderRegistry.h"
 #include "ui/TranscriberPopup.h"
 
 #include <windows.h>
@@ -27,6 +30,7 @@
 #include <QTest>
 #include <QFile>
 #include <QScopeGuard>
+#include <QStringList>
 #include <QTemporaryDir>
 
 #include <cmath>
@@ -52,6 +56,27 @@ QString describeBoxes(const QList<QRect> &boxes)
     QString text;
     QDebug(&text) << boxes;
     return text;
+}
+
+// A provider's registry label, as the Add a fallback combo lists it.
+QString chainLabel(ProviderRole role, const ProviderRegistry &registry, const QString &id)
+{
+    for (const RowOption &provider : win::chainProviders(role, registry)) {
+        if (provider.id == id) {
+            return provider.label;
+        }
+    }
+    return id;
+}
+
+// Saves a refinement provider as a choice the person made, which the setup
+// assistant never replaces. Saving the default over an unset one leaves it a
+// default, and the default depends on which CLIs this computer has.
+void chooseRefinementProvider(SettingsStore &store, const QString &id)
+{
+    store.setRefinementProvider(id == QStringLiteral("openai") ? QStringLiteral("anthropic")
+                                                               : QStringLiteral("openai"));
+    store.setRefinementProvider(id);
 }
 
 template<typename Widget>
@@ -777,6 +802,258 @@ private slots:
             setup->show(SetupAssistantPage::GlobalShortcut);
             QCOMPARE(setup->currentPageTitleForTest(), QStringLiteral("Global Shortcut"));
         }
+    }
+
+    // The Fallbacks row names the subpage it opens, and the list row takes a
+    // whole new list through the ordinary write path.
+    void settingsModelEditsTheFallbackList()
+    {
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        store->setRefinementProvider(QStringLiteral("openai"));
+        store->setRefinementFallbackProviders({QStringLiteral("anthropic"), QStringLiteral("local")});
+        win::SettingsModel model(controller.get());
+        QString target;
+        for (const SettingsPaneGroup &group : model.schema().pane(QStringLiteral("refinement"))->groups) {
+            for (const auto &row : model.section(group).rows) {
+                if (row.id == QStringLiteral("refinementFallbacks")) {
+                    target = row.targetPage;
+                }
+            }
+        }
+        QCOMPARE(target, QStringLiteral("refinement:fallbacks"));
+        QCOMPARE(model.fallbackList(ProviderRole::Refinement).items.size(), 2);
+
+        model.setValue(QStringLiteral("refinementFallbackList"),
+                       withFallbackMoved(model.draft(), ProviderRole::Refinement, 0, 1));
+        model.commit();
+        QCOMPARE(store->refinementFallbackProviders(),
+                 (QStringList{QStringLiteral("local"), QStringLiteral("anthropic")}));
+    }
+
+    // The Fallbacks row opens its subpage with the pane still selected, the
+    // subpage's buttons and combo edit the stored list, and Back returns.
+    void fallbacksSubpageNavigatesAndEdits()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        store->setRefinementProvider(QStringLiteral("openai"));
+        store->setRefinementFallbackProviders({QStringLiteral("anthropic"), QStringLiteral("local")});
+        const FallbackListPresentation captions = fallbackListPresentation(
+            ProviderRole::Refinement, store->snapshot(), {}, {}, FallbackSurface::Settings);
+        const QString anthropic = QStringLiteral("anthropic");
+        const QString local = QStringLiteral("local");
+        const QString endpoint = QStringLiteral("endpoint");
+
+        win::TranscribePane transcribe(controller.get());
+        win::SettingsWindow window(controller.get(), &transcribe);
+        window.showPage(QStringLiteral("refinement"));
+        QTest::qWait(200);
+        QVERIFY(window.pressForTest(
+            win::SettingsModel(controller.get()).schema().row(QStringLiteral("refinementFallbacks"))->label));
+        QTRY_COMPARE_WITH_TIMEOUT(window.shownPageForTest(), QStringLiteral("refinement:fallbacks"), 2000);
+        QCOMPARE(window.selectedPaneForTest(), QStringLiteral("refinement"));
+        QVERIFY(window.backVisibleForTest());
+
+        // The first fallback can't move up; moving it down swaps the two.
+        QVERIFY(!window.pressForTest(captions.moveUpCaption));
+        QVERIFY(window.pressForTest(captions.moveDownCaption));
+        QTRY_COMPARE_WITH_TIMEOUT(store->refinementFallbackProviders(), (QStringList{local, anthropic}), 2000);
+        QTest::qWait(200);
+        QVERIFY(window.pressForTest(captions.removeCaption));
+        QTRY_COMPARE_WITH_TIMEOUT(store->refinementFallbackProviders(), QStringList{anthropic}, 2000);
+        QTest::qWait(200);
+        QVERIFY(window.chooseForTest(captions.addLabel,
+                                     chainLabel(ProviderRole::Refinement, *controller->providerRegistry(),
+                                                endpoint)));
+        QTRY_COMPARE_WITH_TIMEOUT(store->refinementFallbackProviders(), (QStringList{anthropic, endpoint}), 2000);
+
+        window.goBackForTest();
+        QCOMPARE(window.shownPageForTest(), QStringLiteral("refinement"));
+        QVERIFY(!window.backVisibleForTest());
+        // A subpage's id opens it directly, as SPEECHER_GRAB_PAGE does.
+        window.showPage(QStringLiteral("dictation:fallbacks"));
+        QCOMPARE(window.shownPageForTest(), QStringLiteral("dictation:fallbacks"));
+        QCOMPARE(window.selectedPaneForTest(), QStringLiteral("dictation"));
+        window.close();
+    }
+
+    // The setup assistant's fallback section is optional: it never holds
+    // Next, and it goes away with Skip cleanup.
+    void setupFallbacksAreOptional()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        chooseRefinementProvider(*store, QStringLiteral("anthropic"));
+        store->setRefinementFallbackProviders({});
+        store->setLocalRunnerSettings({QStringLiteral("ollama"), QStringLiteral("qwen3:4b")});
+        // An assistant of its own: the shared one carries earlier tests'
+        // finished setup and taken shortcut.
+        SetupWindow assistant(controller.get(), [] {});
+        assistant.show(SetupAssistantPage::All);
+        assistant.showPageForTest(QStringLiteral("refinement"));
+        QVERIFY(assistant.fallbacksShownForTest());
+        QVERIFY(assistant.finishEnabledForTest());
+
+        // A running Local Runner with a cleanup model is suggested, and the
+        // suggestion adds it after the other fallbacks. The step's own look
+        // for runners finishes first.
+        LocalSetup *local = controller->localSetup();
+        const auto forgetRunners = qScopeGuard([local] { LocalSetupTestAccess::setRunners(*local, {}); });
+        QTRY_VERIFY_WITH_TIMEOUT(!local->detectingRunners(), 20000);
+        LocalSetupTestAccess::setRunners(*local, {{QStringLiteral("ollama"), QStringLiteral("Ollama"), {},
+                                                   QStringLiteral("http://127.0.0.1:11434/v1"),
+                                                   {QStringLiteral("qwen3:4b")}}});
+        // QTRY evaluates its condition again once it holds, so the press is
+        // latched: a second one would find the suggestion already gone.
+        bool pressed = false;
+        QTRY_VERIFY2_WITH_TIMEOUT(pressed || (pressed = assistant.pressFallbackSuggestionForTest()),
+                                  qPrintable(QStringLiteral("primary %1, fallbacks %2")
+                                                 .arg(store->refinementProvider(),
+                                                      store->refinementFallbackProviders().join(QLatin1Char(',')))),
+                                  2000);
+        QTRY_COMPARE_WITH_TIMEOUT(store->refinementFallbackProviders(), QStringList{QStringLiteral("local")}, 2000);
+        QVERIFY(assistant.finishEnabledForTest());
+
+        store->setRefinementProvider(QStringLiteral("none"));
+        assistant.showPageForTest(QStringLiteral("refinement"));
+        QVERIFY(!assistant.fallbacksShownForTest());
+        QVERIFY(assistant.finishEnabledForTest());
+    }
+
+    // A successful outcome shows a fix only when it has one; only then does
+    // the panel take clicks, and the fix opens the page the error path opens.
+    void outcomeOffersItsFixOnlyWithOne()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI islands require an interactive desktop");
+        }
+        DictationPanel *panel = frontEnd->dictationPanelForTest();
+        panel->showForTest(31);
+        controller->session()->popupMessageRequested(QStringLiteral("Pasted"), PopupOutcome::Inserted);
+        QTest::qWait(100);
+        QVERIFY(!panel->fixVisibleForTest());
+        QVERIFY(panel->windowStyleForTest() & WS_EX_TRANSPARENT);
+
+        panel->showForTest(32);
+        controller->session()->popupMessageRequested(
+            QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired."),
+            PopupOutcome::Fallback, {ErrorFix::SettingsPage, QStringLiteral("accounts")});
+        QTest::qWait(100);
+        QVERIFY(panel->fixVisibleForTest());
+        QVERIFY(!(panel->windowStyleForTest() & WS_EX_TRANSPARENT));
+        QString opened;
+        const auto connection = connect(panel, &DictationPanel::fixRequested, this,
+                                        [&opened](const PopupErrorAction &fix) { opened = fix.pageId; });
+        const auto release = qScopeGuard([connection] { QObject::disconnect(connection); });
+        panel->pressFixForTest();
+        QTRY_COMPARE_WITH_TIMEOUT(opened, QStringLiteral("accounts"), 2000);
+        QVERIFY(!panel->visibleForTest());
+        QTRY_VERIFY_WITH_TIMEOUT(FindWindowW(nullptr, L"Speecher") != nullptr, 2000);
+    }
+
+    // Pictures of every surface the fallbacks add, for UI evidence: both
+    // settings pages with a chain, both subpages empty and full (with a
+    // fallback that can't stand in, in the negative tone), both setup
+    // steps, and an outcome with a fix, in Light and Dark.
+    void fallbackEvidenceGrabs()
+    {
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (grabDir.isEmpty()) {
+            QSKIP("SPEECHER_TEST_GRAB_DIR is not set");
+        }
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] {
+            store->applySnapshot(original);
+            LocalSetupTestAccess::setRunners(*controller->localSetup(), {});
+            qunsetenv("SPEECHER_GRAB_PAGE");
+            qunsetenv("SPEECHER_GRAB_SIZE");
+            qunsetenv("SPEECHER_GRAB_SCROLL");
+        });
+        // An endpoint with no server can't stand in, which its row says in
+        // the negative tone.
+        store->setSpeechEndpointSettings({});
+        store->setRefinementEndpointSettings({});
+        qputenv("SPEECHER_GRAB_SIZE", "1000x1100");
+        for (const QString theme : {QStringLiteral("light"), QStringLiteral("dark")}) {
+            store->setTheme(theme);
+            const auto grab = [&](const QString &page, const QString &name, const QByteArray &scroll = {}) {
+                win::TranscribePane transcribe(controller.get());
+                win::SettingsWindow window(controller.get(), &transcribe);
+                window.show();
+                qputenv("SPEECHER_GRAB_PAGE", page.toUtf8());
+                qputenv("SPEECHER_GRAB_SCROLL", scroll);
+                QTest::qWait(800);
+                QVERIFY(window.capture(grabDir + QStringLiteral("/win-%1-%2.png").arg(name, theme)));
+                window.close();
+            };
+            store->setSpeechProvider(QStringLiteral("codex"));
+            store->setRefinementProvider(QStringLiteral("openai"));
+            store->setSpeechFallbackProviders({});
+            store->setRefinementFallbackProviders({});
+            grab(QStringLiteral("dictation:fallbacks"), QStringLiteral("fallbacks-dictation-empty"));
+            grab(QStringLiteral("refinement:fallbacks"), QStringLiteral("fallbacks-refinement-empty"));
+            store->setSpeechFallbackProviders({QStringLiteral("claude"), QStringLiteral("endpoint")});
+            store->setRefinementFallbackProviders({QStringLiteral("anthropic"), QStringLiteral("endpoint")});
+            grab(QStringLiteral("dictation"), QStringLiteral("settings-dictation"));
+            grab(QStringLiteral("refinement"), QStringLiteral("settings-refinement"));
+            // The provider cards further down.
+            grab(QStringLiteral("dictation"), QStringLiteral("settings-dictation-middle"), "middle");
+            grab(QStringLiteral("refinement"), QStringLiteral("settings-refinement-middle"), "middle");
+            grab(QStringLiteral("refinement"), QStringLiteral("settings-refinement-bottom"), "bottom");
+            grab(QStringLiteral("dictation:fallbacks"), QStringLiteral("fallbacks-dictation-full"));
+            grab(QStringLiteral("refinement:fallbacks"), QStringLiteral("fallbacks-refinement-full"));
+
+            store->setSpeechFallbackProviders({});
+            chooseRefinementProvider(*store, QStringLiteral("anthropic"));
+            store->setRefinementFallbackProviders({QStringLiteral("openai")});
+            store->setLocalRunnerSettings({QStringLiteral("ollama"), QStringLiteral("qwen3:4b")});
+            SetupWindow assistant(controller.get(), [] {});
+            assistant.show(SetupAssistantPage::All);
+            for (const QString step : {QStringLiteral("transcription"), QStringLiteral("refinement")}) {
+                assistant.showPageForTest(step);
+                QTest::qWait(1500);
+                QTRY_VERIFY_WITH_TIMEOUT(!controller->localSetup()->detectingRunners(), 20000);
+                // As a running Ollama would leave it, so Refinement suggests it.
+                LocalSetupTestAccess::setRunners(*controller->localSetup(),
+                                                 {{QStringLiteral("ollama"), QStringLiteral("Ollama"), {},
+                                                   QStringLiteral("http://127.0.0.1:11434/v1"),
+                                                   {QStringLiteral("qwen3:4b")}}});
+                QTest::qWait(300);
+                assistant.revealFallbacksForTest();
+                QTest::qWait(300);
+                QVERIFY(assistant.captureForTest(grabDir + QStringLiteral("/win-setup-%1-fallbacks-%2.png")
+                                                               .arg(step, theme)));
+            }
+        }
+
+        DictationPanel *panel = frontEnd->dictationPanelForTest();
+        panel->showForTest(41);
+        controller->session()->popupMessageRequested(
+            QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired."),
+            PopupOutcome::Fallback, {ErrorFix::SettingsPage, QStringLiteral("accounts")});
+        QTest::qWait(300);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-receipt-fix.png")));
+        panel->showForTest(42);
+        controller->session()->popupMessageRequested(
+            QStringLiteral("Pasted • Transcribed with Custom Endpoint. ChatGPT Codex couldn't be reached."),
+            PopupOutcome::Fallback);
+        QTest::qWait(300);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-receipt-fallback.png")));
+        panel->dismissForTest();
     }
 
     void panelVisualState()
