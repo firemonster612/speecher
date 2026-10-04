@@ -252,6 +252,9 @@ private:
     // The raw transcript is delivered in place of a refinement that was
     // asked for.
     bool m_usedRawTranscript = false;
+    // The refiner's sign-in renewed while starting: once a session, not for
+    // each speech provider tried.
+    bool m_refinerRefreshed = false;
     ProviderHistory m_providerHistory;
     Reachability m_reachability = Reachability::Unknown;
     // Inside stopAudio(); a session start waits in m_pendingStart until it

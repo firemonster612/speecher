@@ -175,6 +175,9 @@ private:
     QStringList m_speechChain;
     int m_speechIndex = 0;
     QList<ProviderAttemptIssue> m_speechIssues;
+    // The refiner's sign-in renewed for this file: once, not for each
+    // speech provider tried.
+    bool m_refinerRefreshed = false;
 };
 
 } // namespace speecher

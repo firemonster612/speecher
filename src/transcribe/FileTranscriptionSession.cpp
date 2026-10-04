@@ -150,6 +150,7 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
                 if (result.revision != m_preparationRevision) {
                     return;
                 }
+                m_refinerRefreshed |= result.refinerRefreshAttempted;
                 if (!result.speech.ok) {
                     m_speechIssues.append({ProviderRole::Speech, m_speechChain.at(m_speechIndex), Stage::Prepare,
                                            result.speech.kind, result.speech.message});
@@ -269,6 +270,7 @@ void FileTranscriptionSession::prepareProviders()
     }
     m_speechIndex = 0;
     m_speechIssues.clear();
+    m_refinerRefreshed = false;
     prepareSpeechProvider();
 }
 
@@ -302,10 +304,11 @@ void FileTranscriptionSession::prepareSpeechProvider()
         connectTranscriber();
 
         std::optional<RefinementRefreshJob> refreshJob;
-        if (m_refiner) {
+        if (m_refiner && !m_refinerRefreshed) {
             refreshJob = m_refiner->createRefreshJob(m_batchSettings.refinement);
             if (!refreshJob && m_refiner->requiresRefresh(m_batchSettings.refinement)) {
                 m_refiner->refresh(m_batchSettings.refinement);
+                m_refinerRefreshed = true;
             }
         }
         // Credentials load off the UI thread when the provider offers a job

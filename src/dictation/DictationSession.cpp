@@ -309,6 +309,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
                                       settings.refinement.fallbackProviderIds);
     m_refinementIndex = 0;
     m_usedRawTranscript = false;
+    m_refinerRefreshed = false;
     m_awaitingSpeechProvider = true;
     m_providerHistory = {};
     m_listeningMs = 0;
@@ -425,7 +426,8 @@ void DictationSession::prepareSpeechProvider()
         std::optional<RefinementRefreshJob> refinerRefreshJob;
         bool refinerRefreshRequired = false;
         const RefinementSettings refinement = m_sessionSettings->refinement;
-        if (m_state == DictationState::Starting && m_refiner && refinement.providerId != QStringLiteral("none")) {
+        if (m_state == DictationState::Starting && m_refiner && refinement.providerId != QStringLiteral("none")
+            && !m_refinerRefreshed) {
             refinerRefreshJob = m_refiner->createRefreshJob(refinement);
             refinerRefreshRequired = refinerRefreshJob ? refinerRefreshJob->showRefreshIndicator
                                                        : m_refiner->requiresRefresh(refinement);
@@ -446,6 +448,7 @@ void DictationSession::prepareSpeechProvider()
         }
         if (!refinerRefreshJob && refinerRefreshRequired) {
             m_refiner->refresh(refinement);
+            m_refinerRefreshed = true;
             emit previewDisplayChanged({});
         }
         if (speechPrepareJob || refinerRefreshJob) {
@@ -480,6 +483,7 @@ void DictationSession::finishSpeechPreparation(const StartupPreparationResult &r
         prepareSpeechProvider();
         return;
     }
+    m_refinerRefreshed |= result.refinerRefreshAttempted;
     if (result.refinerRefreshAttempted && !result.refinerRefresh.ok) {
         qWarning().noquote() << "refinement oauth refresh unavailable status=" + result.refinerRefresh.message;
     }

@@ -247,6 +247,23 @@ private slots:
         QVERIFY2(rig.settings.secrets()->lastError().isEmpty(), qPrintable(rig.settings.secrets()->lastError()));
     }
 
+    // The refiner's sign-in renews alongside the speech provider's once per
+    // session, not again for each speech provider tried.
+    void theRefinerRenewsOncePerSession()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")}, {QStringLiteral("openai")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        openai->refreshRequired = true;
+        openai->backgroundRefresh = true;
+        codex->onStartAttempt = [codex] {
+            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        };
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
+        QCOMPARE(openai->backgroundRefreshCalls, 1);
+    }
+
     // A fallback that can't listen for the Spoken Language, by its Local
     // Model's catalog entry, is passed over; one with no model is tried and
     // fails as unavailable.
