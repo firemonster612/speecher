@@ -22,9 +22,9 @@ jobs:
       - name: Configure and build
         shell: pwsh
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=OFF
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=OFF
           if ($LASTEXITCODE -ne 0) { throw "configure failed" }
-          cmake --build build --target speecher_tests --parallel 4
+          cmake --build build --target speecher speecher_tests --parallel 4
           if ($LASTEXITCODE -ne 0) { throw "build failed" }
       - name: Install Windows App Runtime
         shell: pwsh
@@ -50,6 +50,24 @@ jobs:
             "$case exit=$exitCode" | Tee-Object -FilePath evidence/summary.txt -Append
           }
           exit 0
+      - name: Verify clean production patch
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          git restore src/app/NetworkReachability.cpp src/frontend/qt/QtFrontEnd.cpp src/ui/AppWindow.cpp
+          $path = "src/frontend/qt/QtFrontEnd.cpp"
+          $code = [IO.File]::ReadAllText((Join-Path $PWD $path))
+          $code = $code.Replace("    delete m_popup;", "    delete m_appWindow;`n    delete m_popup;")
+          [IO.File]::WriteAllText((Join-Path $PWD $path), $code)
+          git diff -- src/app/NetworkReachability.cpp src/frontend/qt/QtFrontEnd.cpp src/ui/AppWindow.cpp
+          cmake --build build --target speecher_tests --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw "clean patch build failed" }
+          & ./build/speecher_tests.exe --suite app_window *> evidence/clean-patch.log
+          $exitCode = $LASTEXITCODE
+          Get-Content evidence/clean-patch.log
+          "clean-patch exit=$exitCode" | Tee-Object -FilePath evidence/summary.txt -Append
+          if ($exitCode -ne 0) { throw "clean patch suite failed" }
       - uses: actions/upload-artifact@v7
         if: always()
         with:
