@@ -115,9 +115,26 @@ defaults write "$DOMAIN" output.completionStatusDurationMs -int 3000
 defaults write "$BUNDLE_ID" SUEnableAutomaticChecks -bool false
 defaults read "$DOMAIN" >"$CASE_DIR/settings.txt"
 seed_common_tcc
+user_tcc="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
+system_tcc='/Library/Application Support/com.apple.TCC/TCC.db'
+# On hosted runners, TCC attributes osascript's requests to this ancestor.
+runner_client="$(sqlite3 "$user_tcc" "SELECT DISTINCT client FROM access WHERE client LIKE '%hosted-compute-agent%' LIMIT 1;")"
+if [[ -z "$runner_client" ]]; then
+  runner_client="$(ps -axo comm= | awk '/\/hosted-compute-agent$/ { print; exit }')"
+fi
+[[ -n "$runner_client" ]]
+printf '%s\n' "$runner_client" >"$EVIDENCE_ROOT/runner-tcc-client.txt"
+for target in com.apple.TextEdit com.apple.systemevents; do
+  python3 "$TCC_SEED" "$user_tcc" kTCCServiceAppleEvents "$runner_client" 2 "$target" 1 \
+    >>"$EVIDENCE_ROOT/tcc-seeding.log"
+done
+sudo python3 "$TCC_SEED" "$system_tcc" kTCCServiceAccessibility "$runner_client" 2 UNUSED 1 \
+  >>"$EVIDENCE_ROOT/tcc-seeding.log"
+sudo python3 "$TCC_SEED" "$system_tcc" kTCCServicePostEvent "$runner_client" 2 UNUSED 1 \
+  >>"$EVIDENCE_ROOT/tcc-seeding.log"
 # tcc_seed.py copies a template row, including Terminal's target identity.
-sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
-  "UPDATE access SET indirect_object_code_identity=NULL WHERE service='kTCCServiceAppleEvents' AND client='/usr/bin/osascript';"
+sqlite3 "$user_tcc" \
+  "UPDATE access SET indirect_object_code_identity=NULL WHERE service='kTCCServiceAppleEvents' AND (client='/usr/bin/osascript' OR client LIKE '%hosted-compute-agent%');"
 restart_tcc
 probe_desktop_capture
 [[ "$DESKTOP_CAPTURE" == 1 ]]
