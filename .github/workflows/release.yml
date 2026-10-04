@@ -63,6 +63,20 @@ jobs:
           $prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\','/'
           Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$prefix"
 
+      - name: Install Windows App Runtime
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "WindowsAppRuntimeInstall-x64.exe"
+          Invoke-WebRequest "https://aka.ms/windowsappsdk/2.4/2.4.0/windowsappruntimeinstall-x64.exe" -OutFile $installer
+          $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sha256 -ne "851c35b0b0a59ce4c55f9171f601193322fc3413143b0dc3390ea11e14cfa7fc") {
+            throw "Windows App Runtime installer checksum mismatch: $sha256"
+          }
+          $process = Start-Process $installer -ArgumentList "--quiet" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Windows App Runtime installer exited with code $($process.ExitCode)"
+          }
+
       - name: Compare pinned master and stack
         shell: pwsh
         env:
@@ -77,11 +91,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "instrument failed" }
             cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
             if ($LASTEXITCODE -ne 0) { throw "configure failed" }
-            cmake --build build --target speecher_tests --parallel 4
+            cmake --build build --target speecher speecher_tests --parallel 4
             if ($LASTEXITCODE -ne 0) { throw "build failed" }
             Copy-Item build/CMakeCache.txt "evidence/$($revision.Name)-CMakeCache.txt"
             & ./build/speecher_tests.exe --suite app_window -maxwarnings 1000000 -o "evidence/$($revision.Name).xml,xml" -o "evidence/$($revision.Name).txt,txt"
-            if ($LASTEXITCODE -ne 0) { throw "$($revision.Name) tests failed" }
+            if ($LASTEXITCODE -ne 0) { throw "$($revision.Name) tests failed, exit=$LASTEXITCODE" }
           }
       - name: Single-variable focused toggles
         shell: pwsh
