@@ -112,7 +112,7 @@ private slots:
                                       QStringLiteral("refiner apply")}));
         const StartupPreparationResult result =
             qvariant_cast<StartupPreparationResult>(completed.first().first());
-        QCOMPARE(result.generation, quint64(17));
+        QCOMPARE(result.revision, quint64(17));
         QVERIFY(result.speech.ok);
         QVERIFY(result.refinerRefreshAttempted);
         QVERIFY(result.refinerRefresh.ok);
@@ -248,7 +248,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 1000);
         const StartupPreparationResult result =
             qvariant_cast<StartupPreparationResult>(completed.first().first());
-        QCOMPARE(result.generation, quint64(22));
+        QCOMPARE(result.revision, quint64(22));
         QVERIFY(!staleApplied);
         QTest::qWait(50);
         QCOMPARE(completed.count(), 1);

@@ -1,8 +1,12 @@
 #pragma once
 
 #include "core/OutputFormat.h"
+#include "core/ProviderChain.h"
+#include "core/ProviderFailure.h"
 
+#include <QList>
 #include <QString>
+#include <QStringList>
 
 #include <optional>
 
@@ -101,6 +105,38 @@ QString noTranscriptYetText();
 // The accessible name of a microphone level meter, in the tray panels and the
 // setup assistant's microphone step.
 QString inputLevelLabel();
+
+// Why a provider in a Dictation Session's chain did not do its part.
+struct ProviderAttemptIssue {
+    enum class Stage {
+        // Its preparation failed.
+        Prepare,
+        // It can't listen for the Spoken Language, so it was passed over.
+        LanguageSkipped,
+        // It failed before it heard any of the dictation.
+        Connect,
+        // It stopped after it had started hearing the dictation.
+        Interrupted,
+    };
+    ProviderRole role = ProviderRole::Speech;
+    QString providerId;
+    Stage stage = Stage::Prepare;
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
+    // The provider's own reason.
+    QString message;
+    // It could not connect while the system reported no internet and it
+    // needs the internet; only then may an outcome say "No internet".
+    bool offline = false;
+};
+
+// Which providers a Dictation Session used and which let it down.
+struct ProviderHistory {
+    // By id, in the order they ran, each once. A provider ran once its
+    // startAttempt() or refine() was called.
+    QStringList speechRan;
+    QStringList refinementRan;
+    QList<ProviderAttemptIssue> issues;
+};
 
 struct SessionResponse {
     bool ok = true;

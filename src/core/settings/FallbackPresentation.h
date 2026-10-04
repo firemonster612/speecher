@@ -23,18 +23,27 @@ enum class FallbackProblem {
     SpokenLanguage,
 };
 
-// How a status line reads. Each front end maps Negative to its platform's
-// negative-text role and Normal to its ordinary description role.
-enum class StatusTone { Normal, Negative };
-
 FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, const AppSettings &settings,
                                 const LiveFacts &facts);
+
+// What the primary's row says when the primary can't work right now, judged
+// the same way, and which fallback takes over: "Can't reach ChatGPT right
+// now. Dictation starts with Custom Endpoint." Empty while it can.
+QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, const LiveFacts &facts,
+                              const QList<RowOption> &providers);
 
 // Whether a speech fallback is skipped because it can't listen for the
 // Spoken Language: only a Local Model whose catalog entry lacks it. A
 // missing model is not skipped here; it is unavailable. The primary is never
 // skipped.
 bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &providerId);
+
+// Whether a provider works through an account the person signs in to (Claude
+// Voice, ChatGPT Codex, OpenAI, Anthropic), rather than a key or this computer.
+bool providerSignsIn(const QString &providerId);
+// The account a provider signs in to, as a person knows it: "ChatGPT" for
+// ChatGPT Codex. label is the provider's registry label.
+QString signInName(const QString &providerId, const QString &label);
 
 // Where a fallback list is edited. Setup offers no speech Custom Endpoint,
 // which is set up in Settings only.

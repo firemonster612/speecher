@@ -1968,6 +1968,35 @@ private slots:
         QCOMPARE(list.items[1].tone, StatusTone::Negative);
     }
 
+    // A primary that can't work right now says why on its own row, in the
+    // negative tone, and which fallback takes over, from cached facts only.
+    void aPrimaryThatCantWorkSaysWhatTakesOver()
+    {
+        LiveFacts facts;
+        facts.reachability = Reachability::Offline;
+        SchemaContext context = chainContext();
+        context.liveFacts = [&facts] { return facts; };
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const SettingsRow *speech = schema.row(QStringLiteral("speechProvider"));
+        const SettingsRow *refinement = schema.row(QStringLiteral("refinementProvider"));
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.fallbackProviderIds = {QStringLiteral("endpoint")};
+        settings.speech.endpoint.baseUrl = QStringLiteral("http://localhost:8080");
+        settings.refinement.providerId = QStringLiteral("openai");
+        QCOMPARE(speech->helpValue(settings),
+                 QStringLiteral("Can't reach ChatGPT right now. Dictation starts with Custom Endpoint."));
+        QCOMPARE(speech->helpTone(settings), StatusTone::Negative);
+        QCOMPARE(refinement->helpValue(settings),
+                 QStringLiteral("Can't reach OpenAI right now. Your words are pasted as spoken."));
+        QCOMPARE(refinement->helpTone(settings), StatusTone::Negative);
+
+        facts.reachability = Reachability::Unknown;
+        QCOMPARE(speech->helpTone(settings), StatusTone::Normal);
+        QVERIFY(!speech->helpValue(settings).contains(QStringLiteral("Can't reach")));
+        QCOMPARE(refinement->helpValue(settings), QStringLiteral("The service that cleans up your text."));
+    }
+
     void aMixedChainSaysWhichProvidersReadTheScreenshot()
     {
         const SettingsSchema schema = buildSettingsSchema(chainContext());

@@ -36,13 +36,6 @@ QString labelOf(const QList<RowOption> &providers, const QString &id)
     return id;
 }
 
-bool needsInternet(const QString &providerId)
-{
-    static const QStringList cloud{QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("openai"),
-                                   QStringLiteral("anthropic")};
-    return cloud.contains(providerId);
-}
-
 // A server on this computer or its network, which keeps answering without
 // internet: localhost, a bare or .local name, or a private address.
 bool isLocalNetworkServer(const QString &url)
@@ -78,6 +71,14 @@ QString serverUrl(ProviderRole role, const AppSettings &settings)
                                         : resolvedRefinementEndpoint(settings.refinement).apiBase;
 }
 
+// "Ollama isn't running", or that no runner is.
+QString runnerNotRunning(const AppSettings &settings)
+{
+    const QString runner = settings.refinement.localRunner.runner;
+    return runner.isEmpty() ? QStringLiteral("No Ollama, LM Studio or llama-server is running")
+                            : QStringLiteral("%1 isn't running").arg(localRunnerName(runner));
+}
+
 QString problemText(FallbackProblem problem, const AppSettings &settings)
 {
     switch (problem) {
@@ -89,12 +90,8 @@ QString problemText(FallbackProblem problem, const AppSettings &settings)
         return QStringLiteral("Not signed in, so it can't stand in yet.");
     case FallbackProblem::NoModel:
         return QStringLiteral("No model downloaded, so it can't stand in yet.");
-    case FallbackProblem::NoRunner: {
-        const QString runner = settings.refinement.localRunner.runner;
-        return runner.isEmpty()
-            ? QStringLiteral("No Ollama, LM Studio or llama-server is running, so it can't stand in right now.")
-            : QStringLiteral("%1 isn't running, so it can't stand in right now.").arg(localRunnerName(runner));
-    }
+    case FallbackProblem::NoRunner:
+        return runnerNotRunning(settings) + QStringLiteral(", so it can't stand in right now.");
     case FallbackProblem::NoServer:
         return QStringLiteral("No server URL is set, so it can't stand in yet.");
     case FallbackProblem::SpokenLanguage: {
@@ -142,7 +139,69 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
     if (!facts.signedIn.value(providerId, true)) {
         return FallbackProblem::SignedOut;
     }
-    return offline && needsInternet(providerId) ? FallbackProblem::Offline : FallbackProblem::None;
+    return offline && providerSignsIn(providerId) ? FallbackProblem::Offline : FallbackProblem::None;
+}
+
+QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, const LiveFacts &facts,
+                              const QList<RowOption> &providers)
+{
+    const QString primary = primaryOf(settings, role);
+    if (role == ProviderRole::Refinement && primary == kNone) {
+        return {};
+    }
+    const QString account = signInName(primary, labelOf(providers, primary));
+    QString problem;
+    switch (fallbackProblem(role, primary, settings, facts)) {
+    case FallbackProblem::None:
+    // The Spoken Language row says so, and dictation stops rather than pass
+    // the primary over.
+    case FallbackProblem::SpokenLanguage:
+        return {};
+    case FallbackProblem::Offline:
+        problem = QStringLiteral("Can't reach %1 right now.").arg(account);
+        break;
+    case FallbackProblem::SignedOut:
+        problem = QStringLiteral("Not signed in to %1.").arg(account);
+        break;
+    case FallbackProblem::NoModel:
+        problem = QStringLiteral("No model downloaded.");
+        break;
+    case FallbackProblem::NoRunner:
+        problem = runnerNotRunning(settings) + QLatin1Char('.');
+        break;
+    case FallbackProblem::NoServer:
+        problem = QStringLiteral("No server URL is set.");
+        break;
+    }
+    const QStringList fallbacks = fallbacksOf(settings, role);
+    const auto usable = std::find_if(fallbacks.cbegin(), fallbacks.cend(), [&](const QString &id) {
+        return fallbackProblem(role, id, settings, facts) == FallbackProblem::None;
+    });
+    if (usable != fallbacks.cend()) {
+        const QString name = labelOf(providers, *usable);
+        return problem + QLatin1Char(' ')
+            + (role == ProviderRole::Speech ? QStringLiteral("Dictation starts with %1.").arg(name)
+                                            : QStringLiteral("%1 cleans up your words instead.").arg(name));
+    }
+    return role == ProviderRole::Speech ? problem : problem + QStringLiteral(" Your words are pasted as spoken.");
+}
+
+bool providerSignsIn(const QString &providerId)
+{
+    static const QStringList accounts{QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("openai"),
+                                      QStringLiteral("anthropic")};
+    return accounts.contains(providerId);
+}
+
+QString signInName(const QString &providerId, const QString &label)
+{
+    if (providerId == QStringLiteral("codex")) {
+        return QStringLiteral("ChatGPT");
+    }
+    if (providerId == QStringLiteral("claude")) {
+        return QStringLiteral("Claude");
+    }
+    return label;
 }
 
 FallbackListPresentation fallbackListPresentation(ProviderRole role, const AppSettings &settings,

@@ -37,17 +37,19 @@ struct DeliveryResult {
     QString message;
 };
 
+// A failed preparation sends a Dictation Session on to the next provider
+// whatever its kind, so an unclassified one counts as Unavailable.
 struct SpeechPrepareResult {
     bool ok = false;
     QString message;
-    ProviderFailureKind kind = ProviderFailureKind::Other;
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
     int httpStatus = 0;
 };
 
 struct RefinementPrepareResult {
     bool ok = false;
     QString message;
-    ProviderFailureKind kind = ProviderFailureKind::Other;
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
     int httpStatus = 0;
 };
 
@@ -60,7 +62,7 @@ struct SpeechPrepareJob {
 struct RefinementRefreshResult {
     bool ok = true;
     QString message;
-    ProviderFailureKind kind = ProviderFailureKind::Other;
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
     int httpStatus = 0;
 };
 

@@ -1534,6 +1534,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_delivery.cpp
     tests/test_dictation_session_lifecycle.cpp
     tests/test_dictation_session_refinement.cpp
+    tests/test_dictation_session_fallbacks.cpp
     tests/test_refiners.cpp
     tests/test_vocabulary.cpp
     tests/test_insights.cpp
@@ -1613,6 +1614,7 @@ if(SPEECHER_BUILD_TESTS)
     delivery
     dictation_session_lifecycle
     dictation_session_refinement
+    dictation_session_fallbacks
     refiners
     vocabulary
     insights

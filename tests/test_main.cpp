@@ -154,6 +154,7 @@ int main(int argc, char **argv)
     if (selected("delivery")) result |= runDeliveryTests(argc, argv);
     if (selected("dictation_session_lifecycle")) result |= runDictationSessionLifecycleTests(argc, argv);
     if (selected("dictation_session_refinement")) result |= runDictationSessionRefinementTests(argc, argv);
+    if (selected("dictation_session_fallbacks")) result |= runDictationSessionFallbacksTests(argc, argv);
     if (selected("refiners")) result |= runRefinersTests(argc, argv);
     if (selected("vocabulary")) result |= runVocabularyTests(argc, argv);
     if (selected("insights")) result |= runInsightsTests(argc, argv);

@@ -100,6 +100,32 @@ private slots:
         QCOMPARE(loaded.profile, WritingProfile::AiCoding);
     }
 
+    // A fallback that stood in shows in the record; a line written before
+    // providers were kept reads as none.
+    void aRecordKeepsTheProvidersThatRanInOrder()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("insights.jsonl"));
+        writeAll(path, R"({"finishedAt":"2026-09-23T10:00:00","audioMs":1000,"words":3,"app":"Slack","profile":"work"})"
+                       "\n");
+        {
+            InsightsLog log(path);
+            DictationRecord record{QDateTime(kToday, QTime(9, 0)), 1000, 5, QStringLiteral("Kate"), WritingProfile::Other};
+            record.speechProviders = {QStringLiteral("codex"), QStringLiteral("local")};
+            record.refinementProviders = {QStringLiteral("openai")};
+            log.append(record);
+        }
+        QVERIFY(readAll(path).endsWith(
+            R"("profile":"other","speechProviders":["codex","local"],"refinementProviders":["openai"]})"
+            "\n"));
+        const InsightsLog log(path);
+        QCOMPARE(log.records().size(), 2);
+        QCOMPARE(log.records().at(0).speechProviders, QStringList());
+        QCOMPARE(log.records().at(0).refinementProviders, QStringList());
+        QCOMPARE(log.records().at(1).speechProviders, (QStringList{QStringLiteral("codex"), QStringLiteral("local")}));
+        QCOMPARE(log.records().at(1).refinementProviders, QStringList{QStringLiteral("openai")});
+    }
+
     // A custom profile's record stores its name; a record from before that
     // has none. Once the profile is gone the first reads by that name and the
     // second as Deleted profile.

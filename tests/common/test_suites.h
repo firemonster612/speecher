@@ -72,6 +72,7 @@ int runSingleInstanceIpcTests(int argc, char **argv);
 int runDeliveryTests(int argc, char **argv);
 int runDictationSessionLifecycleTests(int argc, char **argv);
 int runDictationSessionRefinementTests(int argc, char **argv);
+int runDictationSessionFallbacksTests(int argc, char **argv);
 int runRefinersTests(int argc, char **argv);
 int runVocabularyTests(int argc, char **argv);
 int runInsightsTests(int argc, char **argv);
