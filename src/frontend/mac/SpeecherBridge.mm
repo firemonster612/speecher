@@ -743,6 +743,17 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @implementation SpeecherFallbackList
 @end
 
+@interface SpeecherSetupFallbackSection ()
+@property (nonatomic) BOOL visible;
+@property (nonatomic, copy) NSString *hint;
+@property (nonatomic, copy) NSString *suggestion;
+@property (nonatomic, copy) NSString *suggestionAction;
+@property (nonatomic, strong) SpeecherFallbackList *list;
+@end
+
+@implementation SpeecherSetupFallbackSection
+@end
+
 namespace {
 
 speecher::ProviderRole coreRole(SpeecherProviderRole role)
@@ -3355,6 +3366,27 @@ static void probeSpeechProvider(BridgeState *state,
 - (NSString *)setupPasteVerdict:(BOOL)pastes
 {
     return speecher::setupPasteVerdict(pastes).toNSString();
+}
+
+- (SpeecherSetupFallbackSection *)setupFallbackSection:(SpeecherProviderRole)role
+{
+    const speecher::ProviderRole core = coreRole(role);
+    const speecher::LocalSetup *setup = _state->controller->localSetup();
+    const speecher::SetupFallbackPresentation presentation = speecher::setupFallbackPresentation(
+        core, _state->controller->settings()->snapshot(), setup->liveFacts(),
+        [_settingsSchema chainProviders:core], setup->setupFallbackOffer(core));
+    SpeecherSetupFallbackSection *section = [[SpeecherSetupFallbackSection alloc] init];
+    section.visible = presentation.visible;
+    section.hint = presentation.hint.toNSString();
+    section.suggestion = presentation.suggestion.toNSString();
+    section.suggestionAction = presentation.suggestionAction.toNSString();
+    section.list = bridgedFallbackList(core, presentation.list);
+    return section;
+}
+
+- (void)acceptSetupFallbackOffer:(SpeecherProviderRole)role
+{
+    _state->controller->localSetup()->acceptSetupFallbackOffer(coreRole(role));
 }
 
 - (NSString *)ownModelRefinementSummary

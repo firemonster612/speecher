@@ -154,6 +154,17 @@ typedef NS_ENUM(NSInteger, SpeecherProviderRole) {
 @property (nonatomic, readonly, copy) NSString *removeCaption;
 @end
 
+// The optional fallbacks section of the Transcription and Refinement setup
+// steps (speecher::SetupFallbackPresentation). Hidden while visible is NO.
+@interface SpeecherSetupFallbackSection : NSObject
+@property (nonatomic, readonly) BOOL visible;
+@property (nonatomic, readonly, copy) NSString *hint;
+// Empty when there is nothing to suggest.
+@property (nonatomic, readonly, copy) NSString *suggestion;
+@property (nonatomic, readonly, copy) NSString *suggestionAction;
+@property (nonatomic, readonly, strong) SpeecherFallbackList *list;
+@end
+
 @interface SettingsRowModel : NSObject
 @property (nonatomic, readonly, copy) NSString *rowId;
 // As the draft words it: a status row titled "API key" in key mode.
@@ -1221,6 +1232,12 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (NSString *)setupCliproxySpeechChoice:(NSString *)providerLabel NS_SWIFT_NAME(setupCliproxySpeechChoice(_:));
 // The Ready step's verdict on pasting: Ready, or Clipboard only.
 - (NSString *)setupPasteVerdict:(BOOL)pastes NS_SWIFT_NAME(setupPasteVerdict(_:));
+// The fallbacks section under the chosen provider on the Transcription or
+// Refinement step, from the saved settings, and its suggestion's action
+// (LocalSetup::acceptSetupFallbackOffer), which adds the suggested fallback.
+- (SpeecherSetupFallbackSection *)setupFallbackSection:(SpeecherProviderRole)role
+    NS_SWIFT_NAME(setupFallbackSection(_:));
+- (void)acceptSetupFallbackOffer:(SpeecherProviderRole)role NS_SWIFT_NAME(acceptSetupFallbackOffer(_:));
 
 // Every provider the registry offers, in the order it offers them.
 @property (nonatomic, readonly, copy) NSArray<SpeecherProviderModel *> *speechProviders;

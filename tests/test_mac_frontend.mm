@@ -457,6 +457,25 @@ private slots:
         QVERIFY(saved().isEmpty());
     }
 
+    // The setup steps' section is optional: it shows with nothing in it, and
+    // Skip cleanup hides it.
+    void setupFallbackSectionIsOptional()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+
+        SpeecherSetupFallbackSection *speech = [bridge setupFallbackSection:SpeecherProviderRoleSpeech];
+        QVERIFY(speech.visible);
+        QVERIFY(speech.hint.length > 0);
+        QCOMPARE(speech.list.items.count, NSUInteger(0));
+        QVERIFY(speech.list.canAdd);
+        QVERIFY([bridge setupFallbackSection:SpeecherProviderRoleRefinement].visible);
+
+        [bridge.settingsSchema setValue:@"none" forRowId:@"refinementProvider"];
+        [bridge.settingsSchema commit];
+        QVERIFY(![bridge setupFallbackSection:SpeecherProviderRoleRefinement].visible);
+    }
+
     // Skip, all nine pages, and Finish are driven through the native AX tree
     // in macOS setup assistant E2E. This catches a Qt wizard returning here.
     void setupUsesANativeWindow()

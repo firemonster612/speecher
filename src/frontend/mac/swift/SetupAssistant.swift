@@ -1405,6 +1405,7 @@ private struct TranscriptionStep: View {
                     }
                 }
             }
+            SetupFallbacks(role: .speech, model: model)
         }
         .formStyle(.grouped)
         // One round covers every row, so selecting a different service shows a
@@ -1689,6 +1690,7 @@ private struct RefinementStep: View {
             } else if provider == "endpoint" {
                 EndpointSections(flow: flow, model: model)
             }
+            SetupFallbacks(role: .refinement, model: model)
         }
         .formStyle(.grouped)
         .onAppear {
@@ -1736,6 +1738,32 @@ private struct RefinementStep: View {
     private func selection(in group: Group) -> Binding<String?> {
         Binding(get: { group.rows.contains { $0.id == flow.refinementProviderId } ? flow.refinementProviderId : nil },
                 set: { if let id = $0 { flow.chooseRefinementProvider(id) } })
+    }
+}
+
+/// What the step's provider falls back to, under its details: the Fallbacks
+/// subpage's list inline, with core's hint and a local fallback to suggest.
+/// Optional, so Continue never waits on it; core hides it with Skip cleanup.
+private struct SetupFallbacks: View {
+    let role: SpeecherProviderRole
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        let section = model.bridge.setupFallbackSection(role)
+        if section.visible {
+            FallbackSection(list: section.list, subtitle: section.hint, model: model) {
+                if !section.suggestion.isEmpty {
+                    LabeledContent {
+                        Button(section.suggestionAction) {
+                            model.bridge.acceptSetupFallbackOffer(role)
+                            model.reloadSettingsDraft()
+                        }
+                    } label: {
+                        Text(section.suggestion)
+                    }
+                }
+            }
+        }
     }
 }
 
