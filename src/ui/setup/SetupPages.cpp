@@ -426,8 +426,9 @@ public:
     {
         const std::optional<SetupFallbackOffer> offer =
             m_local ? m_local->setupFallbackOffer(m_role) : std::nullopt;
+        const AppSettings draft = m_settings.snapshot();
         const SetupFallbackPresentation section = setupFallbackPresentation(
-            m_role, m_settings.snapshot(), m_local ? m_local->liveFacts() : LiveFacts{}, m_providers, offer);
+            m_role, draft, m_local ? m_local->liveFacts(draft) : LiveFacts{}, m_providers, offer);
         setVisible(section.visible);
         m_heading->setText(section.list.heading);
         m_hint->setText(section.hint);
