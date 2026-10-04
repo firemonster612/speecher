@@ -26,6 +26,7 @@ private:
 
     QProcess *m_capture = nullptr;
     QString m_capturePath;
+    quint64 m_generation = 0;
 };
 
 } // namespace speecher

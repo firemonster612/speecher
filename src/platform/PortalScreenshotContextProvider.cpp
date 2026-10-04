@@ -3,10 +3,9 @@
 #include "platform/ScreenshotImage.h"
 
 #include <QDBusConnection>
-#include <QDBusInterface>
+#include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
-#include <QFile>
 #include <QTimer>
 #include <QUrl>
 #include <QUuid>
@@ -15,8 +14,8 @@ namespace speecher {
 
 namespace {
 
-constexpr qsizetype maximumPortalFileSize = 32 * 1024 * 1024;
 constexpr int screenshotTimeoutMs = 30'000;
+const QString portalService = QStringLiteral("org.freedesktop.portal.Desktop");
 
 QDBusObjectPath predictedRequestPath(const QString &token)
 {
@@ -25,6 +24,15 @@ QDBusObjectPath predictedRequestPath(const QString &token)
     sender.replace(QLatin1Char('.'), QLatin1Char('_'));
     return QDBusObjectPath(
         QStringLiteral("/org/freedesktop/portal/desktop/request/%1/%2").arg(sender, token));
+}
+
+// QDBusInterface introspects the remote object synchronously, so every portal
+// call goes out as a plain message instead.
+void closeRequest(const QString &path)
+{
+    QDBusConnection::sessionBus().asyncCall(QDBusMessage::createMethodCall(
+        portalService, path, QStringLiteral("org.freedesktop.portal.Request"),
+        QStringLiteral("Close")));
 }
 } // namespace
 
@@ -42,15 +50,6 @@ void PortalScreenshotContextProvider::capture()
     cancel();
     const quint64 generation = m_generation;
 
-    QDBusInterface portal(QStringLiteral("org.freedesktop.portal.Desktop"),
-                          QStringLiteral("/org/freedesktop/portal/desktop"),
-                          QStringLiteral("org.freedesktop.portal.Screenshot"),
-                          QDBusConnection::sessionBus());
-    if (!portal.isValid()) {
-        emit failed(QStringLiteral("The desktop screenshot portal is unavailable"));
-        return;
-    }
-
     QVariantMap options;
     options.insert(QStringLiteral("interactive"), false);
     const QString token = QStringLiteral("speecher_%1").arg(
@@ -59,7 +58,7 @@ void PortalScreenshotContextProvider::capture()
     m_requestPath = predictedRequestPath(token);
     m_responseTracker.begin(m_requestPath);
     const bool connected = QDBusConnection::sessionBus().connect(
-        QStringLiteral("org.freedesktop.portal.Desktop"),
+        portalService,
         QString(),
         QStringLiteral("org.freedesktop.portal.Request"),
         QStringLiteral("Response"),
@@ -70,19 +69,20 @@ void PortalScreenshotContextProvider::capture()
         emit failed(QStringLiteral("Could not watch the screenshot portal request"));
         return;
     }
+    QDBusMessage screenshot = QDBusMessage::createMethodCall(
+        portalService,
+        QStringLiteral("/org/freedesktop/portal/desktop"),
+        QStringLiteral("org.freedesktop.portal.Screenshot"),
+        QStringLiteral("Screenshot"));
+    screenshot << QString() << options;
     auto *watcher = new QDBusPendingCallWatcher(
-        portal.asyncCall(QStringLiteral("Screenshot"), QString(), options),
-        this);
+        QDBusConnection::sessionBus().asyncCall(screenshot), this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher, generation] {
         const QDBusPendingReply<QDBusObjectPath> reply = *watcher;
         watcher->deleteLater();
         if (generation != m_generation) {
             if (!reply.isError()) {
-                QDBusInterface request(QStringLiteral("org.freedesktop.portal.Desktop"),
-                                       reply.value().path(),
-                                       QStringLiteral("org.freedesktop.portal.Request"),
-                                       QDBusConnection::sessionBus());
-                request.asyncCall(QStringLiteral("Close"));
+                closeRequest(reply.value().path());
             }
             return;
         }
@@ -105,11 +105,7 @@ void PortalScreenshotContextProvider::cancel()
 {
     ++m_generation;
     if (!m_requestPath.path().isEmpty()) {
-        QDBusInterface request(QStringLiteral("org.freedesktop.portal.Desktop"),
-                               m_requestPath.path(),
-                               QStringLiteral("org.freedesktop.portal.Request"),
-                               QDBusConnection::sessionBus());
-        request.asyncCall(QStringLiteral("Close"));
+        closeRequest(m_requestPath.path());
     }
     disconnectRequest();
 }
@@ -127,11 +123,7 @@ void PortalScreenshotContextProvider::handleTimeout()
 {
     ++m_generation;
     if (!m_requestPath.path().isEmpty()) {
-        QDBusInterface request(QStringLiteral("org.freedesktop.portal.Desktop"),
-                               m_requestPath.path(),
-                               QStringLiteral("org.freedesktop.portal.Request"),
-                               QDBusConnection::sessionBus());
-        request.asyncCall(QStringLiteral("Close"));
+        closeRequest(m_requestPath.path());
     }
     disconnectRequest();
     emit failed(QStringLiteral("Screenshot capture timed out"));
@@ -154,23 +146,17 @@ void PortalScreenshotContextProvider::processResponse(const PortalResponse &resp
         return;
     }
 
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly) || file.size() > maximumPortalFileSize) {
-        file.close();
-        QFile::remove(path);
-        emit failed(QStringLiteral("The captured screenshot could not be read"));
-        return;
-    }
-    const QByteArray source = file.readAll();
-    file.close();
-    QFile::remove(path);
-
-    const QByteArray png = normalizedScreenshot(source);
-    if (png.isEmpty()) {
-        emit failed(QStringLiteral("The captured screenshot format was not supported"));
-        return;
-    }
-    emit captured(png, QStringLiteral("image/png"));
+    const quint64 generation = m_generation;
+    normalizeScreenshotFile(path, this, [this, generation](const ScreenshotResult &result) {
+        if (generation != m_generation) {
+            return;
+        }
+        if (!result.error.isEmpty()) {
+            emit failed(result.error);
+            return;
+        }
+        emit captured(result.png, QStringLiteral("image/png"));
+    });
 }
 
 void PortalScreenshotContextProvider::disconnectRequest()
@@ -180,7 +166,7 @@ void PortalScreenshotContextProvider::disconnectRequest()
     }
     m_requestTimer->stop();
     QDBusConnection::sessionBus().disconnect(
-        QStringLiteral("org.freedesktop.portal.Desktop"),
+        portalService,
         QString(),
         QStringLiteral("org.freedesktop.portal.Request"),
         QStringLiteral("Response"),

@@ -1,5 +1,7 @@
 #include "platform/win/WinScreenshotContextProvider.h"
 
+#include "platform/ScreenshotImage.h"
+
 #include <QBuffer>
 #include <QImage>
 #include <QThread>
@@ -12,11 +14,6 @@ namespace speecher {
 namespace {
 
 constexpr qsizetype maximumCaptureSize = 32 * 1024 * 1024;
-
-struct ScreenshotResult {
-    QByteArray png;
-    QString error;
-};
 
 ScreenshotResult captureWindow(HWND window)
 {

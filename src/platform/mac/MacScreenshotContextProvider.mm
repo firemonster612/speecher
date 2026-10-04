@@ -4,6 +4,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QProcess>
 #include <QUuid>
 
@@ -11,13 +12,13 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <optional>
+#include <utility>
 
 namespace speecher {
 
 namespace {
 
 constexpr auto screenCaptureTool = "/usr/sbin/screencapture";
-constexpr qsizetype maximumCaptureFileSize = 32 * 1024 * 1024;
 
 QString screenRecordingHint()
 {
@@ -122,6 +123,7 @@ void MacScreenshotContextProvider::capture()
 
 void MacScreenshotContextProvider::cancel()
 {
+    ++m_generation;
     if (m_capture) {
         m_capture->disconnect(this);
         m_capture->kill();
@@ -150,24 +152,25 @@ void MacScreenshotContextProvider::finish(int exitCode)
 
     // A denied Screen Recording grant shows up either as a non-zero exit or as
     // an empty file, depending on the macOS version.
-    QFile file(m_capturePath);
-    if (exitCode != 0 || !file.open(QIODevice::ReadOnly) || file.size() == 0
-        || file.size() > maximumCaptureFileSize) {
-        file.close();
+    if (exitCode != 0 || QFileInfo(m_capturePath).size() == 0) {
         discardCaptureFile();
         emit failed(screenRecordingHint());
         return;
     }
-    const QByteArray source = file.readAll();
-    file.close();
-    discardCaptureFile();
 
-    const QByteArray png = normalizedScreenshot(source);
-    if (png.isEmpty()) {
-        emit failed(QStringLiteral("The captured screenshot format was not supported"));
-        return;
-    }
-    emit captured(png, QStringLiteral("image/png"));
+    const quint64 generation = m_generation;
+    normalizeScreenshotFile(std::exchange(m_capturePath, {}),
+                            this,
+                            [this, generation](const ScreenshotResult &result) {
+                                if (generation != m_generation) {
+                                    return;
+                                }
+                                if (!result.error.isEmpty()) {
+                                    emit failed(result.error);
+                                    return;
+                                }
+                                emit captured(result.png, QStringLiteral("image/png"));
+                            });
 }
 
 } // namespace speecher

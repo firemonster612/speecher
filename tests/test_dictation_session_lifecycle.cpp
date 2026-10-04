@@ -1527,6 +1527,16 @@ private slots:
         PortalScreenshotContextProvider screenshots;
         QSignalSpy captured(&screenshots, &PortalScreenshotContextProvider::captured);
         QSignalSpy failed(&screenshots, &PortalScreenshotContextProvider::failed);
+        // The microphone is read on the main thread, so a capture that stalls
+        // the event loop cuts out whatever the person says meanwhile.
+        QElapsedTimer sinceTick;
+        qint64 longestStallMs = 0;
+        QTimer tick;
+        connect(&tick, &QTimer::timeout, &tick, [&] {
+            longestStallMs = std::max(longestStallMs, sinceTick.restart());
+        });
+        sinceTick.start();
+        tick.start(10);
         screenshots.capture();
 
         QTRY_VERIFY_WITH_TIMEOUT(!captured.isEmpty() || !failed.isEmpty(), 15000);
@@ -1536,6 +1546,10 @@ private slots:
         QVERIFY2(failed.isEmpty(), qPrintable(failureMessage));
         QVERIFY(captured.first().at(0).toByteArray().size() > 100);
         QCOMPARE(captured.first().at(1).toString(), QStringLiteral("image/png"));
+        // A stall just before the result lands has no tick after it yet.
+        longestStallMs = std::max(longestStallMs, sinceTick.elapsed());
+        QVERIFY2(longestStallMs < 100,
+                 qPrintable(QStringLiteral("event loop stalled for %1 ms").arg(longestStallMs)));
     }
 #endif // SPEECHER_WITH_WAYLAND
 
