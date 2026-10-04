@@ -1,0 +1,101 @@
+<!doctype html>
+<!--
+  Mockup of what the dictation popup says after a fallback provider did the
+  work. Each cell is one ending. Outcome lines follow today's format,
+  "<delivery> • <note>", and today's icons: dialog-information for a fallback,
+  dialog-warning for an error. Breeze Dark palette roles, Slim popup sizes.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher: fallback outcomes in the popup (mockup)</title>
+<style>
+  :root {
+    --desk: #232129;
+    --base: #1b1e20;
+    --button: #292c30;
+    --ring: #545659;
+    --text: #fcfcfc;
+    --ph: #a1a9b1;
+    --highlight: #3daee9;
+    --font: "Noto Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 32px 40px; background: #16151a; color: var(--text); font: 13px/1.45 var(--font); }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  .lead { color: var(--ph); max-width: 900px; margin: 0 0 22px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 560px); gap: 16px 20px; }
+  .cell { background: var(--desk); border-radius: 10px; overflow: hidden; }
+  .stage { height: 150px; display: flex; align-items: flex-end; justify-content: center; padding: 0 16px 18px; }
+  .cap { padding: 8px 12px 10px; background: #1d1c22; font-size: 12px; color: var(--ph); }
+  .cap b { display: block; color: var(--text); font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+  .cap .tag { display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid #f67400; color: #f6a35a; border-radius: 3px; font-size: 11px; font-weight: 400; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px 0 10px;
+    background: var(--base); border-radius: 999px; white-space: nowrap; font-size: 12px;
+    filter: drop-shadow(0 0 .5px rgba(130, 136, 142, .95));
+  }
+  .pill .act { margin-left: 4px; }
+  .box {
+    width: 520px; background: var(--base); border-radius: 14px; padding: 12px 14px 0;
+    filter: drop-shadow(0 0 .5px rgba(130, 136, 142, .95)); font-size: 12px;
+  }
+  .box .msg { display: flex; gap: 10px; align-items: flex-start; }
+  .box .actions { display: flex; justify-content: flex-end; gap: 6px; margin: 10px 0 10px; }
+  .box .count { height: 3px; margin: 0 -14px; background: #2c2f33; border-radius: 0 0 14px 14px; overflow: hidden; }
+  .box .count span { display: block; height: 100%; width: 62%; background: var(--ph); }
+  button { font: inherit; font-size: 12px; color: var(--text); background: var(--button); border: 1px solid var(--ring); border-radius: 4px; padding: 2px 9px; }
+  svg { width: 16px; height: 16px; flex: none; }
+  .info { color: var(--highlight); }
+  .warn { color: #f67400; }
+  .sent { color: var(--ph); }
+</style>
+</head>
+<body>
+<h1>Fallback outcomes in the dictation popup</h1>
+<p class="lead">After a fallback, the outcome line names the provider that did the work and why the one before it didn't. The delivery receipt stays first, as it does today. Cells marked <span style="color:#f6a35a">new</span> show something the popup can't do yet: an outcome line with a fix button. Every other cell reuses today's outcome or error layout.</p>
+<div class="grid" id="grid"></div>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7v4.2M8 4.6v.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 16 16"><path d="M8 1.8 15 14H1Z" fill="currentColor"/><path d="M8 6v4M8 11.7v.1" stroke="#1b1e20" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-sent" viewBox="0 0 16 16"><path d="M2 8.2 14 2.5 11.2 13.6 7.6 9.7 2 8.2Z M7.6 9.7 14 2.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+</svg>
+
+<script>
+const CELLS = [
+  { title: "Started on a fallback", detail: "ChatGPT Codex couldn't be reached when dictation started, so the endpoint took it. Nothing was lost.",
+    pill: ["info", "Pasted • Transcribed with Custom Endpoint. ChatGPT Codex couldn't be reached."] },
+  { title: "Offline: both roles fell back", detail: "No internet, so speech and cleanup both ran on fallbacks. One reason covers both instead of two notes.",
+    pill: ["info", "Pasted • No internet, so Custom Endpoint and Local Runner did this one."] },
+  { title: "Switched mid-dictation", detail: "Codex dropped and its two reconnects failed. The next attempt opened on the Local Model and the text so far was kept. Audio Codex never confirmed is not sent again (rule A7), so words can be missing.",
+    pill: ["info", "Pasted • ChatGPT Codex dropped, so Local Model finished. A few words may be missing."] },
+  { title: "Sign-in rejected", isNew: true, detail: "Codex said the sign-in has expired. Dictation still finished on the Local Model, and the popup offers the same fix an error would.",
+    pill: ["info", "Pasted • Used Local Model. Your ChatGPT sign-in has expired."], action: "Open Accounts" },
+  { title: "Cleanup fell back", detail: "OpenAI couldn't be reached after recording, so the Local Runner cleaned the text up.",
+    pill: ["info", "Pasted • Cleaned up with Local Runner. OpenAI couldn't be reached."] },
+  { title: "Every cleanup provider failed", detail: "Today's outcome, unchanged: the Raw Transcript is pasted. The note now names what was tried.",
+    pill: ["info", "Used raw transcript • Pasted • OpenAI and Local Runner couldn't be reached."] },
+  { title: "No speech service available", detail: "Every service in the chain failed before recording started. Today's error layout, with the reasons listed and the Dictation page as the fix.",
+    box: "No speech service is available. ChatGPT Codex couldn't be reached, Custom Endpoint didn't answer and Local Model has no model downloaded.", action: "Open Dictation" },
+  { title: "No fallback set", detail: "Someone without fallbacks sees exactly what they see today.",
+    pill: ["sent", "Pasted"] },
+];
+
+const icon = (kind) => `<svg class="${kind}"><use href="#i-${kind}"/></svg>`;
+const grid = document.getElementById("grid");
+for (const c of CELLS) {
+  let popup;
+  if (c.box) {
+    popup = `<div class="box"><div class="msg">${icon("warn")}<span>${c.box}</span></div>
+      <div class="actions"><button>${c.action}</button><button>Dismiss</button></div><div class="count"><span></span></div></div>`;
+  } else {
+    popup = `<div class="pill">${icon(c.pill[0])}<span>${c.pill[1]}</span>${c.action ? `<button class="act">${c.action}</button>` : ""}</div>`;
+  }
+  grid.insertAdjacentHTML("beforeend", `<div class="cell"><div class="stage">${popup}</div>
+    <div class="cap"><b>${c.title}${c.isNew ? '<span class="tag">new</span>' : ""}</b>${c.detail}</div></div>`);
+}
+</script>
+</body>
+</html>

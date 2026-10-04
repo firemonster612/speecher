@@ -1,0 +1,61 @@
+<!doctype html>
+<!-- Index of the provider fallback mockups. Open from disk; no build step. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher: provider fallbacks (mockups)</title>
+<style>
+  body { margin: 0 auto; max-width: 760px; padding: 32px 24px 60px; font: 14px/1.5 "Noto Sans", "Segoe UI", system-ui, sans-serif; color: #232629; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 26px 0 6px; }
+  p, li { color: #3b3f44; }
+  a { color: #2f6ed0; }
+  ul { padding-left: 20px; }
+  li + li { margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>Provider fallbacks</h1>
+<p>Each role, speech and refinement, gets a chain: a primary provider and up to two
+fallbacks. Dictation uses the first one that works. When every refinement provider
+fails, the raw transcript is pasted, as it is today.</p>
+
+<h2>Pages</h2>
+<ul>
+  <li>Settings, in three layouts to choose from. In each one, a provider with settings of its own gets a card named after it.
+    <ul>
+      <li><a href="settings.html?variant=list">Ordered list</a>: the chain is one list with move and remove buttons, and an Add a fallback row.</li>
+      <li><a href="settings.html?variant=all">Every service, in order</a>: every provider listed once. Ticking one puts it in the chain, and the arrows set the order.</li>
+      <li><a href="settings.html?variant=page">Fallbacks page</a> (chosen): today's Service row, plus one button row that opens a subpage with the ordered list. <a href="settings.html?variant=page&amp;sub=1">The subpage</a>.</li>
+    </ul></li>
+  <li><a href="setup-transcription.html">Setup assistant: Transcription</a>: an "If ChatGPT Codex is unavailable" section, suggesting a Local model when this computer can run one.</li>
+  <li><a href="setup-refinement.html">Setup assistant: Refinement</a>: the same section, suggesting a Local Runner when one is running. Both setup pages show the same ordered list as the Settings Fallbacks page, inline.</li>
+  <li><a href="popup.html">Popup outcomes</a>: what the popup says after each kind of fallback.</li>
+</ul>
+
+<h2>Decided</h2>
+<ul>
+  <li>Speech switches at the start of a dictation and in the middle of one. A stream that drops gets its two reconnects first. After that, the next attempt opens on the next provider and the text so far is kept.</li>
+  <li>Audio the failed provider never confirmed is not sent again, so rule A7 stays. A few words can be lost when a provider fails mid-dictation.</li>
+  <li>A rejected sign-in falls back like any other failure. The outcome line says the sign-in needs fixing and offers Open Accounts.</li>
+  <li>After a fallback, the popup's outcome line names the provider that ran and why the earlier one didn't.</li>
+  <li>The chain is set in Settings and in the setup assistant.</li>
+  <li>These mockups assume the speech Custom Endpoint streams. That fix is in progress separately.</li>
+</ul>
+
+<h2>Open questions the mockups take a position on</h2>
+<ul>
+  <li><b>Live status in Settings.</b> Each slot says when its provider can't work right now (offline, no model, runner stopped). That means probing the providers when the page opens.</li>
+  <li><b>Spoken Language.</b> A fallback that can't listen for the Spoken Language is skipped, for example an English-only Local model while you dictate in French. The alternative is to use it anyway.</li>
+  <li><b>Outcome with a button.</b> Today only errors have a fix button. The rejected sign-in needs one on a successful outcome.</li>
+  <li><b>Screenshots.</b> Only OpenAI and Anthropic read the screenshot. Other providers in the chain clean up without it rather than being skipped.</li>
+  <li><b>Setup assistant.</b> The speech fallback list leaves out Custom Endpoint, because the endpoint is set up in Settings only today.</li>
+</ul>
+
+<h2>Not mocked</h2>
+<ul>
+  <li>The Transcribe page, which has the whole file up front, could walk the same chain with no A7 concern.</li>
+  <li>Insights should record which provider handled each dictation.</li>
+</ul>
+</body>
+</html>

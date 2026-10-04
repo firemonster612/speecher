@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<!--
+  The setup assistant's Refinement step with a fallback section under the
+  provider details. Built on ../wizard-mockup; ?state= picks a state (the
+  links under the dialog). The new section is marked with a dashed outline.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup — Refinement with fallbacks</title>
+<link rel="stylesheet" href="../wizard-mockup/wizard.css">
+<style>
+  .newmark { outline: 2px dashed #f67400; outline-offset: 6px; border-radius: 6px; }
+  .states { position: fixed; bottom: 8px; white-space: nowrap; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; font-size: 13px; }
+  .states a { padding: 3px 9px; border-radius: 5px; background: #e8e9ec; color: #1b1b1e; text-decoration: none; }
+  .states a.on { background: #2b2d30; color: #fff; }
+  .fallbacks { margin-top: 18px; }
+  /* The ordered list from the Settings Fallbacks page, inline. */
+  .chain { background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-card); margin: 8px 0 0; }
+  .chain-row { display: flex; align-items: center; gap: 12px; padding: 9px 8px 9px 14px; min-height: 48px; }
+  .chain-row + .chain-row { border-top: 1px solid var(--border); }
+  .chain-row .text { flex: 1; min-width: 0; }
+  .chain-row .name { display: block; }
+  .chain-row .fine { display: block; margin: 0; }
+  .chain-row select { min-width: 220px; margin-right: 6px; }
+  .chain button.tool { width: 28px; height: 28px; padding: 0; border: 1px solid transparent; background: transparent; border-radius: var(--radius); display: grid; place-items: center; color: var(--text); }
+  .chain button.tool:hover:not(:disabled) { border-color: var(--border); background: var(--surface-sunken); }
+  .chain button.tool:disabled { opacity: .35; background: transparent; border-color: transparent; }
+  .chain button.tool svg { width: 16px; height: 16px; }
+</style>
+</head>
+<body data-states="ready fallback none" data-default-state="ready">
+
+<nav class="states">
+  <a href="?state=ready">Suggests a fallback</a>
+  <a href="?state=fallback">This computer as fallback</a>
+  <a href="?state=none">Skip cleanup</a>
+</nav>
+
+<div class="dialog" role="dialog" aria-labelledby="page-title">
+
+  <header class="dialog-header">
+    <h1 id="page-title">Refinement</h1>
+    <span class="step-count">Step 6 of 10</span>
+  </header>
+
+  <main class="dialog-body">
+    <p class="lead">Refinement can clean up a raw transcript after dictation.
+      Choose a provider, or skip cleanup.</p>
+
+    <div role="radiogroup" aria-label="Cleanup provider"
+         data-choicegroup data-gate="false" data-panel="#detail">
+      <h2 class="section-title" style="margin-top:4px">Uses your sign-in</h2>
+      <div class="choices two compact">
+        <label class="choice" data-name="Anthropic" data-stats='[]'
+               data-states='{"*":{"status":"Not signed in","tone":"warn","line":null}}'>
+          <input type="radio" name="refine" value="anthropic">
+          <svg class="icon lg" aria-hidden="true"><use href="#icon-anthropic"/></svg>
+          <span class="choice-text">
+            <span class="choice-name">Anthropic</span>
+            <span class="choice-note">Uses your Claude Code sign-in.</span>
+          </span>
+          <span class="choice-status"></span>
+        </label>
+        <label class="choice" data-name="OpenAI"
+               data-stats='[["Default model","gpt-6-luna"],["Speed","About 3 seconds per dictation (estimated)"]]'
+               data-states='{"*":{"status":"Ready","tone":"ok","line":"OpenAI is ready."}}'>
+          <input type="radio" name="refine" value="openai" data-checked-in="ready fallback">
+          <svg class="icon lg" aria-hidden="true"><use href="#icon-openai"/></svg>
+          <span class="choice-text">
+            <span class="choice-name">OpenAI</span>
+            <span class="choice-note">Uses your ChatGPT or Codex sign-in.</span>
+          </span>
+          <span class="choice-status"></span>
+        </label>
+      </div>
+
+      <h2 class="section-title">Your own models</h2>
+      <div class="choices two compact">
+        <label class="choice" data-name="This computer" data-stats='[]'
+               data-states='{"*":{"status":"Ollama found","tone":"ok","line":null}}'>
+          <input type="radio" name="refine" value="local">
+          <svg class="icon lg" aria-hidden="true"><use href="#icon-chip"/></svg>
+          <span class="choice-text">
+            <span class="choice-name">This computer</span>
+            <span class="choice-note">Ollama, LM Studio or llama-server.</span>
+          </span>
+          <span class="choice-status"></span>
+        </label>
+        <label class="choice" data-name="A server I run" data-stats='[]' data-states='{"*":{"line":null}}'>
+          <input type="radio" name="refine" value="endpoint">
+          <svg class="icon lg" aria-hidden="true"><use href="#icon-server"/></svg>
+          <span class="choice-text">
+            <span class="choice-name">A server I run</span>
+            <span class="choice-note">OpenAI- or Anthropic-compatible.</span>
+          </span>
+          <span class="choice-status"></span>
+        </label>
+      </div>
+
+      <label class="check" style="margin:10px 0 4px">
+        <input type="radio" name="refine" value="none" data-checked-in="none" style="display:none">
+        <input type="checkbox" data-checked-in="none">
+        <span>Skip cleanup and deliver the raw transcript</span>
+      </label>
+    </div>
+
+    <section id="detail">
+      <table class="stats"><tbody></tbody></table>
+    </section>
+
+    <!-- New: what cleanup uses when the chosen provider can't. Hidden when
+         cleanup is skipped, since there is nothing to fall back from. -->
+    <section class="fallbacks newmark" id="fallbacks" data-hide="none">
+      <h2 class="section-title">If OpenAI is unavailable</h2>
+      <p class="hint" style="margin-top:0">Speecher tries these top to bottom when it's offline,
+        signed out or the provider stops answering. If none of them answers, it pastes
+        the raw transcript, as it does today. Optional.</p>
+
+      <div class="chain">
+        <div class="chain-row" data-show="fallback">
+          <span class="text"><span class="name">This computer</span>
+            <span class="fine">Ollama 0.34.4 is running, with llama3.2:3b.</span></span>
+          <span style="display:flex;gap:2px">
+            <button type="button" class="tool" aria-label="Move up" disabled><svg viewBox="0 0 16 16"><path d="M3.5 10 8 5.5 12.5 10" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+            <button type="button" class="tool" aria-label="Move down" disabled><svg viewBox="0 0 16 16"><path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+            <button type="button" class="tool" aria-label="Remove"><svg viewBox="0 0 16 16"><path d="M3.5 8h9" stroke="currentColor" stroke-width="1.4"/></svg></button>
+          </span>
+        </div>
+        <div class="chain-row">
+          <span class="text"><span class="name">Add a fallback</span></span>
+          <select data-show="ready"><option>Choose…</option><option>This computer (Ollama)</option><option>Anthropic (not signed in)</option><option>A server I run</option></select>
+          <select data-show="fallback"><option>Choose…</option><option>Anthropic (not signed in)</option><option>A server I run</option></select>
+        </div>
+      </div>
+
+      <div class="notice" data-show="ready" style="margin-top:10px">
+        <svg class="icon sm" aria-hidden="true"><use href="#icon-chip"/></svg>
+        <p>Ollama is running on this computer, so cleanup can keep working without
+          internet. <button type="button" class="link">Add it as a fallback</button></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="dialog-footer">
+    <button type="button" class="link">Skip setup</button>
+    <div class="footer-right">
+      <button type="button" data-nav="back">Back</button>
+      <button type="button" class="primary" data-nav="next">Next</button>
+      <button type="button">Cancel</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="../wizard-mockup/wizard.js"></script>
+<script>
+  const state = new URLSearchParams(location.search).get("state") || document.body.dataset.defaultState;
+  document.querySelectorAll(".states a").forEach((a) => a.classList.toggle("on", a.href.endsWith("=" + state)));
+  addEventListener("load", () => document.getElementById("fallbacks").scrollIntoView({ block: "end" }));
+</script>
+</body>
+</html>
