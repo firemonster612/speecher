@@ -1273,6 +1273,33 @@ private slots:
                  speecher::settings::negativeTextColor(switched));
     }
 
+    // Accepting a setup step's suggestion adds what it names to the chain.
+    void setupSuggestionAddsItsFallback()
+    {
+        QTemporaryDir directory;
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("anthropic"));
+        ProviderRegistry providers;
+        for (const char *id : {"anthropic", "local"}) {
+            providers.registerRefinementProvider({id, id}, [](QObject *parent) { return new FakeRefiner(parent); });
+        }
+        LocalModelStore models(directory.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, models);
+        LocalSetupTestAccess::setRunners(local, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
+                                                  QStringLiteral("0.34.4"),
+                                                  QStringLiteral("http://127.0.0.1:11434/v1"),
+                                                  {QStringLiteral("gemma4:e4b")}}});
+
+        RefinementSetupPage page(settings, providers, &local);
+        page.show();
+        auto *accept = page.findChild<QPushButton *>(QStringLiteral("fallbackSuggestionAccept"));
+        QVERIFY(accept && accept->isVisible());
+        accept->click();
+        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("fallback_local")));
+    }
+
     // The setup steps' fallback section is optional: editing it never holds
     // Next, and Skip cleanup hides it.
     void setupFallbackSectionIsOptional()
