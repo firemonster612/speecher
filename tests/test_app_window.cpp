@@ -1314,6 +1314,20 @@ private slots:
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Refinement"));
         back->click();
         QCOMPARE(title->text(), QStringLiteral("Refinement"));
+
+        // Picking the parent's entry again, by mouse or by Enter, leaves the
+        // subpage for the parent too.
+        auto *dictation = window.findChild<QWidget *>(QStringLiteral("dictation"));
+        auto *subpage = window.findChild<QWidget *>(QStringLiteral("dictation:fallbacks"));
+        window.showPage(QStringLiteral("dictation:fallbacks"));
+        QVERIFY(subpage->isVisible());
+        QTest::mouseClick(navigation->viewport(), Qt::LeftButton, {},
+                          navigation->visualItemRect(navigation->currentItem()).center());
+        QVERIFY(dictation->isVisible());
+        window.showPage(QStringLiteral("dictation:fallbacks"));
+        QVERIFY(subpage->isVisible());
+        QTest::keyClick(navigation, Qt::Key_Return);
+        QVERIFY(dictation->isVisible());
     }
 
     // A successful outcome with a fix, such as a sign-in that expired while a

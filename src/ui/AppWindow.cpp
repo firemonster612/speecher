@@ -810,9 +810,16 @@ void AppWindow::buildSidebarShell()
                     showPage(pane);
                 }
             });
+    // A subpage keeps its parent selected, so picking the parent again
+    // changes nothing in the list; it still leaves for the parent's page.
     for (auto commit : {&QListWidget::itemClicked, &QListWidget::itemActivated}) {
-        connect(m_navigation, commit, this,
-                [openSearchHit](QListWidgetItem *item) { openSearchHit(item, true); });
+        connect(m_navigation, commit, this, [this, openSearchHit](QListWidgetItem *item) {
+            const QString pane = item->data(kPaneRole).toString();
+            if (openSearchHit(item, true) || pane.isEmpty() || currentSubpage().isEmpty()) {
+                return;
+            }
+            showPage(pane);
+        });
     }
     connect(m_stack, &QStackedWidget::currentChanged, this, [this] {
         const QString pane = currentPane();
