@@ -449,6 +449,28 @@ UIElement revealIfSought(const QList<RowSnapshot> &unit, const UIElement &card, 
     return card;
 }
 
+// An Action row that opens a subpage, as a clickable SettingsCard draws it:
+// the whole card is the button, with a chevron at its end.
+Button navigationRow(const RowSnapshot &row, PaneHost &host)
+{
+    FontIcon chevron;
+    chevron.Glyph(L"\uE974");
+    chevron.FontSize(12);
+    Button button;
+    button.HorizontalAlignment(HorizontalAlignment::Stretch);
+    button.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+    button.Padding({0, 0, 0, 0});
+    button.Content(rowGrid(row, chevron, host, false));
+    AutomationProperties::SetName(button, hs(row.label));
+    AutomationProperties::SetHelpText(button, hs(row.help));
+    button.Click([target = row.targetPage, &host](const auto &, const auto &) {
+        if (host.showPage) {
+            host.showPage(target);
+        }
+    });
+    return button;
+}
+
 // One schema section as the Settings app draws it: a BodyStrong header, one
 // SettingsCard per row — rows sharing a groupId in one card — spaced 4, and
 // the footnote underneath.
@@ -465,12 +487,13 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
     if (section.title.isEmpty()) {
         cards.Margin({0, 12, 0, 0});
     }
-    // Consecutive rows naming the same group share one card; a collection or
-    // full-width custom row is always a card of its own.
+    // Consecutive rows naming the same group share one card; a collection, a
+    // row that opens a subpage, or a full-width custom row is always a card
+    // of its own, and a fallback list lays out its own cards.
     QList<QList<RowSnapshot>> units;
     for (const RowSnapshot &row : section.rows) {
-        const bool standsAlone = row.kind == RowKind::Collection
-            || (row.kind == RowKind::Custom && customRowIsFullWidth(row.id));
+        const bool standsAlone = row.kind == RowKind::Collection || !row.targetPage.isEmpty()
+            || (row.kind == RowKind::Custom && (customRowIsFullWidth(row.id) || customRowIsSection(row.id)));
         if (!standsAlone && !units.isEmpty() && !row.groupId.isEmpty()
             && units.last().last().groupId == row.groupId
             && units.last().last().kind != RowKind::Collection) {
@@ -481,6 +504,14 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
     }
     for (const QList<RowSnapshot> &unit : units) {
         const RowSnapshot &first = unit.first();
+        if (first.kind == RowKind::Custom && customRowIsSection(first.id)) {
+            cards.Children().Append(customRowElement(first, host));
+            continue;
+        }
+        if (!first.targetPage.isEmpty()) {
+            cards.Children().Append(revealIfSought(unit, navigationRow(first, host), host));
+            continue;
+        }
         if (first.kind == RowKind::Collection) {
             cards.Children().Append(revealIfSought(
                 unit, gatedFullWidthCard(first, editorFor(first, host)->card(first), host), host));
@@ -801,7 +832,13 @@ Grid rowGrid(const RowSnapshot &row, const UIElement &control, PaneHost &host, b
     // disabledHelp replaces the description while enabled says no.
     const QString description = row.enabled ? row.help : row.disabledHelp;
     if (!description.isEmpty()) {
-        header.Children().Append(secondaryTextBlock(description, L"SettingsCardDescriptionStyle", host));
+        TextBlock text = secondaryTextBlock(description, L"SettingsCardDescriptionStyle", host);
+        if (row.enabled && row.helpTone == StatusTone::Negative) {
+            if (const auto negative = themeBrush(L"NegativeTextForeground", host)) {
+                text.Foreground(negative);
+            }
+        }
+        header.Children().Append(text);
     }
     if (!row.enabled && !row.disabledAction.isEmpty()) {
         HyperlinkButton lift;
@@ -980,5 +1017,14 @@ UIElement buildPane(const SettingsPane &pane, PaneHost &host)
     return scroll;
 }
 
+UIElement buildSubpage(const SettingsSubpage &subpage, PaneHost &host)
+{
+    StackPanel column;
+    ScrollViewer scroll = pageScaffold(subpage.title, column);
+    for (const SettingsPaneGroup &group : subpage.groups) {
+        appendSection(column, host.model->section(group), host);
+    }
+    return scroll;
+}
 
 } // namespace speecher::win

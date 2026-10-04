@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/settings/FallbackPresentation.h"
 #include "core/settings/SettingsSchema.h"
 
 #include <QFileSystemWatcher>
@@ -69,8 +70,12 @@ struct RowSnapshot {
     QString id;
     QString label;
     QString help;
+    // Negative where help says why something can't work right now.
+    StatusTone helpTone = StatusTone::Normal;
     RowKind kind = RowKind::Info;
     QString actionLabel;
+    // An Action row that opens a subpage, by its page id.
+    QString targetPage;
     NumberRange range;
     int contentWidthHint = 0;
     // bool for a Toggle, int for a Number, a QList<QVariantMap> for a
@@ -117,6 +122,8 @@ public:
     // The panes and rows a search finds, with rows as the draft shows them.
     QList<SearchMatch> search(const QString &query) const;
     void setValue(const QString &rowId, const QVariant &value);
+    // A role's fallbacks as the draft and LocalSetup's facts have them.
+    FallbackListPresentation fallbackList(ProviderRole role) const;
     // Writes the draft back to the store, applies the theme and re-reads it.
     void commit();
     // Discards edits left from the last showing and re-reads the store.

@@ -26,6 +26,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include <windows.h>
 #include <shellapi.h>
@@ -33,6 +34,10 @@
 
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
+// The headers above declared the automation peers before windows.h renamed
+// GetClassName, so their definitions must not see the rename either.
+#pragma push_macro("GetClassName")
+#undef GetClassName
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Microsoft.UI.h>
@@ -41,10 +46,13 @@
 #include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Automation.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Provider.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
+#pragma pop_macro("GetClassName")
 #pragma pop_macro("GetCurrentTime")
 
 namespace speecher::win {
@@ -55,6 +63,7 @@ using namespace winrt;
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Microsoft::UI::Xaml;
 using namespace winrt::Microsoft::UI::Xaml::Controls;
+using winrt::Microsoft::UI::Xaml::Automation::AutomationProperties;
 using winrt::Microsoft::UI::Xaml::Input::FocusManager;
 using winrt::Microsoft::UI::Xaml::Media::MicaBackdrop;
 
@@ -271,7 +280,7 @@ struct SettingsWindow::Native {
         titleBar.Title(L"Speecher");
         setWindowIcon(window, titleBar);
         titleBar.IsBackButtonVisible(false);
-        titleBar.BackRequested([this](const auto &, const auto &) { leaveWhatsNew(); });
+        titleBar.BackRequested([this](const auto &, const auto &) { goBack(); });
         root.Children().Append(titleBar);
 
         navigation = NavigationView();
@@ -330,6 +339,15 @@ struct SettingsWindow::Native {
             const QString id = qs(unbox_value<hstring>(item.as<NavigationViewItem>().Tag()));
             if (id != currentPane) {
                 showPage(id);
+            }
+        });
+        // The pane stays selected while its subpage shows, so choosing it
+        // again is the way back, as in the Settings app.
+        navigation.ItemInvoked([this](const NavigationView &, const NavigationViewItemInvokedEventArgs &args) {
+            const auto item = args.InvokedItemContainer();
+            if (item && item.Tag() && !currentSubpage.isEmpty()
+                && qs(unbox_value<hstring>(item.Tag())) == currentPane) {
+                selectPane(currentPane);
             }
         });
         Grid::SetRow(navigation, 1);
@@ -528,16 +546,19 @@ struct SettingsWindow::Native {
         sidebarUpdating = false;
     }
 
-    void selectPane(const QString &id)
+    // A pane, or one of its subpages, which keeps the pane selected in the
+    // sidebar.
+    void selectPane(const QString &id, const QString &subpage = {})
     {
         // The model browser belongs to its pane; left running, its download
         // progress would keep updating controls no longer on screen. Another
-        // pane opens at its top, not at the scroll offset of this one.
-        if (id != currentPane) {
+        // page opens at its top, not at the scroll offset of this one.
+        if (id != currentPane || subpage != currentSubpage) {
             host.localModels.reset();
             endMicrophoneTest(host);
             scrollToTop = true;
         }
+        currentSubpage = subpage;
         if (id == kTranscribePane) {
             transcribe->enter();
         } else {
@@ -545,7 +566,7 @@ struct SettingsWindow::Native {
         }
         currentPane = id;
         if (titleBar) {
-            titleBar.IsBackButtonVisible(id == kWhatsNewPane);
+            titleBar.IsBackButtonVisible(id == kWhatsNewPane || !subpage.isEmpty());
         }
         rebuildSidebar();
         rebuildPage();
@@ -562,7 +583,7 @@ struct SettingsWindow::Native {
         if (!page.view.isEmpty()) {
             host.views.insert(page.pane, page.view);
         }
-        selectPane(page.pane);
+        selectPane(page.pane, page.subpage);
     }
 
     void showWhatsNew()
@@ -634,11 +655,22 @@ struct SettingsWindow::Native {
             }
         }
         host.revealRow = rowId;
-        if (paneId == currentPane) {
+        if (paneId == currentPane && currentSubpage.isEmpty()) {
             scrollToTop = true;
             rebuildPage();
         } else {
             selectPane(paneId);
+        }
+    }
+
+    // Back leaves a subpage for its pane, and What's New for where it was
+    // opened from.
+    void goBack()
+    {
+        if (currentSubpage.isEmpty()) {
+            leaveWhatsNew();
+        } else {
+            selectPane(currentPane);
         }
     }
 
@@ -714,19 +746,24 @@ struct SettingsWindow::Native {
         if (!pane) {
             return;
         }
+        const SettingsSubpage *subpage = model.schema().subpage(currentSubpage);
         UIElement page{nullptr};
         try {
-            switch (pane->layout) {
-            case PaneLayout::Home:
-                page = buildHomePage(host);
-                break;
-            case PaneLayout::Transcribe:
-                page = transcribe->build(host, pane->title);
-                break;
-            case PaneLayout::Sections:
-            case PaneLayout::Alternatives:
-                page = buildPane(*pane, host);
-                break;
+            if (subpage) {
+                page = buildSubpage(*subpage, host);
+            } else {
+                switch (pane->layout) {
+                case PaneLayout::Home:
+                    page = buildHomePage(host);
+                    break;
+                case PaneLayout::Transcribe:
+                    page = transcribe->build(host, pane->title);
+                    break;
+                case PaneLayout::Sections:
+                case PaneLayout::Alternatives:
+                    page = buildPane(*pane, host);
+                    break;
+                }
             }
             // A sought row this pane did not show is not sought on the next.
             host.revealRow.clear();
@@ -940,6 +977,8 @@ struct SettingsWindow::Native {
     Border pageHost{nullptr};
 
     QString currentPane;
+    // The subpage of currentPane on screen, by id; empty for the pane itself.
+    QString currentSubpage;
     QString whatsNewReturnPane;
     bool sidebarUpdating = false;
     // The next build is another pane, or a search's row, not a rebuild of
@@ -1020,6 +1059,88 @@ void SettingsWindow::confirm(const QString &title,
 void SettingsWindow::inform(const QString &title, const QString &text)
 {
     m_native->inform(title, text);
+}
+
+namespace {
+
+// The controls of a page built in code, in order, from its panels, borders
+// and content: the tree as built, which needs no layout pass.
+void collectControls(const IInspectable &node, std::vector<Control> &found)
+{
+    if (!node) {
+        return;
+    }
+    if (const auto control = node.try_as<Control>()) {
+        found.push_back(control);
+    }
+    if (const auto panel = node.try_as<Panel>()) {
+        for (const UIElement &child : panel.Children()) {
+            collectControls(child, found);
+        }
+    } else if (const auto border = node.try_as<Border>()) {
+        collectControls(border.Child(), found);
+    } else if (const auto content = node.try_as<ContentControl>()) {
+        collectControls(content.Content(), found);
+    }
+}
+
+} // namespace
+
+QString SettingsWindow::shownPageForTest() const
+{
+    return m_native->currentSubpage.isEmpty() ? m_native->currentPane : m_native->currentSubpage;
+}
+
+QString SettingsWindow::selectedPaneForTest() const
+{
+    const auto item = m_native->navigation ? m_native->navigation.SelectedItem() : nullptr;
+    return item ? qs(unbox_value<hstring>(item.as<NavigationViewItem>().Tag())) : QString();
+}
+
+bool SettingsWindow::backVisibleForTest() const
+{
+    return m_native->titleBar && m_native->titleBar.IsBackButtonVisible();
+}
+
+void SettingsWindow::goBackForTest()
+{
+    m_native->goBack();
+}
+
+bool SettingsWindow::pressForTest(const QString &name, int index)
+{
+    std::vector<Control> controls;
+    collectControls(m_native->pageHost ? m_native->pageHost.Child() : nullptr, controls);
+    for (const Control &control : controls) {
+        const auto button = control.try_as<Button>();
+        if (button && qs(AutomationProperties::GetName(button)) == name && index-- == 0) {
+            if (!button.IsEnabled()) {
+                return false;
+            }
+            winrt::Microsoft::UI::Xaml::Automation::Peers::ButtonAutomationPeer(button).Invoke();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SettingsWindow::chooseForTest(const QString &name, const QString &choice)
+{
+    std::vector<Control> controls;
+    collectControls(m_native->pageHost ? m_native->pageHost.Child() : nullptr, controls);
+    for (const Control &control : controls) {
+        const auto combo = control.try_as<ComboBox>();
+        if (!combo || qs(AutomationProperties::GetName(combo)) != name) {
+            continue;
+        }
+        for (const IInspectable &item : combo.Items()) {
+            if (qs(unbox_value<hstring>(item.as<ComboBoxItem>().Content())) == choice) {
+                combo.SelectedItem(item);
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 QStringList SettingsWindow::searchSuggestionsForTest(const QString &query)

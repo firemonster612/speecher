@@ -153,6 +153,10 @@ void setWindowIcon(const winrt::Microsoft::UI::Xaml::Window &window,
 // in code. An Alternatives pane shows one group at a time under a SelectorBar.
 winrt::Microsoft::UI::Xaml::UIElement buildPane(const SettingsPane &pane, PaneHost &host);
 
+// A subpage, built like a pane under its own title. The window gives it the
+// way back to its parent.
+winrt::Microsoft::UI::Xaml::UIElement buildSubpage(const SettingsSubpage &subpage, PaneHost &host);
+
 
 // The Gallery's settings page scaffold: gutters on the scroller, the column
 // capped at 1064 inside them, the page title on top (none when empty). Shared

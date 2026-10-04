@@ -10,11 +10,13 @@
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "providers/ClaudeCredentials.h"
+#include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
 
 #include <QRegularExpression>
 
 #include <algorithm>
+#include <memory>
 #include <optional>
 
 #pragma push_macro("GetCurrentTime")
@@ -497,7 +499,104 @@ UIElement microphoneTestElement(const RowSnapshot &row, PaneHost &host)
     return element;
 }
 
+// One of a fallback row's tool buttons: the platform's glyph, named with
+// core's caption, which is also its tooltip.
+Button fallbackTool(wchar_t glyph, const QString &caption, const QString &item, bool enabled)
+{
+    Button button;
+    FontIcon icon;
+    icon.Glyph(hstring(std::wstring_view(&glyph, 1)));
+    icon.FontSize(16);
+    button.Content(icon);
+    button.IsEnabled(enabled);
+    Automation::AutomationProperties::SetName(button, hs(caption));
+    Automation::AutomationProperties::SetHelpText(button, hs(item));
+    ToolTipService::SetToolTip(button, box_value(hs(caption)));
+    return button;
+}
+
 } // namespace
+
+QList<RowOption> chainProviders(ProviderRole role, const ProviderRegistry &registry)
+{
+    QList<RowOption> providers;
+    const QList<ProviderDescriptor> descriptors =
+        role == ProviderRole::Speech ? registry.speechProviders() : registry.refinementProviders();
+    for (const ProviderDescriptor &provider : descriptors) {
+        providers.append({provider.id, provider.label});
+    }
+    return providers;
+}
+
+UIElement fallbackListElement(ProviderRole role,
+                               const FallbackListPresentation &list,
+                               const AppSettings &settings,
+                               const std::function<void(const QStringList &)> &write,
+                               PaneHost &host)
+{
+    StackPanel element;
+    if (list.heading.isEmpty()) {
+        return element;
+    }
+    element.Children().Append(styledTextBlock(list.heading, L"SettingsSectionHeaderStyle"));
+    if (!list.subtitle.isEmpty()) {
+        TextBlock subtitle = secondaryText(list.subtitle, host);
+        subtitle.Margin({1, 0, 0, 8});
+        element.Children().Append(subtitle);
+    }
+    // Shared by every button's edit, which works from the settings shown.
+    const auto shown = std::make_shared<const AppSettings>(settings);
+    StackPanel rows;
+    for (qsizetype index = 0; index < list.items.size(); ++index) {
+        const FallbackItem &item = list.items.at(index);
+        StackPanel tools;
+        tools.Orientation(Orientation::Horizontal);
+        tools.Spacing(4);
+        const int at = int(index);
+        Button up = fallbackTool(L'\uE74A', list.moveUpCaption, item.label, item.canMoveUp);
+        up.Click([=](const auto &, const auto &) { write(withFallbackMoved(*shown, role, at, -1)); });
+        Button down = fallbackTool(L'\uE74B', list.moveDownCaption, item.label, item.canMoveDown);
+        down.Click([=](const auto &, const auto &) { write(withFallbackMoved(*shown, role, at, 1)); });
+        Button remove = fallbackTool(L'\uE74D', list.removeCaption, item.label, true);
+        remove.Click([=](const auto &, const auto &) { write(withFallbackRemoved(*shown, role, at)); });
+        tools.Children().Append(up);
+        tools.Children().Append(down);
+        tools.Children().Append(remove);
+        RowSnapshot row;
+        row.label = item.label;
+        row.help = item.status;
+        row.helpTone = item.tone;
+        rows.Children().Append(rowGrid(row, tools, host, index > 0));
+    }
+    if (list.canAdd) {
+        ComboBox add;
+        add.MinWidth(200);
+        add.PlaceholderText(hs(list.addPlaceholder));
+        for (const RowOption &choice : list.addChoices) {
+            ComboBoxItem item;
+            item.Content(box_value(hs(choice.label)));
+            item.Tag(box_value(hs(choice.id)));
+            add.Items().Append(item);
+        }
+        add.SelectionChanged([=](const IInspectable &sender, const auto &) {
+            if (const auto item = sender.as<ComboBox>().SelectedItem()) {
+                write(withFallbackAdded(*shown, role,
+                                        qs(unbox_value<hstring>(item.as<ComboBoxItem>().Tag()))));
+            }
+        });
+        RowSnapshot row;
+        row.label = list.addLabel;
+        row.help = list.addHelp;
+        rows.Children().Append(rowGrid(row, add, host, !list.items.isEmpty()));
+    }
+    if (rows.Children().Size() > 0) {
+        element.Children().Append(cardContainer(rows));
+    }
+    if (!list.footer.isEmpty()) {
+        element.Children().Append(secondaryTextBlock(list.footer, L"SettingsFootnoteStyle", host));
+    }
+    return element;
+}
 
 void endMicrophoneTest(PaneHost &host)
 {
@@ -507,6 +606,11 @@ void endMicrophoneTest(PaneHost &host)
     host.microphoneTest->stop();
     host.microphoneTest->disconnect();
     host.microphoneTest.reset();
+}
+
+bool customRowIsSection(const QString &rowId)
+{
+    return rowId == QStringLiteral("speechFallbackList") || rowId == QStringLiteral("refinementFallbackList");
 }
 
 bool customRowIsFullWidth(const QString &rowId)
@@ -525,6 +629,15 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     }
     if (row.id == QStringLiteral("whatsNewNotes")) {
         return releaseNotes(row);
+    }
+    if (customRowIsSection(row.id)) {
+        const ProviderRole role = row.id == QStringLiteral("speechFallbackList") ? ProviderRole::Speech
+                                                                                 : ProviderRole::Refinement;
+        return fallbackListElement(role, host.model->fallbackList(role), host.model->draft(),
+                                   [rowId = row.id, &host](const QStringList &fallbacks) {
+                                       setValueAndCommit(host, rowId, fallbacks);
+                                   },
+                                   host);
     }
     if (row.id == QStringLiteral("globalShortcut") || row.id == QStringLiteral("cancelShortcut")) {
         return ShortcutRecorder::element(row, host);

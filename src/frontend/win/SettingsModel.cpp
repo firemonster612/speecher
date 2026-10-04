@@ -233,6 +233,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.help = row.helpValue ? row.helpValue(m_draft) : row.help;
     snapshot.kind = row.kind;
     snapshot.actionLabel = row.actionLabelValue ? row.actionLabelValue(m_draft) : row.actionLabel;
+    snapshot.targetPage = row.targetPage;
     snapshot.range = row.range;
     snapshot.contentWidthHint = row.contentWidthHint;
     snapshot.options = optionsForRow(row);
@@ -341,6 +342,13 @@ void SettingsModel::setValue(const QString &rowId, const QVariant &value)
         return;
     }
     row->apply(m_draft, value);
+}
+
+FallbackListPresentation SettingsModel::fallbackList(ProviderRole role) const
+{
+    return fallbackListPresentation(role, m_draft, m_controller->localSetup()->liveFacts(m_draft),
+                                    chainProviders(role, *m_controller->providerRegistry()),
+                                    FallbackSurface::Settings);
 }
 
 void SettingsModel::commit()
