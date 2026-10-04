@@ -127,6 +127,10 @@ struct ProviderAttemptIssue {
     // It could not connect while the system reported no internet and it
     // needs the internet; only then may an outcome say "No internet".
     bool offline = false;
+    // A speech provider that never connected still took audio the
+    // microphone heard, which is never sent again (rule A7): a few words may
+    // be missing. Always so for one Interrupted.
+    bool wordsLost = false;
 };
 
 // Which providers a Dictation Session used and which let it down.

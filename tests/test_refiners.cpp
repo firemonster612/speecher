@@ -1899,6 +1899,60 @@ private slots:
                  QStringLiteral("fresh-selected-token"));
     }
 
+    // An expired Codex sign-in that can't renew leaves OpenAI working when a
+    // usable API key is configured: the refresh job resolves every source on
+    // the worker, and prepare() then uses what it found, without renewing
+    // again on the GUI thread.
+    void openAiRefreshJobFallsBackToAnApiKeyWhenTheSignInCantRenew()
+    {
+        int tokenRequests = 0;
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        connect(&server, &QTcpServer::newConnection, this, [&] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            ++tokenRequests;
+            readHttpRequest(socket, 1000);
+            socket->write("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            socket->flush();
+        });
+        QTemporaryDir dir;
+        const QString authPath = dir.filePath(QStringLiteral("auth.json"));
+        QFile auth(authPath);
+        QVERIFY(auth.open(QIODevice::WriteOnly));
+        auth.write(QJsonDocument(QJsonObject{
+                                     {QStringLiteral("auth_mode"), QStringLiteral("chatgpt")},
+                                     {QStringLiteral("OPENAI_API_KEY"), QStringLiteral("sk-usable-key")},
+                                     {QStringLiteral("tokens"),
+                                      QJsonObject{
+                                          {QStringLiteral("access_token"),
+                                           jwtWithExpiry(QDateTime::currentDateTimeUtc().addSecs(-60))},
+                                          {QStringLiteral("refresh_token"), QStringLiteral("codex-refresh-token")},
+                                      }},
+                                 })
+                       .toJson());
+        auth.close();
+        qputenv("SPEECHER_TEST_CODEX_AUTH_PATH", QFile::encodeName(authPath));
+        qputenv("SPEECHER_CODEX_TOKEN_URL",
+                QStringLiteral("http://127.0.0.1:%1/oauth/token").arg(server.serverPort()).toUtf8());
+        const auto restoreEnv = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CODEX_AUTH_PATH");
+            qunsetenv("SPEECHER_CODEX_TOKEN_URL");
+        });
+
+        RefinementSettings settings;
+        OpenAiTranscriptRefiner refiner(nullptr);
+        std::optional<RefinementRefreshJob> job = refiner.createRefreshJob(settings);
+        QVERIFY(job.has_value());
+        const RefinementRefreshResult result = job->run();
+        QVERIFY2(result.ok, qPrintable(result.message));
+        job->apply(result);
+        QCOMPARE(tokenRequests, 1);
+
+        const RefinementPrepareResult prepared = refiner.prepare(settings);
+        QVERIFY2(prepared.ok, qPrintable(prepared.message));
+        QCOMPARE(tokenRequests, 1);
+    }
+
     void remoteCliproxyWithoutKeyFailsWithClearMessage()
     {
         RefinementSettings settings;

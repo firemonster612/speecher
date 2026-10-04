@@ -31,6 +31,9 @@ private:
     SecretStore *m_secretStore = nullptr;
     OpenAiRefiner *m_refiner = nullptr;
     OpenAiAuth m_auth;
+    // The refresh job resolved m_auth on the worker, renewing what had
+    // expired; the next prepare() uses it rather than renew on this thread.
+    bool m_authResolvedByJob = false;
 };
 
 } // namespace speecher

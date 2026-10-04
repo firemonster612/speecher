@@ -539,8 +539,115 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
 
         const auto results = finished.first().first().value<QList<TranscribeFileResult>>();
-        QCOMPARE(results.first().error, QStringLiteral("dropped"));
+        QCOMPARE(results.first().error, QStringLiteral("No speech service is available. ChatGPT Codex dropped."));
         QCOMPARE(m_script.attempts, 0);
+    }
+
+    // A provider that never connected only buffered what it was sent: the
+    // next one starts the file over, from its first chunk.
+    void aFileThatNeverConnectedStartsOverOnTheNextProvider()
+    {
+        FakeSpeechTranscriber *codex = nullptr;
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           [&codex](QObject *parent) {
+                                               codex = new FakeSpeechTranscriber(parent);
+                                               codex->autoCompleteOnFinish = false;
+                                               return codex;
+                                           });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("codex");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
+        codex->emitFailure(QStringLiteral("offline"), false, QStringLiteral("connect"), ProviderFailureKind::Network);
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
+        QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+        QCOMPARE(m_script.attempts, 1);
+        QVERIFY(qAbs(m_script.bytes - 16000) <= 8);
+        QCOMPARE(result.raw, QStringLiteral("heard %1").arg(m_script.bytes));
+    }
+
+    // The refiner's sign-in renews once per file, not again for each speech
+    // provider tried.
+    void theRefinerRenewsOncePerFile()
+    {
+        FakeRefiner *refiner = nullptr;
+        m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
+                                               [&refiner](QObject *parent) {
+                                                   refiner = new FakeRefiner(parent);
+                                                   refiner->refreshRequired = true;
+                                                   return refiner;
+                                               });
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           [](QObject *parent) {
+                                               auto *speech = new FakeSpeechTranscriber(parent);
+                                               speech->prepareResult = {false, QStringLiteral("offline"),
+                                                                        ProviderFailureKind::Network};
+                                               return speech;
+                                           });
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("codex");
+        options.refinementProviderId = QStringLiteral("openai");
+        // Read while the file's refiner still exists: it goes once the file is done.
+        int refreshes = -1;
+        connect(&session, &FileTranscriptionSession::fileFinished, this,
+                [&refiner, &refreshes] { refreshes = refiner->refreshCalls; });
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+        QCOMPARE(refreshes, 1);
+    }
+
+    // The last provider failing once it started is named with the others.
+    void theLastProviderFailingAfterItStartedIsNamed()
+    {
+        const auto failingInsideStartAttempt = [](const QString &message, ProviderFailureKind kind) {
+            return [message, kind](QObject *parent) {
+                auto *speech = new FakeSpeechTranscriber(parent);
+                speech->onStartAttempt = [speech, message, kind] {
+                    speech->emitFailure(message, false, QStringLiteral("connect"), kind);
+                };
+                return speech;
+            };
+        };
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           failingInsideStartAttempt(QStringLiteral("offline"),
+                                                                     ProviderFailureKind::Network));
+        m_registry->registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")},
+                                           failingInsideStartAttempt(QStringLiteral("502"),
+                                                                     ProviderFailureKind::Server));
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("endpoint")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("codex");
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        QCOMPARE(finished.first().first().value<QList<TranscribeFileResult>>().first().error,
+                 QStringLiteral("No speech service is available. ChatGPT Codex couldn't be reached and Custom "
+                                "Endpoint had a server error."));
     }
 
     void numbersASaveThatWouldOverwrite()

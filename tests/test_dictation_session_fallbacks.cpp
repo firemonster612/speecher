@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "core/settings/FallbackPresentation.h"
 #include "core/settings/SettingsKeys.h"
 
 #include <QScopeGuard>
@@ -191,6 +192,23 @@ private slots:
         QCOMPARE(signIns.first(), (QVariantList{QStringLiteral("claude"), false}));
     }
 
+    // A preparation that fails without saying the sign-in was turned down,
+    // such as a keyring that can't be read, says nothing about the sign-in.
+    void anUnavailableProviderIsNotTakenForSignedOut()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("Desktop keyring unavailable")};
+        QSignalSpy signIns(rig.session.get(), &DictationSession::providerSignInObserved);
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(signIns.size(), 0);
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Input sent • Transcribed with Local Model. ChatGPT Codex couldn't start."));
+    }
+
     void noSpeechProviderStartsAndTheErrorNamesEach()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("endpoint"), QStringLiteral("local")});
@@ -229,6 +247,23 @@ private slots:
         QVERIFY2(rig.settings.secrets()->lastError().isEmpty(), qPrintable(rig.settings.secrets()->lastError()));
     }
 
+    // The refiner's sign-in renews alongside the speech provider's once per
+    // session, not again for each speech provider tried.
+    void theRefinerRenewsOncePerSession()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")}, {QStringLiteral("openai")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        openai->refreshRequired = true;
+        openai->backgroundRefresh = true;
+        codex->onStartAttempt = [codex] {
+            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        };
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
+        QCOMPARE(openai->backgroundRefreshCalls, 1);
+    }
+
     // A fallback that can't listen for the Spoken Language, by its Local
     // Model's catalog entry, is passed over; one with no model is tried and
     // fails as unavailable.
@@ -257,6 +292,49 @@ private slots:
         QCOMPARE(rig.speech[QStringLiteral("endpoint")]->lastLanguage, QStringLiteral("de"));
     }
 
+    // The session and the Fallbacks row decide a language skip the same way,
+    // from the provider's own language list: Claude Voice can't listen for
+    // Afrikaans, which ChatGPT Codex and a Custom Endpoint can.
+    void theSessionAndItsFallbackRowAgreeOnALanguageSkip()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")});
+        rig.settings.setSpokenLanguage(QStringLiteral("af"));
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("claude")]->prepareCalls, 0);
+        QCOMPARE(rig.speech[QStringLiteral("endpoint")]->startCalls, 1);
+
+        AppSettings settings = rig.settings.dictationSnapshot();
+        settings.speech.endpoint.baseUrl = QStringLiteral("https://speech.example.com");
+        const LiveFacts facts;
+        QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("claude"), settings, facts),
+                 FallbackProblem::SpokenLanguage);
+        QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("endpoint"), settings, facts),
+                 FallbackProblem::None);
+        const QList<RowOption> providers{{QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                         {QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+                                         {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")}};
+        QCOMPARE(fallbackListPresentation(ProviderRole::Speech, settings, facts, providers, FallbackSurface::Settings)
+                     .items.first()
+                     .status,
+                 QStringLiteral("Claude Voice can't listen for your Spoken Language, so it is skipped."));
+    }
+
+    // What needs the internet: a provider that signs in, and a server that
+    // isn't on this computer or its network.
+    void needsInternetCoversSignInsAndServersOutOnTheInternet()
+    {
+        AppSettings settings;
+        QVERIFY(needsInternet(ProviderRole::Speech, QStringLiteral("codex"), settings));
+        QVERIFY(needsInternet(ProviderRole::Refinement, QStringLiteral("openai"), settings));
+        QVERIFY(!needsInternet(ProviderRole::Speech, QStringLiteral("local"), settings));
+        QVERIFY(!needsInternet(ProviderRole::Refinement, QStringLiteral("local"), settings));
+        settings.speech.endpoint.baseUrl = QStringLiteral("http://192.168.1.20:8000");
+        QVERIFY(!needsInternet(ProviderRole::Speech, QStringLiteral("endpoint"), settings));
+        settings.speech.endpoint.baseUrl = QStringLiteral("https://speech.example.com");
+        QVERIFY(needsInternet(ProviderRole::Speech, QStringLiteral("endpoint"), settings));
+    }
+
     // Guarded right after startAttempt(): a provider failing inside it never
     // gets the microphone, and the next one opens it.
     void aProviderFailingInsideStartAttemptNeverOpensTheMicrophoneForIt()
@@ -272,6 +350,36 @@ private slots:
         rig.listen();
         QCOMPARE(codex->cancelledAttempts, QList<quint64>{codex->currentAttemptId});
         QCOMPARE(rig.microphoneStarts, 1);
+    }
+
+    // The primary failing while the microphone starts (its start spins an
+    // event loop): the next provider opens only its attempt there, gets the
+    // audio heard while it prepared, and the one start goes on to Listening.
+    void aProviderFailingWhileTheMicrophoneStartsHandsOverToOneCapture()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->backgroundPrepare = true;
+        local->backgroundPrepareDelayMs = 50;
+        rig.audio.onStart = [&rig, codex, local] {
+            ++rig.microphoneStarts;
+            if (rig.microphoneStarts > 1) {
+                return;
+            }
+            rig.audio.pushAudio("a");
+            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+            rig.audio.pushAudio("b");
+            QTRY_COMPARE(local->startCalls, 1);
+            rig.audio.pushAudio("c");
+        };
+        rig.listen();
+        QCOMPARE(rig.microphoneStarts, 1);
+        QVERIFY(rig.audio.active);
+        QCOMPARE(codex->audioChunks, QList<QByteArray>{"a"});
+        QCOMPARE(local->audioChunks, (QList<QByteArray>{"b", "c"}));
+        rig.audio.pushAudio("d");
+        QCOMPARE(local->audioChunks, (QList<QByteArray>{"b", "c", "d"}));
     }
 
     // Reconnects on the same provider come first, as without fallbacks; then
@@ -337,6 +445,35 @@ private slots:
         rig.audio.pushAudio("d");
         QCOMPARE(codex->audioChunks, QList<QByteArray>{"a"});
         QCOMPARE(local->audioChunks, (QList<QByteArray>{"b", "c", "d"}));
+    }
+
+    // The session holds no more than the connect budget's worth of audio,
+    // ten seconds, for a provider still preparing: past it the speech ends
+    // with what was heard, and the provider is passed over.
+    void aProviderPreparingPastTheConnectBudgetEndsTheSpeech()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->backgroundPrepare = true;
+        local->backgroundPrepareDelayMs = 300;
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        codex->emitFinalText(QStringLiteral("said"));
+        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        const QByteArray second(16000 * 2, '\0');
+        for (int seconds = 0; seconds < 10; ++seconds) {
+            rig.audio.pushAudio(second);
+        }
+        QCOMPARE(rig.session->state(), DictationState::Listening);
+        rig.audio.pushAudio(second);
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Used raw transcript • Input sent • ChatGPT Codex couldn't be reached and Local Model "
+                                "didn't answer. • Part of the dictation may be missing. The connection dropped."));
+        QTest::qWait(400);
+        QCOMPARE(local->startCalls, 0);
     }
 
     // The attempt id moves on before the old provider is cancelled, so what
@@ -587,7 +724,7 @@ private slots:
     }
 
     // An unusable answer is not a missing service: no other refiner is
-    // tried, and the raw transcript is pasted as before.
+    // tried, and the raw transcript is pasted with today's outcome.
     void anUnusableRefinementStopsTheChain_data()
     {
         QTest::addColumn<bool>("emptyAnswer");
@@ -600,6 +737,7 @@ private slots:
         QFETCH(bool, emptyAnswer);
         ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("openai"), QStringLiteral("local")});
         FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
         rig.session->stopListening();
@@ -612,7 +750,10 @@ private slots:
         QCOMPARE(rig.delivery.calls, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("spoken words"));
         QCOMPARE(rig.refiners[QStringLiteral("local")]->refineCalls, 0);
-        QVERIFY(rig.session->lastMessage().startsWith(QStringLiteral("Used raw transcript")));
+        QCOMPARE(outcome.first().at(0).toString(), emptyAnswer ? QStringLiteral("Input sent")
+                                                               : QStringLiteral("Used raw transcript • Input sent"));
+        QCOMPARE(outcome.first().at(1).value<PopupOutcome>(),
+                 emptyAnswer ? PopupOutcome::Inserted : PopupOutcome::Fallback);
     }
 
     // A selection edit walks the same chain. With every refiner gone it
@@ -788,6 +929,96 @@ private slots:
                  QStringLiteral("Input sent • ChatGPT Codex dropped, so Local Model finished. A few words may be missing."));
         QCOMPARE(recorded.first().first().value<DictationRecord>().speechProviders,
                  (QStringList{QStringLiteral("codex"), QStringLiteral("local")}));
+    }
+
+    // The last provider failing after it started is named too, and never
+    // credited: with nothing heard the error names each provider, and with
+    // words kept no provider "finished" them.
+    void theLastProviderFailingAfterItStartedIsNamedAndNotCredited()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        codex->onStartAttempt = [codex] {
+            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        };
+        local->onStartAttempt = [local] {
+            local->emitFailure(QStringLiteral("model failed to load"), false, {}, ProviderFailureKind::Unavailable);
+        };
+        QSignalSpy errors(rig.session.get(), &DictationSession::popupErrorRequested);
+        rig.session->startListening();
+        QTRY_COMPARE(rig.session->state(), DictationState::Error);
+        QCOMPARE(errors.last().at(0).toString(),
+                 QStringLiteral("No speech service is available. ChatGPT Codex couldn't be reached and Local Model "
+                                "couldn't load its model."));
+    }
+
+    void wordsKeptAfterEveryProviderFailedAreNotCreditedToOne()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        codex->emitFinalText(QStringLiteral("said"));
+        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("streaming"), Network);
+        QCOMPARE(local->startCalls, 1);
+        local->emitFailure(QStringLiteral("model failed to load"), false, {}, ProviderFailureKind::Unavailable);
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Used raw transcript • Input sent • Part of the dictation may be missing. The "
+                                "connection dropped."));
+    }
+
+    // A provider that never connected, though the microphone was already
+    // open, couldn't be reached rather than dropped; what it was sent is
+    // lost all the same (rule A7).
+    void aConnectFailureAfterListeningSaysCouldntBeReached()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFailure(QStringLiteral("offline"), false, QStringLiteral("connect"),
+                                                         Network);
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Input sent • Transcribed with Local Model. ChatGPT Codex couldn't be reached. A few "
+                                "words may be missing."));
+    }
+
+    // The microphone failing after words were heard delivers them, as it
+    // always has: as the raw transcript, unless refinement then cleans them up.
+    void aCaptureFailureAfterWordsDeliversThem_data()
+    {
+        QTest::addColumn<bool>("refines");
+        QTest::addColumn<QString>("message");
+        QTest::addColumn<int>("outcome");
+        QTest::newRow("without refinement")
+            << false << QStringLiteral("Used raw transcript • Input sent") << int(PopupOutcome::Fallback);
+        QTest::newRow("refined") << true << QStringLiteral("Input sent") << int(PopupOutcome::Inserted);
+    }
+
+    void aCaptureFailureAfterWordsDeliversThem()
+    {
+        QFETCH(bool, refines);
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")},
+                     refines ? QStringList{QStringLiteral("openai")} : QStringList{QStringLiteral("none")});
+        if (refines) {
+            rig.refiners[QStringLiteral("openai")]->autoComplete = true;
+            rig.refiners[QStringLiteral("openai")]->autoCompleteText = QStringLiteral("Spoken words.");
+        }
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.audio.emitFailure(QStringLiteral("The microphone was disconnected"));
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(rig.delivery.lastText, refines ? QStringLiteral("Spoken words.") : QStringLiteral("spoken words"));
+        QTEST(outcome.first().at(0).toString(), "message");
+        QTEST(int(outcome.first().at(1).value<PopupOutcome>()), "outcome");
+        QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, 0);
     }
 
     // A sign-in turned down: a successful outcome with Open Accounts, up

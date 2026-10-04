@@ -131,6 +131,7 @@ private:
     void startNextAttempt();
     void handleAttemptCompleted(quint64 attemptId);
     void handleSpeechFailure(const SpeechFailure &failure);
+    QString speechFailureText(const QString &providerMessage) const;
     bool attemptWasStable() const;
     void finishTranscription();
     void refine(const QString &raw);
@@ -174,6 +175,9 @@ private:
     QStringList m_speechChain;
     int m_speechIndex = 0;
     QList<ProviderAttemptIssue> m_speechIssues;
+    // The refiner's sign-in renewed for this file: once, not for each
+    // speech provider tried.
+    bool m_refinerRefreshed = false;
 };
 
 } // namespace speecher
