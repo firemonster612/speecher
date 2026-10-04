@@ -56,7 +56,7 @@ struct RootView: View {
     private static let columnWidth: CGFloat = 742
 
     @ViewBuilder private var detail: some View {
-        if let pane = model.pane(withId: model.pane) {
+        if let pane = model.shownPage {
             VStack(spacing: 0) {
                 header(pane)
                     .frame(maxWidth: Self.columnWidth, alignment: .leading)
@@ -86,6 +86,9 @@ struct RootView: View {
             HStack {
                 if pane.id == "whatsNew" {
                     Button("Back", systemImage: "chevron.backward") { model.leaveWhatsNew() }
+                        .labelStyle(.iconOnly)
+                } else if model.subpage != nil {
+                    Button("Back", systemImage: "chevron.backward") { model.leaveSubpage() }
                         .labelStyle(.iconOnly)
                 }
                 Text(pane.title)

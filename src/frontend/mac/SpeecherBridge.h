@@ -115,6 +115,45 @@ typedef NS_ENUM(NSInteger, SpeecherIconState) {
 @property (nonatomic, readonly) NSInteger minimumHeight;
 @end
 
+// Which provider chain a fallback list belongs to (speecher::ProviderRole).
+typedef NS_ENUM(NSInteger, SpeecherProviderRole) {
+    SpeecherProviderRoleSpeech,
+    SpeecherProviderRoleRefinement,
+};
+
+// One fallback as its row shows it (speecher::FallbackItem).
+@interface SpeecherFallbackItem : NSObject
+@property (nonatomic, readonly, copy) NSString *providerId;
+@property (nonatomic, readonly, copy) NSString *label;
+// Which turn it gets, or why it can't stand in right now.
+@property (nonatomic, readonly, copy) NSString *status;
+// The status reads in the negative role (speecher::StatusTone::Negative).
+@property (nonatomic, readonly) BOOL negative;
+@property (nonatomic, readonly) BOOL canMoveUp;
+@property (nonatomic, readonly) BOOL canMoveDown;
+@end
+
+// A role's ordered fallbacks as the Fallbacks subpage and the setup assistant
+// show them (speecher::FallbackListPresentation).
+@interface SpeecherFallbackList : NSObject
+@property (nonatomic, readonly) SpeecherProviderRole role;
+// Above the card, with the subtitle under it; the footer goes under the card.
+@property (nonatomic, readonly, copy) NSString *heading;
+@property (nonatomic, readonly, copy) NSString *subtitle;
+@property (nonatomic, readonly, copy) NSString *footer;
+@property (nonatomic, readonly, copy) NSArray<SpeecherFallbackItem *> *items;
+// The Add row, shown only while canAdd; the placeholder chooses nothing.
+@property (nonatomic, readonly) BOOL canAdd;
+@property (nonatomic, readonly, copy) NSString *addLabel;
+@property (nonatomic, readonly, copy) NSString *addHelp;
+@property (nonatomic, readonly, copy) NSString *addPlaceholder;
+@property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *addChoices;
+// The row buttons' captions, which are also their accessible names.
+@property (nonatomic, readonly, copy) NSString *moveUpCaption;
+@property (nonatomic, readonly, copy) NSString *moveDownCaption;
+@property (nonatomic, readonly, copy) NSString *removeCaption;
+@end
+
 @interface SettingsRowModel : NSObject
 @property (nonatomic, readonly, copy) NSString *rowId;
 // As the draft words it: a status row titled "API key" in key mode.
@@ -158,6 +197,10 @@ typedef NS_ENUM(NSInteger, SpeecherIconState) {
 @property (nonatomic, readonly, copy) NSString *placeholder;
 // Text rows only: the value may hold several lines.
 @property (nonatomic, readonly) BOOL multiline;
+// Action rows only: the subpage the whole row opens, or empty.
+@property (nonatomic, readonly, copy) NSString *targetPage;
+// The fallback list rows only, as the draft and the live facts present them.
+@property (nonatomic, readonly, strong, nullable) SpeecherFallbackList *fallbackList;
 @end
 
 @interface SettingsSectionModel : NSObject
@@ -198,6 +241,17 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneGroupModel *> *groups;
 @end
 
+// A page one step below a pane, with no sidebar entry of its own
+// (speecher::SettingsSubpage).
+@interface SettingsSubpageModel : NSObject
+// "dictation:fallbacks", as resolvePage takes it.
+@property (nonatomic, readonly, copy) NSString *subpageId;
+// The pane its Back returns to, which the sidebar keeps selected.
+@property (nonatomic, readonly, copy) NSString *parent;
+@property (nonatomic, readonly, copy) NSString *title;
+@property (nonatomic, readonly, copy) NSArray<SettingsPaneGroupModel *> *groups;
+@end
+
 // One pane a settings search finds, with the visible rows on it whose label or
 // help mention the query, in reading order (speecher::SearchMatch). No rows
 // means the pane matched by its title or a group's.
@@ -229,10 +283,18 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 // The sidebar's panes and their groups, which never change while the app runs.
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneModel *> *panes;
 @property (nonatomic, readonly, copy) NSArray<SidebarGroupModel *> *sidebarGroups;
-// A page id ("general", "vocabulary:corrections") as the pane and view it
-// names, speecher::resolvePage's answer: an unknown pane, or a view the pane
-// does not have, gives Home.
+@property (nonatomic, readonly, copy) NSArray<SettingsSubpageModel *> *subpages;
+// A page id ("general", "vocabulary:corrections", "dictation:fallbacks") as
+// the pane, view and subpage it names, speecher::resolvePage's answer: an
+// unknown pane, or a view the pane does not have, gives Home.
 - (NSArray<NSString *> *)resolvePage:(NSString *)pageId NS_SWIFT_NAME(resolvePage(_:));
+// One edit of a role's fallbacks (speecher::withFallbackMoved, Removed and
+// Added), written to the draft as the list row's value. Commit saves it.
+- (void)moveFallback:(SpeecherProviderRole)role at:(NSInteger)index by:(NSInteger)offset
+    NS_SWIFT_NAME(moveFallback(_:at:by:));
+- (void)removeFallback:(SpeecherProviderRole)role at:(NSInteger)index NS_SWIFT_NAME(removeFallback(_:at:));
+- (void)addFallback:(SpeecherProviderRole)role provider:(NSString *)providerId
+    NS_SWIFT_NAME(addFallback(_:provider:));
 // The panes a sidebar search shows, from the core index, with rows as the
 // draft shows them.
 - (NSArray<SettingsSearchMatch *> *)searchSettings:(NSString *)query NS_SWIFT_NAME(searchSettings(_:));

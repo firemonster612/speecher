@@ -251,6 +251,18 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc public var settingsWindowVisible: Bool { settings?.isVisible ?? false }
 
+    /// The pane the sidebar has selected, and the subpage shown in its place,
+    /// empty while there is none.
+    @MainActor
+    @objc public var settingsPane: String { model.pane }
+
+    @MainActor
+    @objc public var settingsSubpage: String { model.subpage ?? "" }
+
+    /// What the subpage's Back button does.
+    @MainActor
+    @objc public func leaveSettingsSubpage() { model.leaveSubpage() }
+
     /// News that arrives while no Speecher window is up, such as a Local
     /// Model download finishing after setup closed, goes to Notification
     /// Center. A window on screen already shows it.

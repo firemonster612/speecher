@@ -68,11 +68,24 @@ struct RowView: View {
         case .info:
             LabeledContent { Text(Self.text(row.value)) } label: { label }
         case .action:
-            // A caption that follows the state (a Local Runner's name) is the
-            // row's value; without one the label names the row.
-            LabeledContent { Button(row.actionLabel) { model.trigger(row.rowId) } } label: {
-                Self.label(RowView.text(row.value).isEmpty ? row.label : RowView.text(row.value),
-                           help: description)
+            if !row.targetPage.isEmpty {
+                // The whole row opens its subpage, with the chevron at its end
+                // that System Settings' navigation rows carry.
+                Button { model.showPage(row.targetPage) } label: {
+                    LabeledContent {
+                        Image(systemName: "chevron.forward").foregroundStyle(.tertiary)
+                    } label: { label }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(row.actionLabel)
+            } else {
+                // A caption that follows the state (a Local Runner's name) is
+                // the row's value; without one the label names the row.
+                LabeledContent { Button(row.actionLabel) { model.trigger(row.rowId) } } label: {
+                    Self.label(RowView.text(row.value).isEmpty ? row.label : RowView.text(row.value),
+                               help: description)
+                }
             }
         case .collection:
             // The card's heading and footnote carry this row's label and help,
@@ -254,6 +267,88 @@ enum ReleaseNoteLine {
             if !paragraph.isEmpty { lines.append(.text(paragraph.joined(separator: " "))) }
         }
         return lines
+    }
+}
+
+/// A role's fallbacks as one card: each with Move up, Move down and Remove,
+/// then the Add row's pop-up of the providers left, under core's heading and
+/// over its footer. The Fallbacks subpage shows it, and the setup assistant
+/// shows it inline with its own subtitle and suggestion. Core words every
+/// caption and decides which moves are open.
+struct FallbackSection<Extra: View>: View {
+    let list: SpeecherFallbackList
+    let subtitle: String
+    @ObservedObject var model: AppModel
+    @ViewBuilder var extra: Extra
+
+    var body: some View {
+        Section {
+            ForEach(Array(list.items.enumerated()), id: \.element.providerId) { index, item in
+                LabeledContent {
+                    HStack {
+                        tool(list.moveUpCaption, "chevron.up", enabled: item.canMoveUp) {
+                            $0.moveFallback(list.role, at: index, by: -1)
+                        }
+                        tool(list.moveDownCaption, "chevron.down", enabled: item.canMoveDown) {
+                            $0.moveFallback(list.role, at: index, by: 1)
+                        }
+                        tool(list.removeCaption, "minus.circle", enabled: true) {
+                            $0.removeFallback(list.role, at: index)
+                        }
+                    }
+                } label: {
+                    Text(item.label)
+                    if item.negative {
+                        Text(item.status).foregroundStyle(.red)
+                    } else if !item.status.isEmpty {
+                        Text(item.status)
+                    }
+                }
+            }
+            if list.canAdd {
+                // Choosing adds at once, so the pop-up always reads as the
+                // placeholder that chooses nothing.
+                Picker(selection: Binding(get: { "" }, set: { id in
+                    if !id.isEmpty { model.editFallbacks { $0.addFallback(list.role, provider: id) } }
+                })) {
+                    Text(list.addPlaceholder).tag("")
+                    ForEach(list.addChoices, id: \.rowOptionId) { choice in
+                        Text(choice.label).tag(choice.rowOptionId)
+                    }
+                } label: {
+                    RowView.label(list.addLabel, help: list.addHelp)
+                }
+            }
+            extra
+        } header: {
+            VStack(alignment: .leading) {
+                Text(list.heading)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .fontWeight(.regular)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } footer: {
+            if !list.footer.isEmpty { Text(list.footer) }
+        }
+    }
+
+    /// An icon button named by its caption, which VoiceOver reads.
+    private func tool(_ caption: String, _ symbol: String, enabled: Bool,
+                      edit: @escaping (SettingsSchemaModel) -> Void) -> some View {
+        Button(caption, systemImage: symbol) { model.editFallbacks(edit) }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help(caption)
+            .disabled(!enabled)
+    }
+}
+
+extension FallbackSection where Extra == EmptyView {
+    /// The Fallbacks subpage's card, with core's subtitle.
+    init(list: SpeecherFallbackList, model: AppModel) {
+        self.init(list: list, subtitle: list.subtitle, model: model) { EmptyView() }
     }
 }
 

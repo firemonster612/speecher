@@ -14,6 +14,7 @@
 #include "core/SecretStore.h"
 #include "core/ShortcutBinding.h"
 #include "core/SettingsStore.h"
+#include "core/settings/FallbackPresentation.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
@@ -291,6 +292,11 @@ struct SchemaState {
     // taken after every edit. The device row reads the same cached list.
     std::function<QList<RowOption>()> listAudioInputs;
     std::shared_ptr<QList<RowOption>> audioInputs;
+    // What the fallback lists are presented from: each role's providers with
+    // their registry labels, and the live facts for the draft on screen.
+    QList<RowOption> speechProviders;
+    QList<RowOption> refinementProviders;
+    std::function<speecher::LiveFacts(const AppSettings &)> liveFacts;
 };
 
 struct BridgeState {
@@ -699,10 +705,113 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) BOOL secret;
 @property (nonatomic, copy) NSString *placeholder;
 @property (nonatomic) BOOL multiline;
+@property (nonatomic, copy) NSString *targetPage;
+@property (nonatomic, strong, nullable) SpeecherFallbackList *fallbackList;
 @end
 
 @implementation SettingsRowModel
 @end
+
+@interface SpeecherFallbackItem ()
+@property (nonatomic, copy) NSString *providerId;
+@property (nonatomic, copy) NSString *label;
+@property (nonatomic, copy) NSString *status;
+@property (nonatomic) BOOL negative;
+@property (nonatomic) BOOL canMoveUp;
+@property (nonatomic) BOOL canMoveDown;
+@end
+
+@implementation SpeecherFallbackItem
+@end
+
+@interface SpeecherFallbackList ()
+@property (nonatomic) SpeecherProviderRole role;
+@property (nonatomic, copy) NSString *heading;
+@property (nonatomic, copy) NSString *subtitle;
+@property (nonatomic, copy) NSString *footer;
+@property (nonatomic, copy) NSArray<SpeecherFallbackItem *> *items;
+@property (nonatomic) BOOL canAdd;
+@property (nonatomic, copy) NSString *addLabel;
+@property (nonatomic, copy) NSString *addHelp;
+@property (nonatomic, copy) NSString *addPlaceholder;
+@property (nonatomic, copy) NSArray<RowOptionModel *> *addChoices;
+@property (nonatomic, copy) NSString *moveUpCaption;
+@property (nonatomic, copy) NSString *moveDownCaption;
+@property (nonatomic, copy) NSString *removeCaption;
+@end
+
+@implementation SpeecherFallbackList
+@end
+
+namespace {
+
+speecher::ProviderRole coreRole(SpeecherProviderRole role)
+{
+    return role == SpeecherProviderRoleSpeech ? speecher::ProviderRole::Speech : speecher::ProviderRole::Refinement;
+}
+
+// The schema rows that hold each role's fallbacks, which the subpages show.
+QString fallbackListRowId(speecher::ProviderRole role)
+{
+    return role == speecher::ProviderRole::Speech ? QStringLiteral("speechFallbackList")
+                                                  : QStringLiteral("refinementFallbackList");
+}
+
+std::optional<speecher::ProviderRole> fallbackListRole(const QString &rowId)
+{
+    for (const speecher::ProviderRole role : {speecher::ProviderRole::Speech, speecher::ProviderRole::Refinement}) {
+        if (rowId == fallbackListRowId(role)) {
+            return role;
+        }
+    }
+    return std::nullopt;
+}
+
+NSArray<RowOptionModel *> *bridgedRowOptions(const QList<RowOption> &options)
+{
+    NSMutableArray<RowOptionModel *> *bridged = [NSMutableArray array];
+    for (const RowOption &option : options) {
+        RowOptionModel *model = [[RowOptionModel alloc] init];
+        model.rowOptionId = option.id.toNSString();
+        model.label = option.label.toNSString();
+        model.help = option.help.toNSString();
+        model.enabled = option.enabled;
+        [bridged addObject:model];
+    }
+    return bridged;
+}
+
+SpeecherFallbackList *bridgedFallbackList(speecher::ProviderRole role, const speecher::FallbackListPresentation &list)
+{
+    NSMutableArray<SpeecherFallbackItem *> *items = [NSMutableArray array];
+    for (const speecher::FallbackItem &item : list.items) {
+        SpeecherFallbackItem *model = [[SpeecherFallbackItem alloc] init];
+        model.providerId = item.providerId.toNSString();
+        model.label = item.label.toNSString();
+        model.status = item.status.toNSString();
+        model.negative = item.tone == speecher::StatusTone::Negative;
+        model.canMoveUp = item.canMoveUp;
+        model.canMoveDown = item.canMoveDown;
+        [items addObject:model];
+    }
+    SpeecherFallbackList *model = [[SpeecherFallbackList alloc] init];
+    model.role = role == speecher::ProviderRole::Speech ? SpeecherProviderRoleSpeech : SpeecherProviderRoleRefinement;
+    model.heading = list.heading.toNSString();
+    model.subtitle = list.subtitle.toNSString();
+    model.footer = list.footer.toNSString();
+    model.items = items;
+    model.canAdd = list.canAdd;
+    model.addLabel = list.addLabel.toNSString();
+    model.addHelp = list.addHelp.toNSString();
+    model.addPlaceholder = list.addPlaceholder.toNSString();
+    model.addChoices = bridgedRowOptions(list.addChoices);
+    model.moveUpCaption = list.moveUpCaption.toNSString();
+    model.moveDownCaption = list.moveDownCaption.toNSString();
+    model.removeCaption = list.removeCaption.toNSString();
+    return model;
+}
+
+} // namespace
 
 @interface SettingsSectionModel ()
 @property (nonatomic, copy) NSString *title;
@@ -740,6 +849,16 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @end
 
 @implementation SettingsPaneModel
+@end
+
+@interface SettingsSubpageModel ()
+@property (nonatomic, copy) NSString *subpageId;
+@property (nonatomic, copy) NSString *parent;
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy) NSArray<SettingsPaneGroupModel *> *groups;
+@end
+
+@implementation SettingsSubpageModel
 @end
 
 @interface SidebarGroupModel ()
@@ -1326,7 +1445,10 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 @interface SettingsSchemaModel (Cxx)
 - (instancetype)initWithStore:(SettingsStore *)store
                        schema:(const SettingsSchema &)schema
+                      context:(const speecher::SchemaContext &)context
                  capabilities:(const Capabilities &)capabilities;
+// A role's providers with their registry labels, as its fallback lists offer them.
+- (const QList<RowOption> &)chainProviders:(speecher::ProviderRole)role;
 - (NSArray<RowOptionModel *> *)bridgedOptions:(const QList<RowOption> &)options;
 - (void)setTargetAccessibility:(BOOL)available;
 - (void)setLaunchAtLoginAccepted:(BOOL)accepted;
@@ -1343,6 +1465,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 - (instancetype)initWithStore:(SettingsStore *)store
                        schema:(const SettingsSchema &)schema
+                      context:(const speecher::SchemaContext &)context
                  capabilities:(const Capabilities &)capabilities
 {
     self = [super init];
@@ -1352,8 +1475,18 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         _state->schema = schema;
         _state->draft = _state->loaded = store->snapshot();
         _state->capabilities = capabilities;
+        _state->speechProviders = context.speechProviders;
+        for (const speecher::RefinementProvider &provider : context.refinementProviders) {
+            _state->refinementProviders.append({provider.id, provider.label});
+        }
+        _state->liveFacts = context.liveFactsForDraft;
     }
     return self;
+}
+
+- (const QList<RowOption> &)chainProviders:(speecher::ProviderRole)role
+{
+    return role == speecher::ProviderRole::Speech ? _state->speechProviders : _state->refinementProviders;
 }
 
 - (void)dealloc
@@ -1383,16 +1516,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 - (NSArray<RowOptionModel *> *)bridgedOptions:(const QList<RowOption> &)options
 {
-    NSMutableArray<RowOptionModel *> *bridged = [NSMutableArray array];
-    for (const RowOption &option : options) {
-        RowOptionModel *model = [[RowOptionModel alloc] init];
-        model.rowOptionId = option.id.toNSString();
-        model.label = option.label.toNSString();
-        model.help = option.help.toNSString();
-        model.enabled = option.enabled;
-        [bridged addObject:model];
-    }
-    return bridged;
+    return bridgedRowOptions(options);
 }
 
 - (NSArray<RowOptionModel *> *)optionsForRow:(const SettingsRow &)row
@@ -1479,6 +1603,13 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.secret = row.secret;
     model.placeholder = row.placeholder.toNSString();
     model.multiline = row.multiline;
+    model.targetPage = row.targetPage.toNSString();
+    if (const std::optional<speecher::ProviderRole> role = fallbackListRole(row.id)) {
+        const speecher::LiveFacts facts = _state->liveFacts ? _state->liveFacts(_state->draft) : speecher::LiveFacts{};
+        model.fallbackList = bridgedFallbackList(
+            *role, speecher::fallbackListPresentation(*role, _state->draft, facts, [self chainProviders:*role],
+                                                      speecher::FallbackSurface::Settings));
+    }
     if (const CollectionDescriptor *collection = [self collectionForRow:row]) {
         model.collection = [self collectionModel:*collection];
         model.value = bridgedRecords(collection->records(_state->draft));
@@ -1515,34 +1646,77 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return pages;
 }
 
+- (NSArray<SettingsPaneGroupModel *> *)bridgedGroups:(const QList<speecher::SettingsPaneGroup> &)groups
+{
+    NSMutableArray<SettingsPaneGroupModel *> *bridged = [NSMutableArray array];
+    for (const speecher::SettingsPaneGroup &group : groups) {
+        SettingsPaneGroupModel *groupModel = [[SettingsPaneGroupModel alloc] init];
+        groupModel.view = group.view.toNSString();
+        groupModel.title = group.title.toNSString();
+        groupModel.help = group.help.toNSString();
+        groupModel.rows = bridgedStrings(group.rows);
+        [bridged addObject:groupModel];
+    }
+    return bridged;
+}
+
 - (NSArray<SettingsPaneModel *> *)panes
 {
     NSMutableArray<SettingsPaneModel *> *panes = [NSMutableArray array];
     for (const speecher::SettingsPane &pane : _state->schema.panes) {
-        NSMutableArray<SettingsPaneGroupModel *> *groups = [NSMutableArray array];
-        for (const speecher::SettingsPaneGroup &group : pane.groups) {
-            SettingsPaneGroupModel *groupModel = [[SettingsPaneGroupModel alloc] init];
-            groupModel.view = group.view.toNSString();
-            groupModel.title = group.title.toNSString();
-            groupModel.help = group.help.toNSString();
-            groupModel.rows = bridgedStrings(group.rows);
-            [groups addObject:groupModel];
-        }
         SettingsPaneModel *paneModel = [[SettingsPaneModel alloc] init];
         paneModel.paneId = pane.id.toNSString();
         paneModel.title = pane.title.toNSString();
         paneModel.iconId = pane.iconId.toNSString();
         paneModel.layout = bridgedPaneLayout(pane.layout);
-        paneModel.groups = groups;
+        paneModel.groups = [self bridgedGroups:pane.groups];
         [panes addObject:paneModel];
     }
     return panes;
 }
 
+- (NSArray<SettingsSubpageModel *> *)subpages
+{
+    NSMutableArray<SettingsSubpageModel *> *subpages = [NSMutableArray array];
+    for (const speecher::SettingsSubpage &subpage : _state->schema.subpages) {
+        SettingsSubpageModel *model = [[SettingsSubpageModel alloc] init];
+        model.subpageId = subpage.id.toNSString();
+        model.parent = subpage.parent.toNSString();
+        model.title = subpage.title.toNSString();
+        model.groups = [self bridgedGroups:subpage.groups];
+        [subpages addObject:model];
+    }
+    return subpages;
+}
+
 - (NSArray<NSString *> *)resolvePage:(NSString *)pageId
 {
     const speecher::PageId page = speecher::resolvePage(_state->schema, QString::fromNSString(pageId));
-    return @[page.pane.toNSString(), page.view.toNSString()];
+    return @[page.pane.toNSString(), page.view.toNSString(), page.subpage.toNSString()];
+}
+
+- (void)applyFallbacks:(const QStringList &)fallbacks role:(speecher::ProviderRole)role
+{
+    [self rowWithId:fallbackListRowId(role).toNSString()]->apply(_state->draft, fallbacks);
+}
+
+- (void)moveFallback:(SpeecherProviderRole)role at:(NSInteger)index by:(NSInteger)offset
+{
+    const speecher::ProviderRole core = coreRole(role);
+    [self applyFallbacks:speecher::withFallbackMoved(_state->draft, core, int(index), int(offset)) role:core];
+}
+
+- (void)removeFallback:(SpeecherProviderRole)role at:(NSInteger)index
+{
+    const speecher::ProviderRole core = coreRole(role);
+    [self applyFallbacks:speecher::withFallbackRemoved(_state->draft, core, int(index)) role:core];
+}
+
+- (void)addFallback:(SpeecherProviderRole)role provider:(NSString *)providerId
+{
+    const speecher::ProviderRole core = coreRole(role);
+    [self applyFallbacks:speecher::withFallbackAdded(_state->draft, core, QString::fromNSString(providerId))
+                    role:core];
 }
 
 - (NSArray<SettingsSearchMatch *> *)searchSettings:(NSString *)query
@@ -1824,6 +1998,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     _settingsSchema = [[SettingsSchemaModel alloc]
         initWithStore:controller->settings()
                schema:schema
+              context:context
          capabilities:capabilities];
     [_settingsSchema setAudioInputLister:listAudioInputs cache:audioInputs];
     __weak SpeecherBridge *weakSelf = self;

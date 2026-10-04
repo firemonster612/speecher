@@ -16,6 +16,8 @@ final class AppModel: ObservableObject {
     /// Fixed for the life of the app, so a plain let.
     let panes: [Pane]
     let sidebarGroups: [SidebarGroupModel]
+    /// The pages a step below a pane, such as Dictation's Fallbacks.
+    let subpages: [Pane]
     /// What dictation is doing, in the words and controls core gives every
     /// platform, re-read whole on every state change.
     @Published private(set) var status: String
@@ -87,6 +89,7 @@ final class AppModel: ObservableObject {
     @Published var pane = "home" {
         didSet {
             guard pane != oldValue else { return }
+            subpage = nil
             activeShortcutRecorder?.stop()
             bridge.stopMicrophoneTest()
             if pane != "whatsNew", !Self.screenshotRun {
@@ -94,6 +97,9 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    /// The subpage showing in place of the pane, by id; the sidebar keeps the
+    /// pane selected and Back returns to it.
+    @Published var subpage: String?
     private static let lastPaneKey = "lastSettingsPane"
     /// A screenshot run names a page or a window size. It neither reads nor
     /// stores the last pane, so what it grabs does not depend on what the
@@ -158,6 +164,7 @@ final class AppModel: ObservableObject {
         let panes = bridge.settingsSchema.panes.map(Pane.init)
         self.panes = panes
         sidebarGroups = bridge.settingsSchema.sidebarGroups
+        subpages = bridge.settingsSchema.subpages.map(Pane.init)
         status = bridge.statusLabel
         dictationState = bridge.dictationState
         listening = bridge.listening
@@ -324,9 +331,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Shows a page by id: a pane id, or "pane:view" for one of its views.
-    /// An unknown id shows Home (speecher::resolvePage). A row id scrolls the
-    /// pane to that row, and on an Alternatives pane picks the view holding it.
+    /// Shows a page by id: a pane id, "pane:view" for one of its views, or a
+    /// subpage's id. An unknown id shows Home (speecher::resolvePage). A row id
+    /// scrolls the pane to that row, and on an Alternatives pane picks the view
+    /// holding it.
     func showPage(_ pageId: String, row rowId: String? = nil) {
         let page = bridge.settingsSchema.resolvePage(pageId)
         if !page[1].isEmpty { requestedView = page[1] }
@@ -340,6 +348,8 @@ final class AppModel: ObservableObject {
         } else {
             pane = page[0]
         }
+        // After the pane, whose change closes any subpage.
+        subpage = page[2].isEmpty ? nil : page[2]
     }
 
     /// What a window showing local models asks for on the way up: the
@@ -400,6 +410,16 @@ final class AppModel: ObservableObject {
 
     func pane(withId id: String) -> Pane? {
         panes.first { $0.id == id }
+    }
+
+    /// Back from a subpage to the pane it belongs to.
+    func leaveSubpage() {
+        subpage = nil
+    }
+
+    /// The page the detail column shows: the subpage open, else the pane.
+    var shownPage: Pane? {
+        subpages.first { $0.id == subpage } ?? pane(withId: pane)
     }
 
     func row(_ rowId: String) -> SettingsRowModel? {
@@ -511,6 +531,14 @@ final class AppModel: ObservableObject {
                 set: { [weak self] newValue in
                     self?.setValue(write(newValue), for: row.rowId)
                 })
+    }
+
+    /// Saves one edit of a fallback list, which the schema makes like any
+    /// row's value.
+    func editFallbacks(_ edit: (SettingsSchemaModel) -> Void) {
+        edit(bridge.settingsSchema)
+        bridge.settingsSchema.commit()
+        pages = bridge.settingsSchema.pages
     }
 
     /// Empty when the records are consistent, in which case they are also saved.

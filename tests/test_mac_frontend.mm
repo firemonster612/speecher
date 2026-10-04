@@ -102,6 +102,16 @@ QString accessibilityTree(id element, int depth = 0)
     return tree;
 }
 
+// Lets SwiftUI lay out and AppKit draw what the last call changed.
+void settle()
+{
+    const QDeadlineTimer deadline(300);
+    while (!deadline.hasExpired()) {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.02, true);
+        QCoreApplication::processEvents();
+    }
+}
+
 } // namespace
 
 class MacFrontEndTests : public QObject {
@@ -370,6 +380,81 @@ private slots:
         settle();
         QVERIFY(capture("error-unbroken"));
         QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
+    }
+
+    // The Fallbacks row opens its subpage with the parent still selected, and
+    // Back returns to the parent. A page id reaches the subpage directly.
+    void fallbacksRowOpensItsSubpage()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+        const auto cleanup = qScopeGuard([&] { [ui hideSettings]; });
+
+        SettingsRowModel *row = settingsRow(bridge.settingsSchema, @"speechFallbacks");
+        QVERIFY(row);
+        QCOMPARE(QString::fromNSString(row.targetPage), QStringLiteral("dictation:fallbacks"));
+        [ui openSettingsPage:@"dictation"];
+        // What the row's button does.
+        [ui openSettingsPage:row.targetPage];
+        settle();
+        QCOMPARE(QString::fromNSString(ui.settingsPane), QStringLiteral("dictation"));
+        QCOMPARE(QString::fromNSString(ui.settingsSubpage), QStringLiteral("dictation:fallbacks"));
+
+        [ui leaveSettingsSubpage];
+        settle();
+        QCOMPARE(QString::fromNSString(ui.settingsPane), QStringLiteral("dictation"));
+        QCOMPARE(QString::fromNSString(ui.settingsSubpage), QString());
+
+        [ui openSettingsPage:@"refinement:fallbacks"];
+        QCOMPARE(QString::fromNSString(ui.settingsPane), QStringLiteral("refinement"));
+        QCOMPARE(QString::fromNSString(ui.settingsSubpage), QStringLiteral("refinement:fallbacks"));
+        // Choosing another pane leaves the subpage.
+        [ui openSettingsPage:@"general"];
+        QCOMPARE(QString::fromNSString(ui.settingsSubpage), QString());
+    }
+
+    // The list's buttons edit through core's rules and save like any row, and
+    // the list re-renders from what was saved.
+    void fallbackListEditsPersist()
+    {
+        ApplicationController controller(false);
+        SettingsStore *store = controller.settings();
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsSchemaModel *schema = bridge.settingsSchema;
+        const auto saved = [&] { return store->snapshot().speech.fallbackProviderIds; };
+
+        SpeecherFallbackList *list = settingsRow(schema, @"speechFallbackList").fallbackList;
+        QVERIFY(list);
+        QVERIFY(list.role == SpeecherProviderRoleSpeech);
+        QVERIFY(list.heading.length > 0);
+        QCOMPARE(list.items.count, NSUInteger(0));
+        QVERIFY(list.canAdd);
+
+        [schema addFallback:SpeecherProviderRoleSpeech provider:@"endpoint"];
+        [schema addFallback:SpeecherProviderRoleSpeech provider:@"codex"];
+        [schema commit];
+        QCOMPARE(saved(), (QStringList{QStringLiteral("endpoint"), QStringLiteral("codex")}));
+        list = settingsRow(schema, @"speechFallbackList").fallbackList;
+        QCOMPARE(list.items.count, NSUInteger(2));
+        QVERIFY(!list.items[0].canMoveUp && list.items[0].canMoveDown);
+        QVERIFY(list.items[1].canMoveUp && !list.items[1].canMoveDown);
+        // Two fallbacks fill the chain.
+        QVERIFY(!list.canAdd);
+
+        [schema moveFallback:SpeecherProviderRoleSpeech at:0 by:1];
+        [schema commit];
+        QCOMPARE(saved(), (QStringList{QStringLiteral("codex"), QStringLiteral("endpoint")}));
+        [schema removeFallback:SpeecherProviderRoleSpeech at:0];
+        [schema commit];
+        QCOMPARE(saved(), QStringList{QStringLiteral("endpoint")});
+        QCOMPARE(QString::fromNSString(settingsRow(schema, @"speechFallbackList").fallbackList.items[0].providerId),
+                 QStringLiteral("endpoint"));
+
+        // A primary that is already a fallback leaves the list.
+        [schema setValue:@"endpoint" forRowId:@"speechProvider"];
+        [schema commit];
+        QVERIFY(saved().isEmpty());
     }
 
     // Skip, all nine pages, and Finish are driven through the native AX tree

@@ -70,6 +70,16 @@ struct Pane: Identifiable {
         groups = model.groups.map(PaneGroup.init)
     }
 
+    /// A subpage, which is laid out as a pane of sections but has no sidebar
+    /// entry and so no symbol.
+    init(_ model: SettingsSubpageModel) {
+        id = model.subpageId
+        title = model.title
+        symbol = ""
+        layout = .sections
+        groups = model.groups.map(PaneGroup.init)
+    }
+
     /// SF Symbols for the schema's platform-neutral icon ids.
     private static func symbol(forIconId iconId: String) -> String {
         switch iconId {
@@ -157,7 +167,10 @@ struct PaneView: View {
     }
 
     @ViewBuilder private func card(_ card: PaneCard, titled: Bool = true) -> some View {
-        if !card.rows.isEmpty {
+        // A fallback list is the whole card, and core words its heading.
+        if let list = card.rows.first?.fallbackList {
+            FallbackSection(list: list, model: model)
+        } else if !card.rows.isEmpty {
             Section {
                 ForEach(Array(card.rows.enumerated()), id: \.element.rowId) { index, row in
                     // Rows of a group share one gate, so one note above the
