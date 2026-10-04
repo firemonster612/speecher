@@ -4,6 +4,7 @@
 
 #include <QAbstractSocket>
 
+class QJsonObject;
 class QNetworkReply;
 
 namespace speecher {
@@ -18,11 +19,19 @@ ProviderFailureKind failureKindForHttpStatus(int httpStatus);
 // whoever aborted it knows why.
 ProviderFailure replyFailure(const QNetworkReply &reply, const QString &message);
 
-// An error a service streamed after the request was accepted, by its code or
-// type, such as Anthropic's "overloaded_error" or OpenAI's
-// "rate_limit_exceeded". An unknown code is the server's failure; one naming
-// an invalid or missing part of the request is Other.
-ProviderFailureKind streamedErrorKind(const QString &code);
+// An error object a service streamed after the request was accepted. Its
+// specific code, a string or a number, decides first, so
+// {"type":"invalid_request_error","code":"invalid_api_key"} is a rejected
+// sign-in; the generic type decides only when the code names no kind. Codes
+// such as Anthropic's "overloaded_error" or OpenAI's "rate_limit_exceeded"
+// are known; an unknown one is the server's failure, and one naming an
+// invalid or missing part of the request is Other.
+ProviderFailureKind streamedErrorKind(const QJsonObject &error);
+
+// A failure from a Local Runner or a Custom Endpoint. A 404 there means the
+// model or the path is gone, so the provider is Unavailable; a cloud
+// provider's 404 stays Other.
+ProviderFailure selfHostedFailure(ProviderFailure failure);
 
 // A WebSocket error. Qt reports a refused upgrade as ConnectionRefusedError
 // with the HTTP status only in the error string, so that status is read back

@@ -43,11 +43,8 @@ StreamingRefinement::Event chatCompletionsEvent(const QByteArray &, const QByteA
     if (data == "[DONE]") return {Event::Complete, {}};
     const QJsonObject object = QJsonDocument::fromJson(data).object();
     if (object.contains(QStringLiteral("error"))) {
-        const QJsonObject detail = object.value(QStringLiteral("error")).toObject();
-        const QString code = detail.value(QStringLiteral("type")).toString(
-            detail.value(QStringLiteral("code")).toVariant().toString());
         return {Event::Failed, chatCompletionsErrorMessage(data, QStringLiteral("stream error")),
-                streamedErrorKind(code)};
+                streamedErrorKind(object.value(QStringLiteral("error")).toObject())};
     }
     const QJsonObject choice = object.value(QStringLiteral("choices")).toArray().at(0).toObject();
     // Anything but a natural stop cut the text short.
@@ -98,7 +95,7 @@ ChatCompletionsRefiner::ChatCompletionsRefiner(const QString &label,
             post(false);
             return;
         }
-        emit failed(failure);
+        emit failed(selfHostedFailure(failure));
     });
 }
 

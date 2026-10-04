@@ -316,6 +316,8 @@ private slots:
         QTest::newRow("429") << response("429 Too Many Requests", error) << ProviderFailureKind::RateLimited << 429;
         QTest::newRow("503") << response("503 Service Unavailable", error) << ProviderFailureKind::Server << 503;
         QTest::newRow("400") << response("400 Bad Request", error) << ProviderFailureKind::Other << 400;
+        // Only a self-hosted server's 404 means the model is gone.
+        QTest::newRow("404") << response("404 Not Found", error) << ProviderFailureKind::Other << 404;
         QTest::newRow("empty-200") << response("200 OK", "event: response.completed\ndata: {}\n\n")
                                    << ProviderFailureKind::InvalidResult << 200;
         QTest::newRow("refused") << QByteArray() << ProviderFailureKind::Network << 0;

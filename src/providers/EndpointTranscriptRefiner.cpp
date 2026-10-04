@@ -3,6 +3,7 @@
 #include "providers/AnthropicApiRefiner.h"
 #include "providers/ChatCompletionsRefiner.h"
 #include "providers/CustomEndpoints.h"
+#include "providers/ProviderFailureClassification.h"
 
 namespace speecher {
 
@@ -16,7 +17,9 @@ EndpointTranscriptRefiner::EndpointTranscriptRefiner(QObject *parent)
     connect(m_chat, &ChatCompletionsRefiner::failed, this, &TranscriptRefiner::failed);
     connect(m_messages, &AnthropicApiRefiner::delta, this, &TranscriptRefiner::delta);
     connect(m_messages, &AnthropicApiRefiner::completed, this, &TranscriptRefiner::completed);
-    connect(m_messages, &AnthropicApiRefiner::failed, this, &TranscriptRefiner::failed);
+    connect(m_messages, &AnthropicApiRefiner::failed, this, [this](const ProviderFailure &failure) {
+        emit failed(selfHostedFailure(failure));
+    });
 }
 
 QString EndpointTranscriptRefiner::id() const

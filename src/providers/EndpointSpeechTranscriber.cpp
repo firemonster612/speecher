@@ -214,9 +214,7 @@ void EndpointSpeechTranscriber::readStream()
         const QString type = event.value(QStringLiteral("type")).toString(QString::fromUtf8(frame->name));
         if (type == QStringLiteral("error") || frame->name == "error") {
             m_streamError = endpointErrorMessage(frame->data, QStringLiteral("stream error"));
-            const QJsonObject error = event.value(QStringLiteral("error")).toObject();
-            m_streamErrorKind = streamedErrorKind(error.value(QStringLiteral("type")).toString(
-                error.value(QStringLiteral("code")).toVariant().toString()));
+            m_streamErrorKind = streamedErrorKind(event.value(QStringLiteral("error")).toObject());
             // Avoid re-entering the reply's readyRead handler through abort().
             QMetaObject::invokeMethod(m_reply, &QNetworkReply::abort, Qt::QueuedConnection);
             return;
