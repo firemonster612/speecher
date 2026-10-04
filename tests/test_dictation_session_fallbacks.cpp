@@ -376,6 +376,7 @@ private slots:
         FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
         codex->autoCompleteOnFinish = false;
         rig.listen();
+        rig.audio.pushAudio("before pause");
         codex->emitFinalText(QStringLiteral("before"));
         rig.session->pause();
         codex->emitFailure(QStringLiteral("expired"), false, QStringLiteral("finalize"),
@@ -386,6 +387,9 @@ private slots:
         rig.session->resume();
         QCOMPARE(local->startCalls, 1);
         QCOMPARE(rig.microphoneStarts, 2);
+        rig.audio.pushAudio("after resume");
+        // What the failed provider heard before the pause is never sent again.
+        QCOMPARE(local->audioChunks, QList<QByteArray>{"after resume"});
         local->emitFinalText(QStringLiteral("after"));
         rig.session->stopListening();
         QTRY_COMPARE(rig.delivery.calls, 1);
@@ -431,6 +435,55 @@ private slots:
         QVERIFY(rig.session->lastMessage().contains(QStringLiteral("Part of the dictation may be missing")));
     }
 
+    // Paused while the next provider prepares: when it is ready, the words
+    // heard before the pause go to it once and it is told to finish, without
+    // the microphone; resume opens the next attempt.
+    void pauseWhileTheNextProviderPreparesSendsItTheWordsOnce()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->backgroundPrepare = true;
+        local->backgroundPrepareDelayMs = 100;
+        local->autoCompleteOnFinish = false;
+        rig.listen();
+        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        rig.audio.pushAudio("w");
+        rig.session->pause();
+        QCOMPARE(rig.session->state(), DictationState::Paused);
+        QTRY_COMPARE(local->startCalls, 1);
+        QCOMPARE(local->audioChunks, QList<QByteArray>{"w"});
+        QCOMPARE(local->stopCalls, 1);
+        QCOMPARE(rig.microphoneStarts, 1);
+        local->emitCompletion();
+        rig.session->resume();
+        QCOMPARE(local->startCalls, 2);
+        QCOMPARE(rig.microphoneStarts, 2);
+    }
+
+    // A provider failing inside the microphone's stop for a pause: the next
+    // one opens its attempt there and takes the rest of the post-roll, and is
+    // the attempt the pause finishes.
+    void aHandOverInsideThePausesMicrophoneStopTakesThePostRoll()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->autoCompleteOnFinish = false;
+        rig.listen();
+        rig.audio.onStop = [&rig, codex] {
+            rig.audio.onStop = nullptr;
+            rig.audio.pushAudio("tail one");
+            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("streaming"), Network);
+            rig.audio.pushAudio("tail two");
+        };
+        rig.session->pause();
+        QCOMPARE(rig.session->state(), DictationState::Paused);
+        QCOMPARE(codex->audioChunks, QList<QByteArray>{"tail one"});
+        QCOMPARE(local->audioChunks, QList<QByteArray>{"tail two"});
+        QCOMPARE(local->stopCalls, 1);
+    }
+
     // Stopped with words from a quick resume still unsent: only those go to
     // the next provider, once, without the microphone, and refinement
     // follows once.
@@ -462,13 +515,16 @@ private slots:
     void stopOrCancelWhileTheNextProviderPrepares_data()
     {
         QTest::addColumn<bool>("cancel");
-        QTest::newRow("stop") << false;
-        QTest::newRow("cancel") << true;
+        QTest::addColumn<bool>("restart");
+        QTest::newRow("stop") << false << false;
+        QTest::newRow("cancel") << true << false;
+        QTest::newRow("cancel and start again") << true << true;
     }
 
     void stopOrCancelWhileTheNextProviderPrepares()
     {
         QFETCH(bool, cancel);
+        QFETCH(bool, restart);
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
         FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
         FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
@@ -480,10 +536,16 @@ private slots:
         rig.audio.pushAudio("z");
         if (cancel) {
             rig.session->cancel();
+            if (restart) {
+                QTRY_COMPARE(rig.session->state(), DictationState::Idle);
+                rig.listen();
+                QCOMPARE(codex->startCalls, 2);
+            }
             QTest::qWait(400);
             QCOMPARE(local->prepareCalls, 0);
             QCOMPARE(local->startCalls, 0);
             QCOMPARE(rig.delivery.calls, 0);
+            QCOMPARE(rig.session->state(), restart ? DictationState::Listening : DictationState::Idle);
             return;
         }
         rig.session->stopListening();

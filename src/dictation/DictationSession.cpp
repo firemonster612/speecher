@@ -421,7 +421,7 @@ void DictationSession::prepareSpeechProvider()
         // need not wait for it later.
         std::optional<RefinementRefreshJob> refinerRefreshJob;
         bool refinerRefreshRequired = false;
-        const RefinementSettings &refinement = m_sessionSettings->refinement;
+        const RefinementSettings refinement = m_sessionSettings->refinement;
         if (m_state == DictationState::Starting && m_refiner && refinement.providerId != QStringLiteral("none")) {
             refinerRefreshJob = m_refiner->createRefreshJob(refinement);
             refinerRefreshRequired = refinerRefreshJob ? refinerRefreshJob->showRefreshIndicator
