@@ -412,6 +412,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/ScreenshotImage.h
   src/platform/SingleKeyShortcutBinder.h
   src/platform/audio/AudioPcmConverter.h
+  src/platform/audio/E2EAudioInput.h
   src/platform/audio/QtAudioInput.h
   src/platform/audio/WavFileAudioInput.h
 )

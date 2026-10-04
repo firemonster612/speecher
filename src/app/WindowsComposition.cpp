@@ -4,6 +4,7 @@
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
 #include "platform/FallbackPopupPositioner.h"
+#include "platform/audio/E2EAudioInput.h"
 #include "platform/audio/QtAudioInput.h"
 #include "platform/RoutingShortcutBinder.h"
 #include "platform/win/WinCancelKeyGrab.h"
@@ -64,6 +65,12 @@ QList<AudioInputDeviceInfo> WindowsComposition::availableAudioInputDevices() con
 
 AudioInput *WindowsComposition::createAudioInput(SettingsStore *settings, QObject *parent) const
 {
+#ifdef SPEECHER_E2E_HOOKS
+    if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1
+        && qEnvironmentVariableIntValue("SPEECHER_E2E_REAL_AUDIO") != 1) {
+        return new E2EAudioInput(parent);
+    }
+#endif
     auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
     QObject::connect(settings,
                      &SettingsStore::audioCaptureSettingsChanged,
