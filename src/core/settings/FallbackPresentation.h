@@ -19,7 +19,7 @@ enum class FallbackProblem {
     NoModel,
     NoRunner,
     NoServer,
-    // A Local Model that can't listen for the Spoken Language is skipped.
+    // A speech fallback that can't listen for the Spoken Language is skipped.
     SpokenLanguage,
 };
 
@@ -33,9 +33,10 @@ QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, co
                               const QList<RowOption> &providers);
 
 // Whether a speech fallback is skipped because it can't listen for the
-// Spoken Language: only a Local Model whose catalog entry lacks it. A
-// missing model is not skipped here; it is unavailable. The primary is never
-// skipped.
+// Spoken Language, by its own language list or its Local Model's catalog
+// entry (listensForSpokenLanguage). A missing model is not skipped here; it
+// is unavailable. The primary is never skipped. A Dictation Session decides
+// with this too.
 bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &providerId);
 
 // Whether a provider needs the internet to work: one that signs in, or a

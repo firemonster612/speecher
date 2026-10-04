@@ -104,16 +104,24 @@ QString requestedSpokenLanguage(const QString &language)
     return language == QLatin1String(kAutomaticSpokenLanguage) ? QString() : language;
 }
 
-QString spokenLanguageProblem(const SpeechSettings &speech, const QString &serviceLabel)
+bool listensForSpokenLanguage(const SpeechSettings &speech)
 {
     const LocalModel *model =
         speech.providerId == QStringLiteral("local") ? findLocalModel(speech.local.modelId) : nullptr;
+    if (model) {
+        return localModelListensFor(*model, speech.language);
+    }
     const QStringList offered = spokenLanguages(speech);
-    const bool listens = model ? localModelListensFor(*model, speech.language)
-                               : offered.isEmpty() || offered.contains(speech.language);
-    if (listens) {
+    return offered.isEmpty() || offered.contains(speech.language);
+}
+
+QString spokenLanguageProblem(const SpeechSettings &speech, const QString &serviceLabel)
+{
+    if (listensForSpokenLanguage(speech)) {
         return {};
     }
+    const LocalModel *model =
+        speech.providerId == QStringLiteral("local") ? findLocalModel(speech.local.modelId) : nullptr;
     const QString service = model ? model->name : serviceLabel;
     if (speech.language == QLatin1String(kAutomaticSpokenLanguage)) {
         return QStringLiteral("%1 can't detect the language. Choose the language you speak.").arg(service);

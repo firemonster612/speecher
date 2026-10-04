@@ -398,13 +398,12 @@ void DictationSession::prepareSpeechProvider()
     for (; m_speechIndex < m_speechChain.size(); ++m_speechIndex) {
         const QString providerId = m_speechChain.at(m_speechIndex);
         const SpeechSettings speech = speechSettingsFor(providerId);
-        if (m_speechIndex > 0) {
-            if (const QString problem = spokenLanguageProblem(speech, m_providers->speechProviderLabel(providerId));
-                !problem.isEmpty()) {
-                noteProviderIssue(ProviderRole::Speech, providerId, Stage::LanguageSkipped,
-                                  {ProviderFailureKind::Unavailable, problem});
-                continue;
-            }
+        // Decided as the Fallbacks row decides it.
+        if (m_speechIndex > 0 && fallbackSkipsSpokenLanguage(speech, providerId)) {
+            noteProviderIssue(ProviderRole::Speech, providerId, Stage::LanguageSkipped,
+                              {ProviderFailureKind::Unavailable,
+                               spokenLanguageProblem(speech, m_providers->speechProviderLabel(providerId))});
+            continue;
         }
         QString providerError;
         if (!selectSpeechTranscriber(providerId, &providerError)) {

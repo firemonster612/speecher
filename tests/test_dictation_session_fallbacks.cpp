@@ -275,6 +275,34 @@ private slots:
         QCOMPARE(rig.speech[QStringLiteral("endpoint")]->lastLanguage, QStringLiteral("de"));
     }
 
+    // The session and the Fallbacks row decide a language skip the same way,
+    // from the provider's own language list: Claude Voice can't listen for
+    // Afrikaans, which ChatGPT Codex and a Custom Endpoint can.
+    void theSessionAndItsFallbackRowAgreeOnALanguageSkip()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("endpoint")});
+        rig.settings.setSpokenLanguage(QStringLiteral("af"));
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("claude")]->prepareCalls, 0);
+        QCOMPARE(rig.speech[QStringLiteral("endpoint")]->startCalls, 1);
+
+        AppSettings settings = rig.settings.dictationSnapshot();
+        settings.speech.endpoint.baseUrl = QStringLiteral("https://speech.example.com");
+        const LiveFacts facts;
+        QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("claude"), settings, facts),
+                 FallbackProblem::SpokenLanguage);
+        QCOMPARE(fallbackProblem(ProviderRole::Speech, QStringLiteral("endpoint"), settings, facts),
+                 FallbackProblem::None);
+        const QList<RowOption> providers{{QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                         {QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+                                         {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")}};
+        QCOMPARE(fallbackListPresentation(ProviderRole::Speech, settings, facts, providers, FallbackSurface::Settings)
+                     .items.first()
+                     .status,
+                 QStringLiteral("Claude Voice can't listen for your Spoken Language, so it is skipped."));
+    }
+
     // What needs the internet: a provider that signs in, and a server that
     // isn't on this computer or its network.
     void needsInternetCoversSignInsAndServersOutOnTheInternet()

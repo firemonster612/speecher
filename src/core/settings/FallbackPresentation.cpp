@@ -2,6 +2,7 @@
 
 #include "core/EndpointSettings.h"
 #include "core/LocalModelCatalog.h"
+#include "core/settings/SpokenLanguages.h"
 
 #include <QUrl>
 
@@ -79,7 +80,9 @@ QString runnerNotRunning(const AppSettings &settings)
                             : QStringLiteral("%1 isn't running").arg(localRunnerName(runner));
 }
 
-QString problemText(FallbackProblem problem, const AppSettings &settings)
+// label is the provider's registry label.
+QString problemText(FallbackProblem problem, const AppSettings &settings, const QString &providerId,
+                    const QString &label)
 {
     switch (problem) {
     case FallbackProblem::None:
@@ -95,9 +98,9 @@ QString problemText(FallbackProblem problem, const AppSettings &settings)
     case FallbackProblem::NoServer:
         return QStringLiteral("No server URL is set, so it can't stand in yet.");
     case FallbackProblem::SpokenLanguage: {
-        const LocalModel *model = findLocalModel(settings.speech.local.modelId);
+        const LocalModel *model = providerId == kLocal ? findLocalModel(settings.speech.local.modelId) : nullptr;
         return QStringLiteral("%1 can't listen for your Spoken Language, so it is skipped.")
-            .arg(model ? model->name : settings.speech.local.modelId);
+            .arg(model ? model->name : label);
     }
     }
     return {};
@@ -107,8 +110,9 @@ QString problemText(FallbackProblem problem, const AppSettings &settings)
 
 bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &providerId)
 {
-    const LocalModel *model = providerId == kLocal ? findLocalModel(speech.local.modelId) : nullptr;
-    return model && !localModelListensFor(*model, speech.language);
+    SpeechSettings candidate = speech;
+    candidate.providerId = providerId;
+    return !listensForSpokenLanguage(candidate);
 }
 
 FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, const AppSettings &settings,
@@ -127,6 +131,9 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
                                          [&runner](const RowOption &found) { return found.id == runner; });
         return facts.runnersChecked && !facts.detectingRunners && !running ? FallbackProblem::NoRunner
                                                                             : FallbackProblem::None;
+    }
+    if (role == ProviderRole::Speech && fallbackSkipsSpokenLanguage(settings.speech, providerId)) {
+        return FallbackProblem::SpokenLanguage;
     }
     if (providerId == kEndpoint && serverUrl(role, settings).isEmpty()) {
         return FallbackProblem::NoServer;
@@ -229,7 +236,7 @@ FallbackListPresentation fallbackListPresentation(ProviderRole role, const AppSe
         FallbackItem item{id, labelOf(providers, id)};
         const FallbackProblem problem = fallbackProblem(role, id, settings, facts);
         if (problem != FallbackProblem::None) {
-            item.status = problemText(problem, settings);
+            item.status = problemText(problem, settings, id, item.label);
             item.tone = StatusTone::Negative;
         } else {
             item.status = index == 0
