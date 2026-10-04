@@ -229,12 +229,14 @@ PopupPositioner *MacComposition::createPopupPositioner(QObject *parent) const
 GlobalShortcutBinder *MacComposition::createGlobalShortcutBinder(GlobalShortcutRole role,
                                                                  QObject *parent) const
 {
-    // Carbon hot keys take the combinations; the NSEvent monitor binder takes
-    // a single key, which no hotkey API accepts.
+    // Carbon hot keys take the combinations, the Cancel and Pause Shortcuts'
+    // just while dictating; the NSEvent monitor binder takes a single key,
+    // which no hotkey API accepts.
     const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
-    return new RoutingShortcutBinder(new MacGlobalShortcutBinder(action),
-                                     new MacSingleKeyShortcutBinder(action),
-                                     parent);
+    GlobalShortcutBinder *combination = action.sessionOnly
+        ? static_cast<GlobalShortcutBinder *>(new MacSessionShortcutBinder(action))
+        : new MacGlobalShortcutBinder(action);
+    return new RoutingShortcutBinder(combination, new MacSingleKeyShortcutBinder(action), parent);
 }
 
 CancelKeyGrab *MacComposition::createCancelKeyGrab(QObject *parent) const

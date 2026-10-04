@@ -69,8 +69,12 @@ final class ShortcutRecorder: ObservableObject {
             // would take the top-row key instead.
             if (bareKeysCombine && !keypadKeyCodes.contains(event.keyCode))
                 || !event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
-                stop()
+                // Bound before the recording ends, as single keys are:
+                // ending it gives the shortcuts their keys back, and during a
+                // session Escape would go back to cancelling before it could
+                // become the Cancel or Pause Shortcut.
                 combination(event.charactersIgnoringModifiers ?? "", event.modifierFlags)
+                stop()
                 return nil
             }
             if singleKey(event.keyCode) { stop() }

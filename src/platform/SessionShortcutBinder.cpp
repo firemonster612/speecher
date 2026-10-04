@@ -48,8 +48,10 @@ bool SessionShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString
 {
     QString reason = unsupportedBindingReason(shortcut);
     // Taking the keys now, armed or not, is what tells another app already
-    // holds them while the person is still choosing.
-    if (reason.isEmpty() && !shortcut.isEmpty() && m_suspensions == 0) {
+    // holds them while the person is still choosing. Suspended too: a
+    // recorder that binds before it resumes still learns, and the keys are
+    // let go at once, so they stay free for it.
+    if (reason.isEmpty() && !shortcut.isEmpty()) {
         letGo();
         m_holding = false;
         if (!take(shortcut.combination())) {
