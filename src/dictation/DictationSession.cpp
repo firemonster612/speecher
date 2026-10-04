@@ -116,6 +116,7 @@ DictationSession::DictationSession(SettingsStore *settings,
                              << "message=" + message;
         if (!m_transcript->isEmpty()) {
             m_lastMessage = message;
+            m_usedRawTranscript = true;
             stopListening();
             return;
         }
@@ -300,6 +301,10 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_resumeAudio.clear();
     m_speechChain = providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
     m_speechIndex = 0;
+    m_refinementChain = providerChain(ProviderRole::Refinement, settings.refinement.providerId,
+                                      settings.refinement.fallbackProviderIds);
+    m_refinementIndex = 0;
+    m_usedRawTranscript = false;
     m_awaitingSpeechProvider = true;
     m_providerHistory = {};
     m_listeningMs = 0;
@@ -358,13 +363,18 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     const AppSettings settings = *m_sessionSettings;
     const RefinementSettings effectiveRefinement =
         TranscriptPipeline::effectiveRefinementSettings(settings, m_target);
+    // Once, for whichever refiner in the chain reads it.
+    const bool chainReadsScreenshots =
+        std::any_of(m_refinementChain.cbegin(), m_refinementChain.cend(), [&settings, this](const QString &id) {
+            TranscriptRefiner *refiner = m_providers->refinementProvider(id);
+            RefinementSettings refinement = settings.refinement;
+            refinement.providerId = id;
+            return refiner && refiner->supportsScreenshotContext(refinement);
+        });
     if (settings.refinement.includeScreenshotContext
-        && settings.refinement.providerId != QStringLiteral("none")
         && effectiveRefinement.style != QStringLiteral("none")
         && m_screenshotProvider
-        && m_refiner
-        && m_refiner->id() == settings.refinement.providerId
-        && m_refiner->supportsScreenshotContext(settings.refinement)
+        && chainReadsScreenshots
         && !m_target.secure) {
         m_screenshotCaptureGeneration = generation;
         m_screenshotProvider->capture();
@@ -646,6 +656,7 @@ void DictationSession::stopListening()
             setState(DictationState::Idle);
         } else {
             m_lastMessage = QStringLiteral("Refinement cancelled");
+            m_usedRawTranscript = true;
             deliverFinal(m_transcriptPipeline.deliveryFallback);
         }
         return;
@@ -1049,26 +1060,26 @@ void DictationSession::beginRefinement(quint64 generation)
         return;
     }
 
-    QString providerError;
-    if (!selectTranscriptRefiner(settings.refinement.providerId, &providerError)) {
-        qWarning().noquote() << "refinement provider unavailable message=" + providerError;
-        if (pipeline.editsSelection) {
-            failSelectionEdit(providerError);
-            return;
-        }
-        m_lastMessage = providerError;
-        deliverFinal(pipeline.deliveryFallback);
-        return;
-    }
-
+    m_refinementIndex = 0;
     prepareRefiner();
 }
 
-// The refiner's keys come from the keyring, and an expired sign-in renews,
-// on the worker: never on this thread, where prepare() would do both.
+// Tries the refinement chain from m_refinementIndex on, with the same
+// pipeline for each refiner. Its keys come from the keyring, and an expired
+// sign-in renews, on the worker: never on this thread, where prepare() would
+// do both.
 void DictationSession::prepareRefiner()
 {
-    const QString providerId = m_sessionSettings->refinement.providerId;
+    if (m_refinementIndex >= m_refinementChain.size()) {
+        deliverWithoutRefinement();
+        return;
+    }
+    const QString providerId = m_refinementChain.at(m_refinementIndex);
+    QString providerError;
+    if (!selectTranscriptRefiner(providerId, &providerError)) {
+        handleRefinementFailure({ProviderFailureKind::Unavailable, providerError}, Stage::Prepare);
+        return;
+    }
     if (SettingsStore::hasUnreadProviderSecrets(*m_sessionSettings, ProviderRole::Refinement, providerId)) {
         enterRefining();
         m_startupRunner->resolveSecrets(++m_preparationRevision, ProviderRole::Refinement, providerId,
@@ -1092,7 +1103,8 @@ void DictationSession::finishRefinerPreparation(const StartupPreparationResult &
     }
     if (result.refinerRefreshAttempted && !result.refinerRefresh.ok) {
         handleRefinementFailure(
-            {result.refinerRefresh.kind, result.refinerRefresh.message, result.refinerRefresh.httpStatus});
+            {result.refinerRefresh.kind, result.refinerRefresh.message, result.refinerRefresh.httpStatus},
+            Stage::Prepare);
         return;
     }
     if (result.resolvedSettings) {
@@ -1108,9 +1120,10 @@ void DictationSession::startRefiner()
     const RefinementSettings refinement = refinerSettings();
     const RefinementPrepareResult prepared = m_refiner->prepare(refinement);
     if (!prepared.ok) {
-        handleRefinementFailure({prepared.kind, prepared.message, prepared.httpStatus});
+        handleRefinementFailure({prepared.kind, prepared.message, prepared.httpStatus}, Stage::Prepare);
         return;
     }
+    noteSignIn(refinement.providerId, true);
 
     enterRefining();
     m_refinementStream.clear();
@@ -1129,6 +1142,7 @@ void DictationSession::startRefiner()
             << "bindingCount=" << pipeline.bindingResult.placeholders.size()
             << "noBindCount=" << pipeline.noBindPhrases.size()
             << "vocabularyCount=" << pipeline.refinementVocabulary.size();
+    noteRan(ProviderRole::Refinement, refinement.providerId);
     m_refiner->refine(pipeline.refinementInput,
                       pipeline.refinementVocabulary,
                       pipeline.refinementContext,
@@ -1145,23 +1159,57 @@ void DictationSession::enterRefining()
     emit popupRefiningChanged(true);
 }
 
-// The pipeline's refinement settings with the keys read since it was built.
+// The pipeline's refinement settings for the refiner being tried, with the
+// keys read since the pipeline was built.
 RefinementSettings DictationSession::refinerSettings() const
 {
     RefinementSettings refinement = m_transcriptPipeline.refinementSettings;
+    refinement.providerId = m_refinementChain.at(m_refinementIndex);
     refinement.endpoint.apiKey = m_sessionSettings->refinement.endpoint.apiKey;
     refinement.cliproxyApiKey = m_sessionSettings->refinement.cliproxyApiKey;
     return refinement;
 }
 
-void DictationSession::handleRefinementFailure(const ProviderFailure &failure)
+// Any refiner that fails to prepare, and one that fails to answer for want
+// of a service, makes way for the next; one that answers unusably or fails
+// otherwise ends refinement as before.
+void DictationSession::handleRefinementFailure(const ProviderFailure &failure, Stage stage)
 {
     qWarning().noquote() << "refinement failed message=" + failure.message;
-    if (m_transcriptPipeline.editsSelection) {
-        failSelectionEdit(failure.message);
+    m_lastMessage = failure.message;
+    if (stage == Stage::Prepare || permitsProviderFallback(failure.kind)) {
+        noteProviderIssue(ProviderRole::Refinement, m_refinementChain.at(m_refinementIndex), stage, failure);
+        retireRefiner();
+        ++m_refinementIndex;
+        prepareRefiner();
         return;
     }
-    m_lastMessage = failure.message;
+    deliverWithoutRefinement();
+}
+
+// Nothing it sends from now on counts, and the next refiner starts from an
+// empty preview. The revision moves on first: cancelling can make a refiner
+// emit at once.
+void DictationSession::retireRefiner()
+{
+    ++m_refinementRevision;
+    disconnectTranscriptRefiner();
+    if (m_refiner) {
+        m_refiner->cancel();
+    }
+    m_refinementStream.clear();
+    emit popupRefinementPreviewChanged({});
+}
+
+// No refiner gave a result: a selection edit fails with the last reason, a
+// dictation is pasted as spoken.
+void DictationSession::deliverWithoutRefinement()
+{
+    if (m_transcriptPipeline.editsSelection) {
+        failSelectionEdit(m_lastMessage);
+        return;
+    }
+    m_usedRawTranscript = true;
     deliverFinal(m_transcriptPipeline.deliveryFallback);
 }
 
@@ -1198,7 +1246,7 @@ void DictationSession::deliverFinal(const QString &text)
     const int words = countWords(m_transcriptPipeline.editsSelection ? m_transcript->text() : text);
     m_refinementGeneration = 0;
     m_lastTranscript = text;
-    const bool usedFallback = !m_lastMessage.isEmpty();
+    const bool usedFallback = m_usedRawTranscript;
     emit popupRefiningChanged(false);
     setState(DictationState::Delivering);
     qInfo() << "deliverFinal length=" << text.size();
@@ -1334,6 +1382,8 @@ void DictationSession::endSpeechAfterFailure(const SpeechFailure &failure)
     const bool hearing = m_state == DictationState::Listening || m_state == DictationState::Paused;
     if (!m_transcript->isEmpty() && (hearing || m_state == DictationState::Stopping)) {
         m_speechWarning = partMissingWarning(failure);
+        // Refinement may still replace it.
+        m_usedRawTranscript = true;
         if (hearing) {
             m_transcriber->cancelAttempt(m_attemptId);
             setState(DictationState::Stopping, failure.message);
@@ -1441,9 +1491,9 @@ bool DictationSession::selectTranscriptRefiner(const QString &providerId, QStrin
         }
         return false;
     }
-    if (provider != m_refiner) {
-        connectTranscriptRefiner(provider);
-    }
+    // Always afresh, under a revision of its own: a refiner retired earlier
+    // was disconnected.
+    connectTranscriptRefiner(provider);
     return true;
 }
 
@@ -1505,15 +1555,25 @@ void DictationSession::connectSpeechTranscriber(SpeechTranscriber *transcriber)
     m_transcriberConnections << connect(m_transcriber, &SpeechTranscriber::failed, this, &DictationSession::handleSpeechFailure);
 }
 
-void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
+void DictationSession::disconnectTranscriptRefiner()
 {
     for (const QMetaObject::Connection &connection : m_refinerConnections) {
         QObject::disconnect(connection);
     }
     m_refinerConnections.clear();
+}
+
+void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
+{
+    disconnectTranscriptRefiner();
     m_refiner = refiner;
-    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::delta, this, [this](const QString &text) {
-        if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
+    const quint64 revision = ++m_refinementRevision;
+    const auto current = [this, revision] {
+        return m_state == DictationState::Refining && m_refinementGeneration == m_generation
+            && m_refinementRevision == revision;
+    };
+    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::delta, this, [this, current](const QString &text) {
+        if (!current()) {
             return;
         }
         // Selection edits stream the complete revised document, not the
@@ -1570,8 +1630,8 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         const int words = m_settings ? m_settings->previewWords() : 7;
         emit popupRefinementPreviewChanged(WordPreview::lastWords(preview, words));
     });
-    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this](const QString &text) {
-        if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
+    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::completed, this, [this, current](const QString &text) {
+        if (!current()) {
             return;
         }
         const std::optional<QString> refined = TranscriptPipeline::restoreRefinedResult(
@@ -1579,19 +1639,22 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             text);
         if (refined) {
             m_lastMessage.clear();
+            m_usedRawTranscript = false;
             deliverFinal(*refined);
         } else if (m_transcriptPipeline.editsSelection) {
             failSelectionEdit(QStringLiteral("The refinement model returned an unusable selection edit"));
         } else {
+            // An unusable answer is not a missing service: no other refiner.
             qWarning() << "refinement result could not be restored, delivering fallback";
+            m_usedRawTranscript = true;
             deliverFinal(m_transcriptPipeline.deliveryFallback);
         }
     });
-    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::failed, this, [this](const ProviderFailure &failure) {
-        if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
+    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::failed, this, [this, current](const ProviderFailure &failure) {
+        if (!current()) {
             return;
         }
-        handleRefinementFailure(failure);
+        handleRefinementFailure(failure, Stage::Connect);
     });
 }
 

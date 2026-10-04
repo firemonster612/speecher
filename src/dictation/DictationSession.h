@@ -146,7 +146,9 @@ private:
     void startRefiner();
     void enterRefining();
     RefinementSettings refinerSettings() const;
-    void handleRefinementFailure(const ProviderFailure &failure);
+    void handleRefinementFailure(const ProviderFailure &failure, Stage stage);
+    void retireRefiner();
+    void deliverWithoutRefinement();
     void failSelectionEdit(const QString &message);
     void handleSpeechFailure(const SpeechFailure &failure);
     void endSpeechAfterFailure(const SpeechFailure &failure);
@@ -171,6 +173,7 @@ private:
     bool selectTranscriptRefiner(const QString &providerId, QString *error);
     void disconnectSpeechTranscriber();
     void connectSpeechTranscriber(SpeechTranscriber *transcriber);
+    void disconnectTranscriptRefiner();
     void connectTranscriptRefiner(TranscriptRefiner *refiner);
     void toggleSession(const SessionOverrides &overrides);
     void startSession(const SessionOverrides &overrides);
@@ -235,6 +238,14 @@ private:
     // The failure that sent the session on to the next provider, which ends
     // the speech if none takes over.
     SpeechFailure m_switchFailure;
+    // The refiners this session may use, primary first, and the one it is
+    // on; each connection to a refiner gets its own revision.
+    QStringList m_refinementChain;
+    int m_refinementIndex = 0;
+    quint64 m_refinementRevision = 0;
+    // The raw transcript is delivered in place of a refinement that was
+    // asked for.
+    bool m_usedRawTranscript = false;
     ProviderHistory m_providerHistory;
     Reachability m_reachability = Reachability::Unknown;
     // Inside stopAudio(); a session start waits in m_pendingStart until it

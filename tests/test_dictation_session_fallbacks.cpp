@@ -59,7 +59,8 @@ struct ChainRig {
             }
         }
         audio.onStart = [this] { ++microphoneStarts; };
-        session = std::make_unique<DictationSession>(&settings, &audio, &media, &delivery, &registry);
+        session = std::make_unique<DictationSession>(&settings, &audio, &media, &target, &delivery, &registry);
+        session->setScreenshotContextProvider(&screenshots);
     }
 
     void listen()
@@ -71,6 +72,8 @@ struct ChainRig {
     SettingsStore settings;
     FakeAudioInput audio;
     FakeMediaController media;
+    FakeTargetProvider target;
+    FakeScreenshotContextProvider screenshots;
     FakeDelivery delivery;
     ProviderRegistry registry;
     std::map<QString, FakeSpeechTranscriber *> speech;
@@ -490,6 +493,175 @@ private slots:
         QCOMPARE(local->stopCalls, 1);
         QTest::qWait(50);
         QCOMPARE(rig.delivery.calls, 1);
+    }
+
+    // A refiner that can't be reached makes way for the next, which gets the
+    // same input with an empty preview; what the retired one sends after
+    // doesn't count.
+    void refinementFallsBackToTheNextRefiner()
+    {
+        ChainRig rig({QStringLiteral("codex")},
+                     {QStringLiteral("openai"), QStringLiteral("anthropic"), QStringLiteral("local")});
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        FakeRefiner *anthropic = rig.refiners[QStringLiteral("anthropic")];
+        FakeRefiner *local = rig.refiners[QStringLiteral("local")];
+        openai->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        QSignalSpy preview(rig.session.get(), &DictationSession::popupRefinementPreviewChanged);
+        rig.session->stopListening();
+        QTRY_COMPARE(anthropic->refineCalls, 1);
+        anthropic->emitDeltaText(QStringLiteral("Half"));
+        anthropic->emitFailure(QStringLiteral("server"), ProviderFailureKind::Server);
+        QCOMPARE(preview.last().first().toString(), QString());
+        anthropic->emitCompletedText(QStringLiteral("Stale."));
+        QCOMPARE(rig.delivery.calls, 0);
+        QCOMPARE(openai->refineCalls, 0);
+        QCOMPARE(local->refineCalls, 1);
+        QCOMPARE(local->lastRawTranscript, anthropic->lastRawTranscript);
+        local->emitCompletedText(QStringLiteral("Spoken words."));
+        QCOMPARE(rig.delivery.calls, 1);
+        QCOMPARE(rig.delivery.lastText, QStringLiteral("Spoken words."));
+    }
+
+    // An unusable answer is not a missing service: no other refiner is
+    // tried, and the raw transcript is pasted as before.
+    void anUnusableRefinementStopsTheChain_data()
+    {
+        QTest::addColumn<bool>("emptyAnswer");
+        QTest::newRow("empty answer") << true;
+        QTest::newRow("invalid result") << false;
+    }
+
+    void anUnusableRefinementStopsTheChain()
+    {
+        QFETCH(bool, emptyAnswer);
+        ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("openai"), QStringLiteral("local")});
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(openai->refineCalls, 1);
+        if (emptyAnswer) {
+            openai->emitCompletedText(QString());
+        } else {
+            openai->emitFailure(QStringLiteral("truncated"), ProviderFailureKind::InvalidResult);
+        }
+        QCOMPARE(rig.delivery.calls, 1);
+        QCOMPARE(rig.delivery.lastText, QStringLiteral("spoken words"));
+        QCOMPARE(rig.refiners[QStringLiteral("local")]->refineCalls, 0);
+        QVERIFY(rig.session->lastMessage().startsWith(QStringLiteral("Used raw transcript")));
+    }
+
+    // A selection edit walks the same chain. With every refiner gone it
+    // fails with today's error and pastes nothing; an unusable edit fails at
+    // once.
+    void aSelectionEditWalksTheChainAndNeverPastesTheInstruction_data()
+    {
+        QTest::addColumn<QString>("secondRefiner");
+        QTest::addColumn<QString>("delivered");
+        QTest::newRow("fallback edits") << QStringLiteral("answers") << QStringLiteral("The release is Friday.");
+        QTest::newRow("all unavailable") << QStringLiteral("unavailable") << QString();
+        QTest::newRow("unusable edit") << QStringLiteral("unusable") << QString();
+    }
+
+    void aSelectionEditWalksTheChainAndNeverPastesTheInstruction()
+    {
+        QFETCH(QString, secondRefiner);
+        QFETCH(QString, delivered);
+        ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("openai"), QStringLiteral("local")});
+        rig.target.target.selectedText = QStringLiteral("the release is tomorrow");
+        rig.target.target.selectionStart = 0;
+        rig.target.target.selectionEnd = 23;
+        FakeRefiner *local = rig.refiners[QStringLiteral("local")];
+        rig.refiners[QStringLiteral("openai")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("make it friday"));
+        rig.session->stopListening();
+        QTRY_COMPARE(local->refineCalls, 1);
+        if (secondRefiner == QStringLiteral("answers")) {
+            local->emitCompletedText(QStringLiteral("The release is Friday."));
+        } else if (secondRefiner == QStringLiteral("unavailable")) {
+            local->emitFailure(QStringLiteral("runner stopped"), Network);
+        } else {
+            local->emitCompletedText(QString());
+        }
+        QCOMPARE(rig.delivery.calls, delivered.isEmpty() ? 0 : 1);
+        if (!delivered.isEmpty()) {
+            QCOMPARE(rig.delivery.lastText, delivered);
+            return;
+        }
+        QCOMPARE(rig.session->state(), DictationState::Error);
+        QCOMPARE(rig.session->lastMessage(), secondRefiner == QStringLiteral("unavailable")
+                                                  ? QStringLiteral("runner stopped")
+                                                  : QStringLiteral("The refinement model returned an unusable selection edit"));
+    }
+
+    // Captured once at start because a refiner in the chain reads it, and
+    // set afresh for each refiner tried: only one that reads it gets it.
+    void theScreenshotGoesOnlyToARefinerThatReadsIt_data()
+    {
+        QTest::addColumn<bool>("primaryReads");
+        QTest::newRow("fallback reads it") << false;
+        QTest::newRow("primary reads it") << true;
+    }
+
+    void theScreenshotGoesOnlyToARefinerThatReadsIt()
+    {
+        QFETCH(bool, primaryReads);
+        ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("openai"), QStringLiteral("local")});
+        rig.settings.setIncludeScreenshotContext(true);
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        FakeRefiner *local = rig.refiners[QStringLiteral("local")];
+        openai->screenshotCapable = primaryReads;
+        local->screenshotCapable = !primaryReads;
+        rig.listen();
+        QCOMPARE(rig.screenshots.captureCalls, 1);
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(openai->refineCalls, 1);
+        QCOMPARE(openai->lastContext.hasScreenshot(), primaryReads);
+        openai->emitFailure(QStringLiteral("refused"), Network);
+        QCOMPARE(local->refineCalls, 1);
+        QCOMPARE(local->lastContext.hasScreenshot(), !primaryReads);
+    }
+
+    // A fallback refiner whose sign-in expired renews it on the worker
+    // before it runs; stopped meanwhile, the raw transcript is pasted once
+    // and the renewal's result is dropped.
+    void aColdFallbackRefinerRenewsOffTheGuiThread_data()
+    {
+        QTest::addColumn<bool>("stopWhileRenewing");
+        QTest::newRow("renews and refines") << false;
+        QTest::newRow("stopped while renewing") << true;
+    }
+
+    void aColdFallbackRefinerRenewsOffTheGuiThread()
+    {
+        QFETCH(bool, stopWhileRenewing);
+        ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("local"), QStringLiteral("openai")});
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        rig.refiners[QStringLiteral("local")]->prepareResult = {false, QStringLiteral("no runner"), Network};
+        rig.listen();
+        openai->refreshRequired = true;
+        openai->backgroundRefresh = true;
+        openai->backgroundRefreshDelayMs = 100;
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QCOMPARE(rig.session->state(), DictationState::Refining);
+        QCOMPARE(openai->prepareCalls, 0);
+        if (stopWhileRenewing) {
+            rig.session->stopListening();
+            QCOMPARE(rig.delivery.calls, 1);
+            QTest::qWait(250);
+            QCOMPARE(openai->refreshCalls, 0);
+            QCOMPARE(openai->refineCalls, 0);
+            QCOMPARE(rig.delivery.calls, 1);
+            return;
+        }
+        QTRY_COMPARE(openai->refineCalls, 1);
+        QCOMPARE(openai->backgroundRefreshCalls, 1);
+        QCOMPARE(openai->refreshCalls, 1);
     }
 
     // An expired sign-in renews on the worker before refinement, and one that
