@@ -650,7 +650,7 @@ void ApplicationController::updateDictationOnlyShortcuts()
     const bool cancelable = dictationCancelable(state);
     const bool pausable = dictationPausable(state);
     if (m_cancelKeyGrab) {
-        const ShortcutBinding escape(QKeySequence(Qt::Key_Escape));
+        const ShortcutBinding escape{QKeySequence(Qt::Key_Escape)};
         m_cancelKeyGrab->setGrabbed(m_shortcutSuspensions == 0 && cancelable
                                     && globalShortcut(GlobalShortcutRole::Cancel) != escape
                                     && globalShortcut(GlobalShortcutRole::Pause) != escape);

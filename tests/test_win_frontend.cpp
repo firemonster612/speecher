@@ -40,6 +40,20 @@ bool nativeUiAvailable()
     return QGuiApplication::platformName() != QStringLiteral("offscreen");
 }
 
+// A press and release of one key, as the person's keyboard would send it to
+// whichever window has focus.
+void pressKey(WORD key)
+{
+    INPUT input[2]{};
+    for (INPUT &event : input) {
+        event.type = INPUT_KEYBOARD;
+        event.ki.wVk = key;
+        event.ki.wScan = WORD(MapVirtualKeyW(key, MAPVK_VK_TO_VSC));
+    }
+    input[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(2, input, sizeof(INPUT));
+}
+
 // DIPs to the physical pixels the panel's geometry hooks report.
 double dipScale()
 {
@@ -655,6 +669,53 @@ private slots:
         setup->skipForTest();
         QVERIFY(!controller->settings()->setupCompleted());
         QCOMPARE(setup->currentPageTitleForTest(), QStringLiteral("Global Shortcut"));
+    }
+
+    // Setup's Global Shortcut step asks for the optional Cancel and Pause
+    // Shortcuts under the dictation one, as the Dictation pane lists them, and
+    // their recorder takes Escape as the key instead of closing.
+    void sessionShortcutRowsTakeABareKey()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        const auto clear = qScopeGuard([this] {
+            for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
+                controller->setGlobalShortcut({}, nullptr, role);
+            }
+        });
+        QVERIFY(controller->setGlobalShortcut(QKeySequence(Qt::Key_P), nullptr, GlobalShortcutRole::Pause));
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+
+        setup->show(SetupAssistantPage::All);
+        setup->showPageForTest(QStringLiteral("shortcut"));
+        setup->recordShortcutForTest(GlobalShortcutRole::Cancel);
+        QTest::qWait(500);
+        pressKey(VK_ESCAPE);
+        QTest::qWait(300);
+        if (!grabDir.isEmpty()) {
+            QVERIFY(setup->captureForTest(grabDir + QStringLiteral("/win-setup-record-escape.png")));
+        }
+        // Enter saves: a bare Enter is the dialog's default button.
+        pressKey(VK_RETURN);
+        QTRY_COMPARE_WITH_TIMEOUT(controller->globalShortcut(GlobalShortcutRole::Cancel),
+                                  ShortcutBinding(QKeySequence(Qt::Key_Escape)), 2000);
+        if (!grabDir.isEmpty()) {
+            QTest::qWait(400);
+            setup->scrollToEndForTest();
+            QTest::qWait(400);
+            QVERIFY(setup->captureForTest(grabDir + QStringLiteral("/win-setup-session-shortcuts.png")));
+        }
+
+        win::TranscribePane transcribe(controller.get());
+        win::SettingsWindow window(controller.get(), &transcribe);
+        window.show();
+        if (!grabDir.isEmpty()) {
+            qputenv("SPEECHER_GRAB_PAGE", "dictation");
+            const auto unset = qScopeGuard([] { qunsetenv("SPEECHER_GRAB_PAGE"); });
+            QVERIFY(window.capture(grabDir + QStringLiteral("/win-settings-shortcuts.png")));
+        }
+        window.close();
     }
 
     // Search offers each matching row with its pane, and says when nothing

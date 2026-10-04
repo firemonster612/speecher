@@ -1,5 +1,6 @@
 #include "platform/win/WinSingleKeyShortcutBinder.h"
 
+#include "core/settings/SettingsSchema.h"
 #include "platform/win/WinInjectedInput.h"
 #include "platform/win/WinRawKeyboard.h"
 
@@ -23,6 +24,11 @@ QString WinSingleKeyShortcutBinder::unsupportedBindingReason(const ShortcutBindi
     }
     if (physicalKey(binding.keyCode())->win < 0) {
         return QStringLiteral("Windows does not report the %1 key.").arg(binding.displayText());
+    }
+    // Watching cannot keep a key from the focused app, so a Cancel or Pause
+    // key that types would type into the dictation it acts on.
+    if (action().duringDictationOnly && !singleKeyTypingWarning(binding).isEmpty()) {
+        return typingKeyOnlyWatchedText(binding);
     }
     return QString();
 }

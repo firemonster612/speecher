@@ -105,6 +105,19 @@ jobs:
           $env:SPEECHER_TEST_PANEL_BANNERS = "1"
           build/speecher_tests.exe
 
+      # The unit tests, win_platform's Global Shortcut binders included,
+      # which the filming run above leaves out.
+      - name: Unit tests
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          ctest --test-dir build --output-on-failure -E speecher_win_platform
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Verbose, so a skip on a runner without an interactive window
+          # station shows in the log rather than passing silently.
+          ctest --test-dir build --output-on-failure -V -R speecher_win_platform
+
       - name: Upload panel pictures
         if: always()
         uses: actions/upload-artifact@v7
