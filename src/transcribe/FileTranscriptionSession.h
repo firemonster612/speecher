@@ -131,6 +131,7 @@ private:
     void startNextAttempt();
     void handleAttemptCompleted(quint64 attemptId);
     void handleSpeechFailure(const SpeechFailure &failure);
+    QString speechFailureText(const QString &providerMessage) const;
     bool attemptWasStable() const;
     void finishTranscription();
     void refine(const QString &raw);

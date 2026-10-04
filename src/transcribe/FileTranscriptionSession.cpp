@@ -227,8 +227,6 @@ void FileTranscriptionSession::startFile()
     m_current.path = m_paths.at(m_index);
     m_transcript->clear();
     m_pcm.clear();
-    m_sent = 0;
-    m_inputFinished = false;
     emit fileStarted(m_index, m_current.path);
 
     m_decoder = new QAudioDecoder(this);
@@ -325,10 +323,19 @@ void FileTranscriptionSession::prepareSpeechProvider()
         m_preparation->start(++m_preparationRevision, std::move(speechJob), std::move(refreshJob), prepared);
         return;
     }
-    failFile(m_speechChain.size() == 1 ? m_speechIssues.value(0).message
-                                       : noSpeechServiceText(m_speechIssues, [this](ProviderRole, const QString &id) {
-                                             return m_providers->speechProviderLabel(id);
-                                         }));
+    failFile(speechFailureText(m_speechIssues.value(0).message));
+}
+
+// Why no speech provider could transcribe the file: with fallbacks, each one
+// tried and why; otherwise the provider's own reason.
+QString FileTranscriptionSession::speechFailureText(const QString &providerMessage) const
+{
+    if (m_speechChain.size() == 1) {
+        return providerMessage;
+    }
+    return noSpeechServiceText(m_speechIssues, [this](ProviderRole, const QString &id) {
+        return m_providers->speechProviderLabel(id);
+    });
 }
 
 void FileTranscriptionSession::connectTranscriber()
@@ -375,8 +382,13 @@ void FileTranscriptionSession::connectTranscriber()
             this, &FileTranscriptionSession::handleSpeechFailure);
 }
 
+// The provider takes the file from its start.
 void FileTranscriptionSession::beginStreaming()
 {
+    m_transcript->clear();
+    m_current.segments.clear();
+    m_sent = 0;
+    m_inputFinished = false;
     m_reconnectsLeft = kReconnectsPerFile;
     m_attemptBaseText.clear();
     m_attemptStartMs = 0;
@@ -461,12 +473,18 @@ void FileTranscriptionSession::handleSpeechFailure(const SpeechFailure &failure)
     if (failure.attemptId != m_attemptId) {
         return;
     }
-    // Before any audio went out the next provider may take the file instead;
-    // after, never: what was sent is not sent again.
-    if (m_sent == 0 && permitsProviderFallback(failure.kind) && m_speechIndex + 1 < m_speechChain.size()) {
+    // Nothing reached a service yet: no audio went out, or the file's first
+    // attempt never connected and only buffered what it was given. Then the
+    // next provider may take the file instead, from its start, as the audio
+    // is on disk; after, never: what was sent is not sent again.
+    const bool nothingReachedAService =
+        m_attemptStartMs == 0 && (m_sent == 0 || failure.phase == QStringLiteral("connect"));
+    const ProviderAttemptIssue issue{ProviderRole::Speech, m_speechChain.at(m_speechIndex),
+                                     nothingReachedAService ? Stage::Connect : Stage::Interrupted, failure.kind,
+                                     failure.message};
+    if (nothingReachedAService && permitsProviderFallback(failure.kind) && m_speechIndex + 1 < m_speechChain.size()) {
         m_sendTimer.stop();
-        m_speechIssues.append({ProviderRole::Speech, m_speechChain.at(m_speechIndex), Stage::Connect, failure.kind,
-                               failure.message});
+        m_speechIssues.append(issue);
         releaseTranscriber();
         ++m_speechIndex;
         prepareSpeechProvider();
@@ -483,7 +501,9 @@ void FileTranscriptionSession::handleSpeechFailure(const SpeechFailure &failure)
         startNextAttempt();
         return;
     }
-    failFile(failure.message);
+    m_speechIssues.append(issue);
+    // As a dictation: words the provider did return are the file's result.
+    failFile(m_transcript->isEmpty() ? speechFailureText(failure.message) : failure.message);
 }
 
 bool FileTranscriptionSession::attemptWasStable() const
