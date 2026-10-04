@@ -624,13 +624,9 @@ void DictationSession::noteProviderIssue(ProviderRole role,
                          << "stage=" << int(stage) << "message=" + failure.message;
     // Only a failure to connect while the system says it is offline, for a
     // provider that needs the internet, lets the outcome say "No internet".
-    AppSettings candidate = *m_sessionSettings;
-    (role == ProviderRole::Speech ? candidate.speech.providerId : candidate.refinement.providerId) = providerId;
-    LiveFacts facts;
-    facts.reachability = m_reachability;
     const bool offline =
         (failure.kind == ProviderFailureKind::Network || failure.kind == ProviderFailureKind::Timeout)
-        && fallbackProblem(role, providerId, candidate, facts) == FallbackProblem::Offline;
+        && m_reachability == Reachability::Offline && needsInternet(role, providerId, *m_sessionSettings);
     // Once the microphone is open, a speech provider has been sent audio.
     const bool wordsLost = role == ProviderRole::Speech && stage == Stage::Connect
         && m_state != DictationState::Starting;

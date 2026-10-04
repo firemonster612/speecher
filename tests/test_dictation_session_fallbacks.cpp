@@ -1,5 +1,6 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
+#include "core/settings/FallbackPresentation.h"
 #include "core/settings/SettingsKeys.h"
 
 #include <QScopeGuard>
@@ -272,6 +273,21 @@ private slots:
         QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, localPrepares);
         QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 0);
         QCOMPARE(rig.speech[QStringLiteral("endpoint")]->lastLanguage, QStringLiteral("de"));
+    }
+
+    // What needs the internet: a provider that signs in, and a server that
+    // isn't on this computer or its network.
+    void needsInternetCoversSignInsAndServersOutOnTheInternet()
+    {
+        AppSettings settings;
+        QVERIFY(needsInternet(ProviderRole::Speech, QStringLiteral("codex"), settings));
+        QVERIFY(needsInternet(ProviderRole::Refinement, QStringLiteral("openai"), settings));
+        QVERIFY(!needsInternet(ProviderRole::Speech, QStringLiteral("local"), settings));
+        QVERIFY(!needsInternet(ProviderRole::Refinement, QStringLiteral("local"), settings));
+        settings.speech.endpoint.baseUrl = QStringLiteral("http://192.168.1.20:8000");
+        QVERIFY(!needsInternet(ProviderRole::Speech, QStringLiteral("endpoint"), settings));
+        settings.speech.endpoint.baseUrl = QStringLiteral("https://speech.example.com");
+        QVERIFY(needsInternet(ProviderRole::Speech, QStringLiteral("endpoint"), settings));
     }
 
     // Guarded right after startAttempt(): a provider failing inside it never

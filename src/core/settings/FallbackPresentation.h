@@ -38,6 +38,10 @@ QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, co
 // skipped.
 bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &providerId);
 
+// Whether a provider needs the internet to work: one that signs in, or a
+// Custom Endpoint whose server isn't on this computer or its network.
+bool needsInternet(ProviderRole role, const QString &providerId, const AppSettings &settings);
+
 // Whether a provider works through an account the person signs in to (Claude
 // Voice, ChatGPT Codex, OpenAI, Anthropic), rather than a key or this computer.
 bool providerSignsIn(const QString &providerId);

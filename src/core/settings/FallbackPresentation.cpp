@@ -128,18 +128,23 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
         return facts.runnersChecked && !facts.detectingRunners && !running ? FallbackProblem::NoRunner
                                                                             : FallbackProblem::None;
     }
-    const bool offline = facts.reachability == Reachability::Offline;
-    if (providerId == kEndpoint) {
-        const QString url = serverUrl(role, settings);
-        if (url.isEmpty()) {
-            return FallbackProblem::NoServer;
-        }
-        return offline && !isLocalNetworkServer(url) ? FallbackProblem::Offline : FallbackProblem::None;
+    if (providerId == kEndpoint && serverUrl(role, settings).isEmpty()) {
+        return FallbackProblem::NoServer;
     }
     if (!facts.signedIn.value(providerId, true)) {
         return FallbackProblem::SignedOut;
     }
-    return offline && providerSignsIn(providerId) ? FallbackProblem::Offline : FallbackProblem::None;
+    return facts.reachability == Reachability::Offline && needsInternet(role, providerId, settings)
+        ? FallbackProblem::Offline
+        : FallbackProblem::None;
+}
+
+bool needsInternet(ProviderRole role, const QString &providerId, const AppSettings &settings)
+{
+    if (providerId == kEndpoint) {
+        return !isLocalNetworkServer(serverUrl(role, settings));
+    }
+    return providerSignsIn(providerId);
 }
 
 QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, const LiveFacts &facts,
