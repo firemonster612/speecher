@@ -614,8 +614,9 @@ void DictationSession::noteProviderIssue(ProviderRole role,
     const bool wordsLost = role == ProviderRole::Speech && stage == Stage::Connect
         && m_state != DictationState::Starting;
     m_providerHistory.issues.append({role, providerId, stage, failure.kind, failure.message, offline, wordsLost});
-    const bool signInMissing = stage == Stage::Prepare && failure.kind == ProviderFailureKind::Unavailable;
-    if (failure.kind == ProviderFailureKind::Authentication || signInMissing) {
+    // Only a sign-in the service turned down is evidence: an unavailable
+    // provider may have a keyring it can't read, not a missing sign-in.
+    if (failure.kind == ProviderFailureKind::Authentication) {
         noteSignIn(providerId, false);
     }
 }

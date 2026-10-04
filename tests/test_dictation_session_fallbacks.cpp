@@ -191,6 +191,23 @@ private slots:
         QCOMPARE(signIns.first(), (QVariantList{QStringLiteral("claude"), false}));
     }
 
+    // A preparation that fails without saying the sign-in was turned down,
+    // such as a keyring that can't be read, says nothing about the sign-in.
+    void anUnavailableProviderIsNotTakenForSignedOut()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("Desktop keyring unavailable")};
+        QSignalSpy signIns(rig.session.get(), &DictationSession::providerSignInObserved);
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(signIns.size(), 0);
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Input sent • Transcribed with Local Model. ChatGPT Codex couldn't start."));
+    }
+
     void noSpeechProviderStartsAndTheErrorNamesEach()
     {
         ChainRig rig({QStringLiteral("codex"), QStringLiteral("endpoint"), QStringLiteral("local")});

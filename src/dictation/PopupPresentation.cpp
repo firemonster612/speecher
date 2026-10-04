@@ -98,7 +98,12 @@ QString shortfall(const ProviderAttemptIssue &issue)
             return issue.stage == Stage::Prepare ? QStringLiteral("has no model downloaded")
                                                  : QStringLiteral("couldn't load its model");
         }
-        return providerSignsIn(issue.providerId) ? QStringLiteral("isn't signed in") : QStringLiteral("isn't set up");
+        // Unavailable says nothing about a sign-in: the keyring may not have
+        // answered. Only a turned-down one is named as such.
+        if (!providerSignsIn(issue.providerId)) {
+            return QStringLiteral("isn't set up");
+        }
+        break;
     case ProviderFailureKind::Other:
     case ProviderFailureKind::InvalidResult:
     case ProviderFailureKind::Cancelled:
