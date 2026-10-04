@@ -68,16 +68,6 @@ void setOptions(QComboBox *combo, const QList<RowOption> &options)
     }
 }
 
-QList<RowOption> providerOptions(const QList<ProviderDescriptor> &providers)
-{
-    QList<RowOption> options;
-    options.reserve(providers.size());
-    for (const ProviderDescriptor &provider : providers) {
-        options.append({provider.id, provider.label, provider.summary});
-    }
-    return options;
-}
-
 QList<RefinementProvider> refinementProviders(const QList<ProviderDescriptor> &providers)
 {
     QList<RefinementProvider> refiners;
@@ -98,7 +88,9 @@ SchemaCustomRow builtInRow(const SettingsRow &descriptor,
     if (descriptor.id == QStringLiteral("writingProfileBehavior")) {
         return makeWritingProfileList(descriptor.collection, parent, std::move(notifyChanged));
     }
-    // The Fallbacks subpages' lists, which no Qt page draws yet.
+    // The Fallbacks lists need LocalSetup's facts, so SettingsPageSet supplies
+    // them (fallbackListRows); a schema page rendered whole without that
+    // factory leaves them out.
     if (descriptor.id == QStringLiteral("speechFallbackList")
         || descriptor.id == QStringLiteral("refinementFallbackList")) {
         auto *placeholder = new QWidget(parent);
@@ -116,6 +108,16 @@ QString gateNoticeKey(const SettingsRow &descriptor)
 }
 
 } // namespace
+
+QList<RowOption> providerOptions(const QList<ProviderDescriptor> &providers)
+{
+    QList<RowOption> options;
+    options.reserve(providers.size());
+    for (const ProviderDescriptor &provider : providers) {
+        options.append({provider.id, provider.label, provider.summary});
+    }
+    return options;
+}
 
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
                               const ProviderRegistry &providers,
@@ -167,17 +169,20 @@ SchemaSettingsPage::SchemaSettingsPage(const QList<SettingsSection> &sections,
         }
     }
     for (int index = 0; index < sections.size(); ++index) {
-        if (index > 0) {
-            pageLayout->addSpacing(settings::groupGap());
-        }
-        addSection(sections.at(index), pageLayout);
+        addSection(sections.at(index), pageLayout, index > 0);
     }
     pageLayout->addStretch();
 }
 
-void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout *pageLayout)
+void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout *pageLayout, bool spaced)
 {
     Section entry;
+    // The gap above a section goes with its card, so a hidden card leaves none.
+    if (spaced) {
+        entry.gap = new QWidget(this);
+        entry.gap->setFixedHeight(settings::groupGap());
+        pageLayout->addWidget(entry.gap);
+    }
     entry.rowStart = m_rows.size();
     // A section is one column: its title, then its card of rows. The column is
     // centred and capped so every section on the page shares the same edges.
@@ -223,6 +228,21 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
         && entry.rowStart < m_rows.size()) {
         if (auto *heading = m_rows.at(entry.rowStart).frame->findChild<QLabel *>(QStringLiteral("subsectionLabel"))) {
             heading->hide();
+        }
+    }
+    // A row may title and footnote its section itself.
+    for (int index = entry.rowStart; index < m_rows.size(); ++index) {
+        const Row &row = m_rows.at(index);
+        if (row.header) {
+            delete entry.label;
+            row.header->setParent(column);
+            columnLayout->insertWidget(0, row.header);
+            entry.label = row.header;
+        }
+        if (row.footer) {
+            row.footer->setParent(column);
+            columnLayout->addWidget(row.footer);
+            entry.note = row.footer;
         }
     }
     if (!section.help.isEmpty()) {
@@ -350,6 +370,8 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor, QWidget *host, bo
         row.setValue = custom.setValue;
         row.refresh = custom.refresh;
         row.setEditable = custom.setEditable;
+        row.header = custom.header;
+        row.footer = custom.footer;
         if (custom.cardRows) {
             settings::addCardRow(form, custom.widget, host);
             row.frame = custom.widget;
@@ -403,6 +425,23 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor, QWidget *host, bo
         containerLayout->addWidget(custom.widget);
         settings::addCardRow(form, container, host);
         row.frame = container;
+        m_rows.append(row);
+        applyRow(m_rows.last(), AppSettings{});
+        return;
+    }
+
+    if (descriptor.kind == RowKind::Action && !descriptor.targetPage.isEmpty()) {
+        // A row that opens a subpage is itself the button, with the trailing
+        // arrow, and its description says what the subpage holds.
+        QPushButton *button = settings::makeButtonRow(descriptor.label, descriptor.help, host, dynamicDescription);
+        button->setObjectName(descriptor.id);
+        connect(button, &QPushButton::clicked, this, [this, id = descriptor.id] {
+            emit actionTriggered(id);
+        });
+        settings::addCardRow(form, button, host);
+        row.frame = button;
+        row.control = button;
+        row.description = button->findChild<QLabel *>(QStringLiteral("rowDescription"));
         m_rows.append(row);
         applyRow(m_rows.last(), AppSettings{});
         return;
@@ -735,7 +774,7 @@ void SchemaSettingsPage::refreshRows()
         }
         // The caption follows what a click will do, and a value names what
         // the row is about (the Local Runner found) in place of its label.
-        if (row.descriptor.kind == RowKind::Action) {
+        if (row.descriptor.kind == RowKind::Action && row.descriptor.targetPage.isEmpty()) {
             if (row.descriptor.actionLabelValue) {
                 qobject_cast<QPushButton *>(row.control)->setText(row.descriptor.actionLabelValue(draft));
             }
@@ -801,11 +840,13 @@ void SchemaSettingsPage::refreshRows()
             }
         }
         section.card->setVisible(anyRowVisible);
-        if (section.label) {
-            section.label->setVisible(anyRowVisible);
+        for (QWidget *chrome : {section.label, section.gap}) {
+            if (chrome) {
+                chrome->setVisible(anyRowVisible);
+            }
         }
         if (section.note) {
-            section.note->setVisible(anyRowVisible);
+            section.note->setVisible(anyRowVisible && !section.note->text().isEmpty());
         }
     }
 }

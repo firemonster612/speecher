@@ -9,6 +9,7 @@
 #include "core/AppSettings.h"
 #include "core/SecretStore.h"
 #include "core/SettingsStore.h"
+#include "frontend/qt/FallbackList.h"
 #include "frontend/qt/LocalModelRows.h"
 #include "frontend/qt/MicrophoneTestRow.h"
 #include "frontend/qt/SchemaSettingsPage.h"
@@ -197,6 +198,7 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
         m_schema.hasPage(QStringLiteral("localModels")) ? localModelRows(*controller->localSetup())
                                                         : SchemaCustomRowFactory(),
         whatsNewCustomRow,
+        fallbackListRows(*controller->providerRegistry(), *controller->localSetup()),
     });
     for (const SettingsPane &pane : std::as_const(m_schema.panes)) {
         if (pane.layout == PaneLayout::Alternatives) {
@@ -213,6 +215,13 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
             }
             addPage(pane.id, sections, parent, customRows, pane.intro);
         }
+    }
+    for (const SettingsSubpage &subpage : std::as_const(m_schema.subpages)) {
+        QList<SettingsSection> sections;
+        for (const SettingsPaneGroup &group : subpage.groups) {
+            sections.append(m_schema.section(group));
+        }
+        addPage(subpage.id, sections, parent, customRows, QString());
     }
     preserveScroll(page(QStringLiteral("vocabulary:replacements")));
 
@@ -235,11 +244,15 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
         const auto current = m_controller->settings()->dictationSnapshot();
         m_draft = mergeSettingsDraft(m_schema, m_loaded, m_draft, current);
         m_loaded = current;
-        for (const QString &id : {QStringLiteral("dictation"), QStringLiteral("refinement"),
-                                  QStringLiteral("localModels")}) {
-            if (SchemaSettingsPage *live = page(id)) {
-                const QSignalBlocker blocker(live);
-                live->load(m_draft);
+        // The subpages too: the Fallbacks lists show what can stand in now.
+        QStringList live{QStringLiteral("dictation"), QStringLiteral("refinement"), QStringLiteral("localModels")};
+        for (const SettingsSubpage &subpage : std::as_const(m_schema.subpages)) {
+            live.append(subpage.id);
+        }
+        for (const QString &id : std::as_const(live)) {
+            if (SchemaSettingsPage *shown = page(id)) {
+                const QSignalBlocker blocker(shown);
+                shown->load(m_draft);
             }
         }
     });
@@ -415,6 +428,10 @@ void SettingsPageSet::preserveScroll(QScrollArea *scroll)
 
 void SettingsPageSet::runPageAction(const QString &rowId)
 {
+    if (const SettingsRow *row = m_schema.row(rowId); row && !row->targetPage.isEmpty()) {
+        emit pageRequested(row->targetPage);
+        return;
+    }
     if (rowId == QStringLiteral("runSetup")) {
         m_controller->showSetupAssistant();
         return;

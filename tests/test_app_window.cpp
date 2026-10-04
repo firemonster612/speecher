@@ -243,7 +243,7 @@ private slots:
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(controller.pendingWhatsNewVersion().isEmpty());
 
-        window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"))->click();
+        window.findChild<QToolButton *>(QStringLiteral("pageBack"))->click();
         QCOMPARE(title->text(), QStringLiteral("Output"));
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Output"));
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Home"));
@@ -1259,7 +1259,7 @@ private slots:
         window.show();
         auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
-        auto *back = window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"));
+        auto *back = window.findChild<QToolButton *>(QStringLiteral("pageBack"));
         auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
         QVERIFY(navigation && whatsNew && back && title);
         QVERIFY(!back->isVisible());
@@ -1280,6 +1280,39 @@ private slots:
         QVERIFY(!back->isVisible());
         // Not pending and not showing, so it leaves the sidebar.
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Home"));
+    }
+
+    // A Fallbacks row opens its subpage under the parent's sidebar entry, and
+    // Back returns to the parent. A subpage's id opens it directly.
+    void fallbacksRowsOpenTheirSubpageAndBackReturns()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        window.show();
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *back = window.findChild<QToolButton *>(QStringLiteral("pageBack"));
+        auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
+        QVERIFY(navigation && back && title);
+        const int sidebarRows = navigation->count();
+
+        window.showPage(QStringLiteral("dictation"));
+        window.findChild<QPushButton *>(QStringLiteral("speechFallbacks"))->click();
+        QCOMPARE(title->text(), QStringLiteral("Fallbacks"));
+        QVERIFY(window.findChild<QWidget *>(QStringLiteral("dictation:fallbacks"))->isVisible());
+        QVERIFY(back->isVisible());
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Dictation"));
+        QCOMPARE(navigation->count(), sidebarRows);
+
+        back->click();
+        QCOMPARE(title->text(), QStringLiteral("Dictation"));
+        QVERIFY(window.findChild<QWidget *>(QStringLiteral("dictation"))->isVisible());
+        QVERIFY(!back->isVisible());
+
+        window.showPage(QStringLiteral("refinement:fallbacks"));
+        QCOMPARE(title->text(), QStringLiteral("Fallbacks"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Refinement"));
+        back->click();
+        QCOMPARE(title->text(), QStringLiteral("Refinement"));
     }
 
     void deletingACorrectionThroughThePageSetKeepsUndoAvailable()

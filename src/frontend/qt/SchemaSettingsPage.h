@@ -15,6 +15,10 @@ namespace speecher {
 class InlineMessage;
 class PlatformComposition;
 class ProviderRegistry;
+struct ProviderDescriptor;
+
+// A role's providers as schema rows offer them, by their registry labels.
+QList<RowOption> providerOptions(const QList<ProviderDescriptor> &providers);
 
 // What the Qt front end can tell the schema about this machine.
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
@@ -44,6 +48,10 @@ struct SchemaCustomRow {
     // Reads under the row's title and description, such as a live status
     // that would otherwise crowd the control column.
     QWidget *detail = nullptr;
+    // Take the place of the section's title above its card and its footnote
+    // under it, for a row whose heading follows the settings.
+    QWidget *header = nullptr;
+    QLabel *footer = nullptr;
 };
 
 // How a front end hands the renderer a widget for a row it wants to draw
@@ -101,6 +109,9 @@ private:
         std::function<void(bool)> setEditable;
         // The button row that opens the dialog this row is shown in, if any.
         QPushButton *opener = nullptr;
+        // What a Custom row puts in place of its section's title and footnote.
+        QWidget *header = nullptr;
+        QLabel *footer = nullptr;
     };
 
     // A button row standing in for rows shown in a dialog, and what its
@@ -124,12 +135,16 @@ private:
     struct Section {
         QWidget *card = nullptr;
         QWidget *label = nullptr;
-        QWidget *note = nullptr;
+        // The space above the section, which goes with it.
+        QWidget *gap = nullptr;
+        // Hidden while it has nothing to say.
+        QLabel *note = nullptr;
         int rowStart = 0;
         int rowEnd = 0;
     };
 
-    void addSection(const SettingsSection &section, QVBoxLayout *pageLayout);
+    // A spaced section keeps the gap between sections above it.
+    void addSection(const SettingsSection &section, QVBoxLayout *pageLayout, bool spaced);
     // Adds the button row to the card and returns the form of its dialog's card.
     QWidget *addDialog(const RowDialog &dialog, QWidget *cardForm);
     void addRow(const SettingsRow &descriptor, QWidget *host, bool explainsGate);

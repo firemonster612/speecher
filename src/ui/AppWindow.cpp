@@ -207,6 +207,7 @@ AppWindow::AppWindow(ApplicationController *controller, QWidget *parent)
     connect(m_pages, &SettingsPageSet::whatsNewRequested, this, &AppWindow::showWhatsNew);
     connect(m_pages, &SettingsPageSet::localModelsRequested, this,
             [this] { showPage(QStringLiteral("localModels")); });
+    connect(m_pages, &SettingsPageSet::pageRequested, this, &AppWindow::showPage);
     connect(m_home, &HomePage::pageRequested, this, &AppWindow::showPage);
     connect(m_transcribe, &TranscribePage::pageRequested, this, &AppWindow::showPage);
     connect(m_controller->updateBanner(),
@@ -259,6 +260,9 @@ void AppWindow::showPage(const QString &pageId)
         }
     }
     selectPane(page.pane);
+    if (QWidget *subpage = m_subpageWidgets.value(page.subpage)) {
+        m_stack->setCurrentWidget(subpage);
+    }
 }
 
 void AppWindow::showSearchMatch(const SearchMatch &match, bool focusRow)
@@ -283,9 +287,16 @@ void AppWindow::showSearchMatch(const SearchMatch &match, bool focusRow)
     }
 }
 
+// A subpage counts as its parent pane, which the sidebar keeps selected.
 QString AppWindow::currentPane() const
 {
-    return m_paneWidgets.key(m_stack->currentWidget());
+    const SettingsSubpage *subpage = m_pages->schema().subpage(currentSubpage());
+    return subpage ? subpage->parent : m_paneWidgets.key(m_stack->currentWidget());
+}
+
+QString AppWindow::currentSubpage() const
+{
+    return m_subpageWidgets.key(m_stack->currentWidget());
 }
 
 void AppWindow::selectPane(const QString &paneId)
@@ -535,6 +546,9 @@ void AppWindow::buildPages()
         }
         m_paneWidgets.insert(pane.id, widget);
     }
+    for (const SettingsSubpage &subpage : m_pages->schema().subpages) {
+        m_subpageWidgets.insert(subpage.id, m_pages->page(subpage.id));
+    }
 }
 
 void AppWindow::buildSidebarShell()
@@ -591,11 +605,11 @@ void AppWindow::buildSidebarShell()
                                           settings::relatedSpacing(),
                                           settings::relatedSpacing(),
                                           settings::relatedSpacing());
-    // What's New is not a sidebar page, so while it shows, the header carries
-    // the way back to the page it was opened from, as System Settings does for
-    // a page reached from another one.
+    // What's New and the subpages are not sidebar pages, so while one shows,
+    // the header carries the way back to the page it was opened from, as
+    // System Settings does for a page reached from another one.
     m_backButton = new QToolButton(headerRight);
-    m_backButton->setObjectName(QStringLiteral("whatsNewBack"));
+    m_backButton->setObjectName(QStringLiteral("pageBack"));
     m_backButton->setText(QStringLiteral("Back"));
     const QIcon backIcon = QIcon::fromTheme(QStringLiteral("go-previous"));
     m_backButton->setIcon(backIcon);
@@ -604,7 +618,7 @@ void AppWindow::buildSidebarShell()
     m_backButton->setToolTip(QStringLiteral("Back"));
     m_backButton->setAutoRaise(true);
     m_backButton->hide();
-    connect(m_backButton, &QToolButton::clicked, this, &AppWindow::leaveWhatsNew);
+    connect(m_backButton, &QToolButton::clicked, this, &AppWindow::goBack);
     headerRightLayout->addWidget(m_backButton);
     m_pageTitle = settings::makePageTitle(paneTitle(kHomePane), headerRight);
     headerRightLayout->addWidget(m_pageTitle);
@@ -673,6 +687,9 @@ void AppWindow::buildSidebarShell()
     m_stack->setObjectName(QStringLiteral("appPageStack"));
     for (const SettingsPane &pane : m_pages->schema().panes) {
         m_stack->addWidget(m_paneWidgets.value(pane.id));
+    }
+    for (QWidget *subpage : std::as_const(m_subpageWidgets)) {
+        m_stack->addWidget(subpage);
     }
     auto *right = new QWidget(m_sidebarSplitter);
     right->setBackgroundRole(QPalette::Window);
@@ -799,8 +816,9 @@ void AppWindow::buildSidebarShell()
     }
     connect(m_stack, &QStackedWidget::currentChanged, this, [this] {
         const QString pane = currentPane();
-        m_pageTitle->setText(paneTitle(pane));
-        m_backButton->setVisible(pane == kWhatsNewPane);
+        const SettingsSubpage *subpage = m_pages->schema().subpage(currentSubpage());
+        m_pageTitle->setText(subpage ? subpage->title : paneTitle(pane));
+        m_backButton->setVisible(pane == kWhatsNewPane || subpage);
     });
     connect(m_controller, &ApplicationController::whatsNewChanged, this, [this] {
         if (sidebarListsWhatsNew() != m_sidebarListsWhatsNew) {
@@ -887,8 +905,12 @@ void AppWindow::showWhatsNew()
     selectPane(kWhatsNewPane);
 }
 
-void AppWindow::leaveWhatsNew()
+void AppWindow::goBack()
 {
+    if (const SettingsSubpage *subpage = m_pages->schema().subpage(currentSubpage())) {
+        showPage(subpage->parent);
+        return;
+    }
     selectPane(m_whatsNewReturnPane.isEmpty() ? kHomePane : m_whatsNewReturnPane);
 }
 
