@@ -1038,6 +1038,38 @@ private slots:
         QCOMPARE(completed.size(), 0);
     }
 
+    // A completion marker with no text ends the request at once, even while
+    // the server holds the stream open.
+    void emptyCompletionOnAnOpenStreamIsAnInvalidResult()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        using Event = StreamingRefinement::Event;
+        StreamingRefinement stream(QStringLiteral("Test"),
+            [](const QByteArray &name, const QByteArray &) {
+                return name == "done" ? Event{Event::Complete, {}} : Event{};
+            },
+            [](const QByteArray &, const QString &fallback) { return fallback; },
+            5000, 10000);
+        QSignalSpy completed(&stream, &StreamingRefinement::completed);
+        QSignalSpy failed(&stream, &StreamingRefinement::failed);
+        const QUrl url(QStringLiteral("http://127.0.0.1:%1/").arg(server.serverPort()));
+        stream.start([url](bool) { return StreamingRefinement::Request{QNetworkRequest(url), "{}"}; }, {});
+        QTRY_VERIFY(server.hasPendingConnections());
+        QTcpSocket *socket = server.nextPendingConnection();
+        QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+        const QByteArray done = "event: done\ndata: {}\n\n";
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
+                      + QByteArray::number(done.size(), 16) + "\r\n" + done + "\r\n");
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
+        const ProviderFailure failure = failed.first().first().value<ProviderFailure>();
+        QCOMPARE(failure.kind, ProviderFailureKind::InvalidResult);
+        QCOMPARE(failure.httpStatus, 200);
+        QVERIFY2(failure.message.contains(QStringLiteral("empty response")), qPrintable(failure.message));
+        QTRY_COMPARE_WITH_TIMEOUT(socket->state(), QAbstractSocket::UnconnectedState, 1000);
+        QCOMPARE(completed.size(), 0);
+    }
+
     void refinersTreatStreamErrorsAsTerminal()
     {
         QTcpServer openAiServer;

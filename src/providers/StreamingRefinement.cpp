@@ -76,14 +76,13 @@ void StreamingRefinement::post(const Request &request)
         }
         takeReply();
         reply->deleteLater();
-        const QString prefix = m_provider + QStringLiteral(" refinement failed: ");
         // An answer that ends without its completion marker is unusable, not
         // a sign the provider is unreachable.
         const ProviderFailure failure = reply->error() != QNetworkReply::NoError
-            ? replyFailure(*reply, prefix + m_decodeError(m_buffer + reply->readAll(), reply->errorString()))
+            ? replyFailure(*reply, failureMessage(m_decodeError(m_buffer + reply->readAll(), reply->errorString())))
             : ProviderFailure{ProviderFailureKind::InvalidResult,
-                              prefix + (m_accumulated.isEmpty() ? QStringLiteral("empty response")
-                                                                : QStringLiteral("stream ended before completion")),
+                              failureMessage(m_accumulated.isEmpty() ? QStringLiteral("empty response")
+                                                                     : QStringLiteral("stream ended before completion")),
                               reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()};
         if (!retryAtStandardSpeed(failure.message, true)) emit failed(failure);
     });
@@ -172,9 +171,21 @@ bool StreamingRefinement::retryAtStandardSpeed(const QString &reason, bool latch
     return true;
 }
 
+QString StreamingRefinement::failureMessage(const QString &detail) const
+{
+    return m_provider + QStringLiteral(" refinement failed: ") + detail;
+}
+
 void StreamingRefinement::complete()
 {
-    if (m_accumulated.isEmpty()) return;
+    // A completed answer with no text is unusable; waiting on the open
+    // stream would only turn it into a timeout. It retries at standard speed
+    // the way an empty answer that closes the stream does.
+    if (m_accumulated.isEmpty()) {
+        fail({ProviderFailureKind::InvalidResult, failureMessage(QStringLiteral("empty response"))},
+             Retry::AfterRejection);
+        return;
+    }
     QPointer<QNetworkReply> reply = takeReply();
     m_standardFallback = nullptr;
     if (m_latchOnSuccess) {

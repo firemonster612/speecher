@@ -61,6 +61,7 @@ private:
     void fail(ProviderFailure failure, Retry retry);
     bool retryAtStandardSpeed(const QString &reason, bool latchOnSuccess);
     void complete();
+    QString failureMessage(const QString &detail) const;
 
     QString m_provider;
     DecodeEvent m_decodeEvent;
