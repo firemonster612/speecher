@@ -1,4 +1,5 @@
 #include "common/test_prelude.h"
+#include "core/ProviderChain.h"
 #include "core/settings/SettingsKeys.h"
 #include <QProcess>
 #ifdef SPEECHER_WITH_QKEYCHAIN
@@ -51,6 +52,82 @@ private slots:
         const auto actual = settings.raw().format();
         QSettings::setDefaultFormat(previous);
         QCOMPARE(actual, QSettings::IniFormat);
+    }
+
+    void fallbackProvidersAreStoredInOrderWithinTheCap()
+    {
+        const QString claude = QStringLiteral("claude");
+        const QString codex = QStringLiteral("codex");
+        const QString local = QStringLiteral("local");
+        const QString endpoint = QStringLiteral("endpoint");
+        QCOMPARE(normalizedFallbackProviders(ProviderRole::Speech, claude,
+                                             {endpoint, QString(), QStringLiteral("whisper"), claude, endpoint,
+                                              local, codex}),
+                 (QStringList{endpoint, local}));
+        QCOMPARE(providerChain(ProviderRole::Speech, codex, {local, claude}), (QStringList{codex, local, claude}));
+        QCOMPARE(normalizedFallbackProviders(ProviderRole::Refinement, QStringLiteral("openai"),
+                                             {QStringLiteral("none"), claude, QStringLiteral("anthropic")}),
+                 QStringList{QStringLiteral("anthropic")});
+
+        SettingsStore settings;
+        settings.raw().clear();
+        // A key nothing has written reads as no fallbacks.
+        QVERIFY(settings.speechFallbackProviders().isEmpty());
+        QVERIFY(settings.refinementFallbackProviders().isEmpty());
+
+        settings.setSpeechProvider(codex);
+        settings.setSpeechFallbackProviders({local, codex, endpoint, claude});
+        QCOMPARE(SettingsStore().speechFallbackProviders(), (QStringList{local, endpoint}));
+        // The new primary leaves the fallbacks.
+        settings.setSpeechProvider(local);
+        QCOMPARE(SettingsStore().speechFallbackProviders(), QStringList{endpoint});
+    }
+
+    void refinementNoneClearsItsFallbacks()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setRefinementFallbackProviders({QStringLiteral("local")});
+        settings.setRefinementProvider(QStringLiteral("none"));
+        QVERIFY(settings.refinementFallbackProviders().isEmpty());
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        QVERIFY(settings.refinementFallbackProviders().isEmpty());
+        QVERIFY(providerChain(ProviderRole::Refinement, QStringLiteral("none"), {QStringLiteral("local")}).isEmpty());
+    }
+
+    void fallbackProvidersRoundTripThroughASnapshot()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        AppSettings draft = settings.snapshot();
+        draft.speech.providerId = QStringLiteral("codex");
+        draft.speech.fallbackProviderIds = {QStringLiteral("endpoint"), QStringLiteral("local")};
+        draft.refinement.providerId = QStringLiteral("anthropic");
+        draft.refinement.fallbackProviderIds = {QStringLiteral("local")};
+        settings.applySnapshot(draft);
+
+        const AppSettings saved = SettingsStore().snapshot();
+        QCOMPARE(saved.speech.fallbackProviderIds, draft.speech.fallbackProviderIds);
+        QCOMPARE(saved.refinement.fallbackProviderIds, draft.refinement.fallbackProviderIds);
+    }
+
+    // A draft taken before another window swapped the primary and a fallback
+    // still saves the chain it shows.
+    void aDraftThatSwapsThePrimaryAndAFallbackSavesBoth()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        settings.setSpeechFallbackProviders({QStringLiteral("codex")});
+        AppSettings draft = settings.snapshot();
+        draft.speech.providerId = QStringLiteral("codex");
+        draft.speech.fallbackProviderIds = {QStringLiteral("claude")};
+        settings.applySnapshot(draft);
+
+        const AppSettings saved = SettingsStore().snapshot();
+        QCOMPARE(saved.speech.providerId, QStringLiteral("codex"));
+        QCOMPARE(saved.speech.fallbackProviderIds, QStringList{QStringLiteral("claude")});
     }
 
     void otherTestProcessesCannotClearSettingsFallbacks()
