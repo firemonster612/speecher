@@ -1,0 +1,9 @@
+2026-10-04T11:37:32.655Z info toggle requested state=idle
+2026-10-04T11:37:32.656Z info state changed state=starting messagePresent=0
+2026-10-04T11:37:32.840Z info state changed state=listening messagePresent=0
+2026-10-04T11:37:41.734Z info pause requested transcriptLength= 59
+2026-10-04T11:37:41.735Z info state changed state=paused messagePresent=0
+2026-10-04T11:38:49.873Z info resume requested pausedAttemptFinished= true
+2026-10-04T11:38:49.875Z info state changed state=listening messagePresent=0
+2026-10-04T11:39:40.578Z info cancel requested state=listening
+2026-10-04T11:39:40.579Z info state changed state=idle messagePresent=0

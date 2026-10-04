@@ -1,0 +1,15 @@
+01-IDLE-P: PASS — Before a session, P typed p into TextEdit.
+02-PAUSE-P: PASS — P paused the session; TextEdit still contained only the original p.
+03-RESUME-P: PASS — P resumed listening; TextEdit still contained only the original p.
+04-CANCEL-ESC: PASS — Escape canceled the session, pasted nothing, and left TextEdit's Find bar open.
+05-IDLE-KEYS: PASS — After the session, Escape closed Find and P typed a second p.
+
+2026-10-04T11:10:30.005Z info toggle requested state=idle
+2026-10-04T11:10:30.067Z info state changed state=starting messagePresent=0
+2026-10-04T11:10:30.172Z info state changed state=listening messagePresent=0
+2026-10-04T11:10:31.872Z info pause requested transcriptLength= 59
+2026-10-04T11:10:31.889Z info state changed state=paused messagePresent=0
+2026-10-04T11:10:33.437Z info resume requested pausedAttemptFinished= true
+2026-10-04T11:10:33.447Z info state changed state=listening messagePresent=0
+2026-10-04T11:10:36.155Z info cancel requested state=listening
+2026-10-04T11:10:36.172Z info state changed state=idle messagePresent=0
