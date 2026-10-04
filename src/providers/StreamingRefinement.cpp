@@ -14,24 +14,27 @@ namespace speecher {
 
 StreamingRefinement::StreamingRefinement(QString provider, DecodeEvent decodeEvent,
                                          DecodeError decodeError, int inactivityMs,
-                                         int deadlineMs, QObject *parent)
+                                         int deadlineMs, QObject *parent, int connectMs)
     : QObject(parent)
     , m_provider(std::move(provider))
     , m_decodeEvent(std::move(decodeEvent))
     , m_decodeError(decodeError)
     , m_inactivityMs(inactivityMs)
     , m_deadlineMs(deadlineMs)
+    , m_connectMs(connectMs)
 {
+    m_connectTimer.setSingleShot(true);
     m_inactivityTimer.setSingleShot(true);
     m_deadlineTimer.setSingleShot(true);
-    const auto timeout = [this](Retry retry) {
-        if (m_reply) {
-            fail({ProviderFailureKind::Timeout, m_provider + QStringLiteral(" refinement timed out waiting for a response")},
-                 retry);
-        }
+    const auto timeout = [this](const QString &message, Retry retry) {
+        if (m_reply) fail({ProviderFailureKind::Timeout, m_provider + message}, retry);
     };
-    connect(&m_inactivityTimer, &QTimer::timeout, this, [timeout] { timeout(Retry::AfterStall); });
-    connect(&m_deadlineTimer, &QTimer::timeout, this, [timeout] { timeout(Retry::Never); });
+    connect(&m_connectTimer, &QTimer::timeout, this, [this, timeout] {
+        timeout(QStringLiteral(" refinement could not connect within %1 s").arg(m_connectMs / 1000.0), Retry::Never);
+    });
+    const QString waiting = QStringLiteral(" refinement timed out waiting for a response");
+    connect(&m_inactivityTimer, &QTimer::timeout, this, [timeout, waiting] { timeout(waiting, Retry::AfterStall); });
+    connect(&m_deadlineTimer, &QTimer::timeout, this, [timeout, waiting] { timeout(waiting, Retry::Never); });
 }
 
 void StreamingRefinement::start(BuildRequest buildRequest, const QString &fastTier)
@@ -53,9 +56,16 @@ void StreamingRefinement::post(const Request &request)
     m_accumulated.clear();
     QNetworkReply *reply = m_network.post(request.headers, request.body);
     m_reply = reply;
+    m_connectTimer.start(m_connectMs);
     m_inactivityTimer.start(m_inactivityMs);
     // A retry shares the original absolute deadline.
     m_deadlineTimer.start(qMax(1, int(m_operationDeadline.remainingTime())));
+    // A sent request, or a TLS session, proves the connection is up.
+    const auto connected = [this, reply] {
+        if (reply == m_reply) m_connectTimer.stop();
+    };
+    connect(reply, &QNetworkReply::requestSent, this, connected);
+    connect(reply, &QNetworkReply::encrypted, this, connected);
     connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
         if (reply == m_reply) parseChunk(reply->readAll());
     });
@@ -84,6 +94,7 @@ QNetworkReply *StreamingRefinement::takeReply()
     // Stop suspended parsers, and invalidate queued completion even if its
     // reply was already detached when cancel() was called.
     ++m_generation;
+    m_connectTimer.stop();
     m_inactivityTimer.stop();
     m_deadlineTimer.stop();
     return std::exchange(m_reply, nullptr);

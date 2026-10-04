@@ -2,6 +2,9 @@
 #include "common/test_http.h"
 #include "common/test_auth.h"
 #include "providers/OpenAiTranscriptRefiner.h"
+#include "providers/StreamingRefinement.h"
+
+#include <QSslSocket>
 
 using namespace speecher::test;
 
@@ -344,6 +347,50 @@ private slots:
         const ProviderFailure failure = failed.first().first().value<ProviderFailure>();
         QCOMPARE(failure.kind, kind);
         QCOMPARE(failure.httpStatus, httpStatus);
+    }
+
+    // The connect budget ends once the request is out, so a TLS handshake
+    // that never finishes times out, and a slow first token does not.
+    void connectBudgetEndsWhenTheRequestIsSent_data()
+    {
+        QTest::addColumn<bool>("tls");
+        QTest::newRow("tls-handshake-stalls") << true;
+        QTest::newRow("first-token-is-slow") << false;
+    }
+
+    void connectBudgetEndsWhenTheRequestIsSent()
+    {
+        QFETCH(bool, tls);
+        if (tls && !QSslSocket::supportsSsl()) QSKIP("No TLS backend");
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        using Event = StreamingRefinement::Event;
+        StreamingRefinement stream(QStringLiteral("Test"),
+            [](const QByteArray &name, const QByteArray &data) -> Event {
+                return name == "done" ? Event{Event::Complete, {}} : Event{Event::Delta, QString::fromUtf8(data)};
+            },
+            [](const QByteArray &, const QString &fallback) { return fallback; },
+            5000, 10000, nullptr, 200);
+        QSignalSpy completed(&stream, &StreamingRefinement::completed);
+        QSignalSpy failed(&stream, &StreamingRefinement::failed);
+        const QUrl url(QStringLiteral("%1://127.0.0.1:%2/").arg(tls ? "https" : "http").arg(server.serverPort()));
+        stream.start([url](bool) { return StreamingRefinement::Request{QNetworkRequest(url), "{}"}; }, {});
+        QTRY_VERIFY(server.hasPendingConnections());
+        QTcpSocket *socket = server.nextPendingConnection();
+        if (tls) {
+            QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+            const ProviderFailure failure = failed.first().first().value<ProviderFailure>();
+            QCOMPARE(failure.kind, ProviderFailureKind::Timeout);
+            QVERIFY2(failure.message.contains(QStringLiteral("could not connect")), qPrintable(failure.message));
+            return;
+        }
+        QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+        QTest::qWait(400);
+        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n"
+                      "data: hello\n\nevent: done\ndata: {}\n\n");
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
+        QCOMPARE(completed.first().first().toString(), QStringLiteral("hello"));
+        QCOMPARE(failed.size(), 0);
     }
 
     void refinementInstructionsCompose()

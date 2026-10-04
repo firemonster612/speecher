@@ -36,8 +36,12 @@ public:
     using DecodeError = QString (*)(const QByteArray &body, const QString &fallback);
     using BuildRequest = std::function<Request(bool fast)>;
 
+    // connectMs bounds the time until the request is sent, so an offline
+    // provider fails in seconds; a slow first token is the inactivity
+    // budget's business.
     StreamingRefinement(QString provider, DecodeEvent decodeEvent, DecodeError decodeError,
-                        int inactivityMs, int deadlineMs, QObject *parent = nullptr);
+                        int inactivityMs, int deadlineMs, QObject *parent = nullptr,
+                        int connectMs = 10000);
     // fastTier names the faster tier asked for, such as "priority" or
     // "ultrafast", or is empty for standard speed. A tier the provider refused
     // this session is skipped; the other tiers are still asked for.
@@ -63,7 +67,9 @@ private:
     DecodeError m_decodeError;
     int m_inactivityMs;
     int m_deadlineMs;
+    int m_connectMs;
     QNetworkAccessManager m_network;
+    QTimer m_connectTimer;
     QTimer m_inactivityTimer;
     QTimer m_deadlineTimer;
     QDeadlineTimer m_operationDeadline;
