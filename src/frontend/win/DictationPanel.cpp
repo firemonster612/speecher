@@ -1238,9 +1238,12 @@ struct DictationPanel::Native : QObject {
         RECT bounds{};
         GetWindowRect(window, &bounds);
         const auto point = control.TransformToVisual(nullptr).TransformPoint({0, 0});
+        // The width layout gave the element: a TextBlock's ActualWidth is its
+        // text's, short of the explicit Width the row arranged it in.
+        const double width = std::isnan(control.Width()) ? control.ActualWidth() : control.Width();
         return QRect(bounds.left + qRound(point.X * scale()),
                      bounds.top + qRound(point.Y * scale()),
-                     qRound(control.ActualWidth() * scale()),
+                     qRound(width * scale()),
                      qRound(control.ActualHeight() * scale()));
     }
 
