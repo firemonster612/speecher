@@ -4,6 +4,8 @@
 #include "core/CliToolDiscovery.h"
 #include "core/settings/SettingsSchema.h"
 
+#include <algorithm>
+
 namespace speecher {
 
 QList<SetupStepInfo> setupSteps()
@@ -290,6 +292,34 @@ QString setupBlockedHeading()
 QString setupBlockedFooter()
 {
     return QStringLiteral("Finish becomes available once every step above is resolved.");
+}
+
+SetupFallbackPresentation setupFallbackPresentation(ProviderRole role, const AppSettings &settings,
+                                                    const LiveFacts &facts, const QList<RowOption> &providers,
+                                                    const std::optional<SetupFallbackOffer> &offer)
+{
+    SetupFallbackPresentation section;
+    section.list = fallbackListPresentation(role, settings, facts, providers, FallbackSurface::Setup);
+    section.visible = !section.list.heading.isEmpty();
+    const QString primary = role == ProviderRole::Speech ? settings.speech.providerId : settings.refinement.providerId;
+    section.hint = primary == QStringLiteral("local")
+        ? QStringLiteral("For example while its model is still downloading. Leave this empty to keep every "
+                         "dictation on this computer.")
+        : QStringLiteral("Speecher tries these top to bottom when it's offline, signed out or the service stops "
+                         "answering, and tells you when it used one. Optional.");
+    const bool offered = offer
+        && std::any_of(section.list.addChoices.cbegin(), section.list.addChoices.cend(),
+                       [&offer](const RowOption &choice) { return choice.id == offer->providerId; });
+    if (!offered || !section.list.canAdd) {
+        return section;
+    }
+    section.offer = offer;
+    section.suggestion = role == ProviderRole::Speech
+        ? QStringLiteral("This computer can run %1, which keeps dictation working without internet.").arg(offer->name)
+        : QStringLiteral("%1 is running on this computer, so cleanup can keep working without internet.")
+              .arg(offer->name);
+    section.suggestionAction = QStringLiteral("Add it as a fallback");
+    return section;
 }
 
 } // namespace speecher

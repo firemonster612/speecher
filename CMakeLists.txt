@@ -521,6 +521,8 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
 set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/LocalSetup.cpp
+  src/app/NetworkReachability.cpp
+  src/app/ProviderAvailability.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
@@ -541,6 +543,8 @@ set(SPEECHER_APP_HEADERS
   src/app/AppFrontEnd.h
   src/app/ApplicationController.h
   src/app/LocalSetup.h
+  src/app/NetworkReachability.h
+  src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h

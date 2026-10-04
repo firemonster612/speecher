@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/settings/FallbackPresentation.h"
+
 #include <QList>
 #include <QString>
 
@@ -8,7 +10,6 @@
 namespace speecher {
 
 enum class ShortcutActivationMode;
-struct SettingsRow;
 
 // One step of the setup assistant, as every front end shows it. Which steps
 // hold Continue is each front end's, since the state behind a gate is.
@@ -111,6 +112,37 @@ QString setupRefinementNotSignedIn(const QString &providerLabel);
 // this computer", or "Claude Voice (CLI Proxy API)" for a CLI Proxy API sign-in.
 QString setupLocalSpeechChoice(const QString &modelName);
 QString setupCliproxySpeechChoice(const QString &providerLabel);
+
+// A local fallback this computer can run, which the Transcription or
+// Refinement step suggests adding. LocalSetup::setupFallbackOffer() decides
+// whether there is one; LocalSetup::acceptSetupFallbackOffer() adds it.
+struct SetupFallbackOffer {
+    QString providerId;
+    // The Local Model to download, or the cleanup model the runner serves.
+    QString modelId;
+    // What the suggestion names: "Parakeet 0.6B", or "Ollama".
+    QString name;
+};
+
+// The optional section under the chosen provider's details on the
+// Transcription and Refinement steps: the same list as the Fallbacks
+// subpage, inline, whose heading and footer it also uses, plus a hint and a
+// suggestion. It never holds Next. A front end hides it while visible is false
+// and while Skip cleanup is ticked.
+struct SetupFallbackPresentation {
+    bool visible = false;
+    QString hint;
+    // Empty, with no offer, when there is nothing to suggest.
+    QString suggestion;
+    QString suggestionAction;
+    std::optional<SetupFallbackOffer> offer;
+    FallbackListPresentation list;
+};
+// `providers` are the step's providers with their registry labels, and
+// `offer` LocalSetup::setupFallbackOffer() for the role.
+SetupFallbackPresentation setupFallbackPresentation(ProviderRole role, const AppSettings &settings,
+                                                    const LiveFacts &facts, const QList<RowOption> &providers,
+                                                    const std::optional<SetupFallbackOffer> &offer);
 
 // The Ready step: its lead, and the heading and footer around the steps
 // still holding Finish.

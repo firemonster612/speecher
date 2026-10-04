@@ -28,6 +28,8 @@ class CancelKeyGrab;
 class InsightsLog;
 class LocalModelStore;
 class LocalSetup;
+class NetworkReachability;
+class ProviderAvailability;
 class ProviderRegistry;
 class SecretStore;
 class SettingsStore;
@@ -88,6 +90,10 @@ public:
     // Hardware, runners, endpoint checks, Speed Tests and Ollama pulls, owned
     // here for the same reason.
     LocalSetup *localSetup() const;
+    // Whether this computer is online, shared by settings and dictation.
+    NetworkReachability *networkReachability() const;
+    // Where the sign-ins learned along the way are noted for settings status.
+    ProviderAvailability *providerAvailability() const;
     const PlatformComposition *platform() const;
     QString stateName() const;
     // What a status line says about dictation now (dictationStatusLabel);
@@ -224,6 +230,8 @@ private:
     ProviderRegistry *m_providers = nullptr;
     LocalModelStore *m_localModels = nullptr;
     LocalSetup *m_localSetup = nullptr;
+    NetworkReachability *m_reachability = nullptr;
+    ProviderAvailability *m_availability = nullptr;
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;

@@ -1,6 +1,13 @@
 #include "core/EndpointSettings.h"
 #include "core/SecretStore.h"
+#include "common/test_local_setup.h"
 #include "common/test_suites.h"
+
+#include "app/NetworkReachability.h"
+#include "app/ProviderAvailability.h"
+#include "app/SetupSteps.h"
+#include "providers/LocalModelStore.h"
+#include "providers/ProviderRegistry.h"
 
 #include "core/BindingProcessor.h"
 #include "core/SettingsStore.h"
@@ -13,6 +20,7 @@
 
 #include <QRegularExpression>
 #include <QSettings>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <algorithm>
 
@@ -1985,6 +1993,112 @@ private slots:
         QVERIFY(!server->visible(settings, Capabilities{}));
         settings.refinement.fallbackProviderIds = {QStringLiteral("endpoint")};
         QVERIFY(server->visible(settings, Capabilities{}));
+    }
+
+    void onlyTheOperatingSystemsOnlineCountsAsOnline()
+    {
+        QCOMPARE(NetworkReachability::fromSystem(QNetworkInformation::Reachability::Unknown), Reachability::Unknown);
+        QCOMPARE(NetworkReachability::fromSystem(QNetworkInformation::Reachability::Online), Reachability::Online);
+        for (const auto offline : {QNetworkInformation::Reachability::Disconnected,
+                                   QNetworkInformation::Reachability::Local, QNetworkInformation::Reachability::Site}) {
+            QCOMPARE(NetworkReachability::fromSystem(offline), Reachability::Offline);
+        }
+    }
+
+    // Reachability and the sign-ins seen reach the rows through LocalSetup's
+    // facts, and their changes through its changed().
+    void availabilityReachesTheLiveFacts()
+    {
+        QTemporaryDir directory;
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        LocalModelStore models(directory.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup setup(settings, providers, models);
+        NetworkReachability reachability;
+        ProviderAvailability availability(reachability);
+        setup.setProviderAvailability(availability);
+        QSignalSpy changed(&setup, &LocalSetup::changed);
+
+        QCOMPARE(setup.liveFacts().reachability, Reachability::Unknown);
+        reachability.setReachability(Reachability::Offline);
+        availability.noteSignIn(QStringLiteral("codex"), false);
+        availability.noteSignIn(QStringLiteral("codex"), false);
+        QCOMPARE(changed.count(), 2);
+        const LiveFacts facts = setup.liveFacts();
+        QCOMPARE(facts.reachability, Reachability::Offline);
+        QCOMPARE(facts.signedIn.value(QStringLiteral("codex"), true), false);
+        QVERIFY(!facts.signedIn.contains(QStringLiteral("claude")));
+        QVERIFY(!facts.runnersChecked);
+    }
+
+    void setupSuggestsALocalFallbackOnlyWhileItCanBeAdded()
+    {
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        const SetupFallbackOffer model{QStringLiteral("local"), QStringLiteral("parakeet"),
+                                       QStringLiteral("Parakeet 0.6B")};
+        SetupFallbackPresentation section =
+            setupFallbackPresentation(ProviderRole::Speech, settings, LiveFacts{}, speechChoices(), model);
+        QVERIFY(section.visible);
+        QCOMPARE(section.list.heading, QStringLiteral("If ChatGPT Codex is unavailable"));
+        QCOMPARE(section.suggestion, QStringLiteral("This computer can run Parakeet 0.6B, which keeps dictation "
+                                                    "working without internet."));
+        QCOMPARE(section.offer->modelId, QStringLiteral("parakeet"));
+        // Not once it is in the chain, nor while it is the primary, whose
+        // hint keeps dictation on this computer.
+        settings.speech.fallbackProviderIds = {QStringLiteral("local")};
+        section = setupFallbackPresentation(ProviderRole::Speech, settings, LiveFacts{}, speechChoices(), model);
+        QVERIFY(section.suggestion.isEmpty() && !section.offer);
+        const QString cloudHint = section.hint;
+        settings.speech.providerId = QStringLiteral("local");
+        section = setupFallbackPresentation(ProviderRole::Speech, settings, LiveFacts{}, speechChoices(), model);
+        QVERIFY(!section.offer);
+        QVERIFY(section.hint != cloudHint);
+
+        settings.refinement.providerId = QStringLiteral("none");
+        QVERIFY(!setupFallbackPresentation(ProviderRole::Refinement, settings, LiveFacts{}, refinementChoices(), {})
+                     .visible);
+    }
+
+    void acceptingASetupOfferAddsAFallbackAndKeepsThePrimary()
+    {
+        QTemporaryDir directory;
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("anthropic"));
+        ProviderRegistry providers;
+        LocalModelStore models(directory.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup setup(settings, providers, models);
+
+        // A runner offers itself only with a cleanup model it serves.
+        QVERIFY(!setup.setupFallbackOffer(ProviderRole::Refinement));
+        DetectedRunner ollama{QStringLiteral("ollama"), QStringLiteral("Ollama"), QStringLiteral("0.34.4"),
+                              QStringLiteral("http://127.0.0.1:11434/v1"), {}};
+        LocalSetupTestAccess::setRunners(setup, {ollama});
+        QVERIFY(!setup.setupFallbackOffer(ProviderRole::Refinement));
+        ollama.models = {QStringLiteral("gemma4:e4b")};
+        LocalSetupTestAccess::setRunners(setup, {ollama});
+        QCOMPARE(setup.setupFallbackOffer(ProviderRole::Refinement)->name, QStringLiteral("Ollama"));
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        QCOMPARE(settings.refinementProvider(), QStringLiteral("anthropic"));
+        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.localRunnerSettings().model, QStringLiteral("gemma4:e4b"));
+
+        // A Local Model only once the hardware is known to fit it.
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QVERIFY(!setup.setupFallbackOffer(ProviderRole::Speech));
+        HardwareProfile workstation;
+        workstation.systemRamBytes = 64'000'000'000;
+        workstation.availableRamBytes = 48'000'000'000;
+        LocalSetupTestAccess::setHardware(setup, workstation);
+        const std::optional<SetupFallbackOffer> offer = setup.setupFallbackOffer(ProviderRole::Speech);
+        QVERIFY(offer);
+        setup.acceptSetupFallbackOffer(ProviderRole::Speech);
+        QCOMPARE(settings.speechProvider(), QStringLiteral("codex"));
+        QCOMPARE(settings.speechFallbackProviders(), QStringList{QStringLiteral("local")});
+        QCOMPARE(settings.localSpeechSettings().modelId, offer->modelId);
+        QVERIFY(setup.downloadProgress(offer->modelId) || !setup.downloadError(offer->modelId).isEmpty());
     }
 
     void endpointAndRunnerRowsReportWhatTheAppLayerLearned()

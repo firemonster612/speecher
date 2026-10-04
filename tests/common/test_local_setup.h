@@ -20,6 +20,13 @@ public:
         setup.m_hardwareKnown = true;
         emit setup.changed();
     }
+    // As a finished look for runners would leave it.
+    static void setRunners(LocalSetup &setup, const QList<DetectedRunner> &runners)
+    {
+        setup.m_runners = runners;
+        setup.m_runnersChecked = true;
+        emit setup.changed();
+    }
 };
 
 } // namespace speecher
