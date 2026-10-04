@@ -27,7 +27,7 @@ trap cleanup EXIT
 
 # The shared helpers use unbounded AppleEvents; CI must finish if TextEdit is blocked.
 textedit_text() {
-  "$KEY_INPUT" text "$(pgrep -x TextEdit | head -1)"
+  "$KEY_INPUT" text "$(pgrep -x TextEdit | head -1)" 2>>"$CASE_DIR/editor-readback.out"
 }
 
 textedit_reset() {
@@ -123,8 +123,8 @@ if mode == "text" || mode == "fields" {
     let app = AXUIElementCreateApplication(pid)
     AXUIElementSetMessagingTimeout(app, 5)
     guard let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement],
-          let window = windows.first else { fputs("No accessible TextEdit window\n", stderr); exit(2) }
-    let elements = descendants(window)
+          !windows.isEmpty else { fputs("No accessible TextEdit window\n", stderr); exit(2) }
+    let elements = windows.flatMap(descendants)
     if mode == "fields" {
         print(elements.filter {
             let role = attribute($0, kAXRoleAttribute) as? String
@@ -133,6 +133,12 @@ if mode == "text" || mode == "fields" {
     } else {
         guard let area = elements.first(where: { attribute($0, kAXRoleAttribute) as? String == kAXTextAreaRole }),
               let text = attribute(area, kAXValueAttribute) as? String else {
+            for element in elements {
+                let role = attribute(element, kAXRoleAttribute) as? String ?? ""
+                let title = attribute(element, kAXTitleAttribute) as? String ?? ""
+                let value = attribute(element, kAXValueAttribute) as? String ?? ""
+                fputs("role=\(role) title=\(title) value=\(value)\n", stderr)
+            }
             fputs("No accessible TextEdit document text\n", stderr); exit(2)
         }
         print(text)
