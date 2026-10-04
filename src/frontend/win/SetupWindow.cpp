@@ -113,7 +113,7 @@ void setShown(const UIElement &element, bool shown)
 // Where a status sits on the mockup's scale: neutral while a probe runs or
 // when a row is merely reporting, positive once a prerequisite holds, caution
 // when it does not.
-enum class StatusTone { Neutral, Positive, Caution };
+enum class SetupTone { Neutral, Positive, Caution };
 
 TextBlock textBlock(const QString &value, bool wrap = true)
 {
@@ -148,12 +148,12 @@ TextBlock secondaryTextBlock(const QString &value)
 // secondary foreground for a status that is only reporting, such as "Not
 // found" or "No cleanup". Red is never used — nothing the wizard reports is
 // beyond the user's reach.
-Brush toneBrush(StatusTone tone)
+Brush toneBrush(SetupTone tone)
 {
     const wchar_t *key = L"TextFillColorSecondaryBrush";
-    if (tone == StatusTone::Positive) {
+    if (tone == SetupTone::Positive) {
         key = L"SystemFillColorSuccessBrush";
-    } else if (tone == StatusTone::Caution) {
+    } else if (tone == SetupTone::Caution) {
         key = L"SystemFillColorCautionBrush";
     }
     const auto resources = Application::Current().Resources();
@@ -163,20 +163,20 @@ Brush toneBrush(StatusTone tone)
 
 // The Segoe Fluent glyph a tone leads with: a check, a warning triangle, or
 // the dash the mockup's "Not found" and "No cleanup" rows carry.
-wchar_t toneGlyph(StatusTone tone)
+wchar_t toneGlyph(SetupTone tone)
 {
     switch (tone) {
-    case StatusTone::Positive:
+    case SetupTone::Positive:
         return L'\uE73E';
-    case StatusTone::Caution:
+    case SetupTone::Caution:
         return L'\uE7BA';
-    case StatusTone::Neutral:
+    case SetupTone::Neutral:
         break;
     }
     return L'\uE738';
 }
 
-FontIcon toneIcon(StatusTone tone)
+FontIcon toneIcon(SetupTone tone)
 {
     FontIcon icon;
     const wchar_t glyph = toneGlyph(tone);
@@ -197,7 +197,7 @@ struct StatusCell {
     TextBlock text{nullptr};
 
     // An empty value hides the whole cell, glyph included.
-    void set(const QString &value, StatusTone tone) const
+    void set(const QString &value, SetupTone tone) const
     {
         root.Visibility(value.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
         const wchar_t mark = toneGlyph(tone);
@@ -212,7 +212,7 @@ struct StatusCell {
     }
 };
 
-StatusCell statusCell(const QString &value, StatusTone tone)
+StatusCell statusCell(const QString &value, SetupTone tone)
 {
     StatusCell cell;
     cell.root = StackPanel();
@@ -1241,7 +1241,7 @@ struct SetupWindow::Native {
             localRowStatus.set(downloaded ? QStringLiteral("Ready")
                                : progress ? QStringLiteral("Downloading")
                                           : QString(),
-                               downloaded ? StatusTone::Positive : StatusTone::Neutral);
+                               downloaded ? SetupTone::Positive : SetupTone::Neutral);
         }
     }
 
@@ -1273,7 +1273,7 @@ struct SetupWindow::Native {
             const bool local = id == kLocal;
             // The Local row's status is its download, which showLocalChoice keeps.
             const StatusCell status = statusCell(local ? QString() : QStringLiteral("Checking…"),
-                                                 StatusTone::Neutral);
+                                                 SetupTone::Neutral);
             StackPanel text = rowText(strongTextBlock(options.at(index).second));
             if (local) {
                 text.Children().Append(secondaryTextBlock(
@@ -1383,7 +1383,7 @@ struct SetupWindow::Native {
         };
 
         StackPanel stats;
-        const StatusCell status = statusCell(QString(), StatusTone::Neutral);
+        const StatusCell status = statusCell(QString(), SetupTone::Neutral);
         status.root.VerticalAlignment(VerticalAlignment::Top);
         TextBlock hint = secondaryTextBlock(QString());
         Button check;
@@ -1396,7 +1396,7 @@ struct SetupWindow::Native {
                                        accuracy, updateSignInVisibility] {
             const int index = choices.SelectedIndex();
             if (index < 0 || index >= options.size()) {
-                status.set(setupTranscriptionBlocked(false, QString()), StatusTone::Caution);
+                status.set(setupTranscriptionBlocked(false, QString()), SetupTone::Caution);
                 return;
             }
             const QString id = options.at(index).first;
@@ -1415,7 +1415,7 @@ struct SetupWindow::Native {
                            : localDownloadStarted()
                                ? setupText(SetupText::DownloadContinues)
                                : setupText(SetupText::DownloadToContinue),
-                           StatusTone::Neutral);
+                           SetupTone::Neutral);
                 setShown(hint, false);
                 setShown(check, false);
                 return;
@@ -1423,8 +1423,8 @@ struct SetupWindow::Native {
             const bool ready = speechReady.value(id, false);
             const bool checked = speechReady.contains(id);
             status.set(speechMessage.value(id, QStringLiteral("Checking…")),
-                       !checked ? StatusTone::Neutral
-                                : (ready ? StatusTone::Positive : StatusTone::Caution));
+                       !checked ? SetupTone::Neutral
+                                : (ready ? SetupTone::Positive : SetupTone::Caution));
             QString credential;
             for (const ProviderDescriptor &provider :
                  controller->providerRegistry()->speechProviders()) {
@@ -1474,12 +1474,12 @@ struct SetupWindow::Native {
                     continue;
                 }
                 const StatusCell rowStatus = statuses.at(size_t(index));
-                rowStatus.set(QStringLiteral("Checking…"), StatusTone::Neutral);
+                rowStatus.set(QStringLiteral("Checking…"), SetupTone::Neutral);
                 probeSpeechProvider(id, generation,
                                     [this, id, rowStatus, choices, options,
                                      describeSelected](const SpeechPrepareResult &result) {
                     rowStatus.set(setupProviderVerdict(id, result.ok),
-                                  result.ok ? StatusTone::Positive : StatusTone::Caution);
+                                  result.ok ? SetupTone::Positive : SetupTone::Caution);
                     autoSelectSpeechProvider(choices, options);
                     describeSelected();
                     refreshGates();
@@ -1502,7 +1502,7 @@ struct SetupWindow::Native {
             const StatusCell rowStatus = statuses.at(size_t(index));
             speechReady.remove(id);
             speechMessage.remove(id);
-            rowStatus.set(QStringLiteral("Checking…"), StatusTone::Neutral);
+            rowStatus.set(QStringLiteral("Checking…"), SetupTone::Neutral);
             describeSelected();
             refreshGates();
             const quint64 generation = ++checkGeneration;
@@ -1510,7 +1510,7 @@ struct SetupWindow::Native {
                                 [this, id, rowStatus, describeSelected](
                                     const SpeechPrepareResult &result) {
                 rowStatus.set(setupProviderVerdict(id, result.ok),
-                              result.ok ? StatusTone::Positive : StatusTone::Caution);
+                              result.ok ? SetupTone::Positive : SetupTone::Caution);
                 describeSelected();
                 refreshGates();
             });
@@ -1716,7 +1716,7 @@ struct SetupWindow::Native {
                 const bool ownModel = id == kLocal || id == kEndpoint;
                 RefinementOption option{id, found->label};
                 option.status = statusCell(ownModel ? QString() : QStringLiteral("Checking…"),
-                                           StatusTone::Neutral);
+                                           SetupTone::Neutral);
                 StackPanel text = rowText(strongTextBlock(option.label));
                 text.Children().Append(secondaryTextBlock(found->setupHint));
                 const FrameworkElement mark = id == kLocal      ? FrameworkElement(glyphMark(kComputerGlyph))
@@ -1884,7 +1884,7 @@ struct SetupWindow::Native {
                 // sign-in verdict; showRunner keeps them.
                 if (id != kLocal && id != kEndpoint) {
                     status.set(setupProviderVerdict(id, ok),
-                               ok ? StatusTone::Positive : StatusTone::Caution);
+                               ok ? SetupTone::Positive : SetupTone::Caution);
                 }
                 autoSelectRefinementProvider(*options);
                 refinementRefresh();
@@ -1991,7 +1991,7 @@ struct SetupWindow::Native {
                 option.status.set(detecting ? QStringLiteral("Checking…")
                                   : found   ? QStringLiteral("%1 found").arg(choice.available->name)
                                             : setupText(SetupText::NoRunner),
-                                  found ? StatusTone::Positive : StatusTone::Neutral);
+                                  found ? SetupTone::Positive : SetupTone::Neutral);
             }
         }
         runner.status.Text(win::hs(
@@ -2282,7 +2282,7 @@ struct SetupWindow::Native {
     }
 
     Grid readyRow(const FrameworkElement &mark, const QString &label, const QString &status,
-                  StatusTone tone)
+                  SetupTone tone)
     {
         return cardRow(mark, rowText(textBlock(label)), statusCell(status, tone).root);
     }
@@ -2317,7 +2317,7 @@ struct SetupWindow::Native {
             go.Content(box_value(win::hs(setupText(SetupText::GoToStep))));
             go.VerticalAlignment(VerticalAlignment::Center);
             go.Click([this, index](const auto &, const auto &) { showPage(index); });
-            appendRow(rows, cardRow(toneIcon(StatusTone::Caution), text, go));
+            appendRow(rows, cardRow(toneIcon(SetupTone::Caution), text, go));
         }
         readyBody.Children().Append(secondaryTextBlock(setupBlockedFooter()));
     }
@@ -2338,7 +2338,7 @@ struct SetupWindow::Native {
         const QString downloading = downloadingModel();
         if (downloading.isEmpty()) {
             readyBody.Children().Append(
-                statusCell(setupReadyIntro(false, false), StatusTone::Positive).root);
+                statusCell(setupReadyIntro(false, false), SetupTone::Positive).root);
         } else {
             readyBody.Children().Append(textBlock(setupReadyIntro(false, true)));
             InfoBar notice;
@@ -2365,7 +2365,7 @@ struct SetupWindow::Native {
                 QStringLiteral("transcription"), setupLocalSpeechChoice(localChoice().name));
             if (downloading.isEmpty()) {
                 appendRow(rows, readyRow(glyphMark(kComputerGlyph), label, QStringLiteral("Ready"),
-                                         StatusTone::Positive));
+                                         SetupTone::Positive));
             } else {
                 // The download this step chose is still going: its row
                 // carries the progress instead of a verdict.
@@ -2398,11 +2398,11 @@ struct SetupWindow::Native {
                                                         signIn.usingCliproxy(speechId)
                                                             ? setupCliproxySpeechChoice(label)
                                                             : label),
-                                     QStringLiteral("Ready"), StatusTone::Positive));
+                                     QStringLiteral("Ready"), SetupTone::Positive));
         }
         appendRow(rows, readyRow(glyphMark(L'\uE720'),
                                  setupChecklistLine(QStringLiteral("microphone"), microphoneLabel()),
-                                 QStringLiteral("Ready"), StatusTone::Positive));
+                                 QStringLiteral("Ready"), SetupTone::Positive));
 
         // Refinement is never gated, so this row reports what the refinement
         // page last saw rather than a readiness the Ready page insists on. A
@@ -2431,9 +2431,9 @@ struct SetupWindow::Native {
                 : refinementReady.contains(refinementId) ? std::optional<bool>(refinementReady.value(refinementId))
                                                          : std::nullopt;
         }
-        const StatusTone refinementTone = refinementId == kNone || !refinementIsReady ? StatusTone::Neutral
-                                          : *refinementIsReady                        ? StatusTone::Positive
-                                                                                      : StatusTone::Caution;
+        const SetupTone refinementTone = refinementId == kNone || !refinementIsReady ? SetupTone::Neutral
+                                          : *refinementIsReady                        ? SetupTone::Positive
+                                                                                      : SetupTone::Caution;
         appendRow(rows, readyRow(refinementMark,
                                  setupChecklistLine(QStringLiteral("refinement"), refinementName),
                                  setupRefinementStatus(refinementId, refinementIsReady), refinementTone));
