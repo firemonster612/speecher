@@ -5,6 +5,7 @@
 #include "ui/settings/SettingsPageSupport.h"
 
 #include <QComboBox>
+#include <QEvent>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -36,18 +37,11 @@ bool sameRows(const FallbackListPresentation &left, const FallbackListPresentati
 
 // A Negative status reads in the colour scheme's negative text, a Normal one
 // as any row's description.
-void showStatus(QLabel *label, const FallbackItem &item)
+void showStatus(QLabel *label, const FallbackItem &item, const QPalette &palette)
 {
     label->setText(item.status);
     label->setVisible(!item.status.isEmpty());
-    QPalette palette = label->parentWidget()->palette();
-    if (item.tone == StatusTone::Negative) {
-        label->setForegroundRole(QPalette::WindowText);
-        palette.setColor(QPalette::WindowText, settings::negativeTextColor(palette));
-    } else {
-        label->setForegroundRole(QPalette::PlaceholderText);
-    }
-    label->setPalette(palette);
+    settings::setDescriptionTone(label, item.tone == StatusTone::Negative, palette);
 }
 
 QToolButton *toolButton(const QString &caption, const QString &iconName, QStyle::StandardPixmap standard,
@@ -87,12 +81,30 @@ void FallbackList::setPresentation(const FallbackListPresentation &list)
         rebuild();
         return;
     }
+    showStatuses();
     for (const FallbackItem &item : std::as_const(m_list.items)) {
         auto *row = findChild<QWidget *>(QStringLiteral("fallback_") + item.providerId);
-        showStatus(row->findChild<QLabel *>(QStringLiteral("rowDescription")), item);
         row->findChild<QToolButton *>(QStringLiteral("fallbackMoveUp_") + item.providerId)->setEnabled(item.canMoveUp);
         row->findChild<QToolButton *>(QStringLiteral("fallbackMoveDown_") + item.providerId)
             ->setEnabled(item.canMoveDown);
+    }
+}
+
+void FallbackList::showStatuses()
+{
+    for (const FallbackItem &item : std::as_const(m_list.items)) {
+        auto *row = findChild<QWidget *>(QStringLiteral("fallback_") + item.providerId);
+        showStatus(row->findChild<QLabel *>(QStringLiteral("rowDescription")), item, palette());
+    }
+}
+
+// A Negative status holds a copy of the scheme's colour, which a light or
+// dark switch would leave behind.
+void FallbackList::changeEvent(QEvent *event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange) {
+        showStatuses();
     }
 }
 
@@ -134,7 +146,6 @@ void FallbackList::rebuild()
         }
         QFrame *row = settings::makeRow(item.label, item.status, tools, this, nullptr, true);
         row->setObjectName(QStringLiteral("fallback_") + item.providerId);
-        showStatus(row->findChild<QLabel *>(QStringLiteral("rowDescription")), item);
         settings::addCardRow(m_form, row, this);
     }
     if (m_list.canAdd) {
@@ -146,19 +157,42 @@ void FallbackList::rebuild()
             settings::setComboItemEnabled(add, add->count() - 1, choice.enabled,
                                           choice.enabled ? QString() : choice.help);
         }
+        // The id is read now, while the combo exists; only the request waits.
         connect(add, &QComboBox::activated, this, [this, add](int index) {
-            if (index > 0) {
-                emit addRequested(add->itemData(index).toString());
+            if (index <= 0) {
+                return;
             }
-        }, Qt::QueuedConnection);
+            const QString providerId = add->itemData(index).toString();
+            QMetaObject::invokeMethod(this, [this, providerId] { emit addRequested(providerId); },
+                                      Qt::QueuedConnection);
+        });
         settings::addCardRow(m_form, settings::makeRow(m_list.addLabel, m_list.addHelp, add, this), this);
     }
+    showStatuses();
     // Rows added to a list already on screen stay hidden until shown.
     for (QWidget *child : findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly)) {
         child->show();
     }
-    if (QWidget *target = focusedName.isEmpty() ? nullptr : findChild<QWidget *>(focusedName);
-        target && target->isEnabled()) {
+    restoreFocus(focusedName);
+}
+
+// A move that reaches an end disables its button, so the focus goes to the
+// row's other move button, or else its Remove.
+void FallbackList::restoreFocus(const QString &name)
+{
+    QWidget *target = name.isEmpty() ? nullptr : findChild<QWidget *>(name);
+    if (!target) {
+        return;
+    }
+    if (!target->isEnabled()) {
+        const QList<QToolButton *> buttons =
+            target->parentWidget()->findChildren<QToolButton *>(QString(), Qt::FindDirectChildrenOnly);
+        const auto enabled = std::find_if(buttons.cbegin(), buttons.cend(), [target](QToolButton *button) {
+            return button != target && button->isEnabled();
+        });
+        target = enabled == buttons.cend() ? nullptr : *enabled;
+    }
+    if (target) {
         target->setFocus(Qt::OtherFocusReason);
     }
 }

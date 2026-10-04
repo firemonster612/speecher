@@ -658,6 +658,17 @@ QColor negativeTextColor(const QPalette &palette)
 #endif
 }
 
+void setDescriptionTone(QLabel *description, bool negative, const QPalette &palette)
+{
+    // Only WindowText is set, so every other role still follows the parent.
+    QPalette own;
+    if (negative) {
+        own.setColor(QPalette::WindowText, negativeTextColor(palette));
+    }
+    description->setPalette(own);
+    description->setForegroundRole(negative ? QPalette::WindowText : QPalette::PlaceholderText);
+}
+
 QColor neutralTextColor(const QPalette &palette)
 {
 #ifdef SPEECHER_WITH_KCOLORSCHEME

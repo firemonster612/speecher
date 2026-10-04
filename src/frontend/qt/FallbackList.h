@@ -29,8 +29,13 @@ signals:
     void removeRequested(int index);
     void addRequested(const QString &providerId);
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 private:
     void rebuild();
+    void restoreFocus(const QString &name);
+    void showStatuses();
 
     QFormLayout *m_form;
     FallbackListPresentation m_list;

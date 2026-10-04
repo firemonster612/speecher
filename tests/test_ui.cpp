@@ -25,6 +25,7 @@
 #include <QFile>
 #include <QTcpServer>
 #include "app/MicrophoneTest.h"
+#include "frontend/qt/FallbackList.h"
 #include "frontend/qt/MicrophoneTestRow.h"
 #include "frontend/qt/OutputCustomRows.h"
 #ifdef SPEECHER_WITH_YDOTOOL
@@ -1172,9 +1173,18 @@ private slots:
         QCOMPARE(localStatus->foregroundRole(), QPalette::PlaceholderText);
         LocalSetupTestAccess::setRunners(*controller.localSetup(), {});
         QCOMPARE(localStatus->foregroundRole(), QPalette::WindowText);
+        // Its colour follows a switch of colour scheme.
+        QPalette switched = subpage->palette();
+        switched.setColor(QPalette::WindowText, Qt::magenta);
+        subpage->setPalette(switched);
+        QCOMPARE(localStatus->palette().color(QPalette::WindowText), speecher::settings::negativeTextColor(switched));
 
+        // Moved to the end, its Move down is disabled, so the focus stays in
+        // the row on Move up.
+        button(QStringLiteral("fallbackMoveDown_anthropic"))->setFocus();
         button(QStringLiteral("fallbackMoveDown_anthropic"))->click();
         QCoreApplication::processEvents();
+        QCOMPARE(subpage->focusWidget(), button(QStringLiteral("fallbackMoveUp_anthropic")));
         QVERIFY(pages.save(false));
         QCOMPARE(settings->refinementFallbackProviders(),
                  (QStringList{QStringLiteral("local"), QStringLiteral("anthropic")}));
@@ -1193,6 +1203,31 @@ private slots:
         QVERIFY(pages.save(false));
         QCOMPARE(settings->refinementFallbackProviders(),
                  (QStringList{QStringLiteral("local"), QStringLiteral("anthropic")}));
+    }
+
+    // The Add row's choice is read as it is made, so a rebuild that deletes
+    // the combo before the request is delivered still adds that choice.
+    void fallbackAddSurvivesARebuildBeforeDelivery()
+    {
+        const QList<RowOption> providers{{QStringLiteral("openai"), QStringLiteral("OpenAI")},
+                                         {QStringLiteral("anthropic"), QStringLiteral("Anthropic")}};
+        AppSettings chain;
+        chain.refinement.providerId = QStringLiteral("openai");
+        const auto present = [&] {
+            return fallbackListPresentation(ProviderRole::Refinement, chain, {}, providers, FallbackSurface::Settings);
+        };
+        FallbackList list;
+        list.setPresentation(present());
+        QSignalSpy added(&list, &FallbackList::addRequested);
+        QPointer<QComboBox> add = list.findChild<QComboBox *>(QStringLiteral("fallbackAdd"));
+        QVERIFY(add);
+
+        emit add->activated(add->findData(QStringLiteral("anthropic")));
+        chain.refinement.fallbackProviderIds = {QStringLiteral("anthropic")};
+        list.setPresentation(present());
+        QVERIFY(!add);
+        QTRY_COMPARE(added.count(), 1);
+        QCOMPARE(added.first().first().toString(), QStringLiteral("anthropic"));
     }
 
     // The setup steps' fallback section is optional: editing it never holds
