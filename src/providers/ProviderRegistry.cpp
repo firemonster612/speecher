@@ -59,6 +59,12 @@ QString ProviderRegistry::speechProviderLabel(const QString &id) const
     return entry == m_speech.cend() ? id : entry->descriptor.label;
 }
 
+QString ProviderRegistry::refinementProviderLabel(const QString &id) const
+{
+    const auto entry = m_refinement.constFind(id);
+    return entry == m_refinement.cend() ? id : entry->descriptor.label;
+}
+
 SpeechTranscriber *ProviderRegistry::speechProvider(const QString &id)
 {
     auto it = m_speech.find(id);

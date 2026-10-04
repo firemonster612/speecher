@@ -49,6 +49,8 @@ public:
     // The id itself for one this registry does not offer.
     QString speechProviderLabel(const QString &id) const;
     QList<ProviderDescriptor> refinementProviders() const;
+    // The id itself for one this registry does not offer.
+    QString refinementProviderLabel(const QString &id) const;
 
     SpeechTranscriber *speechProvider(const QString &id);
     TranscriptRefiner *refinementProvider(const QString &id);

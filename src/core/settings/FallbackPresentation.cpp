@@ -36,13 +36,6 @@ QString labelOf(const QList<RowOption> &providers, const QString &id)
     return id;
 }
 
-bool needsInternet(const QString &providerId)
-{
-    static const QStringList cloud{QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("openai"),
-                                   QStringLiteral("anthropic")};
-    return cloud.contains(providerId);
-}
-
 // A server on this computer or its network, which keeps answering without
 // internet: localhost, a bare or .local name, or a private address.
 bool isLocalNetworkServer(const QString &url)
@@ -142,7 +135,25 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
     if (!facts.signedIn.value(providerId, true)) {
         return FallbackProblem::SignedOut;
     }
-    return offline && needsInternet(providerId) ? FallbackProblem::Offline : FallbackProblem::None;
+    return offline && providerSignsIn(providerId) ? FallbackProblem::Offline : FallbackProblem::None;
+}
+
+bool providerSignsIn(const QString &providerId)
+{
+    static const QStringList accounts{QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("openai"),
+                                      QStringLiteral("anthropic")};
+    return accounts.contains(providerId);
+}
+
+QString signInName(const QString &providerId, const QString &label)
+{
+    if (providerId == QStringLiteral("codex")) {
+        return QStringLiteral("ChatGPT");
+    }
+    if (providerId == QStringLiteral("claude")) {
+        return QStringLiteral("Claude");
+    }
+    return label;
 }
 
 FallbackListPresentation fallbackListPresentation(ProviderRole role, const AppSettings &settings,

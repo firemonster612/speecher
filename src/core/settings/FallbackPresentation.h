@@ -36,6 +36,13 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
 // skipped.
 bool fallbackSkipsSpokenLanguage(const SpeechSettings &speech, const QString &providerId);
 
+// Whether a provider works through an account the person signs in to (Claude
+// Voice, ChatGPT Codex, OpenAI, Anthropic), rather than a key or this computer.
+bool providerSignsIn(const QString &providerId);
+// The account a provider signs in to, as a person knows it: "ChatGPT" for
+// ChatGPT Codex. label is the provider's registry label.
+QString signInName(const QString &providerId, const QString &label);
+
 // Where a fallback list is edited. Setup offers no speech Custom Endpoint,
 // which is set up in Settings only.
 enum class FallbackSurface { Settings, Setup };
