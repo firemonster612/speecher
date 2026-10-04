@@ -297,6 +297,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/Vocabulary.h
   src/core/WordPreview.h
   src/dictation/DictationTypes.h
+  src/dictation/PopupGeometry.h
   src/dictation/PopupPresentation.h
 )
 

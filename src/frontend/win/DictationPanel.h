@@ -48,8 +48,18 @@ private:
     QRect capsuleGeometryForTest() const;
     QRect waveformGeometryForTest() const;
     QRect previewGeometryForTest() const;
+    QRect statusGeometryForTest() const;
+    QRect pauseGeometryForTest() const;
+    QRect spinnerGeometryForTest() const;
+    QRect cancelGeometryForTest() const;
     QString previewTextForTest() const;
     bool previewTextFitsForTest() const;
+    // Whether the preview's start fades, as it does when words were cut.
+    bool previewFadesForTest() const;
+    // The carved outline's shoulder height and lobe width in DIPs; a zero
+    // shoulder means the capsule fell back to a plain rounded box.
+    double outlineShoulderForTest() const;
+    double outlineLobeWidthForTest() const;
     struct Native;
     std::unique_ptr<Native> m_native;
 };

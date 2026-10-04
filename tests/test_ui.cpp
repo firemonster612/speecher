@@ -1,4 +1,5 @@
 #include <QTcpSocket>
+#include <QGraphicsEffect>
 #include <QToolButton>
 #include <QTableWidget>
 #include "common/test_prelude.h"
@@ -14,6 +15,7 @@
 #include "core/SecretStore.h"
 #include "app/LocalSetup.h"
 #include "app/UpdateBanner.h"
+#include "dictation/PopupGeometry.h"
 #include "dictation/PopupPresentation.h"
 #include "providers/LocalModelStore.h"
 #include "providers/EndpointSpeechTranscriber.h"
@@ -299,7 +301,7 @@ private slots:
         verifyContained();
     }
 
-    void popupTrimsThePreviewFromTheFrontWithAnEllipsis()
+    void popupTrimsThePreviewFromTheFrontAndFadesItsStart()
     {
         TranscriberPopup popup(new SizingPopupPositioner);
         popup.showListeningIndicator();
@@ -310,15 +312,78 @@ private slots:
 
         auto *preview = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
         QVERIFY(preview);
-        QVERIFY(preview->text().startsWith(QStringLiteral("…")));
+        // The fade, not an ellipsis, says words came before.
+        QVERIFY(!preview->text().startsWith(QStringLiteral("…")));
         QVERIFY(preview->text().endsWith(QStringLiteral("the very last words")));
+        QVERIFY(preview->graphicsEffect() && preview->graphicsEffect()->isEnabled());
         const QFontMetrics metrics(preview->font());
-        // One line capped at the popup's preview width (kMaxPreviewWidth).
-        QVERIFY(metrics.horizontalAdvance(preview->text()) <= 440);
+        // One line capped at the preview width every platform shares.
+        QVERIFY(metrics.horizontalAdvance(preview->text()) <= popup::kMaxPreviewWidth);
 
         // A short preview is shown whole, with nothing implied before it.
         popup.setPreview(QStringLiteral("short preview"));
         QCOMPARE(preview->text(), QStringLiteral("short preview"));
+        QVERIFY(!preview->graphicsEffect()->isEnabled());
+    }
+
+    void popupKeepsTheCarvedContourUnderAShortPreview()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        popup.showPopup(1);
+        popup.setSessionState(DictationState::Listening);
+        popup.setPreview(QStringLiteral("hi"));
+        auto *pill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *preview = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        auto *pause = popup.findChild<QToolButton *>(QStringLiteral("pauseButton"));
+        auto *cancel = popup.findChild<QToolButton *>(QStringLiteral("cancelButton"));
+        QVERIFY(pill && preview && pause && cancel);
+        QTRY_VERIFY(preview->isVisible() && pause->isVisible() && cancel->isVisible());
+        QCoreApplication::processEvents();
+        // An end cap and a whole fillet either side of the lobe, the room
+        // PillFrame needs to carve the text bar over the lobe instead of
+        // drawing one plain rounded box.
+        const qreal lobeLeft = pause->mapTo(pill, QPoint()).x() - popup::kLobeAir;
+        const qreal lobeRight = cancel->mapTo(pill, QPoint()).x() + cancel->width() + popup::kLobeAir;
+        const qreal shoulder = preview->mapTo(pill, QPoint()).y() + preview->height()
+            + popup::kShoulderDrop;
+        const qreal needed = shoulder / 2 + popup::kFillet - 1;
+        QVERIFY2(lobeLeft >= needed && pill->width() - lobeRight >= needed,
+                 qPrintable(QStringLiteral("pill %1 lobe %2..%3 shoulder %4")
+                                .arg(pill->width()).arg(lobeLeft).arg(lobeRight).arg(shoulder)));
+        QVERIFY(qAbs(preview->mapTo(pill, QPoint()).x() + preview->width() / 2 - pill->width() / 2) <= 1);
+    }
+
+    void popupCentresTheStatusBetweenSpinnerAndCancel()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        popup.showPopup(1);
+        popup.setSessionState(DictationState::Refining);
+        popup.setRefining(true);
+        auto *pill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
+        auto *busy = popup.findChild<QWidget *>(QStringLiteral("busyIndicator"));
+        auto *pause = popup.findChild<QToolButton *>(QStringLiteral("pauseButton"));
+        auto *cancel = popup.findChild<QToolButton *>(QStringLiteral("cancelButton"));
+        auto *waveform = popup.findChild<WaveformWidget *>();
+        QVERIFY(pill && busy && pause && cancel && waveform);
+        const auto verifyMirrored = [&] {
+            QCoreApplication::processEvents();
+            QVERIFY(busy->isVisible() && cancel->isVisible() && pause->isHidden());
+            const qreal centre = pill->width() / 2.0;
+            const QRectF status(waveform->mapTo(pill, QPoint()), waveform->size());
+            const QRectF spinner(busy->mapTo(pill, QPoint()), busy->size());
+            const QRectF x(cancel->mapTo(pill, QPoint()), cancel->size());
+            QVERIFY(qAbs(status.center().x() - centre) <= 1);
+            QVERIFY(qAbs((centre - spinner.center().x()) - (x.center().x() - centre)) <= 1);
+            QCOMPARE(spinner.size(), x.size());
+        };
+        verifyMirrored();
+        // Without words the capsule hugs the row rather than keeping a wider
+        // state's width.
+        const int rowLeft = busy->mapTo(pill, QPoint()).x();
+        const int rowRight = cancel->mapTo(pill, QPoint()).x() + cancel->width();
+        QCOMPARE(pill->width(), rowRight - rowLeft + 2 * popup::kLobeAir);
+        popup.setRefinementPreview(QStringLiteral("So I was thinking we could move the stand-up"));
+        verifyMirrored();
     }
 
     void popupErrorHugsAShortMessage()
@@ -481,7 +546,7 @@ private slots:
         QVERIFY(dismiss->isHidden());
         QVERIFY(!pill->isHidden());
         QVERIFY(popup.findChild<QLabel *>(QStringLiteral("rawTranscript"))->isHidden());
-        QCOMPARE(pill->height(), 48);
+        QCOMPARE(pill->height(), popup::kPillHeight);
         // Left running it would hide this dictation's popup when it finished,
         // and report a dismissal against a session that had moved on.
         QCOMPARE(countdown->state(), QAbstractAnimation::Stopped);
@@ -532,7 +597,7 @@ private slots:
         QVERIFY(preview->heightForWidth(preview->width()) > preview->fontMetrics().lineSpacing() * 2);
     }
 
-    void popupUsesTheApplicationFontAndNoStylesheet()
+    void popupScalesTheApplicationFontAndUsesNoStylesheet()
     {
         TranscriberPopup popup(new SizingPopupPositioner);
         QVERIFY(popup.styleSheet().isEmpty());
@@ -542,8 +607,12 @@ private slots:
         auto *preview = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
         QVERIFY(preview);
         QCOMPARE(preview->font().family(), QApplication::font().family());
-        QCOMPARE(preview->font().pointSizeF(), QApplication::font().pointSizeF());
+        QCOMPARE(preview->font().pointSizeF(),
+                 QApplication::font().pointSizeF() * popup::kPreviewFontScale);
         QCOMPARE(preview->foregroundRole(), QPalette::Text);
+        // An error keeps the desktop's own size.
+        popup.showErrorMessage(QStringLiteral("Microphone unavailable"));
+        QCOMPARE(preview->font().pointSizeF(), QApplication::font().pointSizeF());
     }
 
     void updateBannerSaysWhatEachStateOffers()
@@ -663,14 +732,18 @@ private slots:
         const auto fitsIn = [](int characters) {
             return [characters](const QString &text) { return text.size() <= characters; };
         };
-        QCOMPARE(trimPreviewToFit(QStringLiteral("  short   preview "), fitsIn(40)),
-                 QStringLiteral("short preview"));
-        QCOMPARE(trimPreviewToFit(QStringLiteral("the hiring plan and then the budget"), fitsIn(21)),
-                 QStringLiteral("… and then the budget"));
+        // Collapsed whitespace alone is not a cut.
+        const PreviewLine whole = trimPreviewToFit(QStringLiteral("  short   preview "), fitsIn(40));
+        QCOMPARE(whole.text, QStringLiteral("short preview"));
+        QVERIFY(!whole.cut);
+        const PreviewLine cut = trimPreviewToFit(QStringLiteral("the hiring plan and then the budget"),
+                                                 fitsIn(21));
+        QCOMPARE(cut.text, QStringLiteral("and then the budget"));
+        QVERIFY(cut.cut);
         // One word wider than the line keeps its end, cut on a grapheme.
         const QString trimmed = trimPreviewToFit(
-            QStringLiteral("x ") + QString::fromUtf8("👩‍💻").repeated(8), fitsIn(12));
-        QVERIFY(trimmed.startsWith(QStringLiteral("…")));
+            QStringLiteral("x ") + QString::fromUtf8("👩‍💻").repeated(8), fitsIn(12)).text;
+        QVERIFY(trimmed.startsWith(QString::fromUtf8("👩‍💻")));
         QVERIFY(trimmed.endsWith(QString::fromUtf8("👩‍💻")));
         QVERIFY(trimmed.size() <= 12);
     }
@@ -681,14 +754,13 @@ private slots:
         const QString text = QString::fromUtf8("今日は良い天気ですね明日も晴れるでしょう");
         const QString trimmed = trimPreviewToFit(text, [](const QString &candidate) {
             return candidate.size() <= 10;
-        });
-        QVERIFY(trimmed.startsWith(QStringLiteral("…")));
+        }).text;
+        QVERIFY(trimmed.size() < text.size());
         QVERIFY(trimmed.endsWith(QString::fromUtf8("でしょう")));
         QVERIFY(trimmed.size() <= 10);
         // What is kept starts at one of the text's word boundaries.
-        const QString kept = trimmed.mid(1).trimmed();
         QTextBoundaryFinder words(QTextBoundaryFinder::Word, text);
-        words.setPosition(text.size() - kept.size());
+        words.setPosition(text.size() - trimmed.size());
         QVERIFY(words.isAtBoundary());
     }
 
@@ -728,6 +800,21 @@ private slots:
         grab("long-preview");
         popup.setSessionState(DictationState::Paused);
         grab("paused-preview");
+        popup.setSessionState(DictationState::Listening);
+        popup.setPreview(QStringLiteral("so I was thinking"));
+        speak();
+        grab("short-preview");
+        popup.setSessionState(DictationState::Stopping);
+        grab("transcribing");
+        popup.setSessionState(DictationState::Refining);
+        popup.setRefining(true);
+        grab("refining");
+        popup.setRefinementPreview(QStringLiteral("So I was thinking we could move the stand-up to "
+                                                  "Thursday morning, because half the team"));
+        grab("refining-preview");
+        popup.setRefinementPreview(QStringLiteral("So I was thinking"));
+        grab("refining-short-preview");
+        popup.setRefining(false);
         popup.setSessionState(DictationState::Idle);
         popup.showMessage(cancelledOutcomeText(), PopupOutcome::Cancelled);
         grab("receipt-canceled");
