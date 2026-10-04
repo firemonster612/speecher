@@ -123,6 +123,9 @@ private:
     void handleDecodedBuffer();
     void handleDecodeFinished();
     void prepareProviders();
+    void prepareSpeechProvider();
+    void connectTranscriber();
+    void releaseTranscriber();
     void beginStreaming();
     void sendNextChunk();
     void startNextAttempt();
@@ -166,6 +169,11 @@ private:
     // replaces only what followed it.
     QString m_attemptBaseText;
     TranscriptPipelineResult m_pipeline;
+    // The page's speech provider, then the saved fallbacks; each file walks
+    // it from the start, and says why each one it passed could not help.
+    QStringList m_speechChain;
+    int m_speechIndex = 0;
+    QList<ProviderAttemptIssue> m_speechIssues;
 };
 
 } // namespace speecher
