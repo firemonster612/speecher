@@ -2,6 +2,7 @@
 
 #ifdef SPEECHER_WITH_X11
 
+
 #include <QSocketNotifier>
 
 // Xlib last: its macros (None, Bool, KeyPress) collide with Qt names.

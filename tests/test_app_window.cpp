@@ -49,6 +49,7 @@
 #include <QSaveFile>
 #include <QScopeGuard>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QSplitter>
 #include <QStandardPaths>
 #include <QStackedWidget>
@@ -818,6 +819,32 @@ private slots:
         channel->setCurrentIndex(channel->findData(QStringLiteral("stable")));
         window.close();
         QCOMPARE(controller.settings()->updateChannel(), UpdateChannel::Stable);
+    }
+
+    void customCheckIntervalSavesItsNumberAndUnit()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        auto *frequency = window.findChild<QComboBox *>(QStringLiteral("updateCheckInterval"));
+        auto *custom = window.findChild<QWidget *>(QStringLiteral("updateCheckCustomInterval"));
+        QVERIFY(frequency);
+        QVERIFY(custom);
+        window.show();
+        window.showPage(QStringLiteral("general"));
+        QVERIFY(!custom->isVisible());
+
+        frequency->setCurrentIndex(frequency->findData(QStringLiteral("custom")));
+        QTRY_VERIFY(custom->isVisible());
+        auto *number = custom->findChild<QSpinBox *>();
+        auto *unit = custom->findChild<QComboBox *>();
+        QCOMPARE(number->value(), 30);
+        QCOMPARE(unit->currentData().toString(), QStringLiteral("minutes"));
+        unit->setCurrentIndex(unit->findData(QStringLiteral("hours")));
+        QCOMPARE(number->maximum(), 720);
+        number->setValue(8);
+        window.close();
+        QCOMPARE(controller.settings()->updateCheckIntervalMinutes(), 480);
+        QCOMPARE(controller.settings()->updateCheckIntervalUnit(), QStringLiteral("hours"));
     }
 
     void savingAnotherPageDoesNotRevertWhatsNewSettings()

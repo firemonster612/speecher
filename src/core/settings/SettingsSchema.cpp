@@ -291,6 +291,71 @@ Options fixedOptions(QList<RowOption> options)
     return [options = std::move(options)](const AppSettings &) { return options; };
 }
 
+// The update check frequencies offered by name, keyed by their minutes.
+const QList<RowOption> checkFrequencies{
+    {QStringLiteral("5"), QStringLiteral("Every 5 minutes"), QString()},
+    {QStringLiteral("15"), QStringLiteral("Every 15 minutes"), QString()},
+    {QStringLiteral("30"), QStringLiteral("Every 30 minutes"), QString()},
+    {QStringLiteral("60"), QStringLiteral("Every hour"), QString()},
+    {QStringLiteral("360"), QStringLiteral("Every 6 hours"), QString()},
+    {QStringLiteral("720"), QStringLiteral("Every 12 hours"), QString()},
+    {QStringLiteral("1440"), QStringLiteral("Every day"), QString()},
+    {QStringLiteral("10080"), QStringLiteral("Every week"), QString()},
+};
+
+const QString customCheckFrequency = QStringLiteral("custom");
+
+// A custom interval's units, each ranging up to the longest interval allowed.
+const QList<NumberUnit> checkIntervalUnits{
+    {QStringLiteral("minutes"), QStringLiteral("minutes"), UpdateSettings::minimumCheckIntervalMinutes, 24 * 60},
+    {QStringLiteral("hours"), QStringLiteral("hours"), 1, UpdateSettings::maximumCheckIntervalMinutes / 60},
+    {QStringLiteral("days"), QStringLiteral("days"), 1, UpdateSettings::maximumCheckIntervalMinutes / (24 * 60)},
+};
+
+// Zero for an id that is not one of checkIntervalUnits, such as a hand-edited
+// "weeks".
+int minutesPerCheckIntervalUnit(const QString &unit)
+{
+    if (unit == QLatin1String("days")) {
+        return 24 * 60;
+    }
+    if (unit == QLatin1String("hours")) {
+        return 60;
+    }
+    return unit == QLatin1String("minutes") ? 1 : 0;
+}
+
+// An interval given in a unit, or one none of the listed frequencies matches,
+// such as a hand-edited 45 minutes.
+bool isCustomCheckInterval(const UpdateSettings &updates)
+{
+    const QString minutes = QString::number(updates.checkIntervalMinutes);
+    return !updates.checkIntervalUnit.isEmpty()
+        || std::none_of(checkFrequencies.cbegin(), checkFrequencies.cend(), [&](const RowOption &option) {
+               return option.id == minutes;
+           });
+}
+
+// The unit a custom interval reads back in: the one it was given in, or else
+// the largest that divides it evenly, so a day picked from the list becomes
+// 1 day rather than 1440 minutes.
+QString checkIntervalUnit(const UpdateSettings &updates)
+{
+    const auto divides = [&](const QString &unit) {
+        const int minutes = minutesPerCheckIntervalUnit(unit);
+        return minutes > 0 && updates.checkIntervalMinutes % minutes == 0;
+    };
+    if (!updates.checkIntervalUnit.isEmpty() && divides(updates.checkIntervalUnit)) {
+        return updates.checkIntervalUnit;
+    }
+    for (auto unit = checkIntervalUnits.crbegin(); unit != checkIntervalUnits.crend(); ++unit) {
+        if (divides(unit->id)) {
+            return unit->id;
+        }
+    }
+    return checkIntervalUnits.first().id;
+}
+
 SettingsRow choiceRow(QString id, QString label, QString help, Options options, Getter get, Setter set)
 {
     SettingsRow row;
@@ -1004,6 +1069,12 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("Throw away the dictation in progress. Nothing is pasted or copied."));
     cancelShortcut.sinceVersion = QStringLiteral("0.2.1");
     shortcutRows.append(cancelShortcut);
+    SettingsRow pauseShortcut = customRow(
+        QStringLiteral("pauseShortcut"),
+        QStringLiteral("Pause Shortcut"),
+        QStringLiteral("Pause the dictation in progress, and press again to resume."));
+    pauseShortcut.sinceVersion = QStringLiteral("0.2.1");
+    shortcutRows.append(pauseShortcut);
     // No clipboard status row here: the Output page's Paste with choice says
     // how text is delivered, and a platform's "clipboard path" is not a setting.
 
@@ -1046,21 +1117,62 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("updateCheckInterval"),
         QStringLiteral("Check frequency"),
         QString(),
-        fixedOptions({
-            {QStringLiteral("30"), QStringLiteral("Every 30 minutes"), QString()},
-            {QStringLiteral("60"), QStringLiteral("Every hour"), QString()},
-            {QStringLiteral("360"), QStringLiteral("Every 6 hours"), QString()},
-            {QStringLiteral("1440"), QStringLiteral("Once a day"), QString()},
-        }),
+        fixedOptions(checkFrequencies
+                     + QList<RowOption>{{customCheckFrequency, QStringLiteral("Custom"), QString()}}),
         [](const AppSettings &settings) {
-            return QString::number(settings.updates.checkIntervalMinutes);
+            return isCustomCheckInterval(settings.updates)
+                ? customCheckFrequency
+                : QString::number(settings.updates.checkIntervalMinutes);
         },
         [](AppSettings &settings, const QString &value) {
+            // Choosing Custom keeps the interval and shows it in the custom
+            // row, where it can be changed.
+            if (value == customCheckFrequency) {
+                settings.updates.checkIntervalUnit = checkIntervalUnit(settings.updates);
+                return;
+            }
+            settings.updates.checkIntervalUnit.clear();
             settings.updates.checkIntervalMinutes = value.toInt();
         });
-    checkInterval.sinceVersion = QStringLiteral("0.1.5");
+    // Added in 0.1.5; tagged with the release that grew its choices and
+    // Custom, so What's New shows it and the custom row can follow it there.
+    checkInterval.sinceVersion = QStringLiteral("0.2.1");
     checkInterval.visible = [](const AppSettings &settings, const Capabilities &) {
         return settings.updates.autoCheck;
+    };
+    SettingsRow customCheckInterval;
+    customCheckInterval.id = QStringLiteral("updateCheckCustomInterval");
+    customCheckInterval.label = QStringLiteral("Custom interval");
+    customCheckInterval.help = QStringLiteral("Between 5 minutes and 30 days.");
+    customCheckInterval.kind = RowKind::Number;
+    customCheckInterval.units = checkIntervalUnits;
+    customCheckInterval.value = [](const AppSettings &settings) {
+        const QString unit = checkIntervalUnit(settings.updates);
+        return QVariant(QVariantMap{
+            {QStringLiteral("number"), settings.updates.checkIntervalMinutes / minutesPerCheckIntervalUnit(unit)},
+            {QStringLiteral("unit"), unit},
+        });
+    };
+    customCheckInterval.apply = [](AppSettings &settings, const QVariant &value) {
+        // A front end may apply every row's control, hidden ones too; this one
+        // only has a say once Check frequency, applied before it, is Custom.
+        if (!isCustomCheckInterval(settings.updates)) {
+            return;
+        }
+        const QVariantMap interval = value.toMap();
+        const QString unit = interval.value(QStringLiteral("unit")).toString();
+        if (minutesPerCheckIntervalUnit(unit) == 0) {
+            return;
+        }
+        settings.updates.checkIntervalUnit = unit;
+        settings.updates.checkIntervalMinutes =
+            qBound(UpdateSettings::minimumCheckIntervalMinutes,
+                   interval.value(QStringLiteral("number")).toInt() * minutesPerCheckIntervalUnit(unit),
+                   UpdateSettings::maximumCheckIntervalMinutes);
+    };
+    customCheckInterval.sinceVersion = QStringLiteral("0.2.1");
+    customCheckInterval.visible = [](const AppSettings &settings, const Capabilities &) {
+        return settings.updates.autoCheck && isCustomCheckInterval(settings.updates);
     };
     SettingsRow autoInstall = toggleRow(
         QStringLiteral("autoInstallUpdates"),
@@ -1165,6 +1277,7 @@ SettingsPage generalPage(const SchemaContext &context)
                  std::move(updateChannel),
                  std::move(autoCheck),
                  std::move(checkInterval),
+                 std::move(customCheckInterval),
                  std::move(autoInstall),
                  actionRow(QStringLiteral("checkForUpdates"),
                            QStringLiteral("Check for updates"),
@@ -3063,6 +3176,12 @@ QString globalShortcutPrompt()
 #endif
 }
 
+QString sessionShortcutPrompt()
+{
+    return QStringLiteral("Press a key combination, or a key such as Escape or C. Speecher only "
+                          "takes it while you dictate.");
+}
+
 QString globalShortcutChangeCaption()
 {
     return QStringLiteral("Change…");
@@ -3098,20 +3217,59 @@ QString globalShortcutClearCaption()
     return QStringLiteral("Clear");
 }
 
-QString globalShortcutTakenText(GlobalShortcutRole takenBy)
+QString globalShortcutRowId(GlobalShortcutRole role)
 {
-    return takenBy == GlobalShortcutRole::Cancel
-        ? QStringLiteral("That is already the Cancel Shortcut.")
-        : QStringLiteral("That is already the Global Shortcut for dictation.");
+    switch (role) {
+    case GlobalShortcutRole::Cancel:
+        return QStringLiteral("cancelShortcut");
+    case GlobalShortcutRole::Pause:
+        return QStringLiteral("pauseShortcut");
+    case GlobalShortcutRole::Dictation:
+        break;
+    }
+    return QStringLiteral("globalShortcut");
 }
 
-QString keyHelperBusyText(GlobalShortcutRole heldBy)
+std::optional<GlobalShortcutRole> globalShortcutRoleForRow(const QString &rowId)
 {
-    return heldBy == GlobalShortcutRole::Cancel
-        ? QStringLiteral("The Cancel Shortcut already uses the one key Speecher's key helper can "
-                         "watch. Use a key combination here instead.")
-        : QStringLiteral("The Global Shortcut for dictation already uses the one key Speecher's "
-                         "key helper can watch. Use a key combination here instead.");
+    for (const GlobalShortcutRole role : globalShortcutRoles) {
+        if (globalShortcutRowId(role) == rowId) {
+            return role;
+        }
+    }
+    return std::nullopt;
+}
+
+QString globalShortcutTakenText(GlobalShortcutRole takenBy)
+{
+    switch (takenBy) {
+    case GlobalShortcutRole::Cancel:
+        return QStringLiteral("That is already the Cancel Shortcut.");
+    case GlobalShortcutRole::Pause:
+        return QStringLiteral("That is already the Pause Shortcut.");
+    case GlobalShortcutRole::Dictation:
+        break;
+    }
+    return QStringLiteral("That is already the Global Shortcut for dictation.");
+}
+
+QString globalShortcutOwnedElsewhereText(const ShortcutBinding &binding)
+{
+    return QStringLiteral("%1 is already a shortcut in another app.").arg(binding.displayText());
+}
+
+QString watchedKeyStillTypesText(const ShortcutBinding &binding)
+{
+    return QStringLiteral(
+        "Speecher can only watch %1, not take it from other apps, so it would still type while "
+        "you dictate. Use another key or a key combination.")
+        .arg(binding.displayText());
+}
+
+QString keyHelperBusyText()
+{
+    return QStringLiteral("Speecher's key helper is already watching as many keys as it allows. "
+                          "Use a key combination here instead.");
 }
 
 QString globalShortcutBindFailedText()

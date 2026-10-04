@@ -110,6 +110,12 @@ bool RoutingShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString
     return true;
 }
 
+void RoutingShortcutBinder::setArmed(bool armed)
+{
+    m_combination->setArmed(armed);
+    m_singleKey->setArmed(armed);
+}
+
 void RoutingShortcutBinder::suspend()
 {
     m_combination->suspend();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/GlobalShortcutBinder.h"
+#include "platform/SessionShortcutBinder.h"
 
 class QAction;
 
@@ -24,6 +25,29 @@ public:
 private:
     QAction *makeShortcutAction();
 
+    QAction *m_action = nullptr;
+};
+
+// A session shortcut (Cancel or Pause) through KDE's global shortcut daemon:
+// registered only for the length of a Dictation Session, so KWin takes a bare
+// key such as C from the focused app just while it is armed.
+class KGlobalAccelSessionShortcutBinder final : public SessionShortcutBinder {
+    Q_OBJECT
+
+public:
+    explicit KGlobalAccelSessionShortcutBinder(GlobalShortcutAction action,
+                                               QObject *parent = nullptr);
+
+    bool supported() const override;
+    QString unsupportedReason() const override;
+    void bind() override;
+
+protected:
+    bool take(const QKeySequence &keys) override;
+    void letGo() override;
+    ShortcutBinding storedShortcut() const override;
+
+private:
     QAction *m_action = nullptr;
 };
 

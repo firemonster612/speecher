@@ -83,11 +83,13 @@ bool isModifierKey(int key)
 // What to press while the capture waits. Where the desktop registers
 // combinations the whole range is on offer; elsewhere Speecher can only watch
 // a single key, and portal desktops pick combinations through Choose shortcut.
-QString captureLead(bool combinationsAvailable)
+QString captureLead(bool combinationsAvailable, GlobalShortcutRole role)
 {
-    return combinationsAvailable
-        ? globalShortcutPrompt()
-        : QStringLiteral("Press a single key, such as Right Alt or F13, to use on its own.");
+    if (!combinationsAvailable) {
+        return QStringLiteral("Press a single key, such as Right Alt or F13, to use on its own.");
+    }
+    return role == GlobalShortcutRole::Dictation ? globalShortcutPrompt()
+                                                 : sessionShortcutPrompt();
 }
 
 } // namespace
@@ -158,8 +160,8 @@ void ShortcutCaptureButton::keyPressEvent(QKeyEvent *event)
         return;
     }
     // Escape abandons the capture rather than becoming the shortcut, like the
-    // mac and Windows recorders.
-    if (event->key() == Qt::Key_Escape) {
+    // mac and Windows recorders, except where it can be the shortcut.
+    if (event->key() == Qt::Key_Escape && !m_escapeRecords) {
         setArmed(false);
         return;
     }
@@ -329,6 +331,9 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     buttons->addWidget(m_chooseShortcut);
     m_setShortcut = new ShortcutCaptureButton(trailing);
     m_setShortcut->setObjectName(QStringLiteral("globalShortcutCapture"));
+    // The Cancel and Pause Shortcuts hold their keys only while dictating,
+    // so Escape, the key people reach for to cancel, may be one of them.
+    m_setShortcut->setEscapeRecords(m_role != GlobalShortcutRole::Dictation);
     buttons->addWidget(m_setShortcut);
     m_resetShortcut = new QPushButton(
         globalShortcutResetCaption(ShortcutBinding(GlobalShortcutBinder::defaultShortcut()).displayText()),
@@ -420,6 +425,31 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     m_trayNote = guidanceLabel(QString(), this);
     m_trayNote->setObjectName(QStringLiteral("globalShortcutTrayNote"));
     layout->addWidget(m_trayNote);
+
+    // The setup step asks for the Cancel and Pause Shortcuts too, in a card
+    // of their own: optional, so they never hold the step.
+    if (!m_settingsCard && m_role == GlobalShortcutRole::Dictation) {
+        m_sessionShortcuts = new QWidget(this);
+        m_sessionShortcuts->setObjectName(QStringLiteral("sessionShortcuts"));
+        auto *sessionLayout = new QVBoxLayout(m_sessionShortcuts);
+        sessionLayout->setContentsMargins(0, settings::groupGap(), 0, 0);
+        sessionLayout->setSpacing(0);
+        sessionLayout->addWidget(
+            settings::makeSectionLabel(setupText(SetupText::SessionShortcuts), m_sessionShortcuts));
+        QLabel *lead = guidanceLabel(setupText(SetupText::SessionShortcutsLead), m_sessionShortcuts);
+        lead->setContentsMargins(settings::gridUnit(), 0, settings::gridUnit(), settings::smallSpacing());
+        sessionLayout->addWidget(lead);
+        QFrame *card = settings::makeSettingsCard(m_sessionShortcuts);
+        QFormLayout *cardRows = settings::cardFormLayout(card);
+        for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
+            settings::addCardRow(cardRows,
+                                 new LinuxGlobalShortcutSetupPage(
+                                     m_controller, card, Placement::SettingsCard, role),
+                                 card);
+        }
+        sessionLayout->addWidget(card);
+        layout->addWidget(m_sessionShortcuts);
+    }
 
     if (!m_settingsCard) {
         layout->addStretch();
@@ -556,7 +586,7 @@ void LinuxGlobalShortcutSetupPage::setStatus(const QString &text)
 
 void LinuxGlobalShortcutSetupPage::refreshDescription()
 {
-    m_description->setText(m_setShortcut->armed()      ? captureLead(m_combinationsAvailable)
+    m_description->setText(m_setShortcut->armed()      ? captureLead(m_combinationsAvailable, m_role)
                            : !m_statusText.isEmpty() ? m_statusText
                                                      : shortcutRow().help);
 }
@@ -617,7 +647,7 @@ void LinuxGlobalShortcutSetupPage::resetShortcut()
 // was already given up when the single key took over, so its answer is moot.
 void LinuxGlobalShortcutSetupPage::clearShortcut()
 {
-    if (m_role == GlobalShortcutRole::Cancel) {
+    if (m_role != GlobalShortcutRole::Dictation) {
         m_controller.setGlobalShortcut({}, nullptr, m_role);
     } else {
         m_controller.removeGlobalShortcutRegistration();
@@ -706,6 +736,9 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     m_combinationsAvailable = known && supported && !desktopChooser;
     const bool manualCommand = ready && known && !supported;
     settings::setCardRowVisible(m_captureControls, ready);
+    if (m_sessionShortcuts) {
+        m_sessionShortcuts->setVisible(ready && known);
+    }
     settings::setCardRowVisible(m_manualControls, manualCommand && m_role == GlobalShortcutRole::Dictation);
     m_chooseShortcut->setVisible(portal);
     // The capture handles combinations only where the desktop registers them;
@@ -747,7 +780,7 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
     m_binding->setVisible(!display.isEmpty() || supported);
     m_setShortcut->setShortcutDisplay(display);
     const QString defaultDisplay = ShortcutBinding(GlobalShortcutBinder::defaultShortcut()).displayText();
-    if (m_role == GlobalShortcutRole::Cancel) {
+    if (m_role != GlobalShortcutRole::Dictation) {
         m_resetShortcut->hide();
         m_clearShortcut->setVisible(!display.isEmpty());
     } else {
@@ -769,17 +802,19 @@ void LinuxGlobalShortcutSetupPage::refreshControls()
 
 const SettingsRow &LinuxGlobalShortcutSetupPage::shortcutRow() const
 {
-    return setupSchemaRow(m_role == GlobalShortcutRole::Cancel ? QStringLiteral("cancelShortcut")
-                                                               : QStringLiteral("globalShortcut"));
+    return setupSchemaRow(globalShortcutRowId(m_role));
 }
 
 void LinuxGlobalShortcutSetupPage::refreshKeyHelper()
 {
     const KeywatchSetupStatus status = KeywatchSetup::probe();
     m_keyHelperStatus->setText(status.detail);
-    m_keyHelperButton->setEnabled(!status.ready() && !m_keyHelperProgress->isVisible());
-    m_keyHelperButton->setText(status.ready() ? QStringLiteral("Key helper ready")
-                                              : QStringLiteral("Set up single-key helper"));
+    const bool current = status.state == KeywatchSetupState::Ready;
+    m_keyHelperButton->setEnabled(!current && !m_keyHelperProgress->isVisible());
+    m_keyHelperButton->setText(current ? QStringLiteral("Key helper ready")
+                               : status.state == KeywatchSetupState::Outdated
+                               ? QStringLiteral("Update key helper")
+                               : QStringLiteral("Set up single-key helper"));
 }
 
 void LinuxGlobalShortcutSetupPage::showRegistrationResult(bool bound,

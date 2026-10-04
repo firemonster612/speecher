@@ -23,7 +23,7 @@ const char *refusalText(keywatch::Refusal refusal)
     case keywatch::Refusal::None: return "accepted";
     case keywatch::Refusal::BadVersion: return "the helper speaks another protocol version";
     case keywatch::Refusal::KeyNotPermitted: return "the helper does not permit that key";
-    case keywatch::Refusal::AlreadyWatching: return "a key is already being watched for this user";
+    case keywatch::Refusal::AlreadyWatching: return "it already watches as many keys for this user as it allows";
     case keywatch::Refusal::TooManyRequests: return "too many requests; try again in a minute";
     }
     return "unknown reason";
@@ -38,7 +38,7 @@ KeywatchShortcutBinder::KeywatchShortcutBinder(GlobalShortcutAction action, QObj
     // The async slots serve reconnects after the daemon restarts; the initial
     // exchange in watch() is synchronous and runs with these signals blocked.
     connect(m_socket, &QLocalSocket::connected, this, [this] {
-        const keywatch::WatchRequest request{keywatch::protocolVersion, m_keyId};
+        const keywatch::WatchRequest request{KeywatchSetup::requestVersion(), m_keyId};
         m_replied = false;
         m_socket->write(reinterpret_cast<const char *>(&request), sizeof(request));
     });
@@ -75,8 +75,8 @@ QString KeywatchShortcutBinder::unsupportedBindingReason(const ShortcutBinding &
 // Accessibility grant: installing the helper later revives the shortcut
 // without a restart.
 //
-// A refusal because our other Global Shortcut holds the helper's one watch
-// does not poll: no number of retries succeeds while it does.
+// A refusal because the helper already watches as many keys for this person
+// as it allows does not poll: no number of retries succeeds while it does.
 void KeywatchShortcutBinder::bind()
 {
     SingleKeyShortcutBinder::bind();
@@ -129,7 +129,7 @@ QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
         return status.ready() ? QStringLiteral("Speecher could not reach the key helper.")
                               : status.detail;
     }
-    const keywatch::WatchRequest request{keywatch::protocolVersion, m_keyId};
+    const keywatch::WatchRequest request{KeywatchSetup::requestVersion(), m_keyId};
     m_socket->write(reinterpret_cast<const char *>(&request), sizeof(request));
     while (m_socket->bytesAvailable() < qint64(sizeof(keywatch::WatchReply))) {
         if (!m_socket->waitForReadyRead(replyTimeoutMs)) {
@@ -142,9 +142,8 @@ QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
     if (reply.refusal == quint8(keywatch::Refusal::AlreadyWatching)) {
         unwatch();
         m_helperBusy = true;
-        const bool isCancel = action().id == actionFor(GlobalShortcutRole::Cancel).id;
-        return keyHelperBusyText(isCancel ? GlobalShortcutRole::Dictation
-                                          : GlobalShortcutRole::Cancel);
+        const KeywatchSetupStatus status = KeywatchSetup::probe();
+        return status.state == KeywatchSetupState::Outdated ? status.detail : keyHelperBusyText();
     }
     if (reply.refusal != quint8(keywatch::Refusal::None)) {
         const QString reason = QString::fromLatin1(refusalText(keywatch::Refusal(reply.refusal)));

@@ -9,6 +9,7 @@
 #include <QVariant>
 
 #include <functional>
+#include <optional>
 
 namespace speecher {
 
@@ -161,6 +162,15 @@ struct NumberRange {
     QString suffix;
 };
 
+// A unit a Number row's value can be given in, such as hours, with the range
+// the number keeps to in it.
+struct NumberUnit {
+    QString id;
+    QString label;
+    int minimum = 0;
+    int maximum = 0;
+};
+
 // What the machine Speecher is running on can do, for rows that are only
 // meaningful when it can. Grows a member when a row needs one, not before.
 struct Capabilities {
@@ -217,6 +227,11 @@ struct SettingsRow {
     // platform's navigation indicator at its end.
     QString targetPage;
     NumberRange range;
+    // Number rows only: the units the number can be given in, offered as a
+    // choice beside it. The row's value is then a QVariantMap holding the
+    // "number" and the id of its "unit", and the number keeps to that unit's
+    // range instead of range's.
+    QList<NumberUnit> units;
     // Room to reserve for a Choice row's value, in characters, so a list that
     // arrives late does not resize the row under the reader. Zero sizes the
     // control to whatever it holds.
@@ -589,6 +604,8 @@ QString lookingForRunnersStatus();
 // What the Global Shortcut row says while it waits for keys, naming this
 // platform's keys.
 QString globalShortcutPrompt();
+// What the Cancel and Pause recorders ask for: they also take a bare key.
+QString sessionShortcutPrompt();
 // The Global Shortcut row's buttons: record a new binding, and go back to the
 // binder's default, named by its display text.
 QString globalShortcutChangeCaption();
@@ -602,11 +619,21 @@ QString globalShortcutSetCaption();
 QString globalShortcutSingleKeyCaption();
 QString globalShortcutChooseCaption();
 QString globalShortcutClearCaption();
-// Why a Global Shortcut cannot take the binding the other one already has.
+// The schema row that records each Global Shortcut: "globalShortcut",
+// "cancelShortcut" or "pauseShortcut", and back.
+QString globalShortcutRowId(GlobalShortcutRole role);
+std::optional<GlobalShortcutRole> globalShortcutRoleForRow(const QString &rowId);
+// Why a Global Shortcut cannot take the binding another one already has.
 QString globalShortcutTakenText(GlobalShortcutRole takenBy);
-// Why a single key cannot be watched on Wayland while the other Global
-// Shortcut already holds the one key the key helper watches per person.
-QString keyHelperBusyText(GlobalShortcutRole heldBy);
+// Why the desktop would not register a binding: another app holds it.
+QString globalShortcutOwnedElsewhereText(const ShortcutBinding &binding);
+// Why a session shortcut cannot be a single key that types where
+// Speecher can only watch a single key, not take it (Windows, macOS): it
+// would still type.
+QString watchedKeyStillTypesText(const ShortcutBinding &binding);
+// Why a single key cannot be watched on Wayland while the key helper already
+// watches as many keys for this person as it allows.
+QString keyHelperBusyText();
 // What the Global Shortcut row says when the binder refused a binding without
 // saying why.
 QString globalShortcutBindFailedText();

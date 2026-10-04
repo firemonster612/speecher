@@ -80,6 +80,7 @@ public:
     bool autoCheckUpdates() const; void setAutoCheckUpdates(bool value);
     bool autoInstallUpdates() const; void setAutoInstallUpdates(bool value);
     int updateCheckIntervalMinutes() const; void setUpdateCheckIntervalMinutes(int value);
+    QString updateCheckIntervalUnit() const; void setUpdateCheckIntervalUnit(const QString &value);
     QString updatesRestoreState() const; void setUpdatesRestoreState(const QString &value);
     qint64 updatesRestoreStateTime() const;
     qint64 updatesLastCheckTime() const; void setUpdatesLastCheckTime(qint64 value);

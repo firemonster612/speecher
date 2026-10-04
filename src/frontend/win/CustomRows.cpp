@@ -5,6 +5,7 @@
 #include "app/MicrophoneTest.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationTypes.h"
 #include "frontend/win/LocalModelBrowser.h"
 #include "frontend/win/SettingsModel.h"
@@ -514,8 +515,7 @@ bool customRowIsFullWidth(const QString &rowId)
     return rowId == QStringLiteral("writingProfileBehavior")
         || rowId == QStringLiteral("whatsNewNotes")
         || rowId == QStringLiteral("localModelBrowser")
-        || rowId == QStringLiteral("globalShortcut")
-        || rowId == QStringLiteral("cancelShortcut");
+        || globalShortcutRoleForRow(rowId).has_value();
 }
 
 UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
@@ -526,7 +526,7 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     if (row.id == QStringLiteral("whatsNewNotes")) {
         return releaseNotes(row);
     }
-    if (row.id == QStringLiteral("globalShortcut") || row.id == QStringLiteral("cancelShortcut")) {
+    if (globalShortcutRoleForRow(row.id)) {
         return ShortcutRecorder::element(row, host);
     }
     if (row.id == QStringLiteral("localModelBrowser")) {
