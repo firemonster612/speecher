@@ -483,6 +483,23 @@ private slots:
         QVERIFY([row.help containsString:@"Sparkle"]);
     }
 
+    void customCheckIntervalCrossesTheBridgeWithItsUnit()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsSchemaModel *schema = bridge.settingsSchema;
+        [schema setValue:@"custom" forRowId:@"updateCheckInterval"];
+        [schema setValue:@{@"number": @8, @"unit": @"hours"} forRowId:@"updateCheckCustomInterval"];
+        [schema commit];
+
+        SettingsRowModel *row = settingsRow(schema, @"updateCheckCustomInterval");
+        QVERIFY(row);
+        QCOMPARE(row.units.count, NSUInteger(3));
+        QCOMPARE(row.units.lastObject.maximum, NSInteger(30));
+        QVERIFY([row.value isEqual:(@{@"number": @8, @"unit": @"hours"})]);
+        QCOMPARE(controller.settings()->updateCheckIntervalMinutes(), 480);
+    }
+
     void accountOptionsUseUserFacingLanguage()
     {
         ApplicationController controller(false);

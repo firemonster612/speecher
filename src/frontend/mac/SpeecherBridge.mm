@@ -241,6 +241,11 @@ id bridgedValue(const SettingsRow &row, const AppSettings &settings)
     case RowKind::Toggle:
         return @(row.value(settings).toBool());
     case RowKind::Number:
+        if (!row.units.isEmpty()) {
+            const QVariantMap interval = row.value(settings).toMap();
+            return @{@"number": @(interval.value(QStringLiteral("number")).toInt()),
+                     @"unit": interval.value(QStringLiteral("unit")).toString().toNSString()};
+        }
         return @(row.value(settings).toInt());
     default:
         return row.value(settings).toString().toNSString();
@@ -256,6 +261,11 @@ QVariant coreValue(const SettingsRow &row, id value)
     case RowKind::Toggle:
         return QVariant([value boolValue]);
     case RowKind::Number:
+        if ([value isKindOfClass:[NSDictionary class]]) {
+            NSDictionary *interval = value;
+            return QVariantMap{{QStringLiteral("number"), static_cast<int>([interval[@"number"] integerValue])},
+                               {QStringLiteral("unit"), QString::fromNSString(interval[@"unit"])}};
+        }
         return QVariant(static_cast<int>([value integerValue]));
     default:
         return QVariant(QString::fromNSString([value isKindOfClass:[NSString class]]
@@ -437,6 +447,16 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @end
 
 @implementation RowOptionModel
+@end
+
+@interface NumberUnitModel ()
+@property (nonatomic, copy) NSString *unitId;
+@property (nonatomic, copy) NSString *label;
+@property (nonatomic) NSInteger minimum;
+@property (nonatomic) NSInteger maximum;
+@end
+
+@implementation NumberUnitModel
 @end
 
 @interface SpeecherProviderModel ()
@@ -685,6 +705,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) NSInteger maximum;
 @property (nonatomic) NSInteger step;
 @property (nonatomic, copy) NSString *suffix;
+@property (nonatomic, copy) NSArray<NumberUnitModel *> *units;
 @property (nonatomic, strong, nullable) id value;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *options;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *suggestions;
@@ -1465,6 +1486,16 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.maximum = row.range.maximum;
     model.step = row.range.step;
     model.suffix = row.range.suffix.toNSString();
+    NSMutableArray<NumberUnitModel *> *units = [NSMutableArray array];
+    for (const speecher::NumberUnit &unit : row.units) {
+        NumberUnitModel *unitModel = [[NumberUnitModel alloc] init];
+        unitModel.unitId = unit.id.toNSString();
+        unitModel.label = unit.label.toNSString();
+        unitModel.minimum = unit.minimum;
+        unitModel.maximum = unit.maximum;
+        [units addObject:unitModel];
+    }
+    model.units = units;
     model.options = [self optionsForRow:row];
     model.suggestions = row.suggestions ? [self bridgedOptions:row.suggestions(_state->draft)] : @[];
     model.suggests = bool(row.suggestions);

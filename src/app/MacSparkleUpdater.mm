@@ -3,6 +3,7 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
 
+#include <QDateTime>
 #include <QDebug>
 #include <QTimer>
 
@@ -291,7 +292,8 @@ MacSparkleUpdater::MacSparkleUpdater(SettingsStore *settings,
     m_dismissedVersion = m_settings->updatesDismissedVersion();
     m_selectedNightly = m_settings->updateChannel() == UpdateChannel::Nightly;
     m_checkTimer = new QTimer(this);
-    connect(m_checkTimer, &QTimer::timeout, this, &MacSparkleUpdater::beginBackgroundCheck);
+    m_checkTimer->setSingleShot(true);
+    connect(m_checkTimer, &QTimer::timeout, this, &MacSparkleUpdater::checkIfDue);
     m_transientTimer = new QTimer(this);
     m_transientTimer->setSingleShot(true);
     m_transientTimer->setInterval(6000);
@@ -325,10 +327,31 @@ void MacSparkleUpdater::start()
                              << QString::fromNSString(error.localizedDescription);
     }
     // We own the schedule: Sparkle 2.9.6 clamps its own interval to an hour, so
-    // the timer honours a shorter "check frequency" the way Linux does.
-    if (m_settings->autoCheckUpdates()) {
-        m_checkTimer->start();
+    // the timer honours a shorter "check frequency" the way Linux does, and
+    // like Linux a check that fell due while the app was closed runs now.
+    QTimer::singleShot(0, this, &MacSparkleUpdater::checkIfDue);
+}
+
+void MacSparkleUpdater::checkIfDue()
+{
+    if (m_settings->autoCheckUpdates()
+        && automaticCheckDue(m_settings->updatesLastCheckTime(),
+                             m_settings->updateCheckIntervalMinutes(),
+                             QDateTime::currentMSecsSinceEpoch())) {
+        beginBackgroundCheck();
     }
+    scheduleAutomaticCheck();
+}
+
+void MacSparkleUpdater::scheduleAutomaticCheck()
+{
+    if (!m_settings->autoCheckUpdates()) {
+        m_checkTimer->stop();
+        return;
+    }
+    m_checkTimer->start(automaticCheckDelayMs(m_settings->updatesLastCheckTime(),
+                                              m_settings->updateCheckIntervalMinutes(),
+                                              QDateTime::currentMSecsSinceEpoch()));
 }
 
 UpdateController::State MacSparkleUpdater::state() const
@@ -420,6 +443,9 @@ void MacSparkleUpdater::beginBackgroundCheck()
     // background check is silent unless it finds an update.
     [m_native->delegate setNightly:nightly allowStableReplacement:NO];
     [m_native->updater checkForUpdatesInBackground];
+    // Counted when it starts: a background check that finds nothing reports
+    // nothing back to time it by.
+    m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
 }
 
 bool MacSparkleUpdater::sessionActive() const
@@ -661,14 +687,7 @@ void MacSparkleUpdater::applySettings()
     // two do not both fire.
     updater.automaticallyChecksForUpdates = NO;
     updater.automaticallyDownloadsUpdates = m_settings->autoInstallUpdates();
-    m_checkTimer->setInterval(m_settings->updateCheckIntervalMinutes() * 60 * 1000);
-    if (m_settings->autoCheckUpdates()) {
-        if (!m_checkTimer->isActive()) {
-            m_checkTimer->start();
-        }
-    } else {
-        m_checkTimer->stop();
-    }
+    scheduleAutomaticCheck();
 }
 
 void MacSparkleUpdater::updateSettingsChanged()

@@ -49,6 +49,14 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly) BOOL enabled;
 @end
 
+// A unit a Number row's value can be given in, with the range it keeps to.
+@interface NumberUnitModel : NSObject
+@property (nonatomic, readonly, copy) NSString *unitId;
+@property (nonatomic, readonly, copy) NSString *label;
+@property (nonatomic, readonly) NSInteger minimum;
+@property (nonatomic, readonly) NSInteger maximum;
+@end
+
 @interface CollectionColumnModel : NSObject
 @property (nonatomic, readonly, copy) NSString *columnId;
 @property (nonatomic, readonly, copy) NSString *title;
@@ -127,9 +135,13 @@ typedef NS_ENUM(NSInteger, SpeecherIconState) {
 @property (nonatomic, readonly) NSInteger maximum;
 @property (nonatomic, readonly) NSInteger step;
 @property (nonatomic, readonly, copy) NSString *suffix;
+// Number rows only: the units offered beside the number, whose ranges replace
+// minimum and maximum.
+@property (nonatomic, readonly, copy) NSArray<NumberUnitModel *> *units;
 // An NSString for a Choice, Text or Info row, an NSNumber for a Toggle or
-// Number row, an array of records for a Collection row, and nil for a row that
-// holds no value of its own.
+// Number row, an NSDictionary of "number" (NSNumber) and "unit" (NSString)
+// for a Number row with units, an array of records for a Collection row, and
+// nil for a row that holds no value of its own.
 @property (nonatomic, readonly, strong, nullable) id value;
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *options;
 // Text rows only: values worth offering, though the row still takes any text.

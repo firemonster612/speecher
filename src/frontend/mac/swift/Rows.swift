@@ -47,7 +47,13 @@ struct RowView: View {
         case .choice:
             picker
         case .number:
-            LabeledContent { NumberField(row: row, model: model) } label: { label }
+            LabeledContent {
+                if row.units.isEmpty {
+                    NumberField(row: row, model: model)
+                } else {
+                    UnitNumberField(row: row, model: model)
+                }
+            } label: { label }
         case .text:
             if row.multiline {
                 // A paragraph does not fit beside its label, so the field
@@ -332,6 +338,59 @@ struct NumberField: View {
 
     private var lowerBound: Int { min(row.minimum, row.maximum) }
     private var upperBound: Int { max(row.minimum, row.maximum) }
+}
+
+/// A number and the unit it is given in: the numeric field and stepper, then a
+/// menu of units. The number keeps to the chosen unit's range, so picking a
+/// smaller unit can raise it to that unit's minimum.
+struct UnitNumberField: View {
+    let row: SettingsRowModel
+    @ObservedObject var model: AppModel
+    @State private var value = 0
+    @FocusState private var editing: Bool
+
+    var body: some View {
+        HStack {
+            TextField("", value: $value, format: .number.grouping(.never))
+                .labelsHidden()
+                .multilineTextAlignment(.trailing)
+                .fixedSize()
+                .focused($editing)
+                .onSubmit { commit(unit: storedUnit) }
+            Stepper("", value: $value, in: range(of: storedUnit))
+                .labelsHidden()
+            Picker("", selection: Binding(get: { storedUnit }, set: { commit(unit: $0) })) {
+                ForEach(row.units, id: \.unitId) { unit in
+                    Text(unit.label).tag(unit.unitId)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+        .onAppear { value = storedNumber }
+        .onChange(of: value) { commit(unit: storedUnit) }
+        .onChange(of: storedNumber) { _, stored in
+            if !editing { value = stored }
+        }
+    }
+
+    private var interval: [String: Any] { row.value as? [String: Any] ?? [:] }
+    private var storedNumber: Int { (interval["number"] as? NSNumber)?.intValue ?? 0 }
+    private var storedUnit: String { interval["unit"] as? String ?? row.units.first?.unitId ?? "" }
+
+    private func range(of unitId: String) -> ClosedRange<Int> {
+        guard let unit = row.units.first(where: { $0.unitId == unitId }) else { return 0...0 }
+        return min(unit.minimum, unit.maximum)...max(unit.minimum, unit.maximum)
+    }
+
+    private func commit(unit: String) {
+        let bounds = range(of: unit)
+        let clamped = min(max(value, bounds.lowerBound), bounds.upperBound)
+        if clamped != value { value = clamped }
+        if clamped != storedNumber || unit != storedUnit {
+            model.setValue(["number": clamped, "unit": unit] as NSDictionary, for: row.rowId)
+        }
+    }
 }
 
 /// Free text, saved when the field is done rather than on every keystroke. A row

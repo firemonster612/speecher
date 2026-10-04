@@ -166,6 +166,32 @@ private slots:
         QCOMPARE(multiline, QStringList{QStringLiteral("replacement")});
     }
 
+    void customCheckIntervalSnapshotCarriesItsUnit()
+    {
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        win::SettingsModel model(controller.get());
+        model.setValue(QStringLiteral("updateCheckInterval"), QStringLiteral("custom"));
+        model.setValue(QStringLiteral("updateCheckCustomInterval"),
+                       QVariantMap{{QStringLiteral("number"), 8}, {QStringLiteral("unit"), QStringLiteral("hours")}});
+        model.commit();
+
+        std::optional<win::RowSnapshot> custom;
+        for (const SettingsPaneGroup &group : model.schema().pane(QStringLiteral("general"))->groups) {
+            for (const auto &row : model.section(group).rows) {
+                if (row.id == QStringLiteral("updateCheckCustomInterval")) {
+                    custom = row;
+                }
+            }
+        }
+        QVERIFY(custom);
+        QCOMPARE(custom->units.size(), 3);
+        QCOMPARE(custom->value.toMap(),
+                 (QVariantMap{{QStringLiteral("number"), 8}, {QStringLiteral("unit"), QStringLiteral("hours")}}));
+        QCOMPARE(store->updateCheckIntervalMinutes(), 480);
+    }
+
     // LocalSetup writes settings behind an open window (deleting the model in
     // use moves dictation to another); the draft takes that in without losing
     // an edit of its own.
