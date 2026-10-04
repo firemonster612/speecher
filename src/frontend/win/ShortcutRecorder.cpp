@@ -282,31 +282,13 @@ void ShortcutRecorder::reset(PaneHost &host)
     bind(host, WinGlobalShortcutBinder::defaultShortcut());
 }
 
-// The Qt key a Windows virtual key stands for. Qt's enum uses the unshifted
-// character for every printable key the binder accepts, so the binder's own
-// mapping stays the only list of what Windows can register.
+// The Qt key a Windows virtual key stands for, read from the binder's own
+// mapping, so it stays the only list of what Windows can register.
 int ShortcutRecorder::qtKeyForVirtualKey(int virtualKey)
 {
-    if (virtualKey >= VK_F1 && virtualKey <= VK_F24) {
-        return Qt::Key_F1 + (virtualKey - VK_F1);
-    }
-    switch (virtualKey) {
-    case VK_SPACE:
-        return Qt::Key_Space;
-    case VK_RETURN:
-        return Qt::Key_Return;
-    case VK_TAB:
-        return Qt::Key_Tab;
-    case VK_ESCAPE:
-        return Qt::Key_Escape;
-    default:
-        break;
-    }
-    const UINT character = MapVirtualKeyW(static_cast<UINT>(virtualKey), MAPVK_VK_TO_CHAR);
-    if ((character & 0xFFFF) < 0x20) {
-        return 0;
-    }
-    return QChar(static_cast<char16_t>(character & 0xFFFF)).toUpper().unicode();
+    const QKeySequence keys =
+        WinGlobalShortcutBinder::keySequenceForHotKey(0, static_cast<quint32>(virtualKey));
+    return keys.isEmpty() ? 0 : keys[0].key();
 }
 
 bool ShortcutRecorder::isModifierKey(int virtualKey)

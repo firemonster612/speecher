@@ -101,9 +101,10 @@ GlobalShortcutBinder *WindowsComposition::createGlobalShortcutBinder(GlobalShort
                                                                      QObject *parent) const
 {
     const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
-    return new RoutingShortcutBinder(new WinGlobalShortcutBinder(action),
-                                     new WinSingleKeyShortcutBinder(action),
-                                     parent);
+    GlobalShortcutBinder *combination = action.sessionOnly
+        ? static_cast<GlobalShortcutBinder *>(new WinSessionShortcutBinder(action))
+        : new WinGlobalShortcutBinder(action);
+    return new RoutingShortcutBinder(combination, new WinSingleKeyShortcutBinder(action), parent);
 }
 
 CancelKeyGrab *WindowsComposition::createCancelKeyGrab(QObject *parent) const
