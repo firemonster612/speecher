@@ -2103,6 +2103,49 @@ private slots:
         QVERIFY(setup.downloadProgress(offer->modelId) || !setup.downloadError(offer->modelId).isEmpty());
     }
 
+    // An offer the chain would drop changes nothing: not the chain, the
+    // chosen model, a download or the runner selection.
+    void aSetupOfferThatWouldNotBeAddedChangesNothing()
+    {
+        QTemporaryDir directory;
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        LocalModelStore models(directory.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup setup(settings, providers, models);
+        HardwareProfile workstation;
+        workstation.systemRamBytes = 64'000'000'000;
+        workstation.availableRamBytes = 48'000'000'000;
+        LocalSetupTestAccess::setHardware(setup, workstation);
+        LocalSetupTestAccess::setRunners(setup, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
+                                                  QStringLiteral("0.34.4"), QStringLiteral("http://127.0.0.1:11434/v1"),
+                                                  {QStringLiteral("gemma4:e4b")}}});
+
+        // Local is already the primary.
+        settings.setSpeechProvider(QStringLiteral("local"));
+        const std::optional<SetupFallbackOffer> offer = setup.setupFallbackOffer(ProviderRole::Speech);
+        QVERIFY(offer);
+        LocalSpeechSettings chosen = settings.localSpeechSettings();
+        chosen.modelId = std::find_if(localModelCatalog().cbegin(), localModelCatalog().cend(),
+                                      [&offer](const LocalModel &model) { return model.id != offer->modelId; })
+                             ->id;
+        settings.setLocalSpeechSettings(chosen);
+        setup.acceptSetupFallbackOffer(ProviderRole::Speech);
+        QVERIFY(settings.speechFallbackProviders().isEmpty());
+        QCOMPARE(settings.localSpeechSettings().modelId, chosen.modelId);
+        QVERIFY(!setup.downloadProgress(offer->modelId) && setup.downloadError(offer->modelId).isEmpty());
+
+        // The chain is full.
+        settings.setRefinementProvider(QStringLiteral("anthropic"));
+        const QStringList full = {QStringLiteral("openai"), QStringLiteral("endpoint")};
+        settings.setRefinementFallbackProviders(full);
+        QCOMPARE(settings.refinementFallbackProviders().size(), kMaxFallbackProviders);
+        QVERIFY(setup.setupFallbackOffer(ProviderRole::Refinement));
+        setup.acceptSetupFallbackOffer(ProviderRole::Refinement);
+        QCOMPARE(settings.refinementFallbackProviders(), full);
+        QCOMPARE(settings.localRunnerSettings(), LocalRunnerSettings{});
+    }
+
     void endpointAndRunnerRowsReportWhatTheAppLayerLearned()
     {
         SchemaContext context = fakeContext();
