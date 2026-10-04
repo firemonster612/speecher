@@ -1,0 +1,405 @@
+<!doctype html>
+<!--
+  Mockup of provider fallbacks on the Dictation and Refinement settings pages.
+  ?variant= picks how the chain is edited (list, all, page), ?page= the page
+  (dictation, refinement) and ?state= a preset; the bar at the bottom links
+  them all. The controls are live: reorder, add and remove to see the rows and
+  the per-provider cards follow. Colours are Breeze Light palette roles.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher: provider fallbacks in Settings (mockup)</title>
+<style>
+  :root {
+    --window: #eff0f1;
+    --base: #ffffff;
+    --button: #fcfcfc;
+    --text: #232629;
+    --inactive: #707d8a;
+    --highlight: #3daee9;
+    --highlight-text: #ffffff;
+    --negative: #da4453;
+    --frame: #c9cbcd;
+    --separator: #e3e5e7;
+    --font: "Noto Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #b9bcc0; font: 13px/1.4 var(--font); color: var(--text); padding: 24px 24px 120px; }
+  .window { width: 900px; height: 760px; margin: 0 auto; background: var(--window); border-radius: 6px; overflow: hidden;
+    box-shadow: 0 4px 18px rgba(0,0,0,.25); display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 48px 1fr; }
+  .search { border-right: 1px solid var(--frame); border-bottom: 1px solid var(--frame); padding: 8px; background: #e3e5e7; }
+  .search div { height: 31px; border: 1px solid var(--highlight); border-radius: 4px; background: var(--base); color: var(--inactive); padding: 6px 10px 0 32px; }
+  .title { border-bottom: 1px solid var(--frame); background: #e3e5e7; font-size: 18px; padding: 10px 8px; display: flex; align-items: center; gap: 8px; }
+  .title button { font-size: 13px; }
+  nav { background: var(--base); border-right: 1px solid var(--frame); padding: 10px; }
+  nav .group { display: flex; align-items: center; gap: 8px; font-weight: 700; margin: 10px 8px 4px; }
+  nav .group::after { content: ""; flex: 1; border-top: 1px solid var(--frame); }
+  nav a { display: block; padding: 7px 10px 7px 33px; border-radius: 4px; color: inherit; text-decoration: none; }
+  nav a.on { background: var(--highlight); color: var(--highlight-text); }
+  main { overflow-y: auto; padding: 14px 0 40px; }
+  .column { width: 540px; margin: 0 auto; }
+  .intro { margin: 0 0 14px; padding: 0 18px; }
+  h2 { font-size: 13px; margin: 18px 18px 8px; }
+  h2 + .sub { color: var(--inactive); font-size: 12px; margin: -6px 18px 8px; }
+  .card { background: var(--base); border: 1px solid var(--frame); border-radius: 6px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 18px; min-height: 52px; }
+  .row + .row { border-top: 1px solid var(--separator); margin: 0 18px; padding: 10px 0; }
+  .row .text { flex: 1; min-width: 0; }
+  .row small { display: block; color: var(--inactive); font-size: 12px; }
+  .row small.problem { color: var(--negative); }
+  .row.off .text > span { color: var(--inactive); }
+  .row input[type=checkbox] { width: 16px; height: 16px; margin: 0 2px 0 0; flex: none; }
+  .tools { display: flex; gap: 2px; flex: none; }
+  select, input[type=text], button {
+    font: inherit; color: var(--text); background: var(--button); border: 1px solid var(--frame); border-radius: 3px; padding: 5px 8px; }
+  select { min-width: 142px; }
+  input[type=text] { background: var(--base); width: 230px; }
+  button.tool { width: 30px; height: 30px; padding: 0; border-color: transparent; background: transparent; display: grid; place-items: center; }
+  button.tool:hover:not(:disabled) { border-color: var(--frame); background: var(--button); }
+  button.tool:disabled { opacity: .35; }
+  button.tool svg { width: 16px; height: 16px; }
+  .buttonrow { cursor: pointer; }
+  .buttonrow::after { content: "›"; font-size: 20px; color: var(--inactive); }
+  .buttonrow:hover { background: #f4f5f6; }
+  .note { color: var(--inactive); font-size: 12px; margin: 6px 18px 0; }
+  .newmark { outline: 2px dashed #f67400; outline-offset: 3px; border-radius: 6px; }
+  .legend { width: 900px; margin: 10px auto 0; color: #2b2d30; }
+  .legend span { outline: 2px dashed #f67400; padding: 0 4px; border-radius: 3px; }
+  #bar { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px);
+    background: #f2f2f2; border-radius: 8px; padding: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+  #bar div { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; align-items: center; }
+  #bar div + div { margin-top: 4px; padding-top: 4px; border-top: 1px solid #ccc; }
+  #bar a { padding: 4px 10px; border-radius: 5px; color: #111; text-decoration: none; }
+  #bar a.on { background: #2b2d30; color: #fff; }
+  #bar b { padding: 0 6px; }
+  #explain { width: 900px; margin: 0 auto 12px; color: #1b1c1e; }
+  #explain b { display: block; font-size: 15px; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<div id="explain"></div>
+<p class="legend" style="margin:-6px auto 12px">Areas marked <span>like this</span> are new or moved. Everything else is today's page.</p>
+<div class="window">
+  <div class="search"><div>Search settings…</div></div>
+  <div class="title" id="page-title"></div>
+  <nav>
+    <a>Home</a><a>Transcribe</a><a>General</a><a>Accounts</a>
+    <div class="group">Speech</div>
+    <a id="nav-dictation">Dictation</a><a>Local models</a>
+    <div class="group">Text</div>
+    <a id="nav-refinement">Refinement</a><a>Writing Profiles</a><a>Vocabulary</a><a>Output</a>
+  </nav>
+  <main><div class="column" id="content"></div></main>
+</div>
+<div id="bar"></div>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-up" viewBox="0 0 16 16"><path d="M3.5 10 8 5.5 12.5 10" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+  <symbol id="i-down" viewBox="0 0 16 16"><path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+  <symbol id="i-remove" viewBox="0 0 16 16"><path d="M3.5 8h9" stroke="currentColor" stroke-width="1.4"/></symbol>
+</svg>
+
+<script>
+const SPEECH = {
+  codex: { label: "ChatGPT Codex", about: "GPT Live Transcribe. Very accurate, around 100 languages." },
+  claude: { label: "Claude Voice", about: "Deepgram Nova 3. About 60 languages, automatic punctuation and numerals." },
+  local: { label: "Local Model", about: "Runs on this computer: no account, works offline after a one-time download." },
+  endpoint: { label: "Custom Endpoint", about: "A server you run. Speed, accuracy and languages depend on the server and its model." },
+};
+const REFINE = {
+  openai: { label: "OpenAI", about: "Uses your ChatGPT or Codex sign-in." },
+  anthropic: { label: "Anthropic", about: "Uses your Claude Code sign-in." },
+  local: { label: "Local Runner", about: "Runs on this computer through Ollama, LM Studio or llama-server." },
+  endpoint: { label: "Custom Endpoint", about: "A server you run, or CLI Proxy API." },
+};
+const MAX_CHAIN = 3;
+
+const VARIANTS = {
+  list: { title: "Ordered list",
+    text: "The chain is one list: Speecher tries the services top to bottom. Each row has move and remove buttons, and Add a fallback offers the services not in the list yet. No Fallback or Second fallback labels, and nothing to fill in for someone who wants one service." },
+  all: { title: "Every service, in order",
+    text: "Every service is listed once. Tick the ones to use; the ticked ones come first and the arrows set their order. Nothing to add or remove, and the services you don't use are still visible with what they are." },
+  page: { title: "Fallbacks page",
+    text: "The Service row stays exactly as it is today. One button row underneath names the fallbacks and opens a page with the ordered list. The main page grows by one row however long the chain is." },
+};
+
+// Each preset: the chain, the Spoken Language, and any provider that is not
+// ready right now with the reason shown under it.
+const PRESETS = {
+  dictation: {
+    chain: { title: "Three services", chain: ["codex", "endpoint", "local"], language: "English", problems: {} },
+    single: { title: "No fallback", chain: ["codex"], language: "English", problems: {} },
+    offline: { title: "Offline right now", chain: ["codex", "endpoint", "local"], language: "English",
+      problems: { codex: "Can't reach ChatGPT right now. Dictation starts with Custom Endpoint." } },
+    missing: { title: "Model not downloaded", chain: ["codex", "local"], language: "English",
+      problems: { local: "No model downloaded, so it can't stand in yet." } },
+    language: { title: "Language mismatch", chain: ["codex", "endpoint", "local"], language: "French",
+      problems: { local: "Parakeet 0.6B understands English only, so it is skipped while you dictate in French." } },
+  },
+  refinement: {
+    chain: { title: "OpenAI, then this computer", chain: ["openai", "local"], problems: {} },
+    three: { title: "Three providers", chain: ["openai", "anthropic", "local"], problems: {} },
+    norunner: { title: "Runner not running", chain: ["openai", "local"], problems: { local: "Ollama isn't running, so it can't stand in right now." } },
+    none: { title: "Refinement off", chain: [], problems: {} },
+  },
+};
+
+const params = new URLSearchParams(location.search);
+const variant = params.get("variant") in VARIANTS ? params.get("variant") : "list";
+const page = params.get("page") === "refinement" ? "refinement" : "dictation";
+const presets = PRESETS[page];
+const stateKey = params.get("state") in presets ? params.get("state") : Object.keys(presets)[0];
+const preset = presets[stateKey];
+const catalog = page === "dictation" ? SPEECH : REFINE;
+let chain = [...preset.chain];
+let subpage = params.get("sub") === "1";
+
+const $ = (tag, cls, ...kids) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  for (const k of kids) e.append(k);
+  return e;
+};
+const row = (title, desc, control, opts = {}) => $("div", "row" + (opts.button ? " buttonrow" : "") + (opts.off ? " off" : ""),
+  opts.lead || "",
+  $("div", "text", $("span", "", title), desc ? $("small", opts.problem ? "problem" : "", desc) : ""), control || "");
+const select = (options, value, onChange) => {
+  const s = $("select");
+  for (const [v, t] of options) {
+    const o = $("option", "", t);
+    o.value = v;
+    o.selected = v === value;
+    s.append(o);
+  }
+  if (onChange) s.onchange = () => onChange(s.value);
+  return s;
+};
+const field = (value) => { const i = $("input"); i.type = "text"; i.value = value; return i; };
+const card = (title, rows, opts = {}) => {
+  const wrap = $("div", opts.isNew ? "newmark" : "");
+  wrap.append($("h2", "", title));
+  if (opts.sub) wrap.append($("p", "sub", opts.sub));
+  wrap.append($("div", "card", ...rows));
+  if (opts.note) wrap.append($("p", "note", opts.note));
+  return wrap;
+};
+const tool = (icon, label, disabled, onClick) => {
+  const b = $("button", "tool");
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  b.disabled = disabled;
+  b.innerHTML = `<svg><use href="#i-${icon}"/></svg>`;
+  b.onclick = onClick;
+  return b;
+};
+const update = (next) => { chain = next; render(); };
+const move = (i, by) => {
+  const next = [...chain];
+  [next[i], next[i + by]] = [next[i + by], next[i]];
+  update(next);
+};
+const label = (id) => catalog[id].label;
+const roleText = (i) => (i === 0 ? "Used first." : "Used when the ones above are unavailable.");
+const rawNote = "If none of these answers, your words are pasted as spoken.";
+const thing = page === "dictation" ? "service" : "provider";
+
+// The chain as a list with move and remove buttons; from = first index shown.
+function listRows(from) {
+  const rows = [];
+  for (let i = from; i < chain.length; i++) {
+    const id = chain[i];
+    const problem = preset.problems[id];
+    const desc = problem || (from === 0 ? roleText(i) : i === from ? `Used when ${label(chain[0])} is unavailable.` : "Used when the ones above are unavailable.");
+    const removable = page === "refinement" || chain.length > 1;
+    rows.push(row(label(id), desc, $("div", "tools",
+      tool("up", "Move up", i === from, () => move(i, -1)),
+      tool("down", "Move down", i === chain.length - 1, () => move(i, 1)),
+      tool("remove", "Remove", !removable, () => update(chain.filter((_, j) => j !== i)))),
+      { problem: !!problem }));
+  }
+  const left = Object.keys(catalog).filter((id) => !chain.includes(id));
+  if (chain.length === 0) {
+    rows.push(row("No cleanup", "Your words are pasted as spoken."));
+  }
+  if (left.length && chain.length < MAX_CHAIN) {
+    const adding = chain.length === 0 ? `Add a ${thing}` : "Add a fallback";
+    rows.push(row(adding, chain.length === 0 ? "" : "Used when everything above is unavailable.",
+      select([["", "Choose…"], ...left.map((id) => [id, label(id)])], "", (v) => update([...chain, v]))));
+  }
+  return rows;
+}
+
+// Every provider once: ticked ones first, in chain order.
+function allRows() {
+  const order = [...chain, ...Object.keys(catalog).filter((id) => !chain.includes(id))];
+  return order.map((id) => {
+    const i = chain.indexOf(id);
+    const on = i >= 0;
+    const box = $("input");
+    box.type = "checkbox";
+    box.checked = on;
+    box.disabled = on && page === "dictation" && chain.length === 1;
+    box.onchange = () => update(on ? chain.filter((p) => p !== id) : [...chain, id]);
+    const problem = on && preset.problems[id];
+    const desc = problem || (on ? roleText(i) : catalog[id].about);
+    return row(label(id), desc, on ? $("div", "tools",
+      tool("up", "Move up", i === 0, () => move(i, -1)),
+      tool("down", "Move down", i === chain.length - 1, () => move(i, 1))) : "",
+    { lead: box, problem: !!problem, off: !on });
+  });
+}
+
+function chainCard(extraRows = []) {
+  const heading = page === "dictation" ? "Transcription" : "Provider";
+  if (variant === "list") {
+    return card(heading, [...listRows(0), ...extraRows], {
+      isNew: true,
+      sub: page === "dictation" ? "Speecher uses the first service that works, top to bottom." : "Speecher uses the first provider that works, top to bottom.",
+      note: page === "refinement" && chain.length ? rawNote : "",
+    });
+  }
+  if (variant === "all") {
+    return card(heading, [...allRows(), ...extraRows], {
+      isNew: true,
+      sub: page === "dictation" ? "Tick the services to use. Speecher tries them top to bottom." : "Tick the providers to use. Speecher tries them top to bottom. With none ticked, your words are pasted as spoken.",
+    });
+  }
+  // Fallbacks page: today's Service row plus one button row.
+  const options = Object.keys(catalog).map((id) => [id, label(id)]);
+  if (page === "refinement") options.push(["none", "None"]);
+  const first = chain[0] || "none";
+  const rows = [row(page === "dictation" ? "Service" : "Provider",
+    page === "dictation" ? SPEECH[first].about : "The service that cleans up your text.",
+    select(options, first, (v) => update(v === "none" ? [] : [v, ...chain.filter((p) => p !== v)].slice(0, MAX_CHAIN))))];
+  if (chain.length) {
+    const rest = chain.slice(1);
+    const problem = rest.map((id) => preset.problems[id]).find(Boolean);
+    const summary = rest.length ? rest.map(label).join(", then ") : `None. ${page === "dictation" ? "Dictation stops" : "Your words are pasted as spoken"} if ${label(chain[0])} is unavailable.`;
+    const buttonRow = row("Fallbacks", problem ? `${rest.map(label).join(", then ")}. ${problem}` : summary, "", { button: true, problem: !!problem });
+    buttonRow.classList.add("newmark");
+    buttonRow.onclick = () => { subpage = true; render(); };
+    rows.push(buttonRow);
+  }
+  return card(heading, [...rows, ...extraRows]);
+}
+
+function providerCards() {
+  const cards = page === "dictation" ? {
+    endpoint: () => card("Custom Endpoint", [
+      row("Server URL", "Any server with an OpenAI-style audio transcriptions API.", field("http://192.168.1.20:8000")),
+      row("Path", "whisper.cpp uses /inference.", field("/v1/audio/transcriptions")),
+      row("API key", "Optional. Kept in the system keychain.", field("••••••••")),
+      row("Model", "Sent with each request.", field("whisper-large-v3-turbo")),
+    ], { isNew: true }),
+    local: () => {
+      const missing = stateKey === "missing";
+      return card("Local Model", [
+        row("Local models", missing ? "No model downloaded yet. Pick one to download." : "Parakeet 0.6B is downloaded and ready.",
+          missing ? $("button", "", "Download a model") : "", { button: !missing, problem: missing }),
+      ], { isNew: true });
+    },
+  } : {
+    openai: () => card("OpenAI", [
+      row("Model", "", select([["l", "gpt-6-luna"]], "l")),
+      row("Thinking", "More thinking follows instructions more closely but takes longer.", select([["n", "None"]], "n")),
+      row("Speed", "Fast answers sooner for slightly more usage.", select([["f", "Fast"]], "f")),
+    ], { isNew: true }),
+    anthropic: () => card("Anthropic", [
+      row("Model", "", select([["o", "claude-opus-5-5"]], "o")),
+      row("Thinking", "More thinking follows instructions more closely but takes longer.", select([["l", "Low"]], "l")),
+      row("Fast mode", "Answers sooner for more usage.", select([["on", "On"]], "on")),
+    ], { isNew: true }),
+    local: () => card("Local Runner", [
+      row("Runner", stateKey === "norunner" ? "Ollama was found earlier but isn't running now." : "Ollama is running on this computer.",
+        select([["o", "Ollama"]], "o"), { problem: stateKey === "norunner" }),
+      row("Model", "A cleanup model the runner has downloaded.", select([["q", "qwen3:4b"]], "q")),
+      row("Look for runners", "Checks for Ollama, LM Studio and llama-server again.", $("button", "", "Look for runners again")),
+    ], { isNew: true }),
+    endpoint: () => card("Custom Endpoint", [
+      row("Format", "", select([["o", "OpenAI-compatible"]], "o")),
+      row("Server URL", "", field("http://192.168.1.20:8080")),
+      row("Model", "", select([["m", "qwen3-8b"]], "m")),
+    ], { isNew: true }),
+  };
+  return chain.filter((id) => cards[id]).map((id) => cards[id]());
+}
+
+function renderDictation(root) {
+  root.append(card("Shortcut", [
+    row("Global Shortcut", "Start or stop dictation from anywhere.", $("button", "", "Set single key")),
+    row("Shortcut behavior", "What pressing the Global Shortcut does.", select([["h", "Hybrid"]], "h")),
+  ]));
+  const language = row("Spoken Language", "The language you dictate in.",
+    select([["en", "English"], ["fr", "French"]], preset.language === "French" ? "fr" : "en"));
+  if (variant === "page") {
+    root.append(chainCard([language]));
+  } else {
+    root.append(chainCard(), card("Language", [language]));
+  }
+  root.append(...providerCards());
+  root.append(card("Microphone", [row("Input device", "", select([["d", "System default"]], "d"))]));
+}
+
+function renderRefinement(root) {
+  root.append($("p", "intro", "Refinement turns what you said into clean text before it's pasted: punctuation, filler words and the cleanup your Writing Profile asks for."));
+  root.append(chainCard(), ...providerCards());
+  if (chain.length) {
+    const screens = chain.filter((id) => id === "openai" || id === "anthropic");
+    root.append(card("What refinement can see", [
+      row("Text around your cursor", "Lets cleanup fit what you are writing.", select([["on", "On"]], "on")),
+      row("A screenshot", screens.length && screens.length < chain.length
+        ? "Kept only for the current dictation. Only OpenAI and Anthropic can read it; the others clean up without it."
+        : "Kept only for the current dictation.", select([["off", "Off"]], "off")),
+    ]));
+  }
+}
+
+function renderSubpage(root) {
+  root.append(card(`If ${label(chain[0])} is unavailable`, listRows(1), {
+    isNew: true,
+    sub: "Speecher tries these top to bottom and tells you when it used one.",
+    note: page === "refinement" ? rawNote : "",
+  }));
+}
+
+function render() {
+  const pageTitle = page === "dictation" ? "Dictation" : "Refinement";
+  const title = document.getElementById("page-title");
+  const root = document.getElementById("content");
+  root.replaceChildren();
+  if (subpage && chain.length) {
+    const back = $("button", "", "‹ " + pageTitle);
+    back.onclick = () => { subpage = false; render(); };
+    title.replaceChildren(back, "Fallbacks");
+    renderSubpage(root);
+    return;
+  }
+  title.replaceChildren(pageTitle);
+  (page === "dictation" ? renderDictation : renderRefinement)(root);
+}
+
+document.getElementById("nav-" + page).classList.add("on");
+const v = VARIANTS[variant];
+document.getElementById("explain").replaceChildren($("b", "", `${v.title}: ${preset.title}`), v.text);
+const bar = document.getElementById("bar");
+const link = (text, query, on) => { const a = $("a", on ? "on" : "", text); a.href = "?" + query; return a; };
+const variantsRow = $("div", "", $("b", "", "Layout"));
+for (const [key, value] of Object.entries(VARIANTS)) {
+  variantsRow.append(link(value.title, `variant=${key}&page=${page}&state=${stateKey}`, key === variant));
+}
+variantsRow.append($("b", "", "Fallbacks subpage"));
+variantsRow.lastChild.hidden = variant !== "page";
+if (variant === "page") variantsRow.append(link("Open it", `variant=page&page=${page}&state=${stateKey}&sub=1`, subpage));
+const statesRow = $("div", "");
+for (const p of ["dictation", "refinement"]) {
+  statesRow.append($("b", "", p === "dictation" ? "Dictation" : "Refinement"));
+  for (const [key, value] of Object.entries(PRESETS[p])) {
+    statesRow.append(link(value.title, `variant=${variant}&page=${p}&state=${key}`, p === page && key === stateKey && !subpage));
+  }
+}
+bar.append(variantsRow, statesRow);
+render();
+</script>
+</body>
+</html>
