@@ -455,6 +455,25 @@ SettingsRow fallbacksRow(ProviderRole role, QList<RowOption> providers)
     return row;
 }
 
+// A role's primary picker says why the primary can't work right now, in the
+// negative tone, in place of its usual help.
+void showPrimaryStatus(SettingsRow &row, ProviderRole role, QList<RowOption> providers,
+                       std::function<LiveFacts()> facts)
+{
+    const auto status = [role, providers = std::move(providers), facts = std::move(facts)](const AppSettings &settings) {
+        return primaryProviderStatus(role, settings, facts(), providers);
+    };
+    const std::function<QString(const AppSettings &)> help =
+        row.helpValue ? row.helpValue : [text = row.help](const AppSettings &) { return text; };
+    row.helpValue = [status, help](const AppSettings &settings) {
+        const QString text = status(settings);
+        return text.isEmpty() ? help(settings) : text;
+    };
+    row.helpTone = [status](const AppSettings &settings) {
+        return status(settings).isEmpty() ? StatusTone::Normal : StatusTone::Negative;
+    };
+}
+
 // The ordered fallbacks the subpage edits, as a QStringList of provider ids.
 // Each front end draws it from fallbackListPresentation() and edits it with
 // withFallbackMoved() and its siblings.
@@ -1200,6 +1219,7 @@ SettingsPage audioPage(const SchemaContext &context)
         }
         return QStringLiteral("Service used to turn speech into a raw transcript.");
     };
+    showPrimaryStatus(speechProvider, ProviderRole::Speech, speechChoices, [context] { return liveFacts(context); });
 
     // Only what the chosen service or Local Model listens for, so a choice
     // here always works; a saved language it lacks stays, disabled, beside a
@@ -1639,20 +1659,22 @@ SettingsPage refinementPage(const SchemaContext &context)
     fallbacks.visible = refinementOn;
 
     const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
+    SettingsRow refinementProvider = choiceRow(QStringLiteral("refinementProvider"),
+                                               QStringLiteral("Provider"),
+                                               QStringLiteral("The service that cleans up your text."),
+                                               fixedOptions(refiners),
+                                               [](const AppSettings &settings) { return settings.refinement.providerId; },
+                                               [](AppSettings &settings, const QString &value) {
+                                                   setPrimaryProvider(settings, ProviderRole::Refinement, value);
+                                               });
+    showPrimaryStatus(refinementProvider, ProviderRole::Refinement, refinementChoices, facts);
     SettingsPage page{
         QStringLiteral("refinement"),
         {
             {QStringLiteral("Provider"),
              QString(),
              QList<SettingsRow>{
-                 choiceRow(QStringLiteral("refinementProvider"),
-                           QStringLiteral("Provider"),
-                           QStringLiteral("The service that cleans up your text."),
-                           fixedOptions(refiners),
-                           [](const AppSettings &settings) { return settings.refinement.providerId; },
-                           [](AppSettings &settings, const QString &value) {
-                               setPrimaryProvider(settings, ProviderRole::Refinement, value);
-                           }),
+                 std::move(refinementProvider),
                  std::move(fallbacks),
              }},
             // On the Fallbacks subpage rather than a pane.

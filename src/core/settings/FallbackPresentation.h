@@ -23,12 +23,14 @@ enum class FallbackProblem {
     SpokenLanguage,
 };
 
-// How a status line reads. Each front end maps Negative to its platform's
-// negative-text role and Normal to its ordinary description role.
-enum class StatusTone { Normal, Negative };
-
 FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, const AppSettings &settings,
                                 const LiveFacts &facts);
+
+// What the primary's row says when the primary can't work right now, judged
+// the same way, and which fallback takes over: "Can't reach ChatGPT right
+// now. Dictation starts with Custom Endpoint." Empty while it can.
+QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, const LiveFacts &facts,
+                              const QList<RowOption> &providers);
 
 // Whether a speech fallback is skipped because it can't listen for the
 // Spoken Language: only a Local Model whose catalog entry lacks it. A

@@ -186,6 +186,10 @@ struct RowDialog {
     std::function<QString(const AppSettings &)> summary;
 };
 
+// How a status line reads. Each front end maps Negative to its platform's
+// negative-text role and Normal to its ordinary description role.
+enum class StatusTone { Normal, Negative };
+
 struct SettingsRow {
     // Stable across front ends: a renderer uses it to name its control, and a
     // Custom or Action row is recognised by it.
@@ -199,6 +203,9 @@ struct SettingsRow {
     std::function<QString(const AppSettings &)> labelValue;
     QString help;
     std::function<QString(const AppSettings &)> helpValue;
+    // Negative while helpValue says the row's choice can't work right now.
+    // Absent reads as Normal.
+    std::function<StatusTone(const AppSettings &)> helpTone;
     RowKind kind = RowKind::Info;
     // The caption of an Action row's control, which is not its label.
     QString actionLabel;
