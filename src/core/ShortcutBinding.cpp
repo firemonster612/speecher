@@ -1,5 +1,6 @@
 #include "core/ShortcutBinding.h"
 
+
 #include <QLatin1StringView>
 
 #ifdef Q_OS_LINUX
@@ -206,6 +207,27 @@ QKeySequence ShortcutBinding::combination() const
 QString ShortcutBinding::keyCode() const
 {
     return m_keyCode;
+}
+
+bool ShortcutBinding::overlaps(const ShortcutBinding &other) const
+{
+    if (*this == other) {
+        return true;
+    }
+    const ShortcutBinding &single = isSingleKey() ? *this : other;
+    const ShortcutBinding &combination = isSingleKey() ? other : *this;
+    if (!single.isSingleKey() || combination.isSingleKey() || combination.isEmpty()) {
+        return false;
+    }
+    // The vocabulary's labels read as Qt key names ("C", "F13", "Escape").
+    // They name the key on a US layout, so a key
+    // that layouts move (Q on AZERTY) can slip past.
+    // Qt reads "Enter" as the keypad's Enter; the main one is Return.
+    const QString name = single.displayText();
+    const QKeySequence label = name == QStringLiteral("Enter")
+        ? QKeySequence(Qt::Key_Return)
+        : QKeySequence::fromString(name, QKeySequence::PortableText);
+    return label.count() == 1 && label[0].key() == combination.m_combination[0].key();
 }
 
 QString ShortcutBinding::displayText() const

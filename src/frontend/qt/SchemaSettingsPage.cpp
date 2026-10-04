@@ -567,9 +567,48 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
         spin->setSingleStep(descriptor.range.step);
         spin->setSuffix(descriptor.range.suffix);
         connect(spin, &QSpinBox::valueChanged, this, announce);
-        row.value = [spin] { return spin->value(); };
-        row.setValue = [spin](const QVariant &value) { spin->setValue(value.toInt()); };
-        return spin;
+        if (descriptor.units.isEmpty()) {
+            row.value = [spin] { return spin->value(); };
+            row.setValue = [spin](const QVariant &value) { spin->setValue(value.toInt()); };
+            return spin;
+        }
+        // The number and its unit side by side, one control as the row sees it.
+        auto *control = new QWidget(card);
+        auto *layout = new QHBoxLayout(control);
+        layout->setContentsMargins({});
+        auto *unit = new QComboBox(control);
+        for (const NumberUnit &option : descriptor.units) {
+            unit->addItem(option.label, option.id);
+        }
+        spin->setParent(control);
+        spin->setAccessibleName(descriptor.label);
+        unit->setAccessibleName(descriptor.label);
+        layout->addWidget(spin);
+        layout->addWidget(unit);
+        // The spin box clamps to the new unit's range by itself; announcing
+        // once afterwards saves the clamped number with the unit.
+        const auto keepToUnit = [spin, unit, units = descriptor.units] {
+            const NumberUnit &chosen = units.at(qMax(0, unit->currentIndex()));
+            const QSignalBlocker blocker(spin);
+            spin->setRange(chosen.minimum, chosen.maximum);
+        };
+        connect(unit, &QComboBox::currentIndexChanged, this, [keepToUnit, announce] {
+            keepToUnit();
+            announce();
+        });
+        row.value = [spin, unit] {
+            return QVariantMap{{QStringLiteral("number"), spin->value()},
+                               {QStringLiteral("unit"), unit->currentData()}};
+        };
+        row.setValue = [spin, unit, keepToUnit](const QVariant &value) {
+            const QVariantMap interval = value.toMap();
+            const QSignalBlocker spinBlocker(spin);
+            const QSignalBlocker unitBlocker(unit);
+            settings::selectData(unit, interval.value(QStringLiteral("unit")).toString());
+            keepToUnit();
+            spin->setValue(interval.value(QStringLiteral("number")).toInt());
+        };
+        return control;
     }
     case RowKind::Text: {
         if (descriptor.multiline) {

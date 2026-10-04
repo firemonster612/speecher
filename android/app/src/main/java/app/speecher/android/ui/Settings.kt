@@ -108,6 +108,7 @@ fun Settings(
     onOpen: (SettingsPage) -> Unit,
     onSignIn: (Provider) -> Unit,
     onSignOut: (Provider) -> Unit,
+    onChange: (SpeecherSettings) -> Unit,
     modifier: Modifier = Modifier,
     sessionEnded: Set<Provider> = emptySet(),
     signingIn: Provider? = null,
@@ -207,6 +208,9 @@ fun Settings(
                 onOpen,
             )
         }
+
+        Section("Updates")
+        UpdateCheckRow(settings, onChange)
     }
 }
 
@@ -925,7 +929,7 @@ internal fun vocabularySummary(settings: SpeecherSettings): String {
 
 @Composable
 private fun SettingsPreview(settings: SpeecherSettings, signedIn: Set<Provider>) = SpeecherTheme {
-    Surface { Settings(settings, signedIn, {}, {}, {}) }
+    Surface { Settings(settings, signedIn, {}, {}, {}, {}) }
 }
 
 @PreviewLightDark

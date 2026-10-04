@@ -68,6 +68,8 @@ private:
     void applySettings();
     void updateSettingsChanged();
     void beginBackgroundCheck();
+    void checkIfDue();
+    void scheduleAutomaticCheck();
     void cancelActiveSession();
     bool sessionActive() const;
     void setState(State state, const QString &error = {});

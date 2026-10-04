@@ -78,9 +78,11 @@ struct RowSnapshot {
     // An Action row that opens a subpage, by its page id.
     QString targetPage;
     NumberRange range;
+    QList<NumberUnit> units;
     int contentWidthHint = 0;
-    // bool for a Toggle, int for a Number, a QList<QVariantMap> for a
-    // Collection, a QString otherwise; invalid for a row without a value.
+    // bool for a Toggle, int for a Number, a QVariantMap of "number" and
+    // "unit" for a Number with units, a QList<QVariantMap> for a Collection,
+    // a QString otherwise; invalid for a row without a value.
     QVariant value;
     QList<RowOption> options;
     QList<RowOption> suggestions;

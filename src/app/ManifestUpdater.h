@@ -95,7 +95,9 @@ private:
     void beginCheck(UpdateChannel channel, bool automaticCheck);
     void decideCheck(const std::optional<UpdateManifest> &candidate);
     void updateSettingsChanged();
-    int baseCheckIntervalMs() const;
+    bool automaticCheckDue() const;
+    // Arms the timer for the next automatic check, or the retry of a failed one.
+    void scheduleAutomaticCheck();
     QUrl manifestUrl(UpdateChannel channel) const;
     void finishCheck(QNetworkReply *reply);
     void recordAutomaticCheckFailure();
@@ -109,7 +111,7 @@ private:
     SettingsStore *m_settings;
     DictationSession *m_session;
     QNetworkAccessManager *m_network;
-    QTimer *m_dailyTimer;
+    QTimer *m_checkTimer;
     QNetworkReply *m_reply = nullptr;
     std::unique_ptr<QFile> m_download;
     UpdateManifest m_manifest;

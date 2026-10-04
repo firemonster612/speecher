@@ -13,7 +13,8 @@ namespace speecher {
 // input reports the scancode identity the vocabulary's win column keys on
 // (make code plus the E0 byte), arrives whatever window has focus
 // (RIDEV_INPUTSINK), and involves no hook or grab, so the key keeps doing
-// its normal job as well.
+// its normal job as well. That is why the Cancel and Pause Shortcuts refuse a
+// key that types here: the hot-key binder takes those just for the session.
 //
 // Raw input registration is per process and usage, so the stream comes from
 // the shared listener in WinRawKeyboard, which the combination binders' release

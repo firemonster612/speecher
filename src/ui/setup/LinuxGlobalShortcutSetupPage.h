@@ -41,6 +41,9 @@ public:
     // F13 binds as a plain QKeySequence through that service; without one it
     // can only bind as a watched single key.
     void setCombinationsAvailable(bool available);
+    // Escape gives up the capture unless it can be the shortcut, where the
+    // button's own Cancel caption gives it up instead.
+    void setEscapeRecords(bool records) { m_escapeRecords = records; }
 
 signals:
     void bindingCaptured(const ShortcutBinding &binding);
@@ -63,6 +66,7 @@ private:
 
     bool m_armed = false;
     bool m_combinationsAvailable = true;
+    bool m_escapeRecords = false;
     QString m_display;
     // Modifiers currently held while armed, by native scan code. A lone entry
     // is the commit-on-release candidate; a second one voids the candidate (a
@@ -170,6 +174,8 @@ private:
     QLabel *m_holdUnavailableNote = nullptr;
     QString m_displayedShortcut;
     QWidget *m_integration = nullptr;
+    // The setup step's Cancel and Pause Shortcuts.
+    QWidget *m_sessionShortcuts = nullptr;
     QPushButton *m_integrationButton = nullptr;
     QLabel *m_integrationStatus = nullptr;
     bool m_settingsCard = false;

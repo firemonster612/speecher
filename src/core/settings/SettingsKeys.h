@@ -41,8 +41,9 @@ inline const QString BindingRules = QStringLiteral("bindings/rules");
 // Only platforms without a desktop-wide shortcut registry of their own store the
 // dictation binding here; KGlobalAccel owns it on KDE.
 inline const QString GlobalShortcut = QStringLiteral("shortcuts/toggleDictation");
-// The optional Global Shortcut that cancels dictation, kept the same way.
+// The optional Global Shortcuts that cancel and pause dictation, kept the same way.
 inline const QString CancelShortcut = QStringLiteral("shortcuts/cancelDictation");
+inline const QString PauseShortcut = QStringLiteral("shortcuts/pauseDictation");
 inline const QString ShortcutActivationMode = QStringLiteral("shortcuts/activationMode");
 inline const QString CorrectionLearningEnabled = QStringLiteral("vocabulary/correctionLearningEnabled");
 inline const QString LearnedCorrections = QStringLiteral("vocabulary/learnedCorrections");
@@ -103,6 +104,7 @@ inline const QString UpdatesChannel = QStringLiteral("updates/channel");
 inline const QString UpdatesAutoCheck = QStringLiteral("updates/autoCheck");
 inline const QString UpdatesAutoInstall = QStringLiteral("updates/autoInstall");
 inline const QString UpdatesCheckIntervalMinutes = QStringLiteral("updates/checkIntervalMinutes");
+inline const QString UpdatesCheckIntervalUnit = QStringLiteral("updates/checkIntervalUnit");
 inline const QString UpdatesRestoreState = QStringLiteral("updates/restoreState");
 inline const QString UpdatesRestoreStateTime = QStringLiteral("updates/restoreStateTime");
 inline const QString UpdatesLastCheckTime = QStringLiteral("updates/lastCheckTime");

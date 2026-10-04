@@ -9,6 +9,7 @@ namespace speecher {
 // Watches one physical key through NSEvent global and local monitors, which is
 // the Accessibility-grant path: not a CGEventTap, not Input Monitoring. The
 // monitors cannot consume the key; the recorder's inline warning covers that.
+// For the same reason the Cancel and Pause Shortcuts refuse a key that types.
 //
 // The failure mode that matters is silence: without the grant a monitor
 // registers successfully and never fires. unsupportedBindingReason() therefore

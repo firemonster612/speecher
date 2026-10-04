@@ -30,6 +30,27 @@ inline QString nightlyVersionDisplay(const QString &version, qint64 buildNumber 
     return display;
 }
 
+// Whether intervalMinutes have passed since the last automatic check. A last
+// check in the future means the clock was set back, and waiting for it to come
+// round again could take days.
+inline bool automaticCheckDue(qint64 lastCheckMs, int intervalMinutes, qint64 nowMs)
+{
+    return nowMs < lastCheckMs || nowMs - lastCheckMs >= intervalMinutes * 60'000LL;
+}
+
+// How long to wait before asking again whether an automatic check is due:
+// until it is, but never under a minute, so a due check that cannot start yet
+// is retried rather than spun on, and never over an hour, so a week-long
+// interval follows the wall clock across sleep and stays in QTimer's range.
+inline int automaticCheckDelayMs(qint64 lastCheckMs, int intervalMinutes, qint64 nowMs)
+{
+    constexpr qint64 minuteMs = 60'000;
+    if (automaticCheckDue(lastCheckMs, intervalMinutes, nowMs)) {
+        return int(minuteMs);
+    }
+    return int(qBound(minuteMs, lastCheckMs + intervalMinutes * minuteMs - nowMs, 60 * minuteMs));
+}
+
 class UpdateController : public QObject {
     Q_OBJECT
 

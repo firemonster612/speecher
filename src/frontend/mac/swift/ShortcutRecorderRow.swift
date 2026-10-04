@@ -21,8 +21,15 @@ final class ShortcutRecorder: ObservableObject {
     /// combination is consumed system-wide while registered, so the monitor
     /// would never see it — pressing it would start dictation instead.
     private var restoreShortcut: (@MainActor @Sendable () -> Void)?
-    /// Escape abandons the recording rather than becoming the shortcut.
+    /// Escape abandons the recording rather than becoming the shortcut,
+    /// unless bare keys are being recorded as combinations.
     private let escapeKeyCode: UInt16 = 53
+    /// kVK_ANSI_Keypad*: decimal, multiply, plus, clear, divide, enter, minus,
+    /// equals and the digits.
+    private let keypadKeyCodes: Set<UInt16> = [
+        0x41, 0x43, 0x45, 0x47, 0x4B, 0x4C, 0x4E, 0x51,
+        0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5B, 0x5C,
+    ]
 
     /// Catches the next shortcut of either kind: a non-modifier key pressed
     /// with ⌘, ⌥, ⌃ or ⇧ held goes to `combination`; one pressed bare goes to
@@ -31,7 +38,14 @@ final class ShortcutRecorder: ObservableObject {
     /// chord is not a valid shortcut). `singleKey` says whether it took the
     /// key; one it does not know (a media key) leaves the recorder armed.
     /// Escape abandons.
+    ///
+    /// With `bareKeysCombine`, for the Cancel and Pause Shortcuts, a key
+    /// pressed bare goes to `combination` too, Escape included: those
+    /// shortcuts take their keys only while dictating, so C or Escape can be
+    /// one. Only a lone modifier is still a single key. The caller offers its
+    /// own control to abandon.
     func record(suspending model: AppModel,
+                bareKeysCombine: Bool = false,
                 combination: @escaping (String, NSEvent.ModifierFlags) -> Void,
                 singleKey: @escaping (UInt16) -> Bool) {
         begin(suspending: model)
@@ -47,13 +61,22 @@ final class ShortcutRecorder: ObservableObject {
             // modifiers' releases from here on pass by unrecorded.
             heldModifiers = []
             modifierChordSpoiled = false
-            if event.keyCode == escapeKeyCode {
+            if event.keyCode == escapeKeyCode, !bareKeysCombine {
                 stop()
                 return nil
             }
-            if !event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
-                stop()
+            // For the session shortcuts, keypad keys stay single keys with or
+            // without modifiers: a hot key named by their character would
+            // take the top-row key instead.
+            let keypad = bareKeysCombine && keypadKeyCodes.contains(event.keyCode)
+            if !keypad, bareKeysCombine
+                || !event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
+                // Bound before the recording ends, as single keys are:
+                // ending it gives the shortcuts their keys back, and during a
+                // session Escape would go back to cancelling before it could
+                // become the Cancel or Pause Shortcut.
                 combination(event.charactersIgnoringModifiers ?? "", event.modifierFlags)
+                stop()
                 return nil
             }
             if singleKey(event.keyCode) { stop() }
@@ -209,32 +232,36 @@ struct ShortcutRecorderRow: View {
     }
 }
 
-/// The Cancel Shortcut row under the Global Shortcut: the binding, Change to
-/// record one with the same recorder, and Clear while one is set, since it has
-/// no default.
-struct CancelShortcutRecorderRow: View {
+/// The Cancel or Pause Shortcut row under the Global Shortcut: the binding,
+/// Change to record one, and Clear while one is set, since neither has a
+/// default. Escape records here, so while recording the row offers Cancel to
+/// abandon instead.
+struct SessionShortcutRecorderRow: View {
     @ObservedObject var model: AppModel
+    let role: SpeecherShortcutRole
     @StateObject private var recorder = ShortcutRecorder()
     @State private var captureProblem = ""
 
     var body: some View {
+        let shortcut = model.sessionShortcut(role)
         VStack(alignment: .leading) {
             LabeledContent {
                 HStack {
-                    if !recorder.recording {
-                        Text(model.cancelShortcut.isEmpty ? SpeecherBridge.globalShortcutUnsetText
-                                                          : model.cancelShortcut)
-                    }
-                    Button(SpeecherBridge.globalShortcutChangeCaption) { record() }
-                        .disabled(!model.shortcutSupported || recorder.recording)
-                    if !recorder.recording, !model.cancelShortcut.isEmpty {
-                        Button(SpeecherBridge.globalShortcutClearCaption) { model.clearCancelShortcut() }
+                    if recorder.recording {
+                        Button(SpeecherBridge.cancelCaption) { recorder.stop() }
+                    } else {
+                        Text(shortcut.display.isEmpty ? SpeecherBridge.globalShortcutUnsetText : shortcut.display)
+                        Button(SpeecherBridge.globalShortcutChangeCaption) { record() }
+                            .disabled(!model.shortcutSupported)
+                        if !shortcut.display.isEmpty {
+                            Button(SpeecherBridge.globalShortcutClearCaption) { model.clearShortcut(role: role) }
+                        }
                     }
                 }
             } label: {
-                RowView.label(model.row("cancelShortcut")?.label ?? "", help: description)
+                RowView.label(model.row(SpeecherBridge.rowId(for: role))?.label ?? "", help: description)
             }
-            if model.cancelShortcutNeedsAccessibility, !model.accessibilityEnabled {
+            if shortcut.needsAccessibility, !model.accessibilityEnabled {
                 Button(SpeecherBridge.accessibilityGrantActionLabel) { model.requestAccessibility() }
             }
         }
@@ -242,10 +269,10 @@ struct CancelShortcutRecorderRow: View {
 
     private func record() {
         captureProblem = ""
-        recorder.record(suspending: model, combination: { characters, flags in
-            model.bindCancelShortcut(characters: characters, modifierFlags: flags)
+        recorder.record(suspending: model, bareKeysCombine: true, combination: { characters, flags in
+            model.bindShortcut(characters: characters, modifierFlags: flags, role: role)
         }, singleKey: { keyCode in
-            if model.bindCancelSingleKey(macKeyCode: keyCode) { return true }
+            if model.bindSingleKey(macKeyCode: keyCode, role: role) { return true }
             captureProblem = "That key cannot be a dictation key."
             return false
         })
@@ -254,10 +281,11 @@ struct CancelShortcutRecorderRow: View {
     private var description: String {
         if recorder.recording {
             return captureProblem.isEmpty
-                ? SpeecherBridge.globalShortcutPrompt
-                : captureProblem + " " + SpeecherBridge.globalShortcutPrompt
+                ? SpeecherBridge.sessionShortcutPrompt
+                : captureProblem + " " + SpeecherBridge.sessionShortcutPrompt
         }
-        if !model.cancelShortcutProblem.isEmpty { return model.cancelShortcutProblem }
-        return model.row("cancelShortcut")?.help ?? ""
+        let problem = model.sessionShortcut(role).problem
+        if !problem.isEmpty { return problem }
+        return model.row(SpeecherBridge.rowId(for: role))?.help ?? ""
     }
 }

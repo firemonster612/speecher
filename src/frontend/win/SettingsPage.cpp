@@ -281,7 +281,7 @@ UIElement textField(const RowSnapshot &row, PaneHost &host)
     return box;
 }
 
-UIElement numberField(const RowSnapshot &row, PaneHost &host)
+NumberBox countBox(int minimum, int maximum, int step, int value)
 {
     NumberBox box;
     box.SpinButtonPlacementMode(NumberBoxSpinButtonPlacementMode::Compact);
@@ -290,11 +290,85 @@ UIElement numberField(const RowSnapshot &row, PaneHost &host)
     formatter.IsGrouped(false);
     formatter.FractionDigits(0);
     box.NumberFormatter(formatter);
-    box.Minimum(std::min(row.range.minimum, row.range.maximum));
-    box.Maximum(std::max(row.range.minimum, row.range.maximum));
-    box.SmallChange(row.range.step);
-    box.LargeChange(row.range.step);
-    box.Value(row.value.toInt());
+    box.Minimum(std::min(minimum, maximum));
+    box.Maximum(std::max(minimum, maximum));
+    box.SmallChange(step);
+    box.LargeChange(step);
+    box.Value(value);
+    return box;
+}
+
+// A number and the unit it is given in: the number box, then a combo box of
+// units. The number keeps to the chosen unit's range, so picking a smaller
+// unit can raise it to that unit's minimum.
+UIElement unitNumberField(const RowSnapshot &row, PaneHost &host)
+{
+    const QVariantMap interval = row.value.toMap();
+    const int number = interval.value(QStringLiteral("number")).toInt();
+    const QString unitId = interval.value(QStringLiteral("unit")).toString();
+    const auto stored = std::find_if(row.units.cbegin(), row.units.cend(), [&](const NumberUnit &unit) {
+        return unit.id == unitId;
+    });
+    const NumberUnit &chosen = stored == row.units.cend() ? row.units.first() : *stored;
+    NumberBox box = countBox(chosen.minimum, chosen.maximum, 1, number);
+    box.ValueChanged([rowId = row.id, unitId = chosen.id, number, &host](
+                         const NumberBox &sender, const NumberBoxValueChangedEventArgs &args) {
+        // Cleared rather than changed: put the stored value back.
+        if (std::isnan(args.NewValue())) {
+            sender.Value(number);
+            return;
+        }
+        const int value = static_cast<int>(args.NewValue());
+        if (value != number) {
+            setValueAndCommit(host, rowId, QVariantMap{{QStringLiteral("number"), value},
+                                                       {QStringLiteral("unit"), unitId}});
+        }
+    });
+    ComboBox units;
+    int selected = -1;
+    for (const NumberUnit &unit : row.units) {
+        ComboBoxItem item;
+        item.Content(box_value(hs(unit.label)));
+        item.Tag(box_value(hs(unit.id)));
+        if (unit.id == chosen.id) {
+            selected = units.Items().Size();
+        }
+        units.Items().Append(item);
+    }
+    units.SelectedIndex(selected);
+    // describeForAssistiveTech names only the number box, the panel's first control.
+    AutomationProperties::SetName(units, hs(row.label));
+    units.SelectionChanged([rowId = row.id, number, choices = row.units, &host](
+                               const IInspectable &sender, const auto &) {
+        const auto item = sender.as<ComboBox>().SelectedItem();
+        if (!item) {
+            return;
+        }
+        const QString id = qs(unbox_value<hstring>(item.as<ComboBoxItem>().Tag()));
+        for (const NumberUnit &unit : choices) {
+            if (unit.id == id) {
+                setValueAndCommit(host, rowId, QVariantMap{
+                    {QStringLiteral("number"), qBound(unit.minimum, number, unit.maximum)},
+                    {QStringLiteral("unit"), id},
+                });
+                return;
+            }
+        }
+    });
+    StackPanel panel;
+    panel.Orientation(Orientation::Horizontal);
+    panel.Spacing(8);
+    panel.Children().Append(box);
+    panel.Children().Append(units);
+    return panel;
+}
+
+UIElement numberField(const RowSnapshot &row, PaneHost &host)
+{
+    if (!row.units.isEmpty()) {
+        return unitNumberField(row, host);
+    }
+    NumberBox box = countBox(row.range.minimum, row.range.maximum, row.range.step, row.value.toInt());
     box.ValueChanged([rowId = row.id, stored = row.value.toInt(), &host](
                          const NumberBox &sender, const NumberBoxValueChangedEventArgs &args) {
         // Cleared rather than changed: put the stored value back.

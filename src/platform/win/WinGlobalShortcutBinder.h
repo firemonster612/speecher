@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/GlobalShortcutBinder.h"
+#include "platform/SessionShortcutBinder.h"
 
 #include <QAbstractNativeEventFilter>
 
@@ -12,6 +13,8 @@ class WinPlatformTests;
 
 namespace speecher {
 
+// The dictation shortcut: a combination RegisterHotKey takes from every app
+// for good, with its release read from raw input for push-to-talk.
 class WinGlobalShortcutBinder : public GlobalShortcutBinder,
                                 public QAbstractNativeEventFilter {
     Q_OBJECT
@@ -40,8 +43,11 @@ public:
                            void *message,
                            qintptr *result) override;
 
+    // bareKeyAllowed lets a combination without a modifier through, for a
+    // session shortcut, which holds its hot key only while dictating.
     static std::optional<NativeHotKey> nativeHotKey(const QKeySequence &shortcut,
-                                                     QString *error = nullptr);
+                                                     QString *error = nullptr,
+                                                     bool bareKeyAllowed = false);
     static QKeySequence keySequenceForHotKey(quint32 modifiers, quint32 virtualKey);
     // Whether a setShortcut error means another application already owns the
     // combination. Setup tells the user to record a different one only then;
@@ -63,6 +69,35 @@ private:
     // Setup and settings can record concurrently; only the last resume binds.
     int m_suspensionCount = 0;
     bool m_resumeBinding = false;
+};
+
+// A Cancel or Pause Shortcut: RegisterHotKey holds its keys only while
+// dictating, so a bare key such as C or Escape types as usual the rest of the
+// time. Both act on press alone, so no release is read.
+class WinSessionShortcutBinder final : public SessionShortcutBinder,
+                                       public QAbstractNativeEventFilter {
+    Q_OBJECT
+
+public:
+    explicit WinSessionShortcutBinder(GlobalShortcutAction action, QObject *parent = nullptr);
+    ~WinSessionShortcutBinder() override;
+
+    bool supported() const override;
+    QString unsupportedReason() const override;
+    QString unsupportedBindingReason(const ShortcutBinding &binding) const override;
+
+    bool nativeEventFilter(const QByteArray &eventType,
+                           void *message,
+                           qintptr *result) override;
+
+protected:
+    bool take(const QKeySequence &keys) override;
+    void letGo() override;
+
+private:
+    friend class ::WinPlatformTests;
+    const int m_hotKeyId;
+    bool m_registered = false;
 };
 
 } // namespace speecher

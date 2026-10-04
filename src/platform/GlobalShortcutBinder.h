@@ -19,6 +19,8 @@ struct GlobalShortcutAction {
     QString description;
     // Empty: unbound until the person sets one.
     QKeySequence defaultShortcut;
+    // Acts only during a Dictation Session: the Cancel and Pause Shortcuts.
+    bool sessionOnly = false;
 };
 
 // Binds one desktop-wide ShortcutBinding to dictation. Platforms that report
@@ -39,11 +41,21 @@ public:
 
     static GlobalShortcutAction actionFor(GlobalShortcutRole role)
     {
-        if (role == GlobalShortcutRole::Cancel) {
+        switch (role) {
+        case GlobalShortcutRole::Cancel:
             return {SettingsKeys::CancelShortcut,
                     QStringLiteral("cancel-dictation"),
                     QStringLiteral("Cancel dictation"),
-                    {}};
+                    {},
+                    true};
+        case GlobalShortcutRole::Pause:
+            return {SettingsKeys::PauseShortcut,
+                    QStringLiteral("pause-dictation"),
+                    QStringLiteral("Pause or resume dictation"),
+                    {},
+                    true};
+        case GlobalShortcutRole::Dictation:
+            break;
         }
         return {SettingsKeys::GlobalShortcut,
                 QStringLiteral("toggle-dictation"),
@@ -91,6 +103,13 @@ public:
     }
     // An empty binding lets the shortcut go and forgets it.
     virtual bool setShortcut(const ShortcutBinding &shortcut, QString *error = nullptr) = 0;
+    // A shortcut that acts only during a Dictation Session is armed for its
+    // length. A binder that can take keys from the desktop on demand holds
+    // them only while armed, so a bare key such as C or Escape types as usual
+    // the rest of the time; one that cannot keeps its registration and
+    // refuses bare keys in unsupportedBindingReason(). Suspension wins: a
+    // suspended binder holds nothing until it resumes, armed or not.
+    virtual void setArmed(bool armed) { Q_UNUSED(armed) }
     // Recording a replacement needs the current combination delivered as an
     // ordinary key event. A platform that consumes it system-wide lets go of
     // the registration here and takes it back on resume; the default binders

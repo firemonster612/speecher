@@ -242,6 +242,11 @@ id bridgedValue(const SettingsRow &row, const AppSettings &settings)
     case RowKind::Toggle:
         return @(row.value(settings).toBool());
     case RowKind::Number:
+        if (!row.units.isEmpty()) {
+            const QVariantMap interval = row.value(settings).toMap();
+            return @{@"number": @(interval.value(QStringLiteral("number")).toInt()),
+                     @"unit": interval.value(QStringLiteral("unit")).toString().toNSString()};
+        }
         return @(row.value(settings).toInt());
     default:
         return row.value(settings).toString().toNSString();
@@ -257,6 +262,11 @@ QVariant coreValue(const SettingsRow &row, id value)
     case RowKind::Toggle:
         return QVariant([value boolValue]);
     case RowKind::Number:
+        if ([value isKindOfClass:[NSDictionary class]]) {
+            NSDictionary *interval = value;
+            return QVariantMap{{QStringLiteral("number"), static_cast<int>([interval[@"number"] integerValue])},
+                               {QStringLiteral("unit"), QString::fromNSString(interval[@"unit"])}};
+        }
         return QVariant(static_cast<int>([value integerValue]));
     default:
         return QVariant(QString::fromNSString([value isKindOfClass:[NSString class]]
@@ -395,7 +405,7 @@ int qtKeyForCharacters(NSString *characters)
         return 0;
     }
     const unichar character = [characters characterAtIndex:0];
-    if (character >= NSF1FunctionKey && character <= NSF12FunctionKey) {
+    if (character >= NSF1FunctionKey && character <= NSF20FunctionKey) {
         return Qt::Key_F1 + (character - NSF1FunctionKey);
     }
     switch (character) {
@@ -411,6 +421,15 @@ int qtKeyForCharacters(NSString *characters)
         break;
     }
     return QChar(character).toUpper().unicode();
+}
+
+// SpeecherShortcutRole mirrors speecher::GlobalShortcutRole value for value.
+speecher::GlobalShortcutRole coreRole(SpeecherShortcutRole role)
+{
+    static_assert(int(SpeecherShortcutRoleDictation) == int(speecher::GlobalShortcutRole::Dictation));
+    static_assert(int(SpeecherShortcutRoleCancel) == int(speecher::GlobalShortcutRole::Cancel));
+    static_assert(int(SpeecherShortcutRolePause) == int(speecher::GlobalShortcutRole::Pause));
+    return static_cast<speecher::GlobalShortcutRole>(role);
 }
 
 // Qt maps the Mac keyboard onto its portable enum: the Command key arrives as
@@ -443,6 +462,16 @@ Qt::KeyboardModifiers qtModifiersForFlags(NSUInteger flags)
 @end
 
 @implementation RowOptionModel
+@end
+
+@interface NumberUnitModel ()
+@property (nonatomic, copy) NSString *unitId;
+@property (nonatomic, copy) NSString *label;
+@property (nonatomic) NSInteger minimum;
+@property (nonatomic) NSInteger maximum;
+@end
+
+@implementation NumberUnitModel
 @end
 
 @interface SpeecherProviderModel ()
@@ -691,6 +720,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) NSInteger maximum;
 @property (nonatomic) NSInteger step;
 @property (nonatomic, copy) NSString *suffix;
+@property (nonatomic, copy) NSArray<NumberUnitModel *> *units;
 @property (nonatomic, strong, nullable) id value;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *options;
 @property (nonatomic, copy) NSArray<RowOptionModel *> *suggestions;
@@ -1601,6 +1631,16 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.maximum = row.range.maximum;
     model.step = row.range.step;
     model.suffix = row.range.suffix.toNSString();
+    NSMutableArray<NumberUnitModel *> *units = [NSMutableArray array];
+    for (const speecher::NumberUnit &unit : row.units) {
+        NumberUnitModel *unitModel = [[NumberUnitModel alloc] init];
+        unitModel.unitId = unit.id.toNSString();
+        unitModel.label = unit.label.toNSString();
+        unitModel.minimum = unit.minimum;
+        unitModel.maximum = unit.maximum;
+        [units addObject:unitModel];
+    }
+    model.units = units;
     model.options = [self optionsForRow:row];
     model.suggestions = row.suggestions ? [self bridgedOptions:row.suggestions(_state->draft)] : @[];
     model.suggests = bool(row.suggestions);
@@ -2446,60 +2486,47 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 - (NSString *)shortcutDisplay
 {
-    return _state->controller->globalShortcut().displayText().toNSString();
+    return [self shortcutDisplayForRole:SpeecherShortcutRoleDictation];
+}
+
+- (NSString *)shortcutDisplayForRole:(SpeecherShortcutRole)role
+{
+    return _state->controller->globalShortcut(coreRole(role)).displayText().toNSString();
 }
 
 - (NSString *)bindShortcutWithCharacters:(NSString *)characters modifierFlags:(NSUInteger)flags
 {
-    return [self bindCombination:characters modifierFlags:flags role:speecher::GlobalShortcutRole::Dictation];
+    return [self bindShortcutWithCharacters:characters modifierFlags:flags role:SpeecherShortcutRoleDictation];
 }
 
-- (NSString *)bindCancelShortcutWithCharacters:(NSString *)characters modifierFlags:(NSUInteger)flags
-{
-    return [self bindCombination:characters modifierFlags:flags role:speecher::GlobalShortcutRole::Cancel];
-}
-
-- (NSString *)bindCombination:(NSString *)characters
-                modifierFlags:(NSUInteger)flags
-                         role:(speecher::GlobalShortcutRole)role
+- (NSString *)bindShortcutWithCharacters:(NSString *)characters
+                           modifierFlags:(NSUInteger)flags
+                                    role:(SpeecherShortcutRole)role
 {
     const int key = qtKeyForCharacters(characters);
     if (key == 0) {
         return @"That key cannot be part of a shortcut.";
     }
     const Qt::KeyboardModifiers modifiers = qtModifiersForFlags(flags);
-    // A shortcut with no modifier would swallow the key everywhere on the
-    // desktop, including in whatever the dictation is going into.
-    if (modifiers == Qt::NoModifier) {
+    // The dictation shortcut is held for good, and with no modifier it would
+    // swallow the key everywhere on the desktop, including in whatever the
+    // dictation is going into.
+    if (modifiers == Qt::NoModifier
+        && !speecher::GlobalShortcutBinder::actionFor(coreRole(role)).sessionOnly) {
         return @"Hold ⌘, ⌥, ⌃ or ⇧ as part of the shortcut.";
     }
     QString error;
     const QKeySequence sequence(QKeyCombination(modifiers, Qt::Key(key)));
-    if (_state->controller->setGlobalShortcut(sequence, &error, role)) {
+    if (_state->controller->setGlobalShortcut(sequence, &error, coreRole(role))) {
         return nil;
     }
     return error.isEmpty() ? speecher::globalShortcutBindFailedText().toNSString() : error.toNSString();
 }
 
-- (NSString *)cancelShortcutDisplay
-{
-    return _state->controller->globalShortcut(speecher::GlobalShortcutRole::Cancel).displayText().toNSString();
-}
-
-- (NSString *)bindCancelSingleKeyCode:(NSString *)code
+- (NSString *)clearShortcutForRole:(SpeecherShortcutRole)role
 {
     QString error;
-    if (_state->controller->setGlobalShortcut(speecher::ShortcutBinding::singleKey(QString::fromNSString(code)),
-                                              &error, speecher::GlobalShortcutRole::Cancel)) {
-        return nil;
-    }
-    return error.isEmpty() ? @"That key could not be bound." : error.toNSString();
-}
-
-- (NSString *)clearCancelShortcut
-{
-    QString error;
-    if (_state->controller->setGlobalShortcut({}, &error, speecher::GlobalShortcutRole::Cancel)) {
+    if (_state->controller->setGlobalShortcut({}, &error, coreRole(role))) {
         return nil;
     }
     return error.isEmpty() ? speecher::globalShortcutBindFailedText().toNSString() : error.toNSString();
@@ -2566,9 +2593,14 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 
 - (NSString *)bindSingleKeyCode:(NSString *)code
 {
+    return [self bindSingleKeyCode:code role:SpeecherShortcutRoleDictation];
+}
+
+- (NSString *)bindSingleKeyCode:(NSString *)code role:(SpeecherShortcutRole)role
+{
     QString error;
     if (_state->controller->setGlobalShortcut(
-            speecher::ShortcutBinding::singleKey(QString::fromNSString(code)), &error)) {
+            speecher::ShortcutBinding::singleKey(QString::fromNSString(code)), &error, coreRole(role))) {
         return nil;
     }
     return error.isEmpty() ? @"That key could not be bound." : error.toNSString();
@@ -2594,13 +2626,13 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     if (_state->controller) _state->controller->suspendGlobalShortcut();
 }
 
-- (NSString *)endShortcutRecordingCancelShortcutFailed:(BOOL *)cancelShortcutFailed
+- (NSString *)endShortcutRecordingFailedRole:(SpeecherShortcutRole *)failedRole
 {
-    if (cancelShortcutFailed) *cancelShortcutFailed = NO;
+    if (failedRole) *failedRole = SpeecherShortcutRoleDictation;
     if (!_state->controller) return nil;
-    speecher::GlobalShortcutRole failedRole = speecher::GlobalShortcutRole::Dictation;
-    const QString error = _state->controller->resumeGlobalShortcut(&failedRole);
-    if (cancelShortcutFailed) *cancelShortcutFailed = failedRole == speecher::GlobalShortcutRole::Cancel;
+    speecher::GlobalShortcutRole role = speecher::GlobalShortcutRole::Dictation;
+    const QString error = _state->controller->resumeGlobalShortcut(&role);
+    if (failedRole) *failedRole = static_cast<SpeecherShortcutRole>(role);
     return error.isEmpty() ? nil : error.toNSString();
 }
 
@@ -2899,6 +2931,16 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 + (NSString *)globalShortcutPrompt
 {
     return speecher::globalShortcutPrompt().toNSString();
+}
+
++ (NSString *)sessionShortcutPrompt
+{
+    return speecher::sessionShortcutPrompt().toNSString();
+}
+
++ (NSString *)rowIdForShortcutRole:(SpeecherShortcutRole)role
+{
+    return speecher::globalShortcutRowId(coreRole(role)).toNSString();
 }
 
 + (NSString *)globalShortcutChangeCaption
@@ -3295,6 +3337,8 @@ static void probeSpeechProvider(BridgeState *state,
     static_assert(int(SpeecherSetupTextGetOllama) == int(speecher::SetupText::GetOllama));
     static_assert(int(SpeecherSetupTextDownloadWithOllama) == int(speecher::SetupText::DownloadWithOllama));
     static_assert(int(SpeecherSetupTextEndpointModelHint) == int(speecher::SetupText::EndpointModelHint));
+    static_assert(int(SpeecherSetupTextSessionShortcuts) == int(speecher::SetupText::SessionShortcuts));
+    static_assert(int(SpeecherSetupTextSessionShortcutsLead) == int(speecher::SetupText::SessionShortcutsLead));
     return speecher::setupText(static_cast<speecher::SetupText>(text)).toNSString();
 }
 

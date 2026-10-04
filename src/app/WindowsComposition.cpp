@@ -4,6 +4,7 @@
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
 #include "platform/FallbackPopupPositioner.h"
+#include "platform/audio/E2EAudioInput.h"
 #include "platform/audio/QtAudioInput.h"
 #include "platform/RoutingShortcutBinder.h"
 #include "platform/win/WinCancelKeyGrab.h"
@@ -64,6 +65,12 @@ QList<AudioInputDeviceInfo> WindowsComposition::availableAudioInputDevices() con
 
 AudioInput *WindowsComposition::createAudioInput(SettingsStore *settings, QObject *parent) const
 {
+#ifdef SPEECHER_E2E_HOOKS
+    if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1
+        && qEnvironmentVariableIntValue("SPEECHER_E2E_REAL_AUDIO") != 1) {
+        return new E2EAudioInput(parent);
+    }
+#endif
     auto *input = new QtAudioInput(settings->audioCaptureSettings(), parent);
     QObject::connect(settings,
                      &SettingsStore::audioCaptureSettingsChanged,
@@ -101,9 +108,10 @@ GlobalShortcutBinder *WindowsComposition::createGlobalShortcutBinder(GlobalShort
                                                                      QObject *parent) const
 {
     const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
-    return new RoutingShortcutBinder(new WinGlobalShortcutBinder(action),
-                                     new WinSingleKeyShortcutBinder(action),
-                                     parent);
+    GlobalShortcutBinder *combination = action.sessionOnly
+        ? static_cast<GlobalShortcutBinder *>(new WinSessionShortcutBinder(action))
+        : new WinGlobalShortcutBinder(action);
+    return new RoutingShortcutBinder(combination, new WinSingleKeyShortcutBinder(action), parent);
 }
 
 CancelKeyGrab *WindowsComposition::createCancelKeyGrab(QObject *parent) const
