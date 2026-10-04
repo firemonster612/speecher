@@ -279,6 +279,10 @@ private slots:
             << QByteArray("data: {\"text\":\"Hello there.\"}\n\ndata: {\"text\":\"How are you?\"}\n\n")
             << QStringList{QStringLiteral("Hello there."), QStringLiteral("Hello there. How are you?")}
             << QStringLiteral("Hello there. How are you?");
+        QTest::newRow("speaches-0.8-chinese")
+            << QByteArray("data: {\"text\":\"你好。\"}\n\ndata: {\"text\":\"今天怎么样？\"}\n\n")
+            << QStringList{QStringLiteral("你好。"), QStringLiteral("你好。今天怎么样？")}
+            << QStringLiteral("你好。今天怎么样？");
     }
 
     void speechEndpointReadsAStreamedTranscript()

@@ -34,6 +34,33 @@ QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
     return message.isEmpty() ? fallback : message;
 }
 
+bool writtenWithoutSpaces(QChar character)
+{
+    switch (character.script()) {
+    case QChar::Script_Han:
+    case QChar::Script_Hiragana:
+    case QChar::Script_Katakana:
+    case QChar::Script_Thai:
+    case QChar::Script_Lao:
+    case QChar::Script_Khmer:
+    case QChar::Script_Myanmar:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// A trimmed segment as it follows text: after a space, the way Whisper spaces
+// segments, except next to a script written without spaces between words.
+QString spacedSegment(const QString &text, const QString &segment)
+{
+    if (text.isEmpty() || segment.isEmpty() || writtenWithoutSpaces(text.back())
+        || writtenWithoutSpaces(segment.front())) {
+        return segment;
+    }
+    return QLatin1Char(' ') + segment;
+}
+
 } // namespace
 
 SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint,
@@ -185,9 +212,7 @@ void EndpointSpeechTranscriber::readStream()
         if (type == QStringLiteral("transcript.text.delta")) {
             piece = event.value(QStringLiteral("delta")).toString();
         } else if (type.isEmpty()) {
-            // These segments come trimmed, so they need a space between them.
-            const QString segment = event.value(QStringLiteral("text")).toString().trimmed();
-            piece = m_streamedText.isEmpty() || segment.isEmpty() ? segment : QLatin1Char(' ') + segment;
+            piece = spacedSegment(m_streamedText, event.value(QStringLiteral("text")).toString().trimmed());
         } else if (type == QStringLiteral("transcript.text.done")) {
             m_doneText = event.value(QStringLiteral("text")).toString();
         }
