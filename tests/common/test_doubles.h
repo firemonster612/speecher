@@ -390,7 +390,7 @@ public:
 
     void emitFailure(const QString &message)
     {
-        emit failed(message);
+        emit failed({ProviderFailureKind::Other, message});
     }
 
     bool refreshRequired = false;

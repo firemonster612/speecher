@@ -1,5 +1,6 @@
 #include "providers/OpenAiRefiner.h"
 #include "providers/EndpointRequest.h"
+#include "providers/ProviderFailureClassification.h"
 
 #include "core/AppSettings.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -37,8 +38,14 @@ StreamingRefinement::Event openAiEvent(const QByteArray &name, const QByteArray 
                                    .value(QStringLiteral("reason")).toString();
         const QString fallback = reason.isEmpty()
             ? QStringLiteral("OpenAI refinement error: %1").arg(QString::fromLatin1(name)) : reason;
+        const QJsonObject source = terminalFailure ? response : object;
+        const QJsonValue error = source.value(QStringLiteral("error"));
+        const QString code = (error.isObject() ? error.toObject() : source).value(QStringLiteral("code")).toString();
+        // An incomplete response hit a token limit or a filter: the text is cut short.
+        const ProviderFailureKind kind = name == "response.incomplete" ? ProviderFailureKind::InvalidResult
+                                                                         : streamedErrorKind(code);
         return {terminalFailure ? Event::Failed : Event::Rejected,
-                openAiErrorMessage(terminalFailure ? QJsonDocument(response).toJson() : data, fallback)};
+                openAiErrorMessage(terminalFailure ? QJsonDocument(response).toJson() : data, fallback), kind};
     }
     if (name == "response.output_text.delta") {
         return {Event::Delta, object.value(QStringLiteral("delta")).toString()};

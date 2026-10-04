@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/ProviderFailure.h"
+
 #include <QDateTime>
 #include <QString>
 #include <QStringList>
@@ -15,6 +17,10 @@ struct ClaudeCredentialResult {
     QString subscriptionType;
     QString rateLimitTier;
     QString error;
+    // Why there is no usable token: a missing or expired sign-in unless a
+    // refresh said otherwise.
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
+    int httpStatus = 0;
 };
 
 class ClaudeCredentials {

@@ -81,7 +81,7 @@ SpeechPrepareResult LocalSpeechTranscriber::prepare(const SpeechSettings &settin
 {
     QString error;
     const bool ready = !downloadedModelPath(settings.local.modelId, &error).isEmpty();
-    return {ready, error};
+    return {ready, error, ProviderFailureKind::Unavailable};
 }
 
 void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
@@ -97,7 +97,7 @@ void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSetting
     const QString modelPath = downloadedModelPath(settings.local.modelId, &error);
     if (modelPath.isEmpty()) {
         reportEnd(attemptId, [this, attemptId, error] {
-            emit failed({attemptId, error, false, QStringLiteral("load")});
+            emit failed({attemptId, error, false, QStringLiteral("load"), ProviderFailureKind::Unavailable});
         });
         return;
     }
@@ -241,11 +241,12 @@ bool LocalSpeechTranscriber::attemptRunning(quint64 attemptId) const
         && attemptId == m_liveAttempt.load();
 }
 
-void LocalSpeechTranscriber::failAttempt(quint64 attemptId, const QString &message, const QString &phase)
+void LocalSpeechTranscriber::failAttempt(quint64 attemptId, const QString &message, const QString &phase,
+                                         ProviderFailureKind kind)
 {
     m_workerAttemptFailed = true;
-    reportEnd(attemptId, [this, attemptId, message, phase] {
-        emit failed({attemptId, message, false, phase});
+    reportEnd(attemptId, [this, attemptId, message, phase, kind] {
+        emit failed({attemptId, message, false, phase, kind});
     });
 }
 
@@ -267,7 +268,7 @@ void LocalSpeechTranscriber::begin(quint64 attemptId,
     QString error;
     if (!ensureLoaded(modelPath, runsOn, &error)
         || (m_engine.streams() && !m_engine.beginStream(spokenLanguage, &error))) {
-        failAttempt(attemptId, error, QStringLiteral("load"));
+        failAttempt(attemptId, error, QStringLiteral("load"), ProviderFailureKind::Unavailable);
         return;
     }
     feedPending();
@@ -299,7 +300,7 @@ void LocalSpeechTranscriber::feedPending()
     QString error;
     if (!m_engine.feed(pcm, &text, &error)) {
         if (!error.isEmpty()) {
-            failAttempt(attemptId, error, QStringLiteral("streaming"));
+            failAttempt(attemptId, error, QStringLiteral("streaming"), ProviderFailureKind::Other);
         }
         return;
     }
@@ -336,7 +337,7 @@ void LocalSpeechTranscriber::finish(quint64 attemptId)
     m_batchPcm.clear();
     if (!transcript) {
         if (!error.isEmpty()) {
-            failAttempt(attemptId, error, QStringLiteral("finalize"));
+            failAttempt(attemptId, error, QStringLiteral("finalize"), ProviderFailureKind::Other);
         }
         return;
     }

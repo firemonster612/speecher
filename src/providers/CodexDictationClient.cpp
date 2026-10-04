@@ -1,6 +1,7 @@
 #include "providers/CodexDictationClient.h"
 
 #include "core/settings/SpokenLanguages.h"
+#include "providers/ProviderFailureClassification.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -26,12 +27,14 @@ QString errorMessage(const QJsonObject &event)
         .toString();
 }
 
+QString errorCode(const QJsonObject &event)
+{
+    return event.value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toVariant().toString();
+}
+
 bool isAuthenticationError(const QString &message, const QJsonObject &event = {})
 {
-    const QJsonValue code = event.value(QStringLiteral("error"))
-                                .toObject()
-                                .value(QStringLiteral("code"));
-    const QString codeText = code.toVariant().toString();
+    const QString codeText = errorCode(event);
     return codeText == QStringLiteral("401") || codeText == QStringLiteral("403")
         || message.contains(QStringLiteral("401"))
         || message.contains(QStringLiteral("403"))
@@ -55,7 +58,8 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs, 
         if (m_finalizing && !m_sessionClosed && !m_failureEmitted) {
             fail(QStringLiteral("Codex dictation stream timed out while closing the session"),
                  true,
-                 QStringLiteral("finalize"));
+                 QStringLiteral("finalize"),
+                 ProviderFailureKind::Timeout);
             m_socket.abort();
         }
     });
@@ -90,7 +94,8 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs, 
                      true,
                      m_finalizing ? QStringLiteral("finalize")
                                   : (m_sessionStarted ? QStringLiteral("streaming")
-                                                      : QStringLiteral("connect")));
+                                                      : QStringLiteral("connect")),
+                     ProviderFailureKind::Network);
             }
         }
         emit closed();
@@ -111,7 +116,8 @@ CodexDictationClient::CodexDictationClient(QObject *parent, int closeTimeoutMs, 
                          ? QStringLiteral("authentication")
                          : (m_finalizing ? QStringLiteral("finalize")
                                          : (m_sessionStarted ? QStringLiteral("streaming")
-                                                             : QStringLiteral("connect"))));
+                                                             : QStringLiteral("connect"))),
+                     authentication ? ProviderFailureKind::Authentication : webSocketFailureKind(error, detail));
             });
 #else
     Q_UNUSED(closeTimeoutMs)
@@ -155,7 +161,8 @@ void CodexDictationClient::start(const QUrl &url,
             && !m_failureEmitted) {
             fail(QStringLiteral("Codex dictation stream timed out before session.start completed"),
                  true,
-                 QStringLiteral("connect"));
+                 QStringLiteral("connect"),
+                 ProviderFailureKind::Timeout);
             m_socket.abort();
         }
     });
@@ -166,7 +173,8 @@ void CodexDictationClient::start(const QUrl &url,
     Q_UNUSED(spokenLanguage)
     emit failed(QStringLiteral("Qt WebSockets support was not built; install Qt6 WebSockets development files and rebuild"),
                 false,
-                QStringLiteral("protocol"));
+                QStringLiteral("protocol"),
+                ProviderFailureKind::Unavailable);
 #endif
 }
 
@@ -296,7 +304,8 @@ void CodexDictationClient::handleTextMessage(const QString &message)
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
         fail(QStringLiteral("Codex dictation stream returned an invalid event payload"),
              false,
-             QStringLiteral("protocol"));
+             QStringLiteral("protocol"),
+             ProviderFailureKind::Other);
         m_socket.close();
         return;
     }
@@ -365,7 +374,8 @@ void CodexDictationClient::handleTextMessage(const QString &message)
              !authentication && error.value(QStringLiteral("retryable")).toBool(true),
              authentication ? QStringLiteral("authentication")
                             : (m_finalizing ? QStringLiteral("finalize")
-                                            : QStringLiteral("streaming")));
+                                            : QStringLiteral("streaming")),
+             authentication ? ProviderFailureKind::Authentication : streamedErrorKind(errorCode(event)));
         m_socket.close();
         return;
     }
@@ -381,7 +391,8 @@ void CodexDictationClient::handleTextMessage(const QString &message)
                         .value(QStringLiteral("retryable")).toBool(true),
              authentication ? QStringLiteral("authentication")
                             : (m_finalizing ? QStringLiteral("finalize")
-                                            : QStringLiteral("streaming")));
+                                            : QStringLiteral("streaming")),
+             authentication ? ProviderFailureKind::Authentication : streamedErrorKind(errorCode(event)));
         m_socket.close();
     }
 #else
@@ -391,13 +402,14 @@ void CodexDictationClient::handleTextMessage(const QString &message)
 
 void CodexDictationClient::fail(const QString &message,
                                 bool retryable,
-                                const QString &phase)
+                                const QString &phase,
+                                ProviderFailureKind kind)
 {
     if (m_cancelled || m_failureEmitted || m_sessionClosed) {
         return;
     }
     m_failureEmitted = true;
-    emit failed(message, retryable, phase);
+    emit failed(message, retryable, phase, kind);
 }
 
 } // namespace speecher

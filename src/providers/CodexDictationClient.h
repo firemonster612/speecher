@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/ProviderFailure.h"
+
 #include <QByteArray>
 #include <QList>
 #include <QObject>
@@ -54,7 +56,8 @@ signals:
     void completed();
     void connected();
     void closed();
-    void failed(const QString &message, bool retryable, const QString &phase);
+    void failed(const QString &message, bool retryable, const QString &phase,
+                speecher::ProviderFailureKind kind);
 
 private:
     void sendSessionStart(int sampleRateHz, const QString &language);
@@ -63,7 +66,7 @@ private:
     void requestFinalization();
     void extendCloseWait();
     void handleTextMessage(const QString &message);
-    void fail(const QString &message, bool retryable, const QString &phase);
+    void fail(const QString &message, bool retryable, const QString &phase, ProviderFailureKind kind);
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
     QWebSocket m_socket;

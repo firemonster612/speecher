@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/ProviderFailure.h"
+
 #include <QDeadlineTimer>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
@@ -26,13 +28,20 @@ public:
         enum Kind { Ignore, Progress, Delta, Complete, Rejected, Failed };
         Kind kind = Ignore;
         QString text;
+        // Why a Rejected or Failed event failed. An error the server streamed
+        // is its own failure unless its code says otherwise.
+        ProviderFailureKind failureKind = ProviderFailureKind::Server;
     };
     using DecodeEvent = std::function<Event(const QByteArray &name, const QByteArray &data)>;
     using DecodeError = QString (*)(const QByteArray &body, const QString &fallback);
     using BuildRequest = std::function<Request(bool fast)>;
 
+    // connectMs bounds the time until the request is sent, so an offline
+    // provider fails in seconds; a slow first token is the inactivity
+    // budget's business.
     StreamingRefinement(QString provider, DecodeEvent decodeEvent, DecodeError decodeError,
-                        int inactivityMs, int deadlineMs, QObject *parent = nullptr);
+                        int inactivityMs, int deadlineMs, QObject *parent = nullptr,
+                        int connectMs = 10000);
     // fastTier names the faster tier asked for, such as "priority" or
     // "ultrafast", or is empty for standard speed. A tier the provider refused
     // this session is skipped; the other tiers are still asked for.
@@ -42,14 +51,14 @@ public:
 signals:
     void delta(const QString &text);
     void completed(const QString &text);
-    void failed(const QString &message, int httpStatus);
+    void failed(const speecher::ProviderFailure &failure);
 
 private:
     enum class Retry { Never, AfterStall, AfterRejection };
     void post(const Request &request);
     void parseChunk(const QByteArray &chunk);
     QNetworkReply *takeReply();
-    void fail(const QString &message, Retry retry);
+    void fail(ProviderFailure failure, Retry retry);
     bool retryAtStandardSpeed(const QString &reason, bool latchOnSuccess);
     void complete();
 
@@ -58,7 +67,9 @@ private:
     DecodeError m_decodeError;
     int m_inactivityMs;
     int m_deadlineMs;
+    int m_connectMs;
     QNetworkAccessManager m_network;
+    QTimer m_connectTimer;
     QTimer m_inactivityTimer;
     QTimer m_deadlineTimer;
     QDeadlineTimer m_operationDeadline;

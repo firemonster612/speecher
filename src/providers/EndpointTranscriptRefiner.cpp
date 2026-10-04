@@ -42,12 +42,14 @@ RefinementPrepareResult EndpointTranscriptRefiner::prepare(const RefinementSetti
 {
     const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings);
     if (endpoint.apiBase.isEmpty()) {
-        return {false, settings.endpoint.preset == QStringLiteral("cliproxy")
-                           ? QStringLiteral("Set the CLI Proxy API server URL for the custom endpoint.")
-                           : QStringLiteral("Set the custom endpoint's server URL.")};
+        return {false,
+                settings.endpoint.preset == QStringLiteral("cliproxy")
+                    ? QStringLiteral("Set the CLI Proxy API server URL for the custom endpoint.")
+                    : QStringLiteral("Set the custom endpoint's server URL."),
+                ProviderFailureKind::Unavailable};
     }
     if (endpoint.model.isEmpty()) {
-        return {false, QStringLiteral("Choose a model for the custom endpoint.")};
+        return {false, QStringLiteral("Choose a model for the custom endpoint."), ProviderFailureKind::Unavailable};
     }
     return {true, {}};
 }
@@ -59,7 +61,7 @@ void EndpointTranscriptRefiner::refine(const QString &rawTranscript,
 {
     const RefinementPrepareResult prepared = prepare(settings);
     if (!prepared.ok) {
-        emit failed(prepared.message);
+        emit failed({prepared.kind, prepared.message});
         return;
     }
     const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings);

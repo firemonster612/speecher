@@ -316,16 +316,25 @@ private slots:
         QTest::addColumn<QByteArray>("response");
         QTest::addColumn<QString>("message");
         QTest::addColumn<QString>("kept");
+        QTest::addColumn<ProviderFailureKind>("kind");
         QTest::newRow("http-500") << httpResponse("500 Internal Server Error", "application/json",
                                                   "{\"error\":{\"message\":\"model not loaded\"}}")
-                                  << "model not loaded" << QString();
+                                  << "model not loaded" << QString() << ProviderFailureKind::Server;
+        QTest::newRow("http-401") << httpResponse("401 Unauthorized", "application/json",
+                                                  "{\"error\":{\"message\":\"bad key\"}}")
+                                  << "bad key" << QString() << ProviderFailureKind::Authentication;
+        QTest::newRow("http-429") << httpResponse("429 Too Many Requests", "application/json",
+                                                  "{\"error\":{\"message\":\"busy\"}}")
+                                  << "busy" << QString() << ProviderFailureKind::RateLimited;
         QTest::newRow("sse-error-before-output")
-            << httpResponse("200 OK", "text/event-stream", sseError) << "model failed" << QString();
+            << httpResponse("200 OK", "text/event-stream", sseError) << "model failed" << QString()
+            << ProviderFailureKind::Server;
         QTest::newRow("sse-error-after-output")
-            << httpResponse("200 OK", "text/event-stream", keepThis + sseError) << "model failed" << "Keep this";
+            << httpResponse("200 OK", "text/event-stream", keepThis + sseError) << "model failed" << "Keep this"
+            << ProviderFailureKind::Server;
         QTest::newRow("dropped-stream") << "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
                                            "Content-Length: 10000\r\nConnection: close\r\n\r\n" + keepThis
-                                        << QString() << "Keep this";
+                                        << QString() << "Keep this" << ProviderFailureKind::Network;
     }
 
     void speechEndpointFailuresKeepStreamedTextAndAreNotRetried()
@@ -333,6 +342,7 @@ private slots:
         QFETCH(QByteArray, response);
         QFETCH(QString, message);
         QFETCH(QString, kept);
+        QFETCH(ProviderFailureKind, kind);
         FakeServer server;
         server.route("POST /v1/audio/transcriptions", response);
         EndpointSpeechTranscriber transcriber;
@@ -343,6 +353,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
         const SpeechFailure failure = failed.first().first().value<SpeechFailure>();
         QVERIFY2(failure.message.contains(message), qPrintable(failure.message));
+        QCOMPARE(failure.kind, kind);
         QCOMPARE(failure.phase, QStringLiteral("finalize"));
         QVERIFY(!failure.retryable);
         QCOMPARE(transcript.size(), kept.isEmpty() ? 0 : 1);
@@ -383,6 +394,7 @@ private slots:
         const auto failure = failed.first().first().value<SpeechFailure>();
         QCOMPARE(failure.phase, QStringLiteral("finalize"));
         QVERIFY(failure.message.contains(QStringLiteral("sent nothing")));
+        QCOMPARE(failure.kind, ProviderFailureKind::Timeout);
         QVERIFY(!failure.retryable);
         QVERIFY(!server.hasPendingConnections());
         QCOMPARE(transcript.size(), 1);
@@ -521,23 +533,29 @@ private slots:
     {
         QTest::addColumn<QByteArray>("response");
         QTest::addColumn<QString>("message");
+        QTest::addColumn<ProviderFailureKind>("kind");
         QTest::newRow("http-500") << httpResponse("500 Internal Server Error", "application/json",
-            "{\"error\":{\"message\":\"reasoning_effort crashed\"}}") << "reasoning_effort crashed";
+            "{\"error\":{\"message\":\"reasoning_effort crashed\"}}") << "reasoning_effort crashed"
+            << ProviderFailureKind::Server;
         QTest::newRow("sse-200") << sse({"{\"error\":{\"message\":\"reasoning_effort crashed\"}}"})
-                                 << "reasoning_effort crashed";
+                                 << "reasoning_effort crashed" << ProviderFailureKind::Server;
         QTest::newRow("after-streamed-output")
             << sse({chatChunk(QStringLiteral("Half")),
                     json({{QStringLiteral("error"), QJsonObject{{QStringLiteral("message"),
                            QStringLiteral("chat_template_kwargs is not supported")}}}})})
-            << "chat_template_kwargs is not supported";
+            << "chat_template_kwargs is not supported" << ProviderFailureKind::Server;
         QTest::newRow("http-404") << httpResponse("404 Not Found", "application/json",
-            "{\"error\":\"model \\\"m\\\" not found, try pulling it first\"}") << "try pulling it first";
+            "{\"error\":\"model \\\"m\\\" not found, try pulling it first\"}") << "try pulling it first"
+            << ProviderFailureKind::Other;
+        QTest::newRow("token-limit") << sse({chatChunk(QStringLiteral("Half"), QStringLiteral("length"))})
+                                     << "stopped early" << ProviderFailureKind::InvalidResult;
     }
 
     void reasoningFieldErrorsOnlyRetryHttp400()
     {
         QFETCH(QByteArray, response);
         QFETCH(QString, message);
+        QFETCH(ProviderFailureKind, kind);
         FakeServer server;
         server.route("POST /v1/chat/completions", response);
         ChatCompletionsRefiner refiner(QStringLiteral("Custom endpoint"), ChatCompletionsRefiner::Audience::Server);
@@ -549,7 +567,9 @@ private slots:
         };
         refine();
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
-        QVERIFY2(failed.first().first().toString().contains(message), qPrintable(failed.first().first().toString()));
+        const ProviderFailure failure = failed.first().first().value<ProviderFailure>();
+        QVERIFY2(failure.message.contains(message), qPrintable(failure.message));
+        QCOMPARE(failure.kind, kind);
         QTest::qWait(100);
         QCOMPARE(server.requests.size(), 1);
         QCOMPARE(completed.size(), 0);
@@ -602,7 +622,7 @@ private slots:
         // Failures name the custom endpoint, not Anthropic.
         refiner.refine(QStringLiteral("x"), {}, context, settings);
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
-        const QString message = failed.first().first().toString();
+        const QString message = failed.first().first().value<ProviderFailure>().message;
         QVERIFY2(message.startsWith(QStringLiteral("Custom Endpoint refinement")), qPrintable(message));
         QVERIFY(!message.contains(QStringLiteral("Anthropic")));
     }

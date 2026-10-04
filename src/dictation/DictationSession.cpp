@@ -1272,10 +1272,11 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
             deliverFinal(m_transcriptPipeline.deliveryFallback);
         }
     });
-    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::failed, this, [this](const QString &message) {
+    m_refinerConnections << connect(m_refiner, &TranscriptRefiner::failed, this, [this](const ProviderFailure &failure) {
         if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
             return;
         }
+        const QString &message = failure.message;
         qWarning().noquote() << "refinement failed message=" + message;
         if (m_transcriptPipeline.editsSelection) {
             failSelectionEdit(message);

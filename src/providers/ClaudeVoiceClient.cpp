@@ -1,6 +1,7 @@
 #include "providers/ClaudeVoiceClient.h"
 
 #include "providers/ClaudeCredentials.h"
+#include "providers/ProviderFailureClassification.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -34,7 +35,8 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent, int connectionTimeoutMs)
         if (!m_connected && !m_cancelled && !m_failureEmitted) {
             fail(QStringLiteral("Claude voice stream timed out while connecting"),
                  true,
-                 QStringLiteral("connect"));
+                 QStringLiteral("connect"),
+                 ProviderFailureKind::Timeout);
             m_socket.abort();
         }
     });
@@ -81,7 +83,8 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent, int connectionTimeoutMs)
                      ? QStringLiteral("Claude voice stream closed before final transcript completion")
                      : QStringLiteral("Claude voice stream disconnected unexpectedly"),
                  true,
-                 phase);
+                 phase,
+                 ProviderFailureKind::Network);
         }
         emit closed();
     });
@@ -109,7 +112,8 @@ ClaudeVoiceClient::ClaudeVoiceClient(QObject *parent, int connectionTimeoutMs)
                      ? QStringLiteral("authentication")
                      : (m_finalizing ? QStringLiteral("finalize")
                                      : (m_connected ? QStringLiteral("streaming")
-                                                    : QStringLiteral("connect"))));
+                                                    : QStringLiteral("connect"))),
+                 authentication ? ProviderFailureKind::Authentication : webSocketFailureKind(error, detail));
         }
     });
 #endif
@@ -155,7 +159,8 @@ void ClaudeVoiceClient::start(const QUrl &url,
     Q_UNUSED(spokenLanguage)
     emit failed(QStringLiteral("Qt WebSockets support was not built; install Qt6 WebSockets development files and rebuild"),
                 false,
-                QStringLiteral("protocol"));
+                QStringLiteral("protocol"),
+                ProviderFailureKind::Unavailable);
 #endif
 }
 
@@ -192,14 +197,16 @@ void ClaudeVoiceClient::stop()
                 && !m_failureEmitted) {
                 fail(QStringLiteral("Claude voice stream did not become ready for finalization"),
                      true,
-                     QStringLiteral("connect"));
+                     QStringLiteral("connect"),
+                     ProviderFailureKind::Timeout);
                 m_socket.abort();
             }
         });
         if (m_socket.state() == QAbstractSocket::UnconnectedState && !m_failureEmitted) {
             fail(QStringLiteral("Claude voice stream closed before input could be finalized"),
                  true,
-                 QStringLiteral("connect"));
+                 QStringLiteral("connect"),
+                 ProviderFailureKind::Network);
         }
     }
     qInfo() << "claude close requested connected=" << m_connected;
@@ -230,7 +237,8 @@ void ClaudeVoiceClient::queueAudio(const QByteArray &pcm)
     if (m_pendingAudioBytes + pcm.size() > kMaximumPendingAudioBytes) {
         fail(QStringLiteral("Claude voice audio buffer filled before the stream connected"),
              true,
-             QStringLiteral("connect"));
+             QStringLiteral("connect"),
+             ProviderFailureKind::Network);
         m_socket.abort();
         return;
     }
@@ -283,14 +291,16 @@ void ClaudeVoiceClient::requestFinalization()
             && !m_failureEmitted) {
             fail(QStringLiteral("Claude voice stream timed out while waiting for the final transcript"),
                  true,
-                 QStringLiteral("finalize"));
+                 QStringLiteral("finalize"),
+                 ProviderFailureKind::Timeout);
             m_socket.abort();
         }
     });
 #endif
 }
 
-void ClaudeVoiceClient::fail(const QString &message, bool retryable, const QString &phase)
+void ClaudeVoiceClient::fail(const QString &message, bool retryable, const QString &phase,
+                             ProviderFailureKind kind)
 {
     if (m_cancelled || m_failureEmitted || m_completed) {
         return;
@@ -299,7 +309,7 @@ void ClaudeVoiceClient::fail(const QString &message, bool retryable, const QStri
     m_connectionTimer.stop();
     m_keepAliveTimer.stop();
     clearPendingAudio();
-    emit failed(message, retryable, phase);
+    emit failed(message, retryable, phase, kind);
 }
 
 void ClaudeVoiceClient::handleTextMessage(const QString &message)
@@ -326,7 +336,8 @@ void ClaudeVoiceClient::handleTextMessage(const QString &message)
              !authentication,
              authentication ? QStringLiteral("authentication")
                             : (m_finalizing ? QStringLiteral("finalize")
-                                            : QStringLiteral("streaming")));
+                                            : QStringLiteral("streaming")),
+             authentication ? ProviderFailureKind::Authentication : ProviderFailureKind::Server);
         return;
     }
     if (event.kind == ClaudeVoiceEventKind::Endpoint) {
@@ -350,7 +361,8 @@ void ClaudeVoiceClient::handleTextMessage(const QString &message)
         fail(event.errorSummary.isEmpty() ? QStringLiteral("Claude transcript error")
                                           : event.errorSummary,
              true,
-             m_finalizing ? QStringLiteral("finalize") : QStringLiteral("streaming"));
+             m_finalizing ? QStringLiteral("finalize") : QStringLiteral("streaming"),
+             ProviderFailureKind::Server);
         return;
     }
     if (event.kind != ClaudeVoiceEventKind::Working) {

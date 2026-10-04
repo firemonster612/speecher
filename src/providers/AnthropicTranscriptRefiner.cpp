@@ -24,7 +24,7 @@ RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
                 if (accessToken) {
                     accessToken->clear();
                 }
-                return {false, QStringLiteral("CLI Proxy API key is not set (cliproxy/apiKey)")};
+                return {false, QStringLiteral("CLI Proxy API key is not set (cliproxy/apiKey)"), ProviderFailureKind::Unavailable};
             }
             if (accessToken) {
                 *accessToken = settings.cliproxyApiKey;
@@ -39,7 +39,7 @@ RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
         if (accessToken) {
             *accessToken = credentials.ok ? credentials.accessToken : QString();
         }
-        return {credentials.ok, credentials.error};
+        return {credentials.ok, credentials.error, credentials.kind, credentials.httpStatus};
     }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(
         settings.claudeCredentialsPath,
@@ -48,7 +48,7 @@ RefinementPrepareResult loadClaudeOauthToken(const RefinementSettings &settings,
         if (accessToken) {
             accessToken->clear();
         }
-        return {false, credentials.error};
+        return {false, credentials.error, credentials.kind, credentials.httpStatus};
     }
     if (accessToken) {
         *accessToken = credentials.accessToken;
@@ -102,7 +102,7 @@ std::optional<RefinementRefreshJob> AnthropicTranscriptRefiner::createRefreshJob
     job.run = [settings, accessToken] {
         const RefinementPrepareResult result = loadClaudeOauthToken(settings, accessToken.get(), true);
         ClaudeCredentials::installedVersion();
-        return RefinementRefreshResult{result.ok, result.message};
+        return RefinementRefreshResult{result.ok, result.message, result.kind, result.httpStatus};
     };
     job.apply = [this, accessToken](const RefinementRefreshResult &result) {
         if (result.ok) {
@@ -137,7 +137,7 @@ void AnthropicTranscriptRefiner::refine(const QString &rawTranscript,
     if (m_accessToken.isEmpty() || settings.anthropicAuthMode == QStringLiteral("cliproxy")) {
         const RefinementPrepareResult prepared = prepare(settings);
         if (!prepared.ok) {
-            emit failed(prepared.message);
+            emit failed({prepared.kind, prepared.message, prepared.httpStatus});
             return;
         }
     }

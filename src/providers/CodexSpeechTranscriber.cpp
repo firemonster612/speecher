@@ -43,14 +43,16 @@ SpeechPrepareResult prepareCodex(const SpeechSettings &settings, QString *access
         if (credentials.ok) {
             *accessToken = credentials.accessToken;
         }
-        return {credentials.ok, credentials.error};
+        return {credentials.ok, credentials.error, credentials.kind, credentials.httpStatus};
     }
     const OpenAiAuth auth = OpenAiAuthProvider(nullptr, QStringLiteral("codex_oauth")).resolve();
     if (!auth.ok) {
         accessToken->clear();
         return {false,
                 QStringLiteral("%1. Sign in with ChatGPT in the ChatGPT app or Codex CLI.")
-                    .arg(auth.status)};
+                    .arg(auth.status),
+                auth.kind,
+                auth.httpStatus};
     }
     *accessToken = auth.bearerToken;
     return {true, {}};
@@ -160,9 +162,10 @@ void CodexSpeechTranscriber::startAttempt(quint64 attemptId,
     connect(client, &CodexDictationClient::failed,
             this, [this, client, attemptId](const QString &message,
                                             bool retryable,
-                                            const QString &phase) {
+                                            const QString &phase,
+                                            ProviderFailureKind kind) {
                 if (m_client == client && m_attemptId == attemptId) {
-                    emit failed({attemptId, message, retryable, phase});
+                    emit failed({attemptId, message, retryable, phase, kind});
                 }
             });
     client->start(QUrl(dictationEndpoint()), m_accessToken, sampleRateHz, settings.language);
@@ -250,6 +253,8 @@ void CodexSpeechTranscriber::cancelAttempt(quint64 attemptId)
     if (attemptId != m_attemptId) {
         return;
     }
+    // Retired audio must not wait in memory for the next attempt.
+    m_bufferedPcm.clear();
     if (m_client) {
         m_client->cancel();
     }
