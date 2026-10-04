@@ -92,6 +92,9 @@ signals:
     void changed();
     void actionTriggered(const QString &rowId);
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 private:
     struct Row {
         SettingsRow descriptor;
