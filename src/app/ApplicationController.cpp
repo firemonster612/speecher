@@ -74,6 +74,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_localModels(new LocalModelStore(this))
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Dictation, this))
     , m_cancelShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Cancel, this))
+    , m_pauseShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Pause, this))
     , m_cancelKeyGrab(m_platform->createCancelKeyGrab(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
     , m_pushToTalkStart(new QTimer(this))
@@ -140,18 +141,24 @@ ApplicationController::ApplicationController(bool popupOnly,
             [this](bool bound, const QString &detail) {
                 emit globalShortcutRegistrationFinished(bound, detail, GlobalShortcutRole::Dictation);
             });
-    // The Cancel Shortcut acts on press only; its release means nothing.
+    // The Cancel and Pause Shortcuts act on press only; their release means
+    // nothing. Outside a Dictation Session both do nothing.
     connect(m_cancelShortcutBinder, &GlobalShortcutBinder::activated, this, &ApplicationController::cancel);
-    connect(m_cancelShortcutBinder, &GlobalShortcutBinder::bindingChanged,
-            this, &ApplicationController::globalShortcutChanged);
-    connect(m_cancelShortcutBinder, &GlobalShortcutBinder::supportChanged,
-            this, &ApplicationController::globalShortcutSupportChanged);
-    connect(m_cancelShortcutBinder,
-            &GlobalShortcutBinder::registrationFinished,
-            this,
-            [this](bool bound, const QString &detail) {
-                emit globalShortcutRegistrationFinished(bound, detail, GlobalShortcutRole::Cancel);
-            });
+    for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
+        GlobalShortcutBinder *binder = shortcutBinder(role);
+        connect(binder, &GlobalShortcutBinder::bindingChanged, this, [this] {
+            updateDictationOnlyShortcuts();
+            emit globalShortcutChanged();
+        });
+        connect(binder, &GlobalShortcutBinder::supportChanged,
+                this, &ApplicationController::globalShortcutSupportChanged);
+        connect(binder,
+                &GlobalShortcutBinder::registrationFinished,
+                this,
+                [this, role](bool bound, const QString &detail) {
+                    emit globalShortcutRegistrationFinished(bound, detail, role);
+                });
+    }
     if (m_cancelKeyGrab) {
         connect(m_cancelKeyGrab, &CancelKeyGrab::pressed, this, &ApplicationController::cancel);
     }
@@ -188,7 +195,7 @@ ApplicationController::ApplicationController(bool popupOnly,
                                      targetProvider,
                                      new ShortcutSuspendingDelivery(
                                          m_platform->createTextDelivery(targetProvider, this),
-                                         {m_shortcutBinder, m_cancelShortcutBinder},
+                                         {m_shortcutBinder, m_cancelShortcutBinder, m_pauseShortcutBinder},
                                          this),
                                      m_providers,
                                      this);
@@ -233,7 +240,8 @@ ApplicationController::ApplicationController(bool popupOnly,
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
-    connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateCancelKeyGrab);
+    connect(m_pauseShortcutBinder, &GlobalShortcutBinder::activated, m_session, &DictationSession::togglePause);
+    connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateDictationOnlyShortcuts);
 #ifdef Q_OS_MACOS
     connect(m_session, &DictationSession::stateChanged, this, [this](const QString &state) {
         if (state != QStringLiteral("Listening")) {
@@ -388,8 +396,9 @@ void ApplicationController::runDeferredStartup()
 #else
     m_audio->warmUp();
 #endif
-    m_shortcutBinder->bind();
-    m_cancelShortcutBinder->bind();
+    for (const GlobalShortcutRole role : globalShortcutRoles) {
+        shortcutBinder(role)->bind();
+    }
     const AccessibilityState state = m_platform->accessibilityState();
     const bool requestSucceeded = state.persistent && m_platform->requestAccessibility();
     m_accessibilitySupported = state.supported;
@@ -534,7 +543,15 @@ bool ApplicationController::grabMainWindow(const QString &path) const
 
 GlobalShortcutBinder *ApplicationController::shortcutBinder(GlobalShortcutRole role) const
 {
-    return role == GlobalShortcutRole::Cancel ? m_cancelShortcutBinder : m_shortcutBinder;
+    switch (role) {
+    case GlobalShortcutRole::Cancel:
+        return m_cancelShortcutBinder;
+    case GlobalShortcutRole::Pause:
+        return m_pauseShortcutBinder;
+    case GlobalShortcutRole::Dictation:
+        break;
+    }
+    return m_shortcutBinder;
 }
 
 bool ApplicationController::globalShortcutsSupported(GlobalShortcutRole role) const
@@ -582,13 +599,13 @@ bool ApplicationController::setGlobalShortcut(const ShortcutBinding &shortcut,
         return false;
     }
 #endif
-    const GlobalShortcutRole other =
-        role == GlobalShortcutRole::Cancel ? GlobalShortcutRole::Dictation : GlobalShortcutRole::Cancel;
-    if (!shortcut.isEmpty() && shortcut == globalShortcut(other)) {
-        if (error) {
-            *error = globalShortcutTakenText(other);
+    for (const GlobalShortcutRole other : globalShortcutRoles) {
+        if (other != role && !shortcut.isEmpty() && shortcut == globalShortcut(other)) {
+            if (error) {
+                *error = globalShortcutTakenText(other);
+            }
+            return false;
         }
-        return false;
     }
     return shortcutBinder(role)->setShortcut(shortcut, error);
 }
@@ -596,31 +613,50 @@ bool ApplicationController::setGlobalShortcut(const ShortcutBinding &shortcut,
 void ApplicationController::suspendGlobalShortcut()
 {
     ++m_shortcutSuspensions;
-    m_shortcutBinder->suspend();
-    m_cancelShortcutBinder->suspend();
-    updateCancelKeyGrab();
+    for (const GlobalShortcutRole role : globalShortcutRoles) {
+        shortcutBinder(role)->suspend();
+    }
+    updateDictationOnlyShortcuts();
 }
 
 QString ApplicationController::resumeGlobalShortcut(GlobalShortcutRole *failedRole)
 {
     m_shortcutSuspensions = std::max(0, m_shortcutSuspensions - 1);
-    const QString cancelError = m_cancelShortcutBinder->resume();
-    const QString error = m_shortcutBinder->resume();
-    updateCancelKeyGrab();
-    // A settings page shows one problem at a time; the dictation shortcut's wins.
-    const bool cancelFailed = error.isEmpty() && !cancelError.isEmpty();
-    if (failedRole) {
-        *failedRole = cancelFailed ? GlobalShortcutRole::Cancel : GlobalShortcutRole::Dictation;
+    // A settings page shows one problem at a time: the first role's, in the
+    // order the roles are listed, so the dictation shortcut's wins.
+    QString firstError;
+    for (const GlobalShortcutRole role : globalShortcutRoles) {
+        const QString error = shortcutBinder(role)->resume();
+        if (firstError.isEmpty() && !error.isEmpty()) {
+            firstError = error;
+            if (failedRole) {
+                *failedRole = role;
+            }
+        }
     }
-    return cancelFailed ? cancelError : error;
+    updateDictationOnlyShortcuts();
+    return firstError;
 }
 
-void ApplicationController::updateCancelKeyGrab()
+// The Cancel and Pause Shortcuts hold their keys only while their action
+// applies, and Escape is the built-in cancel key only while neither of them
+// is Escape: both cannot hold it at once.
+void ApplicationController::updateDictationOnlyShortcuts()
 {
-    if (m_cancelKeyGrab) {
-        m_cancelKeyGrab->setGrabbed(m_shortcutSuspensions == 0
-                                    && dictationCancelable(m_session->stateName()));
+    if (!m_session) {
+        return;
     }
+    const QString state = m_session->stateName();
+    const bool cancelable = dictationCancelable(state);
+    const bool pausable = dictationPausable(state);
+    if (m_cancelKeyGrab) {
+        const ShortcutBinding escape(QKeySequence(Qt::Key_Escape));
+        m_cancelKeyGrab->setGrabbed(m_shortcutSuspensions == 0 && cancelable
+                                    && globalShortcut(GlobalShortcutRole::Cancel) != escape
+                                    && globalShortcut(GlobalShortcutRole::Pause) != escape);
+    }
+    m_cancelShortcutBinder->setArmed(cancelable);
+    m_pauseShortcutBinder->setArmed(pausable);
 }
 
 void ApplicationController::registerGlobalShortcut(GlobalShortcutRole role)

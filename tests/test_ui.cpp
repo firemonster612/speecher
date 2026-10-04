@@ -1098,6 +1098,7 @@ private slots:
                                  || row == QStringLiteral("whatsNewNotes")
                                  || row == QStringLiteral("globalShortcut")
                                  || row == QStringLiteral("cancelShortcut")
+                                 || row == QStringLiteral("pauseShortcut")
                                  || row == QStringLiteral("localModelBrowser"),
                              qPrintable(pane.id + QLatin1Char('/') + row));
                 }
@@ -2372,7 +2373,7 @@ private slots:
         SchemaCustomRowFactory customRows = [](const SettingsRow &row,
                                                QWidget *parent,
                                                std::function<void()>) {
-            return row.id == QStringLiteral("globalShortcut") || row.id == QStringLiteral("cancelShortcut")
+            return globalShortcutRoleForRow(row.id)
                 ? SchemaCustomRow{new QWidget(parent), {}, {}}
                 : SchemaCustomRow{};
         };
@@ -2414,7 +2415,7 @@ private slots:
         SchemaCustomRowFactory customRows = [](const SettingsRow &row,
                                                QWidget *parent,
                                                std::function<void()>) {
-            return row.id == QStringLiteral("globalShortcut") || row.id == QStringLiteral("cancelShortcut")
+            return globalShortcutRoleForRow(row.id)
                 ? SchemaCustomRow{new QWidget(parent), {}, {}, true}
                 : SchemaCustomRow{};
         };
@@ -2470,7 +2471,7 @@ private slots:
         SchemaCustomRowFactory customRows = [](const SettingsRow &row,
                                                QWidget *parent,
                                                std::function<void()>) {
-            if (row.id == QStringLiteral("cancelShortcut")) {
+            if (row.id == QStringLiteral("cancelShortcut") || row.id == QStringLiteral("pauseShortcut")) {
                 return SchemaCustomRow{new QWidget(parent), {}, {}, true};
             }
             if (row.id != QStringLiteral("globalShortcut")) {

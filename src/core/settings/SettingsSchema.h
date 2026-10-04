@@ -9,6 +9,7 @@
 #include <QVariant>
 
 #include <functional>
+#include <optional>
 
 namespace speecher {
 
@@ -547,6 +548,8 @@ QString lookingForRunnersStatus();
 // What the Global Shortcut row says while it waits for keys, naming this
 // platform's keys.
 QString globalShortcutPrompt();
+// What the Cancel and Pause recorders ask for: they also take a bare key.
+QString dictationOnlyShortcutPrompt();
 // The Global Shortcut row's buttons: record a new binding, and go back to the
 // binder's default, named by its display text.
 QString globalShortcutChangeCaption();
@@ -560,11 +563,20 @@ QString globalShortcutSetCaption();
 QString globalShortcutSingleKeyCaption();
 QString globalShortcutChooseCaption();
 QString globalShortcutClearCaption();
-// Why a Global Shortcut cannot take the binding the other one already has.
+// The schema row that records each Global Shortcut: "globalShortcut",
+// "cancelShortcut" or "pauseShortcut", and back.
+QString globalShortcutRowId(GlobalShortcutRole role);
+std::optional<GlobalShortcutRole> globalShortcutRoleForRow(const QString &rowId);
+// Why a Global Shortcut cannot take the binding another one already has.
 QString globalShortcutTakenText(GlobalShortcutRole takenBy);
-// Why a single key cannot be watched on Wayland while the other Global
-// Shortcut already holds the one key the key helper watches per person.
-QString keyHelperBusyText(GlobalShortcutRole heldBy);
+// Why the desktop would not register a binding: another app holds it.
+QString globalShortcutOwnedElsewhereText(const ShortcutBinding &binding);
+// Why a dictation-only shortcut cannot be a bare key such as C or Escape on a
+// desktop that can only take keys for good, never just for a session.
+QString bareKeyNeedsSessionGrabText(const ShortcutBinding &binding);
+// Why a single key cannot be watched on Wayland while the key helper already
+// watches as many keys for this person as it allows.
+QString keyHelperBusyText();
 // What the Global Shortcut row says when the binder refused a binding without
 // saying why.
 QString globalShortcutBindFailedText();

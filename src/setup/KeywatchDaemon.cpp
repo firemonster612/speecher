@@ -43,8 +43,9 @@ constexpr char inputDirectory[] = "/dev/input";
 constexpr int maxClients = 16;
 constexpr int idleExitSeconds = 30;
 // Per-uid connection budget: no more than this many WATCH attempts in the
-// window, so the allowlist cannot be rebuilt out of repeated connects.
-constexpr int rateLimitConnects = 8;
+// window, so the allowlist cannot be rebuilt out of repeated connects. Sized
+// for a person setting all three Global Shortcuts while the app probes.
+constexpr int rateLimitConnects = 16;
 constexpr int rateLimitWindowSec = 60;
 
 void logLine(const std::string &text)
@@ -354,15 +355,16 @@ private:
         m_clientCount -= 1;
     }
 
-    bool uidAlreadyWatching(const Client &asking) const
+    bool uidWatchesTheMost(const Client &asking) const
     {
+        int watches = 0;
         for (const Client &client : m_clients) {
             if (client.fd != -1 && &client != &asking && client.uid == asking.uid
                 && client.evdev != 0) {
-                return true;
+                watches += 1;
             }
         }
-        return false;
+        return watches >= speecher::keywatch::maxWatchesPerUser;
     }
 
     void readClient(Client &client)
@@ -386,9 +388,10 @@ private:
         client.pendingFill = 0;
         Refusal refusal = Refusal::None;
         const PermittedKey *key = nullptr;
-        if (client.evdev != 0 || uidAlreadyWatching(client)) {
-            // One watch per peer: neither a second WATCH on this connection
-            // nor a second connection from the same uid gets another key.
+        if (client.evdev != 0 || uidWatchesTheMost(client)) {
+            // One key per connection, and a few connections per uid: one for
+            // each Global Shortcut. Keys that cannot spell text do not
+            // compose into a keylogger however many are watched at once.
             refusal = Refusal::AlreadyWatching;
         } else if (request.version != speecher::keywatch::protocolVersion) {
             refusal = Refusal::BadVersion;

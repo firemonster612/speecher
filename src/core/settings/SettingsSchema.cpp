@@ -908,6 +908,12 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("Throw away the dictation in progress. Nothing is pasted or copied."));
     cancelShortcut.sinceVersion = QStringLiteral("0.2.1");
     shortcutRows.append(cancelShortcut);
+    SettingsRow pauseShortcut = customRow(
+        QStringLiteral("pauseShortcut"),
+        QStringLiteral("Pause Shortcut"),
+        QStringLiteral("Pause the dictation in progress, and press again to resume."));
+    pauseShortcut.sinceVersion = QStringLiteral("0.2.1");
+    shortcutRows.append(pauseShortcut);
     // No clipboard status row here: the Output page's Paste with choice says
     // how text is delivered, and a platform's "clipboard path" is not a setting.
 
@@ -2925,6 +2931,12 @@ QString globalShortcutPrompt()
 #endif
 }
 
+QString dictationOnlyShortcutPrompt()
+{
+    return QStringLiteral("Press a key combination, or a key such as Escape or C. Speecher only "
+                          "takes it while you dictate.");
+}
+
 QString globalShortcutChangeCaption()
 {
     return QStringLiteral("Change…");
@@ -2960,20 +2972,60 @@ QString globalShortcutClearCaption()
     return QStringLiteral("Clear");
 }
 
-QString globalShortcutTakenText(GlobalShortcutRole takenBy)
+QString globalShortcutRowId(GlobalShortcutRole role)
 {
-    return takenBy == GlobalShortcutRole::Cancel
-        ? QStringLiteral("That is already the Cancel Shortcut.")
-        : QStringLiteral("That is already the Global Shortcut for dictation.");
+    switch (role) {
+    case GlobalShortcutRole::Cancel:
+        return QStringLiteral("cancelShortcut");
+    case GlobalShortcutRole::Pause:
+        return QStringLiteral("pauseShortcut");
+    case GlobalShortcutRole::Dictation:
+        break;
+    }
+    return QStringLiteral("globalShortcut");
 }
 
-QString keyHelperBusyText(GlobalShortcutRole heldBy)
+std::optional<GlobalShortcutRole> globalShortcutRoleForRow(const QString &rowId)
 {
-    return heldBy == GlobalShortcutRole::Cancel
-        ? QStringLiteral("The Cancel Shortcut already uses the one key Speecher's key helper can "
-                         "watch. Use a key combination here instead.")
-        : QStringLiteral("The Global Shortcut for dictation already uses the one key Speecher's "
-                         "key helper can watch. Use a key combination here instead.");
+    for (const GlobalShortcutRole role : globalShortcutRoles) {
+        if (globalShortcutRowId(role) == rowId) {
+            return role;
+        }
+    }
+    return std::nullopt;
+}
+
+QString globalShortcutTakenText(GlobalShortcutRole takenBy)
+{
+    switch (takenBy) {
+    case GlobalShortcutRole::Cancel:
+        return QStringLiteral("That is already the Cancel Shortcut.");
+    case GlobalShortcutRole::Pause:
+        return QStringLiteral("That is already the Pause Shortcut.");
+    case GlobalShortcutRole::Dictation:
+        break;
+    }
+    return QStringLiteral("That is already the Global Shortcut for dictation.");
+}
+
+QString globalShortcutOwnedElsewhereText(const ShortcutBinding &binding)
+{
+    return QStringLiteral("%1 is already a shortcut in another app.").arg(binding.displayText());
+}
+
+QString bareKeyNeedsSessionGrabText(const ShortcutBinding &binding)
+{
+    return QStringLiteral(
+        "Your desktop cannot give %1 to Speecher only while you dictate, so it would stop "
+        "working in every other app. Use a key combination, or a key that cannot type, such "
+        "as F13 or Right Ctrl.")
+        .arg(binding.displayText());
+}
+
+QString keyHelperBusyText()
+{
+    return QStringLiteral("Speecher's key helper is already watching as many keys as it allows. "
+                          "Use a key combination here instead.");
 }
 
 QString globalShortcutBindFailedText()

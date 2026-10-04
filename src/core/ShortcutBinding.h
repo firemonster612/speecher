@@ -30,11 +30,18 @@ const PhysicalKey *physicalKeyForMac(int mac);
 // The row for a Windows scancode, or nullptr when the vocabulary lacks it.
 const PhysicalKey *physicalKeyForWin(int win);
 
-// The two Global Shortcuts: the one that toggles dictation, and the optional
-// Cancel Shortcut.
+// The Global Shortcuts: the one that toggles dictation, and the optional
+// Cancel Shortcut and Pause Shortcut.
 enum class GlobalShortcutRole {
     Dictation,
     Cancel,
+    Pause,
+};
+
+inline constexpr GlobalShortcutRole globalShortcutRoles[] = {
+    GlobalShortcutRole::Dictation,
+    GlobalShortcutRole::Cancel,
+    GlobalShortcutRole::Pause,
 };
 
 // The Global Shortcut: a key combination, which every desktop shortcut service
@@ -52,6 +59,10 @@ public:
 
     bool isEmpty() const;
     bool isSingleKey() const;
+    // A combination with no modifier but Shift: a key that types or that apps
+    // act on, such as C or Escape. Taking one for good would take it from
+    // every app, so only a shortcut held just while it is needed can use one.
+    bool isBareKey() const;
     // Empty for a single key.
     QKeySequence combination() const;
     // The KeyboardEvent.code name; empty for a combination.

@@ -23,7 +23,7 @@ const char *refusalText(keywatch::Refusal refusal)
     case keywatch::Refusal::None: return "accepted";
     case keywatch::Refusal::BadVersion: return "the helper speaks another protocol version";
     case keywatch::Refusal::KeyNotPermitted: return "the helper does not permit that key";
-    case keywatch::Refusal::AlreadyWatching: return "a key is already being watched for this user";
+    case keywatch::Refusal::AlreadyWatching: return "it already watches as many keys for this user as it allows";
     case keywatch::Refusal::TooManyRequests: return "too many requests; try again in a minute";
     }
     return "unknown reason";
@@ -61,6 +61,9 @@ QString KeywatchShortcutBinder::unsupportedBindingReason(const ShortcutBinding &
         return reason;
     }
     if (!keywatch::permittedKeyByCode(binding.keyCode().toStdString())) {
+        if (action().duringDictationOnly) {
+            return bareKeyNeedsSessionGrabText(binding);
+        }
         return QStringLiteral(
             "On Wayland, Speecher's key helper watches only keys that cannot type text: "
             "Shift, Ctrl, Alt, Meta, Caps Lock and F13 to F24. %1 is not one of them.")
@@ -75,8 +78,8 @@ QString KeywatchShortcutBinder::unsupportedBindingReason(const ShortcutBinding &
 // Accessibility grant: installing the helper later revives the shortcut
 // without a restart.
 //
-// A refusal because our other Global Shortcut holds the helper's one watch
-// does not poll: no number of retries succeeds while it does.
+// A refusal because the helper already watches as many keys for this person
+// as it allows does not poll: no number of retries succeeds while it does.
 void KeywatchShortcutBinder::bind()
 {
     SingleKeyShortcutBinder::bind();
@@ -142,9 +145,7 @@ QString KeywatchShortcutBinder::watch(const PhysicalKey &key)
     if (reply.refusal == quint8(keywatch::Refusal::AlreadyWatching)) {
         unwatch();
         m_helperBusy = true;
-        const bool isCancel = action().id == actionFor(GlobalShortcutRole::Cancel).id;
-        return keyHelperBusyText(isCancel ? GlobalShortcutRole::Dictation
-                                          : GlobalShortcutRole::Cancel);
+        return keyHelperBusyText();
     }
     if (reply.refusal != quint8(keywatch::Refusal::None)) {
         const QString reason = QString::fromLatin1(refusalText(keywatch::Refusal(reply.refusal)));

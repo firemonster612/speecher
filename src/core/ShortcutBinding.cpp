@@ -198,6 +198,12 @@ bool ShortcutBinding::isSingleKey() const
     return !m_keyCode.isEmpty();
 }
 
+bool ShortcutBinding::isBareKey() const
+{
+    return !m_combination.isEmpty()
+        && (m_combination[0].keyboardModifiers() & ~Qt::ShiftModifier) == Qt::NoModifier;
+}
+
 QKeySequence ShortcutBinding::combination() const
 {
     return m_combination;

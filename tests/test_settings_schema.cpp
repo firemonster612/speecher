@@ -1542,7 +1542,7 @@ private slots:
         QCOMPARE(paneOf(QStringLiteral("activationMode")), QStringLiteral("dictation"));
         QCOMPARE(schema.pane(QStringLiteral("dictation"))->groups.first().rows,
                  (QStringList{QStringLiteral("globalShortcut"), QStringLiteral("activationMode"),
-                              QStringLiteral("cancelShortcut")}));
+                              QStringLiteral("cancelShortcut"), QStringLiteral("pauseShortcut")}));
         QCOMPARE(paneOf(QStringLiteral("appRecognitionRules")), QStringLiteral("output"));
         QCOMPARE(paneOf(QStringLiteral("applicationPasteRules")), QStringLiteral("output"));
         QStringList outputSections;

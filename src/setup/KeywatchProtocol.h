@@ -6,7 +6,8 @@
 //
 // Messages are fixed-size and carry no strings, so the daemon's parser has
 // nothing to overflow. The client sends one WatchRequest; the daemon answers
-// one WatchReply and, when accepted, streams KeyEvents for that key only.
+// one WatchReply and, when accepted, streams KeyEvents for that key only. Each
+// connection watches one key.
 
 #include <cstdint>
 #include <string_view>
@@ -14,7 +15,11 @@
 namespace speecher::keywatch {
 
 constexpr const char *socketPath = "/run/speecher-keywatchd/socket";
-constexpr std::uint8_t protocolVersion = 1;
+// Version 2 watches up to maxWatchesPerUser keys per user, one per
+// connection; version 1 watched one.
+constexpr std::uint8_t protocolVersion = 2;
+// One for each Global Shortcut: dictation, cancel and pause.
+constexpr int maxWatchesPerUser = 3;
 
 struct WatchRequest {
     std::uint8_t version;

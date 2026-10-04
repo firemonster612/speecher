@@ -285,6 +285,17 @@ private slots:
                     .contains(QStringLiteral("E")));
     }
 
+    // A bare key is one that types or that apps act on: no modifier but Shift.
+    void bareKeysAreCombinationsWithoutARealModifier()
+    {
+        QVERIFY(ShortcutBinding(QKeySequence(Qt::Key_C)).isBareKey());
+        QVERIFY(ShortcutBinding(QKeySequence(Qt::Key_Escape)).isBareKey());
+        QVERIFY(ShortcutBinding(QKeySequence(Qt::SHIFT | Qt::Key_P)).isBareKey());
+        QVERIFY(!ShortcutBinding(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_X)).isBareKey());
+        QVERIFY(!ShortcutBinding::singleKey(QStringLiteral("F13")).isBareKey());
+        QVERIFY(!ShortcutBinding().isBareKey());
+    }
+
     void settingsDefaults()
     {
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
