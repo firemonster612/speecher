@@ -177,7 +177,11 @@ QString fallbackNote(const ProviderHistory &history, bool usedRawTranscript, con
     const bool speechInterrupted = !speechStandIn.isEmpty()
         && std::any_of(speechIssues.cbegin(), speechIssues.cend(),
                        [](const ProviderAttemptIssue &issue) { return issue.stage == Stage::Interrupted; });
-    *wordsMayBeMissing = speechInterrupted;
+    const bool speechWordsLost = speechInterrupted
+        || (!speechStandIn.isEmpty()
+            && std::any_of(speechIssues.cbegin(), speechIssues.cend(),
+                           [](const ProviderAttemptIssue &issue) { return issue.wordsLost; }));
+    *wordsMayBeMissing = speechWordsLost;
 
     const bool allOffline = !history.issues.isEmpty()
         && std::all_of(history.issues.cbegin(), history.issues.cend(),
@@ -191,7 +195,7 @@ QString fallbackNote(const ProviderHistory &history, bool usedRawTranscript, con
             names.append(labels(ProviderRole::Refinement, refinementStandIn));
         }
         const QString note = QStringLiteral("No internet, so %1 did this one.").arg(joinedList(names));
-        return speechInterrupted ? note + QStringLiteral(" A few words may be missing.") : note;
+        return speechWordsLost ? note + QStringLiteral(" A few words may be missing.") : note;
     }
 
     QStringList sentences;
@@ -222,6 +226,10 @@ QString fallbackNote(const ProviderHistory &history, bool usedRawTranscript, con
         }
         if (const QString sentence = shortfallSentence(others, labels); !sentence.isEmpty()) {
             sentences.append(sentence);
+        }
+        // The dropped sentence says so itself.
+        if (role == ProviderRole::Speech && speechWordsLost && !speechInterrupted) {
+            sentences.append(QStringLiteral("A few words may be missing."));
         }
         sentences += signInSentences(issues, labels);
     }

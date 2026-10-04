@@ -131,7 +131,9 @@ private:
     void finishSpeechPreparation(const StartupPreparationResult &result);
     void speechProviderReady();
     void speechChainExhausted();
-    bool switchSpeechProvider(Stage stage, const SpeechFailure &failure);
+    bool speechFallbackRemains(const SpeechFailure &failure) const;
+    void switchSpeechProvider(const SpeechFailure &failure);
+    void noteSpeechFailure(const SpeechFailure &failure);
     void retireSpeechAttempt();
     SpeechSettings speechSettingsFor(const QString &providerId) const;
     void noteProviderIssue(ProviderRole role, const QString &providerId, Stage stage, const ProviderFailure &failure);

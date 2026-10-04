@@ -820,6 +820,64 @@ private slots:
                  (QStringList{QStringLiteral("codex"), QStringLiteral("local")}));
     }
 
+    // The last provider failing after it started is named too, and never
+    // credited: with nothing heard the error names each provider, and with
+    // words kept no provider "finished" them.
+    void theLastProviderFailingAfterItStartedIsNamedAndNotCredited()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        codex->onStartAttempt = [codex] {
+            codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        };
+        local->onStartAttempt = [local] {
+            local->emitFailure(QStringLiteral("model failed to load"), false, {}, ProviderFailureKind::Unavailable);
+        };
+        QSignalSpy errors(rig.session.get(), &DictationSession::popupErrorRequested);
+        rig.session->startListening();
+        QTRY_COMPARE(rig.session->state(), DictationState::Error);
+        QCOMPARE(errors.last().at(0).toString(),
+                 QStringLiteral("No speech service is available. ChatGPT Codex couldn't be reached and Local Model "
+                                "couldn't load its model."));
+    }
+
+    void wordsKeptAfterEveryProviderFailedAreNotCreditedToOne()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        codex->emitFinalText(QStringLiteral("said"));
+        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("streaming"), Network);
+        QCOMPARE(local->startCalls, 1);
+        local->emitFailure(QStringLiteral("model failed to load"), false, {}, ProviderFailureKind::Unavailable);
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Used raw transcript • Input sent • Part of the dictation may be missing. The "
+                                "connection dropped."));
+    }
+
+    // A provider that never connected, though the microphone was already
+    // open, couldn't be reached rather than dropped; what it was sent is
+    // lost all the same (rule A7).
+    void aConnectFailureAfterListeningSaysCouldntBeReached()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFailure(QStringLiteral("offline"), false, QStringLiteral("connect"),
+                                                         Network);
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Input sent • Transcribed with Local Model. ChatGPT Codex couldn't be reached. A few "
+                                "words may be missing."));
+    }
+
     // A sign-in turned down: a successful outcome with Open Accounts, up
     // for at least as long as an error would be, so the fix can be used.
     void aTurnedDownSignInOffersAccountsAndStaysUpToBeRead()

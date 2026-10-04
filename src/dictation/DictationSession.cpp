@@ -544,21 +544,31 @@ void DictationSession::speechChainExhausted()
                 {ErrorFix::SettingsPage, QStringLiteral("dictation")});
 }
 
-// The current attempt's provider failed in a way the next provider in the
-// chain may make up for: retire it and walk on. False, with nothing changed,
-// when the failure isn't one a fallback answers or none is left.
-bool DictationSession::switchSpeechProvider(Stage stage, const SpeechFailure &failure)
+// Whether the next provider in the chain may make up for this failure: one
+// a fallback answers, with a provider left to take over.
+bool DictationSession::speechFallbackRemains(const SpeechFailure &failure) const
 {
-    if (!permitsProviderFallback(failure.kind) || m_speechIndex + 1 >= m_speechChain.size()) {
-        return false;
-    }
+    return permitsProviderFallback(failure.kind) && m_speechIndex + 1 < m_speechChain.size();
+}
+
+// Retires the current attempt's provider and walks on to the next.
+void DictationSession::switchSpeechProvider(const SpeechFailure &failure)
+{
     m_switchFailure = failure;
     retireSpeechAttempt();
-    noteProviderIssue(ProviderRole::Speech, m_speechChain.at(m_speechIndex), stage,
-                      {failure.kind, failure.message, failure.httpStatus});
     ++m_speechIndex;
     prepareSpeechProvider();
-    return true;
+}
+
+// The current speech provider is done with this dictation, whether another
+// takes over or none is left. One that never connected couldn't be reached;
+// any other dropped.
+void DictationSession::noteSpeechFailure(const SpeechFailure &failure)
+{
+    const bool connecting = failure.phase == QStringLiteral("connect") || m_state == DictationState::Starting;
+    noteProviderIssue(ProviderRole::Speech, m_speechChain.at(m_speechIndex),
+                      connecting ? Stage::Connect : Stage::Interrupted,
+                      {failure.kind, failure.message, failure.httpStatus});
 }
 
 // Nothing the attempt's provider sends from here on counts, and audio waits
@@ -600,7 +610,10 @@ void DictationSession::noteProviderIssue(ProviderRole role,
     const bool offline =
         (failure.kind == ProviderFailureKind::Network || failure.kind == ProviderFailureKind::Timeout)
         && fallbackProblem(role, providerId, candidate, facts) == FallbackProblem::Offline;
-    m_providerHistory.issues.append({role, providerId, stage, failure.kind, failure.message, offline});
+    // Once the microphone is open, a speech provider has been sent audio.
+    const bool wordsLost = role == ProviderRole::Speech && stage == Stage::Connect
+        && m_state != DictationState::Starting;
+    m_providerHistory.issues.append({role, providerId, stage, failure.kind, failure.message, offline, wordsLost});
     const bool signInMissing = stage == Stage::Prepare && failure.kind == ProviderFailureKind::Unavailable;
     if (failure.kind == ProviderFailureKind::Authentication || signInMissing) {
         noteSignIn(providerId, false);
@@ -1348,7 +1361,9 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         // closed, makes way for the next before the next attempt: at resume,
         // or now for words heard since one.
         const bool attemptNeeded = m_state != DictationState::Stopping || !m_resumeAudio.isEmpty();
-        if (!droppedStream && attemptNeeded && switchSpeechProvider(Stage::Interrupted, failure)) {
+        if (!droppedStream && attemptNeeded && speechFallbackRemains(failure)) {
+            noteSpeechFailure(failure);
+            switchSpeechProvider(failure);
             return;
         }
         if (m_state == DictationState::Paused) {
@@ -1359,6 +1374,10 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
             return;
         }
         if (m_state == DictationState::Stopping) {
+            // Nothing is left for it to hear: its part of the dictation ends here.
+            if (!attemptNeeded) {
+                noteSpeechFailure(failure);
+            }
             attemptEndedWhileStopping();
             return;
         }
@@ -1382,11 +1401,13 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         startNextAttempt();
         return;
     }
-    // Reconnects spent, or a failure they can't mend: the next provider
-    // takes over. Not once stopped, when the last attempt already has all
-    // the audio there is and none may be sent again.
-    if (m_state != DictationState::Stopping
-        && switchSpeechProvider(m_state == DictationState::Starting ? Stage::Connect : Stage::Interrupted, failure)) {
+    // Reconnects spent, or a failure they can't mend: the provider is done
+    // with this dictation, and the next one takes over. Not once stopped,
+    // when the last attempt already has all the audio there is and none may
+    // be sent again.
+    noteSpeechFailure(failure);
+    if (m_state != DictationState::Stopping && speechFallbackRemains(failure)) {
+        switchSpeechProvider(failure);
         return;
     }
     endSpeechAfterFailure(failure);
