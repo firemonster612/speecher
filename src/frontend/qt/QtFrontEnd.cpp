@@ -342,11 +342,15 @@ void QtFrontEnd::showDictationError(const QString &message, const PopupErrorActi
 
 // Linux has no system permission panels to open, so only a settings page
 // becomes a button.
+static QString fixButtonLabel(const PopupErrorAction &fix)
+{
+    return fix.fix == ErrorFix::SettingsPage ? popupErrorActionLabel(fix) : QString();
+}
+
 void QtFrontEnd::showPopupError(const QString &message, const PopupErrorAction &fix)
 {
     m_errorFix = fix;
-    m_popup->showErrorMessage(message,
-                              fix.fix == ErrorFix::SettingsPage ? popupErrorActionLabel(fix) : QString());
+    m_popup->showErrorMessage(message, fixButtonLabel(fix));
 }
 
 // An outcome can offer a fix too, such as a sign-in that expired while a
@@ -354,8 +358,7 @@ void QtFrontEnd::showPopupError(const QString &message, const PopupErrorAction &
 void QtFrontEnd::showPopupOutcome(const QString &message, PopupOutcome outcome, const PopupErrorAction &fix)
 {
     m_errorFix = fix;
-    m_popup->showMessage(message, outcome,
-                         fix.fix == ErrorFix::SettingsPage ? popupErrorActionLabel(fix) : QString());
+    m_popup->showMessage(message, outcome, fixButtonLabel(fix));
 }
 
 void QtFrontEnd::applyErrorFix()

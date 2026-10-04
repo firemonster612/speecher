@@ -906,18 +906,17 @@ void TranscriberPopup::showMessage(const QString &message, PopupOutcome outcome,
     }
     // An outcome with a fix wraps as an error does and carries its button,
     // but not Dismiss or the countdown: the session decides when it goes.
-    const int textHeight = showWrappedLine(message, outcomeIcon(outcome), actionLabel);
-    m_pillLayout->setContentsMargins(24, 0, 24, 0);
-    m_previewPill->setFixedHeight(qMax(48, textHeight + 24));
-    m_previewPill->resize(m_previewPill->sizeHint());
-    adjustSize();
-    repositionIfVisible();
+    showWrappedLine(message, outcomeIcon(outcome), actionLabel, false);
 }
 
-int TranscriberPopup::showWrappedLine(const QString &message, const QIcon &icon, const QString &actionLabel)
+void TranscriberPopup::showWrappedLine(const QString &message, const QIcon &icon, const QString &actionLabel,
+                                       bool countdown)
 {
     m_waveform->hide();
     applyFonts();
+    // The wrapped line is never cut short, so a long preview before it
+    // leaves no fade behind.
+    m_previewCut = false;
     m_previewFade->setEnabled(false);
     m_previewPill->setMinimumWidth(0);
     const QFontMetrics metrics(m_preview->font());
@@ -943,7 +942,18 @@ int TranscriberPopup::showWrappedLine(const QString &message, const QIcon &icon,
     m_errorAction->setVisible(!actionLabel.isEmpty());
     m_previewPill->setVisible(true);
     m_pillLayout->setSpacing(0);
-    return metrics.boundingRect(QRect(0, 0, textWidth, 1000), Qt::AlignCenter | wrapFlags, text).height();
+    const int textHeight =
+        metrics.boundingRect(QRect(0, 0, textWidth, 1000), Qt::AlignCenter | wrapFlags, text).height();
+    // previewRow is centred in what is left after the bar and its air, so the
+    // same amount above it puts the text on the capsule's optical centre.
+    const int barSpace = countdown ? 3 + kErrorBarInset : 0;
+    m_pillLayout->setContentsMargins(24, barSpace, 24, countdown ? kErrorBarInset : 0);
+    // 24 keeps the label's 12px above and below the text; 3 is the countdown
+    // bar; the inset is the air between the bar and the border.
+    m_previewPill->setFixedHeight(qMax(48, textHeight + 24 + 2 * barSpace));
+    m_previewPill->resize(m_previewPill->sizeHint());
+    adjustSize();
+    repositionIfVisible();
 }
 
 void TranscriberPopup::showErrorMessage(const QString &message, const QString &actionLabel)
@@ -951,22 +961,10 @@ void TranscriberPopup::showErrorMessage(const QString &message, const QString &a
     m_phase = Phase::Live;
     m_errorDismissAnimation->stop();
     m_errorDismiss->setVisible(true);
-    // The error capsule keeps the desktop's own font and its own width.
-    const int textHeight = showWrappedLine(message, outcomeIcon(PopupOutcome::Error), actionLabel);
-    // previewRow is centred in what is left after the bar and its air, so the
-    // same amount above it puts the text on the capsule's optical centre.
-    m_pillLayout->setContentsMargins(24, kErrorBarInset + 3, 24, kErrorBarInset);
     m_errorDismissProgress->setValue(m_errorDismissProgress->maximum());
     m_errorDismissProgress->show();
-    // 24 keeps the label's 12px above and below the text; 3 is the countdown
-    // bar; the inset is the air between the bar and the border.
-    m_previewPill->setFixedHeight(
-        qMax(48, textHeight + 24 + 2 * (3 + kErrorBarInset)));
-    m_previewPill->resize(m_previewPill->sizeHint());
-    adjustSize();
-    if (isVisible()) {
-        m_positioner->positionBottomCenter(m_surface);
-    }
+    // The error capsule keeps the desktop's own font and its own width.
+    showWrappedLine(message, outcomeIcon(PopupOutcome::Error), actionLabel, true);
     m_errorDismissAnimation->setDuration(popupErrorDismissMs(message));
     m_errorDismissAnimation->start();
     if (m_previewPill->underMouse()) {

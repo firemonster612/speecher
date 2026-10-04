@@ -543,8 +543,18 @@ private slots:
         popup.showMessage(QStringLiteral("Pasted"), PopupOutcome::Inserted);
         QVERIFY(action->isHidden());
 
+        // A long preview fades its first words; the outcome after it starts
+        // with none faded.
+        auto *preview = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        QVERIFY(preview);
+        popup.setSessionState(DictationState::Listening);
+        popup.setPreview(QStringLiteral("more words in the middle ").repeated(20));
+        QVERIFY(preview->graphicsEffect()->isEnabled());
+        popup.setSessionState(DictationState::Delivering);
         popup.showMessage(QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired."),
                           PopupOutcome::Fallback, QStringLiteral("Open Accounts"));
+        QCoreApplication::processEvents();
+        QVERIFY(!preview->graphicsEffect()->isEnabled());
         QVERIFY(!action->isHidden());
         QCOMPARE(action->text(), QStringLiteral("Open Accounts"));
         QVERIFY(dismiss->isHidden());
