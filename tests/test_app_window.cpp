@@ -23,6 +23,7 @@
 #include "ui/TranscribeModel.h"
 #include "ui/TranscribePage.h"
 #include "ui/TranscribeWindow.h"
+#include "ui/TranscriberPopup.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
@@ -1313,6 +1314,45 @@ private slots:
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Refinement"));
         back->click();
         QCOMPARE(title->text(), QStringLiteral("Refinement"));
+    }
+
+    // A successful outcome with a fix, such as a sign-in that expired while a
+    // fallback did the work, opens the fix's page from its button.
+    void anOutcomeFixOpensItsPage()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        TranscriberPopup *popup = nullptr;
+        for (QWidget *widget : QApplication::topLevelWidgets()) {
+            popup = popup ? popup : qobject_cast<TranscriberPopup *>(widget);
+        }
+        QVERIFY(popup);
+        auto *action = popup->findChild<QPushButton *>(QStringLiteral("errorAction"));
+        QVERIFY(action);
+
+        emit controller.session()->popupMessageRequested(QStringLiteral("Pasted"), PopupOutcome::Inserted);
+        QVERIFY(action->isHidden());
+        emit controller.session()->popupMessageRequested(
+            QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired."), PopupOutcome::Fallback,
+            {ErrorFix::SettingsPage, QStringLiteral("accounts")});
+        QVERIFY(!action->isHidden());
+        QCOMPARE(action->text(), QStringLiteral("Open Accounts"));
+        // Earlier tests leave their windows behind; this one is the new one.
+        const QWidgetList before = QApplication::topLevelWidgets();
+        action->click();
+
+        AppWindow *window = nullptr;
+        for (QWidget *widget : QApplication::topLevelWidgets()) {
+            if (!before.contains(widget)) {
+                window = window ? window : qobject_cast<AppWindow *>(widget);
+            }
+        }
+        QVERIFY(window);
+        const auto hide = qScopeGuard([window] { window->hide(); });
+        QVERIFY(window->isVisible());
+        QCOMPARE(window->findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Accounts"));
     }
 
     void deletingACorrectionThroughThePageSetKeepsUndoAvailable()

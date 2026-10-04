@@ -44,6 +44,7 @@ private:
 
     void wireSessionToPopup();
     void showPopupError(const QString &message, const PopupErrorAction &fix);
+    void showPopupOutcome(const QString &message, PopupOutcome outcome, const PopupErrorAction &fix);
     void applyErrorFix();
     void refreshUpdateChip();
     void refreshWhatsNewChip();

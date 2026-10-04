@@ -349,6 +349,15 @@ void QtFrontEnd::showPopupError(const QString &message, const PopupErrorAction &
                               fix.fix == ErrorFix::SettingsPage ? popupErrorActionLabel(fix) : QString());
 }
 
+// An outcome can offer a fix too, such as a sign-in that expired while a
+// fallback did the work; its button opens the page an error's would.
+void QtFrontEnd::showPopupOutcome(const QString &message, PopupOutcome outcome, const PopupErrorAction &fix)
+{
+    m_errorFix = fix;
+    m_popup->showMessage(message, outcome,
+                         fix.fix == ErrorFix::SettingsPage ? popupErrorActionLabel(fix) : QString());
+}
+
 void QtFrontEnd::applyErrorFix()
 {
     if (m_errorFix.fix != ErrorFix::SettingsPage) {
@@ -441,7 +450,7 @@ void QtFrontEnd::wireSessionToPopup()
     connect(session, &DictationSession::popupRefinementPreviewChanged, m_popup, &TranscriberPopup::setRefinementPreview);
     connect(session, &DictationSession::popupOAuthRefreshRequested, m_popup, &TranscriberPopup::showOAuthRefreshIndicator);
     connect(session, &DictationSession::popupListeningIndicatorRequested, m_popup, &TranscriberPopup::showListeningIndicator);
-    connect(session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
+    connect(session, &DictationSession::popupMessageRequested, this, &QtFrontEnd::showPopupOutcome);
     connect(session, &DictationSession::popupErrorRequested, this, &QtFrontEnd::showPopupError);
     connect(m_popup, &TranscriberPopup::errorActionRequested, this, &QtFrontEnd::applyErrorFix);
     connect(m_popup, &TranscriberPopup::pauseToggled, session, &DictationSession::togglePause);
