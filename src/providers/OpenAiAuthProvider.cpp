@@ -358,6 +358,15 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         return {false, {}, QStringLiteral("settings"), QStringLiteral("Settings API key not found"), {}, {}, {}, {}, false};
     }
 
+    // A refresh that failed says more than a missing credential, so it is
+    // the answer when no other source has one.
+    OpenAiAuth unresolved{false, {}, {}, QStringLiteral("No OpenAI credential found"), {}, {}, {}, {}, false};
+    const auto keepRefreshFailure = [&unresolved](const OpenAiAuth &oauth) {
+        if (oauth.kind == ProviderFailureKind::Unavailable) return;
+        unresolved.status = oauth.status;
+        unresolved.kind = oauth.kind;
+        unresolved.httpStatus = oauth.httpStatus;
+    };
     const CodexCredentialStorage storage;
     const bool codexUsesChatGpt = codexAuthMode(storage) == QStringLiteral("chatgpt");
     if (codexUsesChatGpt) {
@@ -365,6 +374,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         if (oauth.ok) {
             return oauth;
         }
+        keepRefreshFailure(oauth);
     }
 
     const ApiKeyCandidate codexKey = readCodexApiKeyCandidate(storage, &status);
@@ -378,6 +388,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         if (oauth.ok) {
             return oauth;
         }
+        keepRefreshFailure(oauth);
     }
     const ApiKeyCandidate envKey = readEnvApiKey();
     if (envKey.key.startsWith(QStringLiteral("sk-"))) {
@@ -397,7 +408,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
                 {},
                 false};
     }
-    return {false, {}, {}, QStringLiteral("No OpenAI credential found"), {}, {}, {}, {}, false};
+    return unresolved;
 }
 
 bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
