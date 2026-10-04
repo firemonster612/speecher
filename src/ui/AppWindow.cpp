@@ -24,6 +24,8 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QSettings>
+#include <QPointer>
+#include <QDebug>
 #include <QSystemTrayIcon>
 #include <QWindow>
 #include <QLineEdit>
@@ -441,7 +443,9 @@ void AppWindow::paintEvent(QPaintEvent *event)
         return;
     }
     m_afterShowLoadScheduled = true;
-    QTimer::singleShot(0, this, [this] {
+    QTimer::singleShot(0, this, [this, controller = QPointer<ApplicationController>(m_controller)] {
+        qInfo() << "[DEBUG-win-appwindow] queued load, window" << this
+                << "controller alive" << !controller.isNull();
         m_pages->loadAfterShow();
     });
 }

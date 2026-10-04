@@ -120,6 +120,10 @@ QtFrontEnd::~QtFrontEnd()
     // The updater outlives the front end, so drop the provider that reaches
     // back into this object and its windows.
     m_controller->updates()->setRestoreStateProvider({});
+    qInfo() << "[DEBUG-win-appwindow] front end teardown, main window" << m_appWindow;
+    if (qEnvironmentVariableIsSet("DEBUG_DELETE_MAIN_WINDOW")) {
+        delete m_appWindow;
+    }
     delete m_popup;
     delete m_transcribeWindow;
 }

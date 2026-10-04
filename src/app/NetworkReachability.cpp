@@ -11,6 +11,10 @@ NetworkReachability::NetworkReachability(QObject *parent)
 
 void NetworkReachability::watchSystem()
 {
+    if (qEnvironmentVariableIsSet("DEBUG_SKIP_REACHABILITY")) {
+        qInfo() << "[DEBUG-win-appwindow] backend disabled";
+        return;
+    }
     if (!QNetworkInformation::loadBackendByFeatures(QNetworkInformation::Feature::Reachability)) {
         qWarning() << "no network information backend; reachability stays unknown";
         return;
