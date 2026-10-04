@@ -1,6 +1,7 @@
 #include "providers/ClaudeCredentials.h"
 #include "providers/ClaudeCredentialStorage.h"
 #include "providers/OauthTokenRequest.h"
+#include "providers/ProviderFailureClassification.h"
 
 #include "core/CliToolDiscovery.h"
 
@@ -21,6 +22,8 @@
 #include <QTimer>
 #include <QTimeZone>
 #include <QUrl>
+
+#include <optional>
 
 namespace speecher {
 
@@ -136,23 +139,26 @@ bool saveRefreshedCredentials(const ClaudeCredentialStorage &storage,
                              .toJson(QJsonDocument::Compact), error);
 }
 
-bool refreshClaudeAuth(const ClaudeCredentialStorage &storage, const ClaudeCredentialResult &credentials, QString *error)
+// Why the refresh failed, or nothing once it saved new credentials.
+std::optional<ProviderFailure> refreshClaudeAuth(const ClaudeCredentialStorage &storage,
+                                                 const ClaudeCredentialResult &credentials)
 {
+    const auto unavailable = [](const QString &message) {
+        return ProviderFailure{ProviderFailureKind::Unavailable, message};
+    };
     if (credentials.refreshToken.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("Claude login cannot be refreshed; run claude in a terminal and use the /login command");
-        }
-        return false;
+        return unavailable(QStringLiteral("Claude login cannot be refreshed; run claude in a terminal and use the /login command"));
     }
 
     const QStringList requestedScopes = credentials.scopes.isEmpty()
         ? defaultOauthScopes()
         : credentials.scopes;
-    const QByteArray current = storage.read(error);
-    if (!error->isEmpty()) return false;
+    QString error;
+    const QByteArray current = storage.read(&error);
+    if (!error.isEmpty()) return unavailable(error);
     const QJsonObject preflight = withClaudeOauth(QJsonDocument::fromJson(current).object(),
         credentials.accessToken, credentials.refreshToken, QDateTime::currentMSecsSinceEpoch(), requestedScopes);
-    if (!storage.canWrite(QJsonDocument(preflight).toJson(QJsonDocument::Compact), error)) return false;
+    if (!storage.canWrite(QJsonDocument(preflight).toJson(QJsonDocument::Compact), &error)) return unavailable(error);
     const QJsonObject body{
         {QStringLiteral("grant_type"), QStringLiteral("refresh_token")},
         {QStringLiteral("refresh_token"), credentials.refreshToken},
@@ -180,38 +186,34 @@ bool refreshClaudeAuth(const ClaudeCredentialStorage &storage, const ClaudeCrede
     const QNetworkReply::NetworkError networkError = reply->error();
     reply->deleteLater();
     if (timedOut) {
-        if (error) {
-            *error = QStringLiteral("Timed out refreshing Claude login; check the network and try again");
-        }
-        return false;
+        return ProviderFailure{ProviderFailureKind::Timeout,
+                               QStringLiteral("Timed out refreshing Claude login; check the network and try again")};
     }
 
     QJsonParseError parseError;
     const QJsonObject response = QJsonDocument::fromJson(responseBytes, &parseError).object();
     if (status < 200 || status >= 300 || networkError != QNetworkReply::NoError) {
-        if (error) {
-            const QString code = response.value(QStringLiteral("error")).toString();
-            *error = code == QStringLiteral("invalid_grant")
-                ? QStringLiteral("Claude login expired; run claude in a terminal and use the /login command")
-                : QStringLiteral("Could not refresh Claude login (HTTP %1); check the network and try again").arg(status);
+        if (response.value(QStringLiteral("error")).toString() == QStringLiteral("invalid_grant")) {
+            return ProviderFailure{ProviderFailureKind::Authentication,
+                                   QStringLiteral("Claude login expired; run claude in a terminal and use the /login command"),
+                                   status};
         }
-        return false;
+        // A refresh that fails for no reason of its own still leaves no
+        // usable sign-in.
+        ProviderFailure failure = replyFailure(*reply,
+            QStringLiteral("Could not refresh Claude login (HTTP %1); check the network and try again").arg(status));
+        if (failure.kind == ProviderFailureKind::Other) failure.kind = ProviderFailureKind::Unavailable;
+        return failure;
     }
     if (parseError.error != QJsonParseError::NoError) {
-        if (error) {
-            *error = QStringLiteral("Claude login refresh returned invalid JSON");
-        }
-        return false;
+        return unavailable(QStringLiteral("Claude login refresh returned invalid JSON"));
     }
 
     const QString accessToken = response.value(QStringLiteral("access_token")).toString();
     const QString refreshToken = response.value(QStringLiteral("refresh_token")).toString(credentials.refreshToken);
     const qint64 expiresIn = qRound64(response.value(QStringLiteral("expires_in")).toDouble());
     if (accessToken.isEmpty() || expiresIn <= 0) {
-        if (error) {
-            *error = QStringLiteral("Claude login refresh response was incomplete");
-        }
-        return false;
+        return unavailable(QStringLiteral("Claude login refresh response was incomplete"));
     }
 
     QStringList refreshedScopes = response.value(QStringLiteral("scope")).toString().split(
@@ -220,13 +222,16 @@ bool refreshClaudeAuth(const ClaudeCredentialStorage &storage, const ClaudeCrede
     if (refreshedScopes.isEmpty()) {
         refreshedScopes = requestedScopes;
     }
-    return saveRefreshedCredentials(storage,
-                                    credentials.refreshToken,
-                                    accessToken,
-                                    refreshToken,
-                                    QDateTime::currentMSecsSinceEpoch() + expiresIn * 1000,
-                                    refreshedScopes,
-                                    error);
+    if (!saveRefreshedCredentials(storage,
+                                  credentials.refreshToken,
+                                  accessToken,
+                                  refreshToken,
+                                  QDateTime::currentMSecsSinceEpoch() + expiresIn * 1000,
+                                  refreshedScopes,
+                                  &error)) {
+        return unavailable(error);
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -306,9 +311,10 @@ ClaudeCredentialResult ClaudeCredentials::load(const QString &path, bool refresh
         return result;
     }
 
-    QString refreshError;
-    if (!refreshClaudeAuth(storage, result, &refreshError)) {
-        result.error = refreshError;
+    if (const std::optional<ProviderFailure> failure = refreshClaudeAuth(storage, result)) {
+        result.error = failure->message;
+        result.kind = failure->kind;
+        result.httpStatus = failure->httpStatus;
         return result;
     }
 

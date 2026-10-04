@@ -8,6 +8,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 
+#include "core/ProviderFailure.h"
 #include "providers/ClaudeVoiceProtocol.h"
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
@@ -34,7 +35,8 @@ signals:
     void completed();
     void connected();
     void closed();
-    void failed(const QString &message, bool retryable, const QString &phase);
+    void failed(const QString &message, bool retryable, const QString &phase,
+                speecher::ProviderFailureKind kind);
     void debugSchema(const QString &message);
 
 private:
@@ -42,7 +44,7 @@ private:
     void flushPendingAudio();
     void clearPendingAudio();
     void requestFinalization();
-    void fail(const QString &message, bool retryable, const QString &phase);
+    void fail(const QString &message, bool retryable, const QString &phase, ProviderFailureKind kind);
     void handleTextMessage(const QString &message);
 
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS

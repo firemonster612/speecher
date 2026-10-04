@@ -1,5 +1,6 @@
 #include "providers/StreamingRefinement.h"
 
+#include "providers/ProviderFailureClassification.h"
 #include "providers/ServerSentEvents.h"
 
 #include <QDebug>
@@ -25,7 +26,8 @@ StreamingRefinement::StreamingRefinement(QString provider, DecodeEvent decodeEve
     m_deadlineTimer.setSingleShot(true);
     const auto timeout = [this](Retry retry) {
         if (m_reply) {
-            fail(m_provider + QStringLiteral(" refinement timed out waiting for a response"), retry);
+            fail({ProviderFailureKind::Timeout, m_provider + QStringLiteral(" refinement timed out waiting for a response")},
+                 retry);
         }
     };
     connect(&m_inactivityTimer, &QTimer::timeout, this, [timeout] { timeout(Retry::AfterStall); });
@@ -63,17 +65,17 @@ void StreamingRefinement::post(const Request &request)
             return;
         }
         takeReply();
-        QString detail;
-        if (reply->error() != QNetworkReply::NoError) {
-            detail = m_decodeError(m_buffer + reply->readAll(), reply->errorString());
-        } else {
-            detail = m_accumulated.isEmpty() ? QStringLiteral("empty response")
-                                            : QStringLiteral("stream ended before completion");
-        }
-        const QString message = m_provider + QStringLiteral(" refinement failed: ") + detail;
         reply->deleteLater();
-        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        if (!retryAtStandardSpeed(message, true)) emit failed(message, httpStatus);
+        const QString prefix = m_provider + QStringLiteral(" refinement failed: ");
+        // An answer that ends without its completion marker is unusable, not
+        // a sign the provider is unreachable.
+        const ProviderFailure failure = reply->error() != QNetworkReply::NoError
+            ? replyFailure(*reply, prefix + m_decodeError(m_buffer + reply->readAll(), reply->errorString()))
+            : ProviderFailure{ProviderFailureKind::InvalidResult,
+                              prefix + (m_accumulated.isEmpty() ? QStringLiteral("empty response")
+                                                                : QStringLiteral("stream ended before completion")),
+                              reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()};
+        if (!retryAtStandardSpeed(failure.message, true)) emit failed(failure);
     });
 }
 
@@ -122,23 +124,24 @@ void StreamingRefinement::parseChunk(const QByteArray &chunk)
             complete();
             return;
         case Event::Rejected:
-            fail(event.text, Retry::AfterRejection);
+            fail({event.failureKind, event.text}, Retry::AfterRejection);
             return;
         case Event::Failed:
-            fail(event.text, Retry::Never);
+            fail({event.failureKind, event.text}, Retry::Never);
             return;
         }
     }
 }
 
-void StreamingRefinement::fail(const QString &message, Retry retry)
+void StreamingRefinement::fail(ProviderFailure failure, Retry retry)
 {
     QPointer<QNetworkReply> reply = takeReply();
     const bool queuedAbort = m_parsing;
     if (reply && !queuedAbort) reply->abort();
-    if (retry == Retry::Never || !retryAtStandardSpeed(message, retry == Retry::AfterRejection)) {
+    if (retry == Retry::Never || !retryAtStandardSpeed(failure.message, retry == Retry::AfterRejection)) {
         m_standardFallback = nullptr;
-        emit failed(message, reply ? reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() : 0);
+        failure.httpStatus = reply ? reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() : 0;
+        emit failed(failure);
     }
     // A failure listener may drain deferred deletes or start another request.
     if (reply && queuedAbort) {

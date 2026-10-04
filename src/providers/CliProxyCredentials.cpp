@@ -2,6 +2,7 @@
 #include "core/settings/SettingsSchema.h"
 
 #include "providers/OauthTokenRequest.h"
+#include "providers/ProviderFailureClassification.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -17,6 +18,8 @@
 #include <QSaveFile>
 #include <QTimer>
 #include <QUrl>
+
+#include <optional>
 
 namespace speecher {
 namespace {
@@ -105,18 +108,18 @@ QString resolveAccountFileName(const QString &directory,
     return {};
 }
 
-bool refreshAccountFile(const QString &directory,
-                        const QString &type,
-                        const QString &fileName,
-                        const QJsonObject &account,
-                        QString *error)
+// Why the refresh failed, or nothing once the account file is current.
+std::optional<ProviderFailure> refreshAccountFile(const QString &directory,
+                                                  const QString &type,
+                                                  const QString &fileName,
+                                                  const QJsonObject &account)
 {
+    const auto unavailable = [](const QString &message) {
+        return ProviderFailure{ProviderFailureKind::Unavailable, message};
+    };
     const QString refreshToken = account.value(QStringLiteral("refresh_token")).toString().trimmed();
     if (refreshToken.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("CLI Proxy API account %1 has no refresh token; sign in again through CLI Proxy API").arg(fileName);
-        }
-        return false;
+        return unavailable(QStringLiteral("CLI Proxy API account %1 has no refresh token; sign in again through CLI Proxy API").arg(fileName));
     }
 
     const OauthRefreshResult refreshed = CliProxyCredentials::oauthRefresh(
@@ -126,10 +129,9 @@ bool refreshAccountFile(const QString &directory,
         refreshToken,
         type == QStringLiteral("codex") ? QStringLiteral("openid profile email") : QString());
     if (!refreshed.ok) {
-        if (error) {
-            *error = QStringLiteral("Could not refresh the CLI Proxy API %1 token: %2").arg(type, refreshed.error);
-        }
-        return false;
+        return ProviderFailure{refreshed.kind,
+                               QStringLiteral("Could not refresh the CLI Proxy API %1 token: %2").arg(type, refreshed.error),
+                               refreshed.httpStatus};
     }
 
     // The request above can be outstanding for seconds while CLI Proxy API —
@@ -140,17 +142,14 @@ bool refreshAccountFile(const QString &directory,
     // a replaced login. The native Claude and Codex paths follow this same
     // re-read-before-save rule.
     if (!QFileInfo::exists(QDir(directory).filePath(fileName))) {
-        if (error) {
-            *error = QStringLiteral("CLI Proxy API account %1 was removed during refresh").arg(fileName);
-        }
-        return false;
+        return unavailable(QStringLiteral("CLI Proxy API account %1 was removed during refresh").arg(fileName));
     }
     QJsonObject current = readAccountObject(directory, fileName);
     if (current.value(QStringLiteral("refresh_token")).toString().trimmed() != refreshToken) {
         // Another writer replaced the login mid-refresh. Its document wins;
         // the rotation belongs to a superseded login. Report success without
         // writing so the caller reads the current file.
-        return true;
+        return std::nullopt;
     }
     QJsonObject updated = current;
     updated.insert(QStringLiteral("access_token"), refreshed.accessToken);
@@ -165,20 +164,15 @@ bool refreshAccountFile(const QString &directory,
     updated.insert(QStringLiteral("last_refresh"), now.toString(Qt::ISODate));
 
     QSaveFile file(QDir(directory).filePath(fileName));
+    const QString writeError = QStringLiteral("Could not write refreshed CLI Proxy API account %1").arg(fileName);
     if (!file.open(QIODevice::WriteOnly)) {
-        if (error) {
-            *error = QStringLiteral("Could not write refreshed CLI Proxy API account %1").arg(fileName);
-        }
-        return false;
+        return unavailable(writeError);
     }
     file.write(QJsonDocument(updated).toJson());
     if (!file.commit()) {
-        if (error) {
-            *error = QStringLiteral("Could not write refreshed CLI Proxy API account %1").arg(fileName);
-        }
-        return false;
+        return unavailable(writeError);
     }
-    return true;
+    return std::nullopt;
 }
 
 } // namespace
@@ -227,6 +221,7 @@ OauthRefreshResult CliProxyCredentials::oauthRefresh(const QString &tokenUrl,
     reply->deleteLater();
     if (timedOut) {
         result.error = QStringLiteral("the token endpoint timed out");
+        result.kind = ProviderFailureKind::Timeout;
         return result;
     }
     const QJsonObject response = QJsonDocument::fromJson(reply->readAll()).object();
@@ -237,6 +232,13 @@ OauthRefreshResult CliProxyCredentials::oauthRefresh(const QString &tokenUrl,
             ? errorValue.toObject().value(QStringLiteral("message")).toString()
             : errorValue.toString();
         result.error = detail.isEmpty() ? QStringLiteral("the token endpoint rejected the refresh") : detail;
+        const ProviderFailure failure = replyFailure(*reply, result.error);
+        result.httpStatus = failure.httpStatus;
+        // A refresh that fails for no reason of its own still leaves no
+        // usable sign-in.
+        result.kind = errorValue.toString() == QStringLiteral("invalid_grant") ? ProviderFailureKind::Authentication
+            : failure.kind == ProviderFailureKind::Other                       ? ProviderFailureKind::Unavailable
+                                                                               : failure.kind;
         return result;
     }
     result.refreshToken = response.value(QStringLiteral("refresh_token")).toString().trimmed();
@@ -293,9 +295,8 @@ CliProxyCredentialResult CliProxyCredentials::loadWithRefresh(const QString &dir
                 account.value(QStringLiteral("account_id")).toString(),
                 {}};
     }
-    QString refreshError;
-    if (!refreshAccountFile(directory, type, resolved, account, &refreshError)) {
-        return {false, {}, {}, refreshError};
+    if (const std::optional<ProviderFailure> failure = refreshAccountFile(directory, type, resolved, account)) {
+        return {false, {}, {}, failure->message, failure->kind, failure->httpStatus};
     }
     return load(directory, type, resolved);
 }

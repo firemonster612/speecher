@@ -64,7 +64,7 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
                                         cliproxyBaseUrl,
                                         cliproxyApiKey)
                          .refreshCodexOauth();
-        return RefinementRefreshResult{refreshed->ok, refreshed->status};
+        return RefinementRefreshResult{refreshed->ok, refreshed->status, refreshed->kind, refreshed->httpStatus};
     };
     job.apply = [this, refreshed](const RefinementRefreshResult &result) {
         if (result.ok) {
@@ -94,7 +94,7 @@ RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSetting
     m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir,
                              {}, {}, settings.cliproxyBaseUrl, settings.cliproxyApiKey)
                  .resolve();
-    return {m_auth.ok, m_auth.status};
+    return {m_auth.ok, m_auth.status, m_auth.kind, m_auth.httpStatus};
 }
 
 void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
@@ -107,7 +107,7 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
     if (!m_auth.ok || settings.openAiAuthMode == QStringLiteral("cliproxy")) {
         const RefinementPrepareResult prepared = prepare(settings);
         if (!prepared.ok) {
-            emit failed(prepared.message);
+            emit failed({prepared.kind, prepared.message, prepared.httpStatus});
             return;
         }
     }

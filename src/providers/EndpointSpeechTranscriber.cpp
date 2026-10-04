@@ -4,6 +4,7 @@
 #include "core/VocabularyLimit.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/PcmWav.h"
+#include "providers/ProviderFailureClassification.h"
 #include "providers/ServerSentEvents.h"
 
 #include <QHttpMultiPart>
@@ -144,7 +145,8 @@ bool EndpointSpeechTranscriber::requiresRefresh(const SpeechSettings &) const
 SpeechPrepareResult EndpointSpeechTranscriber::prepare(const SpeechSettings &settings)
 {
     if (settings.endpoint.baseUrl.isEmpty()) {
-        return {false, QStringLiteral("Set the speech endpoint's server URL in Settings.")};
+        return {false, QStringLiteral("Set the speech endpoint's server URL in Settings."),
+                ProviderFailureKind::Unavailable};
     }
     return {true, {}};
 }
@@ -212,6 +214,9 @@ void EndpointSpeechTranscriber::readStream()
         const QString type = event.value(QStringLiteral("type")).toString(QString::fromUtf8(frame->name));
         if (type == QStringLiteral("error") || frame->name == "error") {
             m_streamError = endpointErrorMessage(frame->data, QStringLiteral("stream error"));
+            const QJsonObject error = event.value(QStringLiteral("error")).toObject();
+            m_streamErrorKind = streamedErrorKind(error.value(QStringLiteral("type")).toString(
+                error.value(QStringLiteral("code")).toVariant().toString()));
             // Avoid re-entering the reply's readyRead handler through abort().
             QMetaObject::invokeMethod(m_reply, &QNetworkReply::abort, Qt::QueuedConnection);
             return;
@@ -243,19 +248,20 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
     m_deadlineTimer.stop();
     const QByteArray body = m_streaming ? QByteArray() : reply->readAll();
     if (!m_streamError.isEmpty() || reply->error() != QNetworkReply::NoError) {
-        const QString detail = !m_streamError.isEmpty() ? m_streamError : !m_timeoutReason.isEmpty()
-            ? m_timeoutReason
-            : endpointErrorMessage(body, reply->errorString());
-        const QString message = QStringLiteral("Speech endpoint failed: %1").arg(detail);
+        const QString prefix = QStringLiteral("Speech endpoint failed: ");
+        const ProviderFailure failure = !m_streamError.isEmpty()
+            ? ProviderFailure{m_streamErrorKind, prefix + m_streamError,
+                              reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()}
+            : !m_timeoutReason.isEmpty()
+            ? ProviderFailure{ProviderFailureKind::Timeout, prefix + m_timeoutReason}
+            : replyFailure(*reply, prefix + endpointErrorMessage(body, reply->errorString()));
         // Text the stream already produced is the dictation, cut short; the
         // audio is not sent again (rule A7), so keep what arrived.
         if (m_streaming && !m_streamedText.trimmed().isEmpty()) {
-            qWarning().noquote() << message << "- keeping the text streamed so far";
+            qWarning().noquote() << failure.message << "- keeping the text streamed so far";
             emit attemptTranscript(attemptId, m_streamedText.trimmed());
-            fail(attemptId, message);
-            return;
         }
-        fail(attemptId, message);
+        fail(attemptId, failure);
         return;
     }
     const QString text = m_streaming
@@ -268,9 +274,9 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
     emit attemptCompleted(attemptId);
 }
 
-void EndpointSpeechTranscriber::fail(quint64 attemptId, const QString &message)
+void EndpointSpeechTranscriber::fail(quint64 attemptId, const ProviderFailure &failure)
 {
-    emit failed({attemptId, message, false, QStringLiteral("finalize")});
+    emit failed({attemptId, failure.message, false, QStringLiteral("finalize"), failure.kind, failure.httpStatus});
 }
 
 void EndpointSpeechTranscriber::cancelAttempt(quint64 attemptId)

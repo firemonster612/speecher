@@ -52,7 +52,7 @@ public:
 private:
     void readStream();
     void finishReply(QNetworkReply *reply, quint64 attemptId);
-    void fail(quint64 attemptId, const QString &message);
+    void fail(quint64 attemptId, const ProviderFailure &failure);
 
     int m_inactivityTimeoutMs;
     int m_deadlineMs;
@@ -60,6 +60,7 @@ private:
     QTimer m_deadlineTimer;
     QString m_timeoutReason;
     QString m_streamError;
+    ProviderFailureKind m_streamErrorKind = ProviderFailureKind::Server;
     QNetworkAccessManager m_network;
     QPointer<QNetworkReply> m_reply;
     SpeechEndpointSettings m_endpoint;

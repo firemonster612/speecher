@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/ProviderFailure.h"
+
 #include <QString>
 
 namespace speecher {
@@ -16,6 +18,10 @@ struct OpenAiAuth {
     QString endpointBase;
     QString accountId;
     bool chatgptBackend = false;
+    // Why there is no usable credential: a missing or expired sign-in unless
+    // a refresh said otherwise.
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
+    int httpStatus = 0;
 };
 
 // What the Accounts page says about the sign-in, and whether it can be used.

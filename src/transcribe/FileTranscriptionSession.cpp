@@ -463,8 +463,8 @@ void FileTranscriptionSession::refine(const QString &raw)
         completeFile(TranscriptPipeline::restoreRefinedResult(m_pipeline, text)
                          .value_or(m_pipeline.deliveryFallback));
     });
-    connect(m_refiner, &TranscriptRefiner::failed, this, [this](const QString &message) {
-        m_current.error = QStringLiteral("Refinement failed: %1").arg(message);
+    connect(m_refiner, &TranscriptRefiner::failed, this, [this](const ProviderFailure &failure) {
+        m_current.error = QStringLiteral("Refinement failed: %1").arg(failure.message);
         completeFile(m_pipeline.deliveryFallback);
     });
     emit fileRefining(m_index);

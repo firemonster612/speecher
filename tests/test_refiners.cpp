@@ -43,7 +43,7 @@ static QString liveRefine(const QString &rawTranscript,
         return {};
     }
     if (!failed.isEmpty()) {
-        *error = failed.first().first().toString();
+        *error = failed.first().first().value<ProviderFailure>().message;
         return {};
     }
     return completed.first().first().toString();
@@ -70,7 +70,7 @@ private slots:
         AnthropicApiRefiner claude(nullptr, 500, 5000);
         QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
         QSignalSpy completed(refiner, SIGNAL(completed(QString)));
-        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
         const auto waitForFailure = [&] {
             if (deltas.size() == 1) QVERIFY(failed.wait(1500));
@@ -96,7 +96,8 @@ private slots:
         QCOMPARE(completed.size(), 0);
         QCOMPARE(deltas.size(), 1);
         QCOMPARE(failed.size(), 1);
-        QVERIFY(failed.first().first().toString().contains(QStringLiteral("timed out")));
+        QVERIFY(failed.first().first().value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
+        QCOMPARE(failed.first().first().value<ProviderFailure>().kind, ProviderFailureKind::Timeout);
     }
 
     void nonTextProgressKeepsStreamAlive_data()
@@ -114,7 +115,7 @@ private slots:
         OpenAiRefiner openAi(nullptr, 500, 5000);
         AnthropicApiRefiner claude(nullptr, 500, 5000);
         QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
-        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
         const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
         if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-test", "low", false, "balanced", {});
@@ -134,7 +135,7 @@ private slots:
         QCOMPARE(deltas.size(), 0);
         activity.stop();
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1500);
-        QVERIFY(failed.first().first().toString().contains(QStringLiteral("timed out")));
+        QVERIFY(failed.first().first().value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
     }
 
     void stallFallbackDoesNotDisableFastMode_data()
@@ -153,7 +154,7 @@ private slots:
         AnthropicApiRefiner claude(nullptr, 500, 5000);
         QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
         QSignalSpy completed(refiner, SIGNAL(completed(QString)));
-        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         const auto start = [&] {
             const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
             if (anthropic) claude.refine("hello", {}, {}, "token", endpoint, "claude-opus-5", "low", true, "balanced", {});
@@ -205,7 +206,7 @@ private slots:
         AnthropicApiRefiner claude;
         QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
         QSignalSpy completed(refiner, SIGNAL(completed(QString)));
-        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         QSignalSpy deltas(refiner, SIGNAL(delta(QString)));
         const auto start = [&] {
             const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
@@ -239,18 +240,29 @@ private slots:
         cancel();
     }
 
+    // Errors streamed under HTTP 200 are classified from the event.
     void unsuccessfulTerminalEvent_data()
     {
         QTest::addColumn<bool>("anthropic");
         QTest::addColumn<QByteArray>("terminal");
         QTest::addColumn<QString>("detail");
+        QTest::addColumn<ProviderFailureKind>("kind");
         for (const QByteArray reason : {QByteArray("max_tokens"), QByteArray("refusal"), QByteArray("tool_use")}) {
             QTest::newRow(reason.constData()) << true
                 << QByteArray("event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"") + reason + "\"}}\n\nevent: message_stop\ndata: {}\n\n"
-                << QString::fromLatin1(reason);
+                << QString::fromLatin1(reason) << ProviderFailureKind::InvalidResult;
         }
-        QTest::newRow("failed") << false << QByteArray("event: response.failed\ndata: {\"response\":{\"error\":{\"code\":\"server_error\",\"message\":\"provider unavailable\"}}}\n\n") << QStringLiteral("provider unavailable");
-        QTest::newRow("incomplete") << false << QByteArray("event: response.incomplete\ndata: {\"response\":{\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n") << QStringLiteral("max_output_tokens");
+        QTest::newRow("overloaded") << true
+            << QByteArray("event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n")
+            << QStringLiteral("Overloaded") << ProviderFailureKind::Server;
+        QTest::newRow("anthropic-authentication") << true
+            << QByteArray("event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid token\"}}\n\n")
+            << QStringLiteral("invalid token") << ProviderFailureKind::Authentication;
+        QTest::newRow("failed") << false << QByteArray("event: response.failed\ndata: {\"response\":{\"error\":{\"code\":\"server_error\",\"message\":\"provider unavailable\"}}}\n\n") << QStringLiteral("provider unavailable") << ProviderFailureKind::Server;
+        QTest::newRow("incomplete") << false << QByteArray("event: response.incomplete\ndata: {\"response\":{\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n") << QStringLiteral("max_output_tokens") << ProviderFailureKind::InvalidResult;
+        QTest::newRow("rate-limited") << false
+            << QByteArray("event: error\ndata: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"slow down\"}}\n\n")
+            << QStringLiteral("slow down") << ProviderFailureKind::RateLimited;
     }
 
     void unsuccessfulTerminalEvent()
@@ -258,13 +270,14 @@ private slots:
         QFETCH(bool, anthropic);
         QFETCH(QByteArray, terminal);
         QFETCH(QString, detail);
+        QFETCH(ProviderFailureKind, kind);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         OpenAiRefiner openAi;
         AnthropicApiRefiner claude;
         QObject *refiner = anthropic ? static_cast<QObject *>(&claude) : &openAi;
         QSignalSpy completed(refiner, SIGNAL(completed(QString)));
-        QSignalSpy failed(refiner, SIGNAL(failed(QString)));
+        QSignalSpy failed(refiner, SIGNAL(failed(speecher::ProviderFailure)));
         const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
         RefinementContext context;
         context.editSelection = true;
@@ -279,8 +292,58 @@ private slots:
         socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n" + delta + terminal);
         QVERIFY(socket->waitForBytesWritten(1000));
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
-        QVERIFY(failed.first().first().toString().contains(detail));
+        const ProviderFailure failure = failed.first().first().value<ProviderFailure>();
+        QVERIFY(failure.message.contains(detail));
+        QCOMPARE(failure.kind, kind);
+        QCOMPARE(failure.httpStatus, 200);
         QCOMPARE(completed.size(), 0);
+    }
+
+    void failedRequestIsClassifiedByItsAnswer_data()
+    {
+        QTest::addColumn<QByteArray>("response");
+        QTest::addColumn<ProviderFailureKind>("kind");
+        QTest::addColumn<int>("httpStatus");
+        const auto response = [](const QByteArray &status, const QByteArray &body) {
+            return "HTTP/1.1 " + status + "\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n" + body;
+        };
+        const QByteArray error = "{\"error\":{\"message\":\"nope\"}}";
+        QTest::newRow("401") << response("401 Unauthorized", error) << ProviderFailureKind::Authentication << 401;
+        QTest::newRow("403") << response("403 Forbidden", error) << ProviderFailureKind::Authentication << 403;
+        QTest::newRow("429") << response("429 Too Many Requests", error) << ProviderFailureKind::RateLimited << 429;
+        QTest::newRow("503") << response("503 Service Unavailable", error) << ProviderFailureKind::Server << 503;
+        QTest::newRow("400") << response("400 Bad Request", error) << ProviderFailureKind::Other << 400;
+        QTest::newRow("empty-200") << response("200 OK", "event: response.completed\ndata: {}\n\n")
+                                   << ProviderFailureKind::InvalidResult << 200;
+        QTest::newRow("refused") << QByteArray() << ProviderFailureKind::Network << 0;
+    }
+
+    // An empty response means no server: the request is refused.
+    void failedRequestIsClassifiedByItsAnswer()
+    {
+        QFETCH(QByteArray, response);
+        QFETCH(ProviderFailureKind, kind);
+        QFETCH(int, httpStatus);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
+        if (response.isEmpty()) server.close();
+        connect(&server, &QTcpServer::newConnection, this, [&server, response] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            connect(socket, &QTcpSocket::readyRead, socket, [socket, response] {
+                if (!hasWholeRequest(socket)) return;
+                socket->readAll();
+                socket->write(response);
+                socket->disconnectFromHost();
+            });
+        });
+        OpenAiRefiner refiner;
+        QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
+        refiner.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        const ProviderFailure failure = failed.first().first().value<ProviderFailure>();
+        QCOMPARE(failure.kind, kind);
+        QCOMPARE(failure.httpStatus, httpStatus);
     }
 
     void refinementInstructionsCompose()
@@ -766,7 +829,7 @@ private slots:
         keepalive.start(10);
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
-        QVERIFY(failed.at(0).at(0).toString().contains(QStringLiteral("timed out")));
+        QVERIFY(failed.at(0).at(0).value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
         QCOMPARE(completed.size(), 0);
     }
 
@@ -924,7 +987,7 @@ private slots:
         keepalive.start(10);
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1000);
-        QVERIFY(failed.at(0).at(0).toString().contains(QStringLiteral("timed out")));
+        QVERIFY(failed.at(0).at(0).value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
         QCOMPARE(completed.size(), 0);
     }
 
@@ -1497,7 +1560,7 @@ private slots:
         anthropic.refine(QStringLiteral("hello world this is a test"), {}, context, settings);
         QTRY_VERIFY_WITH_TIMEOUT(!anthropicCompleted.isEmpty() || !anthropicFailed.isEmpty(), 60000);
         QVERIFY2(anthropicFailed.isEmpty(),
-                 qPrintable(anthropicFailed.isEmpty() ? QString() : anthropicFailed.first().first().toString()));
+                 qPrintable(anthropicFailed.isEmpty() ? QString() : anthropicFailed.first().first().value<ProviderFailure>().message));
         QVERIFY(!anthropicCompleted.first().first().toString().trimmed().isEmpty());
 
         settings.openAiAuthMode = QStringLiteral("cliproxy");
@@ -1509,7 +1572,7 @@ private slots:
         openAi.refine(QStringLiteral("hello world this is a test"), {}, context, settings);
         QTRY_VERIFY_WITH_TIMEOUT(!openAiCompleted.isEmpty() || !openAiFailed.isEmpty(), 60000);
         QVERIFY2(openAiFailed.isEmpty(),
-                 qPrintable(openAiFailed.isEmpty() ? QString() : openAiFailed.first().first().toString()));
+                 qPrintable(openAiFailed.isEmpty() ? QString() : openAiFailed.first().first().value<ProviderFailure>().message));
         QVERIFY(!openAiCompleted.first().first().toString().trimmed().isEmpty());
     }
 
@@ -1766,7 +1829,7 @@ private slots:
         QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
         refiner.refine(QStringLiteral("hello"), {}, context, settings);
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
-        QVERIFY(failed.first().first().toString().contains(QStringLiteral("cliproxy/apiKey")));
+        QVERIFY(failed.first().first().value<ProviderFailure>().message.contains(QStringLiteral("cliproxy/apiKey")));
     }
 
     void anthropicRefinerReloadsCliproxyTokenPerRequest()

@@ -236,7 +236,8 @@ RefinementPrepareResult LocalRunnerRefiner::prepare(const RefinementSettings &se
 {
     // llama-server answers with whichever model it loaded.
     if (settings.localRunner.model.isEmpty() && settings.localRunner.runner != QStringLiteral("llama-server")) {
-        return {false, QStringLiteral("Choose a cleanup model for %1.").arg(runnerName(settings.localRunner.runner))};
+        return {false, QStringLiteral("Choose a cleanup model for %1.").arg(runnerName(settings.localRunner.runner)),
+                ProviderFailureKind::Unavailable};
     }
     return {true, {}};
 }
@@ -248,7 +249,7 @@ void LocalRunnerRefiner::refine(const QString &rawTranscript,
 {
     const RefinementPrepareResult prepared = prepare(settings);
     if (!prepared.ok) {
-        emit failed(prepared.message);
+        emit failed({prepared.kind, prepared.message});
         return;
     }
     const LocalRunnerSettings &runner = settings.localRunner;

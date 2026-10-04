@@ -281,15 +281,34 @@ private slots:
         }
     }
 
-    void codexDictationClientClassifiesAuthenticationRefusal()
+    void codexDictationClientClassifiesARefusedConnection_data()
     {
+        QTest::addColumn<QByteArray>("statusLine");
+        QTest::addColumn<QString>("phase");
+        QTest::addColumn<ProviderFailureKind>("kind");
+        QTest::newRow("403") << QByteArray("403 Forbidden") << QStringLiteral("authentication")
+                             << ProviderFailureKind::Authentication;
+        QTest::newRow("429") << QByteArray("429 Too Many Requests") << QStringLiteral("connect")
+                             << ProviderFailureKind::RateLimited;
+        QTest::newRow("503") << QByteArray("503 Service Unavailable") << QStringLiteral("connect")
+                             << ProviderFailureKind::Server;
+        QTest::newRow("no server") << QByteArray() << QStringLiteral("connect") << ProviderFailureKind::Network;
+    }
+
+    // The upgrade is refused with statusLine, or nothing listens without one.
+    void codexDictationClientClassifiesARefusedConnection()
+    {
+        QFETCH(QByteArray, statusLine);
+        QFETCH(QString, phase);
+        QFETCH(ProviderFailureKind, kind);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
-        connect(&server, &QTcpServer::newConnection, this, [&server] {
+        if (statusLine.isEmpty()) server.close();
+        connect(&server, &QTcpServer::newConnection, this, [&server, statusLine] {
             QTcpSocket *socket = server.nextPendingConnection();
-            connect(socket, &QTcpSocket::readyRead, socket, [socket] {
+            connect(socket, &QTcpSocket::readyRead, socket, [socket, statusLine] {
                 socket->readAll();
-                socket->write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
+                socket->write("HTTP/1.1 " + statusLine + "\r\nContent-Length: 0\r\n\r\n");
             });
         });
 
@@ -302,8 +321,9 @@ private slots:
                      QStringLiteral("auto"));
 
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
-        QCOMPARE(failed.first().at(1).toBool(), false);
-        QCOMPARE(failed.first().at(2).toString(), QStringLiteral("authentication"));
+        QCOMPARE(failed.first().at(1).toBool(), kind != ProviderFailureKind::Authentication);
+        QCOMPARE(failed.first().at(2).toString(), phase);
+        QCOMPARE(failed.first().at(3).value<ProviderFailureKind>(), kind);
     }
 
     void codexSessionEndedByTheServiceRollsOverWithoutLosingDictation_data()

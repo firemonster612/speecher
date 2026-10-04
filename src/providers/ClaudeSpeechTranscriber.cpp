@@ -18,7 +18,7 @@ SpeechPrepareResult loadClaudeAccessToken(const SpeechSettings &settings, QStrin
         if (accessToken) {
             *accessToken = credentials.ok ? credentials.accessToken : QString();
         }
-        return {credentials.ok, credentials.error};
+        return {credentials.ok, credentials.error, credentials.kind, credentials.httpStatus};
     }
     const ClaudeCredentialResult credentials = ClaudeCredentials::load(settings.claudeCredentialsPath, true);
     ClaudeCredentials::installedVersion();
@@ -26,7 +26,7 @@ SpeechPrepareResult loadClaudeAccessToken(const SpeechSettings &settings, QStrin
         if (accessToken) {
             accessToken->clear();
         }
-        return {false, credentials.error};
+        return {false, credentials.error, credentials.kind, credentials.httpStatus};
     }
     if (accessToken) {
         *accessToken = credentials.accessToken;
@@ -113,9 +113,11 @@ void ClaudeSpeechTranscriber::createClient(quint64 attemptId,
             emit attemptCompleted(attemptId);
         }
     });
-    connect(client, &ClaudeVoiceClient::failed, this, [this, client, attemptId](const QString &message, bool retryable, const QString &phase) {
+    connect(client, &ClaudeVoiceClient::failed, this,
+            [this, client, attemptId](const QString &message, bool retryable, const QString &phase,
+                                      ProviderFailureKind kind) {
         if (m_client == client && m_attemptId == attemptId) {
-            emit failed({attemptId, message, retryable, phase});
+            emit failed({attemptId, message, retryable, phase, kind});
         }
     });
     m_client->start(voiceUrl(settings), m_accessToken, settings.vocabulary, settings.language);

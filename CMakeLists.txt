@@ -320,6 +320,7 @@ set(SPEECHER_WORKFLOW_HEADERS
 
 set(SPEECHER_PROVIDER_SOURCES
   src/providers/StreamingRefinement.cpp
+  src/providers/ProviderFailureClassification.cpp
   src/providers/ChatCompletionsRefiner.cpp
   src/providers/CustomEndpoints.cpp
   src/providers/EndpointSpeechTranscriber.cpp
@@ -351,6 +352,7 @@ endif()
 
 set(SPEECHER_PROVIDER_HEADERS
   src/providers/StreamingRefinement.h
+  src/providers/ProviderFailureClassification.h
   src/providers/BlockingHttp.h
   src/providers/ChatCompletionsRefiner.h
   src/providers/CustomEndpoints.h

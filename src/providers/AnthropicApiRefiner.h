@@ -43,7 +43,7 @@ public:
 signals:
     void delta(const QString &text);
     void completed(const QString &text);
-    void failed(const QString &message);
+    void failed(const speecher::ProviderFailure &failure);
 
 private:
     StreamingRefinement m_stream;
