@@ -13,6 +13,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QEvent>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -748,6 +749,23 @@ void SchemaSettingsPage::revealRow(const QString &rowId, bool focusControl)
     }
 }
 
+// A negative description holds a copy of the scheme's colour, which a light
+// or dark switch would leave behind. Its foreground role says which tone it
+// is in.
+void SchemaSettingsPage::changeEvent(QEvent *event)
+{
+    QScrollArea::changeEvent(event);
+    if (event->type() != QEvent::PaletteChange) {
+        return;
+    }
+    for (const Row &row : std::as_const(m_rows)) {
+        if (row.description && row.descriptor.helpTone) {
+            settings::setDescriptionTone(row.description, row.description->foregroundRole() == QPalette::WindowText,
+                                         palette());
+        }
+    }
+}
+
 // Everything a row can derive from the rest of the page: whether it is worth
 // showing, whether it is usable, and what an Info row currently reads.
 void SchemaSettingsPage::refreshRows()
@@ -792,12 +810,18 @@ void SchemaSettingsPage::refreshRows()
             : row.descriptor.disabledHelpValue ? row.descriptor.disabledHelpValue(draft, m_capabilities)
                                                : row.descriptor.disabledHelp;
         if (row.description && (row.descriptor.helpValue || row.explainsGate)) {
-            const QString description = !live && row.explainsGate ? reason
-                : row.descriptor.helpValue                       ? row.descriptor.helpValue(draft)
-                                                                 : row.descriptor.help;
+            const bool showsReason = !live && row.explainsGate;
+            const QString description = showsReason ? reason
+                : row.descriptor.helpValue           ? row.descriptor.helpValue(draft)
+                                                     : row.descriptor.help;
             row.description->setText(description);
             row.description->setVisible(!description.isEmpty());
             row.control->setAccessibleDescription(description);
+            if (row.descriptor.helpTone) {
+                settings::setDescriptionTone(
+                    row.description, !showsReason && row.descriptor.helpTone(draft) == StatusTone::Negative,
+                    palette());
+            }
         }
         if (row.descriptor.enabled) {
             // The description stays enabled, so its grey is not dimmed twice.

@@ -1230,6 +1230,39 @@ private slots:
         QCOMPARE(added.first().first().toString(), QStringLiteral("anthropic"));
     }
 
+    // A primary or a fallback that can't work right now says so in the
+    // negative tone, which follows a switch of colour scheme.
+    void providerProblemsReadInTheNegativeTone()
+    {
+        ApplicationController controller(true);
+        SettingsStore *settings = controller.settings();
+        settings->setRefinementProvider(QStringLiteral("local"));
+        settings->setSpeechFallbackProviders({QStringLiteral("local")});
+        LocalSetupTestAccess::setRunners(*controller.localSetup(), {});
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.loadBeforeShow();
+        const auto description = [](QWidget *control) {
+            return control->parentWidget()->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        };
+        SchemaSettingsPage *refinement = pages.page(QStringLiteral("refinement"));
+        QLabel *primary = description(refinement->findChild<QComboBox *>(QStringLiteral("refinementProvider")));
+        QCOMPARE(primary->foregroundRole(), QPalette::WindowText);
+        QLabel *fallbacks = refinement->findChild<QPushButton *>(QStringLiteral("refinementFallbacks"))
+                                ->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QCOMPARE(fallbacks->foregroundRole(), QPalette::PlaceholderText);
+
+        SchemaSettingsPage *dictation = pages.page(QStringLiteral("dictation"));
+        QLabel *speechFallbacks = dictation->findChild<QPushButton *>(QStringLiteral("speechFallbacks"))
+                                      ->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QCOMPARE(speechFallbacks->foregroundRole(), QPalette::WindowText);
+        QPalette switched = dictation->palette();
+        switched.setColor(QPalette::WindowText, Qt::magenta);
+        dictation->setPalette(switched);
+        QCOMPARE(speechFallbacks->palette().color(QPalette::WindowText),
+                 speecher::settings::negativeTextColor(switched));
+    }
+
     // The setup steps' fallback section is optional: editing it never holds
     // Next, and Skip cleanup hides it.
     void setupFallbackSectionIsOptional()
