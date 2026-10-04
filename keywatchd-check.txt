@@ -1,0 +1,8 @@
+v2 watch ShiftLeft: reply v2, accepted
+v2 watch F13: reply v2, accepted
+v2 watch AltLeft: reply v2, accepted
+v2 watch F14: reply v2, at the watch limit
+v1 watch F13: reply v1, accepted
+v3 watch F14: reply v2, bad version
+version 1 helper answers a version 2 ping with: reply v1, refusal 1 (1 = bad version)
+version 1 helper answers a version 1 watch of F13 with: reply v1, refusal 0 (0 = accepted)

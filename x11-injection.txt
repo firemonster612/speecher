@@ -1,0 +1,4 @@
+X11 key grab: a held C acted once while armed, the focused window got C only while disarmed
+X11 key grab: disarming mid-hold hands the keyboard back, and Cancel acts while Pause is held
+XInput2 backend: activated() then deactivated() fired on injected right Alt
+exit 0

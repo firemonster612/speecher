@@ -1,0 +1,7 @@
+C presses acting as Cancel: disarmed 0, armed 1, disarmed again 0
+setArmed(true) took 0 ms, setArmed(false) took 0 ms
+C presses reaching the focused app: disarmed 1, armed 0, disarmed again 1 (window active: 1)
+EXIT=0
+armed C, now dying with SIGKILL
+after a crash while armed, C reaches the focused app: before startup cleanup 0, after bind() 1
+EXIT=0
