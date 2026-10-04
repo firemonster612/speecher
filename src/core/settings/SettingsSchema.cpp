@@ -408,6 +408,12 @@ SettingsRow textRow(QString id, QString label, QString help, Getter get, Setter 
     return row;
 }
 
+bool offersProvider(const QList<RowOption> &providers, const QString &id)
+{
+    return std::any_of(providers.cbegin(), providers.cend(),
+                       [&id](const RowOption &provider) { return provider.id == id; });
+}
+
 LiveFacts liveFacts(const SchemaContext &context)
 {
     return context.liveFacts ? context.liveFacts() : LiveFacts{};
@@ -442,16 +448,18 @@ const QString kDictationFallbacks = QStringLiteral("dictation:fallbacks");
 const QString kRefinementFallbacks = QStringLiteral("refinement:fallbacks");
 
 // The button row under a role's picker that opens its Fallbacks subpage, saying
-// what the fallbacks are.
-SettingsRow fallbacksRow(ProviderRole role, QList<RowOption> providers)
+// what the fallbacks are and, in the negative tone, why one can't stand in.
+SettingsRow fallbacksRow(ProviderRole role, QList<RowOption> providers, std::function<LiveFacts()> facts)
 {
     const bool speech = role == ProviderRole::Speech;
     SettingsRow row = actionRow(speech ? QStringLiteral("speechFallbacks") : QStringLiteral("refinementFallbacks"),
                                 QStringLiteral("Fallbacks"), QString(), QStringLiteral("Choose fallbacks"));
     row.targetPage = speech ? kDictationFallbacks : kRefinementFallbacks;
-    row.helpValue = [role, providers = std::move(providers)](const AppSettings &settings) {
-        return fallbackSummary(role, settings, providers);
+    const auto summary = [role, providers = std::move(providers), facts = std::move(facts)](const AppSettings &settings) {
+        return fallbackSummary(role, settings, facts(), providers);
     };
+    row.helpValue = [summary](const AppSettings &settings) { return summary(settings).text; };
+    row.helpTone = [summary](const AppSettings &settings) { return summary(settings).tone; };
     return row;
 }
 
@@ -482,8 +490,11 @@ SettingsRow fallbackListRow(ProviderRole role)
     const bool speech = role == ProviderRole::Speech;
     SettingsRow row = customRow(speech ? QStringLiteral("speechFallbackList") : QStringLiteral("refinementFallbackList"),
                                 QStringLiteral("Fallbacks"), QString());
-    row.value = [speech](const AppSettings &settings) {
-        return QVariant(speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds);
+    row.value = [role, speech](const AppSettings &settings) {
+        return QVariant(speech ? normalizedFallbackProviders(role, settings.speech.providerId,
+                                                             settings.speech.fallbackProviderIds)
+                               : normalizedFallbackProviders(role, settings.refinement.providerId,
+                                                             settings.refinement.fallbackProviderIds));
     };
     row.apply = [role, speech](AppSettings &settings, const QVariant &value) {
         const QString &primary = speech ? settings.speech.providerId : settings.refinement.providerId;
@@ -583,7 +594,7 @@ QList<SettingsRow> speechEndpointRows(const std::function<LiveFacts(const AppSet
 // setting "Use this model" writes, so the two always agree. With nothing
 // downloaded there is nothing to choose, and the row sends people to the page
 // that downloads.
-QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts)
+QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts, bool offered)
 {
     SettingsRow model = choiceRow(
         QStringLiteral("speechLocalModel"),
@@ -621,7 +632,12 @@ QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts)
                                                     "dictate on this computer."),
                                      QStringLiteral("Open %1").arg(paneTitle(QStringLiteral("localModels"))));
 
-    const auto whileLocal = whileInSpeechChain(QStringLiteral("local"));
+    // A build without local speech may still hold a Local Model fallback; it
+    // has no Local models page to send anyone to.
+    const auto inChain = whileInSpeechChain(QStringLiteral("local"));
+    const Gate whileLocal = [inChain, offered](const AppSettings &settings, const Capabilities &capabilities) {
+        return offered && inChain(settings, capabilities);
+    };
     model.visible = [whileLocal, facts](const AppSettings &settings, const Capabilities &capabilities) {
         return whileLocal(settings, capabilities) && !facts().downloadedModels.isEmpty();
     };
@@ -1219,7 +1235,8 @@ SettingsPage audioPage(const SchemaContext &context)
         }
         return QStringLiteral("Service used to turn speech into a raw transcript.");
     };
-    showPrimaryStatus(speechProvider, ProviderRole::Speech, speechChoices, [context] { return liveFacts(context); });
+    const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
+    showPrimaryStatus(speechProvider, ProviderRole::Speech, speechChoices, facts);
 
     // Only what the chosen service or Local Model listens for, so a choice
     // here always works; a saved language it lacks stays, disabled, beside a
@@ -1356,11 +1373,13 @@ SettingsPage audioPage(const SchemaContext &context)
         {
             {QStringLiteral("Transcription"),
              QString(),
-             {std::move(speechProvider), fallbacksRow(ProviderRole::Speech, speechChoices), std::move(spokenLanguage),
-              std::move(spokenLanguageCaution), std::move(finalRetranscribe)}},
+             {std::move(speechProvider), fallbacksRow(ProviderRole::Speech, speechChoices, facts),
+              std::move(spokenLanguage), std::move(spokenLanguageCaution), std::move(finalRetranscribe)}},
             // On the Fallbacks subpage rather than a pane.
             {QStringLiteral("Fallbacks"), QString(), {fallbackListRow(ProviderRole::Speech)}},
-            {QStringLiteral("Local Model"), QString(), speechLocalModelRows([context] { return liveFacts(context); })},
+            {QStringLiteral("Local Model"),
+             QString(),
+             speechLocalModelRows(facts, offersProvider(context.speechProviders, QStringLiteral("local")))},
             {QStringLiteral("Custom Endpoint"),
              QString(),
              speechEndpointRows([context](const AppSettings &draft) {
@@ -1655,10 +1674,9 @@ SettingsPage refinementPage(const SchemaContext &context)
         return screenshotHelp + QStringLiteral(" Only %1 can read it; the others clean up without it.").arg(readers);
     };
 
-    SettingsRow fallbacks = fallbacksRow(ProviderRole::Refinement, refinementChoices);
-    fallbacks.visible = refinementOn;
-
     const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
+    SettingsRow fallbacks = fallbacksRow(ProviderRole::Refinement, refinementChoices, facts);
+    fallbacks.visible = refinementOn;
     SettingsRow refinementProvider = choiceRow(QStringLiteral("refinementProvider"),
                                                QStringLiteral("Provider"),
                                                QStringLiteral("The service that cleans up your text."),
@@ -1828,7 +1846,7 @@ SettingsPage localModelsPage(const SchemaContext &context)
         }
         settings.speech.local.modelId = modelId;
         settings.speech.local.modelChosen = true;
-        settings.speech.providerId = QStringLiteral("local");
+        setPrimaryProvider(settings, ProviderRole::Speech, QStringLiteral("local"));
     };
 
     SettingsRow idleUnload = choiceRow(
@@ -3565,9 +3583,7 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
     // Local models exists where this build runs speech models, which is when
     // the registry offers the local speech provider.
     const QString localModels = QStringLiteral("localModels");
-    const bool localSpeech =
-        std::any_of(context.speechProviders.cbegin(), context.speechProviders.cend(),
-                    [](const RowOption &provider) { return provider.id == QStringLiteral("local"); });
+    const bool localSpeech = offersProvider(context.speechProviders, QStringLiteral("local"));
     if (localSpeech) {
         pages.insert(4, localModelsPage(context));
     } else {

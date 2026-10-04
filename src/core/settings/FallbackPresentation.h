@@ -93,8 +93,15 @@ FallbackListPresentation fallbackListPresentation(ProviderRole role, const AppSe
                                                   FallbackSurface surface);
 
 // What the Fallbacks button row says: the fallbacks in order, "Custom
-// Endpoint, then Local Model", or what happens without any.
-QString fallbackSummary(ProviderRole role, const AppSettings &settings, const QList<RowOption> &providers);
+// Endpoint, then Local Model", or what happens without any. When one can't
+// stand in right now, the first such one's reason follows in the negative
+// tone: "Local Model. No model downloaded, so it can't stand in yet."
+struct FallbackSummary {
+    QString text;
+    StatusTone tone = StatusTone::Normal;
+};
+FallbackSummary fallbackSummary(ProviderRole role, const AppSettings &settings, const LiveFacts &facts,
+                                const QList<RowOption> &providers);
 
 // The role's fallbacks after one edit, normalized: ready to apply to the
 // list row or to save. A front end edits through these so the ordering rules

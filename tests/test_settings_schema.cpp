@@ -1813,7 +1813,9 @@ private slots:
         QCOMPARE(refinement->helpValue(settings),
                  QStringLiteral("None. Your words are pasted as spoken if OpenAI is unavailable."));
         settings.speech.fallbackProviderIds = {QStringLiteral("endpoint"), QStringLiteral("local")};
-        QCOMPARE(speech->helpValue(settings), QStringLiteral("Custom Endpoint, then Local Model"));
+        settings.speech.endpoint.baseUrl = QStringLiteral("http://localhost:8080");
+        QCOMPARE(speech->helpValue(settings),
+                 QStringLiteral("Custom Endpoint, then Local Model. No model downloaded, so it can't stand in yet."));
         QVERIFY(refinement->visible(settings, Capabilities{}));
         settings.refinement.providerId = QStringLiteral("none");
         QVERIFY(!refinement->visible(settings, Capabilities{}));
@@ -1995,6 +1997,90 @@ private slots:
         QCOMPARE(speech->helpTone(settings), StatusTone::Normal);
         QVERIFY(!speech->helpValue(settings).contains(QStringLiteral("Can't reach")));
         QCOMPARE(refinement->helpValue(settings), QStringLiteral("The service that cleans up your text."));
+    }
+
+    // The Fallbacks row adds the first fallback's reason it can't stand in,
+    // in the negative tone, as the mockup's "Model not downloaded" shows.
+    void theFallbacksRowSaysWhyAFallbackCantStandIn()
+    {
+        LiveFacts facts;
+        SchemaContext context = chainContext();
+        context.liveFacts = [&facts] { return facts; };
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const SettingsRow *speech = schema.row(QStringLiteral("speechFallbacks"));
+        const SettingsRow *refinement = schema.row(QStringLiteral("refinementFallbacks"));
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.fallbackProviderIds = {QStringLiteral("local")};
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        settings.speech.language = QStringLiteral("en");
+        QCOMPARE(speech->helpValue(settings), QStringLiteral("Local Model. No model downloaded, so it can't stand in yet."));
+        QCOMPARE(speech->helpTone(settings), StatusTone::Negative);
+
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        QCOMPARE(speech->helpValue(settings), QStringLiteral("Local Model"));
+        QCOMPARE(speech->helpTone(settings), StatusTone::Normal);
+
+        settings.refinement.fallbackProviderIds = {QStringLiteral("anthropic"), QStringLiteral("local")};
+        settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        facts.runnersChecked = true;
+        QCOMPARE(refinement->helpValue(settings),
+                 QStringLiteral("Anthropic, then Local Runner. Ollama isn't running, so it can't stand in right now."));
+        QCOMPARE(refinement->helpTone(settings), StatusTone::Negative);
+    }
+
+    // "Use this model" makes Local Model the primary the way the Service row
+    // does, and the list row reads the fallbacks as they will be saved.
+    void useThisModelLeavesTheFallbacks()
+    {
+        const SettingsSchema schema = buildSettingsSchema(chainContext());
+        const SettingsRow &browser =
+            rowById(schema.page(QStringLiteral("localModels")), QStringLiteral("localModelBrowser"));
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.fallbackProviderIds = {QStringLiteral("local"), QStringLiteral("endpoint")};
+        browser.apply(settings, QStringLiteral("parakeet"));
+        QCOMPARE(settings.speech.providerId, QStringLiteral("local"));
+        QCOMPARE(settings.speech.fallbackProviderIds, QStringList{QStringLiteral("endpoint")});
+
+        settings.speech.fallbackProviderIds = {QStringLiteral("local"), QStringLiteral("endpoint")};
+        QCOMPARE(schema.row(QStringLiteral("speechFallbackList"))->value(settings).toStringList(),
+                 QStringList{QStringLiteral("endpoint")});
+    }
+
+    // A build without local speech keeps a saved Local Model fallback, says
+    // it can't run it so it can be removed, never offers it, and has no
+    // Local Model card pointing at a page it lacks.
+    void aFallbackThisBuildCantRunCanOnlyBeRemoved()
+    {
+        SchemaContext context = chainContext();
+        context.speechProviders.removeIf([](const RowOption &provider) { return provider.id == QStringLiteral("local"); });
+        LiveFacts facts;
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        context.liveFacts = [&facts] { return facts; };
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.fallbackProviderIds = {QStringLiteral("local")};
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        settings.speech.language = QStringLiteral("en");
+
+        const FallbackListPresentation list = fallbackListPresentation(
+            ProviderRole::Speech, settings, facts, context.speechProviders, FallbackSurface::Settings);
+        QCOMPARE(list.items.size(), 1);
+        QCOMPARE(list.items.first().label, QStringLiteral("Provider not in this build"));
+        QCOMPARE(list.items.first().status, QStringLiteral("This build of Speecher can't run it, so it can't stand in."));
+        QCOMPARE(list.items.first().tone, StatusTone::Negative);
+        QVERIFY(!ids(list.addChoices).contains(QStringLiteral("local")));
+
+        const SettingsSchema schema = buildSettingsSchema(context);
+        QCOMPARE(schema.row(QStringLiteral("speechFallbacks"))->helpValue(settings),
+                 QStringLiteral("Provider not in this build. This build of Speecher can't run it, so it can't stand in."));
+        // It never takes over from the primary either.
+        facts.reachability = Reachability::Offline;
+        QCOMPARE(schema.row(QStringLiteral("speechProvider"))->helpValue(settings),
+                 QStringLiteral("Can't reach ChatGPT right now."));
+        QVERIFY(!schema.row(QStringLiteral("speechLocalModel"))->visible(settings, Capabilities{}));
+        QVERIFY(!schema.row(QStringLiteral("speechLocalModelDownload"))->visible(settings, Capabilities{}));
     }
 
     void aMixedChainSaysWhichProvidersReadTheScreenshot()

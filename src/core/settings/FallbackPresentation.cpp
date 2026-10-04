@@ -26,6 +26,14 @@ QStringList fallbacksOf(const AppSettings &settings, ProviderRole role)
                                                                     : settings.refinement.fallbackProviderIds);
 }
 
+bool offers(const QList<RowOption> &providers, const QString &id)
+{
+    return std::any_of(providers.cbegin(), providers.cend(),
+                       [&id](const RowOption &provider) { return provider.id == id; });
+}
+
+// A saved fallback this build doesn't offer, such as a Local Model in a build
+// without local speech, stays in the chain until removed and reads as this.
 QString labelOf(const QList<RowOption> &providers, const QString &id)
 {
     for (const RowOption &provider : providers) {
@@ -33,7 +41,7 @@ QString labelOf(const QList<RowOption> &providers, const QString &id)
             return provider.label;
         }
     }
-    return id;
+    return QStringLiteral("Provider not in this build");
 }
 
 // A server on this computer or its network, which keeps answering without
@@ -101,6 +109,16 @@ QString problemText(FallbackProblem problem, const AppSettings &settings)
     }
     }
     return {};
+}
+
+// Why a fallback can't stand in right now, or empty while it can.
+QString unusableReason(ProviderRole role, const QString &id, const AppSettings &settings, const LiveFacts &facts,
+                       const QList<RowOption> &providers)
+{
+    if (!offers(providers, id)) {
+        return QStringLiteral("This build of Speecher can't run it, so it can't stand in.");
+    }
+    return problemText(fallbackProblem(role, id, settings, facts), settings);
 }
 
 } // namespace
@@ -175,7 +193,7 @@ QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, co
     }
     const QStringList fallbacks = fallbacksOf(settings, role);
     const auto usable = std::find_if(fallbacks.cbegin(), fallbacks.cend(), [&](const QString &id) {
-        return fallbackProblem(role, id, settings, facts) == FallbackProblem::None;
+        return unusableReason(role, id, settings, facts, providers).isEmpty();
     });
     if (usable != fallbacks.cend()) {
         const QString name = labelOf(providers, *usable);
@@ -222,9 +240,8 @@ FallbackListPresentation fallbackListPresentation(ProviderRole role, const AppSe
     for (qsizetype index = 0; index < fallbacks.size(); ++index) {
         const QString &id = fallbacks[index];
         FallbackItem item{id, labelOf(providers, id)};
-        const FallbackProblem problem = fallbackProblem(role, id, settings, facts);
-        if (problem != FallbackProblem::None) {
-            item.status = problemText(problem, settings);
+        item.status = unusableReason(role, id, settings, facts, providers);
+        if (!item.status.isEmpty()) {
             item.tone = StatusTone::Negative;
         } else {
             item.status = index == 0
@@ -253,7 +270,8 @@ FallbackListPresentation fallbackListPresentation(ProviderRole role, const AppSe
     return list;
 }
 
-QString fallbackSummary(ProviderRole role, const AppSettings &settings, const QList<RowOption> &providers)
+FallbackSummary fallbackSummary(ProviderRole role, const AppSettings &settings, const LiveFacts &facts,
+                                const QList<RowOption> &providers)
 {
     const QString primary = primaryOf(settings, role);
     if (role == ProviderRole::Refinement && primary == kNone) {
@@ -261,16 +279,24 @@ QString fallbackSummary(ProviderRole role, const AppSettings &settings, const QL
     }
     const QStringList fallbacks = fallbacksOf(settings, role);
     if (fallbacks.isEmpty()) {
-        return role == ProviderRole::Speech
-            ? QStringLiteral("None. Dictation stops if %1 is unavailable.").arg(labelOf(providers, primary))
-            : QStringLiteral("None. Your words are pasted as spoken if %1 is unavailable.")
-                  .arg(labelOf(providers, primary));
+        return {role == ProviderRole::Speech
+                    ? QStringLiteral("None. Dictation stops if %1 is unavailable.").arg(labelOf(providers, primary))
+                    : QStringLiteral("None. Your words are pasted as spoken if %1 is unavailable.")
+                          .arg(labelOf(providers, primary))};
     }
     QStringList labels;
+    QString problem;
     for (const QString &id : fallbacks) {
         labels.append(labelOf(providers, id));
+        if (problem.isEmpty()) {
+            problem = unusableReason(role, id, settings, facts, providers);
+        }
     }
-    return labels.join(QStringLiteral(", then "));
+    const QString summary = labels.join(QStringLiteral(", then "));
+    if (problem.isEmpty()) {
+        return {summary};
+    }
+    return {summary + QStringLiteral(". ") + problem, StatusTone::Negative};
 }
 
 QStringList withFallbackMoved(const AppSettings &settings, ProviderRole role, int index, int offset)
