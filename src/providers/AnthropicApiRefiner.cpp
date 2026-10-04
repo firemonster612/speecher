@@ -155,7 +155,7 @@ StreamingRefinement::Event anthropicEvent(const QString &label, const QByteArray
     }
     if (name == "error" || object.value(QStringLiteral("type")).toString() == QStringLiteral("error")) {
         return {Event::Rejected, anthropicErrorMessage(data, QStringLiteral("%1 refinement error").arg(label)),
-                streamedErrorKind(object.value(QStringLiteral("error")).toObject().value(QStringLiteral("type")).toString())};
+                streamedErrorKind(object.value(QStringLiteral("error")).toObject())};
     }
     if (name == "content_block_delta" && delta.value(QStringLiteral("type")).toString() == QStringLiteral("text_delta")) {
         return {Event::Delta, delta.value(QStringLiteral("text")).toString()};

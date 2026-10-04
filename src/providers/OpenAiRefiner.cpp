@@ -40,10 +40,10 @@ StreamingRefinement::Event openAiEvent(const QByteArray &name, const QByteArray 
             ? QStringLiteral("OpenAI refinement error: %1").arg(QString::fromLatin1(name)) : reason;
         const QJsonObject source = terminalFailure ? response : object;
         const QJsonValue error = source.value(QStringLiteral("error"));
-        const QString code = (error.isObject() ? error.toObject() : source).value(QStringLiteral("code")).toString();
         // An incomplete response hit a token limit or a filter: the text is cut short.
-        const ProviderFailureKind kind = name == "response.incomplete" ? ProviderFailureKind::InvalidResult
-                                                                         : streamedErrorKind(code);
+        const ProviderFailureKind kind = name == "response.incomplete"
+            ? ProviderFailureKind::InvalidResult
+            : streamedErrorKind(error.isObject() ? error.toObject() : source);
         return {terminalFailure ? Event::Failed : Event::Rejected,
                 openAiErrorMessage(terminalFailure ? QJsonDocument(response).toJson() : data, fallback), kind};
     }

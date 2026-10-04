@@ -27,15 +27,9 @@ QString errorMessage(const QJsonObject &event)
         .toString();
 }
 
-QString errorCode(const QJsonObject &event)
+bool isAuthenticationError(const QString &message, const QJsonObject &error = {})
 {
-    return event.value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toVariant().toString();
-}
-
-bool isAuthenticationError(const QString &message, const QJsonObject &event = {})
-{
-    const QString codeText = errorCode(event);
-    return codeText == QStringLiteral("401") || codeText == QStringLiteral("403")
+    return streamedErrorKind(error) == ProviderFailureKind::Authentication
         || message.contains(QStringLiteral("401"))
         || message.contains(QStringLiteral("403"))
         || message.contains(QStringLiteral("unauthorized"), Qt::CaseInsensitive)
@@ -369,13 +363,13 @@ void CodexDictationClient::handleTextMessage(const QString &message)
         const QJsonObject error = event.value(QStringLiteral("error")).toObject();
         const QString message = error.value(QStringLiteral("message")).toString(
             QStringLiteral("Codex dictation failed to transcribe an utterance"));
-        const bool authentication = isAuthenticationError(message, event);
+        const bool authentication = isAuthenticationError(message, error);
         fail(message,
              !authentication && error.value(QStringLiteral("retryable")).toBool(true),
              authentication ? QStringLiteral("authentication")
                             : (m_finalizing ? QStringLiteral("finalize")
                                             : QStringLiteral("streaming")),
-             authentication ? ProviderFailureKind::Authentication : streamedErrorKind(errorCode(event)));
+             authentication ? ProviderFailureKind::Authentication : streamedErrorKind(error));
         m_socket.close();
         return;
     }
@@ -384,15 +378,14 @@ void CodexDictationClient::handleTextMessage(const QString &message)
         const QString message = errorMessage(event).isEmpty()
             ? QStringLiteral("Codex dictation session failed")
             : errorMessage(event);
-        const bool authentication = isAuthenticationError(message, event);
+        const QJsonObject error = event.value(QStringLiteral("error")).toObject();
+        const bool authentication = isAuthenticationError(message, error);
         fail(message,
-             !authentication
-                 && event.value(QStringLiteral("error")).toObject()
-                        .value(QStringLiteral("retryable")).toBool(true),
+             !authentication && error.value(QStringLiteral("retryable")).toBool(true),
              authentication ? QStringLiteral("authentication")
                             : (m_finalizing ? QStringLiteral("finalize")
                                             : QStringLiteral("streaming")),
-             authentication ? ProviderFailureKind::Authentication : streamedErrorKind(errorCode(event)));
+             authentication ? ProviderFailureKind::Authentication : streamedErrorKind(error));
         m_socket.close();
     }
 #else

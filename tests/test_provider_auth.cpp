@@ -1039,6 +1039,10 @@ private slots:
         const OpenAiAuth auth = provider.resolve();
         QVERIFY(!auth.ok);
         QCOMPARE(refreshRequests, 1);
+        // With no other credential, the rejected refresh is the answer.
+        QCOMPARE(auth.kind, ProviderFailureKind::Authentication);
+        QCOMPARE(auth.httpStatus, 400);
+        QVERIFY2(auth.status.contains(QStringLiteral("invalid_grant")), qPrintable(auth.status));
     }
 
     void refreshFailureSaysWhy_data()

@@ -1,7 +1,10 @@
 #include "providers/ProviderFailureClassification.h"
 
+#include <QJsonObject>
 #include <QNetworkReply>
 #include <QRegularExpression>
+
+#include <optional>
 
 namespace speecher {
 
@@ -26,7 +29,10 @@ ProviderFailure replyFailure(const QNetworkReply &reply, const QString &message)
     return {connectionFailed ? ProviderFailureKind::Network : ProviderFailureKind::Other, message, httpStatus};
 }
 
-ProviderFailureKind streamedErrorKind(const QString &code)
+namespace {
+
+// The kind an error code or type names, if it names one.
+std::optional<ProviderFailureKind> knownStreamedErrorKind(const QString &code)
 {
     static const QStringList authentication{
         QStringLiteral("authentication_error"), QStringLiteral("permission_error"),
@@ -39,7 +45,23 @@ ProviderFailureKind streamedErrorKind(const QString &code)
     if (code.contains(QStringLiteral("invalid")) || code.contains(QStringLiteral("not_found"))) {
         return ProviderFailureKind::Other;
     }
-    return ProviderFailureKind::Server;
+    return std::nullopt;
+}
+
+} // namespace
+
+ProviderFailureKind streamedErrorKind(const QJsonObject &error)
+{
+    const QString code = error.value(QStringLiteral("code")).toVariant().toString();
+    const QString type = error.value(QStringLiteral("type")).toString();
+    return knownStreamedErrorKind(code)
+        .value_or(knownStreamedErrorKind(type).value_or(ProviderFailureKind::Server));
+}
+
+ProviderFailure selfHostedFailure(ProviderFailure failure)
+{
+    if (failure.httpStatus == 404) failure.kind = ProviderFailureKind::Unavailable;
+    return failure;
 }
 
 ProviderFailureKind webSocketFailureKind(QAbstractSocket::SocketError error, const QString &errorString)

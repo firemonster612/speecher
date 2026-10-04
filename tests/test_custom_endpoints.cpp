@@ -332,6 +332,17 @@ private slots:
         QTest::newRow("sse-error-after-output")
             << httpResponse("200 OK", "text/event-stream", keepThis + sseError) << "model failed" << "Keep this"
             << ProviderFailureKind::Server;
+        // The specific code outranks the generic type.
+        QTest::newRow("sse-code-names-the-key")
+            << httpResponse("200 OK", "text/event-stream",
+                            "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\","
+                            "\"code\":\"invalid_api_key\",\"message\":\"bad key\"}}\n\n")
+            << "bad key" << QString() << ProviderFailureKind::Authentication;
+        QTest::newRow("sse-code-names-the-rate-limit")
+            << httpResponse("200 OK", "text/event-stream",
+                            "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\","
+                            "\"code\":\"rate_limit_exceeded\",\"message\":\"slow down\"}}\n\n")
+            << "slow down" << QString() << ProviderFailureKind::RateLimited;
         QTest::newRow("dropped-stream") << "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
                                            "Content-Length: 10000\r\nConnection: close\r\n\r\n" + keepThis
                                         << QString() << "Keep this" << ProviderFailureKind::Network;
@@ -539,6 +550,13 @@ private slots:
             << ProviderFailureKind::Server;
         QTest::newRow("sse-200") << sse({"{\"error\":{\"message\":\"reasoning_effort crashed\"}}"})
                                  << "reasoning_effort crashed" << ProviderFailureKind::Server;
+        // The specific code outranks the generic type.
+        QTest::newRow("sse-code-names-the-key") << sse({"{\"error\":{\"type\":\"invalid_request_error\","
+                                                        "\"code\":\"invalid_api_key\",\"message\":\"bad key\"}}"})
+                                                << "bad key" << ProviderFailureKind::Authentication;
+        QTest::newRow("sse-numeric-code-429") << sse({"{\"error\":{\"type\":\"invalid_request_error\","
+                                                      "\"code\":429,\"message\":\"slow down\"}}"})
+                                              << "slow down" << ProviderFailureKind::RateLimited;
         QTest::newRow("after-streamed-output")
             << sse({chatChunk(QStringLiteral("Half")),
                     json({{QStringLiteral("error"), QJsonObject{{QStringLiteral("message"),
@@ -546,7 +564,7 @@ private slots:
             << "chat_template_kwargs is not supported" << ProviderFailureKind::Server;
         QTest::newRow("http-404") << httpResponse("404 Not Found", "application/json",
             "{\"error\":\"model \\\"m\\\" not found, try pulling it first\"}") << "try pulling it first"
-            << ProviderFailureKind::Other;
+            << ProviderFailureKind::Unavailable;
         QTest::newRow("token-limit") << sse({chatChunk(QStringLiteral("Half"), QStringLiteral("length"))})
                                      << "stopped early" << ProviderFailureKind::InvalidResult;
     }
@@ -625,6 +643,25 @@ private slots:
         const QString message = failed.first().first().value<ProviderFailure>().message;
         QVERIFY2(message.startsWith(QStringLiteral("Custom Endpoint refinement")), qPrintable(message));
         QVERIFY(!message.contains(QStringLiteral("Anthropic")));
+    }
+
+    // A 404 means the endpoint no longer has the model or the path.
+    void anthropicFormatEndpointWithoutTheModelIsUnavailable()
+    {
+        FakeServer server;
+        server.route("POST /v1/messages", httpResponse("404 Not Found", "application/json",
+            "{\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model: m\"}}"));
+        RefinementSettings settings;
+        settings.endpoint.format = QStringLiteral("anthropic");
+        settings.endpoint.baseUrl = server.origin() + QStringLiteral("/v1");
+        settings.endpoint.model = QStringLiteral("m");
+        EndpointTranscriptRefiner refiner;
+        QSignalSpy failed(&refiner, &TranscriptRefiner::failed);
+        refiner.refine(QStringLiteral("x"), {}, {}, settings);
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        const ProviderFailure failure = failed.first().first().value<ProviderFailure>();
+        QCOMPARE(failure.kind, ProviderFailureKind::Unavailable);
+        QCOMPARE(failure.httpStatus, 404);
     }
 
     void connectionTestListsTheServersModels()
