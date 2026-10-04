@@ -253,6 +253,8 @@ void CodexSpeechTranscriber::cancelAttempt(quint64 attemptId)
     if (attemptId != m_attemptId) {
         return;
     }
+    // Retired audio must not wait in memory for the next attempt.
+    m_bufferedPcm.clear();
     if (m_client) {
         m_client->cancel();
     }
