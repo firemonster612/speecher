@@ -86,48 +86,90 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "configure failed" }
           cmake --build build --target speecher speecher_tests --parallel 4
           if ($LASTEXITCODE -ne 0) { throw "build failed" }
-      - name: Confirm snapshot duplication and Qt multipliers
+      - name: Isolate core and setup patches
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           New-Item -ItemType Directory evidence -Force | Out-Null
           Copy-Item build/CMakeCache.txt evidence/CMakeCache.txt
-          $focused = @("sidebarListsTheSchemaPanesInTheirGroups", "saveReportsFailedValidator", "controllerKeepsTheRecordOfTheLastTranscript")
-          foreach ($case in @("baseline", "reuse-primary", "no-subpages", "no-live-reload", "baseline-restored")) {
-            Remove-Item Env:DEBUG_REUSE_PRIMARY, Env:DEBUG_SKIP_SUBPAGES, Env:DEBUG_SKIP_LIVE_RELOAD -ErrorAction SilentlyContinue
-            if ($case -eq "reuse-primary") { $env:DEBUG_REUSE_PRIMARY="1" }
-            if ($case -eq "no-subpages") { $env:DEBUG_SKIP_SUBPAGES="1" }
-            if ($case -eq "no-live-reload") { $env:DEBUG_SKIP_LIVE_RELOAD="1" }
+          $focused = @("sidebarListsTheSchemaPanesInTheirGroups", "filesHeldThroughSetupGetTheCompactWindowAlone")
+          foreach ($case in @("baseline", "core-only", "qt-only", "both", "baseline-restored")) {
+            Remove-Item Env:DEBUG_REUSE_PRIMARY, Env:DEBUG_SETUP_DRAFT -ErrorAction SilentlyContinue
+            if ($case -in @("core-only", "both")) { $env:DEBUG_REUSE_PRIMARY="1" }
+            if ($case -in @("qt-only", "both")) { $env:DEBUG_SETUP_DRAFT="1" }
             & ./build/speecher_tests.exe --suite app_window @focused -maxwarnings 1000000 -o "evidence/$case.xml,xml" -o "evidence/$case.txt,txt"
             if ($LASTEXITCODE -ne 0) { throw "$case failed" }
           }
-          $env:DEBUG_REUSE_PRIMARY="1"
-          & ./build/speecher_tests.exe --suite app_window -maxwarnings 1000000 -o evidence/reuse-primary-full.xml,xml -o evidence/reuse-primary-full.txt,txt
-          if ($LASTEXITCODE -ne 0) { throw "patched full suite failed" }
-          Remove-Item Env:DEBUG_REUSE_PRIMARY
-      - name: Verify the clean proposed core patch
+      - name: Isolate subpage construction and extra reloads
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          DEBUG_REUSE_PRIMARY: "1"
+        run: |
+          foreach ($case in @("pages-baseline", "no-subpages", "pages-baseline-restored")) {
+            Remove-Item Env:DEBUG_SKIP_SUBPAGES -ErrorAction SilentlyContinue
+            if ($case -eq "no-subpages") { $env:DEBUG_SKIP_SUBPAGES="1" }
+            & ./build/speecher_tests.exe --suite app_window sidebarListsTheSchemaPanesInTheirGroups saveReportsFailedValidator -maxwarnings 1000000 -o "evidence/$case.xml,xml" -o "evidence/$case.txt,txt"
+            if ($LASTEXITCODE -ne 0) { throw "$case failed" }
+          }
+          foreach ($case in @("reload-baseline", "no-extra-subpage-reload", "reload-baseline-restored")) {
+            Remove-Item Env:DEBUG_SKIP_EXTRA_SUBPAGE_RELOAD -ErrorAction SilentlyContinue
+            if ($case -eq "no-extra-subpage-reload") { $env:DEBUG_SKIP_EXTRA_SUBPAGE_RELOAD="1" }
+            & ./build/speecher_tests.exe --suite app_window localRefreshPreservesPendingSettingsEdits -maxwarnings 1000000 -o "evidence/$case.xml,xml" -o "evidence/$case.txt,txt"
+            if ($LASTEXITCODE -ne 0) { throw "$case failed" }
+          }
+      - name: Measure native Windows settings
+        shell: pwsh
+        env:
+          QT_FORCE_STDERR_LOGGING: "1"
+        run: |
+          $key = "HKCU:\Software\io.github.firemonster612\speecher\app"
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name setupCompleted -Value "true" -PropertyType String -Force | Out-Null
+          Remove-ItemProperty -Path "HKCU:\Software\io.github.firemonster612\speecher\refinement" -Name provider -ErrorAction SilentlyContinue
+          $exe = (Resolve-Path build/speecher.exe).Path
+          foreach ($case in @("cold", "native-baseline", "native-core", "native-baseline-restored")) {
+            Remove-Item Env:DEBUG_REUSE_PRIMARY -ErrorAction SilentlyContinue
+            if ($case -eq "native-core") { $env:DEBUG_REUSE_PRIMARY="1" }
+            foreach ($page in @("general", "dictation")) {
+              $env:SPEECHER_GRAB_PAGE = $page
+              $out = Join-Path (Resolve-Path evidence).Path "$case-$page.png"
+              $timer = [Diagnostics.Stopwatch]::StartNew()
+              $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -RedirectStandardError "evidence/$case-$page.log" -Wait -PassThru
+              "$case-$page exit=$($process.ExitCode) wall_ms=$($timer.ElapsedMilliseconds)" | Add-Content evidence/native-summary.txt
+              if ($process.ExitCode -ne 0 -or -not (Test-Path $out)) { throw "native $case/$page failed" }
+            }
+          }
+      - name: Profile both patches over the full suite
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          DEBUG_REUSE_PRIMARY: "1"
+          DEBUG_SETUP_DRAFT: "1"
+        run: |
+          & ./build/speecher_tests.exe --suite app_window -maxwarnings 1000000 -o evidence/both-full.xml,xml -o evidence/both-full.txt,txt
+          if ($LASTEXITCODE -ne 0) { throw "instrumented full suite failed" }
+      - name: Verify only the clean proposed patches
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           git restore --source=ec8a48dc -- src tests
-          git apply diagnostics/core.patch
-          if ($LASTEXITCODE -ne 0) { throw "patch failed" }
+          git apply diagnostics/core.patch diagnostics/qt.patch
+          if ($LASTEXITCODE -ne 0) { throw "patches failed" }
           git diff -- src tests > evidence/clean-production.patch
-          if (Select-String -Path src/core/settings/SettingsCodecs.cpp, src/app/LocalSetup.cpp, src/core/SettingsStore.cpp, src/core/CliToolDiscovery.cpp, src/ui/settings/SettingsPageSet.cpp -Pattern "DEBUG-win-slow-2|DEBUG_REUSE_PRIMARY|DEBUG_SKIP_SUBPAGES|DEBUG_SKIP_LIVE_RELOAD|DEBUG_SKIP_MODEL_SCAN|DEBUG_SKIP_HARDWARE") { throw "instrumentation survived" }
+          if (Select-String -Path src/core/settings/SettingsCodecs.cpp, src/app/LocalSetup.cpp, src/core/SettingsStore.cpp, src/core/CliToolDiscovery.cpp, src/ui/settings/SettingsPageSet.cpp, src/ui/setup/SetupPages.cpp -Pattern "DEBUG-win-slow-2|DEBUG_REUSE_PRIMARY|DEBUG_SETUP_DRAFT|DEBUG_SKIP") { throw "instrumentation survived" }
           cmake --build build --target speecher speecher_tests --parallel 4
           if ($LASTEXITCODE -ne 0) { throw "clean build failed" }
           & ./build/speecher_tests.exe --suite app_window -o evidence/clean-patch.xml,xml -o evidence/clean-patch.txt,txt
           if ($LASTEXITCODE -ne 0) { throw "clean suite failed" }
-          & ./build/speecher_tests.exe --suite settings -o evidence/settings.txt,txt
-          if ($LASTEXITCODE -ne 0) { throw "settings failed" }
-          & ./build/speecher_tests.exe --suite settings_schema -o evidence/settings-schema.txt,txt
-          if ($LASTEXITCODE -ne 0) { throw "settings schema failed" }
-          ctest --test-dir build -R "^speecher_app_window$" --output-on-failure *> evidence/ctest.txt
-          if ($LASTEXITCODE -ne 0) { throw "ctest failed" }
+          ctest --test-dir build -R "^speecher_(app_window|ui|settings|settings_schema)$" --output-on-failure *> evidence/ctest.txt
+          $testCode = $LASTEXITCODE
+          Copy-Item build/Testing/Temporary/LastTest.log evidence/LastTest.log
+          if ($testCode -ne 0) { throw "ctest failed" }
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: windows-local-speech-patch-verification
+          name: windows-local-speech-final-verification
           path: evidence/

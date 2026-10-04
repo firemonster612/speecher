@@ -1,0 +1,15 @@
+diff --git a/src/ui/setup/SetupPages.cpp b/src/ui/setup/SetupPages.cpp
+index 10712192..4164d8f9 100644
+--- a/src/ui/setup/SetupPages.cpp
++++ b/src/ui/setup/SetupPages.cpp
+@@ -426,8 +426,9 @@ public:
+     {
+         const std::optional<SetupFallbackOffer> offer =
+             m_local ? m_local->setupFallbackOffer(m_role) : std::nullopt;
++        const AppSettings draft = m_settings.snapshot();
+         const SetupFallbackPresentation section = setupFallbackPresentation(
+-            m_role, m_settings.snapshot(), m_local ? m_local->liveFacts() : LiveFacts{}, m_providers, offer);
++            m_role, draft, m_local ? m_local->liveFacts(draft) : LiveFacts{}, m_providers, offer);
+         setVisible(section.visible);
+         m_heading->setText(section.list.heading);
+         m_hint->setText(section.hint);
