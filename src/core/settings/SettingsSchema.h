@@ -640,6 +640,8 @@ QString globalShortcutBindFailedText();
 
 // What settings search shows when nothing matches the query.
 QString noSettingsMatchText();
+// The caption of the settings window's Back, from What's New or a subpage.
+QString settingsBackCaption();
 
 // The microphone choice as it is offered: a system-default entry ahead of the
 // devices that exist, and a disabled placeholder standing in for a saved device

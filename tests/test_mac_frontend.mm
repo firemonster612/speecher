@@ -14,6 +14,7 @@
 #include "ui/TranscriberPopup.h"
 
 #import <AppKit/AppKit.h>
+#import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
 
 // The Swift class's Objective-C runtime name is mangled, so a hand-written
@@ -27,6 +28,8 @@
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+
+#include <optional>
 
 using namespace speecher;
 
@@ -104,6 +107,139 @@ QString accessibilityTree(id element, int depth = 0)
     return tree;
 }
 
+// An attribute as an accessibility client such as VoiceOver reads it.
+id axAttribute(id element, CFStringRef attribute)
+{
+    CFTypeRef value = nullptr;
+    AXUIElementCopyAttributeValue((__bridge AXUIElementRef)element, attribute, &value);
+    return CFBridgingRelease(value);
+}
+
+// The first button under element, depth first, whose name as VoiceOver reads
+// it starts with caption: a row button's name runs on into its description.
+id axButton(id element, NSString *caption)
+{
+    NSString *description = axAttribute(element, kAXDescriptionAttribute);
+    NSString *name = description.length > 0 ? description : axAttribute(element, kAXTitleAttribute);
+    if ([axAttribute(element, kAXRoleAttribute) isEqual:(__bridge NSString *)kAXButtonRole]
+        && [name hasPrefix:caption]) {
+        return element;
+    }
+    for (id child in axAttribute(element, kAXChildrenAttribute)) {
+        if (id found = axButton(child, caption)) {
+            return found;
+        }
+    }
+    return nil;
+}
+
+// The same, in this process's windows. SwiftUI builds its elements only for
+// an accessibility client, so a test reaches its controls as one, which
+// needs the Accessibility grant; the views' own NSAccessibility tree stays
+// empty until a client has asked.
+id axButtonOnScreen(NSString *caption)
+{
+    // A client lists no windows until the app has finished launching, which
+    // the offscreen platform the suites run on, unlike Cocoa's, never does.
+    static const bool launched = [] {
+        if (QGuiApplication::platformName() == QLatin1String("offscreen")) {
+            [NSApp finishLaunching];
+        }
+        return true;
+    }();
+    Q_UNUSED(launched);
+    id application = CFBridgingRelease(AXUIElementCreateApplication(getpid()));
+    for (id window in axAttribute(application, kAXWindowsAttribute)) {
+        if (id found = axButton(window, caption)) {
+            return found;
+        }
+    }
+    return nil;
+}
+
+bool axPress(id button)
+{
+    return AXUIElementPerformAction((__bridge AXUIElementRef)button, kAXPressAction) == kAXErrorSuccess;
+}
+
+// An autorelease pool for a scope that is not a block, through the runtime
+// calls @autoreleasepool compiles to (clang's ARC specification).
+extern "C" void *objc_autoreleasePoolPush(void);
+extern "C" void objc_autoreleasePoolPop(void *pool);
+
+struct AutoreleasePool {
+    AutoreleasePool() : token(objc_autoreleasePoolPush()) {}
+    ~AutoreleasePool() { objc_autoreleasePoolPop(token); }
+    AutoreleasePool(const AutoreleasePool &) = delete;
+    AutoreleasePool &operator=(const AutoreleasePool &) = delete;
+    void *token;
+};
+
+// Lets SwiftUI lay out and AppKit draw what the last call changed.
+void settle()
+{
+    const QDeadlineTimer deadline(300);
+    while (!deadline.hasExpired()) {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.02, true);
+        QCoreApplication::processEvents();
+    }
+}
+
+// Runs the event loop until object is released, as a closed window and the
+// view it held are some turns after it closes, once accessibility, which a
+// test may have woken, drops what it cached. False if it outlives that.
+bool settleUntilReleased(__weak id &object)
+{
+    const QDeadlineTimer deadline(5000);
+    while (object && !deadline.hasExpired()) {
+        settle();
+    }
+    return !object;
+}
+
+// The visible dictation panel, which floats at the status bar's level.
+NSWindow *dictationPanel()
+{
+    for (NSWindow *window in NSApp.windows) {
+        if ([window isKindOfClass:[NSPanel class]] && window.visible && window.level == NSStatusWindowLevel) {
+            return window;
+        }
+    }
+    return nil;
+}
+
+// A test's mac UI over a bridge to its controller. Declared after the
+// controller, it goes first, as the app's front end does: its windows close,
+// the work they deferred runs while the controller can still answer it, and
+// the UI and the bridge go, with every connection the bridge made.
+struct NativeUi {
+    explicit NativeUi(ApplicationController &controller)
+        : bridge([[SpeecherBridge alloc] initWithController:&controller])
+        , ui([[SpeecherMacUI alloc] initWithBridge:bridge])
+    {
+    }
+    ~NativeUi()
+    {
+        [ui dismissDictationPanel];
+        [ui hideSettings];
+        [ui dismissSetupAssistant];
+        __weak id released = bridge;
+        ui = nil;
+        bridge = nil;
+        pool.reset();
+        if (!settleUntilReleased(released)) {
+            QTest::qFail("The mac UI outlived its test", __FILE__, __LINE__);
+        }
+    }
+    // First, so it holds what making the UI autoreleases. A test runs under
+    // the outermost pool, which never drains, and whatever AppKit and Swift
+    // autorelease while the UI is up, the windows that hold it among them,
+    // would otherwise keep it past the test.
+    std::optional<AutoreleasePool> pool{std::in_place};
+    SpeecherBridge *bridge;
+    SpeecherMacUI *ui;
+};
+
 } // namespace
 
 class MacFrontEndTests : public QObject {
@@ -162,6 +298,9 @@ private slots:
     {
         const int existingPopups = widgetCount<TranscriberPopup>();
         ApplicationController controller(false);
+        // The front end's UI goes with the controller, not with the outermost
+        // pool, which never drains (NativeUi).
+        const AutoreleasePool pool;
         MacFrontEnd frontEnd(&controller);
 
         QCOMPARE(widgetCount<TranscriberPopup>(), existingPopups);
@@ -170,8 +309,8 @@ private slots:
     void nativeDictationProblemCanBeDismissed()
     {
         ApplicationController controller(false);
-        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
-        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+        NativeUi native(controller);
+        SpeecherMacUI *ui = native.ui;
 
         [ui showDictationProblem:@"The microphone stopped" fix:nil];
         QVERIFY(ui.dictationPanelVisible);
@@ -183,8 +322,8 @@ private slots:
     void nativeDictationPanelUsesStatusWindowLevel()
     {
         ApplicationController controller(false);
-        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
-        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+        NativeUi native(controller);
+        SpeecherMacUI *ui = native.ui;
 
         QCOMPARE(ui.dictationPanelLevel, NSInteger(NSStatusWindowLevel));
     }
@@ -192,8 +331,9 @@ private slots:
     void popupPresentationAcknowledgesRequestedGeneration()
     {
         ApplicationController controller(false);
-        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
-        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+        NativeUi native(controller);
+        SpeecherBridge *bridge = native.bridge;
+        SpeecherMacUI *ui = native.ui;
         constexpr uint64_t generation = 73;
 
         QVERIFY(bridge.popupShowRequested);
@@ -213,8 +353,9 @@ private slots:
     void dictationPreviewGrowsUpwardAndRenewalUsesStandalonePill()
     {
         ApplicationController controller(false);
-        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
-        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+        NativeUi native(controller);
+        SpeecherBridge *bridge = native.bridge;
+        SpeecherMacUI *ui = native.ui;
         bridge.popupStatusChanged(@"Listening", SpeecherDictationStateListening);
         bridge.popupShowRequested(74);
         const auto settle = [] {
@@ -234,7 +375,6 @@ private slots:
             }
         }
         QVERIFY(panel);
-        const auto cleanup = qScopeGuard([&] { [ui dismissDictationPanel]; });
         // Each state is captured before its layout is checked, so a failing
         // check still leaves the pictures of it and every state before it.
         const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
@@ -346,12 +486,12 @@ private slots:
         // width and grows taller, with its countdown beneath.
         SpeecherErrorAction *noFix = [[SpeecherErrorAction alloc] initWithFix:SpeecherErrorFixNone pageId:@""];
         QVERIFY(bridge.popupMessageRequested);
-        bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted);
+        bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted, noFix);
         settle();
         QVERIFY(capture("receipt-inserted"));
         // A receipt shares the waveform's pill.
         QCOMPARE(panel.frame.size.height, SpeecherPopupGeometry.pillHeight);
-        bridge.popupMessageRequested(@"Copied", SpeecherPopupOutcomeCopied);
+        bridge.popupMessageRequested(@"Copied", SpeecherPopupOutcomeCopied, noFix);
         settle();
         QVERIFY(capture("receipt-copied"));
         bridge.popupErrorRequested(@"Microphone unavailable", noFix);
@@ -374,6 +514,173 @@ private slots:
         QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
     }
 
+    // A fixable outcome carries its fix as a button, which opens the page the
+    // error path would; an outcome with none looks as it always has.
+    void outcomeOffersItsFixOnlyWithOne()
+    {
+        ApplicationController controller(false);
+        NativeUi native(controller);
+        SpeecherBridge *bridge = native.bridge;
+        SpeecherMacUI *ui = native.ui;
+        bridge.popupStatusChanged(@"Listening", SpeecherDictationStateListening);
+        bridge.popupShowRequested(75);
+        settle();
+        NSWindow *panel = dictationPanel();
+        QVERIFY(panel);
+        const auto capture = [&](const QString &name) {
+            const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
+            if (directory.isEmpty()) return;
+            QDir().mkpath(directory);
+            NSView *view = panel.contentView;
+            NSBitmapImageRep *bitmap = [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+            [view cacheDisplayInRect:view.bounds toBitmapImageRep:bitmap];
+            [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+                writeToFile:(directory + "/mac-" + name + ".png").toNSString() atomically:YES];
+        };
+
+        SpeecherErrorAction *accounts = [[SpeecherErrorAction alloc] initWithFix:SpeecherErrorFixSettingsPage
+                                                                          pageId:@"accounts"];
+        QVERIFY(accounts.label.length > 0);
+        const auto showFixable = [&] {
+            bridge.popupMessageRequested(@"Input sent • Used Local Model. Your ChatGPT sign-in has expired.",
+                                         SpeecherPopupOutcomeFallback, accounts);
+            settle();
+        };
+        showFixable();
+        capture("outcome-fix");
+        const NSRect fix = ui.dictationOutcomeFixFrame;
+        QVERIFY2(!NSIsEmptyRect(fix), qPrintable(QString::fromNSString(NSStringFromRect(fix))));
+        QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 300);
+
+        SpeecherErrorAction *noFix = [[SpeecherErrorAction alloc] initWithFix:SpeecherErrorFixNone pageId:@""];
+        bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted, noFix);
+        settle();
+        capture("outcome-no-fix");
+        QVERIFY(NSIsEmptyRect(ui.dictationOutcomeFixFrame));
+        QCOMPARE(panel.frame.size.height, SpeecherPopupGeometry.pillHeight);
+
+        showFixable();
+        QVERIFY2(AXIsProcessTrusted(), "pressing the fix as VoiceOver does needs the Accessibility grant");
+        id button = axButtonOnScreen(accounts.label);
+        QVERIFY(button);
+        QVERIFY(axPress(button));
+        settle();
+        QVERIFY(!ui.dictationPanelVisible);
+        QVERIFY(ui.settingsWindowVisible);
+        QCOMPARE(QString::fromNSString(ui.settingsPane), QStringLiteral("accounts"));
+    }
+
+    // The Fallbacks row opens its subpage with the parent still selected, its
+    // buttons edit the list, and Back returns to the parent. A page id reaches
+    // the subpage directly.
+    void fallbacksSubpageWorksThroughItsControls()
+    {
+        ApplicationController controller(false);
+        NativeUi native(controller);
+        SpeecherMacUI *ui = native.ui;
+        SettingsSchemaModel *schema = native.bridge.settingsSchema;
+        [schema addFallback:SpeecherProviderRoleSpeech provider:@"endpoint"];
+        [schema addFallback:SpeecherProviderRoleSpeech provider:@"codex"];
+        [schema commit];
+
+        SettingsRowModel *row = settingsRow(schema, @"speechFallbacks");
+        QVERIFY(row);
+        [ui openSettingsPage:@"dictation"];
+        settle();
+        QVERIFY2(AXIsProcessTrusted(), "pressing the controls as VoiceOver does needs the Accessibility grant");
+        id opener = axButtonOnScreen(row.label);
+        QVERIFY(opener);
+        QVERIFY(axPress(opener));
+        settle();
+        QCOMPARE(QString::fromNSString(ui.settingsPane), QStringLiteral("dictation"));
+        QCOMPARE(QString::fromNSString(ui.settingsSubpage), QStringLiteral("dictation:fallbacks"));
+
+        // The first fallback's Move down; the second's is disabled.
+        SpeecherFallbackList *list = settingsRow(schema, @"speechFallbackList").fallbackList;
+        id moveDown = axButtonOnScreen(list.moveDownCaption);
+        QVERIFY(moveDown);
+        QVERIFY(axPress(moveDown));
+        settle();
+        QCOMPARE(controller.settings()->snapshot().speech.fallbackProviderIds,
+                 (QStringList{QStringLiteral("codex"), QStringLiteral("endpoint")}));
+
+        id back = axButtonOnScreen(SpeecherBridge.settingsBackCaption);
+        QVERIFY(back);
+        QVERIFY(axPress(back));
+        settle();
+        QCOMPARE(QString::fromNSString(ui.settingsPane), QStringLiteral("dictation"));
+        QCOMPARE(QString::fromNSString(ui.settingsSubpage), QString());
+
+        [ui openSettingsPage:@"refinement:fallbacks"];
+        QCOMPARE(QString::fromNSString(ui.settingsPane), QStringLiteral("refinement"));
+        QCOMPARE(QString::fromNSString(ui.settingsSubpage), QStringLiteral("refinement:fallbacks"));
+        // Choosing another pane leaves the subpage.
+        [ui openSettingsPage:@"general"];
+        QCOMPARE(QString::fromNSString(ui.settingsSubpage), QString());
+    }
+
+    // The list's buttons edit through core's rules and save like any row, and
+    // the list re-renders from what was saved.
+    void fallbackListEditsPersist()
+    {
+        ApplicationController controller(false);
+        SettingsStore *store = controller.settings();
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsSchemaModel *schema = bridge.settingsSchema;
+        const auto saved = [&] { return store->snapshot().speech.fallbackProviderIds; };
+
+        SpeecherFallbackList *list = settingsRow(schema, @"speechFallbackList").fallbackList;
+        QVERIFY(list);
+        QVERIFY(list.role == SpeecherProviderRoleSpeech);
+        QVERIFY(list.heading.length > 0);
+        QCOMPARE(list.items.count, NSUInteger(0));
+        QVERIFY(list.canAdd);
+
+        [schema addFallback:SpeecherProviderRoleSpeech provider:@"endpoint"];
+        [schema addFallback:SpeecherProviderRoleSpeech provider:@"codex"];
+        [schema commit];
+        QCOMPARE(saved(), (QStringList{QStringLiteral("endpoint"), QStringLiteral("codex")}));
+        list = settingsRow(schema, @"speechFallbackList").fallbackList;
+        QCOMPARE(list.items.count, NSUInteger(2));
+        QVERIFY(!list.items[0].canMoveUp && list.items[0].canMoveDown);
+        QVERIFY(list.items[1].canMoveUp && !list.items[1].canMoveDown);
+        // Two fallbacks fill the chain.
+        QVERIFY(!list.canAdd);
+
+        [schema moveFallback:SpeecherProviderRoleSpeech at:0 by:1];
+        [schema commit];
+        QCOMPARE(saved(), (QStringList{QStringLiteral("codex"), QStringLiteral("endpoint")}));
+        [schema removeFallback:SpeecherProviderRoleSpeech at:0];
+        [schema commit];
+        QCOMPARE(saved(), QStringList{QStringLiteral("endpoint")});
+        QCOMPARE(QString::fromNSString(settingsRow(schema, @"speechFallbackList").fallbackList.items[0].providerId),
+                 QStringLiteral("endpoint"));
+
+        // A primary that is already a fallback leaves the list.
+        [schema setValue:@"endpoint" forRowId:@"speechProvider"];
+        [schema commit];
+        QVERIFY(saved().isEmpty());
+    }
+
+    // The setup steps' section is optional: it shows with nothing in it, and
+    // Skip cleanup hides it.
+    void setupFallbackSectionIsOptional()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+
+        SpeecherSetupFallbackSection *speech = [bridge setupFallbackSection:SpeecherProviderRoleSpeech];
+        QVERIFY(speech.visible);
+        QVERIFY(speech.hint.length > 0);
+        QCOMPARE(speech.list.items.count, NSUInteger(0));
+        QVERIFY(speech.list.canAdd);
+        QVERIFY([bridge setupFallbackSection:SpeecherProviderRoleRefinement].visible);
+
+        [bridge.settingsSchema setValue:@"none" forRowId:@"refinementProvider"];
+        [bridge.settingsSchema commit];
+        QVERIFY(![bridge setupFallbackSection:SpeecherProviderRoleRefinement].visible);
+    }
+
     // Skip, all nine pages, and Finish are driven through the native AX tree
     // in macOS setup assistant E2E. This catches a Qt wizard returning here.
     void setupUsesANativeWindow()
@@ -381,8 +688,16 @@ private slots:
         const int existingQtAssistants = widgetCount<SetupAssistant>();
         const int existingQtWindows = widgetCount<AppWindow>();
         ApplicationController controller(false);
+        // The front end's UI goes with the controller, not with the outermost
+        // pool, which never drains (NativeUi).
+        const AutoreleasePool pool;
         MacFrontEnd frontEnd(&controller);
         controller.setFrontEnd(&frontEnd);
+        // Closing the assistant brings up the settings window.
+        const auto teardown = qScopeGuard([&] {
+            frontEnd.hideMainWindow();
+            settle();
+        });
 
         controller.showSetupAssistant();
         NSWindow *assistant = nil;
@@ -398,6 +713,9 @@ private slots:
         QVERIFY(!controller.settings()->setupCompleted());
         [assistant close];
         QVERIFY(!controller.settings()->setupCompleted());
+        // AppKit lets the closed window go in its own time, and SwiftUI may
+        // still draw its view then, after the controller the view reads.
+        assistant.contentViewController = nil;
     }
 
     // The assistant renders what the bridge's ProviderSignIn seams decide, so
@@ -949,12 +1267,19 @@ private slots:
     void installAndRestartWritesTheRestoreState()
     {
         ApplicationController controller(false);
+        // The front end's UI goes with the controller, not with the outermost
+        // pool, which never drains (NativeUi).
+        const AutoreleasePool pool;
         MacFrontEnd frontEnd(&controller);
         controller.setFrontEnd(&frontEnd);
         auto *updates = qobject_cast<MacSparkleUpdater *>(controller.updates());
         QVERIFY(updates);
 
         frontEnd.showSettingsWindow();
+        const auto teardown = qScopeGuard([&] {
+            frontEnd.hideMainWindow();
+            settle();
+        });
 
         updates->driverUpdateFound(QStringLiteral("9.9.9"), 9900, [](MacSparkleUpdater::Reply) {});
         updates->installAndRestart();
@@ -1003,8 +1328,9 @@ private slots:
         SettingsStore settings;
         settings.setUpdatesPendingWhatsNewVersion(QStringLiteral("0.1.0"));
         ApplicationController controller(false);
-        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
-        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+        NativeUi native(controller);
+        SpeecherBridge *bridge = native.bridge;
+        SpeecherMacUI *ui = native.ui;
 
         QVERIFY(ui.whatsNewOfferVisible);
         [bridge clearPendingWhatsNew];

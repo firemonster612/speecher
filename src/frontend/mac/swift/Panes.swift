@@ -70,6 +70,16 @@ struct Pane: Identifiable {
         groups = model.groups.map(PaneGroup.init)
     }
 
+    /// A subpage, which is laid out as a pane of sections but has no sidebar
+    /// entry and so no symbol.
+    init(_ model: SettingsSubpageModel) {
+        id = model.subpageId
+        title = model.title
+        symbol = ""
+        layout = .sections
+        groups = model.groups.map(PaneGroup.init)
+    }
+
     /// SF Symbols for the schema's platform-neutral icon ids.
     private static func symbol(forIconId iconId: String) -> String {
         switch iconId {
@@ -147,9 +157,11 @@ struct PaneView: View {
         }
     }
 
-    /// Brings the row a search led to into view, once the pane has laid out.
+    /// Brings the row a search or Back led to into view, once the pane has
+    /// laid out. Another page's row is left for that page, which may be about
+    /// to replace this one, as the pane does a subpage on Back.
     private func scroll(to row: String?, _ proxy: ScrollViewProxy) {
-        guard let row else { return }
+        guard let row, pane.groups.contains(where: { $0.rows.contains(row) }) else { return }
         model.requestedRow = nil
         DispatchQueue.main.async {
             withAnimation { proxy.scrollTo(row, anchor: .top) }
@@ -157,7 +169,10 @@ struct PaneView: View {
     }
 
     @ViewBuilder private func card(_ card: PaneCard, titled: Bool = true) -> some View {
-        if !card.rows.isEmpty {
+        // A fallback list is the whole card, and core words its heading.
+        if let list = card.rows.first?.fallbackList {
+            FallbackSection(list: list, model: model)
+        } else if !card.rows.isEmpty {
             Section {
                 ForEach(Array(card.rows.enumerated()), id: \.element.rowId) { index, row in
                     // Rows of a group share one gate, so one note above the

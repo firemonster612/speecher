@@ -160,6 +160,7 @@ final class DictationPanelState: ObservableObject {
     var busyFrame = CGRect.zero
     var statusFrame = CGRect.zero
     var cancelFrame = CGRect.zero
+    var outcomeFixFrame = CGRect.zero
     var waveformFloor: Float = 0
     @Published var problem = ""
     /// What the problem offers to fix it; nil when it offers nothing.
@@ -172,7 +173,14 @@ final class DictationPanelState: ObservableObject {
     /// The problem's height once wrapped at the shared width.
     @Published var problemHeight: CGFloat = problemMinimumHeight
     /// How the delivery ended, once it has; nil while the session is live.
-    @Published var outcome: SpeecherPopupOutcome?
+    @Published var outcome: SpeecherPopupOutcome? {
+        didSet { if outcome == nil { outcomeFix = nil } }
+    }
+    /// What a finished delivery offers to fix, such as the expired sign-in a
+    /// fallback stood in for; nil when it offers nothing. Its outcome wraps
+    /// at the shared width, as a problem does, to the height below.
+    @Published var outcomeFix: SpeecherErrorAction?
+    @Published var outcomeHeight = PopupGeometry.pillHeight
     /// The update banner's message, empty while there is nothing to offer, and
     /// the label of the button beside it, empty for a passive progress state.
     @Published var updateMessage = ""
@@ -265,8 +273,12 @@ final class DictationPanelState: ObservableObject {
         return showsControls ? max(PopupGeometry.compactStripHeight, PopupGeometry.buttonSize)
             : PopupGeometry.compactStripHeight
     }
+    /// A problem, or an outcome with a fix, wraps rather than keeping to the
+    /// pill's one line.
+    var wraps: Bool { !problem.isEmpty || (finished && outcomeFix != nil) }
     var height: CGFloat {
         if !problem.isEmpty { return problemHeight }
+        if wraps { return outcomeHeight }
         return showsPreview
             ? PopupGeometry.previewTopMargin + lineHeight + PopupGeometry.previewStripSpacing
                 + stripHeight + PopupGeometry.previewBottomMargin
@@ -403,6 +415,17 @@ struct DictationPanelView: View {
                         Button(fix.label) { performFix(fix) }
                     }
                     Button(SpeecherBridge.popupDismissCaption, action: dismiss)
+                } else if let fix = state.outcomeFix, finished {
+                    // The symbol apart from the line, as a problem's is, so the
+                    // gap after it is the stack's, which the panel measures.
+                    Image(systemName: symbol)
+                        .font(popupFont)
+                    Text(state.status)
+                        .font(popupFont)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button(fix.label) { performFix(fix) }
+                        .reportingFrame { state.outcomeFixFrame = $0 }
                 } else if finished {
                     Label(state.status, systemImage: symbol)
                         .font(popupFont)
@@ -444,8 +467,8 @@ struct DictationPanelView: View {
                 }
             }
             .padding(.horizontal, !state.problem.isEmpty || finished ? 24 : 0)
-            .frame(height: state.problem.isEmpty ? state.stripHeight : nil)
-            .padding(.vertical, state.problem.isEmpty ? 0 : 10)
+            .frame(height: state.wraps ? nil : state.stripHeight)
+            .padding(.vertical, state.wraps ? 10 : 0)
             .padding(.top, state.showsPreview ? PopupGeometry.previewStripSpacing : 0)
             .padding(.bottom, state.showsPreview ? PopupGeometry.previewBottomMargin : 0)
             if !state.problem.isEmpty {
@@ -767,11 +790,12 @@ final class SpeecherDictationPanel {
             }
             syncFrameHeight()
         }
-        bridge.popupMessageRequested = { [weak self] message, outcome in
+        bridge.popupMessageRequested = { [weak self] message, outcome, fix in
             guard let self else { return }
             // The receipt is also a status, which the E2E flow waits for.
             E2EPanelEvidence.record("status", message)
             state.outcome = outcome
+            state.outcomeFix = fix.fix == .none ? nil : fix
             state.status = message
             announce(message)
             syncFrameHeight()
@@ -926,6 +950,7 @@ final class SpeecherDictationPanel {
     var busyFrame: CGRect { state.busyFrame }
     var statusFrame: CGRect { state.statusFrame }
     var cancelFrame: CGRect { state.cancelFrame }
+    var outcomeFixFrame: CGRect { state.outcomeFixFrame }
     var level: NSWindow.Level { panel.level }
 
     private func setPreview(_ preview: String) {
@@ -1024,8 +1049,17 @@ final class SpeecherDictationPanel {
         // A problem wraps at the width every platform shares, and the capsule
         // grows taller rather than wider.
         let wrapWidth = SpeecherBridge.popupErrorWrapWidth
-        let problemChrome = problemChromeWidth(font: font)
-        let widthLimit: CGFloat = !state.problem.isEmpty ? wrapWidth + problemChrome
+        // What sits beside a wrapped line: a problem's fix and Dismiss, or a
+        // fixable outcome's fix.
+        let chrome: CGFloat = !state.problem.isEmpty
+            ? chromeWidth(symbol: state.presentation.symbol,
+                          buttons: [state.problemFix?.label, SpeecherBridge.popupDismissCaption].compactMap { $0 },
+                          font: font)
+            : state.wraps ? chromeWidth(symbol: state.presentation.symbol,
+                                        buttons: [state.outcomeFix?.label].compactMap { $0 },
+                                        font: popupTextFont)
+            : 0
+        let widthLimit: CGFloat = state.wraps ? wrapWidth + chrome
             : state.showsPreview ? maximumPreviewBarWidth : 568
         let maximumWidth = min(widthLimit, availableWidth - screenEdgeMargin)
         let textWidth = { (text: String) in
@@ -1034,11 +1068,17 @@ final class SpeecherDictationPanel {
         let contentWidth: CGFloat
         if !state.problem.isEmpty {
             let bounds = (state.problem as NSString).boundingRect(
-                with: NSSize(width: maximumWidth - problemChrome, height: .greatestFiniteMagnitude),
+                with: NSSize(width: maximumWidth - chrome, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin], attributes: [.font: font])
             // Text, the air around it and the countdown bar beneath.
             state.problemHeight = max(problemMinimumHeight, ceil(bounds.height) + 20 + 14)
-            contentWidth = ceil(bounds.width) + problemChrome
+            contentWidth = ceil(bounds.width) + chrome
+        } else if state.wraps {
+            let bounds = (state.status as NSString).boundingRect(
+                with: NSSize(width: maximumWidth - chrome, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin], attributes: [.font: popupTextFont])
+            state.outcomeHeight = max(PopupGeometry.pillHeight, ceil(bounds.height) + 20)
+            contentWidth = ceil(bounds.width) + chrome
         } else if state.finished {
             contentWidth = max(PopupGeometry.pillMinimumWidth, textWidth(state.status) + 78)
         } else if state.showsPreview {
@@ -1082,21 +1122,19 @@ final class SpeecherDictationPanel {
         }.max() ?? 0
     }
 
-    /// What sits beside a problem's text: the padding, the warning symbol and
-    /// the bordered fix and Dismiss buttons, with the gaps between them.
-    /// Measured from the real controls, so a one-line problem never wraps for
-    /// want of a point.
-    private func problemChromeWidth(font: NSFont) -> CGFloat {
-        let buttons = [state.problemFix?.label, SpeecherBridge.popupDismissCaption].compactMap { $0 }
+    /// What sits beside a wrapped line: the padding, the symbol in the line's
+    /// font and the bordered buttons, with the gaps between them. Measured
+    /// from the real controls, so a one-line message never wraps for want of
+    /// a point.
+    private func chromeWidth(symbol: String, buttons: [String], font: NSFont) -> CGFloat {
         let buttonWidths = buttons.map { title -> CGFloat in
             let button = NSButton(title: title, target: nil, action: nil)
             button.bezelStyle = .push
             return ceil(button.fittingSize.width) + 10
         }
-        let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
-                             accessibilityDescription: nil)?
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
-        return 2 * 24 + ceil(symbol?.size.width ?? font.pointSize) + 10 + buttonWidths.reduce(0, +)
+        return 2 * 24 + ceil(image?.size.width ?? font.pointSize) + 10 + buttonWidths.reduce(0, +)
     }
 
     private func position() {

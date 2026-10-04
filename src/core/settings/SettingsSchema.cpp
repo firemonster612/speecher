@@ -3282,6 +3282,11 @@ QString noSettingsMatchText()
     return QStringLiteral("No settings match");
 }
 
+QString settingsBackCaption()
+{
+    return QStringLiteral("Back");
+}
+
 const SettingsPage &SettingsSchema::page(const QString &id) const
 {
     for (const SettingsPage &candidate : pages) {
