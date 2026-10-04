@@ -12,8 +12,8 @@ namespace speecher {
 namespace {
 
 // Each binder takes two hot-key ids from here, alternating between them so a
-// replacement registers before the old one goes. The dictation and cancel
-// binders share the thread's hot-key table, so their ids must differ.
+// replacement registers before the old one goes. The dictation, cancel and
+// pause binders share the thread's hot-key table, so their ids must differ.
 int nextHotKeyId = 0x5350;
 
 // The one sentence opener that marks a conflict with another application, so
@@ -133,6 +133,10 @@ QString WinGlobalShortcutBinder::unsupportedReason() const
 
 void WinGlobalShortcutBinder::bind()
 {
+    if (action().duringDictationOnly) {
+        holdWhileArmed();
+        return;
+    }
     if (m_shortcut.isEmpty()) {
         return;
     }
@@ -167,10 +171,15 @@ bool WinGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
         emit bindingChanged();
         return true;
     }
+    // Registering now, armed or not, is what tells another app already owns
+    // the keys while the person is still choosing them.
     if (!registerShortcut(shortcut.combination(), error)) {
         return false;
     }
-    if (m_suspensionCount > 0) {
+    if (action().duringDictationOnly) {
+        m_shortcut = shortcut.combination();
+        holdWhileArmed();
+    } else if (m_suspensionCount > 0) {
         // Validate conflicts now, but leave keys available to other recorders.
         m_resumeBinding = true;
         unregisterShortcut();
@@ -179,6 +188,17 @@ bool WinGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
     storeShortcut(action().settingsKey, m_shortcut);
     emit bindingChanged();
     return true;
+}
+
+void WinGlobalShortcutBinder::setArmed(bool armed)
+{
+    if (!action().duringDictationOnly || armed == m_armed) {
+        return;
+    }
+    m_armed = armed;
+    if (const QString error = holdWhileArmed(); !error.isEmpty()) {
+        qWarning().noquote() << "Could not register" << action().id << "for this dictation:" << error;
+    }
 }
 
 // A RegisterHotKey chord is consumed system-wide and never arrives as an app
@@ -197,6 +217,9 @@ QString WinGlobalShortcutBinder::resume()
     if (m_suspensionCount == 0 || --m_suspensionCount > 0) {
         return {};
     }
+    if (action().duringDictationOnly) {
+        return holdWhileArmed();
+    }
     QString error;
     if (m_resumeBinding) {
         m_resumeBinding = false;
@@ -208,16 +231,21 @@ QString WinGlobalShortcutBinder::resume()
 // The router parks this binder while a single key holds the binding; without
 // letting go of the hot key here, the replaced combination would keep firing
 // alongside the key. Clearing m_resumeBinding keeps a recording's resume from
-// sneaking it back.
+// sneaking it back. A dictation-only shortcut forgets the combination too,
+// or arming it would bring the hot key back beside the key.
 bool WinGlobalShortcutBinder::removeRegistration(QString *)
 {
     m_resumeBinding = false;
     unregisterShortcut();
+    if (action().duringDictationOnly) {
+        m_shortcut = {};
+    }
     return true;
 }
 
 std::optional<WinGlobalShortcutBinder::NativeHotKey>
-WinGlobalShortcutBinder::nativeHotKey(const QKeySequence &shortcut, QString *error)
+WinGlobalShortcutBinder::nativeHotKey(const QKeySequence &shortcut, QString *error,
+                                      bool bareKeyAllowed)
 {
     if (shortcut.isEmpty()) {
         if (error) {
@@ -236,7 +264,7 @@ WinGlobalShortcutBinder::nativeHotKey(const QKeySequence &shortcut, QString *err
     const Qt::KeyboardModifiers qtModifiers = combination.keyboardModifiers();
     const Qt::KeyboardModifiers supportedModifiers = Qt::ControlModifier
         | Qt::AltModifier | Qt::ShiftModifier | Qt::MetaModifier;
-    if (!(qtModifiers & supportedModifiers)) {
+    if (!(qtModifiers & supportedModifiers) && !bareKeyAllowed) {
         if (error) {
             *error = QStringLiteral("A Windows Global Shortcut must include at least one modifier key");
         }
@@ -314,7 +342,7 @@ bool WinGlobalShortcutBinder::nativeEventFilter(const QByteArray &eventType,
 
 bool WinGlobalShortcutBinder::registerShortcut(const QKeySequence &shortcut, QString *error)
 {
-    const auto hotKey = nativeHotKey(shortcut, error);
+    const auto hotKey = nativeHotKey(shortcut, error, action().duringDictationOnly);
     if (!hotKey) {
         return false;
     }
@@ -349,6 +377,17 @@ void WinGlobalShortcutBinder::unregisterShortcut()
     }
     // The raw input listener stays so an outstanding press still receives
     // its release while recording a replacement shortcut.
+}
+
+QString WinGlobalShortcutBinder::holdWhileArmed()
+{
+    if (!m_armed || m_suspensionCount > 0 || m_shortcut.isEmpty()) {
+        unregisterShortcut();
+        return {};
+    }
+    QString error;
+    registerShortcut(m_shortcut, &error);
+    return error;
 }
 
 void WinGlobalShortcutBinder::handleRawInput(const RAWINPUT &input)

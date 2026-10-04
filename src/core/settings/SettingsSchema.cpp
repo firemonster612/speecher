@@ -3022,6 +3022,15 @@ QString bareKeyNeedsSessionGrabText(const ShortcutBinding &binding)
         .arg(binding.displayText());
 }
 
+QString typingKeyOnlyWatchedText(const ShortcutBinding &binding)
+{
+    return QStringLiteral(
+        "Speecher cannot take %1 from other apps while you dictate, so it would still do its "
+        "normal job there. Use a letter, Escape, a key combination, or a key that cannot type, "
+        "such as F13 or Right Ctrl.")
+        .arg(binding.displayText());
+}
+
 QString keyHelperBusyText()
 {
     return QStringLiteral("Speecher's key helper is already watching as many keys as it allows. "

@@ -101,11 +101,13 @@ QString heldModifiersText()
 
 // Keys the capture box leaves to the dialog: Escape is Cancel, a bare Tab
 // moves to the buttons and a bare Enter presses the default one. With a
-// modifier held, Tab and Enter are keys like any other.
-bool leftToDialog(const VirtualKey key)
+// modifier held, Tab and Enter are keys like any other. Escape is the key
+// people reach for to cancel, so the Cancel and Pause recorders take it as a
+// shortcut; the dialog's Cancel button still abandons.
+bool leftToDialog(const VirtualKey key, GlobalShortcutRole role)
 {
     if (key == VirtualKey::Escape) {
-        return true;
+        return role == GlobalShortcutRole::Dictation;
     }
     return (key == VirtualKey::Tab || key == VirtualKey::Enter)
         && ShortcutRecorder::heldModifiers() == Qt::NoModifier;
@@ -151,7 +153,10 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
     StackPanel content;
     content.Spacing(12);
     content.MinWidth(360);
-    content.Children().Append(styledTextBlock(globalShortcutPrompt(), L"BodyTextBlockStyle"));
+    content.Children().Append(styledTextBlock(role == GlobalShortcutRole::Dictation
+                                                  ? globalShortcutPrompt()
+                                                  : dictationOnlyShortcutPrompt(),
+                                              L"BodyTextBlockStyle"));
     // The one focusable thing in the content, and the only place keys are
     // recorded, so the buttons keep their own Enter and Space and the default
     // button keeps its accent. It takes focus when the dialog opens.
@@ -188,10 +193,9 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
         }
     };
 
-    // Escape is not recordable as a single key, like the mac recorder.
     keys.PreviewKeyDown([&host, recording, show, role](const IInspectable &,
                                                  const Input::KeyRoutedEventArgs &args) {
-        if (leftToDialog(args.Key())) {
+        if (leftToDialog(args.Key(), role)) {
             return;
         }
         args.Handled(true);
@@ -211,7 +215,13 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
             return;
         }
         recording->pendingModifier = -1;
-        const bool combination = ShortcutRecorder::heldModifiers() != Qt::NoModifier;
+        // The Cancel and Pause Shortcuts hold their hot key only while
+        // dictating, so a bare key such as C or Escape is a combination
+        // without modifiers there and types as usual the rest of the time. A
+        // key no hot key can name stays a single key, which the binder vets.
+        const bool combination = ShortcutRecorder::heldModifiers() != Qt::NoModifier
+            || (role != GlobalShortcutRole::Dictation
+                && ShortcutRecorder::qtKeyForVirtualKey(static_cast<int>(args.Key())) != 0);
         recording->chordKeyed = combination;
         recording->capture = combination ? combinationCapture(host, args.Key(), role)
                                          : singleKeyCapture(host, scanCode, role);
@@ -219,7 +229,7 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
     });
     keys.PreviewKeyUp([&host, recording, show, role](const IInspectable &,
                                                const Input::KeyRoutedEventArgs &args) {
-        if (leftToDialog(args.Key())) {
+        if (leftToDialog(args.Key(), role)) {
             return;
         }
         args.Handled(true);
@@ -283,6 +293,8 @@ int ShortcutRecorder::qtKeyForVirtualKey(int virtualKey)
         return Qt::Key_Return;
     case VK_TAB:
         return Qt::Key_Tab;
+    case VK_ESCAPE:
+        return Qt::Key_Escape;
     default:
         break;
     }
@@ -353,9 +365,8 @@ void ShortcutRecorder::setRecording(PaneHost &host, bool recording)
 
 StackPanel ShortcutRecorder::element(const RowSnapshot &row, PaneHost &host)
 {
-    const GlobalShortcutRole role = row.id == QStringLiteral("cancelShortcut")
-        ? GlobalShortcutRole::Cancel
-        : GlobalShortcutRole::Dictation;
+    const GlobalShortcutRole role =
+        globalShortcutRoleForRow(row.id).value_or(GlobalShortcutRole::Dictation);
     const ShortcutBinding bound = host.controller->globalShortcut(role);
     const QString current = bound.displayText();
     const ShortcutBinding standard = WinGlobalShortcutBinder::defaultShortcut();
@@ -375,13 +386,13 @@ StackPanel ShortcutRecorder::element(const RowSnapshot &row, PaneHost &host)
         record(host, title, [&host] { host.refresh(); }, role);
     });
     control.Children().Append(change);
-    if (role == GlobalShortcutRole::Cancel && !bound.isEmpty()) {
+    if (role != GlobalShortcutRole::Dictation && !bound.isEmpty()) {
         Button clear;
         clear.Content(box_value(hs(globalShortcutClearCaption())));
-        clear.Click([&host](const auto &, const auto &) {
+        clear.Click([&host, role](const auto &, const auto &) {
             host.shortcutProblem.clear();
             host.shortcutNotice.clear();
-            bind(host, ShortcutBinding(), GlobalShortcutRole::Cancel);
+            bind(host, ShortcutBinding(), role);
             host.refresh();
         });
         control.Children().Append(clear);

@@ -13,6 +13,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QMimeData>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -44,6 +45,14 @@ bool hasRow(const SettingsPage &page, const QString &id)
         }
     }
     return false;
+}
+
+bool interactiveWindowStation()
+{
+    USEROBJECTFLAGS station{};
+    return GetUserObjectInformationW(GetProcessWindowStation(), UOI_FLAGS,
+                                     &station, sizeof(station), nullptr)
+        && (station.dwFlags & WSF_VISIBLE);
 }
 
 SchemaContext context()
@@ -83,10 +92,7 @@ private slots:
 
     void suspendReleasesHotkeyUntilLastResume()
     {
-        USEROBJECTFLAGS station{};
-        if (!GetUserObjectInformationW(GetProcessWindowStation(), UOI_FLAGS,
-                                        &station, sizeof(station), nullptr)
-            || !(station.dwFlags & WSF_VISIBLE)) {
+        if (!interactiveWindowStation()) {
             QSKIP("Global Shortcut registration requires an interactive window station");
         }
         WinGlobalShortcutBinder shortcut;
@@ -119,6 +125,75 @@ private slots:
         QVERIFY(shortcut.removeRegistration());
         QCOMPARE(shortcut.resume(), QString());
         QCOMPARE(shortcut.m_hotKeyId, 0);
+    }
+
+    void sessionShortcutHoldsItsHotKeyOnlyWhileArmed_data()
+    {
+        QTest::addColumn<int>("role");
+        QTest::newRow("cancel") << int(GlobalShortcutRole::Cancel);
+        QTest::newRow("pause") << int(GlobalShortcutRole::Pause);
+    }
+
+    // The Cancel and Pause Shortcuts hold their hot key only while armed, so
+    // a bare key types as usual between sessions. The dictation shortcut is
+    // held for good and still needs a modifier.
+    void sessionShortcutHoldsItsHotKeyOnlyWhileArmed()
+    {
+        if (!interactiveWindowStation()) {
+            QSKIP("Global Shortcut registration requires an interactive window station");
+        }
+        QFETCH(int, role);
+        const QKeySequence bare(Qt::Key_F22);
+        QString error;
+        WinGlobalShortcutBinder dictation;
+        QVERIFY(!dictation.setShortcut(bare, &error));
+
+        WinGlobalShortcutBinder binder(GlobalShortcutBinder::actionFor(GlobalShortcutRole(role)));
+        QVERIFY2(binder.setShortcut(bare, &error), qPrintable(error));
+        QCOMPARE(binder.m_hotKeyId, 0);
+        binder.setArmed(true);
+        QVERIFY(binder.m_hotKeyId != 0);
+        // Recording a replacement mid-session still needs the keys free.
+        binder.suspend();
+        QCOMPARE(binder.m_hotKeyId, 0);
+        QCOMPARE(binder.resume(), QString());
+        QVERIFY(binder.m_hotKeyId != 0);
+        binder.setArmed(false);
+        QCOMPARE(binder.m_hotKeyId, 0);
+
+        // A key another app owns is refused while it is being chosen,
+        // although nothing would be held until the next session.
+        QVERIFY(RegisterHotKey(nullptr, 0x5ee8, MOD_NOREPEAT, VK_F21));
+        const auto release = qScopeGuard([] { UnregisterHotKey(nullptr, 0x5ee8); });
+        QVERIFY(!binder.setShortcut(QKeySequence(Qt::Key_F21), &error));
+        QVERIFY(WinGlobalShortcutBinder::describesConflict(error));
+        QCOMPARE(binder.shortcut().combination(), bare);
+        QCOMPARE(binder.m_hotKeyId, 0);
+
+        // A single key took over through the router: arming must not bring
+        // the replaced hot key back beside it.
+        QVERIFY(binder.removeRegistration());
+        binder.setArmed(true);
+        QCOMPARE(binder.m_hotKeyId, 0);
+        QVERIFY2(binder.setShortcut({}, &error), qPrintable(error));
+    }
+
+    // Raw input only watches, so a Cancel or Pause key that types would also
+    // type into the dictation; keys that cannot type stay allowed.
+    void singleKeySessionShortcutRefusesKeysThatType()
+    {
+        const ShortcutBinding letter = ShortcutBinding::singleKey(QStringLiteral("KeyC"));
+        for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
+            WinSingleKeyShortcutBinder binder(GlobalShortcutBinder::actionFor(role));
+            QCOMPARE(binder.unsupportedBindingReason(letter), typingKeyOnlyWatchedText(letter));
+            for (const char *code : {"ControlRight", "F13", "CapsLock"}) {
+                QCOMPARE(binder.unsupportedBindingReason(
+                             ShortcutBinding::singleKey(QString::fromLatin1(code))),
+                         QString());
+            }
+        }
+        WinSingleKeyShortcutBinder dictation;
+        QCOMPARE(dictation.unsupportedBindingReason(letter), QString());
     }
 
     void keyboardBreakReleasesSuspendedShortcutOnce()
