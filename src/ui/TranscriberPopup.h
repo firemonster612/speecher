@@ -12,6 +12,7 @@ class QEvent;
 class QGraphicsOpacityEffect;
 class QHBoxLayout;
 class QHideEvent;
+class QIcon;
 class QProgressBar;
 class QPushButton;
 class QPropertyAnimation;
@@ -44,7 +45,9 @@ public slots:
     void setFrozen(bool frozen);
     void showOAuthRefreshIndicator();
     void showListeningIndicator();
-    void showMessage(const QString &message, PopupOutcome outcome);
+    // actionLabel names a fix the outcome offers, which its button opens as an
+    // error's does; empty for none, which is the plain receipt.
+    void showMessage(const QString &message, PopupOutcome outcome, const QString &actionLabel = QString());
     // actionLabel names the one fix the error offers; empty for none.
     void showErrorMessage(const QString &message, const QString &actionLabel = QString());
     void showPopup(quint64 generation);
@@ -85,6 +88,10 @@ private:
     void applySessionControls();
     void applyFonts();
     void updatePreviewFade();
+    // Shows the line an error, or an outcome with a fix, shows in place of the
+    // waveform: its icon, its text wrapped at the width errors share, and the
+    // fix's button. Returns the text's height.
+    int showWrappedLine(const QString &message, const QIcon &icon, const QString &actionLabel);
     // An error holds the capsule; its Dismiss chip shows exactly then.
     bool errorShown() const;
 

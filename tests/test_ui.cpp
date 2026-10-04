@@ -529,6 +529,34 @@ private slots:
         QVERIFY(action->isHidden());
     }
 
+    // A successful outcome offers a fix only when it has one. Its button asks
+    // for the fix as an error's does, with no Dismiss and no countdown.
+    void popupOutcomeOffersAFixOnlyWithOne()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        popup.showPopup(0);
+        auto *action = popup.findChild<QPushButton *>(QStringLiteral("errorAction"));
+        auto *dismiss = popup.findChild<QPushButton *>(QStringLiteral("errorDismiss"));
+        auto *countdown = popup.findChild<QPropertyAnimation *>();
+        QVERIFY(action && dismiss && countdown);
+        popup.showMessage(QStringLiteral("Pasted"), PopupOutcome::Inserted);
+        QVERIFY(action->isHidden());
+
+        popup.showMessage(QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired."),
+                          PopupOutcome::Fallback, QStringLiteral("Open Accounts"));
+        QVERIFY(!action->isHidden());
+        QCOMPARE(action->text(), QStringLiteral("Open Accounts"));
+        QVERIFY(dismiss->isHidden());
+        QCOMPARE(countdown->state(), QAbstractAnimation::Stopped);
+        QSignalSpy requested(&popup, &TranscriberPopup::errorActionRequested);
+        action->click();
+        QCOMPARE(requested.count(), 1);
+
+        popup.showPopup(0);
+        popup.showMessage(QStringLiteral("Pasted"), PopupOutcome::Inserted);
+        QVERIFY(action->isHidden());
+    }
+
     void popupDoesNotCarryAnErrorIntoTheNextDictation()
     {
         TranscriberPopup popup(new SizingPopupPositioner);
@@ -822,6 +850,12 @@ private slots:
         grab("receipt-inserted");
         popup.showMessage(QStringLiteral("Copied"), PopupOutcome::Copied);
         grab("receipt-copied");
+        popup.showMessage(QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired."),
+                          PopupOutcome::Fallback, QStringLiteral("Open Accounts"));
+        grab("receipt-fallback-fix");
+        popup.showMessage(QStringLiteral("Pasted • Transcribed with Custom Endpoint. ChatGPT Codex couldn't be reached."),
+                          PopupOutcome::Fallback);
+        grab("receipt-fallback");
         popup.showErrorMessage(QStringLiteral("Microphone unavailable"));
         grab("error-short");
         popup.showErrorMessage(QStringLiteral(
