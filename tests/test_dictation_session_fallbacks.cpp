@@ -617,7 +617,7 @@ private slots:
     }
 
     // An unusable answer is not a missing service: no other refiner is
-    // tried, and the raw transcript is pasted as before.
+    // tried, and the raw transcript is pasted with today's outcome.
     void anUnusableRefinementStopsTheChain_data()
     {
         QTest::addColumn<bool>("emptyAnswer");
@@ -630,6 +630,7 @@ private slots:
         QFETCH(bool, emptyAnswer);
         ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("openai"), QStringLiteral("local")});
         FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
         rig.listen();
         rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
         rig.session->stopListening();
@@ -642,7 +643,10 @@ private slots:
         QCOMPARE(rig.delivery.calls, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("spoken words"));
         QCOMPARE(rig.refiners[QStringLiteral("local")]->refineCalls, 0);
-        QVERIFY(rig.session->lastMessage().startsWith(QStringLiteral("Used raw transcript")));
+        QCOMPARE(outcome.first().at(0).toString(), emptyAnswer ? QStringLiteral("Input sent")
+                                                               : QStringLiteral("Used raw transcript • Input sent"));
+        QCOMPARE(outcome.first().at(1).value<PopupOutcome>(),
+                 emptyAnswer ? PopupOutcome::Inserted : PopupOutcome::Fallback);
     }
 
     // A selection edit walks the same chain. With every refiner gone it

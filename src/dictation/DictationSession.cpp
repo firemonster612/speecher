@@ -1684,9 +1684,9 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         } else if (m_transcriptPipeline.editsSelection) {
             failSelectionEdit(QStringLiteral("The refinement model returned an unusable selection edit"));
         } else {
-            // An unusable answer is not a missing service: no other refiner.
+            // An unusable answer is not a missing service: no other refiner,
+            // and the outcome is the plain receipt, as it always was.
             qWarning() << "refinement result could not be restored, delivering fallback";
-            m_usedRawTranscript = true;
             deliverFinal(m_transcriptPipeline.deliveryFallback);
         }
     });
