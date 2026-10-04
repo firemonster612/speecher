@@ -386,6 +386,7 @@ set(SPEECHER_PLATFORM_SOURCES
   src/output/TextDelivery.cpp
   src/platform/CorrectionDiff.cpp
   src/platform/RoutingShortcutBinder.cpp
+  src/platform/SessionShortcutBinder.cpp
   src/platform/ScreenshotImage.cpp
   src/platform/SingleKeyShortcutBinder.cpp
   src/platform/audio/AudioPcmConverter.cpp
@@ -407,9 +408,11 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/PopupPositioner.h
   src/platform/PopupSurface.h
   src/platform/RoutingShortcutBinder.h
+  src/platform/SessionShortcutBinder.h
   src/platform/ScreenshotImage.h
   src/platform/SingleKeyShortcutBinder.h
   src/platform/audio/AudioPcmConverter.h
+  src/platform/audio/E2EAudioInput.h
   src/platform/audio/QtAudioInput.h
   src/platform/audio/WavFileAudioInput.h
 )
@@ -432,6 +435,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/PortalScreenshotContextProvider.cpp
   src/platform/PortalGlobalShortcutBinder.cpp
   src/platform/WaylandLayerShell.cpp
+  src/platform/X11KeyGrabShortcutBinder.cpp
   src/platform/XInput2ShortcutBinder.cpp
   src/platform/atspi/AtSpiAccess.cpp
   src/platform/atspi/AtSpiCorrectionObserver.cpp
@@ -457,6 +461,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/PortalScreenshotContextProvider.h
   src/platform/PortalGlobalShortcutBinder.h
   src/platform/WaylandLayerShell.h
+  src/platform/X11KeyGrabShortcutBinder.h
   src/platform/XInput2ShortcutBinder.h
   src/setup/KeywatchProtocol.h
   src/platform/atspi/AtSpiAccess.h

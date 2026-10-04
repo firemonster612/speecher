@@ -2212,15 +2212,11 @@ struct SetupWindow::Native {
     void showShortcut()
     {
         StackPanel panel = page(QStringLiteral("shortcut"));
-        // The Settings window's own Global Shortcut row, so both record in the
-        // same dialog. A registration Windows refused says so under it.
-        const SettingsRow &shortcutRow = setupSchemaRow(QStringLiteral("globalShortcut"));
-        win::RowSnapshot row;
-        row.id = shortcutRow.id;
-        row.label = shortcutRow.label;
-        row.help = shortcutRow.help;
-        paneHost.shortcutProblem = shortcutProblem;
-        panel.Children().Append(win::cardContainer(win::ShortcutRecorder::element(row, paneHost)));
+        // A registration Windows refused says so under the dictation row.
+        if (paneHost.shortcutNoteRole == GlobalShortcutRole::Dictation) {
+            paneHost.shortcutProblem = shortcutProblem;
+        }
+        panel.Children().Append(shortcutCard(GlobalShortcutRole::Dictation));
 
         // The shortcut and its behaviour are set together; the combo shares
         // the shortcuts/activationMode setting the Dictation page's schema row
@@ -2239,7 +2235,30 @@ struct SetupWindow::Native {
                 shortcutActivationModeFromName(modes.at(mode.SelectedIndex()).first));
         });
         panel.Children().Append(settingRow(modeRow.label, mode));
+
+        // The Cancel and Pause Shortcuts are asked for here too, but they are
+        // optional: neither holds the step.
+        StackPanel session;
+        session.Spacing(6);
+        session.Children().Append(strongTextBlock(setupText(SetupText::SessionShortcuts)));
+        session.Children().Append(secondaryTextBlock(setupText(SetupText::SessionShortcutsLead)));
+        for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
+            session.Children().Append(shortcutCard(role));
+        }
+        panel.Children().Append(session);
         content.Children().Append(panel);
+    }
+
+    // A Global Shortcut's row from the Settings window, so both record in the
+    // same dialog, in a card of its own.
+    Border shortcutCard(GlobalShortcutRole role)
+    {
+        const SettingsRow &shortcutRow = setupSchemaRow(globalShortcutRowId(role));
+        win::RowSnapshot row;
+        row.id = shortcutRow.id;
+        row.label = shortcutRow.label;
+        row.help = shortcutRow.help;
+        return win::cardContainer(win::ShortcutRecorder::element(row, paneHost));
     }
 
     // The name of the input the ready checklist reports, which is the saved
@@ -2514,6 +2533,10 @@ struct SetupWindow::Native {
             ? QStringLiteral("Another app is using %1. Record a different shortcut.")
                   .arg(effective.displayText())
             : error;
+        // The row shows one note at a time, and this one holds the step.
+        if (!shortcutRegistered) {
+            paneHost.shortcutNoteRole = GlobalShortcutRole::Dictation;
+        }
         refreshGates();
     }
 
@@ -2524,11 +2547,17 @@ struct SetupWindow::Native {
         refreshGates();
     }
 
-    // The Global Shortcut row recorded or reset a binding. A refusal leaves
-    // the gate as it was: the binding before it may still hold.
+    // A Global Shortcut row recorded, reset or cleared a binding. A refusal
+    // leaves the gate as it was: the binding before it may still hold. The
+    // Cancel and Pause Shortcuts answer for no gate; once there is nothing to
+    // say about them, the dictation shortcut's own note shows again.
     void shortcutChanged()
     {
-        if (paneHost.shortcutProblem.isEmpty()) {
+        if (paneHost.shortcutNoteRole != GlobalShortcutRole::Dictation) {
+            if (paneHost.shortcutProblem.isEmpty() && paneHost.shortcutNotice.isEmpty()) {
+                paneHost.shortcutNoteRole = GlobalShortcutRole::Dictation;
+            }
+        } else if (paneHost.shortcutProblem.isEmpty()) {
             markShortcutRegistered();
         } else {
             shortcutProblem = paneHost.shortcutProblem;
@@ -2740,6 +2769,23 @@ bool SetupWindow::captureForTest(const QString &path)
     HWND handle = nullptr;
     m_native->window.as<::IWindowNative>()->get_WindowHandle(&handle);
     return win::printWindowTo(handle, path);
+}
+
+void SetupWindow::scrollToEndForTest()
+{
+    if (const auto scroll = m_native->content.Parent().try_as<ScrollViewer>()) {
+        scroll.ChangeView(nullptr, scroll.ScrollableHeight(), nullptr, true);
+    }
+}
+
+void SetupWindow::recordShortcutForTest(GlobalShortcutRole role)
+{
+    HWND handle = nullptr;
+    m_native->window.as<::IWindowNative>()->get_WindowHandle(&handle);
+    SetForegroundWindow(handle);
+    win::PaneHost &host = m_native->paneHost;
+    win::ShortcutRecorder::record(host, setupSchemaRow(globalShortcutRowId(role)).label,
+                                  [&host] { host.refresh(); }, role);
 }
 
 QStringList SetupWindow::welcomeCopyForTest()

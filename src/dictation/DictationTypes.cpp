@@ -88,6 +88,12 @@ bool dictationCancelable(const QString &stateName)
         || lowered == QStringLiteral("refining");
 }
 
+bool dictationPausable(const QString &stateName)
+{
+    const QString lowered = stateName.toLower();
+    return lowered == QStringLiteral("listening") || lowered == QStringLiteral("paused");
+}
+
 QString cancelDictationCaption()
 {
     return QStringLiteral("Cancel dictation");

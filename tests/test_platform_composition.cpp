@@ -113,6 +113,8 @@ public:
         return true;
     }
 
+    void setArmed(bool value) override { armed = value; }
+
     void suspend() override { suspendCount += 1; }
 
     QString resume() override
@@ -140,6 +142,7 @@ public:
     }
 
     int bindCount = 0;
+    bool armed = false;
     int registerCount = 0;
     int suspendCount = 0;
     int resumeCount = 0;
@@ -241,7 +244,9 @@ public:
     GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role, QObject *parent) const override
     {
         auto *created = new FakeGlobalShortcutBinder(parent);
-        (role == GlobalShortcutRole::Cancel ? cancelBinder : binder) = created;
+        (role == GlobalShortcutRole::Cancel ? cancelBinder
+         : role == GlobalShortcutRole::Pause ? pauseBinder
+                                              : binder) = created;
         return created;
     }
 
@@ -283,6 +288,7 @@ public:
     mutable std::function<void(bool)> microphoneAnswer;
     mutable FakeGlobalShortcutBinder *binder = nullptr;
     mutable FakeGlobalShortcutBinder *cancelBinder = nullptr;
+    mutable FakeGlobalShortcutBinder *pauseBinder = nullptr;
     mutable AccessibilityState accessibility{true, true, false};
     mutable std::function<void()> accessibilityRefresh;
 
@@ -675,7 +681,7 @@ private slots:
         controller.cancel();
     }
 
-    // The two Global Shortcuts cannot share a binding.
+    // No two Global Shortcuts share a binding.
     void cancelShortcutRefusesTheDictationShortcut()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
@@ -686,6 +692,37 @@ private slots:
         QVERIFY(!controller.setGlobalShortcut(keys, &error, GlobalShortcutRole::Cancel));
         QCOMPARE(error, QStringLiteral("That is already the Global Shortcut for dictation."));
         QVERIFY(controller.globalShortcut(GlobalShortcutRole::Cancel).isEmpty());
+
+        const ShortcutBinding c{QKeySequence(Qt::Key_C)};
+        QVERIFY(controller.setGlobalShortcut(c, nullptr, GlobalShortcutRole::Cancel));
+        QVERIFY(!controller.setGlobalShortcut(c, &error, GlobalShortcutRole::Pause));
+        QCOMPARE(error, QStringLiteral("That is already the Cancel Shortcut."));
+        QVERIFY(controller.globalShortcut(GlobalShortcutRole::Pause).isEmpty());
+    }
+
+    // The Cancel and Pause Shortcuts hold their keys only while a Dictation
+    // Session can use them, so a bare key types normally the rest of the time.
+    void sessionShortcutsAreArmedOnlyDuringASession()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        const bool setupCompleted = controller.settings()->setupCompleted();
+        const auto restore = qScopeGuard([&] { controller.settings()->setSetupCompleted(setupCompleted); });
+        controller.settings()->setSetupCompleted(true);
+        QVERIFY(!platform->cancelBinder->armed);
+        QVERIFY(!platform->pauseBinder->armed);
+
+        controller.startListening();
+        platform->microphoneAnswer(true);
+        QCOMPARE(controller.session()->state(), DictationState::Starting);
+        QVERIFY(platform->cancelBinder->armed);
+        // Pause applies from Listening on.
+        QVERIFY(!platform->pauseBinder->armed);
+
+        controller.cancel();
+        QCOMPARE(controller.session()->state(), DictationState::Idle);
+        QVERIFY(!platform->cancelBinder->armed);
+        QVERIFY(!platform->pauseBinder->armed);
     }
 
     // A Cancel Shortcut that could not be taken back after recording is
@@ -705,6 +742,28 @@ private slots:
         controller.suspendGlobalShortcut();
         QCOMPARE(controller.resumeGlobalShortcut(&failed), QStringLiteral("dictation taken"));
         QCOMPARE(int(failed), int(GlobalShortcutRole::Dictation));
+
+        platform->binder->resumeError.clear();
+        platform->cancelBinder->resumeError.clear();
+        platform->pauseBinder->resumeError = QStringLiteral("pause taken");
+        controller.suspendGlobalShortcut();
+        QCOMPARE(controller.resumeGlobalShortcut(&failed), QStringLiteral("pause taken"));
+        QCOMPARE(int(failed), int(GlobalShortcutRole::Pause));
+    }
+
+    // A watcher cannot stop a key, so it refuses a session shortcut on a key
+    // that types; the dictation shortcut may still take one.
+    void watchersRefuseTypingKeysForSessionShortcuts()
+    {
+        const ShortcutBinding c = ShortcutBinding::singleKey(QStringLiteral("KeyC"));
+        const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));
+        for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
+            FakeSingleKeyShortcutBinder session(GlobalShortcutBinder::actionFor(role));
+            QCOMPARE(session.unsupportedBindingReason(c), watchedKeyStillTypesText(c));
+            QVERIFY(session.unsupportedBindingReason(f13).isEmpty());
+        }
+        FakeSingleKeyShortcutBinder dictation(GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation));
+        QVERIFY(dictation.unsupportedBindingReason(c).isEmpty());
     }
 
     // The Cancel Shortcut keeps its binding under its own key, next to the
@@ -1154,7 +1213,13 @@ private slots:
         QCOMPARE(assistant.pageTitles(), QStringList({QStringLiteral("Global Shortcut")}));
         int visibleSetupPages = 0;
         for (QWidget *widget : assistant.findChildren<QWidget *>()) {
-            const bool setupPage = dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget)
+            // The shortcut step's Cancel and Pause rows are pages of their own,
+            // nested inside it.
+            bool nested = false;
+            for (QWidget *ancestor = widget->parentWidget(); ancestor; ancestor = ancestor->parentWidget()) {
+                nested = nested || dynamic_cast<LinuxGlobalShortcutSetupPage *>(ancestor);
+            }
+            const bool setupPage = (dynamic_cast<LinuxGlobalShortcutSetupPage *>(widget) && !nested)
                 || dynamic_cast<WelcomeSetupPage *>(widget)
                 || dynamic_cast<MicrophoneSetupPage *>(widget);
             visibleSetupPages += setupPage && widget->isVisible();

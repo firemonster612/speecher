@@ -119,7 +119,7 @@ public:
                                                    GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
     ShortcutBinding globalShortcut(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
     QString globalShortcutDisplay(GlobalShortcutRole role = GlobalShortcutRole::Dictation) const;
-    // Refuses the other Global Shortcut's binding; an empty one clears it.
+    // Refuses another Global Shortcut's binding; an empty one clears it.
     bool setGlobalShortcut(const ShortcutBinding &shortcut,
                            QString *error = nullptr,
                            GlobalShortcutRole role = GlobalShortcutRole::Dictation);
@@ -211,8 +211,10 @@ private:
     void handleShortcutReleased(qint64 heldMs);
     void forgetShortcutGesture();
     GlobalShortcutBinder *shortcutBinder(GlobalShortcutRole role) const;
-    // Escape is taken while a session can be cancelled and nothing records keys.
-    void updateCancelKeyGrab();
+    // Arms the Cancel and Pause Shortcuts while their action applies, and
+    // takes Escape while a session can be cancelled, nothing records keys and
+    // neither of them is Escape.
+    void updateSessionShortcuts();
     void dropPendingStart();
     void setLaunchAtLoginAccepted(bool accepted);
 
@@ -240,6 +242,7 @@ private:
     QDate m_insightsToday;
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     GlobalShortcutBinder *m_cancelShortcutBinder = nullptr;
+    GlobalShortcutBinder *m_pauseShortcutBinder = nullptr;
     CancelKeyGrab *m_cancelKeyGrab = nullptr;
     int m_shortcutSuspensions = 0;
     SingleInstanceIpc *m_ipc = nullptr;

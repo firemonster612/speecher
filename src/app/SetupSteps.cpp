@@ -248,6 +248,12 @@ QString setupText(SetupText text)
         return QStringLiteral("Download with Ollama");
     case SetupText::EndpointModelHint:
         return QStringLiteral("Connect to list the server's models, or type one.");
+    case SetupText::SessionShortcuts:
+        return QStringLiteral("Cancel and pause");
+    case SetupText::SessionShortcutsLead:
+        return QStringLiteral("Optional. Choose a key that throws away the dictation in progress, "
+                              "and one that pauses and resumes it. Both work only while you "
+                              "dictate. You can set them later in Settings.");
     }
     return {};
 }

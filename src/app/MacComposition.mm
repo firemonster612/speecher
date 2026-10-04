@@ -5,6 +5,7 @@
 #include "output/TextDelivery.h"
 #include "output/mac/MacPasteDelivery.h"
 #include "platform/RoutingShortcutBinder.h"
+#include "platform/audio/E2EAudioInput.h"
 #include "platform/audio/QtAudioInput.h"
 #include "platform/mac/MacCancelKeyGrab.h"
 #include "platform/mac/MacGlobalShortcutBinder.h"
@@ -34,44 +35,6 @@
 
 namespace speecher {
 namespace {
-
-#ifdef SPEECHER_E2E_HOOKS
-// E2E-build-only stub: alternating levels so the waveform moves, and
-// silent chunks so the session believes audio is flowing.
-class E2EAudioInput final : public AudioInput {
-public:
-    explicit E2EAudioInput(QObject *parent)
-        : AudioInput(parent)
-    {
-        m_timer.setInterval(100);
-        connect(&m_timer, &QTimer::timeout, this, [this] {
-            emit audioChunk(QByteArray(3200, '\0'));
-            emit levelChanged(m_highLevel ? 0.65f : 0.12f);
-            m_highLevel = !m_highLevel;
-        });
-    }
-
-    bool start(QString *) override
-    {
-        m_active = true;
-        m_timer.start();
-        return true;
-    }
-
-    void stop() override
-    {
-        m_timer.stop();
-        m_active = false;
-    }
-
-    bool isActive() const override { return m_active; }
-
-private:
-    QTimer m_timer;
-    bool m_active = false;
-    bool m_highLevel = false;
-};
-#endif
 
 constexpr auto accessibilityPaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
@@ -229,12 +192,14 @@ PopupPositioner *MacComposition::createPopupPositioner(QObject *parent) const
 GlobalShortcutBinder *MacComposition::createGlobalShortcutBinder(GlobalShortcutRole role,
                                                                  QObject *parent) const
 {
-    // Carbon hot keys take the combinations; the NSEvent monitor binder takes
-    // a single key, which no hotkey API accepts.
+    // Carbon hot keys take the combinations, the Cancel and Pause Shortcuts'
+    // just while dictating; the NSEvent monitor binder takes a single key,
+    // which no hotkey API accepts.
     const GlobalShortcutAction action = GlobalShortcutBinder::actionFor(role);
-    return new RoutingShortcutBinder(new MacGlobalShortcutBinder(action),
-                                     new MacSingleKeyShortcutBinder(action),
-                                     parent);
+    GlobalShortcutBinder *combination = action.sessionOnly
+        ? static_cast<GlobalShortcutBinder *>(new MacSessionShortcutBinder(action))
+        : new MacGlobalShortcutBinder(action);
+    return new RoutingShortcutBinder(combination, new MacSingleKeyShortcutBinder(action), parent);
 }
 
 CancelKeyGrab *MacComposition::createCancelKeyGrab(QObject *parent) const

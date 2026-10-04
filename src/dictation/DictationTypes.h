@@ -64,6 +64,8 @@ bool dictationListeningPresentation(const QString &stateName);
 // Whether a session state name is one a cancel would throw away, Starting
 // through Refining: trays offer Cancel then, and Windows and macOS take Escape.
 bool dictationCancelable(const QString &stateName);
+// Whether pause or resume applies: Listening or Paused.
+bool dictationPausable(const QString &stateName);
 // The trays' Cancel item.
 QString cancelDictationCaption();
 

@@ -1,5 +1,6 @@
 #include "platform/win/WinSingleKeyShortcutBinder.h"
 
+#include "core/settings/SettingsSchema.h"
 #include "platform/win/WinInjectedInput.h"
 #include "platform/win/WinRawKeyboard.h"
 

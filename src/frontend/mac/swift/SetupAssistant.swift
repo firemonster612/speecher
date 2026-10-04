@@ -1923,6 +1923,16 @@ private struct ShortcutStep: View {
                     RowView(row: row, model: model)
                 }
             }
+            // Optional, so they never hold Continue.
+            Section(model.bridge.setupText(.sessionShortcuts)) {
+                Text(model.bridge.setupText(.sessionShortcutsLead))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(AppModel.sessionShortcutRoles, id: \.self) { role in
+                    SessionShortcutRecorderRow(model: model, role: role)
+                }
+            }
         }
         .formStyle(.grouped)
         // Leaving the step ends a recording still in progress.
