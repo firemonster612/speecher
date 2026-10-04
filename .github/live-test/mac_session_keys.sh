@@ -44,7 +44,7 @@ textedit_reset() {
 
 press_key() {
   log "Hardware-style key code $1"
-  bounded_osascript -e "tell application \"System Events\" to key code $1"
+  "$KEY_INPUT" "$@"
   sleep 0.3
 }
 
@@ -108,6 +108,25 @@ end tell
 }
 
 case_begin SETUP
+KEY_INPUT="$EVIDENCE_ROOT/key-input"
+cat >"$EVIDENCE_ROOT/key-input.swift" <<'SWIFT'
+import CoreGraphics
+import Foundation
+
+guard CommandLine.arguments.count >= 2,
+      let code = UInt16(CommandLine.arguments[1]),
+      let source = CGEventSource(stateID: .hidSystemState),
+      let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true),
+      let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
+else { exit(1) }
+let flags: CGEventFlags = CommandLine.arguments.dropFirst(2).contains("command") ? .maskCommand : []
+down.flags = flags
+up.flags = flags
+down.post(tap: .cghidEventTap)
+usleep(80000)
+up.post(tap: .cghidEventTap)
+SWIFT
+swiftc "$EVIDENCE_ROOT/key-input.swift" -o "$KEY_INPUT"
 baseline_reset
 defaults write "$DOMAIN" shortcuts.cancelDictation Esc
 defaults write "$DOMAIN" shortcuts.pauseDictation P
@@ -131,6 +150,8 @@ done
 sudo python3 "$TCC_SEED" "$system_tcc" kTCCServiceAccessibility "$runner_client" 2 UNUSED 1 \
   >>"$EVIDENCE_ROOT/tcc-seeding.log"
 sudo python3 "$TCC_SEED" "$system_tcc" kTCCServicePostEvent "$runner_client" 2 UNUSED 1 \
+  >>"$EVIDENCE_ROOT/tcc-seeding.log"
+sudo python3 "$TCC_SEED" "$system_tcc" kTCCServicePostEvent "$KEY_INPUT" 2 UNUSED 1 \
   >>"$EVIDENCE_ROOT/tcc-seeding.log"
 # tcc_seed.py copies a template row, including Terminal's target identity.
 sqlite3 "$user_tcc" \
@@ -178,11 +199,13 @@ grep -q 'resume requested' "$(app_log_path)"
 pass_case "P resumed listening; TextEdit still contained only the original p."
 
 case_begin 04-CANCEL-ESC
-bounded_osascript -e 'tell application "System Events" to keystroke "f" using command down'
+fields_baseline="$(find_field_count)"
+printf '%s\n' "$fields_baseline" >"$CASE_DIR/find-fields-baseline.txt"
+press_key 3 command
 sleep 0.5
 fields_before="$(find_field_count)"
 printf '%s\n' "$fields_before" >"$CASE_DIR/find-fields-before.txt"
-(( fields_before > 0 ))
+(( fields_before > fields_baseline ))
 screencapture -x "$CASE_DIR/find-before-cancel.png"
 press_key 53 >"$CASE_DIR/key.out" 2>&1
 wait_panel_status Canceled
@@ -198,7 +221,7 @@ case_begin 05-IDLE-KEYS
 press_key 53 >"$CASE_DIR/escape.out" 2>&1
 fields_after="$(find_field_count)"
 printf '%s\n' "$fields_after" >"$CASE_DIR/find-fields-after-escape.txt"
-[[ "$fields_after" == 0 ]]
+[[ "$fields_after" == "$fields_baseline" ]]
 screencapture -x "$CASE_DIR/escape-closed-find.png"
 press_key 35 >"$CASE_DIR/p.out" 2>&1
 expect_text pp
