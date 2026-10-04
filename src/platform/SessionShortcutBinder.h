@@ -31,10 +31,6 @@ protected:
     // The binding bind() starts from: the stored one, unless a subclass
     // migrates one from elsewhere.
     virtual ShortcutBinding storedShortcut() const;
-    // Whether setShortcut() takes the keys to test them even while suspended,
-    // letting go at once. For a backend whose recorder binds before it
-    // resumes; the default tests only while not suspended.
-    virtual bool testsKeysWhileSuspended() const { return false; }
 
 private:
     // Takes or lets go of the keys to match the armed and suspended state.

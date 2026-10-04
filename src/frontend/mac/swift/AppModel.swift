@@ -534,16 +534,25 @@ final class AppModel: ObservableObject {
         accessibilityProblem = bridge.enableAccessibility() ?? ""
     }
 
+    /// A new recording starts clean: what the last one reported is stale.
     func beginShortcutRecording(by recorder: ShortcutRecorder) {
         activeShortcutRecorder = recorder
+        shortcutProblem = ""
+        for role in Self.sessionShortcutRoles {
+            sessionShortcuts[role]?.problem = ""
+        }
         bridge.beginShortcutRecording()
     }
 
+    /// The recorder binds before it ends the recording, and the binding
+    /// reported itself; only a shortcut that could not be taken back adds a
+    /// problem here, on its own row.
     func endShortcutRecording() {
         var failedRole = SpeecherShortcutRole.dictation
-        let problem = bridge.endShortcutRecording(failedRole: &failedRole) ?? ""
-        shortcutProblem = failedRole == .dictation ? problem : ""
-        if failedRole != .dictation {
+        guard let problem = bridge.endShortcutRecording(failedRole: &failedRole) else { return }
+        if failedRole == .dictation {
+            shortcutProblem = problem
+        } else {
             sessionShortcuts[failedRole]?.problem = problem
         }
     }

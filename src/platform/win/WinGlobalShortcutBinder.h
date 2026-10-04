@@ -93,7 +93,6 @@ public:
 protected:
     bool take(const QKeySequence &keys) override;
     void letGo() override;
-    bool testsKeysWhileSuspended() const override;
 
 private:
     friend class ::WinPlatformTests;

@@ -670,7 +670,7 @@ private slots:
     void sessionShortcutHotKeyIsHeldOnlyWhileArmed()
     {
         for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
-            MacGlobalShortcutBinder binder(GlobalShortcutBinder::actionFor(role));
+            MacSessionShortcutBinder binder(GlobalShortcutBinder::actionFor(role));
             const auto cleanup = qScopeGuard([&] { binder.setShortcut({}); });
             QVERIFY(binder.setShortcut(QKeySequence(Qt::Key_Escape)));
             QVERIFY(hotKeyComboIsFree(kVK_Escape, 0));
@@ -687,6 +687,33 @@ private slots:
         QString error;
         QVERIFY(!dictation.setShortcut(QKeySequence(Qt::Key_Escape), &error));
         QVERIFY(!error.isEmpty());
+    }
+
+    // The recorder binds before it ends the recording, so a Cancel or Pause
+    // Shortcut is set while suspended. It still refuses keys another app
+    // holds, and takes nothing it was not asked to hold.
+    void sessionShortcutSetWhileSuspendedStillRefusesTakenKeys()
+    {
+        MacSessionShortcutBinder binder(GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel));
+        const auto cleanup = qScopeGuard([&] { binder.setShortcut({}); });
+        binder.suspend();
+        EventHotKeyRef competingHotKey = nullptr;
+        const EventHotKeyID identifier{'spct', 101};
+        QCOMPARE(RegisterEventHotKey(kVK_F9, controlKey | optionKey | shiftKey,
+                                     identifier, GetApplicationEventTarget(),
+                                     kEventHotKeyExclusive, &competingHotKey), OSStatus(noErr));
+        const auto releaseCompeting = qScopeGuard([&] { UnregisterEventHotKey(competingHotKey); });
+        QString error;
+        QVERIFY(!binder.setShortcut(QKeySequence(Qt::META | Qt::ALT | Qt::SHIFT | Qt::Key_F9), &error));
+        QVERIFY(!error.isEmpty());
+
+        QVERIFY(binder.setShortcut(QKeySequence(Qt::Key_Escape)));
+        QVERIFY(hotKeyComboIsFree(kVK_Escape, 0));
+        binder.setArmed(true);
+        QVERIFY(hotKeyComboIsFree(kVK_Escape, 0));
+        QVERIFY(binder.resume().isEmpty());
+        QVERIFY(!hotKeyComboIsFree(kVK_Escape, 0));
+        binder.setArmed(false);
     }
 
     // NSEvent monitors cannot stop a key, so a Cancel or Pause single key

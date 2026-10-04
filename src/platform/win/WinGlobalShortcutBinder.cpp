@@ -468,11 +468,4 @@ void WinSessionShortcutBinder::letGo()
     }
 }
 
-// The recorder binds before it resumes, and a hot key taken and let go at
-// once leaves the keys free for it.
-bool WinSessionShortcutBinder::testsKeysWhileSuspended() const
-{
-    return true;
-}
-
 } // namespace speecher
