@@ -23,8 +23,9 @@ public:
     // What each report sets; a test sets it directly.
     void setReachability(Reachability reachability);
 
-    // Unknown stays Unknown. Anything short of Online (no network, only this
-    // computer, only the local network) is Offline.
+    // Only Disconnected is Offline. Local and Site are Unknown: Windows and
+    // NetworkManager report them whenever their connectivity probe is blocked,
+    // as behind many corporate proxies, while the internet works.
     static Reachability fromSystem(QNetworkInformation::Reachability reachability);
 
 signals:

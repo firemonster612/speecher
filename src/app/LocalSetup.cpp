@@ -3,6 +3,7 @@
 #include "app/ProviderAvailability.h"
 #include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
+#include "core/settings/FallbackPresentation.h"
 #include "core/settings/SettingsKeys.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderProbe.h"
@@ -704,14 +705,23 @@ void LocalSetup::acceptSetupFallbackOffer(ProviderRole role)
     if (!offer) {
         return;
     }
+    // A full chain, or the offer already the primary or a fallback, would drop
+    // it; then nothing changes, not even the model or the runner it names.
+    const AppSettings settings = m_settings.dictationSnapshot();
+    const QStringList &saved =
+        role == ProviderRole::Speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds;
+    const QStringList fallbacks = withFallbackAdded(settings, role, offer->providerId);
+    if (fallbacks.size() <= saved.size()) {
+        return;
+    }
     if (role == ProviderRole::Speech) {
-        m_settings.setSpeechFallbackProviders(m_settings.speechFallbackProviders() << offer->providerId);
+        m_settings.setSpeechFallbackProviders(fallbacks);
         chooseSpeechModel(offer->modelId);
         download(*findLocalModel(offer->modelId));
         return;
     }
     m_settings.setLocalRunnerSettings(runnerChoice().selection);
-    m_settings.setRefinementFallbackProviders(m_settings.refinementFallbackProviders() << offer->providerId);
+    m_settings.setRefinementFallbackProviders(fallbacks);
     emit changed();
 }
 
