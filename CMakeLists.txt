@@ -246,12 +246,14 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/EndpointSettings.cpp
   src/core/LocalModelCatalog.cpp
   src/core/OutputMethod.cpp
+  src/core/ProviderChain.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
   src/core/ReleaseNotesPresentation.cpp
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
+  src/core/settings/FallbackPresentation.cpp
   src/core/settings/SettingsCodecs.cpp
   src/core/settings/SettingsSchema.cpp
   src/core/settings/SpokenLanguages.cpp
@@ -285,6 +287,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
+  src/core/settings/FallbackPresentation.h
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SettingsSchema.h
@@ -319,6 +322,7 @@ set(SPEECHER_WORKFLOW_HEADERS
 
 set(SPEECHER_PROVIDER_SOURCES
   src/providers/StreamingRefinement.cpp
+  src/providers/ProviderFailureClassification.cpp
   src/providers/ChatCompletionsRefiner.cpp
   src/providers/CustomEndpoints.cpp
   src/providers/EndpointSpeechTranscriber.cpp
@@ -350,6 +354,7 @@ endif()
 
 set(SPEECHER_PROVIDER_HEADERS
   src/providers/StreamingRefinement.h
+  src/providers/ProviderFailureClassification.h
   src/providers/BlockingHttp.h
   src/providers/ChatCompletionsRefiner.h
   src/providers/CustomEndpoints.h
@@ -523,6 +528,8 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
 set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/LocalSetup.cpp
+  src/app/NetworkReachability.cpp
+  src/app/ProviderAvailability.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
@@ -543,6 +550,8 @@ set(SPEECHER_APP_HEADERS
   src/app/AppFrontEnd.h
   src/app/ApplicationController.h
   src/app/LocalSetup.h
+  src/app/NetworkReachability.h
+  src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h
@@ -1530,6 +1539,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_delivery.cpp
     tests/test_dictation_session_lifecycle.cpp
     tests/test_dictation_session_refinement.cpp
+    tests/test_dictation_session_fallbacks.cpp
     tests/test_refiners.cpp
     tests/test_vocabulary.cpp
     tests/test_insights.cpp
@@ -1609,6 +1619,7 @@ if(SPEECHER_BUILD_TESTS)
     delivery
     dictation_session_lifecycle
     dictation_session_refinement
+    dictation_session_fallbacks
     refiners
     vocabulary
     insights

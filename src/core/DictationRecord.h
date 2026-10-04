@@ -4,6 +4,7 @@
 
 #include <QDateTime>
 #include <QString>
+#include <QStringList>
 
 namespace speecher {
 
@@ -18,6 +19,10 @@ struct DictationRecord {
     // A custom profile's name when the record was made, so it still reads
     // after the profile is deleted. Empty for a built-in.
     QString profileName;
+    // The providers that ran, by id, in the order they ran: more than one
+    // when a fallback stood in. Empty in records from before they were kept.
+    QStringList speechProviders;
+    QStringList refinementProviders;
 };
 
 // Words as a reader counts them: word-boundary segments that contain a letter

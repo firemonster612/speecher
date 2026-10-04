@@ -98,6 +98,13 @@ SchemaCustomRow builtInRow(const SettingsRow &descriptor,
     if (descriptor.id == QStringLiteral("writingProfileBehavior")) {
         return makeWritingProfileList(descriptor.collection, parent, std::move(notifyChanged));
     }
+    // The Fallbacks subpages' lists, which no Qt page draws yet.
+    if (descriptor.id == QStringLiteral("speechFallbackList")
+        || descriptor.id == QStringLiteral("refinementFallbackList")) {
+        auto *placeholder = new QWidget(parent);
+        placeholder->hide();
+        return {placeholder};
+    }
     qFatal("the Qt front end has no widget for settings row %s", qPrintable(descriptor.id));
 }
 

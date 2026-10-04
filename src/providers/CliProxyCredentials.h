@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/ProviderFailure.h"
+
 #include <QList>
 #include <QString>
 
@@ -17,6 +19,9 @@ struct CliProxyCredentialResult {
     QString accessToken;
     QString accountId;
     QString error;
+    // A missing, disabled or expired account unless a refresh said otherwise.
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
+    int httpStatus = 0;
 };
 
 struct OauthRefreshResult {
@@ -26,6 +31,8 @@ struct OauthRefreshResult {
     QString idToken;
     int expiresIn = 0;
     QString error;
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
+    int httpStatus = 0;
 };
 
 class CliProxyCredentials {

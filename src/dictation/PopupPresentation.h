@@ -1,5 +1,7 @@
 #pragma once
 
+#include "dictation/DictationTypes.h"
+
 #include <QMetaType>
 #include <QString>
 
@@ -14,7 +16,8 @@ enum class PopupOutcome {
     Inserted,
     // The text is on the clipboard only.
     Copied,
-    // Refinement failed, so the raw transcript was delivered instead.
+    // A fallback did the work: another provider stood in for an unavailable
+    // one, or refinement failed and the raw transcript was delivered.
     Fallback,
     Error,
     // The person cancelled the session; nothing was delivered.
@@ -53,6 +56,28 @@ QString popupErrorActionLabel(const PopupErrorAction &action);
 // Where a speech service that cannot start is set up: Accounts for a
 // sign-in, Local models for a model on this computer, Dictation for a server.
 PopupErrorAction speechSetupAction(const QString &providerId);
+
+// A provider's registry label, by role and id.
+using ProviderLabels = std::function<QString(ProviderRole role, const QString &providerId)>;
+
+// What the popup says once a Dictation Session delivered: the receipt
+// ("Input sent"), then a note on the fallbacks that did the work and why, in
+// one line. Exactly the receipt and speech warning of a session without a
+// fallback. The fix opens Accounts when a sign-in was turned down.
+struct DictationOutcome {
+    QString message;
+    PopupOutcome outcome = PopupOutcome::Inserted;
+    PopupErrorAction fix;
+};
+DictationOutcome dictationOutcome(const QString &receipt,
+                                  bool copiedOnly,
+                                  const ProviderHistory &history,
+                                  bool usedRawTranscript,
+                                  const QString &speechWarning,
+                                  const ProviderLabels &labels);
+// The error when no speech provider in the chain could take the dictation,
+// naming each and why.
+QString noSpeechServiceText(const QList<ProviderAttemptIssue> &issues, const ProviderLabels &labels);
 
 // The popup's own captions: an error's Dismiss button, and the line shown
 // while an expired sign-in is renewed before dictation starts.

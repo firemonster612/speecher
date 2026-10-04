@@ -75,7 +75,7 @@ private:
     void feedPending();
     void finish(quint64 attemptId);
     bool attemptRunning(quint64 attemptId) const;
-    void failAttempt(quint64 attemptId, const QString &message, const QString &phase);
+    void failAttempt(quint64 attemptId, const QString &message, const QString &phase, ProviderFailureKind kind);
 
     const LocalModelStore &m_store;
     // The attempt the caller still wants results for, 0 for none. The worker

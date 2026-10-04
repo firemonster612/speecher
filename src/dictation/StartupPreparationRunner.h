@@ -13,7 +13,12 @@ class QThread;
 namespace speecher {
 
 struct StartupPreparationResult {
-    quint64 generation = 0;
+    // The caller's own number for this preparation, so it can tell which of
+    // several it is hearing about.
+    quint64 revision = 0;
+    // The role of the provider being prepared. A key that cannot be read
+    // fails speech for Speech and refinerRefresh for Refinement.
+    ProviderRole role = ProviderRole::Speech;
     SpeechPrepareResult speech;
     std::optional<AppSettings> resolvedSettings;
     RefinementRefreshResult refinerRefresh;
@@ -27,11 +32,17 @@ public:
     explicit StartupPreparationRunner(QObject *parent = nullptr);
     ~StartupPreparationRunner() override;
 
-    void start(quint64 generation,
+    // Each start or resolveSecrets cancels the one before: only the latest
+    // completes, and only its jobs apply.
+    void start(quint64 revision,
                std::optional<SpeechPrepareJob> speechJob,
                std::optional<RefinementRefreshJob> refinerJob,
                SpeechPrepareResult speechPrepared,
-               std::optional<AppSettings> secretsToResolve = std::nullopt);
+               ProviderRole role = ProviderRole::Speech);
+    // Reads the keys providerId needs in role and settings has not read
+    // (SettingsStore::resolveProviderSecrets) on the worker; completes with
+    // them in resolvedSettings.
+    void resolveSecrets(quint64 revision, ProviderRole role, const QString &providerId, AppSettings settings);
     void cancel();
 
 signals:
@@ -39,6 +50,7 @@ signals:
 
 private:
     struct Preparation;
+    void run(std::shared_ptr<Preparation> preparation);
     std::shared_ptr<Preparation> m_current;
     QList<QThread *> m_threads;
 };

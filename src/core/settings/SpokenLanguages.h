@@ -22,6 +22,11 @@ QString spokenLanguageLabel(const QString &language);
 // names none.
 QString requestedSpokenLanguage(const QString &language);
 
+// Whether the chosen service, or the chosen Local Model, listens for the
+// stored Spoken Language, by its own list. A service with no list, or a
+// Local Model not in the catalog, takes any.
+bool listensForSpokenLanguage(const SpeechSettings &speech);
+
 // Empty while the chosen service listens for the stored Spoken Language;
 // otherwise the sentence that says it does not, naming the language in
 // English and the service by serviceLabel, or a Local Model by its own name.

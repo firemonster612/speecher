@@ -987,12 +987,15 @@ private slots:
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
         SpeechSettings settings;
 
-        QVERIFY(!transcriber.prepare(settings).ok);
+        const SpeechPrepareResult prepared = transcriber.prepare(settings);
+        QVERIFY(!prepared.ok);
+        QCOMPARE(prepared.kind, ProviderFailureKind::Unavailable);
         transcriber.startAttempt(7, settings);
         QVERIFY(failed.wait(2000));
         const SpeechFailure failure = failed.first().at(0).value<SpeechFailure>();
         QCOMPARE(failure.attemptId, quint64(7));
         QVERIFY(failure.message.contains(QStringLiteral("Local models page")));
+        QCOMPARE(failure.kind, ProviderFailureKind::Unavailable);
     }
 #endif
 };

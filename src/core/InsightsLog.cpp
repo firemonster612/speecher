@@ -19,6 +19,15 @@ QByteArray jsonString(const QString &value)
     return array.mid(1, array.size() - 2);
 }
 
+// ,"key":["a","b"], or nothing for an empty list.
+QByteArray optionalList(const char *key, const QStringList &values)
+{
+    if (values.isEmpty()) {
+        return {};
+    }
+    return QByteArray(",\"") + key + "\":" + QJsonDocument(QJsonArray::fromStringList(values)).toJson(QJsonDocument::Compact);
+}
+
 // Written by hand because QJsonObject sorts its keys, and the line format,
 // shared with the seed files, fixes their order.
 QByteArray encode(const DictationRecord &record)
@@ -30,6 +39,8 @@ QByteArray encode(const DictationRecord &record)
         + ",\"profile\":" + jsonString(record.profile)
         + (record.profileName.isEmpty() ? QByteArray()
                                         : ",\"profileName\":" + jsonString(record.profileName))
+        + optionalList("speechProviders", record.speechProviders)
+        + optionalList("refinementProviders", record.refinementProviders)
         + "}\n";
 }
 
@@ -48,6 +59,8 @@ std::optional<DictationRecord> decode(const QByteArray &line)
         object.value(QLatin1String("app")).toString(),
         writingProfileFromName(object.value(QLatin1String("profile")).toString()),
         object.value(QLatin1String("profileName")).toString(),
+        object.value(QLatin1String("speechProviders")).toVariant().toStringList(),
+        object.value(QLatin1String("refinementProviders")).toVariant().toStringList(),
     };
 }
 

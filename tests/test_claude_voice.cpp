@@ -113,6 +113,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
         QTRY_COMPARE_WITH_TIMEOUT(deadlineFailure.count(), 1, 1000);
         QCOMPARE(deadlineFailure.first().at(2).toString(), QStringLiteral("connect"));
+        QCOMPARE(deadlineFailure.first().at(3).value<ProviderFailureKind>(), ProviderFailureKind::Timeout);
 
         ClaudeVoiceClient bufferedClient(nullptr, 1000);
         QSignalSpy bufferFailure(&bufferedClient, &ClaudeVoiceClient::failed);
@@ -450,6 +451,7 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 1000);
         QCOMPARE(failed.first().at(1).toBool(), false);
         QCOMPARE(failed.first().at(2).toString(), QStringLiteral("authentication"));
+        QCOMPARE(failed.first().at(3).value<ProviderFailureKind>(), ProviderFailureKind::Authentication);
     }
 
 #endif

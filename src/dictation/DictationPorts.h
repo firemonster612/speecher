@@ -2,6 +2,7 @@
 
 #include "core/AppSettings.h"
 #include "core/OutputFormat.h"
+#include "core/ProviderFailure.h"
 #include "core/Target.h"
 #include "dictation/PopupPresentation.h"
 
@@ -36,14 +37,20 @@ struct DeliveryResult {
     QString message;
 };
 
+// A failed preparation sends a Dictation Session on to the next provider
+// whatever its kind, so an unclassified one counts as Unavailable.
 struct SpeechPrepareResult {
     bool ok = false;
     QString message;
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
+    int httpStatus = 0;
 };
 
 struct RefinementPrepareResult {
     bool ok = false;
     QString message;
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
+    int httpStatus = 0;
 };
 
 struct SpeechPrepareJob {
@@ -55,6 +62,8 @@ struct SpeechPrepareJob {
 struct RefinementRefreshResult {
     bool ok = true;
     QString message;
+    ProviderFailureKind kind = ProviderFailureKind::Unavailable;
+    int httpStatus = 0;
 };
 
 struct RefinementRefreshJob {
@@ -74,6 +83,8 @@ struct SpeechFailure {
     QString message;
     bool retryable = false;
     QString phase;
+    ProviderFailureKind kind = ProviderFailureKind::Other;
+    int httpStatus = 0;
 };
 
 class AudioInput : public QObject {
@@ -257,7 +268,7 @@ public:
 signals:
     void delta(const QString &text);
     void completed(const QString &text);
-    void failed(const QString &message);
+    void failed(const speecher::ProviderFailure &failure);
 };
 
 class TextDeliveryAdapter : public QObject {

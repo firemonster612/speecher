@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/SetupSteps.h"
 #include "core/LocalModelCatalog.h"
 #include "core/settings/SettingsSchema.h"
 #include "providers/CustomEndpoints.h"
@@ -15,6 +16,7 @@
 namespace speecher {
 
 class LocalModelStore;
+class ProviderAvailability;
 class ProviderRegistry;
 class SettingsStore;
 
@@ -156,7 +158,7 @@ public:
     };
     Pull pull() const;
 
-    // Also run on their own 800 ms after the saved endpoint in use gets a
+    // Also run on their own 800 ms after a saved endpoint in the chain gets a
     // server, or its server, path, key or format changes. A check that lists
     // models while no model is saved saves the first.
     void checkSpeechEndpoint(const SpeechEndpointSettings &endpoint);
@@ -166,6 +168,19 @@ public:
     // the settings shown), runner detection and the model folder. False for
     // any other row.
     bool runSettingsAction(const QString &rowId, const AppSettings &shown);
+
+    // The local fallback setup suggests for a role: the suggested Local Model
+    // once the hardware is known to fit it and it listens for the Spoken
+    // Language, or a running Local Runner with a cleanup model it serves.
+    std::optional<SetupFallbackOffer> setupFallbackOffer(ProviderRole role) const;
+    // Adds that fallback after the others, leaving the primary alone: a Local
+    // Model is chosen and downloaded the way the Local card does it, a runner
+    // and its model are selected.
+    void acceptSetupFallbackOffer(ProviderRole role);
+
+    // Adds reachability and the sign-ins last seen to liveFacts(), and
+    // announces their changes as changed().
+    void setProviderAvailability(const ProviderAvailability &availability);
 
     // What the schema's rows report; see LiveFacts.
     LiveFacts liveFacts() const;
@@ -206,6 +221,8 @@ private:
     QString m_modelRunsOn;
     QList<DetectedRunner> m_runners;
     bool m_detectingRunners = false;
+    bool m_runnersChecked = false;
+    const ProviderAvailability *m_availability = nullptr;
     OllamaPull m_ollamaPull;
     Pull m_pull;
     std::optional<SpeechEndpointSettings> m_checkedSpeech;

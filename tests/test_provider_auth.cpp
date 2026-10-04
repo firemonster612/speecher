@@ -7,6 +7,7 @@
 #include "providers/ClaudeCredentialStorage.h"
 #include "providers/NativeCredentialStorage.h"
 #include "providers/CodexCredentialStorage.h"
+#include "providers/CodexSpeechTranscriber.h"
 #include <QCryptographicHash>
 #include <QProcess>
 
@@ -1038,6 +1039,98 @@ private slots:
         const OpenAiAuth auth = provider.resolve();
         QVERIFY(!auth.ok);
         QCOMPARE(refreshRequests, 1);
+        // With no other credential, the rejected refresh is the answer.
+        QCOMPARE(auth.kind, ProviderFailureKind::Authentication);
+        QCOMPARE(auth.httpStatus, 400);
+        QVERIFY2(auth.status.contains(QStringLiteral("invalid_grant")), qPrintable(auth.status));
+    }
+
+    void refreshFailureSaysWhy_data()
+    {
+        QTest::addColumn<QByteArray>("response");
+        QTest::addColumn<ProviderFailureKind>("kind");
+        QTest::addColumn<int>("httpStatus");
+        QTest::newRow("invalid_grant") << QByteArray("400 Bad Request\r\n\r\n{\"error\":\"invalid_grant\"}")
+                                       << ProviderFailureKind::Authentication << 400;
+        QTest::newRow("503") << QByteArray("503 Service Unavailable\r\n\r\n{}") << ProviderFailureKind::Server << 503;
+        QTest::newRow("no server") << QByteArray() << ProviderFailureKind::Network << 0;
+    }
+
+    // A rejected refresh is a rejected sign-in; one that could not reach the
+    // token endpoint is not. Checked through each reader's preparation.
+    void refreshFailureSaysWhy()
+    {
+        QFETCH(QByteArray, response);
+        QFETCH(ProviderFailureKind, kind);
+        QFETCH(int, httpStatus);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const QByteArray tokenUrl = QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()).toUtf8();
+        if (response.isEmpty()) server.close();
+        connect(&server, &QTcpServer::newConnection, this, [&server, response] {
+            QTcpSocket *socket = server.nextPendingConnection();
+            connect(socket, &QTcpSocket::readyRead, socket, [socket, response] {
+                if (!hasWholeRequest(socket)) return;
+                socket->readAll();
+                socket->write("HTTP/1.1 " + response);
+                socket->disconnectFromHost();
+            });
+        });
+        qputenv("SPEECHER_TEST_CLAUDE_TOKEN_URL", tokenUrl);
+        qputenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL", tokenUrl);
+        const auto restoreEnv = qScopeGuard([] {
+            qunsetenv("SPEECHER_TEST_CLAUDE_TOKEN_URL");
+            qunsetenv("SPEECHER_CLIPROXY_CODEX_TOKEN_URL");
+        });
+        QTemporaryDir dir;
+        const QDateTime expired = QDateTime::currentDateTimeUtc().addSecs(-60);
+
+        RefinementSettings refinement;
+        refinement.claudeCredentialsPath = dir.filePath(QStringLiteral("credentials.json"));
+        QFile credentials(refinement.claudeCredentialsPath);
+        QVERIFY(credentials.open(QIODevice::WriteOnly));
+        credentials.write(QJsonDocument(QJsonObject{{QStringLiteral("claudeAiOauth"), QJsonObject{
+            {QStringLiteral("accessToken"), QStringLiteral("expired-token")},
+            {QStringLiteral("refreshToken"), QStringLiteral("refresh-token")},
+            {QStringLiteral("expiresAt"), double(expired.toMSecsSinceEpoch())},
+        }}}).toJson());
+        credentials.close();
+        const RefinementPrepareResult claude = AnthropicTranscriptRefiner().prepare(refinement);
+        QVERIFY(!claude.ok);
+        QCOMPARE(claude.kind, kind);
+        QCOMPARE(claude.httpStatus, httpStatus);
+
+        SpeechSettings speech;
+        speech.codexAuthMode = QStringLiteral("cliproxy");
+        speech.cliproxyOauthDir = dir.path();
+        QVERIFY(writeCliProxyAccount(dir.path(), QStringLiteral("codex-a@example.com.json"),
+                                     QStringLiteral("codex"), QStringLiteral("stale-token"), expired));
+        const SpeechPrepareResult codex = CodexSpeechTranscriber().prepare(speech);
+        QVERIFY(!codex.ok);
+        QCOMPARE(codex.kind, kind);
+        QCOMPARE(codex.httpStatus, httpStatus);
+    }
+
+    void tokenEndpointThatNeverAnswersTimesOut()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        const OauthRefreshResult result = CliProxyCredentials::oauthRefresh(
+            QStringLiteral("http://127.0.0.1:%1/token").arg(server.serverPort()),
+            CliProxyCredentials::codexClientId(), QStringLiteral("refresh"), {}, 200);
+        QVERIFY(!result.ok);
+        QCOMPARE(result.kind, ProviderFailureKind::Timeout);
+    }
+
+    void missingSignInIsUnavailable()
+    {
+        QTemporaryDir dir;
+        SpeechSettings speech;
+        speech.codexAuthMode = QStringLiteral("cliproxy");
+        speech.cliproxyOauthDir = dir.path();
+        const SpeechPrepareResult codex = CodexSpeechTranscriber().prepare(speech);
+        QVERIFY(!codex.ok);
+        QCOMPARE(codex.kind, ProviderFailureKind::Unavailable);
     }
 
     void cliproxyExpiredAccountRefreshesAndRewritesFile()

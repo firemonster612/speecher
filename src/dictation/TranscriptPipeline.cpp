@@ -228,15 +228,15 @@ void TranscriptPipeline::includeScreenshotContext(TranscriptPipelineResult &pipe
                                                   const QByteArray &screenshotData,
                                                   const QString &screenshotMediaType)
 {
-    if (pipeline.refinementSettings.includeScreenshotContext
+    // Set or cleared each time, for each refiner a session tries in turn.
+    const bool include = pipeline.refinementSettings.includeScreenshotContext
         && !pipeline.editsSelection
         && !pipeline.refinementContext.target.secure
         && supportsScreenshotContext
         && !screenshotData.isEmpty()
-        && !screenshotMediaType.isEmpty()) {
-        pipeline.refinementContext.screenshotData = screenshotData;
-        pipeline.refinementContext.screenshotMediaType = screenshotMediaType;
-    }
+        && !screenshotMediaType.isEmpty();
+    pipeline.refinementContext.screenshotData = include ? screenshotData : QByteArray();
+    pipeline.refinementContext.screenshotMediaType = include ? screenshotMediaType : QString();
 }
 
 std::optional<QString> TranscriptPipeline::restoreRefinedResult(

@@ -13,6 +13,8 @@
 #include <QProcessEnvironment>
 #include <QTimeZone>
 
+#include <optional>
+
 namespace speecher {
 
 OpenAiAuthProvider::OpenAiAuthProvider(SecretStore *secretStore,
@@ -117,36 +119,35 @@ static bool sameCodexLogin(const QJsonObject &before, const QJsonObject &current
     return true;
 }
 
-static bool refreshCodexAuth(const CodexCredentialStorage &storage, QString *error)
+// Why the refresh failed, or nothing once the stored login is current.
+static std::optional<ProviderFailure> refreshCodexAuth(const CodexCredentialStorage &storage)
 {
+    const auto unavailable = [](const QString &message) {
+        return ProviderFailure{ProviderFailureKind::Unavailable, message};
+    };
     // Refresh straight against the OAuth token endpoint instead of spawning
     // the Codex CLI: `codex exec` pays CLI startup plus a full model request
     // just to trigger the same refresh_token grant.
     QLockFile lock(storage.lockPath());
     if (!lock.tryLock(1000)) {
-        if (error) {
-            *error = QStringLiteral("Could not lock Codex credentials for refresh");
-        }
-        return false;
+        return unavailable(QStringLiteral("Could not lock Codex credentials for refresh"));
     }
 
-    const QByteArray original = storage.read(error);
-    if (!error->isEmpty()) return false;
+    QString error;
+    const QByteArray original = storage.read(&error);
+    if (!error.isEmpty()) return unavailable(error);
     QJsonObject root = QJsonDocument::fromJson(original).object();
     QJsonObject tokens = root.value(QStringLiteral("tokens")).toObject();
     if (!jwtExpired(tokens.value(QStringLiteral("access_token")).toString().trimmed())) {
-        return true;
+        return std::nullopt;
     }
     const QString refreshToken = tokens.value(QStringLiteral("refresh_token")).toString().trimmed();
     if (refreshToken.isEmpty()) {
-        if (error) {
-            *error = QStringLiteral("Codex login cannot be refreshed; sign in with codex login");
-        }
-        return false;
+        return unavailable(QStringLiteral("Codex login cannot be refreshed; sign in with codex login"));
     }
 
     root.insert(QStringLiteral("last_refresh"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
-    if (!storage.canWrite(QJsonDocument(root).toJson(QJsonDocument::Compact), error)) return false;
+    if (!storage.canWrite(QJsonDocument(root).toJson(QJsonDocument::Compact), &error)) return unavailable(error);
 
     const QString overrideUrl = qEnvironmentVariable("SPEECHER_CODEX_TOKEN_URL");
     const OauthRefreshResult refreshed = CliProxyCredentials::oauthRefresh(
@@ -156,18 +157,17 @@ static bool refreshCodexAuth(const CodexCredentialStorage &storage, QString *err
         QStringLiteral("openid profile email"),
         codexRefreshTimeoutMs());
     if (!refreshed.ok) {
-        if (error) {
-            *error = QStringLiteral("Could not refresh the Codex OAuth token: %1").arg(refreshed.error);
-        }
-        return false;
+        return ProviderFailure{refreshed.kind,
+                               QStringLiteral("Could not refresh the Codex OAuth token: %1").arg(refreshed.error),
+                               refreshed.httpStatus};
     }
 
     // A CLI login or logout can occur while the token request is in flight.
     // Leave its document intact and let the caller read the current login.
-    const QByteArray current = storage.read(error);
-    if (!error->isEmpty()) return false;
+    const QByteArray current = storage.read(&error);
+    if (!error.isEmpty()) return unavailable(error);
     const QJsonObject currentRoot = QJsonDocument::fromJson(current).object();
-    if (!sameCodexLogin(root, currentRoot)) return true;
+    if (!sameCodexLogin(root, currentRoot)) return std::nullopt;
     // Metadata and formatting edits do not supersede a rotated OAuth token.
     root = currentRoot;
     tokens = root.value(QStringLiteral("tokens")).toObject();
@@ -183,7 +183,8 @@ static bool refreshCodexAuth(const CodexCredentialStorage &storage, QString *err
     root.insert(QStringLiteral("last_refresh"),
                 QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
 
-    return storage.write(QJsonDocument(root).toJson(QJsonDocument::Compact), error);
+    if (!storage.write(QJsonDocument(root).toJson(QJsonDocument::Compact), &error)) return unavailable(error);
+    return std::nullopt;
 }
 
 static ApiKeyCandidate readCodexApiKeyCandidate(const CodexCredentialStorage &storage, QString *status)
@@ -261,9 +262,9 @@ static OpenAiAuth readCodexOauth(const CodexCredentialStorage &storage, bool ref
             return {false, {}, QStringLiteral("codex_oauth"), QStringLiteral("Codex OAuth token expired"), {}, {}, {}, {}, true};
         }
 
-        QString refreshError;
-        if (!refreshCodexAuth(storage, &refreshError)) {
-            return {false, {}, QStringLiteral("codex_oauth"), refreshError, {}, {}, {}, {}, true};
+        if (const std::optional<ProviderFailure> failure = refreshCodexAuth(storage)) {
+            return {false, {}, QStringLiteral("codex_oauth"), failure->message, {}, {}, {}, {}, true,
+                    failure->kind, failure->httpStatus};
         }
         return readCodexOauth(storage, false);
     }
@@ -328,7 +329,8 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
                                                    m_cliproxyAccount)
             : CliProxyCredentials::load(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
         if (!credentials.ok) {
-            return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true};
+            return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true,
+                    credentials.kind, credentials.httpStatus};
         }
         return {true,
                 credentials.accessToken,
@@ -356,6 +358,15 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         return {false, {}, QStringLiteral("settings"), QStringLiteral("Settings API key not found"), {}, {}, {}, {}, false};
     }
 
+    // A refresh that failed says more than a missing credential, so it is
+    // the answer when no other source has one.
+    OpenAiAuth unresolved{false, {}, {}, QStringLiteral("No OpenAI credential found"), {}, {}, {}, {}, false};
+    const auto keepRefreshFailure = [&unresolved](const OpenAiAuth &oauth) {
+        if (oauth.kind == ProviderFailureKind::Unavailable) return;
+        unresolved.status = oauth.status;
+        unresolved.kind = oauth.kind;
+        unresolved.httpStatus = oauth.httpStatus;
+    };
     const CodexCredentialStorage storage;
     const bool codexUsesChatGpt = codexAuthMode(storage) == QStringLiteral("chatgpt");
     if (codexUsesChatGpt) {
@@ -363,6 +374,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         if (oauth.ok) {
             return oauth;
         }
+        keepRefreshFailure(oauth);
     }
 
     const ApiKeyCandidate codexKey = readCodexApiKeyCandidate(storage, &status);
@@ -376,6 +388,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
         if (oauth.ok) {
             return oauth;
         }
+        keepRefreshFailure(oauth);
     }
     const ApiKeyCandidate envKey = readEnvApiKey();
     if (envKey.key.startsWith(QStringLiteral("sk-"))) {
@@ -395,7 +408,7 @@ OpenAiAuth OpenAiAuthProvider::resolve(bool refreshExpired) const
                 {},
                 false};
     }
-    return {false, {}, {}, QStringLiteral("No OpenAI credential found"), {}, {}, {}, {}, false};
+    return unresolved;
 }
 
 bool OpenAiAuthProvider::requiresCodexOauthRefresh() const
@@ -434,7 +447,8 @@ OpenAiAuth OpenAiAuthProvider::refreshCodexOauth() const
         const CliProxyCredentialResult credentials =
             CliProxyCredentials::loadWithRefresh(m_cliproxyDir, QStringLiteral("codex"), m_cliproxyAccount);
         if (!credentials.ok) {
-            return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true};
+            return {false, {}, QStringLiteral("cliproxy"), credentials.error, {}, {}, {}, {}, true,
+                    credentials.kind, credentials.httpStatus};
         }
         return {true,
                 credentials.accessToken,

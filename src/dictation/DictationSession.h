@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/DictationRecord.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"
@@ -54,6 +55,9 @@ public:
     void toggleWith(const SessionOverrides &overrides);
     void startListeningWith(const SessionOverrides &overrides);
     void setScreenshotContextProvider(ScreenshotContextProvider *provider);
+    // Whether the system says it can reach the internet. Only an outcome's
+    // wording uses it: every provider in a chain is still tried.
+    void setReachability(Reachability reachability);
 
 public slots:
     void toggle();
@@ -104,28 +108,60 @@ signals:
     void popupRefinementPreviewChanged(const QString &preview);
     void popupOAuthRefreshRequested();
     void popupListeningIndicatorRequested();
-    // A delivery's receipt, and which kind of outcome it reports.
-    void popupMessageRequested(const QString &message, PopupOutcome outcome);
+    // A delivery's receipt, which kind of outcome it reports, and the fix it
+    // offers when a fallback provider stood in for one that needs attention
+    // (an expired sign-in); ErrorFix::None otherwise.
+    void popupMessageRequested(const QString &message,
+                               PopupOutcome outcome,
+                               const speecher::PopupErrorAction &fix = {});
     void popupErrorRequested(const QString &message, const speecher::PopupErrorAction &fix);
+    // What a session learned about a provider's sign-in: present when it
+    // prepared, missing or turned down when it failed for that.
+    void providerSignInObserved(const QString &providerId, bool signedIn);
 
 private:
     static int s_popupPaintFallbackMs;
     static int s_stableAttemptMs;
 
     void setState(DictationState state, const QString &message = {}, const PopupErrorAction &fix = {});
+    using Stage = ProviderAttemptIssue::Stage;
     void continueStartupAfterPopup(quint64 generation);
-    void prepareProviders(quint64 generation);
+    void prepareSpeechProvider();
     void finishStartupPreparation(const StartupPreparationResult &result);
-    void continueStartupAfterPreparation(quint64 generation, const AppSettings &settings);
-    void failStartup(quint64 generation, const QString &message);
+    void finishSpeechPreparation(const StartupPreparationResult &result);
+    void speechProviderReady();
+    void speechChainExhausted();
+    void holdPendingAudio(const QByteArray &pcm);
+    bool speechFallbackRemains(const SpeechFailure &failure) const;
+    void switchSpeechProvider(const SpeechFailure &failure);
+    void noteSpeechFailure(const SpeechFailure &failure);
+    void retireSpeechAttempt();
+    SpeechSettings speechSettingsFor(const QString &providerId) const;
+    void noteProviderIssue(ProviderRole role, const QString &providerId, Stage stage, const ProviderFailure &failure);
+    void noteSignIn(const QString &providerId, bool signedIn);
+    void noteRan(ProviderRole role, const QString &providerId);
+    ProviderLabels providerLabels() const;
+    void continueStartupAfterPreparation(quint64 generation);
+    void failStartup(const QString &message, const PopupErrorAction &fix);
     void beginRefinement(quint64 generation);
+    void prepareRefiner();
+    void finishRefinerPreparation(const StartupPreparationResult &result);
+    void startRefiner();
+    void enterRefining();
+    RefinementSettings refinerSettings() const;
+    void handleRefinementFailure(const ProviderFailure &failure, Stage stage);
+    void retireRefiner();
+    void deliverWithoutRefinement();
     void failSelectionEdit(const QString &message);
     void handleSpeechFailure(const SpeechFailure &failure);
+    void endSpeechAfterFailure(const SpeechFailure &failure);
     void rollOverSpeechAttempt();
     void startNextAttempt();
     // Opens the attempt after a pause once the paused one has finished, and
     // sends it the audio heard in between.
     void resumeAttempt();
+    // Sends the open attempt the audio that waited for one, in order.
+    void sendPendingAudio();
     void refineAfterLastAttempt();
     void attemptEndedWhileStopping();
     // QtAudioInput::stop() spins a nested event loop for the post-roll, during
@@ -140,7 +176,9 @@ private:
     void resumePausedMedia();
     bool selectSpeechTranscriber(const QString &providerId, QString *error);
     bool selectTranscriptRefiner(const QString &providerId, QString *error);
+    void disconnectSpeechTranscriber();
     void connectSpeechTranscriber(SpeechTranscriber *transcriber);
+    void disconnectTranscriptRefiner();
     void connectTranscriptRefiner(TranscriptRefiner *refiner);
     void toggleSession(const SessionOverrides &overrides);
     void startSession(const SessionOverrides &overrides);
@@ -153,6 +191,9 @@ private:
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
     StartupPreparationRunner *m_startupRunner = nullptr;
+    // Numbers each preparation the runner is asked for; only the latest's
+    // result counts.
+    quint64 m_preparationRevision = 0;
     QTimer *m_completionTimer = nullptr;
     // The registry owns these and may be destroyed first; never call a dead one.
     QPointer<SpeechTranscriber> m_transcriber;
@@ -188,14 +229,44 @@ private:
     // The current attempt is finishing because of a pause. Its end is not a
     // rollover, and the next attempt may only open once it has come.
     bool m_finishingPausedAttempt = false;
-    // Audio heard after a resume while the paused attempt still finishes.
-    QList<QByteArray> m_resumeAudio;
+    // Audio no open attempt can take yet: heard after a resume while the
+    // paused attempt still finishes, while the next provider prepares, or
+    // after the last attempt ended during the stop. The next attempt gets
+    // it, once.
+    QList<QByteArray> m_pendingAudio;
+    // The speech providers this session may use, primary first, and the
+    // one it is on. It walks forward only.
+    QStringList m_speechChain;
+    int m_speechIndex = 0;
+    // No provider is ready for the next attempt: the session is starting,
+    // or the next provider prepares after one failed.
+    bool m_awaitingSpeechProvider = false;
+    // The failure that sent the session on to the next provider, which ends
+    // the speech if none takes over.
+    SpeechFailure m_switchFailure;
+    // The refiners this session may use, primary first, and the one it is
+    // on; each connection to a refiner gets its own revision.
+    QStringList m_refinementChain;
+    int m_refinementIndex = 0;
+    quint64 m_refinementRevision = 0;
+    // The raw transcript is delivered in place of a refinement that was
+    // asked for.
+    bool m_usedRawTranscript = false;
+    // The refiner's sign-in renewed while starting: once a session, not for
+    // each speech provider tried.
+    bool m_refinerRefreshed = false;
+    ProviderHistory m_providerHistory;
+    Reachability m_reachability = Reachability::Unknown;
     // Inside stopAudio(); a session start waits in m_pendingStart until it
     // returns, unless a stop or cancel drops it first.
     int m_audioStopDepth = 0;
+    // The generation whose first microphone start is under way; it spins an
+    // event loop too. A provider that becomes ready meanwhile opens only its
+    // attempt, and that start goes on to Listening.
+    quint64 m_microphoneStartGeneration = 0;
     std::optional<SessionOverrides> m_pendingStart;
     // The last attempt ended while the microphone was stopping; the post-roll
-    // since waits in m_resumeAudio for stopListening().
+    // since waits in m_pendingAudio for stopListening().
     bool m_attemptEndedDuringStop = false;
 };
 

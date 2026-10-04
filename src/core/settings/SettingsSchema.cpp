@@ -6,7 +6,9 @@
 #include "core/EndpointUrl.h"
 #include "core/LocalModelCatalog.h"
 #include "core/OutputMethod.h"
+#include "core/ProviderChain.h"
 #include "core/ReleaseNotesPresentation.h"
+#include "core/settings/FallbackPresentation.h"
 #include "core/settings/SpokenLanguages.h"
 
 #include "core/BindingProcessor.h"
@@ -471,25 +473,114 @@ SettingsRow textRow(QString id, QString label, QString help, Getter get, Setter 
     return row;
 }
 
+bool offersProvider(const QList<RowOption> &providers, const QString &id)
+{
+    return std::any_of(providers.cbegin(), providers.cend(),
+                       [&id](const RowOption &provider) { return provider.id == id; });
+}
+
 LiveFacts liveFacts(const SchemaContext &context)
 {
     return context.liveFacts ? context.liveFacts() : LiveFacts{};
 }
 
-// Rows that only mean something while one provider is chosen sit under its
-// picker and come and go with it.
-std::function<bool(const AppSettings &, const Capabilities &)> whileSpeechProvider(const QString &id)
+LiveFacts liveFacts(const SchemaContext &context, const AppSettings &settings)
+{
+    return context.liveFactsForDraft ? context.liveFactsForDraft(settings) : liveFacts(context);
+}
+
+QStringList speechChain(const AppSettings &settings)
+{
+    return providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
+}
+
+QStringList refinementChain(const AppSettings &settings)
+{
+    return providerChain(ProviderRole::Refinement, settings.refinement.providerId,
+                         settings.refinement.fallbackProviderIds);
+}
+
+// A provider's own rows sit in its card and show while it is anywhere in the
+// chain, as the primary or a fallback, since either may run.
+Gate whileInSpeechChain(const QString &id)
+{
+    return [id](const AppSettings &settings, const Capabilities &) { return speechChain(settings).contains(id); };
+}
+
+Gate whileInRefinementChain(const QString &id)
 {
     return [id](const AppSettings &settings, const Capabilities &) {
-        return settings.speech.providerId == id;
+        return refinementChain(settings).contains(id);
     };
 }
 
-std::function<bool(const AppSettings &, const Capabilities &)> whileRefinementProvider(const QString &id)
+const QString kDictationFallbacks = QStringLiteral("dictation:fallbacks");
+const QString kRefinementFallbacks = QStringLiteral("refinement:fallbacks");
+
+// The button row under a role's picker that opens its Fallbacks subpage, saying
+// what the fallbacks are and, in the negative tone, why one can't stand in.
+SettingsRow fallbacksRow(ProviderRole role, QList<RowOption> providers, std::function<LiveFacts(const AppSettings &)> facts)
 {
-    return [id](const AppSettings &settings, const Capabilities &) {
-        return settings.refinement.providerId == id;
+    const bool speech = role == ProviderRole::Speech;
+    SettingsRow row = actionRow(speech ? QStringLiteral("speechFallbacks") : QStringLiteral("refinementFallbacks"),
+                                QStringLiteral("Fallbacks"), QString(), QStringLiteral("Choose fallbacks"));
+    row.targetPage = speech ? kDictationFallbacks : kRefinementFallbacks;
+    const auto summary = [role, providers = std::move(providers), facts = std::move(facts)](const AppSettings &settings) {
+        return fallbackSummary(role, settings, facts(settings), providers);
     };
+    row.helpValue = [summary](const AppSettings &settings) { return summary(settings).text; };
+    row.helpTone = [summary](const AppSettings &settings) { return summary(settings).tone; };
+    return row;
+}
+
+// A role's primary picker says why the primary can't work right now, in the
+// negative tone, in place of its usual help.
+void showPrimaryStatus(SettingsRow &row, ProviderRole role, QList<RowOption> providers,
+                       std::function<LiveFacts(const AppSettings &)> facts)
+{
+    const auto status = [role, providers = std::move(providers), facts = std::move(facts)](const AppSettings &settings) {
+        return primaryProviderStatus(role, settings, facts(settings), providers);
+    };
+    const std::function<QString(const AppSettings &)> help =
+        row.helpValue ? row.helpValue : [text = row.help](const AppSettings &) { return text; };
+    row.helpValue = [status, help](const AppSettings &settings) {
+        const QString text = status(settings);
+        return text.isEmpty() ? help(settings) : text;
+    };
+    row.helpTone = [status](const AppSettings &settings) {
+        return status(settings).isEmpty() ? StatusTone::Normal : StatusTone::Negative;
+    };
+}
+
+// The ordered fallbacks the subpage edits, as a QStringList of provider ids.
+// Each front end draws it from fallbackListPresentation() and edits it with
+// withFallbackMoved() and its siblings.
+SettingsRow fallbackListRow(ProviderRole role)
+{
+    const bool speech = role == ProviderRole::Speech;
+    SettingsRow row = customRow(speech ? QStringLiteral("speechFallbackList") : QStringLiteral("refinementFallbackList"),
+                                QStringLiteral("Fallbacks"), QString());
+    row.value = [role, speech](const AppSettings &settings) {
+        return QVariant(speech ? normalizedFallbackProviders(role, settings.speech.providerId,
+                                                             settings.speech.fallbackProviderIds)
+                               : normalizedFallbackProviders(role, settings.refinement.providerId,
+                                                             settings.refinement.fallbackProviderIds));
+    };
+    row.apply = [role, speech](AppSettings &settings, const QVariant &value) {
+        const QString &primary = speech ? settings.speech.providerId : settings.refinement.providerId;
+        QStringList &fallbacks = speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds;
+        fallbacks = normalizedFallbackProviders(role, primary, value.toStringList());
+    };
+    return row;
+}
+
+// A new primary leaves the fallbacks, and refinement None clears them.
+void setPrimaryProvider(AppSettings &settings, ProviderRole role, const QString &id)
+{
+    const bool speech = role == ProviderRole::Speech;
+    (speech ? settings.speech.providerId : settings.refinement.providerId) = id;
+    QStringList &fallbacks = speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds;
+    fallbacks = normalizedFallbackProviders(role, id, fallbacks);
 }
 
 QList<RowOption> namedOptions(const QStringList &ids)
@@ -531,7 +622,7 @@ QString runnersSummary(const LiveFacts &live)
     return QStringLiteral("Running: %1.").arg(found.join(QStringLiteral(", ")));
 }
 
-// The speech Custom Endpoint, under the Service picker.
+// The speech Custom Endpoint, in its card.
 QList<SettingsRow> speechEndpointRows(const std::function<LiveFacts(const AppSettings &)> &facts)
 {
     QList<SettingsRow> rows{
@@ -564,16 +655,16 @@ QList<SettingsRow> speechEndpointRows(const std::function<LiveFacts(const AppSet
         return namedOptions(facts(settings).speechEndpointModels);
     };
     for (SettingsRow &row : rows) {
-        row.visible = whileSpeechProvider(QStringLiteral("endpoint"));
+        row.visible = whileInSpeechChain(QStringLiteral("endpoint"));
     }
     return rows;
 }
 
-// The Local Model dictation uses, under the Service picker. It is the
+// The Local Model dictation uses, in its card. It is the
 // setting "Use this model" writes, so the two always agree. With nothing
 // downloaded there is nothing to choose, and the row sends people to the page
 // that downloads.
-QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts)
+QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts, bool offered)
 {
     SettingsRow model = choiceRow(
         QStringLiteral("speechLocalModel"),
@@ -611,7 +702,12 @@ QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts)
                                                     "dictate on this computer."),
                                      QStringLiteral("Open %1").arg(paneTitle(QStringLiteral("localModels"))));
 
-    const auto whileLocal = whileSpeechProvider(QStringLiteral("local"));
+    // A build without local speech may still hold a Local Model fallback; it
+    // has no Local models page to send anyone to.
+    const auto inChain = whileInSpeechChain(QStringLiteral("local"));
+    const Gate whileLocal = [inChain, offered](const AppSettings &settings, const Capabilities &capabilities) {
+        return offered && inChain(settings, capabilities);
+    };
     model.visible = [whileLocal, facts](const AppSettings &settings, const Capabilities &capabilities) {
         return whileLocal(settings, capabilities) && !facts().downloadedModels.isEmpty();
     };
@@ -621,7 +717,7 @@ QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts)
     return {std::move(model), std::move(download)};
 }
 
-// Refinement through a Local Runner, under the Provider picker.
+// Refinement through a Local Runner, in its card.
 QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
 {
     SettingsRow runner = choiceRow(
@@ -671,12 +767,12 @@ QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
 
     QList<SettingsRow> rows{std::move(runner), std::move(model), std::move(detect)};
     for (SettingsRow &row : rows) {
-        row.visible = whileRefinementProvider(QStringLiteral("local"));
+        row.visible = whileInRefinementChain(QStringLiteral("local"));
     }
     return rows;
 }
 
-// The refinement Custom Endpoint, under the Provider picker.
+// The refinement Custom Endpoint, in its card.
 QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const AppSettings &)> &facts)
 {
     QList<SettingsRow> rows{
@@ -724,7 +820,7 @@ QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const Ap
         return namedOptions(facts(settings).refinementEndpointModels);
     };
     for (SettingsRow &row : rows) {
-        row.visible = whileRefinementProvider(QStringLiteral("endpoint"));
+        row.visible = whileInRefinementChain(QStringLiteral("endpoint"));
     }
     return rows;
 }
@@ -1244,7 +1340,7 @@ SettingsPage audioPage(const SchemaContext &context)
         QStringLiteral("Service used to turn speech into a raw transcript."),
         fixedOptions(context.speechProviders),
         [](const AppSettings &settings) { return settings.speech.providerId; },
-        [](AppSettings &settings, const QString &value) { settings.speech.providerId = value; });
+        [](AppSettings &settings, const QString &value) { setPrimaryProvider(settings, ProviderRole::Speech, value); });
     speechProvider.contentWidthHint = 24;
     // The subtitle explains the engine behind the selected service; the
     // per-provider text rides in on RowOption::help from the registry.
@@ -1257,6 +1353,9 @@ SettingsPage audioPage(const SchemaContext &context)
         }
         return QStringLiteral("Service used to turn speech into a raw transcript.");
     };
+    const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
+    const auto statusFacts = [context](const AppSettings &settings) { return liveFacts(context, settings); };
+    showPrimaryStatus(speechProvider, ProviderRole::Speech, speechChoices, statusFacts);
 
     // Only what the chosen service or Local Model listens for, so a choice
     // here always works; a saved language it lacks stays, disabled, beside a
@@ -1314,9 +1413,7 @@ SettingsPage audioPage(const SchemaContext &context)
         "the live pass misheard. It uses one extra ChatGPT request. Dictations longer than "
         "about a minute and a half keep the live transcript.");
     finalRetranscribe.sinceVersion = QStringLiteral("0.1.6");
-    finalRetranscribe.visible = [](const AppSettings &settings, const Capabilities &) {
-        return settings.speech.providerId == QStringLiteral("codex");
-    };
+    finalRetranscribe.visible = whileInSpeechChain(QStringLiteral("codex"));
 
     SettingsRow device = choiceRow(
         QStringLiteral("audioDevice"),
@@ -1395,12 +1492,18 @@ SettingsPage audioPage(const SchemaContext &context)
         {
             {QStringLiteral("Transcription"),
              QString(),
-             QList<SettingsRow>{std::move(speechProvider), std::move(spokenLanguage), std::move(spokenLanguageCaution),
-                               std::move(finalRetranscribe)}
-                 + speechLocalModelRows([context] { return liveFacts(context); })
-                 + speechEndpointRows([context](const AppSettings &draft) {
-                     return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
-                 })},
+             {std::move(speechProvider), fallbacksRow(ProviderRole::Speech, speechChoices, statusFacts),
+              std::move(spokenLanguage), std::move(spokenLanguageCaution), std::move(finalRetranscribe)}},
+            // On the Fallbacks subpage rather than a pane.
+            {QStringLiteral("Fallbacks"), QString(), {fallbackListRow(ProviderRole::Speech)}},
+            {QStringLiteral("Local Model"),
+             QString(),
+             speechLocalModelRows(facts, offersProvider(context.speechProviders, QStringLiteral("local")))},
+            {QStringLiteral("Custom Endpoint"),
+             QString(),
+             speechEndpointRows([context](const AppSettings &draft) {
+                 return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
+             })},
             {QStringLiteral("Microphone"),
              QString(),
              {
@@ -1624,16 +1727,29 @@ SettingsRow customCleanupLevelsRow()
     return row;
 }
 
-// Each refinement account's Model, Effort and Speed, shown under the Provider
-// picker while that provider is chosen. Defined with the accounts below.
-QList<SettingsRow> providerModelRows();
+// Each refinement account's Model, Effort and Speed, in a card named after
+// the provider, shown while it is in the chain. Defined with the accounts
+// below.
+QList<SettingsSection> providerModelSections();
 
 SettingsPage refinementPage(const SchemaContext &context)
 {
-    QList<RowOption> refiners;
+    QList<RowOption> refinementChoices;
+    QStringList screenshotReaders;
+    QStringList readerLabels;
     for (const RefinementProvider &provider : context.refinementProviders) {
-        refiners.append({provider.id, provider.label});
+        refinementChoices.append({provider.id, provider.label});
+        if (provider.supportsScreenshotContext) {
+            screenshotReaders.append(provider.id);
+            readerLabels.append(provider.label);
+        }
     }
+    if (readerLabels.size() > 1) {
+        readerLabels = {readerLabels.mid(0, readerLabels.size() - 1).join(QStringLiteral(", ")),
+                        readerLabels.last()};
+    }
+    const QString readers = readerLabels.join(QStringLiteral(" and "));
+    QList<RowOption> refiners = refinementChoices;
     refiners.append({QStringLiteral("none"), QStringLiteral("None")});
 
     // Context only shapes a refinement request, so it goes with refinement.
@@ -1647,50 +1763,72 @@ SettingsPage refinementPage(const SchemaContext &context)
     gateOnTargetAccessibility(targetContext,
                               accessibilityGateHelp(QStringLiteral("send the app's text")));
 
+#ifdef Q_OS_MACOS
+    const QString screenshotHelp =
+        QStringLiteral("Needs Screen Recording permission. Kept only for the current dictation.");
+#else
+    const QString screenshotHelp = QStringLiteral("Kept only for the current dictation.");
+#endif
     SettingsRow screenshots = toggleRow(
         QStringLiteral("includeScreenshotContext"),
         QStringLiteral("A screenshot"),
-#ifdef Q_OS_MACOS
-        QStringLiteral("Needs Screen Recording permission. Kept only for the current dictation."),
-#else
-        QStringLiteral("Kept only for the current dictation."),
-#endif
+        screenshotHelp,
         [](const AppSettings &settings) { return settings.refinement.includeScreenshotContext; },
         [](AppSettings &settings, bool value) { settings.refinement.includeScreenshotContext = value; });
     screenshots.visible = refinementOn;
     screenshots.disabledHelp = QStringLiteral("Only OpenAI and Anthropic refinement can use screenshots.");
-    screenshots.enabled = [providers = context.refinementProviders](const AppSettings &settings,
-                                                                   const Capabilities &) {
-        for (const RefinementProvider &provider : providers) {
-            if (provider.id == settings.refinement.providerId) {
-                return provider.supportsScreenshotContext;
-            }
+    // Any provider in the chain that reads screenshots gets one; the rest
+    // clean up without it, which a mixed chain's help says.
+    screenshots.enabled = [screenshotReaders](const AppSettings &settings, const Capabilities &) {
+        const QStringList chain = refinementChain(settings);
+        return std::any_of(chain.cbegin(), chain.cend(),
+                           [&screenshotReaders](const QString &id) { return screenshotReaders.contains(id); });
+    };
+    screenshots.helpValue = [screenshotReaders, screenshotHelp, readers](const AppSettings &settings) {
+        const QStringList chain = refinementChain(settings);
+        const auto reads = [&screenshotReaders](const QString &id) { return screenshotReaders.contains(id); };
+        if (std::all_of(chain.cbegin(), chain.cend(), reads) || std::none_of(chain.cbegin(), chain.cend(), reads)) {
+            return screenshotHelp;
         }
-        return false;
+        return screenshotHelp + QStringLiteral(" Only %1 can read it; the others clean up without it.").arg(readers);
     };
 
     const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
-    return {
+    const auto statusFacts = [context](const AppSettings &settings) { return liveFacts(context, settings); };
+    SettingsRow fallbacks = fallbacksRow(ProviderRole::Refinement, refinementChoices, statusFacts);
+    fallbacks.visible = refinementOn;
+    SettingsRow refinementProvider = choiceRow(QStringLiteral("refinementProvider"),
+                                               QStringLiteral("Provider"),
+                                               QStringLiteral("The service that cleans up your text."),
+                                               fixedOptions(refiners),
+                                               [](const AppSettings &settings) { return settings.refinement.providerId; },
+                                               [](AppSettings &settings, const QString &value) {
+                                                   setPrimaryProvider(settings, ProviderRole::Refinement, value);
+                                               });
+    showPrimaryStatus(refinementProvider, ProviderRole::Refinement, refinementChoices, statusFacts);
+    SettingsPage page{
         QStringLiteral("refinement"),
         {
             {QStringLiteral("Provider"),
              QString(),
              QList<SettingsRow>{
-                 choiceRow(QStringLiteral("refinementProvider"),
-                           QStringLiteral("Provider"),
-                           QStringLiteral("The service that cleans up your text."),
-                           fixedOptions(refiners),
-                           [](const AppSettings &settings) { return settings.refinement.providerId; },
-                           [](AppSettings &settings, const QString &value) { settings.refinement.providerId = value; }),
-             }
-                 + providerModelRows()
-                 + localRunnerRows(facts)
-                 + refinementEndpointRows([context](const AppSettings &draft) {
-                     return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
-                 })},
-            {QStringLiteral("What refinement can see"), QString(), {std::move(targetContext), std::move(screenshots)}},
+                 std::move(refinementProvider),
+                 std::move(fallbacks),
+             }},
+            // On the Fallbacks subpage rather than a pane.
+            {QStringLiteral("Fallbacks"), QString(), {fallbackListRow(ProviderRole::Refinement)}},
         },
     };
+    page.sections += providerModelSections();
+    page.sections.append({QStringLiteral("Local Runner"), QString(), localRunnerRows(facts)});
+    page.sections.append({QStringLiteral("Custom Endpoint"),
+                          QString(),
+                          refinementEndpointRows([context](const AppSettings &draft) {
+                              return context.liveFactsForDraft ? context.liveFactsForDraft(draft) : liveFacts(context);
+                          })});
+    page.sections.append(
+        {QStringLiteral("What refinement can see"), QString(), {std::move(targetContext), std::move(screenshots)}});
+    return page;
 }
 
 // How refinement rewrites: the Writing Profiles, then what they choose from,
@@ -1828,7 +1966,7 @@ SettingsPage localModelsPage(const SchemaContext &context)
         }
         settings.speech.local.modelId = modelId;
         settings.speech.local.modelChosen = true;
-        settings.speech.providerId = QStringLiteral("local");
+        setPrimaryProvider(settings, ProviderRole::Speech, QStringLiteral("local"));
     };
 
     SettingsRow idleUnload = choiceRow(
@@ -2811,9 +2949,9 @@ QList<ProviderAccount> providerAccounts()
     return {openAi, anthropic};
 }
 
-QList<SettingsRow> providerModelRows()
+QList<SettingsSection> providerModelSections()
 {
-    QList<SettingsRow> rows;
+    QList<SettingsSection> sections;
     for (const ProviderAccount &account : providerAccounts()) {
         SettingsRow model;
         model.id = account.modelRowId;
@@ -2839,7 +2977,7 @@ QList<SettingsRow> providerModelRows()
                                needle = account.cautionWhenModelContains,
                                provider = account.providerId](const AppSettings &settings,
                                                               const Capabilities &) {
-                return settings.refinement.providerId == provider
+                return refinementChain(settings).contains(provider)
                     && (settings.refinement.*field).toCaseFolded().contains(needle);
             };
             accountRows.append(std::move(caution));
@@ -2857,12 +2995,12 @@ QList<SettingsRow> providerModelRows()
         accountRows.append(account.speed);
         for (SettingsRow &row : accountRows) {
             if (!row.visible) {
-                row.visible = whileRefinementProvider(account.providerId);
+                row.visible = whileInRefinementChain(account.providerId);
             }
         }
-        rows.append(accountRows);
+        sections.append({account.sectionTitle, QString(), accountRows});
     }
-    return rows;
+    return sections;
 }
 
 // Only a provider actually routed through the CLI Proxy API server needs this
@@ -2878,7 +3016,7 @@ bool cliproxyAccountsInUse(const AppSettings &settings, const Capabilities &)
 bool cliproxyServerRowVisible(const AppSettings &settings, const Capabilities &capabilities)
 {
     return cliproxyAccountsInUse(settings, capabilities)
-        || (settings.refinement.providerId == QStringLiteral("endpoint")
+        || (refinementChain(settings).contains(QStringLiteral("endpoint"))
             && settings.refinement.endpoint.preset == QStringLiteral("cliproxy"));
 }
 
@@ -3357,11 +3495,17 @@ const QList<PaneSpec> &paneSpecs()
         {"dictation", "Dictation", "microphone", PaneLayout::Sections,
          {{"general", "Shortcut"},
           {"audio", "Transcription"},
+          {"audio", "Local Model"},
+          {"audio", "Custom Endpoint"},
           {"audio", "Microphone"},
           {"general", "While dictating"},
           {"audio", "Recording"}}},
         {"refinement", "Refinement", "refinement", PaneLayout::Sections,
          {{"refinement", "Provider"},
+          {"refinement", "OpenAI"},
+          {"refinement", "Anthropic"},
+          {"refinement", "Local Runner"},
+          {"refinement", "Custom Endpoint"},
           {"refinement", "What refinement can see"}},
          refinementIntro() + QStringLiteral(" Choose None to paste your words as spoken.")},
         // ui-lint: allow title-case: the plural of the Writing Profile glossary term.
@@ -3423,6 +3567,18 @@ QList<SettingsPane> settingsPanes(const QList<SettingsPage> &pages)
     return panes;
 }
 
+// Each role's Fallbacks list, a step below the pane with its picker.
+QList<SettingsSubpage> settingsSubpages()
+{
+    const QString title = QStringLiteral("Fallbacks");
+    return {
+        {kDictationFallbacks, QStringLiteral("dictation"), title,
+         {{QString(), QString(), QString(), {QStringLiteral("speechFallbackList")}}}},
+        {kRefinementFallbacks, QStringLiteral("refinement"), title,
+         {{QString(), QString(), QString(), {QStringLiteral("refinementFallbackList")}}}},
+    };
+}
+
 QList<SidebarGroup> settingsSidebarGroups()
 {
     return {
@@ -3451,6 +3607,16 @@ QString paneTitle(const QString &paneId)
 const SettingsPane *SettingsSchema::pane(const QString &id) const
 {
     for (const SettingsPane &candidate : panes) {
+        if (candidate.id == id) {
+            return &candidate;
+        }
+    }
+    return nullptr;
+}
+
+const SettingsSubpage *SettingsSchema::subpage(const QString &id) const
+{
+    for (const SettingsSubpage &candidate : subpages) {
         if (candidate.id == id) {
             return &candidate;
         }
@@ -3495,6 +3661,11 @@ PageId resolvePage(const SettingsSchema &schema, const QString &request)
     };
     if (const auto alias = merged.constFind(request.toLower()); alias != merged.cend()) {
         return resolvePage(schema, *alias);
+    }
+    for (const SettingsSubpage &subpage : schema.subpages) {
+        if (subpage.id.compare(request, Qt::CaseInsensitive) == 0) {
+            return {subpage.parent, {}, subpage.id};
+        }
     }
     const QString paneId = request.section(QLatin1Char(':'), 0, 0);
     const QString viewId = request.section(QLatin1Char(':'), 1);
@@ -3577,9 +3748,7 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
     // Local models exists where this build runs speech models, which is when
     // the registry offers the local speech provider.
     const QString localModels = QStringLiteral("localModels");
-    const bool localSpeech =
-        std::any_of(context.speechProviders.cbegin(), context.speechProviders.cend(),
-                    [](const RowOption &provider) { return provider.id == QStringLiteral("local"); });
+    const bool localSpeech = offersProvider(context.speechProviders, QStringLiteral("local"));
     if (localSpeech) {
         pages.insert(4, localModelsPage(context));
     } else {
@@ -3592,7 +3761,7 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
     if (!localSpeech) {
         panes.removeIf([&localModels](const SettingsPane &pane) { return pane.id == localModels; });
     }
-    return {std::move(pages), std::move(panes), std::move(groups)};
+    return {std::move(pages), std::move(panes), std::move(groups), settingsSubpages()};
 }
 
 QString paneTitleForRow(const QString &rowId)

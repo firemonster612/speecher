@@ -1,10 +1,12 @@
 #include "providers/OpenAiTranscriptRefiner.h"
 
+#include "core/SettingsStore.h"
 #include "providers/OpenAiRefiner.h"
 
 #include <QDebug>
 
 #include <memory>
+#include <utility>
 
 namespace speecher {
 
@@ -46,7 +48,7 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
         return std::nullopt;
     }
 
-    auto refreshed = std::make_shared<OpenAiAuth>();
+    auto resolved = std::make_shared<OpenAiAuth>();
     const QString authMode = settings.openAiAuthMode;
     const QString cliproxyAccount = settings.openAiCliproxyAccount;
     const QString cliproxyDir = settings.cliproxyOauthDir;
@@ -54,21 +56,26 @@ std::optional<RefinementRefreshJob> OpenAiTranscriptRefiner::createRefreshJob(co
     const QString cliproxyApiKey = settings.cliproxyApiKey;
     RefinementRefreshJob job;
     job.showRefreshIndicator = true;
-    job.run = [authMode, cliproxyAccount, cliproxyDir, cliproxyBaseUrl, cliproxyApiKey, refreshed] {
-        *refreshed = OpenAiAuthProvider(nullptr,
-                                        authMode,
-                                        cliproxyAccount,
-                                        cliproxyDir,
-                                        {},
-                                        {},
-                                        cliproxyBaseUrl,
-                                        cliproxyApiKey)
-                         .refreshCodexOauth();
-        return RefinementRefreshResult{refreshed->ok, refreshed->status};
+    // Every source the mode allows, as prepare() resolves them, so a sign-in
+    // that can't renew still leaves an API key to use. The worker reads the
+    // keyring through a SecretStore of its own, never the GUI thread's.
+    job.run = [authMode, cliproxyAccount, cliproxyDir, cliproxyBaseUrl, cliproxyApiKey, resolved] {
+        SettingsStore source;
+        *resolved = OpenAiAuthProvider(source.secrets(),
+                                       authMode,
+                                       cliproxyAccount,
+                                       cliproxyDir,
+                                       {},
+                                       {},
+                                       cliproxyBaseUrl,
+                                       cliproxyApiKey)
+                        .resolve();
+        return RefinementRefreshResult{resolved->ok, resolved->status, resolved->kind, resolved->httpStatus};
     };
-    job.apply = [this, refreshed](const RefinementRefreshResult &result) {
+    job.apply = [this, resolved](const RefinementRefreshResult &result) {
         if (result.ok) {
-            m_auth = *refreshed;
+            m_auth = *resolved;
+            m_authResolvedByJob = true;
         }
     };
     return job;
@@ -87,6 +94,9 @@ void OpenAiTranscriptRefiner::refresh(const RefinementSettings &settings)
 
 RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSettings &settings)
 {
+    if (std::exchange(m_authResolvedByJob, false)) {
+        return {true, m_auth.status};
+    }
     // Refresh an expired token here rather than reporting it expired: a token
     // valid when the user started speaking can lapse before refinement, and
     // refusing then would drop the refinement the user asked for. resolve()
@@ -94,7 +104,7 @@ RefinementPrepareResult OpenAiTranscriptRefiner::prepare(const RefinementSetting
     m_auth = OpenAiAuthProvider(m_secretStore, settings.openAiAuthMode, settings.openAiCliproxyAccount, settings.cliproxyOauthDir,
                              {}, {}, settings.cliproxyBaseUrl, settings.cliproxyApiKey)
                  .resolve();
-    return {m_auth.ok, m_auth.status};
+    return {m_auth.ok, m_auth.status, m_auth.kind, m_auth.httpStatus};
 }
 
 void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
@@ -107,7 +117,7 @@ void OpenAiTranscriptRefiner::refine(const QString &rawTranscript,
     if (!m_auth.ok || settings.openAiAuthMode == QStringLiteral("cliproxy")) {
         const RefinementPrepareResult prepared = prepare(settings);
         if (!prepared.ok) {
-            emit failed(prepared.message);
+            emit failed({prepared.kind, prepared.message, prepared.httpStatus});
             return;
         }
     }

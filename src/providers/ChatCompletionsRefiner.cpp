@@ -1,5 +1,6 @@
 #include "providers/ChatCompletionsRefiner.h"
 #include "providers/EndpointRequest.h"
+#include "providers/ProviderFailureClassification.h"
 
 #include "core/EndpointUrl.h"
 #include "core/VocabularyLimit.h"
@@ -42,13 +43,15 @@ StreamingRefinement::Event chatCompletionsEvent(const QByteArray &, const QByteA
     if (data == "[DONE]") return {Event::Complete, {}};
     const QJsonObject object = QJsonDocument::fromJson(data).object();
     if (object.contains(QStringLiteral("error"))) {
-        return {Event::Failed, chatCompletionsErrorMessage(data, QStringLiteral("stream error"))};
+        return {Event::Failed, chatCompletionsErrorMessage(data, QStringLiteral("stream error")),
+                streamedErrorKind(object.value(QStringLiteral("error")).toObject())};
     }
     const QJsonObject choice = object.value(QStringLiteral("choices")).toArray().at(0).toObject();
     // Anything but a natural stop cut the text short.
     const QString finishReason = choice.value(QStringLiteral("finish_reason")).toString();
     if (!finishReason.isEmpty() && finishReason != QStringLiteral("stop")) {
-        return {Event::Failed, QStringLiteral("the model stopped early: %1").arg(finishReason)};
+        return {Event::Failed, QStringLiteral("the model stopped early: %1").arg(finishReason),
+                ProviderFailureKind::InvalidResult};
     }
     const QString content = choice.value(QStringLiteral("delta")).toObject()
                                 .value(QStringLiteral("content")).toString();
@@ -82,16 +85,17 @@ ChatCompletionsRefiner::ChatCompletionsRefiner(const QString &label,
         emit delta(text);
     });
     connect(&m_stream, &StreamingRefinement::completed, this, &ChatCompletionsRefiner::completed);
-    connect(&m_stream, &StreamingRefinement::failed, this, [this](const QString &message, int httpStatus) {
+    connect(&m_stream, &StreamingRefinement::failed, this, [this](const ProviderFailure &failure) {
         // Text already delivered must never be replayed.
-        if (httpStatus == 400 && m_sentReasoningFields && !m_streamedOutput && namesReasoningField(message)) {
+        if (failure.httpStatus == 400 && m_sentReasoningFields && !m_streamedOutput
+            && namesReasoningField(failure.message)) {
             qInfo().noquote() << "chat completions server rejected the reasoning fields,"
-                              << "retrying without them:" << message;
+                              << "retrying without them:" << failure.message;
             m_rejectsReasoningFields.insert(m_serverModel);
             post(false);
             return;
         }
-        emit failed(message);
+        emit failed(selfHostedFailure(failure));
     });
 }
 

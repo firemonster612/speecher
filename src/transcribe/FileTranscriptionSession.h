@@ -123,11 +123,15 @@ private:
     void handleDecodedBuffer();
     void handleDecodeFinished();
     void prepareProviders();
+    void prepareSpeechProvider();
+    void connectTranscriber();
+    void releaseTranscriber();
     void beginStreaming();
     void sendNextChunk();
     void startNextAttempt();
     void handleAttemptCompleted(quint64 attemptId);
     void handleSpeechFailure(const SpeechFailure &failure);
+    QString speechFailureText(const QString &providerMessage) const;
     bool attemptWasStable() const;
     void finishTranscription();
     void refine(const QString &raw);
@@ -157,7 +161,7 @@ private:
     qsizetype m_sent = 0;
     bool m_inputFinished = false;
     quint64 m_attemptId = 0;
-    quint64 m_preparationGeneration = 0;
+    quint64 m_preparationRevision = 0;
     int m_reconnectsLeft = 0;
     QElapsedTimer m_attemptClock;
     // Where in the file the current attempt's audio starts.
@@ -166,6 +170,14 @@ private:
     // replaces only what followed it.
     QString m_attemptBaseText;
     TranscriptPipelineResult m_pipeline;
+    // The page's speech provider, then the saved fallbacks; each file walks
+    // it from the start, and says why each one it passed could not help.
+    QStringList m_speechChain;
+    int m_speechIndex = 0;
+    QList<ProviderAttemptIssue> m_speechIssues;
+    // The refiner's sign-in renewed for this file: once, not for each
+    // speech provider tried.
+    bool m_refinerRefreshed = false;
 };
 
 } // namespace speecher

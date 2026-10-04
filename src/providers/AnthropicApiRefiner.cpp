@@ -1,5 +1,6 @@
 #include "providers/AnthropicApiRefiner.h"
 #include "providers/EndpointRequest.h"
+#include "providers/ProviderFailureClassification.h"
 
 #include "providers/ClaudeCredentials.h"
 #include "providers/TranscriptRefinementPrompt.h"
@@ -149,10 +150,12 @@ StreamingRefinement::Event anthropicEvent(const QString &label, const QByteArray
     const QString stopReason = delta.value(QStringLiteral("stop_reason")).toString();
     if (name == "message_delta" && !stopReason.isEmpty()
         && stopReason != QStringLiteral("end_turn") && stopReason != QStringLiteral("stop_sequence")) {
-        return {Event::Failed, QStringLiteral("%1 refinement stopped: %2").arg(label, stopReason)};
+        return {Event::Failed, QStringLiteral("%1 refinement stopped: %2").arg(label, stopReason),
+                ProviderFailureKind::InvalidResult};
     }
     if (name == "error" || object.value(QStringLiteral("type")).toString() == QStringLiteral("error")) {
-        return {Event::Rejected, anthropicErrorMessage(data, QStringLiteral("%1 refinement error").arg(label))};
+        return {Event::Rejected, anthropicErrorMessage(data, QStringLiteral("%1 refinement error").arg(label)),
+                streamedErrorKind(object.value(QStringLiteral("error")).toObject())};
     }
     if (name == "content_block_delta" && delta.value(QStringLiteral("type")).toString() == QStringLiteral("text_delta")) {
         return {Event::Delta, delta.value(QStringLiteral("text")).toString()};
