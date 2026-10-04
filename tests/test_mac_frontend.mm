@@ -5,8 +5,10 @@
 #include "core/AppSettings.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
+#include "core/settings/SettingsSchema.h"
 #include "frontend/mac/MacFrontEnd.h"
 #include "frontend/mac/SpeecherBridge.h"
+#include "platform/mac/MacGlobalShortcutBinder.h"
 #include "ui/AppWindow.h"
 #include "ui/SetupAssistant.h"
 #include "ui/TranscriberPopup.h"
@@ -56,15 +58,15 @@ SettingsRowModel *settingsRow(SettingsSchemaModel *schema, NSString *rowId)
     return nil;
 }
 
-// Whether the given ⌃⌥⇧ function key is unregistered system-wide: Carbon's exclusive
-// option refuses the registration while anyone — including this process's own
-// shortcut binder — holds the combination.
-bool hotKeyComboIsFree(UInt32 keyCode = kVK_F9)
+// Whether the given key, with ⌃⌥⇧ unless told otherwise, is unregistered
+// system-wide: Carbon's exclusive option refuses the registration while
+// anyone — including this process's own shortcut binder — holds it.
+bool hotKeyComboIsFree(UInt32 keyCode = kVK_F9, UInt32 modifiers = controlKey | optionKey | shiftKey)
 {
     const EventHotKeyID identifier{'spct', 99};
     EventHotKeyRef probe = nullptr;
     const OSStatus status = RegisterEventHotKey(keyCode,
-                                                controlKey | optionKey | shiftKey,
+                                                modifiers,
                                                 identifier,
                                                 GetApplicationEventTarget(),
                                                 kEventHotKeyExclusive,
@@ -483,6 +485,23 @@ private slots:
         QVERIFY([row.help containsString:@"Sparkle"]);
     }
 
+    void customCheckIntervalCrossesTheBridgeWithItsUnit()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsSchemaModel *schema = bridge.settingsSchema;
+        [schema setValue:@"custom" forRowId:@"updateCheckInterval"];
+        [schema setValue:@{@"number": @8, @"unit": @"hours"} forRowId:@"updateCheckCustomInterval"];
+        [schema commit];
+
+        SettingsRowModel *row = settingsRow(schema, @"updateCheckCustomInterval");
+        QVERIFY(row);
+        QCOMPARE(row.units.count, NSUInteger(3));
+        QCOMPARE(row.units.lastObject.maximum, NSInteger(30));
+        QVERIFY([row.value isEqual:(@{@"number": @8, @"unit": @"hours"})]);
+        QCOMPARE(controller.settings()->updateCheckIntervalMinutes(), 480);
+    }
+
     void accountOptionsUseUserFacingLanguage()
     {
         ApplicationController controller(false);
@@ -563,7 +582,7 @@ private slots:
         QCoreApplication::processEvents();
         QVERIFY(hotKeyComboIsFree());
 
-        [bridge endShortcutRecordingCancelShortcutFailed:nil];
+        [bridge endShortcutRecordingFailedRole:nil];
         QVERIFY(hotKeyComboIsFree());
         const unichar replacement = NSF10FunctionKey;
         QVERIFY([bridge bindShortcutWithCharacters:[NSString stringWithCharacters:&replacement length:1]
@@ -571,7 +590,7 @@ private slots:
                                                    | NSEventModifierFlagOption
                                                    | NSEventModifierFlagShift] == nil);
         QVERIFY(hotKeyComboIsFree(kVK_F10));
-        [bridge endShortcutRecordingCancelShortcutFailed:nil];
+        [bridge endShortcutRecordingFailedRole:nil];
         QVERIFY(hotKeyComboIsFree());
         QVERIFY(!hotKeyComboIsFree(kVK_F10));
     }
@@ -586,7 +605,7 @@ private slots:
         }
         // Recorder callbacks may arrive after controller teardown.
         [bridge beginShortcutRecording];
-        QVERIFY([bridge endShortcutRecordingCancelShortcutFailed:nil] == nil);
+        QVERIFY([bridge endShortcutRecordingFailedRole:nil] == nil);
     }
 
     // Ending a recording that bound a replacement keeps the replacement rather
@@ -602,7 +621,7 @@ private slots:
         QVERIFY([bridge bindShortcutWithCharacters:@"g"
                                      modifierFlags:NSEventModifierFlagControl
                                                    | NSEventModifierFlagOption] == nil);
-        [bridge endShortcutRecordingCancelShortcutFailed:nil];
+        [bridge endShortcutRecordingFailedRole:nil];
 
         QCOMPARE(controller.globalShortcut().combination(),
                  QKeySequence(Qt::META | Qt::ALT | Qt::Key_G));
@@ -624,10 +643,119 @@ private slots:
         QCOMPARE(RegisterEventHotKey(kVK_F9, controlKey | optionKey | shiftKey,
                                      identifier, GetApplicationEventTarget(),
                                      kEventHotKeyExclusive, &competingHotKey), OSStatus(noErr));
-        BOOL cancelShortcutFailed = YES;
-        NSString *error = [bridge endShortcutRecordingCancelShortcutFailed:&cancelShortcutFailed];
+        SpeecherShortcutRole failedRole = SpeecherShortcutRolePause;
+        NSString *error = [bridge endShortcutRecordingFailedRole:&failedRole];
         QVERIFY(error.length > 0);
-        QVERIFY(!cancelShortcutFailed);
+        QCOMPARE(int(failedRole), int(SpeecherShortcutRoleDictation));
+    }
+
+    // Only the Cancel and Pause Shortcuts take a bare key such as C or
+    // Escape, and they leave it free between Dictation Sessions.
+    void sessionShortcutsTakeBareKeys()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        const auto cleanup = qScopeGuard([&] {
+            [bridge clearShortcutForRole:SpeecherShortcutRoleCancel];
+            [bridge clearShortcutForRole:SpeecherShortcutRolePause];
+        });
+        QVERIFY([bridge bindShortcutWithCharacters:@"c" modifierFlags:0 role:SpeecherShortcutRoleDictation] != nil);
+
+        const unichar escape = 0x1b;
+        const struct {
+            SpeecherShortcutRole role;
+            NSString *characters;
+            UInt32 keyCode;
+            Qt::Key key;
+        } cases[] = {
+            {SpeecherShortcutRoleCancel, @"c", kVK_ANSI_C, Qt::Key_C},
+            {SpeecherShortcutRolePause, [NSString stringWithCharacters:&escape length:1], kVK_Escape, Qt::Key_Escape},
+        };
+        for (const auto &bareKey : cases) {
+            QVERIFY(settingsRow(bridge.settingsSchema, [SpeecherBridge rowIdForShortcutRole:bareKey.role]));
+            QVERIFY([bridge bindShortcutWithCharacters:bareKey.characters modifierFlags:0 role:bareKey.role] == nil);
+            QCOMPARE(controller.globalShortcut(GlobalShortcutRole(bareKey.role)).combination(),
+                     QKeySequence(bareKey.key));
+            QCOMPARE(QString::fromNSString([bridge shortcutDisplayForRole:bareKey.role]),
+                     ShortcutBinding(QKeySequence(bareKey.key)).displayText());
+            QVERIFY(hotKeyComboIsFree(bareKey.keyCode, 0));
+        }
+    }
+
+    // A Cancel or Pause binder holds its hot key only while armed and not
+    // suspended; the dictation shortcut still needs a modifier.
+    void sessionShortcutHotKeyIsHeldOnlyWhileArmed()
+    {
+        for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
+            MacSessionShortcutBinder binder(GlobalShortcutBinder::actionFor(role));
+            const auto cleanup = qScopeGuard([&] { binder.setShortcut({}); });
+            QVERIFY(binder.setShortcut(QKeySequence(Qt::Key_Escape)));
+            QVERIFY(hotKeyComboIsFree(kVK_Escape, 0));
+            binder.setArmed(true);
+            QVERIFY(!hotKeyComboIsFree(kVK_Escape, 0));
+            binder.suspend();
+            QVERIFY(hotKeyComboIsFree(kVK_Escape, 0));
+            QVERIFY(binder.resume().isEmpty());
+            QVERIFY(!hotKeyComboIsFree(kVK_Escape, 0));
+            binder.setArmed(false);
+            QVERIFY(hotKeyComboIsFree(kVK_Escape, 0));
+        }
+        MacGlobalShortcutBinder dictation(GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation));
+        QString error;
+        QVERIFY(!dictation.setShortcut(QKeySequence(Qt::Key_Escape), &error));
+        QVERIFY(!error.isEmpty());
+    }
+
+    // The recorder binds before it ends the recording, so a Cancel or Pause
+    // Shortcut is set while suspended. It still refuses keys another app
+    // holds, and takes nothing it was not asked to hold.
+    void sessionShortcutSetWhileSuspendedStillRefusesTakenKeys()
+    {
+        MacSessionShortcutBinder binder(GlobalShortcutBinder::actionFor(GlobalShortcutRole::Cancel));
+        const auto cleanup = qScopeGuard([&] { binder.setShortcut({}); });
+        binder.suspend();
+        EventHotKeyRef competingHotKey = nullptr;
+        const EventHotKeyID identifier{'spct', 101};
+        QCOMPARE(RegisterEventHotKey(kVK_F9, controlKey | optionKey | shiftKey,
+                                     identifier, GetApplicationEventTarget(),
+                                     kEventHotKeyExclusive, &competingHotKey), OSStatus(noErr));
+        const auto releaseCompeting = qScopeGuard([&] { UnregisterEventHotKey(competingHotKey); });
+        QString error;
+        QVERIFY(!binder.setShortcut(QKeySequence(Qt::META | Qt::ALT | Qt::SHIFT | Qt::Key_F9), &error));
+        QVERIFY(!error.isEmpty());
+
+        QVERIFY(binder.setShortcut(QKeySequence(Qt::Key_Escape)));
+        QVERIFY(hotKeyComboIsFree(kVK_Escape, 0));
+        binder.setArmed(true);
+        QVERIFY(hotKeyComboIsFree(kVK_Escape, 0));
+        QVERIFY(binder.resume().isEmpty());
+        QVERIFY(!hotKeyComboIsFree(kVK_Escape, 0));
+        binder.setArmed(false);
+    }
+
+    // NSEvent monitors cannot stop a key, so a Cancel or Pause single key
+    // that types is refused whatever the Accessibility grant says. One that
+    // cannot type follows the grant, as the dictation shortcut's does.
+    void sessionShortcutsRefuseASingleKeyThatTypes()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        const auto cleanup = qScopeGuard([&] {
+            [bridge clearShortcutForRole:SpeecherShortcutRoleCancel];
+            [bridge clearShortcutForRole:SpeecherShortcutRolePause];
+        });
+        const ShortcutBinding typingKey = ShortcutBinding::singleKey(QStringLiteral("KeyC"));
+        const struct {
+            SpeecherShortcutRole role;
+            NSString *silentKey;
+        } cases[] = {{SpeecherShortcutRoleCancel, @"F13"}, {SpeecherShortcutRolePause, @"F14"}};
+        for (const auto &session : cases) {
+            QCOMPARE(QString::fromNSString([bridge bindSingleKeyCode:@"KeyC" role:session.role]),
+                     watchedKeyStillTypesText(typingKey));
+            QVERIFY(controller.globalShortcut(GlobalShortcutRole(session.role)).isEmpty());
+            QCOMPARE([bridge bindSingleKeyCode:session.silentKey role:session.role] == nil,
+                     bool(AXIsProcessTrusted()));
+        }
     }
 
     // The single-key half of the bridge: keycode-to-name mapping, display,

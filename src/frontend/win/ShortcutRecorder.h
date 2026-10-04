@@ -7,13 +7,14 @@ namespace speecher::win {
 // The Global Shortcut row at the top of Dictation: the current binding, a
 // Change… button that records the next one in a modal dialog — a key
 // combination, a bare key, or a lone modifier committed on its release — and
-// a reset to the default while another is bound. The Cancel Shortcut row is
-// the same with Clear in place of the reset, since it has no default. The row says afterwards when
-// the binder refused a binding or when a single key also types. The setup
-// assistant's Global Shortcut page shows the same row.
+// a reset to the default while another is bound. The Cancel and Pause
+// Shortcut rows are the same with Clear in place of the reset, since they
+// have no default, and also record a bare key such as C or Escape. The row
+// says afterwards when the binder refused a binding or when a single key also
+// types. The setup assistant's Global Shortcut page shows the same rows.
 class ShortcutRecorder {
 public:
-    // The schema's "globalShortcut" or "cancelShortcut" custom row, which its
+    // The schema's "globalShortcut", "cancelShortcut" or "pauseShortcut" custom row, which its
     // card holds; the row's label titles the dialog. A change rebuilds
     // through host.refresh.
     static winrt::Microsoft::UI::Xaml::Controls::StackPanel element(const RowSnapshot &row,

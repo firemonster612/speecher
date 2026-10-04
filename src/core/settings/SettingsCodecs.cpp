@@ -1174,12 +1174,24 @@ void SettingsCodecs::setAutoInstallUpdates(bool value)
 int SettingsCodecs::updateCheckIntervalMinutes() const
 {
     // A hand-edited zero or negative interval would make the check timer spin.
-    return qMax(5, value(SettingsKeys::UpdatesCheckIntervalMinutes, 30).toInt());
+    return qBound(UpdateSettings::minimumCheckIntervalMinutes,
+                  value(SettingsKeys::UpdatesCheckIntervalMinutes, 30).toInt(),
+                  UpdateSettings::maximumCheckIntervalMinutes);
 }
 
 void SettingsCodecs::setUpdateCheckIntervalMinutes(int value)
 {
     m_settings.setValue(SettingsKeys::UpdatesCheckIntervalMinutes, value);
+}
+
+QString SettingsCodecs::updateCheckIntervalUnit() const
+{
+    return value(SettingsKeys::UpdatesCheckIntervalUnit, QString()).toString();
+}
+
+void SettingsCodecs::setUpdateCheckIntervalUnit(const QString &value)
+{
+    m_settings.setValue(SettingsKeys::UpdatesCheckIntervalUnit, value);
 }
 
 QString SettingsCodecs::updatesRestoreState() const
@@ -1430,6 +1442,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.updates.autoCheck = autoCheckUpdates();
     settings.updates.autoInstall = autoInstallUpdates();
     settings.updates.checkIntervalMinutes = updateCheckIntervalMinutes();
+    settings.updates.checkIntervalUnit = updateCheckIntervalUnit();
     return settings;
 }
 

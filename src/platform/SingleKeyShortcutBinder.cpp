@@ -1,6 +1,7 @@
 #include "platform/SingleKeyShortcutBinder.h"
 
 #include "core/settings/SettingsKeys.h"
+#include "core/settings/SettingsSchema.h"
 
 #include <QSettings>
 
@@ -58,10 +59,15 @@ ShortcutBinding SingleKeyShortcutBinder::shortcut() const
 
 QString SingleKeyShortcutBinder::unsupportedBindingReason(const ShortcutBinding &binding) const
 {
-    if (binding.isSingleKey()) {
-        return QString();
+    if (!binding.isSingleKey()) {
+        return QStringLiteral("Key combinations go through your desktop's shortcut service.");
     }
-    return QStringLiteral("Key combinations go through your desktop's shortcut service.");
+    // A watcher sees a key without taking it, so a session shortcut on a key
+    // that types would type into the dictation it acts on.
+    if (action().sessionOnly && !singleKeyTypingWarning(binding).isEmpty()) {
+        return watchedKeyStillTypesText(binding);
+    }
+    return QString();
 }
 
 bool SingleKeyShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString *error)

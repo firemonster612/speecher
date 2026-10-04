@@ -103,6 +103,16 @@ private slots:
         QVERIFY(!stale.ready());
         QVERIFY(stale.detail.contains(QStringLiteral("Set it up again")));
 
+        // A version 1 daemon still watches one key, so a single-key dictation
+        // shortcut keeps working; the verdict asks for the update the
+        // session shortcuts need.
+        KeywatchProbeFacts older = mismatched;
+        older.daemonOutdated = true;
+        const KeywatchSetupStatus outdated = KeywatchSetup::evaluate(older);
+        QCOMPARE(outdated.state, KeywatchSetupState::Outdated);
+        QVERIFY(outdated.ready());
+        QVERIFY(outdated.detail.contains(QStringLiteral("Set it up again")));
+
         // The owner-only socket needs no group or sign-out: once the daemon
         // answers on it with this build's protocol, the helper is ready
         // straight away.

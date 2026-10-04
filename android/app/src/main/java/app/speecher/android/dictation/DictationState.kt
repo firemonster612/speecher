@@ -1,5 +1,6 @@
 package app.speecher.android.dictation
 
+import app.speecher.android.update.IntervalUnit
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.ENGLISH_LANGUAGE
@@ -257,6 +258,10 @@ data class SpeecherSettings(
     val buttonLayout: ButtonLayout = ButtonLayout.RefinedPrimary,
     /** The size the panel opens at. */
     val panelSize: PanelSize = PanelSize.Full,
+    /** How often the app checks for an update while it is open. */
+    val updateCheckMinutes: Int = IntervalUnit.Days.minutes,
+    /** The unit a custom interval was entered in, or null for one of the presets. */
+    val updateCheckUnit: IntervalUnit? = null,
 ) {
     /**
      * The layout the panel shows. With refinement off there is nothing to refine, so only Insert.

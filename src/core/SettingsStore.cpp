@@ -279,6 +279,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setAutoCheckUpdates(draft.updates.autoCheck);
     setAutoInstallUpdates(draft.updates.autoInstall);
     setUpdateCheckIntervalMinutes(draft.updates.checkIntervalMinutes);
+    setUpdateCheckIntervalUnit(draft.updates.checkIntervalUnit);
     setVocabularyEntries(draft.vocabulary);
     setLearnedCorrections(draft.learnedCorrections);
     setCorrectionLearningEnabled(draft.correctionLearningEnabled);

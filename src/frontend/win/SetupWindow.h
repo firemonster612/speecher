@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/AppFrontEnd.h"
+#include "core/ShortcutBinding.h"
 
 #include <functional>
 #include <memory>
@@ -31,6 +32,10 @@ private:
     void showPageForTest(const QString &stepId);
     bool finishEnabledForTest() const;
     bool captureForTest(const QString &path);
+    // Scrolls the page to its end, for a capture of what lies below the fold.
+    void scrollToEndForTest();
+    // Brings the window forward and opens a shortcut row's recording dialog.
+    void recordShortcutForTest(GlobalShortcutRole role);
     static QStringList welcomeCopyForTest();
     struct Native;
     std::unique_ptr<Native> m_native;

@@ -53,6 +53,22 @@ private slots:
         QVERIFY(dictationToggleAction(QStringLiteral("error")).enabled);
     }
 
+    // The session shortcuts hold their keys only while their action applies:
+    // cancel from Starting through Refining, pause while Listening or Paused.
+    void sessionShortcutsApplyOnlyWhileTheirActionDoes()
+    {
+        for (const QString &state : {QStringLiteral("Listening"), QStringLiteral("Paused")}) {
+            QVERIFY(dictationPausable(state));
+            QVERIFY(dictationCancelable(state));
+        }
+        for (const QString &state : {QStringLiteral("Starting"), QStringLiteral("Refining")}) {
+            QVERIFY(!dictationPausable(state));
+            QVERIFY(dictationCancelable(state));
+        }
+        QVERIFY(!dictationPausable(QStringLiteral("Idle")));
+        QVERIFY(!dictationCancelable(QStringLiteral("Idle")));
+    }
+
     void popupErrorsStayLongEnoughToRead()
     {
         QCOMPARE(popupErrorDismissMs(QStringLiteral("Microphone unavailable")), 8000);
