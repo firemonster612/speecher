@@ -1387,7 +1387,9 @@ AppSettings SettingsCodecs::snapshot() const
     settings.speech.vocabulary = speechVocabulary(settings.vocabulary, settings.learnedCorrections, QString());
 
     settings.refinement.providerId = refinementProvider();
-    settings.refinement.fallbackProviderIds = refinementFallbackProviders();
+    settings.refinement.fallbackProviderIds = normalizedFallbackProviders(
+        ProviderRole::Refinement, settings.refinement.providerId,
+        value(SettingsKeys::RefinementFallbackProviders, QStringList()).toStringList());
     settings.refinement.style = refinementStyle();
     settings.refinement.openAiModel = openAiModel();
     settings.refinement.openAiAuthMode = openAiAuthMode();
