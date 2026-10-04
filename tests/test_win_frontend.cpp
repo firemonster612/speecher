@@ -35,6 +35,7 @@
 
 #include <cmath>
 #include <memory>
+#include <optional>
 
 namespace speecher {
 namespace {
@@ -61,7 +62,7 @@ QString describeBoxes(const QList<QRect> &boxes)
 // A provider's registry label, as the Add a fallback combo lists it.
 QString chainLabel(ProviderRole role, const ProviderRegistry &registry, const QString &id)
 {
-    for (const RowOption &provider : win::chainProviders(role, registry)) {
+    for (const RowOption &provider : win::providerOptions(role, registry)) {
         if (provider.id == id) {
             return provider.label;
         }
@@ -832,6 +833,28 @@ private slots:
                  (QStringList{QStringLiteral("local"), QStringLiteral("anthropic")}));
     }
 
+    // A primary that can't work right now says so in the negative tone.
+    void settingsModelCarriesThePrimaryStatusTone()
+    {
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        chooseRefinementProvider(*store, QStringLiteral("endpoint"));
+        store->setRefinementEndpointSettings({});
+        win::SettingsModel model(controller.get());
+        std::optional<win::RowSnapshot> picker;
+        for (const SettingsPaneGroup &group : model.schema().pane(QStringLiteral("refinement"))->groups) {
+            for (const auto &row : model.section(group).rows) {
+                if (row.id == QStringLiteral("refinementProvider")) {
+                    picker = row;
+                }
+            }
+        }
+        QVERIFY(picker);
+        QCOMPARE(picker->help, QStringLiteral("No server URL is set."));
+        QCOMPARE(picker->helpTone, StatusTone::Negative);
+    }
+
     // The Fallbacks row opens its subpage with the pane still selected, the
     // subpage's buttons and combo edit the stored list, and Back returns.
     void fallbacksSubpageNavigatesAndEdits()
@@ -872,6 +895,12 @@ private slots:
                                      chainLabel(ProviderRole::Refinement, *controller->providerRegistry(),
                                                 endpoint)));
         QTRY_COMPARE_WITH_TIMEOUT(store->refinementFallbackProviders(), (QStringList{anthropic, endpoint}), 2000);
+        QTest::qWait(200);
+        // Both Removes before the list is drawn again: the second still finds
+        // its fallback, now first.
+        QVERIFY(window.pressForTest(captions.removeCaption, 0));
+        QVERIFY(window.pressForTest(captions.removeCaption, 1));
+        QTRY_COMPARE_WITH_TIMEOUT(store->refinementFallbackProviders(), QStringList{}, 2000);
 
         window.goBackForTest();
         QCOMPARE(window.shownPageForTest(), QStringLiteral("refinement"));
@@ -880,6 +909,12 @@ private slots:
         window.showPage(QStringLiteral("dictation:fallbacks"));
         QCOMPARE(window.shownPageForTest(), QStringLiteral("dictation:fallbacks"));
         QCOMPARE(window.selectedPaneForTest(), QStringLiteral("dictation"));
+        // Closed on a subpage, the window opens again on Home.
+        window.close();
+        window.show();
+        QCOMPARE(window.shownPageForTest(), QStringLiteral("home"));
+        QCOMPARE(window.selectedPaneForTest(), QStringLiteral("home"));
+        QVERIFY(!window.backVisibleForTest());
         window.close();
     }
 
@@ -951,20 +986,27 @@ private slots:
         QTest::qWait(100);
         QVERIFY(panel->fixVisibleForTest());
         QVERIFY(!(panel->windowStyleForTest() & WS_EX_TRANSPARENT));
-        QString opened;
-        const auto connection = connect(panel, &DictationPanel::fixRequested, this,
-                                        [&opened](const PopupErrorAction &fix) { opened = fix.pageId; });
-        const auto release = qScopeGuard([connection] { QObject::disconnect(connection); });
+        // An outcome, not an error: no Dismiss, no countdown, and the session
+        // stays where it was.
+        QVERIFY(!panel->errorChromeVisibleForTest());
+        const DictationState state = controller->session()->state();
+        win::SettingsWindow *settings = frontEnd->settingsWindowForTest();
+        settings->close();
+        QVERIFY(!settings->isVisible());
         panel->pressFixForTest();
-        QTRY_COMPARE_WITH_TIMEOUT(opened, QStringLiteral("accounts"), 2000);
+        QTRY_VERIFY_WITH_TIMEOUT(settings->isVisible(), 2000);
+        QTRY_COMPARE_WITH_TIMEOUT(settings->shownPageForTest(), QStringLiteral("accounts"), 2000);
         QVERIFY(!panel->visibleForTest());
-        QTRY_VERIFY_WITH_TIMEOUT(FindWindowW(nullptr, L"Speecher") != nullptr, 2000);
+        QVERIFY(!panel->errorChromeVisibleForTest());
+        QCOMPARE(controller->session()->state(), state);
+        settings->close();
     }
 
     // Pictures of every surface the fallbacks add, for UI evidence: both
-    // settings pages with a chain, both subpages empty and full (with a
-    // fallback that can't stand in, in the negative tone), both setup
-    // steps, and an outcome with a fix, in Light and Dark.
+    // settings pages with a chain, Dictation with a primary that can't
+    // work, both subpages empty and full (with a fallback that can't stand
+    // in, in the negative tone), both setup steps, and an outcome with a
+    // fix, in Light and Dark.
     void fallbackEvidenceGrabs()
     {
         const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
@@ -1016,6 +1058,11 @@ private slots:
             grab(QStringLiteral("refinement"), QStringLiteral("settings-refinement-bottom"), "bottom");
             grab(QStringLiteral("dictation:fallbacks"), QStringLiteral("fallbacks-dictation-full"));
             grab(QStringLiteral("refinement:fallbacks"), QStringLiteral("fallbacks-refinement-full"));
+            // A primary that can't work: its picker says so in the negative
+            // tone.
+            store->setSpeechProvider(QStringLiteral("endpoint"));
+            grab(QStringLiteral("dictation"), QStringLiteral("settings-dictation-primary-status"));
+            store->setSpeechProvider(QStringLiteral("codex"));
 
             store->setSpeechFallbackProviders({});
             chooseRefinementProvider(*store, QStringLiteral("anthropic"));
