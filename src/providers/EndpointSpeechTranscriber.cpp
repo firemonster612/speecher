@@ -11,6 +11,8 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 
+#include <algorithm>
+
 namespace speecher {
 namespace {
 
@@ -32,6 +34,39 @@ QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
     const QString message = error.isObject() ? error.toObject().value(QStringLiteral("message")).toString()
                                              : error.isString() ? error.toString() : object.value(QStringLiteral("message")).toString();
     return message.isEmpty() ? fallback : message;
+}
+
+// Whether the first character with a script of its own, past punctuation and
+// digits, is in a script written without spaces between words.
+template <typename Iterator>
+bool firstLetterWrittenWithoutSpaces(Iterator begin, Iterator end)
+{
+    const Iterator letter = std::find_if(begin, end, [](QChar c) { return c.script() > QChar::Script_Common; });
+    if (letter == end) return false;
+    switch (letter->script()) {
+    case QChar::Script_Han:
+    case QChar::Script_Hiragana:
+    case QChar::Script_Katakana:
+    case QChar::Script_Thai:
+    case QChar::Script_Lao:
+    case QChar::Script_Khmer:
+    case QChar::Script_Myanmar:
+    case QChar::Script_Tibetan:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// A trimmed segment as it follows text: after a space, the way Whisper spaces
+// segments, except next to a script written without spaces between words.
+QString spacedSegment(const QString &text, const QString &segment)
+{
+    if (text.isEmpty() || segment.isEmpty() || firstLetterWrittenWithoutSpaces(text.rbegin(), text.rend())
+        || firstLetterWrittenWithoutSpaces(segment.begin(), segment.end())) {
+        return segment;
+    }
+    return QLatin1Char(' ') + segment;
 }
 
 } // namespace
@@ -167,6 +202,7 @@ void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
 }
 
 // transcript.text.delta events carry pieces, transcript.text.done the whole.
+// Speaches before 0.9 sends untyped {"text": …} events, one per segment.
 void EndpointSpeechTranscriber::readStream()
 {
     if (!m_streamError.isEmpty()) return;
@@ -180,11 +216,17 @@ void EndpointSpeechTranscriber::readStream()
             QMetaObject::invokeMethod(m_reply, &QNetworkReply::abort, Qt::QueuedConnection);
             return;
         }
+        QString piece;
         if (type == QStringLiteral("transcript.text.delta")) {
-            m_streamedText += event.value(QStringLiteral("delta")).toString();
-            emit partialTranscript(m_attemptId, m_streamedText);
+            piece = event.value(QStringLiteral("delta")).toString();
+        } else if (type.isEmpty()) {
+            piece = spacedSegment(m_streamedText, event.value(QStringLiteral("text")).toString().trimmed());
         } else if (type == QStringLiteral("transcript.text.done")) {
             m_doneText = event.value(QStringLiteral("text")).toString();
+        }
+        if (!piece.isEmpty()) {
+            m_streamedText += piece;
+            emit partialTranscript(m_attemptId, m_streamedText);
         }
     }
 }
