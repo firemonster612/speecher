@@ -1,12 +1,17 @@
 #include "common/test_prelude.h"
 #include "common/test_doubles.h"
 #include "output/HelperPath.h"
+#include "platform/ScreenshotImage.h"
 #include "setup/YdotoolSetupState.h"
 #include "setup/YdotoolSetupTransaction.h"
 
+#include <QImage>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QScopeGuard>
+#include <QTimer>
+
+#include <optional>
 
 #ifdef Q_OS_UNIX
 #include <sys/stat.h>
@@ -185,6 +190,47 @@ if [ "$1" = "--list-types" ]; then echo text/plain; else /bin/cat "$T4_CLIPBOARD
         QCOMPARE(failed.first().first().toString(), QStringLiteral("Screenshot capture timed out"));
     }
 #endif
+
+    void screenshotFileIsNormalizedOffTheMainThread()
+    {
+        // The microphone is read on the main thread, so decoding a
+        // whole-desktop capture there cuts out what the person is saying.
+        QTemporaryDir directory;
+        const QString path = directory.filePath(QStringLiteral("capture.png"));
+        QImage source(3840, 2160, QImage::Format_RGB32);
+        for (int y = 0; y < source.height(); ++y) {
+            auto *line = reinterpret_cast<QRgb *>(source.scanLine(y));
+            for (int x = 0; x < source.width(); ++x) {
+                line[x] = qRgb(x % 256, y % 256, (x * y) % 256);
+            }
+        }
+        QVERIFY(source.save(path, "PNG"));
+
+        QElapsedTimer sinceTick;
+        qint64 longestStallMs = 0;
+        QTimer tick;
+        connect(&tick, &QTimer::timeout, &tick, [&] {
+            longestStallMs = std::max(longestStallMs, sinceTick.restart());
+        });
+        std::optional<ScreenshotResult> result;
+        // Destroyed before result, so a late callback after a failed wait
+        // cannot write to this stack frame.
+        QObject receiver;
+        sinceTick.start();
+        tick.start(10);
+        normalizeScreenshotFile(path, &receiver, [&](const ScreenshotResult &normalized) {
+            result = normalized;
+        });
+        QVERIFY(!result.has_value());
+
+        QTRY_VERIFY_WITH_TIMEOUT(result.has_value(), 15000);
+        longestStallMs = std::max(longestStallMs, sinceTick.elapsed());
+        QVERIFY2(result->error.isEmpty(), qPrintable(result->error));
+        QCOMPARE(QImage::fromData(result->png).width(), 2560);
+        QVERIFY(!QFile::exists(path));
+        QVERIFY2(longestStallMs < 100,
+                 qPrintable(QStringLiteral("event loop stalled for %1 ms").arg(longestStallMs)));
+    }
 
     void ydotoolSetupFailureReportsCompletedChanges()
     {
