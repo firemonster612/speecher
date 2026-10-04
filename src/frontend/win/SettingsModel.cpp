@@ -40,6 +40,21 @@ QStringList fileExtensions(const QString &filter)
     return extensions;
 }
 
+} // namespace
+
+QList<RowOption> providerOptions(ProviderRole role, const ProviderRegistry &registry)
+{
+    QList<RowOption> options;
+    const QList<ProviderDescriptor> providers =
+        role == ProviderRole::Speech ? registry.speechProviders() : registry.refinementProviders();
+    for (const ProviderDescriptor &provider : providers) {
+        options.append({provider.id, provider.label, provider.summary});
+    }
+    return options;
+}
+
+namespace {
+
 // What qtSchemaContext builds for the other two front ends, assembled here
 // because that helper lives in the Qt front end this one must not link.
 SchemaContext winSchemaContext(const PlatformComposition &platform,
@@ -47,16 +62,12 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
                                const QString &lastSeenVersion,
                                const LocalSetup &localSetup)
 {
-    QList<RowOption> speech;
-    for (const ProviderDescriptor &provider : providers.speechProviders()) {
-        speech.append({provider.id, provider.label, provider.summary});
-    }
     QList<RefinementProvider> refiners;
     for (const ProviderDescriptor &provider : providers.refinementProviders()) {
         refiners.append({provider.id, provider.label, provider.supportsScreenshotContext});
     }
     return {
-        speech,
+        providerOptions(ProviderRole::Speech, providers),
         refiners,
         [&platform] {
             QList<RowOption> options;
@@ -231,6 +242,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.id = row.id;
     snapshot.label = row.labelValue ? row.labelValue(m_draft) : row.label;
     snapshot.help = row.helpValue ? row.helpValue(m_draft) : row.help;
+    snapshot.helpTone = row.helpTone ? row.helpTone(m_draft) : StatusTone::Normal;
     snapshot.kind = row.kind;
     snapshot.actionLabel = row.actionLabelValue ? row.actionLabelValue(m_draft) : row.actionLabel;
     snapshot.targetPage = row.targetPage;
@@ -347,7 +359,7 @@ void SettingsModel::setValue(const QString &rowId, const QVariant &value)
 FallbackListPresentation SettingsModel::fallbackList(ProviderRole role) const
 {
     return fallbackListPresentation(role, m_draft, m_controller->localSetup()->liveFacts(m_draft),
-                                    chainProviders(role, *m_controller->providerRegistry()),
+                                    providerOptions(role, *m_controller->providerRegistry()),
                                     FallbackSurface::Settings);
 }
 

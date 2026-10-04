@@ -824,7 +824,7 @@ struct DictationPanel::Native : QObject {
         // An outcome with a fix is laid out like an error, without Dismiss or
         // the countdown: its line wraps and its capsule grows taller.
         const bool offersFix = (hasProblem || finished) && fix.fix != ErrorFix::None;
-        const bool wraps = hasProblem || (finished && offersFix);
+        const bool wraps = hasProblem || offersFix;
         // Only errors, a fix and the session buttons take clicks. Otherwise the
         // transparent space around a live capsule must not intercept clicks in
         // the target application.
@@ -1374,6 +1374,12 @@ qintptr DictationPanel::windowStyleForTest() const
 bool DictationPanel::fixVisibleForTest() const
 {
     return m_native->fixButton && m_native->fixButton.Visibility() == Visibility::Visible;
+}
+
+bool DictationPanel::errorChromeVisibleForTest() const
+{
+    return (m_native->dismiss && m_native->dismiss.Visibility() == Visibility::Visible)
+        || (m_native->countdown && m_native->countdown.Visibility() == Visibility::Visible);
 }
 
 void DictationPanel::pressFixForTest()

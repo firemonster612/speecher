@@ -12,7 +12,6 @@
 
 namespace speecher {
 
-class ProviderRegistry;
 class SettingsStore;
 
 namespace win {
@@ -45,18 +44,15 @@ winrt::Microsoft::UI::Xaml::UIElement customRowElement(const RowSnapshot &row,
 // host's reference alone would leave it running.
 void endMicrophoneTest(PaneHost &host);
 
-// A role's providers this build offers, with their registry labels, as
-// fallbackListPresentation() takes them.
-QList<RowOption> chainProviders(ProviderRole role, const ProviderRegistry &registry);
-
 // The ordered fallbacks as the Fallbacks subpage and the setup assistant show
 // them: the heading and subtitle, one card with a row per fallback (Move up,
-// Move down and Remove) and the Add row, and the footer. Each edit hands
-// `write` the role's new list; empty while the list has no heading.
+// Move down and Remove) and the Add row, and the footer. Each edit applies
+// to `settings` as they are at the click and hands `write` the role's new
+// list; empty while the list has no heading.
 winrt::Microsoft::UI::Xaml::UIElement fallbackListElement(
     ProviderRole role,
     const FallbackListPresentation &list,
-    const AppSettings &settings,
+    const std::function<AppSettings()> &settings,
     const std::function<void(const QStringList &)> &write,
     PaneHost &host);
 

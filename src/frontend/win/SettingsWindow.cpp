@@ -240,6 +240,7 @@ struct SettingsWindow::Native {
         model.reloadDraft();
         // A window opened from closed starts on Home.
         currentPane = kHomePane;
+        currentSubpage.clear();
         createWindow();
         SetForegroundWindow(windowHandle());
     }
@@ -747,6 +748,9 @@ struct SettingsWindow::Native {
             return;
         }
         const SettingsSubpage *subpage = model.schema().subpage(currentSubpage);
+        if (subpage && subpage->parent != currentPane) {
+            subpage = nullptr;
+        }
         UIElement page{nullptr};
         try {
             if (subpage) {

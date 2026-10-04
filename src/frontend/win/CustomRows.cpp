@@ -3,6 +3,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/MicrophoneTest.h"
+#include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
 #include "dictation/DictationTypes.h"
@@ -10,13 +11,11 @@
 #include "frontend/win/SettingsModel.h"
 #include "frontend/win/SettingsPage.h"
 #include "providers/ClaudeCredentials.h"
-#include "providers/ProviderRegistry.h"
 #include "providers/ProviderSignIn.h"
 
 #include <QRegularExpression>
 
 #include <algorithm>
-#include <memory>
 #include <optional>
 
 #pragma push_macro("GetCurrentTime")
@@ -501,7 +500,7 @@ UIElement microphoneTestElement(const RowSnapshot &row, PaneHost &host)
 
 // One of a fallback row's tool buttons: the platform's glyph, named with
 // core's caption, which is also its tooltip.
-Button fallbackTool(wchar_t glyph, const QString &caption, const QString &item, bool enabled)
+Button fallbackTool(wchar_t glyph, const QString &caption, bool enabled)
 {
     Button button;
     FontIcon icon;
@@ -510,27 +509,26 @@ Button fallbackTool(wchar_t glyph, const QString &caption, const QString &item, 
     button.Content(icon);
     button.IsEnabled(enabled);
     Automation::AutomationProperties::SetName(button, hs(caption));
-    Automation::AutomationProperties::SetHelpText(button, hs(item));
     ToolTipService::SetToolTip(button, box_value(hs(caption)));
     return button;
 }
 
-} // namespace
-
-QList<RowOption> chainProviders(ProviderRole role, const ProviderRegistry &registry)
+// Where a fallback stands in the role's list as settings has it, as the
+// withFallback edits count; -1 once it is gone.
+int fallbackIndex(const AppSettings &settings, ProviderRole role, const QString &providerId)
 {
-    QList<RowOption> providers;
-    const QList<ProviderDescriptor> descriptors =
-        role == ProviderRole::Speech ? registry.speechProviders() : registry.refinementProviders();
-    for (const ProviderDescriptor &provider : descriptors) {
-        providers.append({provider.id, provider.label});
-    }
-    return providers;
+    const bool speech = role == ProviderRole::Speech;
+    const QStringList fallbacks = normalizedFallbackProviders(
+        role, speech ? settings.speech.providerId : settings.refinement.providerId,
+        speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds);
+    return int(fallbacks.indexOf(providerId));
 }
+
+} // namespace
 
 UIElement fallbackListElement(ProviderRole role,
                                const FallbackListPresentation &list,
-                               const AppSettings &settings,
+                               const std::function<AppSettings()> &settings,
                                const std::function<void(const QStringList &)> &write,
                                PaneHost &host)
 {
@@ -544,21 +542,27 @@ UIElement fallbackListElement(ProviderRole role,
         subtitle.Margin({1, 0, 0, 8});
         element.Children().Append(subtitle);
     }
-    // Shared by every button's edit, which works from the settings shown.
-    const auto shown = std::make_shared<const AppSettings>(settings);
+    // An edit works from the settings at the click and finds its fallback by
+    // id: an earlier edit may have moved it before this list was redrawn.
+    const auto moveBy = [=](const QString &id, int offset) {
+        const AppSettings current = settings();
+        write(withFallbackMoved(current, role, fallbackIndex(current, role, id), offset));
+    };
     StackPanel rows;
     for (qsizetype index = 0; index < list.items.size(); ++index) {
         const FallbackItem &item = list.items.at(index);
         StackPanel tools;
         tools.Orientation(Orientation::Horizontal);
         tools.Spacing(4);
-        const int at = int(index);
-        Button up = fallbackTool(L'\uE74A', list.moveUpCaption, item.label, item.canMoveUp);
-        up.Click([=](const auto &, const auto &) { write(withFallbackMoved(*shown, role, at, -1)); });
-        Button down = fallbackTool(L'\uE74B', list.moveDownCaption, item.label, item.canMoveDown);
-        down.Click([=](const auto &, const auto &) { write(withFallbackMoved(*shown, role, at, 1)); });
-        Button remove = fallbackTool(L'\uE74D', list.removeCaption, item.label, true);
-        remove.Click([=](const auto &, const auto &) { write(withFallbackRemoved(*shown, role, at)); });
+        Button up = fallbackTool(L'\uE74A', list.moveUpCaption, item.canMoveUp);
+        up.Click([=, id = item.providerId](const auto &, const auto &) { moveBy(id, -1); });
+        Button down = fallbackTool(L'\uE74B', list.moveDownCaption, item.canMoveDown);
+        down.Click([=, id = item.providerId](const auto &, const auto &) { moveBy(id, 1); });
+        Button remove = fallbackTool(L'\uE74D', list.removeCaption, true);
+        remove.Click([=, id = item.providerId](const auto &, const auto &) {
+            const AppSettings current = settings();
+            write(withFallbackRemoved(current, role, fallbackIndex(current, role, id)));
+        });
         tools.Children().Append(up);
         tools.Children().Append(down);
         tools.Children().Append(remove);
@@ -567,6 +571,11 @@ UIElement fallbackListElement(ProviderRole role,
         row.help = item.status;
         row.helpTone = item.tone;
         rows.Children().Append(rowGrid(row, tools, host, index > 0));
+        // rowGrid describes the first button by its row; the others say the
+        // same.
+        const hstring help = Automation::AutomationProperties::GetHelpText(up);
+        Automation::AutomationProperties::SetHelpText(down, help);
+        Automation::AutomationProperties::SetHelpText(remove, help);
     }
     if (list.canAdd) {
         ComboBox add;
@@ -580,7 +589,7 @@ UIElement fallbackListElement(ProviderRole role,
         }
         add.SelectionChanged([=](const IInspectable &sender, const auto &) {
             if (const auto item = sender.as<ComboBox>().SelectedItem()) {
-                write(withFallbackAdded(*shown, role,
+                write(withFallbackAdded(settings(), role,
                                         qs(unbox_value<hstring>(item.as<ComboBoxItem>().Tag()))));
             }
         });
@@ -633,7 +642,7 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     if (customRowIsSection(row.id)) {
         const ProviderRole role = row.id == QStringLiteral("speechFallbackList") ? ProviderRole::Speech
                                                                                  : ProviderRole::Refinement;
-        return fallbackListElement(role, host.model->fallbackList(role), host.model->draft(),
+        return fallbackListElement(role, host.model->fallbackList(role), [&host] { return host.model->draft(); },
                                    [rowId = row.id, &host](const QStringList &fallbacks) {
                                        setValueAndCommit(host, rowId, fallbacks);
                                    },

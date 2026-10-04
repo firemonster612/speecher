@@ -12,6 +12,7 @@
 namespace speecher {
 
 class ApplicationController;
+class ProviderRegistry;
 class SettingsStore;
 
 namespace win {
@@ -105,6 +106,10 @@ struct SectionSnapshot {
     QString help;
     QList<RowSnapshot> rows;
 };
+
+// A role's providers this build offers, with their registry labels and
+// summaries: the schema's speech providers, and every fallback list's.
+QList<RowOption> providerOptions(ProviderRole role, const ProviderRegistry &registry);
 
 // The settings surface as the schema describes it, over a draft of the stored
 // settings — SpeecherBridge's SchemaState for the Windows front end. Reading

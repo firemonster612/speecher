@@ -60,6 +60,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -116,6 +117,29 @@ constexpr wchar_t kServerGlyph = L'\uE968';
 void setShown(const UIElement &element, bool shown)
 {
     element.Visibility(shown ? Visibility::Visible : Visibility::Collapsed);
+}
+
+// Everything the setup fallback section draws, in order, to tell whether
+// drawing it again would change anything.
+QStringList drawnText(const SetupFallbackPresentation &section)
+{
+    if (!section.visible) {
+        return {};
+    }
+    const FallbackListPresentation &list = section.list;
+    QStringList text{section.hint, section.suggestion, section.suggestionAction, list.heading, list.footer,
+                     list.moveUpCaption, list.moveDownCaption, list.removeCaption};
+    for (const FallbackItem &item : list.items) {
+        text << item.providerId << item.label << item.status << QString::number(int(item.tone))
+             << QString::number(item.canMoveUp) << QString::number(item.canMoveDown);
+    }
+    if (list.canAdd) {
+        text << list.addLabel << list.addHelp << list.addPlaceholder;
+        for (const RowOption &choice : list.addChoices) {
+            text << choice.id << choice.label;
+        }
+    }
+    return text;
 }
 
 // Where a status sits on the mockup's scale: neutral while a probe runs or
@@ -830,6 +854,7 @@ struct SetupWindow::Native {
         refinementRefresh = nullptr;
         transcriptionRefresh = nullptr;
         fallbacks = nullptr;
+        fallbacksDrawn.reset();
         pageScope = std::make_unique<QObject>();
         ++checkGeneration;
     }
@@ -1596,6 +1621,10 @@ struct SetupWindow::Native {
         panel.Children().Append(fallbacks);
         content.Children().Append(panel);
         showFallbacks(ProviderRole::Speech);
+        // Reachability and sign-ins change the fallbacks' statuses, with or
+        // without Local Model support.
+        QObject::connect(controller->localSetup(), &LocalSetup::changed, pageScope.get(),
+                         [this] { showFallbacks(ProviderRole::Speech); });
         runChecks();
     }
 
@@ -1913,17 +1942,23 @@ struct SetupWindow::Native {
     // fallbacks as the Fallbacks subpage lists them, with the hint in place
     // of its subtitle, and the local fallback this computer could add. It
     // never holds Next, and hides while there is nothing to fall back from.
+    // Every probe result lands here, so a section that would look the same is
+    // left alone, keeping an open Add combo and the focus.
     void showFallbacks(ProviderRole role)
     {
         if (!fallbacks) {
             return;
         }
         LocalSetup *local = controller->localSetup();
-        const AppSettings settings = controller->settings()->snapshot();
         const SetupFallbackPresentation section =
-            setupFallbackPresentation(role, settings, local->liveFacts(),
-                                      win::chainProviders(role, *controller->providerRegistry()),
+            setupFallbackPresentation(role, controller->settings()->snapshot(), local->liveFacts(),
+                                      win::providerOptions(role, *controller->providerRegistry()),
                                       local->setupFallbackOffer(role));
+        const QStringList drawn = drawnText(section);
+        if (fallbacksDrawn == drawn) {
+            return;
+        }
+        fallbacksDrawn = drawn;
         fallbacks.Children().Clear();
         setShown(fallbacks, section.visible);
         if (!section.visible) {
@@ -1936,7 +1971,7 @@ struct SetupWindow::Native {
         FallbackListPresentation list = section.list;
         list.subtitle = section.hint;
         fallbacks.Children().Append(win::fallbackListElement(
-            role, list, settings,
+            role, list, [this] { return controller->settings()->snapshot(); },
             [this, role, redraw](const QStringList &chosen) {
                 if (role == ProviderRole::Speech) {
                     controller->settings()->setSpeechFallbackProviders(chosen);
@@ -2710,8 +2745,9 @@ struct SetupWindow::Native {
     } endpointForm;
     std::function<void()> refinementRefresh;
     // The Transcription or Refinement page's fallback section, null while
-    // another page is up.
+    // another page is up, and the text it last drew.
     StackPanel fallbacks{nullptr};
+    std::optional<QStringList> fallbacksDrawn;
     // The provider to go back to when Skip cleanup is cleared.
     QString lastRefinementProvider;
     // Owns the Qt connections of the page on screen.
