@@ -126,9 +126,9 @@ struct SetupFallbackOffer {
 
 // The optional section under the chosen provider's details on the
 // Transcription and Refinement steps: the same list as the Fallbacks
-// subpage, inline, whose heading and footer it also uses, plus a hint and a
-// suggestion. It never holds Next. A front end hides it while visible is false
-// and while Skip cleanup is ticked.
+// subpage, inline, whose heading it also uses but not its footer, plus a hint
+// and a suggestion. It never holds Next. A front end hides it while visible is
+// false and while Skip cleanup is ticked.
 struct SetupFallbackPresentation {
     bool visible = false;
     QString hint;

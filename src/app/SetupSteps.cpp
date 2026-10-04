@@ -301,12 +301,20 @@ SetupFallbackPresentation setupFallbackPresentation(ProviderRole role, const App
     SetupFallbackPresentation section;
     section.list = fallbackListPresentation(role, settings, facts, providers, FallbackSurface::Setup);
     section.visible = !section.list.heading.isEmpty();
+    // Refinement's hint already says the raw transcript is pasted.
+    section.list.footer.clear();
     const QString primary = role == ProviderRole::Speech ? settings.speech.providerId : settings.refinement.providerId;
-    section.hint = primary == QStringLiteral("local")
-        ? QStringLiteral("For example while its model is still downloading. Leave this empty to keep every "
-                         "dictation on this computer.")
-        : QStringLiteral("Speecher tries these top to bottom when it's offline, signed out or the service stops "
-                         "answering, and tells you when it used one. Optional.");
+    if (primary == QStringLiteral("local")) {
+        section.hint = QStringLiteral("For example while its model is still downloading. Leave this empty to keep "
+                                      "every dictation on this computer.");
+    } else if (role == ProviderRole::Speech) {
+        section.hint = QStringLiteral("Speecher tries these top to bottom when it's offline, signed out or the "
+                                      "service stops answering, and tells you when it used one. Optional.");
+    } else {
+        section.hint = QStringLiteral("Speecher tries these top to bottom when it's offline, signed out or the "
+                                      "provider stops answering. If none of them answers, it pastes the raw "
+                                      "transcript, as it does today. Optional.");
+    }
     const bool offered = offer
         && std::any_of(section.list.addChoices.cbegin(), section.list.addChoices.cend(),
                        [&offer](const RowOption &choice) { return choice.id == offer->providerId; });

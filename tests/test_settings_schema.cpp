@@ -2063,6 +2063,20 @@ private slots:
                      .visible);
     }
 
+    // The approved mockup's hint, which says the raw transcript is pasted, so
+    // the list's footer doesn't say it again.
+    void setupRefinementHintSaysTheRawTranscriptIsPasted()
+    {
+        AppSettings settings;
+        settings.refinement.providerId = QStringLiteral("openai");
+        const SetupFallbackPresentation section =
+            setupFallbackPresentation(ProviderRole::Refinement, settings, LiveFacts{}, refinementChoices(), {});
+        QCOMPARE(section.hint, QStringLiteral("Speecher tries these top to bottom when it's offline, signed out or "
+                                              "the provider stops answering. If none of them answers, it pastes the "
+                                              "raw transcript, as it does today. Optional."));
+        QVERIFY(section.list.footer.isEmpty());
+    }
+
     void acceptingASetupOfferAddsAFallbackAndKeepsThePrimary()
     {
         QTemporaryDir directory;
