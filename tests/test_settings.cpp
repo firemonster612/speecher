@@ -285,19 +285,22 @@ private slots:
                     .contains(QStringLiteral("E")));
     }
 
-    // A watched single key and a combination without modifiers can name the
-    // same physical key; two shortcuts must not share it either way.
-    void aSingleKeyAndABareCombinationCanBeTheSameKey()
+    // A watched single key fires whatever modifiers are held, so it overlaps
+    // every combination on the same key; two shortcuts must not share one.
+    void aWatchedKeyOverlapsEveryCombinationOnIt()
     {
         const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));
-        QVERIFY(f13.sameKeysAs(ShortcutBinding(QKeySequence(Qt::Key_F13))));
+        QVERIFY(f13.overlaps(ShortcutBinding(QKeySequence(Qt::Key_F13))));
+        QVERIFY(f13.overlaps(ShortcutBinding(QKeySequence(Qt::CTRL | Qt::Key_F13))));
         QVERIFY(ShortcutBinding(QKeySequence(Qt::Key_C))
-                    .sameKeysAs(ShortcutBinding::singleKey(QStringLiteral("KeyC"))));
+                    .overlaps(ShortcutBinding::singleKey(QStringLiteral("KeyC"))));
         QVERIFY(ShortcutBinding::singleKey(QStringLiteral("Escape"))
-                    .sameKeysAs(ShortcutBinding(QKeySequence(Qt::Key_Escape))));
-        QVERIFY(!f13.sameKeysAs(ShortcutBinding(QKeySequence(Qt::CTRL | Qt::Key_F13))));
-        QVERIFY(!f13.sameKeysAs(ShortcutBinding(QKeySequence(Qt::Key_F14))));
-        QVERIFY(!f13.sameKeysAs(ShortcutBinding()));
+                    .overlaps(ShortcutBinding(QKeySequence(Qt::Key_Escape))));
+        QVERIFY(!f13.overlaps(ShortcutBinding(QKeySequence(Qt::Key_F14))));
+        QVERIFY(!f13.overlaps(ShortcutBinding()));
+        // Desktop shortcut services match combinations exactly.
+        QVERIFY(!ShortcutBinding(QKeySequence(Qt::CTRL | Qt::Key_C))
+                     .overlaps(ShortcutBinding(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_C))));
     }
 
     void settingsDefaults()

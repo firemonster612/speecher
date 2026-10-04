@@ -75,7 +75,10 @@ DaemonAnswerState askDaemon()
     }
     keywatch::WatchReply reply{};
     socket.read(reinterpret_cast<char *>(&reply), sizeof(reply));
-    if (reply.refusal != std::uint8_t(keywatch::Refusal::BadVersion)) {
+    // The reply's version alone says which daemon answered: a version 1
+    // daemon checks its one watch before the version, so it may refuse with
+    // AlreadyWatching instead of BadVersion.
+    if (reply.version == keywatch::protocolVersion) {
         return AnsweredMatching;
     }
     return reply.version == keywatch::oldestProtocolVersion ? AnsweredOutdated

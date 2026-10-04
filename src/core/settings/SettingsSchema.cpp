@@ -3025,8 +3025,8 @@ QString bareKeyNeedsSessionGrabText(const ShortcutBinding &binding)
 QString watchedKeyStillTypesText(const ShortcutBinding &binding)
 {
     return QStringLiteral(
-        "Speecher can watch %1 on its own but not take it, so it would still type while you "
-        "dictate. Record it again to use it as a shortcut instead.")
+        "Speecher can only watch %1, not take it from other apps, so it would still type while "
+        "you dictate. Use another key or a key combination.")
         .arg(binding.displayText());
 }
 

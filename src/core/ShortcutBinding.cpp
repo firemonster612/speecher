@@ -208,21 +208,21 @@ QString ShortcutBinding::keyCode() const
     return m_keyCode;
 }
 
-bool ShortcutBinding::sameKeysAs(const ShortcutBinding &other) const
+bool ShortcutBinding::overlaps(const ShortcutBinding &other) const
 {
     if (*this == other) {
         return true;
     }
     const ShortcutBinding &single = isSingleKey() ? *this : other;
     const ShortcutBinding &combination = isSingleKey() ? other : *this;
-    if (!single.isSingleKey() || combination.isSingleKey() || combination.isEmpty()
-        || combination.m_combination[0].keyboardModifiers() != Qt::NoModifier) {
+    if (!single.isSingleKey() || combination.isSingleKey() || combination.isEmpty()) {
         return false;
     }
     // The vocabulary's labels read as Qt key names for every key a
-    // combination can hold ("C", "F13", "Escape").
+    // combination can hold ("C", "F13", "Escape"). They name the key on a US
+    // layout, so a key that layouts move (Q on AZERTY) can slip past.
     const QKeySequence label = QKeySequence::fromString(single.displayText(), QKeySequence::PortableText);
-    return label.count() == 1 && label[0] == combination.m_combination[0];
+    return label.count() == 1 && label[0].key() == combination.m_combination[0].key();
 }
 
 QString ShortcutBinding::displayText() const

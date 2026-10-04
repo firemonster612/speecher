@@ -97,18 +97,29 @@ public:
     QList<X11KeyGrabShortcutBinder *> binders;
 
     // Ends an active grab a held key left behind, so keys pressed while it is
-    // still down reach the focused app. Its release goes there too, so no
-    // binder may go on waiting for one.
+    // still down reach the focused app. The server may have started one whose
+    // press Speecher has not read yet, so this never asks whether one is on.
+    // The held key's release goes to the app too, so no binder may go on
+    // waiting for one.
     void releaseKeyboard()
     {
-        bool anyDown = false;
         for (X11KeyGrabShortcutBinder *binder : std::as_const(binders)) {
-            anyDown = anyDown || binder->m_down;
             binder->m_down = false;
         }
-        if (anyDown) {
-            XUngrabKeyboard(display, CurrentTime);
-            XFlush(display);
+        XUngrabKeyboard(display, CurrentTime);
+    }
+
+    void readEvents()
+    {
+        while (XPending(display)) {
+            XEvent event;
+            XNextEvent(display, &event);
+            if (event.type != KeyPress && event.type != KeyRelease) {
+                continue;
+            }
+            for (X11KeyGrabShortcutBinder *binder : std::as_const(binders)) {
+                binder->keyEvent(event.type == KeyPress, int(event.xkey.keycode), event.xkey.state);
+            }
         }
     }
 
@@ -124,20 +135,6 @@ private:
         XkbSetDetectableAutoRepeat(display, True, nullptr);
         auto *notifier = new QSocketNotifier(ConnectionNumber(display), QSocketNotifier::Read);
         QObject::connect(notifier, &QSocketNotifier::activated, notifier, [this] { readEvents(); });
-    }
-
-    void readEvents()
-    {
-        while (XPending(display)) {
-            XEvent event;
-            XNextEvent(display, &event);
-            if (event.type != KeyPress && event.type != KeyRelease) {
-                continue;
-            }
-            for (X11KeyGrabShortcutBinder *binder : std::as_const(binders)) {
-                binder->keyEvent(event.type == KeyPress, int(event.xkey.keycode), event.xkey.state);
-            }
-        }
     }
 };
 
@@ -215,6 +212,12 @@ bool X11KeyGrabShortcutBinder::take(const QKeySequence &combination)
     XSync(m_display, False);
     XSetErrorHandler(previous);
     m_held = keys;
+    // The round trips read whatever input was waiting into Xlib's queue,
+    // which leaves the socket quiet; read those events now, not at the next
+    // one to arrive.
+    if (XEventsQueued(m_display, QueuedAlready) > 0) {
+        QMetaObject::invokeMethod(this, [] { Connection::instance().readEvents(); }, Qt::QueuedConnection);
+    }
     if (grabError != 0) {
         letGo();
         return false;

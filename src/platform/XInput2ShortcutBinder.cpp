@@ -2,6 +2,8 @@
 
 #ifdef SPEECHER_WITH_X11
 
+#include "core/settings/SettingsSchema.h"
+
 #include <QSocketNotifier>
 
 // Xlib last: its macros (None, Bool, KeyPress) collide with Qt names.
@@ -55,6 +57,11 @@ QString XInput2ShortcutBinder::unsupportedBindingReason(const ShortcutBinding &b
     const QString reason = SingleKeyShortcutBinder::unsupportedBindingReason(binding);
     if (!reason.isEmpty()) {
         return reason;
+    }
+    // XInput2 sees a key without taking it, so a session shortcut on a key
+    // that types would type as well.
+    if (action().sessionOnly && !singleKeyTypingWarning(binding).isEmpty()) {
+        return watchedKeyStillTypesText(binding);
     }
     if (!m_display) {
         return QStringLiteral("Speecher could not reach the X server to watch a key.");

@@ -24,6 +24,12 @@ final class ShortcutRecorder: ObservableObject {
     /// Escape abandons the recording rather than becoming the shortcut,
     /// unless bare keys are being recorded as combinations.
     private let escapeKeyCode: UInt16 = 53
+    /// kVK_ANSI_Keypad*: decimal, multiply, plus, clear, divide, enter, minus,
+    /// equals and the digits.
+    private let keypadKeyCodes: Set<UInt16> = [
+        0x41, 0x43, 0x45, 0x47, 0x4B, 0x4C, 0x4E, 0x51,
+        0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5B, 0x5C,
+    ]
 
     /// Catches the next shortcut of either kind: a non-modifier key pressed
     /// with ⌘, ⌥, ⌃ or ⇧ held goes to `combination`; one pressed bare goes to
@@ -59,7 +65,9 @@ final class ShortcutRecorder: ObservableObject {
                 stop()
                 return nil
             }
-            if bareKeysCombine
+            // Keypad keys stay single keys: a hot key named by their character
+            // would take the top-row key instead.
+            if (bareKeysCombine && !keypadKeyCodes.contains(event.keyCode))
                 || !event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
                 stop()
                 combination(event.charactersIgnoringModifiers ?? "", event.modifierFlags)

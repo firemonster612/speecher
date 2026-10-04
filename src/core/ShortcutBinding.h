@@ -59,10 +59,10 @@ public:
 
     bool isEmpty() const;
     bool isSingleKey() const;
-    // Whether both name the same keys. One backend may store F13 as a single
-    // key while another stores it as a combination without modifiers; those
-    // are the same physical key.
-    bool sameKeysAs(const ShortcutBinding &other) const;
+    // Whether pressing one can fire the other. A watched single key fires
+    // whatever modifiers are held, so it overlaps every combination on the
+    // same key: F13 watched for dictation and Ctrl+F13 grabbed for Cancel.
+    bool overlaps(const ShortcutBinding &other) const;
     // Empty for a single key.
     QKeySequence combination() const;
     // The KeyboardEvent.code name; empty for a combination.
