@@ -595,6 +595,15 @@ typedef NS_ENUM(NSInteger, SpeecherSetupText) {
     SpeecherSetupTextGetOllama,
     SpeecherSetupTextDownloadWithOllama,
     SpeecherSetupTextEndpointModelHint,
+    SpeecherSetupTextSessionShortcuts,
+    SpeecherSetupTextSessionShortcutsLead,
+};
+
+// Mirrors speecher::GlobalShortcutRole.
+typedef NS_ENUM(NSInteger, SpeecherShortcutRole) {
+    SpeecherShortcutRoleDictation,
+    SpeecherShortcutRoleCancel,
+    SpeecherShortcutRolePause,
 };
 
 // Mirrors speecher::TranscribeQueueState.
@@ -996,6 +1005,10 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // speecher::globalShortcutPrompt(), the row's Change caption, and its Reset
 // caption naming the default.
 @property (class, nonatomic, readonly, copy) NSString *globalShortcutPrompt;
+// What the Cancel and Pause recorders ask for (speecher::dictationOnlyShortcutPrompt).
+@property (class, nonatomic, readonly, copy) NSString *dictationOnlyShortcutPrompt;
+// The schema row that records a role's shortcut (speecher::globalShortcutRowId).
++ (NSString *)rowIdForShortcutRole:(SpeecherShortcutRole)role NS_SWIFT_NAME(rowId(for:));
 @property (class, nonatomic, readonly, copy) NSString *globalShortcutChangeCaption;
 + (NSString *)globalShortcutResetCaption:(NSString *)defaultShortcut NS_SWIFT_NAME(globalShortcutResetCaption(_:));
 // What settings search shows when nothing matches (speecher::noSettingsMatchText).
@@ -1062,19 +1075,23 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // registration first; ending it restores the bound sequence.
 - (void)beginShortcutRecording;
 // A shortcut that could not be taken back returns its error, with
-// cancelShortcutFailed, when given, saying whether it was the Cancel Shortcut's.
-- (nullable NSString *)endShortcutRecordingCancelShortcutFailed:(BOOL *_Nullable)cancelShortcutFailed
-    NS_SWIFT_NAME(endShortcutRecording(cancelShortcutFailed:));
+// failedRole, when given, saying whose it was.
+- (nullable NSString *)endShortcutRecordingFailedRole:(SpeecherShortcutRole *_Nullable)failedRole
+    NS_SWIFT_NAME(endShortcutRecording(failedRole:));
 
-// The Cancel Shortcut: the same recorder's two kinds of binding, and Clear,
-// since it has no default. Each returns nil once done, otherwise why not.
-@property (nonatomic, readonly, copy) NSString *cancelShortcutDisplay;
-- (nullable NSString *)bindCancelShortcutWithCharacters:(NSString *)characters
-                                          modifierFlags:(NSUInteger)modifierFlags
-    NS_SWIFT_NAME(bindCancelShortcut(characters:modifierFlags:));
-- (nullable NSString *)bindCancelSingleKeyCode:(NSString *)code
-    NS_SWIFT_NAME(bindCancelSingleKey(code:));
-- (nullable NSString *)clearCancelShortcut;
+// Any role's shortcut: the recorder's two kinds of binding, and Clear for the
+// Cancel and Pause Shortcuts, which have no default. Each returns nil once
+// done, otherwise why not. Only the dictation shortcut needs a modifier: the
+// Cancel and Pause Shortcuts hold their keys only while dictating, so a bare
+// key such as C or Escape is one too.
+- (NSString *)shortcutDisplayForRole:(SpeecherShortcutRole)role NS_SWIFT_NAME(shortcutDisplay(for:));
+- (nullable NSString *)bindShortcutWithCharacters:(NSString *)characters
+                                    modifierFlags:(NSUInteger)modifierFlags
+                                             role:(SpeecherShortcutRole)role
+    NS_SWIFT_NAME(bindShortcut(characters:modifierFlags:role:));
+- (nullable NSString *)bindSingleKeyCode:(NSString *)code role:(SpeecherShortcutRole)role
+    NS_SWIFT_NAME(bindSingleKey(code:role:));
+- (nullable NSString *)clearShortcutForRole:(SpeecherShortcutRole)role NS_SWIFT_NAME(clearShortcut(for:));
 @property (class, nonatomic, readonly, copy) NSString *globalShortcutClearCaption;
 @property (class, nonatomic, readonly, copy) NSString *globalShortcutUnsetText;
 

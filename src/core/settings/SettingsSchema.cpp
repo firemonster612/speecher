@@ -3022,6 +3022,14 @@ QString bareKeyNeedsSessionGrabText(const ShortcutBinding &binding)
         .arg(binding.displayText());
 }
 
+QString watchedKeyStillTypesText(const ShortcutBinding &binding)
+{
+    return QStringLiteral(
+        "Speecher can watch %1 on its own but not take it, so it would still type while you "
+        "dictate. Record it again to use it as a shortcut instead.")
+        .arg(binding.displayText());
+}
+
 QString keyHelperBusyText()
 {
     return QStringLiteral("Speecher's key helper is already watching as many keys as it allows. "
