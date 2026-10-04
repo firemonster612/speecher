@@ -72,5 +72,11 @@ class CheckIntervalTest {
         assertEquals(5, store.load().updateCheckMinutes)
         preferences.edit().putInt("updateCheckMinutes", 100_000).commit()
         assertEquals(43_200, store.load().updateCheckMinutes)
+        preferences
+            .edit()
+            .putInt("updateCheckMinutes", 0)
+            .putString("updateCheckUnit", "Days")
+            .commit()
+        assertNull(store.load().updateCheckUnit)
     }
 }

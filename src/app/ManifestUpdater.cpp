@@ -118,7 +118,7 @@ bool ManifestUpdater::automaticCheckDue() const
 void ManifestUpdater::scheduleAutomaticCheck()
 {
     // Turning automatic checks back on emits updateSettingsChanged, which
-    // arms the timer again.
+    // arms the timer again, retry or not.
     if (!m_settings->autoCheckUpdates()) {
         m_checkTimer->stop();
         return;
@@ -537,7 +537,10 @@ void ManifestUpdater::recordAutomaticCheckFailure()
 
 void ManifestUpdater::updateSettingsChanged()
 {
-    if (m_automaticCheckFailures == 0) {
+    // A pending retry keeps its backoff through other setting changes; turning
+    // automatic checks off stops it, and turning them on again starts one.
+    const bool retryPending = m_automaticCheckFailures > 0 && m_checkTimer->isActive();
+    if (!retryPending || !m_settings->autoCheckUpdates()) {
         scheduleAutomaticCheck();
     }
     const UpdateChannel channel = m_settings->updateChannel();

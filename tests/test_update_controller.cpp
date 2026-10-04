@@ -1018,6 +1018,13 @@ private slots:
         QVERIFY(!ManifestUpdaterTestAccess::checkTimerActive(updater));
         context.settings.setAutoCheckUpdates(true);
         QVERIFY(ManifestUpdaterTestAccess::checkTimerActive(updater));
+
+        // The off switch stops a failed check's retry, and the on switch restarts it.
+        ManifestUpdaterTestAccess::setAutomaticCheckFailures(updater, 1);
+        context.settings.setAutoCheckUpdates(false);
+        QVERIFY(!ManifestUpdaterTestAccess::checkTimerActive(updater));
+        context.settings.setAutoCheckUpdates(true);
+        QVERIFY(ManifestUpdaterTestAccess::checkTimerActive(updater));
     }
 
     // Long intervals wake hourly and ask again, so a week survives sleep and

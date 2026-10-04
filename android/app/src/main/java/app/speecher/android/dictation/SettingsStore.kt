@@ -28,6 +28,11 @@ class SettingsStore(private val context: Context) {
         // With nothing stored yet, fall back to the account the user is signed into rather than a
         // fixed provider, so neither Claude nor ChatGPT is favoured on a fresh install.
         val default = defaultProvider(TokenStore(context).signedIn())
+        // A hand-edited zero would check without pause, and a negative crash the wait.
+        val updateCheckMinutes =
+            preferences
+                .getInt("updateCheckMinutes", IntervalUnit.Days.minutes)
+                .coerceIn(checkIntervalMinutes)
         return SpeecherSettings(
                 transcriptionProvider =
                     enumOf(preferences.getString("transcription", null), default),
@@ -132,15 +137,13 @@ class SettingsStore(private val context: Context) {
                         ButtonLayout.RefinedPrimary,
                     ),
                 panelSize = enumOf(preferences.getString("panelSize", null), PanelSize.Full),
-                // A hand-edited zero would check without pause, and a negative crash the wait.
-                updateCheckMinutes =
-                    preferences
-                        .getInt("updateCheckMinutes", IntervalUnit.Days.minutes)
-                        .coerceIn(checkIntervalMinutes),
+                updateCheckMinutes = updateCheckMinutes,
+                // Only a unit the interval is a whole number of, or 5 minutes would read "0 days".
                 updateCheckUnit =
-                    preferences.getString("updateCheckUnit", null)?.let { name ->
-                        IntervalUnit.entries.firstOrNull { it.name == name }
-                    },
+                    preferences
+                        .getString("updateCheckUnit", null)
+                        ?.let { name -> IntervalUnit.entries.firstOrNull { it.name == name } }
+                        ?.takeIf { updateCheckMinutes % it.minutes == 0 },
             )
             // So no profile names a tone or level that is gone, and no rule a profile.
             .withCustomChoices()

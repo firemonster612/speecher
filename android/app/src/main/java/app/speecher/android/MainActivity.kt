@@ -324,18 +324,21 @@ class MainActivity : ComponentActivity() {
             withContext(Dispatchers.IO) {
                 runCatching { newerApk(sharedHttp, BuildConfig.VERSION_NAME) }
             }
-        updatePreferences.edit {
-            if (!sameVersion) {
+        // The offer an earlier version found is stale either way; the new version is recorded only
+        // with a check that counts, so a failure after an upgrade retries instead of waiting out
+        // what was left of the old version's interval.
+        if (!sameVersion) {
+            updatePreferences.edit {
                 remove("version")
                 remove("url")
             }
-            putString("installed-version", BuildConfig.VERSION_NAME)
         }
         return result
             .onSuccess { release ->
                 update = release
                 updatePreferences.edit {
                     putLong("last-check", now)
+                    putString("installed-version", BuildConfig.VERSION_NAME)
                     if (release == null) {
                         remove("version")
                         remove("url")
