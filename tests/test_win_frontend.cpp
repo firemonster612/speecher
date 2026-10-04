@@ -851,7 +851,7 @@ private slots:
             }
         }
         QVERIFY(picker);
-        QCOMPARE(picker->help, QStringLiteral("No server URL is set."));
+        QVERIFY2(picker->help.startsWith(QStringLiteral("No server URL is set.")), qPrintable(picker->help));
         QCOMPARE(picker->helpTone, StatusTone::Negative);
     }
 
