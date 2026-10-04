@@ -3602,18 +3602,8 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
     return [_settingsSchema draft].refinement.openAiAuthMode == kAppSettingsKeyAuthMode;
 }
 
-// The credential reads below are deferred past the window that asks for them,
-// and a bridge can outlive its controller: once it is gone they find nothing.
-static SpeecherCredentialStatus *noCredentialStatus()
-{
-    SpeecherCredentialStatus *status = [[SpeecherCredentialStatus alloc] init];
-    status.text = @"";
-    return status;
-}
-
 - (SpeecherCredentialStatus *)credentialStatus
 {
-    if (!_state->controller) return noCredentialStatus();
     const AppSettings &draft = [_settingsSchema draft];
     // The remote CLI Proxy fields decide which credential the status
     // describes; passing them matches the Qt call site (ProviderCustomRows).
@@ -3634,7 +3624,6 @@ static SpeecherCredentialStatus *noCredentialStatus()
 
 - (SpeecherCredentialStatus *)anthropicCredentialStatus
 {
-    if (!_state->controller) return noCredentialStatus();
     const speecher::mac::CredentialStatus found =
         speecher::mac::anthropicCredentialStatus([_settingsSchema draft], *_state->controller->settings());
     SpeecherCredentialStatus *status = [[SpeecherCredentialStatus alloc] init];
@@ -3645,7 +3634,6 @@ static SpeecherCredentialStatus *noCredentialStatus()
 
 - (NSString *)readApiKey
 {
-    if (!_state->controller) return @"";
     return _state->controller->secretStore()->apiKey().toNSString();
 }
 

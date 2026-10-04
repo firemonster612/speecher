@@ -729,7 +729,10 @@ final class SpeecherDictationPanel {
         panel.contentView = NSHostingView(rootView: DictationPanelView(
             state: state,
             dismiss: { [weak self] in self?.dismiss() },
-            performFix: { [weak self] fix in self?.perform(fix) },
+            performFix: { [weak self] fix in
+                self?.dismiss()
+                self?.model.perform(fix)
+            },
             installUpdate: { [weak self] in self?.bridge.runUpdateAction() },
             openWhatsNew: { [weak self] in self?.openWhatsNew?() },
             dismissWhatsNew: { [weak self] in
@@ -940,17 +943,6 @@ final class SpeecherDictationPanel {
         if bridge.stateName == "error" {
             bridge.stopListening()
         }
-    }
-
-    /// What a fix button does: the panel goes, and the fix runs.
-    func perform(_ fix: SpeecherErrorAction) {
-        dismiss()
-        model.perform(fix)
-    }
-
-    /// The fix a finished delivery offers, as its button would run it.
-    func performOutcomeFix() {
-        if let fix = state.outcomeFix { perform(fix) }
     }
 
     var isVisible: Bool { panel.isVisible }

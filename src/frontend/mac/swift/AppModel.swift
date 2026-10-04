@@ -278,6 +278,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Stops what the model hears from outside the controller: a window coming
+    /// forward, and the app becoming active or a credential file changing.
+    func stopObserving() {
+        if let keyWindowObserver { NotificationCenter.default.removeObserver(keyWindowObserver) }
+        bridge.anthropicCredentialsChanged = nil
+    }
+
     /// Re-reads Home's numbers. Home calls it when it appears, so a day that
     /// turned over while the window stayed open is picked up.
     func refreshInsights() {

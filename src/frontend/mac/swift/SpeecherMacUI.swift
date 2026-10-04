@@ -83,9 +83,13 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     // only strong reference to the proxy installed over it. Without this,
     // every setup relaunch and app shutdown leaves NSApp.delegate dangling
     // during Qt's Cocoa teardown.
+    //
+    // The model can outlive this object in a closed window's view, past the
+    // controller its reads reach into, so it stops listening here.
     deinit {
         MainActor.assumeIsolated {
             applicationDelegate?.restoreIfInstalled()
+            model.stopObserving()
         }
     }
 
@@ -248,10 +252,6 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc public var dictationOutcomeFixFrame: CGRect { panel.outcomeFixFrame }
 
-    /// What the outcome's fix button does.
-    @MainActor
-    @objc public func performDictationOutcomeFix() { panel.performOutcomeFix() }
-
     @MainActor
     @objc public var whatsNewOfferVisible: Bool { model.whatsNewPending }
 
@@ -267,10 +267,6 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     @objc public var settingsSubpage: String { model.subpage ?? "" }
-
-    /// What the subpage's Back button does.
-    @MainActor
-    @objc public func leaveSettingsSubpage() { model.goBack() }
 
     /// News that arrives while no Speecher window is up, such as a Local
     /// Model download finishing after setup closed, goes to Notification
