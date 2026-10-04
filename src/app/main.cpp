@@ -91,7 +91,8 @@ static QString installLogHandler()
         dir = QDir::homePath() + QStringLiteral("/.cache/speecher");
     }
     QDir().mkpath(dir);
-    const QString path = dir + QStringLiteral("/speecher.log");
+    const QString path = qEnvironmentVariableIsSet("DEBUG_WIN_SLOW_LOG")
+        ? qEnvironmentVariable("DEBUG_WIN_SLOW_LOG") : dir + QStringLiteral("/speecher.log");
     g_logFile = new QFile(path);
     if (!g_logFile->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
         delete g_logFile;

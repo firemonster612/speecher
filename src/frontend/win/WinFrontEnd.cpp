@@ -15,6 +15,9 @@
 #include "frontend/win/TrayIcon.h"
 #include "frontend/win/WinUiHost.h"
 
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QScopeGuard>
 #include <windows.h>
 #include <shellapi.h>
 
@@ -149,6 +152,11 @@ WinFrontEnd::~WinFrontEnd()
 // Opened from closed the window shows Home; one already up keeps its page.
 void WinFrontEnd::showMainWindow()
 {
+    QElapsedTimer debugTimer;
+    debugTimer.start();
+    const auto debugTiming = qScopeGuard([&] {
+        qInfo() << "[DEBUG-win-slow] win_show_window_ns" << debugTimer.nsecsElapsed();
+    });
     m_native->trayReady->stop();
     m_native->settingsWindow()->show();
     QTimer::singleShot(0, this, &WinFrontEnd::reportReady);

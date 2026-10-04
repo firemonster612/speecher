@@ -13,6 +13,9 @@
 #include "core/settings/CorrectionSettingsCodec.h"
 #include "core/settings/VocabularySettingsCodec.h"
 
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QScopeGuard>
 #include <QDateTime>
 #include <QDir>
 #include <QJsonArray>
@@ -1352,6 +1355,11 @@ void SettingsCodecs::clearStoredApiKeyFallback()
 
 AppSettings SettingsCodecs::snapshot() const
 {
+    QElapsedTimer debugTimer;
+    debugTimer.start();
+    const auto debugTiming = qScopeGuard([&] {
+        qInfo() << "[DEBUG-win-slow] all_snapshot_ns" << debugTimer.nsecsElapsed();
+    });
     AppSettings settings;
     settings.setupCompleted = setupCompleted();
     settings.launchAtLogin = launchAtLogin();

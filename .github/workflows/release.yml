@@ -34,59 +34,43 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "configure failed" }
           cmake --build build --target speecher speecher_tests --parallel 4
           if ($LASTEXITCODE -ne 0) { throw "build failed" }
-      - name: Isolate the added cost
+      - name: Measure actual Windows startup and page rendering
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
-          QT_FORCE_STDERR_LOGGING: "1"
         run: |
           New-Item -ItemType Directory evidence -Force | Out-Null
-          $focused = @("sidebarListsTheSchemaPanesInTheirGroups", "saveReportsFailedValidator", "controllerKeepsTheRecordOfTheLastTranscript")
-          foreach ($case in @("baseline", "no-backend", "no-model-scan", "draft-facts", "baseline-restored")) {
-            Remove-Item Env:DEBUG_SKIP_REACHABILITY, Env:DEBUG_SKIP_MODEL_SCAN, Env:DEBUG_USE_DRAFT_FACTS -ErrorAction SilentlyContinue
-            if ($case -eq "no-backend") { $env:DEBUG_SKIP_REACHABILITY = "1" }
-            if ($case -eq "no-model-scan") { $env:DEBUG_SKIP_MODEL_SCAN = "1" }
-            if ($case -eq "draft-facts") { $env:DEBUG_USE_DRAFT_FACTS = "1" }
-            $tests = if ($case -in @("baseline", "draft-facts")) { @() } else { $focused }
-            $arguments = @("--suite", "app_window") + $tests + @("-o", "evidence/$case.xml,xml", "-o", "evidence/$case.txt,txt")
-            $timer = [Diagnostics.Stopwatch]::StartNew()
-            & ./build/speecher_tests.exe @arguments
-            $code = $LASTEXITCODE
-            "$case exit=$code wall_ms=$($timer.ElapsedMilliseconds)" | Tee-Object -FilePath evidence/summary.txt -Append
-            if ($code -ne 0) { throw "$case failed" }
-            if ($case -in @("baseline", "draft-facts")) {
-              $key = "HKCU:\Software\io.github.firemonster612\speecher\app"
-              New-Item -Path $key -Force | Out-Null
-              New-ItemProperty -Path $key -Name setupCompleted -Value "true" -PropertyType String -Force | Out-Null
-              $env:SPEECHER_GRAB_PAGE = "general"
-              $exe = (Resolve-Path build/speecher.exe).Path
-              $out = Join-Path (Resolve-Path evidence).Path "$case-startup.png"
-              $timer.Restart()
-              $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -RedirectStandardError "evidence/$case-startup.log" -Wait -PassThru
-              "startup-$case exit=$($process.ExitCode) wall_ms=$($timer.ElapsedMilliseconds)" | Tee-Object -FilePath evidence/summary.txt -Append
-              Remove-Item Env:SPEECHER_GRAB_PAGE -ErrorAction SilentlyContinue
-              if ($process.ExitCode -ne 0) { throw "startup $case failed" }
+          $key = "HKCU:\Software\io.github.firemonster612\speecher\app"
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name setupCompleted -Value "true" -PropertyType String -Force | Out-Null
+          $exe = (Resolve-Path build/speecher.exe).Path
+          foreach ($case in @("baseline", "draft-facts", "baseline-restored", "draft-facts-repeat")) {
+            Remove-Item Env:DEBUG_USE_DRAFT_FACTS -ErrorAction SilentlyContinue
+            if ($case.StartsWith("draft-facts")) { $env:DEBUG_USE_DRAFT_FACTS = "1" }
+            foreach ($page in @("home", "dictation")) {
+              $env:SPEECHER_GRAB_PAGE = $page
+              $name = "$case-$page"
+              $out = Join-Path (Resolve-Path evidence).Path "$name.png"
+              $raw = Join-Path (Resolve-Path evidence).Path "$name-raw.log"
+              $env:DEBUG_WIN_SLOW_LOG = $raw
+              $timer = [Diagnostics.Stopwatch]::StartNew()
+              $process = Start-Process $exe -ArgumentList "--grab", "`"$out`"" -Wait -PassThru
+              "$name exit=$($process.ExitCode) wall_ms=$($timer.ElapsedMilliseconds)" | Tee-Object -FilePath evidence/summary.txt -Append
+              if ($process.ExitCode -ne 0) { throw "$name failed" }
+              if (!(Test-Path $raw)) { throw "production log missing" }
+              Get-Content $raw | Select-String -SimpleMatch "[DEBUG-win-slow]" | ForEach-Object { $_.Line } | Set-Content "evidence/$name-timing.log"
+              Remove-Item $raw
             }
           }
-      - name: Verify only the proposed patch
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          git restore --source=131ffe2e src/app/ApplicationController.cpp src/app/LocalSetup.cpp src/app/NetworkReachability.cpp src/core/settings/SettingsSchema.cpp src/frontend/win/SettingsModel.cpp src/ui/settings/SettingsPageSet.cpp
-          git apply diagnostics/proposed.patch
-          if ($LASTEXITCODE -ne 0) { throw "patch did not apply" }
-          git diff -- src/ > evidence/clean-production.patch
-          cmake --build build --target speecher speecher_tests --parallel 4
-          if ($LASTEXITCODE -ne 0) { throw "clean build failed" }
-          & ./build/speecher_tests.exe --suite app_window -o evidence/clean-patch.xml,xml -o evidence/clean-patch.txt,txt
-          if ($LASTEXITCODE -ne 0) { throw "clean app_window failed" }
-          & ./build/speecher_tests.exe --suite settings_schema -o evidence/settings-schema.txt,txt
-          if ($LASTEXITCODE -ne 0) { throw "settings_schema failed" }
-          ctest --test-dir build -R "^speecher_app_window$" --output-on-failure *> evidence/ctest.txt
-          if ($LASTEXITCODE -ne 0) { throw "ctest timed out or failed" }
+          Remove-Item Env:SPEECHER_GRAB_PAGE, Env:DEBUG_WIN_SLOW_LOG -ErrorAction SilentlyContinue
+          Remove-Item Env:DEBUG_USE_DRAFT_FACTS -ErrorAction SilentlyContinue
+          & ./build/speecher_tests.exe --suite app_window sidebarListsTheSchemaPanesInTheirGroups saveReportsFailedValidator controllerKeepsTheRecordOfTheLastTranscript -maxwarnings 0 -o evidence/focused-baseline.txt,txt
+          if ($LASTEXITCODE -ne 0) { throw "focused baseline failed" }
+          $env:DEBUG_USE_DRAFT_FACTS = "1"
+          & ./build/speecher_tests.exe --suite app_window sidebarListsTheSchemaPanesInTheirGroups saveReportsFailedValidator controllerKeepsTheRecordOfTheLastTranscript -maxwarnings 0 -o evidence/focused-draft-facts.txt,txt
+          if ($LASTEXITCODE -ne 0) { throw "focused patch failed" }
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: windows-appwindow-slow-toggle
+          name: windows-appwindow-production-cost
           path: evidence/

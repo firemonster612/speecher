@@ -15,6 +15,9 @@
 #include "providers/TranscriptRefinementPrompt.h"
 #include "frontend/win/TranscribePane.h"
 
+#include <QDebug>
+#include <QElapsedTimer>
+#include <QScopeGuard>
 #include <QClipboard>
 #include <QEventLoop>
 #include <QGuiApplication>
@@ -1006,6 +1009,11 @@ void SettingsWindow::recheckMicrophonesOnReturn()
 
 bool SettingsWindow::capture(const QString &path)
 {
+    QElapsedTimer debugTimer;
+    debugTimer.start();
+    const auto debugTiming = qScopeGuard([&] {
+        qInfo() << "[DEBUG-win-slow] win_capture_ns" << debugTimer.nsecsElapsed();
+    });
     return m_native->capture(path);
 }
 
