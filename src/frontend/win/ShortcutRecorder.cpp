@@ -155,7 +155,7 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
     content.MinWidth(360);
     content.Children().Append(styledTextBlock(role == GlobalShortcutRole::Dictation
                                                   ? globalShortcutPrompt()
-                                                  : dictationOnlyShortcutPrompt(),
+                                                  : sessionShortcutPrompt(),
                                               L"BodyTextBlockStyle"));
     // The one focusable thing in the content, and the only place keys are
     // recorded, so the buttons keep their own Enter and Space and the default

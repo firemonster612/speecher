@@ -2931,7 +2931,7 @@ QString globalShortcutPrompt()
 #endif
 }
 
-QString dictationOnlyShortcutPrompt()
+QString sessionShortcutPrompt()
 {
     return QStringLiteral("Press a key combination, or a key such as Escape or C. Speecher only "
                           "takes it while you dictate.");
@@ -3022,12 +3022,11 @@ QString bareKeyNeedsSessionGrabText(const ShortcutBinding &binding)
         .arg(binding.displayText());
 }
 
-QString typingKeyOnlyWatchedText(const ShortcutBinding &binding)
+QString watchedKeyStillTypesText(const ShortcutBinding &binding)
 {
     return QStringLiteral(
-        "Speecher cannot take %1 from other apps while you dictate, so it would still do its "
-        "normal job there. Use a letter, Escape, a key combination, or a key that cannot type, "
-        "such as F13 or Right Ctrl.")
+        "Speecher can watch %1 on its own but not take it, so it would still type while you "
+        "dictate. Record it again to use it as a shortcut instead.")
         .arg(binding.displayText());
 }
 

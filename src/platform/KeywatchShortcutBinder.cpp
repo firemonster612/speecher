@@ -61,7 +61,7 @@ QString KeywatchShortcutBinder::unsupportedBindingReason(const ShortcutBinding &
         return reason;
     }
     if (!keywatch::permittedKeyByCode(binding.keyCode().toStdString())) {
-        if (action().duringDictationOnly) {
+        if (action().sessionOnly) {
             return bareKeyNeedsSessionGrabText(binding);
         }
         return QStringLiteral(

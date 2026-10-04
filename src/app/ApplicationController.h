@@ -214,7 +214,7 @@ private:
     // Arms the Cancel and Pause Shortcuts while their action applies, and
     // takes Escape while a session can be cancelled, nothing records keys and
     // neither of them is Escape.
-    void updateDictationOnlyShortcuts();
+    void updateSessionShortcuts();
     void dropPendingStart();
     void setLaunchAtLoginAccepted(bool accepted);
 

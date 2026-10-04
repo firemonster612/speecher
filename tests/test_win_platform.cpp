@@ -185,7 +185,7 @@ private slots:
         const ShortcutBinding letter = ShortcutBinding::singleKey(QStringLiteral("KeyC"));
         for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
             WinSingleKeyShortcutBinder binder(GlobalShortcutBinder::actionFor(role));
-            QCOMPARE(binder.unsupportedBindingReason(letter), typingKeyOnlyWatchedText(letter));
+            QCOMPARE(binder.unsupportedBindingReason(letter), watchedKeyStillTypesText(letter));
             for (const char *code : {"ControlRight", "F13", "CapsLock"}) {
                 QCOMPARE(binder.unsupportedBindingReason(
                              ShortcutBinding::singleKey(QString::fromLatin1(code))),

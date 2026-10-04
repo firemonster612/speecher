@@ -20,7 +20,7 @@ struct GlobalShortcutAction {
     // Empty: unbound until the person sets one.
     QKeySequence defaultShortcut;
     // Acts only during a Dictation Session: the Cancel and Pause Shortcuts.
-    bool duringDictationOnly = false;
+    bool sessionOnly = false;
 };
 
 // Binds one desktop-wide ShortcutBinding to dictation. Platforms that report

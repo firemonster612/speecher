@@ -27,8 +27,8 @@ QString WinSingleKeyShortcutBinder::unsupportedBindingReason(const ShortcutBindi
     }
     // Watching cannot keep a key from the focused app, so a Cancel or Pause
     // key that types would type into the dictation it acts on.
-    if (action().duringDictationOnly && !singleKeyTypingWarning(binding).isEmpty()) {
-        return typingKeyOnlyWatchedText(binding);
+    if (action().sessionOnly && !singleKeyTypingWarning(binding).isEmpty()) {
+        return watchedKeyStillTypesText(binding);
     }
     return QString();
 }

@@ -28,6 +28,9 @@ std::optional<UInt32> carbonKeyCode(Qt::Key key, Qt::KeyboardModifiers modifiers
         {Qt::Key_F4, kVK_F4}, {Qt::Key_F5, kVK_F5}, {Qt::Key_F6, kVK_F6},
         {Qt::Key_F7, kVK_F7}, {Qt::Key_F8, kVK_F8}, {Qt::Key_F9, kVK_F9},
         {Qt::Key_F10, kVK_F10}, {Qt::Key_F11, kVK_F11}, {Qt::Key_F12, kVK_F12},
+        {Qt::Key_F13, kVK_F13}, {Qt::Key_F14, kVK_F14}, {Qt::Key_F15, kVK_F15},
+        {Qt::Key_F16, kVK_F16}, {Qt::Key_F17, kVK_F17}, {Qt::Key_F18, kVK_F18},
+        {Qt::Key_F19, kVK_F19}, {Qt::Key_F20, kVK_F20},
         {Qt::Key_Return, kVK_Return}, {Qt::Key_Enter, kVK_ANSI_KeypadEnter},
         {Qt::Key_Escape, kVK_Escape}, {Qt::Key_Tab, kVK_Tab},
         {Qt::Key_Space, kVK_Space},
@@ -39,7 +42,13 @@ std::optional<UInt32> carbonKeyCode(Qt::Key key, Qt::KeyboardModifiers modifiers
     return mac::keyCodeForCharacter(QChar(static_cast<ushort>(key)), modifiers);
 }
 
-bool carbonHotKeyFor(const QKeySequence &shortcut, UInt32 *keyCode, UInt32 *modifiers, QString *error)
+// A bare key is allowed only for a shortcut held just during a session; held
+// for good it would take the key from every app.
+bool carbonHotKeyFor(const QKeySequence &shortcut,
+                     bool bareKeyAllowed,
+                     UInt32 *keyCode,
+                     UInt32 *modifiers,
+                     QString *error)
 {
     if (shortcut.count() != 1) {
         if (error) {
@@ -51,7 +60,7 @@ bool carbonHotKeyFor(const QKeySequence &shortcut, UInt32 *keyCode, UInt32 *modi
     const Qt::KeyboardModifiers qtModifiers = combination.keyboardModifiers();
     const Qt::KeyboardModifiers globalModifiers = Qt::ControlModifier | Qt::MetaModifier
         | Qt::AltModifier | Qt::ShiftModifier;
-    if (!(qtModifiers & globalModifiers)) {
+    if (!bareKeyAllowed && !(qtModifiers & globalModifiers)) {
         if (error) {
             *error = QStringLiteral("A macOS global shortcut must include at least one modifier key");
         }
@@ -185,6 +194,13 @@ QString MacGlobalShortcutBinder::unsupportedReason() const
 
 void MacGlobalShortcutBinder::bind()
 {
+    if (action().sessionOnly) {
+        const QString error = holdWhileArmed();
+        if (!error.isEmpty()) {
+            qWarning().noquote() << "Could not register" << action().id << error;
+        }
+        return;
+    }
     if (m_shortcut.isEmpty()) {
         return;
     }
@@ -218,16 +234,20 @@ bool MacGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
         storeShortcut(action().settingsKey, m_shortcut);
         return true;
     }
+    // Registering now, whether or not the shortcut is held yet, is what tells
+    // another app already owns the keys while the person is choosing them.
     if (!registerHotKey(shortcut.combination(), error)) {
         return false;
     }
-    if (m_suspensionCount > 0) {
+    m_shortcut = shortcut.combination();
+    storeShortcut(action().settingsKey, m_shortcut);
+    if (action().sessionOnly) {
+        holdWhileArmed();
+    } else if (m_suspensionCount > 0) {
         // Validate conflicts now, but leave keys available to other recorders.
         m_resumeBinding = true;
         unregisterHotKey();
     }
-    m_shortcut = shortcut.combination();
-    storeShortcut(action().settingsKey, m_shortcut);
     return true;
 }
 
@@ -248,6 +268,10 @@ void MacGlobalShortcutBinder::suspend()
 QString MacGlobalShortcutBinder::resume()
 {
     if (m_suspensionCount == 0 || --m_suspensionCount > 0) return {};
+    if (action().sessionOnly) {
+        m_resumeBinding = false;
+        return holdWhileArmed();
+    }
     QString error;
     if (m_resumeBinding) {
         m_resumeBinding = false;
@@ -262,7 +286,35 @@ bool MacGlobalShortcutBinder::removeRegistration(QString *)
 {
     m_resumeBinding = false;
     unregisterHotKey();
+    // A session shortcut registers whatever it holds each time it is
+    // armed, so it must forget the combination the single key replaced.
+    if (action().sessionOnly) {
+        m_shortcut = {};
+    }
     return true;
+}
+
+void MacGlobalShortcutBinder::setArmed(bool armed)
+{
+    if (!action().sessionOnly || armed == m_armed) {
+        return;
+    }
+    m_armed = armed;
+    const QString error = holdWhileArmed();
+    if (!error.isEmpty()) {
+        qWarning().noquote() << "Could not register" << action().id << "for this dictation:" << error;
+    }
+}
+
+QString MacGlobalShortcutBinder::holdWhileArmed()
+{
+    if (!m_armed || m_suspensionCount > 0 || m_shortcut.isEmpty()) {
+        unregisterHotKey();
+        return {};
+    }
+    QString error;
+    registerHotKey(m_shortcut, &error);
+    return error;
 }
 
 void MacGlobalShortcutBinder::refreshKeyboardLayout()
@@ -298,7 +350,7 @@ bool MacGlobalShortcutBinder::registerHotKey(const QKeySequence &shortcut, QStri
 
     UInt32 keyCode = 0;
     UInt32 modifiers = 0;
-    if (!carbonHotKeyFor(shortcut, &keyCode, &modifiers, error)) {
+    if (!carbonHotKeyFor(shortcut, action().sessionOnly, &keyCode, &modifiers, error)) {
         return false;
     }
 

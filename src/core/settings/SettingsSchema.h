@@ -549,7 +549,7 @@ QString lookingForRunnersStatus();
 // platform's keys.
 QString globalShortcutPrompt();
 // What the Cancel and Pause recorders ask for: they also take a bare key.
-QString dictationOnlyShortcutPrompt();
+QString sessionShortcutPrompt();
 // The Global Shortcut row's buttons: record a new binding, and go back to the
 // binder's default, named by its display text.
 QString globalShortcutChangeCaption();
@@ -571,12 +571,13 @@ std::optional<GlobalShortcutRole> globalShortcutRoleForRow(const QString &rowId)
 QString globalShortcutTakenText(GlobalShortcutRole takenBy);
 // Why the desktop would not register a binding: another app holds it.
 QString globalShortcutOwnedElsewhereText(const ShortcutBinding &binding);
-// Why a dictation-only shortcut cannot be a bare key such as C or Escape on a
+// Why a session shortcut cannot be a bare key such as C or Escape on a
 // desktop that can only take keys for good, never just for a session.
 QString bareKeyNeedsSessionGrabText(const ShortcutBinding &binding);
-// Why a dictation-only shortcut cannot be a single key that types where
-// Speecher can only watch the key, not take it, as on Windows.
-QString typingKeyOnlyWatchedText(const ShortcutBinding &binding);
+// Why a session shortcut cannot be a single key that types where
+// Speecher can only watch a single key, not take it (Windows, macOS): it
+// would still type.
+QString watchedKeyStillTypesText(const ShortcutBinding &binding);
 // Why a single key cannot be watched on Wayland while the key helper already
 // watches as many keys for this person as it allows.
 QString keyHelperBusyText();

@@ -8,6 +8,11 @@ namespace speecher {
 // press without an Accessibility grant, which is what push-to-talk needs. macOS
 // has no desktop-wide shortcut registry to store the binding in, so it lives in
 // Speecher's own settings.
+//
+// The Cancel and Pause Shortcuts act only during a Dictation Session, so their
+// hot key is registered only while armed and not suspended, and may be a bare
+// key such as C or Escape: Carbon takes it from other apps just for the
+// session. The dictation shortcut stays registered and needs a modifier.
 class MacGlobalShortcutBinder : public GlobalShortcutBinder {
     Q_OBJECT
 
@@ -25,6 +30,7 @@ public:
     void suspend() override;
     QString resume() override;
     bool removeRegistration(QString *error = nullptr) override;
+    void setArmed(bool armed) override;
     // What this binder's Carbon hot key is registered under.
     quint32 hotKeyIdentifier() const;
 
@@ -32,12 +38,16 @@ private:
     bool registerHotKey(const QKeySequence &shortcut, QString *error);
     void unregisterHotKey();
     void refreshKeyboardLayout();
+    // A session shortcut: registers the binding while armed and not
+    // suspended, otherwise lets it go. Returns why Carbon refused it.
+    QString holdWhileArmed();
 
     QKeySequence m_shortcut;
     quint32 m_hotKeyIdentifier = 0;
     // Setup and settings can record concurrently; only the last resume binds.
     int m_suspensionCount = 0;
     bool m_resumeBinding = false;
+    bool m_armed = false;
     // EventHotKeyRef, EventHandlerRef and EventHandlerUPP, kept opaque so this
     // header stays plain C++ for moc.
     void *m_hotKey = nullptr;

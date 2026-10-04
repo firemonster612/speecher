@@ -133,7 +133,7 @@ QString WinGlobalShortcutBinder::unsupportedReason() const
 
 void WinGlobalShortcutBinder::bind()
 {
-    if (action().duringDictationOnly) {
+    if (action().sessionOnly) {
         holdWhileArmed();
         return;
     }
@@ -176,7 +176,7 @@ bool WinGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
     if (!registerShortcut(shortcut.combination(), error)) {
         return false;
     }
-    if (action().duringDictationOnly) {
+    if (action().sessionOnly) {
         m_shortcut = shortcut.combination();
         holdWhileArmed();
     } else if (m_suspensionCount > 0) {
@@ -192,7 +192,7 @@ bool WinGlobalShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QStri
 
 void WinGlobalShortcutBinder::setArmed(bool armed)
 {
-    if (!action().duringDictationOnly || armed == m_armed) {
+    if (!action().sessionOnly || armed == m_armed) {
         return;
     }
     m_armed = armed;
@@ -217,7 +217,7 @@ QString WinGlobalShortcutBinder::resume()
     if (m_suspensionCount == 0 || --m_suspensionCount > 0) {
         return {};
     }
-    if (action().duringDictationOnly) {
+    if (action().sessionOnly) {
         return holdWhileArmed();
     }
     QString error;
@@ -231,13 +231,13 @@ QString WinGlobalShortcutBinder::resume()
 // The router parks this binder while a single key holds the binding; without
 // letting go of the hot key here, the replaced combination would keep firing
 // alongside the key. Clearing m_resumeBinding keeps a recording's resume from
-// sneaking it back. A dictation-only shortcut forgets the combination too,
+// sneaking it back. A session shortcut forgets the combination too,
 // or arming it would bring the hot key back beside the key.
 bool WinGlobalShortcutBinder::removeRegistration(QString *)
 {
     m_resumeBinding = false;
     unregisterShortcut();
-    if (action().duringDictationOnly) {
+    if (action().sessionOnly) {
         m_shortcut = {};
     }
     return true;
@@ -342,7 +342,7 @@ bool WinGlobalShortcutBinder::nativeEventFilter(const QByteArray &eventType,
 
 bool WinGlobalShortcutBinder::registerShortcut(const QKeySequence &shortcut, QString *error)
 {
-    const auto hotKey = nativeHotKey(shortcut, error, action().duringDictationOnly);
+    const auto hotKey = nativeHotKey(shortcut, error, action().sessionOnly);
     if (!hotKey) {
         return false;
     }

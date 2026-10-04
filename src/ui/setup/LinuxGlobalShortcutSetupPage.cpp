@@ -89,7 +89,7 @@ QString captureLead(bool combinationsAvailable, GlobalShortcutRole role)
         return QStringLiteral("Press a single key, such as Right Alt or F13, to use on its own.");
     }
     return role == GlobalShortcutRole::Dictation ? globalShortcutPrompt()
-                                                 : dictationOnlyShortcutPrompt();
+                                                 : sessionShortcutPrompt();
 }
 
 } // namespace

@@ -62,9 +62,8 @@ final class AppModel: ObservableObject {
     // retained collection editors can reload from the fresh snapshot.
     @Published private(set) var draftGeneration = 0
     @Published private(set) var shortcut: String
-    @Published private(set) var cancelShortcut: String
-    /// Why the last Cancel Shortcut change was refused, until the next one.
-    @Published private(set) var cancelShortcutProblem = ""
+    /// The Cancel and Pause Shortcut rows, by role.
+    @Published private(set) var sessionShortcuts: [SpeecherShortcutRole: SessionShortcut]
     /// The Test microphone row's test, which the bridge runs. Mirrored here
     /// rather than in the row, which a Form drops when it scrolls off; the
     /// window ends the test on a pane change and on close.
@@ -80,8 +79,6 @@ final class AppModel: ObservableObject {
     /// The last single-key binding was refused for the missing Accessibility
     /// grant, which is what makes the grant call-to-action appear.
     @Published private(set) var shortcutNeedsAccessibility = false
-    /// The same, for the Cancel Shortcut row.
-    @Published private(set) var cancelShortcutNeedsAccessibility = false
     /// The pane the sidebar is on. A window opened from closed starts on
     /// reopenPane.
     @Published var pane = "home" {
@@ -172,7 +169,9 @@ final class AppModel: ObservableObject {
         failureNote = bridge.failureNote
         local = bridge.localSetupState
         shortcut = bridge.shortcutDisplay
-        cancelShortcut = bridge.cancelShortcutDisplay
+        sessionShortcuts = Dictionary(uniqueKeysWithValues: Self.sessionShortcutRoles.map {
+            ($0, SessionShortcut(display: bridge.shortcutDisplay(for: $0)))
+        })
         microphoneTestCaption = bridge.microphoneTestCaption
         microphoneTestEnabled = bridge.microphoneTestEnabled
         accessibilityEnabled = bridge.accessibilityEnabled
@@ -541,11 +540,11 @@ final class AppModel: ObservableObject {
     }
 
     func endShortcutRecording() {
-        var cancelShortcutFailed: ObjCBool = false
-        let problem = bridge.endShortcutRecording(cancelShortcutFailed: &cancelShortcutFailed) ?? ""
-        shortcutProblem = cancelShortcutFailed.boolValue ? "" : problem
-        if cancelShortcutFailed.boolValue {
-            cancelShortcutProblem = problem
+        var failedRole = SpeecherShortcutRole.dictation
+        let problem = bridge.endShortcutRecording(failedRole: &failedRole) ?? ""
+        shortcutProblem = failedRole == .dictation ? problem : ""
+        if failedRole != .dictation {
+            sessionShortcuts[failedRole]?.problem = problem
         }
     }
 
@@ -585,27 +584,38 @@ final class AppModel: ObservableObject {
         return true
     }
 
-    func bindCancelShortcut(characters: String, modifierFlags: NSEvent.ModifierFlags) {
-        cancelShortcutProblem = bridge.bindCancelShortcut(characters: characters,
-                                                          modifierFlags: modifierFlags.rawValue) ?? ""
-        cancelShortcutNeedsAccessibility = false
-        cancelShortcut = bridge.cancelShortcutDisplay
+    /// The Global Shortcuts that act only during a Dictation Session, in the
+    /// order their rows appear.
+    static let sessionShortcutRoles: [SpeecherShortcutRole] = [.cancel, .pause]
+
+    func sessionShortcut(_ role: SpeecherShortcutRole) -> SessionShortcut {
+        sessionShortcuts[role] ?? SessionShortcut(display: "")
     }
 
-    /// The Cancel Shortcut recorder's single-key entry point; says whether the
+    func bindShortcut(characters: String, modifierFlags: NSEvent.ModifierFlags, role: SpeecherShortcutRole) {
+        let problem = bridge.bindShortcut(characters: characters, modifierFlags: modifierFlags.rawValue,
+                                          role: role) ?? ""
+        noteSessionShortcutChange(role, problem: problem, needsAccessibility: false)
+    }
+
+    /// A Cancel or Pause recorder's single-key entry point; says whether the
     /// key was one it could take.
-    func bindCancelSingleKey(macKeyCode keyCode: UInt16) -> Bool {
+    func bindSingleKey(macKeyCode keyCode: UInt16, role: SpeecherShortcutRole) -> Bool {
         guard let code = keyCodeName(forMacKeyCode: keyCode) else { return false }
-        cancelShortcutProblem = bridge.bindCancelSingleKey(code: code) ?? ""
-        cancelShortcutNeedsAccessibility = !cancelShortcutProblem.isEmpty && !bridge.accessibilityEnabled
-        cancelShortcut = bridge.cancelShortcutDisplay
+        let problem = bridge.bindSingleKey(code: code, role: role) ?? ""
+        noteSessionShortcutChange(role, problem: problem,
+                                  needsAccessibility: !problem.isEmpty && !bridge.accessibilityEnabled)
         return true
     }
 
-    func clearCancelShortcut() {
-        cancelShortcutProblem = bridge.clearCancelShortcut() ?? ""
-        cancelShortcutNeedsAccessibility = false
-        cancelShortcut = bridge.cancelShortcutDisplay
+    func clearShortcut(role: SpeecherShortcutRole) {
+        noteSessionShortcutChange(role, problem: bridge.clearShortcut(for: role) ?? "", needsAccessibility: false)
+    }
+
+    private func noteSessionShortcutChange(_ role: SpeecherShortcutRole, problem: String, needsAccessibility: Bool) {
+        sessionShortcuts[role] = SessionShortcut(display: bridge.shortcutDisplay(for: role),
+                                                 problem: problem,
+                                                 needsAccessibility: needsAccessibility)
     }
 
     /// The pause button: pauses, or resumes while paused.
@@ -649,6 +659,15 @@ final class AppModel: ObservableObject {
             pane(withId: match.pane).map { SearchHit(pane: $0, row: match.rows.first) }
         }
     }
+}
+
+/// A Cancel or Pause Shortcut row: the binding, why the last change was
+/// refused until the next one, and whether that refusal was the missing
+/// Accessibility grant, which makes the grant call-to-action appear.
+struct SessionShortcut {
+    var display: String
+    var problem = ""
+    var needsAccessibility = false
 }
 
 /// A pane a search found, and the first row on it that matched; nil when the

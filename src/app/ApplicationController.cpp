@@ -147,7 +147,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
         GlobalShortcutBinder *binder = shortcutBinder(role);
         connect(binder, &GlobalShortcutBinder::bindingChanged, this, [this] {
-            updateDictationOnlyShortcuts();
+            updateSessionShortcuts();
             emit globalShortcutChanged();
         });
         connect(binder, &GlobalShortcutBinder::supportChanged,
@@ -241,7 +241,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
     connect(m_pauseShortcutBinder, &GlobalShortcutBinder::activated, m_session, &DictationSession::togglePause);
-    connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateDictationOnlyShortcuts);
+    connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateSessionShortcuts);
 #ifdef Q_OS_MACOS
     connect(m_session, &DictationSession::stateChanged, this, [this](const QString &state) {
         if (state != QStringLiteral("Listening")) {
@@ -616,7 +616,7 @@ void ApplicationController::suspendGlobalShortcut()
     for (const GlobalShortcutRole role : globalShortcutRoles) {
         shortcutBinder(role)->suspend();
     }
-    updateDictationOnlyShortcuts();
+    updateSessionShortcuts();
 }
 
 QString ApplicationController::resumeGlobalShortcut(GlobalShortcutRole *failedRole)
@@ -634,14 +634,14 @@ QString ApplicationController::resumeGlobalShortcut(GlobalShortcutRole *failedRo
             }
         }
     }
-    updateDictationOnlyShortcuts();
+    updateSessionShortcuts();
     return firstError;
 }
 
 // The Cancel and Pause Shortcuts hold their keys only while their action
 // applies, and Escape is the built-in cancel key only while neither of them
 // is Escape: both cannot hold it at once.
-void ApplicationController::updateDictationOnlyShortcuts()
+void ApplicationController::updateSessionShortcuts()
 {
     if (!m_session) {
         return;

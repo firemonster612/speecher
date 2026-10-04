@@ -1,5 +1,7 @@
 #include "platform/mac/MacSingleKeyShortcutBinder.h"
 
+#include "core/settings/SettingsSchema.h"
+
 #include <QTimer>
 
 #import <AppKit/AppKit.h>
@@ -118,6 +120,12 @@ QString MacSingleKeyShortcutBinder::unsupportedBindingReason(const ShortcutBindi
     if (key->mac < 0) {
         return QStringLiteral("Mac keyboards have no %1 key.")
             .arg(QString::fromLatin1(key->label));
+    }
+    // The monitors cannot stop a key, so a Cancel or Pause key that types
+    // would type into the app as well; the Carbon binder takes such a key
+    // just for the session instead.
+    if (action().sessionOnly && !singleKeyTypingWarning(binding).isEmpty()) {
+        return watchedKeyStillTypesText(binding);
     }
     if (!AXIsProcessTrusted()) {
         return accessibilityRequiredReason();

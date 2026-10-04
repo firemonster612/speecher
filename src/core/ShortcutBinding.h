@@ -59,10 +59,6 @@ public:
 
     bool isEmpty() const;
     bool isSingleKey() const;
-    // A combination with no modifier but Shift: a key that types or that apps
-    // act on, such as C or Escape. Taking one for good would take it from
-    // every app, so only a shortcut held just while it is needed can use one.
-    bool isBareKey() const;
     // Whether both name the same keys. One backend may store F13 as a single
     // key while another stores it as a combination without modifiers; those
     // are the same physical key.

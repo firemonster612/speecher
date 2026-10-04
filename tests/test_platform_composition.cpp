@@ -702,7 +702,7 @@ private slots:
 
     // The Cancel and Pause Shortcuts hold their keys only while a Dictation
     // Session can use them, so a bare key types normally the rest of the time.
-    void dictationOnlyShortcutsAreArmedOnlyDuringASession()
+    void sessionShortcutsAreArmedOnlyDuringASession()
     {
         const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
         ApplicationController controller(true, platform);

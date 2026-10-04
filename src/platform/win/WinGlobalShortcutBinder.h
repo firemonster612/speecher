@@ -60,7 +60,7 @@ private:
     friend class ::WinPlatformTests;
     bool registerShortcut(const QKeySequence &shortcut, QString *error);
     void unregisterShortcut();
-    // The dictation-only shortcut: registers the binding while armed and not
+    // The session shortcut: registers the binding while armed and not
     // suspended, otherwise lets it go. Returns Windows' refusal, if any.
     QString holdWhileArmed();
     void handleRawInput(const RAWINPUT &input);

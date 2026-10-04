@@ -133,7 +133,7 @@ namespace {
 // keys themselves instead, just while dictating, which the portal cannot.
 GlobalShortcutBinder *createCombinationBinder(const GlobalShortcutAction &action)
 {
-    if (action.duringDictationOnly) {
+    if (action.sessionOnly) {
         auto *plasma = new KGlobalAccelSessionShortcutBinder(action);
         if (plasma->supported()) {
             return plasma;

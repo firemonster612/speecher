@@ -65,7 +65,7 @@ An optional Global Shortcut that cancels the Dictation Session in progress: noth
 _Avoid_: Abort key, escape shortcut
 
 **Pause Shortcut**:
-An optional Global Shortcut that pauses the Dictation Session in progress and, pressed again, resumes it. Unbound until the user sets one, and like the Cancel Shortcut it acts only during a session and may be a bare key where the desktop allows.
+An optional Global Shortcut that pauses the Dictation Session in progress and, pressed again, resumes it. Unbound until the user sets one, and like the Cancel Shortcut it acts only during a session and may be a bare key where the desktop allows. The two together are the session shortcuts.
 _Avoid_: Hold key, mute shortcut
 
 **Update Channel**:
