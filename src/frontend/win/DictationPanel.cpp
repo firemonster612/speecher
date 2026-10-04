@@ -55,7 +55,9 @@ using namespace Microsoft::UI::Xaml::Media;
 // The panel's layout constants are DIPs, as the XAML content measures them;
 // every HWND move and resize scales them by the window's DPI. The capsule's
 // own measurements are the ones every platform shares (PopupGeometry.h).
-constexpr int panelWidth = 126;
+constexpr int panelWidth = popup::kPillMinimumWidth;
+// The error capsule keeps its own floor, as on the other platforms.
+constexpr int problemMinimumWidth = 126;
 constexpr int panelHeight = popup::kPillHeight;
 constexpr int previewChromeWidth = 2 * popup::kPreviewSideMargin;
 constexpr int compactStripHeight = popup::kCompactStripHeight;
@@ -373,6 +375,8 @@ struct DictationPanel::Native : QObject {
         spinner.IsIndeterminate(true);
         spinner.Width(spinnerSize);
         spinner.Height(spinnerSize);
+        spinner.HorizontalAlignment(HorizontalAlignment::Center);
+        spinner.VerticalAlignment(VerticalAlignment::Center);
         busySlot = Border();
         busySlot.Width(sessionButtonSize);
         busySlot.Height(sessionButtonSize);
@@ -386,6 +390,7 @@ struct DictationPanel::Native : QObject {
         row.Children().Append(cancelButton);
 
         previewText = TextBlock();
+        previewText.HorizontalAlignment(HorizontalAlignment::Center);
         previewText.VerticalAlignment(VerticalAlignment::Center);
         previewText.TextAlignment(TextAlignment::Center);
         previewText.MaxLines(1);
@@ -860,16 +865,16 @@ struct DictationPanel::Native : QObject {
         // A problem wraps at the width every platform shares and grows taller.
         const int maximumWidth = hasProblem
             ? std::min(kPopupErrorWrapWidth + chromeWidth, screenWidth)
-            : std::max(panelWidth, screenWidth);
+            : std::max(problemMinimumWidth, screenWidth);
         int wantedWidth = hasProblem ? std::clamp(measuredTextWidth(shown) + chromeWidth,
-                                                  panelWidth, maximumWidth)
+                                                  problemMinimumWidth, maximumWidth)
             : finished ? std::clamp(measuredTextWidth(shown) + 68, panelWidth, maximumWidth)
             : controlsWidth > 0 ? lobeWidth
             : waiting ? std::max(panelWidth, statusWidth + 32)
                       : panelWidth;
         if (showPreview) {
             const int transcriptMaximum = std::min(maximumPreviewWidth, maximumWidth);
-            const QString visible = fitPreview(preview, transcriptMaximum - previewChromeWidth);
+            const PreviewLine visible = fitPreview(preview, transcriptMaximum - previewChromeWidth);
             // A short preview still carves the text bar around the lobe,
             // centred in the narrowest bar that does.
             const int shortestBar = int(std::ceil(popup::minimumPreviewBarWidth(
@@ -878,12 +883,11 @@ struct DictationPanel::Native : QObject {
             // Measuring the trimmed tail would make the width twitch at overflow.
             wantedWidth = std::min(transcriptMaximum,
                 std::max(shortestBar, measuredTextWidth(preview, previewFontSize) + previewChromeWidth));
-            const int lineWidth = wantedWidth - previewChromeWidth;
-            previewText.Text(hstring(visible.toStdWString()));
-            previewText.Width(lineWidth);
-            // trimPreviewToFit only shortens a preview by cutting its front.
-            const bool cut = visible.size() < preview.size();
-            setPreviewFade(cut, (lineWidth - measuredTextWidth(visible, previewFontSize)) / 2.0);
+            // The line hugs the words it shows and centres in the bar, so its
+            // left edge is the text's own and the fade starts there.
+            previewText.Text(hstring(visible.text.toStdWString()));
+            previewText.Width(measuredTextWidth(visible.text, previewFontSize));
+            setPreviewFade(visible.cut);
         }
         previewText.Visibility(showPreview ? Visibility::Visible : Visibility::Collapsed);
         row.Spacing(hasProblem || finished ? messageRowSpacing : sessionButtonGap);
@@ -962,14 +966,16 @@ struct DictationPanel::Native : QObject {
     // The surface is sized for the widest preview, so while the panel takes
     // clicks the empty band beside the capsule would swallow clicks meant for
     // the application below. A window region keeps hit testing, child island
-    // included, to the capsule's rectangle; everything the panel draws is
-    // inside it.
+    // included, to the capsule's rectangle. The region clips drawing too, so
+    // it holds every pixel of the outline, stroke and fillets included.
     void limitClicksToCapsule(bool interactive)
     {
         // The words bar across the top, and under it only the tab's width
-        // when the outline carves one, so clicks beside the tab go through.
+        // when the outline carves one, so clicks beside the tab go through,
+        // plus the band where the fillets turn from the shoulder into the tab.
         RECT bar{};
         RECT tab{};
+        RECT joins{};
         if (interactive) {
             const auto bounds = chrome.TransformToVisual(nullptr).TransformBounds(
                 {0, 0, float(chrome.ActualWidth()), float(chrome.ActualHeight())});
@@ -977,23 +983,32 @@ struct DictationPanel::Native : QObject {
             bar = {px(bounds.X), px(bounds.Y), px(bounds.X + bounds.Width), px(bounds.Y + bounds.Height)};
             if (outlineTabHalf > 0) {
                 const double middle = bounds.X + bounds.Width / 2.0;
-                tab = {px(middle - outlineTabHalf), px(bounds.Y + outlineShoulder),
-                       px(middle + outlineTabHalf), bar.bottom};
+                // The outline's one-DIP stroke reaches past the shoulder and
+                // the tab's sides.
+                const double shoulder = bounds.Y + outlineShoulder + 1;
+                const double half = outlineTabHalf + 1;
+                tab = {px(middle - half), px(shoulder), px(middle + half), bar.bottom};
+                joins = {px(middle - half - outlineFillet), px(shoulder),
+                         px(middle + half + outlineFillet), px(shoulder + outlineFillet)};
                 bar.bottom = tab.top;
             }
         }
-        if (EqualRect(&bar, &clickRegion) && EqualRect(&tab, &clickTab)) {
+        if (EqualRect(&bar, &clickRegion) && EqualRect(&tab, &clickTab)
+            && EqualRect(&joins, &clickJoins)) {
             return;
         }
         clickRegion = bar;
         clickTab = tab;
+        clickJoins = joins;
         HRGN region = nullptr;
         if (interactive) {
             region = CreateRectRgnIndirect(&bar);
-            if (!IsRectEmpty(&tab)) {
-                HRGN lobe = CreateRectRgnIndirect(&tab);
-                CombineRgn(region, region, lobe, RGN_OR);
-                DeleteObject(lobe);
+            for (const RECT &part : {tab, joins}) {
+                if (!IsRectEmpty(&part)) {
+                    HRGN extra = CreateRectRgnIndirect(&part);
+                    CombineRgn(region, region, extra, RGN_OR);
+                    DeleteObject(extra);
+                }
             }
         }
         // The system owns the region once it is set.
@@ -1038,18 +1053,19 @@ struct DictationPanel::Native : QObject {
         return measured > 0 ? measured + 2 : int(value.size()) * 7;
     }
 
-    QString fitPreview(const QString &value, int maximumWidth)
+    PreviewLine fitPreview(const QString &value, int maximumWidth)
     {
         return trimPreviewToFit(value, [this, maximumWidth](const QString &candidate) {
             return measuredTextWidth(candidate, previewFontSize) <= maximumWidth;
         });
     }
 
-    // Words cut from the front fade in over the line's first stretch, from
-    // the text's own left edge, so the newest words stay whole. Rebuilt on
-    // every refresh from the theme's text colour, so it follows a theme
-    // change as the plain foreground does.
-    void setPreviewFade(bool cut, double textLeft)
+    // Words cut from the front fade in over the line's first stretch, so the
+    // newest words stay whole. The line hugs its text, so the fade starts at
+    // the text's left edge whether WinUI maps a text brush to the TextBlock
+    // or to the glyphs. Rebuilt on every refresh from the theme's text
+    // colour, so it follows a theme change as the plain foreground does.
+    void setPreviewFade(bool cut)
     {
         previewText.ClearValue(TextBlock::ForegroundProperty());
         if (!cut) {
@@ -1060,8 +1076,8 @@ struct DictationPanel::Native : QObject {
         clear.A = 0;
         LinearGradientBrush fade;
         fade.MappingMode(BrushMappingMode::Absolute);
-        fade.StartPoint({float(textLeft), 0});
-        fade.EndPoint({float(textLeft + popup::kPreviewFadeWidth), 0});
+        fade.StartPoint({0, 0});
+        fade.EndPoint({float(popup::kPreviewFadeWidth), 0});
         for (const auto &[shade, offset] : {std::pair{clear, 0.0}, std::pair{color, 1.0}}) {
             GradientStop stop;
             stop.Color(shade);
@@ -1151,11 +1167,13 @@ struct DictationPanel::Native : QObject {
         if (shoulder <= 0 || lobeHeight <= 0 || fillet < 4) {
             outlineShoulder = 0;
             outlineTabHalf = 0;
+            outlineFillet = 0;
             outline.Data(capsuleGeometry(width, height));
             return;
         }
         outlineShoulder = shoulder;
         outlineTabHalf = half;
+        outlineFillet = fillet;
         figure.StartPoint({float(cap), 0});
         line(width - cap, 0);
         arc(width - cap, shoulder, cap, SweepDirection::Clockwise);
@@ -1282,14 +1300,17 @@ struct DictationPanel::Native : QObject {
     Phase phase = Phase::Live;
     Brush normalForeground{nullptr};
     Microsoft::UI::Xaml::Media::Animation::Storyboard shimmer{nullptr};
-    // The window region limitClicksToCapsule() last set, as the words bar and
-    // the tab under it; empty for none.
+    // The window region limitClicksToCapsule() last set, as the words bar,
+    // the tab under it and the fillets' band; empty for none.
     RECT clickRegion{};
     RECT clickTab{};
-    // The carved outline's shoulder and the tab's half width in DIPs, which
-    // the click region follows; 0 while the outline is a plain capsule.
+    RECT clickJoins{};
+    // The carved outline's shoulder, the tab's half width and the fillet's
+    // radius in DIPs, which the click region follows; 0 while the outline is
+    // a plain capsule.
     double outlineShoulder = 0;
     double outlineTabHalf = 0;
+    double outlineFillet = 0;
     bool shimmering = false;
     bool frozen = false;
     bool completed = false;
@@ -1376,6 +1397,11 @@ QRect DictationPanel::previewGeometryForTest() const
 QRect DictationPanel::statusGeometryForTest() const
 {
     return m_native->controlGeometry(m_native->text);
+}
+
+QRect DictationPanel::pauseGeometryForTest() const
+{
+    return m_native->controlGeometry(m_native->pauseButton);
 }
 
 QRect DictationPanel::spinnerGeometryForTest() const

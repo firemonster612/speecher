@@ -812,11 +812,24 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @implementation SpeecherSessionControls
 @end
 
+@interface SpeecherPreviewLine ()
+@property (nonatomic, copy) NSString *text;
+@property (nonatomic) BOOL cut;
+@end
+
+@implementation SpeecherPreviewLine
+@end
+
 @implementation SpeecherPopupGeometry
 
 + (CGFloat)pillHeight
 {
     return speecher::popup::kPillHeight;
+}
+
++ (CGFloat)pillMinimumWidth
+{
+    return speecher::popup::kPillMinimumWidth;
 }
 
 + (CGFloat)buttonSize
@@ -2764,13 +2777,17 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::popupErrorDismissMs(QString::fromNSString(message)) / 1000.0;
 }
 
-+ (NSString *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font
++ (SpeecherPreviewLine *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font
 {
     NSDictionary *attributes = @{NSFontAttributeName: font};
-    return speecher::trimPreviewToFit(QString::fromNSString(preview), [&](const QString &text) {
-               return [text.toNSString() sizeWithAttributes:attributes].width <= width;
-           })
-        .toNSString();
+    const speecher::PreviewLine core = speecher::trimPreviewToFit(
+        QString::fromNSString(preview), [&](const QString &text) {
+            return [text.toNSString() sizeWithAttributes:attributes].width <= width;
+        });
+    SpeecherPreviewLine *line = [[SpeecherPreviewLine alloc] init];
+    line.text = core.text.toNSString();
+    line.cut = core.cut;
+    return line;
 }
 
 - (BOOL)accessibilitySupported

@@ -49,6 +49,7 @@ private:
     QRect waveformGeometryForTest() const;
     QRect previewGeometryForTest() const;
     QRect statusGeometryForTest() const;
+    QRect pauseGeometryForTest() const;
     QRect spinnerGeometryForTest() const;
     QRect cancelGeometryForTest() const;
     QString previewTextForTest() const;

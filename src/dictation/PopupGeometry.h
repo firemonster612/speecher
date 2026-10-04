@@ -11,6 +11,10 @@ namespace speecher::popup {
 // buttons and the dots.
 inline constexpr int kPillHeight = 32;
 
+// The narrowest the capsule gets when nothing sits beside the strip, as for
+// a receipt: the dots and their air, or a short receipt's icon and word.
+inline constexpr int kPillMinimumWidth = 64;
+
 // Pause (a spinner while transcribing and refining) on the left, cancel on
 // the right: circles this wide around an icon this size.
 inline constexpr int kButtonSize = 24;

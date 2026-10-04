@@ -51,7 +51,7 @@ constexpr Geometry standardGeometry{waveform::barCount, 2.0 * standardScale, 2.0
 // The popup's dots at Wispr Flow's own 2px, in a pill the dots and its
 // rounded ends fill.
 constexpr Geometry popupGeometry{popup::kBarCount, popup::kBarWidth, popup::kBarGap,
-                                 popup::kBarDotHeight, 64, popup::kPillHeight,
+                                 popup::kBarDotHeight, popup::kPillMinimumWidth, popup::kPillHeight,
                                  popup::kCompactStripHeight};
 
 const Geometry &geometryFor(WaveformWidget::Size size)

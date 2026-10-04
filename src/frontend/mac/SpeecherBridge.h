@@ -359,10 +359,18 @@ typedef NS_ENUM(NSInteger, SpeecherErrorFix) {
 @property (nonatomic, readonly) BOOL busyVisible;
 @end
 
+// speecher::PreviewLine: the preview as its line shows it, and whether words
+// were cut from its front.
+@interface SpeecherPreviewLine : NSObject
+@property (nonatomic, readonly, copy) NSString *text;
+@property (nonatomic, readonly) BOOL cut;
+@end
+
 // The dictation popup's measurements (speecher::popup), shared with the Linux
 // and Windows popups. Points.
 @interface SpeecherPopupGeometry : NSObject
 @property (class, nonatomic, readonly) CGFloat pillHeight;
+@property (class, nonatomic, readonly) CGFloat pillMinimumWidth;
 @property (class, nonatomic, readonly) CGFloat buttonSize;
 @property (class, nonatomic, readonly) CGFloat buttonIconSize;
 @property (class, nonatomic, readonly) CGFloat buttonGap;
@@ -1003,7 +1011,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (class, nonatomic, readonly) CGFloat popupErrorWrapWidth;
 + (NSTimeInterval)popupErrorDismissSecondsFor:(NSString *)message NS_SWIFT_NAME(popupErrorDismissSeconds(for:));
 // speecher::trimPreviewToFit against the panel's own font and width.
-+ (NSString *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font
++ (SpeecherPreviewLine *)trimPreview:(NSString *)preview toWidth:(CGFloat)width font:(NSFont *)font
     NS_SWIFT_NAME(trimPreview(_:toWidth:font:));
 // The panel is on screen, so the session need not wait out its fallback timer
 // before opening the microphone.

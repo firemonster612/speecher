@@ -732,13 +732,17 @@ private slots:
         const auto fitsIn = [](int characters) {
             return [characters](const QString &text) { return text.size() <= characters; };
         };
-        QCOMPARE(trimPreviewToFit(QStringLiteral("  short   preview "), fitsIn(40)),
-                 QStringLiteral("short preview"));
-        QCOMPARE(trimPreviewToFit(QStringLiteral("the hiring plan and then the budget"), fitsIn(21)),
-                 QStringLiteral("and then the budget"));
+        // Collapsed whitespace alone is not a cut.
+        const PreviewLine whole = trimPreviewToFit(QStringLiteral("  short   preview "), fitsIn(40));
+        QCOMPARE(whole.text, QStringLiteral("short preview"));
+        QVERIFY(!whole.cut);
+        const PreviewLine cut = trimPreviewToFit(QStringLiteral("the hiring plan and then the budget"),
+                                                 fitsIn(21));
+        QCOMPARE(cut.text, QStringLiteral("and then the budget"));
+        QVERIFY(cut.cut);
         // One word wider than the line keeps its end, cut on a grapheme.
         const QString trimmed = trimPreviewToFit(
-            QStringLiteral("x ") + QString::fromUtf8("👩‍💻").repeated(8), fitsIn(12));
+            QStringLiteral("x ") + QString::fromUtf8("👩‍💻").repeated(8), fitsIn(12)).text;
         QVERIFY(trimmed.startsWith(QString::fromUtf8("👩‍💻")));
         QVERIFY(trimmed.endsWith(QString::fromUtf8("👩‍💻")));
         QVERIFY(trimmed.size() <= 12);
@@ -750,14 +754,13 @@ private slots:
         const QString text = QString::fromUtf8("今日は良い天気ですね明日も晴れるでしょう");
         const QString trimmed = trimPreviewToFit(text, [](const QString &candidate) {
             return candidate.size() <= 10;
-        });
+        }).text;
         QVERIFY(trimmed.size() < text.size());
         QVERIFY(trimmed.endsWith(QString::fromUtf8("でしょう")));
         QVERIFY(trimmed.size() <= 10);
         // What is kept starts at one of the text's word boundaries.
-        const QString kept = trimmed;
         QTextBoundaryFinder words(QTextBoundaryFinder::Word, text);
-        words.setPosition(text.size() - kept.size());
+        words.setPosition(text.size() - trimmed.size());
         QVERIFY(words.isAtBoundary());
     }
 

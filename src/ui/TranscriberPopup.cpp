@@ -654,7 +654,7 @@ void TranscriberPopup::setSessionState(DictationState state)
     const DictationState previous = std::exchange(m_sessionState, state);
     applySessionControls();
     // The buttons set the strip's height; an error capsule sizes itself.
-    if (m_errorDismiss->isHidden()) {
+    if (!errorShown()) {
         applyPillGeometry();
     }
     // Paused stills the bars into a flat row in the caution colour; resuming
@@ -707,16 +707,16 @@ void TranscriberPopup::applyPreviewText(const QString &preview)
 {
     const QFontMetrics metrics(m_preview->font());
     const int maxTextWidth = kMaxPreviewWidth;
-    const QString visible = trimPreviewToFit(preview, [&](const QString &candidate) {
+    const PreviewLine line = trimPreviewToFit(preview, [&](const QString &candidate) {
         return metrics.horizontalAdvance(candidate) <= maxTextWidth;
     });
-    if (visible.isEmpty()) {
+    if (line.text.isEmpty()) {
         // Keep the waveform capsule when there are no words to preview.
         hidePreview();
         return;
     }
-    m_previewCut = visible.size() < preview.simplified().size();
-    m_preview->setText(visible);
+    m_previewCut = line.cut;
+    m_preview->setText(line.text);
     m_preview->setVisible(true);
     m_previewPill->setVisible(true);
     m_preview->setMaximumWidth(maxTextWidth);
@@ -733,7 +733,7 @@ void TranscriberPopup::applyPreviewText(const QString &preview)
 // the text never shifts it.
 void TranscriberPopup::updatePreviewFade()
 {
-    const bool fade = m_previewCut && m_errorDismiss->isHidden() && !m_preview->isHidden();
+    const bool fade = m_previewCut && !errorShown() && !m_preview->isHidden();
     m_previewFade->setEnabled(fade);
     if (!fade) {
         return;
@@ -931,7 +931,6 @@ void TranscriberPopup::showErrorMessage(const QString &message, const QString &a
     m_preview->setFixedWidth(textWidth);
     m_preview->setVisible(true);
     m_errorIcon->setVisible(true);
-    m_errorDismiss->setVisible(true);
     m_errorAction->setText(actionLabel);
     m_errorAction->setVisible(!actionLabel.isEmpty());
     m_previewPill->setVisible(true);
@@ -1031,8 +1030,11 @@ void TranscriberPopup::setUpdateBanner(const UpdateBannerModel &banner)
 
 void TranscriberPopup::changeEvent(QEvent *event)
 {
-    if (event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange) {
+    if (event->type() == QEvent::ApplicationFontChange && !errorShown()) {
+        // The capsule's height and minimum width follow the font.
         applyFonts();
+        applyPillGeometry();
+        adjustSize();
     }
     if (!m_applyingTheme && (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange)) {
         applyTheme();
@@ -1128,10 +1130,14 @@ void TranscriberPopup::restoreStandardLayout()
     updatePreviewFade();
 }
 
+bool TranscriberPopup::errorShown() const
+{
+    return !m_errorDismiss->isHidden();
+}
+
 void TranscriberPopup::applyFonts()
 {
-    // m_errorDismiss shows exactly while an error holds the capsule.
-    m_preview->setFont(m_errorDismiss->isHidden() ? popupTextFont() : QApplication::font());
+    m_preview->setFont(errorShown() ? QApplication::font() : popupTextFont());
     m_waveform->setFont(popupTextFont());
 }
 

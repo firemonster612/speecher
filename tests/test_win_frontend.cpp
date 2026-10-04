@@ -23,6 +23,7 @@
 #include <shellapi.h>
 
 #include <QApplication>
+#include <QDebug>
 #include <QTest>
 #include <QFile>
 #include <QScopeGuard>
@@ -43,6 +44,14 @@ bool nativeUiAvailable()
 double dipScale()
 {
     return GetDpiForSystem() / 96.0;
+}
+
+// The boxes a layout check compared, for its failure message.
+QString describeBoxes(const QList<QRect> &boxes)
+{
+    QString text;
+    QDebug(&text) << boxes;
+    return text;
 }
 
 template<typename Widget>
@@ -229,7 +238,8 @@ private slots:
     }
 
     // A preview shorter than the lobe's carving still sits in a text bar over
-    // the lobe, centred in the narrowest bar that carves it.
+    // the lobe, centred in the narrowest bar that carves it, on one axis with
+    // the row under it: [pause] 8 [dots] 8 [X].
     void nativeShortPreviewKeepsTheCarvedContour()
     {
         if (!nativeUiAvailable()) {
@@ -239,14 +249,27 @@ private slots:
         panel->showForTest(18);
         controller->session()->stateChanged(QStringLiteral("listening"));
         panel->drivePreviewForTest(QStringLiteral("Hi"));
-        QTest::qWait(100);
+        QRect capsule;
+        QRect preview;
+        QRect pause;
+        QRect dots;
+        QRect cancel;
+        const auto centred = [&] {
+            capsule = panel->capsuleGeometryForTest();
+            preview = panel->previewGeometryForTest();
+            pause = panel->pauseGeometryForTest();
+            dots = panel->waveformGeometryForTest();
+            cancel = panel->cancelGeometryForTest();
+            return std::abs(preview.center().x() - capsule.center().x()) <= 1
+                && std::abs(dots.center().x() - capsule.center().x()) <= 1
+                && std::abs((dots.left() - pause.right()) - (cancel.left() - dots.right())) <= 1;
+        };
+        QTRY_VERIFY2(centred(), qPrintable(describeBoxes({capsule, preview, pause, dots, cancel})));
+        QVERIFY(std::abs((dots.left() - pause.right()) - 8 * dipScale()) <= 2);
         const double shoulder = panel->outlineShoulderForTest();
         QVERIFY2(shoulder > 0, "a short preview collapsed into a plain rounded box");
         QCOMPARE(panel->outlineLobeWidthForTest(), 110.0);
-        const double capsuleWidth = panel->capsuleGeometryForTest().width() / dipScale();
-        QVERIFY(capsuleWidth + 1 >= popup::minimumPreviewBarWidth(110, shoulder));
-        QVERIFY(std::abs(panel->previewGeometryForTest().center().x()
-                         - panel->waveformGeometryForTest().center().x()) <= 1);
+        QVERIFY(capsule.width() / dipScale() + 1 >= popup::minimumPreviewBarWidth(110, shoulder));
         controller->session()->stateChanged(QStringLiteral("idle"));
         panel->dismissForTest();
     }
@@ -272,16 +295,21 @@ private slots:
         panel->driveStatusForTest(QStringLiteral("Stopping"));
         controller->session()->popupRefiningChanged(true);
         controller->session()->popupRefinementPreviewChanged(refinedText);
-        QTest::qWait(100);
-        const QRect capsule = panel->capsuleGeometryForTest();
-        const QRect spinner = panel->spinnerGeometryForTest();
-        const QRect label = panel->statusGeometryForTest();
-        const QRect cancel = panel->cancelGeometryForTest();
-        QVERIFY(!spinner.isEmpty());
-        QVERIFY(!cancel.isEmpty());
+        QRect capsule;
+        QRect spinner;
+        QRect label;
+        QRect cancel;
+        const auto centred = [&] {
+            capsule = panel->capsuleGeometryForTest();
+            spinner = panel->spinnerGeometryForTest();
+            label = panel->statusGeometryForTest();
+            cancel = panel->cancelGeometryForTest();
+            return !spinner.isEmpty() && !cancel.isEmpty()
+                && std::abs(label.center().x() - capsule.center().x()) <= 1
+                && std::abs((label.left() - spinner.right()) - (cancel.left() - label.right())) <= 1;
+        };
+        QTRY_VERIFY2(centred(), qPrintable(describeBoxes({capsule, spinner, label, cancel})));
         QCOMPARE(spinner.width(), cancel.width());
-        QVERIFY(std::abs(label.center().x() - capsule.center().x()) <= 1);
-        QVERIFY(std::abs((label.left() - spinner.right()) - (cancel.left() - label.right())) <= 1);
         QVERIFY(std::abs((label.left() - spinner.right()) - 8 * dipScale()) <= 2);
         if (refinedText.isEmpty()) {
             QVERIFY(std::abs((spinner.left() - capsule.left()) - 6 * dipScale()) <= 2);

@@ -85,6 +85,8 @@ private:
     void applySessionControls();
     void applyFonts();
     void updatePreviewFade();
+    // An error holds the capsule; its Dismiss chip shows exactly then.
+    bool errorShown() const;
 
     QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;

@@ -109,19 +109,20 @@ PopupErrorAction speechSetupAction(const QString &providerId)
     return {ErrorFix::SettingsPage, QStringLiteral("accounts")};
 }
 
-QString trimPreviewToFit(const QString &preview, const std::function<bool(const QString &)> &fits)
+PreviewLine trimPreviewToFit(const QString &preview, const std::function<bool(const QString &)> &fits)
 {
     const QString whole = preview.simplified();
     if (whole.isEmpty() || fits(whole)) {
-        return whole;
+        return {whole, false};
     }
     const QString atWord = longestFittingTail(
         whole, boundaries(QTextBoundaryFinder::Word, whole, true), fits);
     if (!atWord.isEmpty()) {
-        return atWord;
+        return {atWord, true};
     }
     // Not even the last word fits: keep as much of its end as does.
-    return longestFittingTail(whole, boundaries(QTextBoundaryFinder::Grapheme, whole, false), fits);
+    return {longestFittingTail(whole, boundaries(QTextBoundaryFinder::Grapheme, whole, false), fits),
+            true};
 }
 
 } // namespace speecher
