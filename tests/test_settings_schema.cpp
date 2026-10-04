@@ -460,6 +460,24 @@ private slots:
         QCOMPARE(settings.updates.checkIntervalMinutes, 10080);
         QCOMPARE(frequency.value(settings).toString(), QStringLiteral("10080"));
         QVERIFY(!custom.visible(settings, {}));
+
+        // A unit the row does not offer, such as a hand-edited "weeks", is
+        // neither kept nor read back.
+        frequency.apply(settings, QStringLiteral("custom"));
+        custom.apply(settings, QVariantMap{{QStringLiteral("number"), 2}, {QStringLiteral("unit"), QStringLiteral("weeks")}});
+        QCOMPARE(settings.updates.checkIntervalMinutes, 10080);
+        settings.updates.checkIntervalUnit = QStringLiteral("weeks");
+        QCOMPARE(custom.value(settings).toMap(),
+                 (QVariantMap{{QStringLiteral("number"), 7}, {QStringLiteral("unit"), QStringLiteral("days")}}));
+    }
+
+    void whatsNewShowsTheNewCheckFrequencies()
+    {
+        SchemaContext context = fakeContext();
+        context.lastSeenVersion = QStringLiteral("0.2.0");
+        context.currentVersion = QStringLiteral("0.2.1");
+        QVERIFY(hasRow(buildSettingsSchema(context).page(QStringLiteral("whatsNew")),
+                       QStringLiteral("updateCheckInterval")));
     }
 
     void whatsNewPageSelectsLiveRowsInTheVersionRange()

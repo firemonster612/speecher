@@ -310,12 +310,17 @@ const QList<NumberUnit> checkIntervalUnits{
     {QStringLiteral("days"), QStringLiteral("days"), 1, UpdateSettings::maximumCheckIntervalMinutes / (24 * 60)},
 };
 
+// Zero for an id that is not one of checkIntervalUnits, such as a hand-edited
+// "weeks".
 int minutesPerCheckIntervalUnit(const QString &unit)
 {
     if (unit == QLatin1String("days")) {
         return 24 * 60;
     }
-    return unit == QLatin1String("hours") ? 60 : 1;
+    if (unit == QLatin1String("hours")) {
+        return 60;
+    }
+    return unit == QLatin1String("minutes") ? 1 : 0;
 }
 
 // An interval given in a unit, or one none of the listed frequencies matches,
@@ -335,7 +340,8 @@ bool isCustomCheckInterval(const UpdateSettings &updates)
 QString checkIntervalUnit(const UpdateSettings &updates)
 {
     const auto divides = [&](const QString &unit) {
-        return updates.checkIntervalMinutes % minutesPerCheckIntervalUnit(unit) == 0;
+        const int minutes = minutesPerCheckIntervalUnit(unit);
+        return minutes > 0 && updates.checkIntervalMinutes % minutes == 0;
     };
     if (!updates.checkIntervalUnit.isEmpty() && divides(updates.checkIntervalUnit)) {
         return updates.checkIntervalUnit;
@@ -1026,7 +1032,9 @@ SettingsPage generalPage(const SchemaContext &context)
             settings.updates.checkIntervalUnit.clear();
             settings.updates.checkIntervalMinutes = value.toInt();
         });
-    checkInterval.sinceVersion = QStringLiteral("0.1.5");
+    // Added in 0.1.5; tagged with the release that grew its choices and
+    // Custom, so What's New shows it and the custom row can follow it there.
+    checkInterval.sinceVersion = QStringLiteral("0.2.1");
     checkInterval.visible = [](const AppSettings &settings, const Capabilities &) {
         return settings.updates.autoCheck;
     };
@@ -1051,6 +1059,9 @@ SettingsPage generalPage(const SchemaContext &context)
         }
         const QVariantMap interval = value.toMap();
         const QString unit = interval.value(QStringLiteral("unit")).toString();
+        if (minutesPerCheckIntervalUnit(unit) == 0) {
+            return;
+        }
         settings.updates.checkIntervalUnit = unit;
         settings.updates.checkIntervalMinutes =
             qBound(UpdateSettings::minimumCheckIntervalMinutes,

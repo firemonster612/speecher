@@ -336,6 +336,8 @@ UIElement unitNumberField(const RowSnapshot &row, PaneHost &host)
         units.Items().Append(item);
     }
     units.SelectedIndex(selected);
+    // describeForAssistiveTech names only the number box, the panel's first control.
+    AutomationProperties::SetName(units, hs(row.label));
     units.SelectionChanged([rowId = row.id, number, choices = row.units, &host](
                                const IInspectable &sender, const auto &) {
         const auto item = sender.as<ComboBox>().SelectedItem();

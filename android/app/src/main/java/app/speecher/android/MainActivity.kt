@@ -43,6 +43,7 @@ import app.speecher.android.ui.SignInStepsSheet
 import app.speecher.android.ui.SpeecherScreen
 import app.speecher.android.ui.SpeecherTheme
 import app.speecher.android.update.ApkUpdate
+import app.speecher.android.update.RETRY_MILLIS
 import app.speecher.android.update.installApk
 import app.speecher.android.update.newerApk
 import app.speecher.android.update.untilCheck
@@ -225,9 +226,11 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 snapshotFlow { settings.updateCheckMinutes }
                     .collectLatest { minutes ->
+                        val interval = minutes * 60_000L
                         while (true) {
-                            delay(untilUpdateCheck(minutes * 60_000L))
-                            checkForUpdate()
+                            delay(untilUpdateCheck(interval))
+                            // A failed check is not a check: try again soon, not an interval later.
+                            if (!checkForUpdate()) delay(minOf(interval, RETRY_MILLIS))
                         }
                     }
             }
@@ -314,7 +317,8 @@ class MainActivity : ComponentActivity() {
                 interval,
             )
 
-    private suspend fun checkForUpdate() {
+    /** Whether the check reached the releases list; only one that did counts as the last check. */
+    private suspend fun checkForUpdate(): Boolean {
         val now = System.currentTimeMillis()
         val result =
             withContext(Dispatchers.IO) {
@@ -325,21 +329,23 @@ class MainActivity : ComponentActivity() {
                 remove("version")
                 remove("url")
             }
-            putLong("last-check", now)
             putString("installed-version", BuildConfig.VERSION_NAME)
         }
-        result.onSuccess { release ->
-            update = release
-            updatePreferences.edit {
-                if (release == null) {
-                    remove("version")
-                    remove("url")
-                } else {
-                    putString("version", release.version)
-                    putString("url", release.downloadUrl)
+        return result
+            .onSuccess { release ->
+                update = release
+                updatePreferences.edit {
+                    putLong("last-check", now)
+                    if (release == null) {
+                        remove("version")
+                        remove("url")
+                    } else {
+                        putString("version", release.version)
+                        putString("url", release.downloadUrl)
+                    }
                 }
             }
-        }
+            .isSuccess
     }
 
     private fun installUpdate() {

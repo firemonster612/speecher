@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.update.IntervalUnit
+import app.speecher.android.update.checkIntervalMinutes
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
@@ -131,8 +132,11 @@ class SettingsStore(private val context: Context) {
                         ButtonLayout.RefinedPrimary,
                     ),
                 panelSize = enumOf(preferences.getString("panelSize", null), PanelSize.Full),
+                // A hand-edited zero would check without pause, and a negative crash the wait.
                 updateCheckMinutes =
-                    preferences.getInt("updateCheckMinutes", IntervalUnit.Days.minutes),
+                    preferences
+                        .getInt("updateCheckMinutes", IntervalUnit.Days.minutes)
+                        .coerceIn(checkIntervalMinutes),
                 updateCheckUnit =
                     preferences.getString("updateCheckUnit", null)?.let { name ->
                         IntervalUnit.entries.firstOrNull { it.name == name }

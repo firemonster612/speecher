@@ -1,5 +1,6 @@
 package app.speecher.android.update
 
+import android.content.Context
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.ui.updateCheckLabel
@@ -60,5 +61,16 @@ class CheckIntervalTest {
         assertEquals(IntervalUnit.Hours, store.load().updateCheckUnit)
         store.save(SpeecherSettings(updateCheckMinutes = 15))
         assertNull(store.load().updateCheckUnit)
+    }
+
+    @Test
+    fun `a hand-edited interval outside 5 minutes to 30 days loads clamped`() {
+        val context = RuntimeEnvironment.getApplication()
+        val store = SettingsStore(context)
+        val preferences = context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE)
+        preferences.edit().putInt("updateCheckMinutes", 0).commit()
+        assertEquals(5, store.load().updateCheckMinutes)
+        preferences.edit().putInt("updateCheckMinutes", 100_000).commit()
+        assertEquals(43_200, store.load().updateCheckMinutes)
     }
 }

@@ -28,7 +28,6 @@
 #endif
 
 #include <QComboBox>
-#include <QSpinBox>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
@@ -50,6 +49,7 @@
 #include <QSaveFile>
 #include <QScopeGuard>
 #include <QSignalSpy>
+#include <QSpinBox>
 #include <QSplitter>
 #include <QStandardPaths>
 #include <QStackedWidget>

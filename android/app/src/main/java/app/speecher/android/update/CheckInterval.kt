@@ -7,6 +7,12 @@ enum class IntervalUnit(val minutes: Int, val counts: IntRange) {
     Days(1_440, 1..30),
 }
 
+/** How long a check may wait, in minutes: 5 minutes to 30 days. */
+val checkIntervalMinutes = 5..30 * 1_440
+
+/** How long a failed check waits before trying again: an hour, or the interval if shorter. */
+const val RETRY_MILLIS = 3_600_000L
+
 /** The largest unit [minutes] is a whole number of, so a week opens the dialog as 7 days. */
 fun fittingUnit(minutes: Int): IntervalUnit =
     IntervalUnit.entries.last { minutes % it.minutes == 0 }

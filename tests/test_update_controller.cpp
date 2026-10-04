@@ -87,9 +87,14 @@ public:
         updater.finishCheck(reply);
     }
 
-    static int retryInterval(const ManifestUpdater &updater)
+    static int nextCheckDelay(const ManifestUpdater &updater)
     {
         return updater.m_checkTimer->interval();
+    }
+
+    static bool checkTimerActive(const ManifestUpdater &updater)
+    {
+        return updater.m_checkTimer->isActive();
     }
 
     static void setAutomaticCheckFailures(ManifestUpdater &updater, int failures)
@@ -971,7 +976,7 @@ private slots:
                 new StaticNetworkReply({}, QNetworkReply::TimeoutError, &updater),
                 true);
             QCOMPARE(context.settings.updatesLastCheckTime(), previousSuccess);
-            QCOMPARE(ManifestUpdaterTestAccess::retryInterval(updater),
+            QCOMPARE(ManifestUpdaterTestAccess::nextCheckDelay(updater),
                      retryMinute * minuteMs);
         }
         QVERIFY(updater.repeatedAutomaticCheckFailure());
@@ -986,7 +991,7 @@ private slots:
                                                    &invalidUpdater),
             true);
         QCOMPARE(invalidContext.settings.updatesLastCheckTime(), previousSuccess);
-        QCOMPARE(ManifestUpdaterTestAccess::retryInterval(invalidUpdater), 5 * minuteMs);
+        QCOMPARE(ManifestUpdaterTestAccess::nextCheckDelay(invalidUpdater), 5 * minuteMs);
 
         ManifestUpdaterTestAccess::finishCheck(
             updater, new StaticNetworkReply(validManifestJson(),
@@ -996,12 +1001,23 @@ private slots:
         QVERIFY(context.settings.updatesLastCheckTime() > previousSuccess);
         // The next check waits the interval from the success just recorded,
         // give or take the milliseconds between the two clock reads.
-        QVERIFY(qAbs(ManifestUpdaterTestAccess::retryInterval(updater) - 30 * minuteMs) < 1000);
+        QVERIFY(qAbs(ManifestUpdaterTestAccess::nextCheckDelay(updater) - 30 * minuteMs) < 1000);
         QVERIFY(!updater.repeatedAutomaticCheckFailure());
 
         // Changing the configured interval reschedules the timer immediately.
         context.settings.setUpdateCheckIntervalMinutes(60);
-        QVERIFY(qAbs(ManifestUpdaterTestAccess::retryInterval(updater) - 60 * minuteMs) < 1000);
+        QVERIFY(qAbs(ManifestUpdaterTestAccess::nextCheckDelay(updater) - 60 * minuteMs) < 1000);
+    }
+
+    void noCheckTimerRunsWhileAutomaticChecksAreOff()
+    {
+        UpdateTestContext context(true);
+        context.settings.setUpdatesLastCheckTime(0);
+        TestManifestUpdater updater(&context.settings, context.session.get());
+        context.settings.setAutoCheckUpdates(false);
+        QVERIFY(!ManifestUpdaterTestAccess::checkTimerActive(updater));
+        context.settings.setAutoCheckUpdates(true);
+        QVERIFY(ManifestUpdaterTestAccess::checkTimerActive(updater));
     }
 
     // Long intervals wake hourly and ask again, so a week survives sleep and

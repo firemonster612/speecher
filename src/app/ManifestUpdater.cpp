@@ -117,6 +117,12 @@ bool ManifestUpdater::automaticCheckDue() const
 
 void ManifestUpdater::scheduleAutomaticCheck()
 {
+    // Turning automatic checks back on emits updateSettingsChanged, which
+    // arms the timer again.
+    if (!m_settings->autoCheckUpdates()) {
+        m_checkTimer->stop();
+        return;
+    }
     const int intervalMinutes = m_settings->updateCheckIntervalMinutes();
     // Backoff never retries slower than the interval itself.
     m_checkTimer->start(m_automaticCheckFailures > 0
