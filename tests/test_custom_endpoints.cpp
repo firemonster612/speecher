@@ -280,9 +280,9 @@ private slots:
             << QStringList{QStringLiteral("Hello there."), QStringLiteral("Hello there. How are you?")}
             << QStringLiteral("Hello there. How are you?");
         QTest::newRow("speaches-0.8-chinese")
-            << QByteArray("data: {\"text\":\"你好。\"}\n\ndata: {\"text\":\"今天怎么样？\"}\n\n")
-            << QStringList{QStringLiteral("你好。"), QStringLiteral("你好。今天怎么样？")}
-            << QStringLiteral("你好。今天怎么样？");
+            << QByteArray("data: {\"text\":\"你好。\"}\n\ndata: {\"text\":\"2026年开始。\"}\n\n")
+            << QStringList{QStringLiteral("你好。"), QStringLiteral("你好。2026年开始。")}
+            << QStringLiteral("你好。2026年开始。");
     }
 
     void speechEndpointReadsAStreamedTranscript()
@@ -359,6 +359,7 @@ private slots:
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         EndpointSpeechTranscriber transcriber(nullptr, 300, 5000);
+        QSignalSpy partial(&transcriber, &SpeechTranscriber::partialTranscript);
         QSignalSpy transcript(&transcriber, &SpeechTranscriber::attemptTranscript);
         QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
         QSignalSpy failed(&transcriber, &SpeechTranscriber::failed);
@@ -373,6 +374,7 @@ private slots:
             socket->flush();
             QTest::qWait(150);
         }
+        QCOMPARE(partial.last().at(1).toString(), QStringLiteral("One two three four"));
         QCOMPARE(failed.size(), 0);
         QCOMPARE(completed.size(), 0);
 

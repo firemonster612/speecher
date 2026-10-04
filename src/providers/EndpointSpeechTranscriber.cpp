@@ -11,6 +11,8 @@
 #include <QJsonObject>
 #include <QNetworkReply>
 
+#include <algorithm>
+
 namespace speecher {
 namespace {
 
@@ -34,9 +36,14 @@ QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
     return message.isEmpty() ? fallback : message;
 }
 
-bool writtenWithoutSpaces(QChar character)
+// Whether the first character with a script of its own, past punctuation and
+// digits, is in a script written without spaces between words.
+template <typename Iterator>
+bool firstLetterWrittenWithoutSpaces(Iterator begin, Iterator end)
 {
-    switch (character.script()) {
+    const Iterator letter = std::find_if(begin, end, [](QChar c) { return c.script() > QChar::Script_Common; });
+    if (letter == end) return false;
+    switch (letter->script()) {
     case QChar::Script_Han:
     case QChar::Script_Hiragana:
     case QChar::Script_Katakana:
@@ -44,6 +51,7 @@ bool writtenWithoutSpaces(QChar character)
     case QChar::Script_Lao:
     case QChar::Script_Khmer:
     case QChar::Script_Myanmar:
+    case QChar::Script_Tibetan:
         return true;
     default:
         return false;
@@ -54,8 +62,8 @@ bool writtenWithoutSpaces(QChar character)
 // segments, except next to a script written without spaces between words.
 QString spacedSegment(const QString &text, const QString &segment)
 {
-    if (text.isEmpty() || segment.isEmpty() || writtenWithoutSpaces(text.back())
-        || writtenWithoutSpaces(segment.front())) {
+    if (text.isEmpty() || segment.isEmpty() || firstLetterWrittenWithoutSpaces(text.rbegin(), text.rend())
+        || firstLetterWrittenWithoutSpaces(segment.begin(), segment.end())) {
         return segment;
     }
     return QLatin1Char(' ') + segment;
