@@ -77,42 +77,57 @@ jobs:
             throw "Windows App Runtime installer exited with code $($process.ExitCode)"
           }
 
-      - name: Compare pinned master and stack
+      - name: Build instrumented stack
+        shell: pwsh
+        run: |
+          python diagnostics/instrument.py
+          if ($LASTEXITCODE -ne 0) { throw "instrument failed" }
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
+          if ($LASTEXITCODE -ne 0) { throw "configure failed" }
+          cmake --build build --target speecher speecher_tests --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+      - name: Confirm snapshot duplication and Qt multipliers
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           New-Item -ItemType Directory evidence -Force | Out-Null
-          $instrument = (Resolve-Path diagnostics/instrument.py).Path
-          foreach ($revision in @(@{Name="master";Sha="28f82e212cb9095a4e41054ed6a7aa0c8a9114e7"}, @{Name="stack";Sha="ec8a48dc"})) {
-            git restore --source=$($revision.Sha) -- src tests CMakeLists.txt cmake
-            if ($LASTEXITCODE -ne 0) { throw "restore failed" }
-            python $instrument
-            if ($LASTEXITCODE -ne 0) { throw "instrument failed" }
-            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPEECHER_BUILD_TESTS=ON -DSPEECHER_WITH_LOCAL_SPEECH=ON -DSPEECHER_LOCAL_SPEECH_ALL_CPUS=ON -DSPEECHER_LOCAL_SPEECH_VULKAN=ON
-            if ($LASTEXITCODE -ne 0) { throw "configure failed" }
-            cmake --build build --target speecher speecher_tests --parallel 4
-            if ($LASTEXITCODE -ne 0) { throw "build failed" }
-            Copy-Item build/CMakeCache.txt "evidence/$($revision.Name)-CMakeCache.txt"
-            & ./build/speecher_tests.exe --suite app_window -maxwarnings 1000000 -o "evidence/$($revision.Name).xml,xml" -o "evidence/$($revision.Name).txt,txt"
-            if ($LASTEXITCODE -ne 0) { throw "$($revision.Name) tests failed, exit=$LASTEXITCODE" }
+          Copy-Item build/CMakeCache.txt evidence/CMakeCache.txt
+          $focused = @("sidebarListsTheSchemaPanesInTheirGroups", "saveReportsFailedValidator", "controllerKeepsTheRecordOfTheLastTranscript")
+          foreach ($case in @("baseline", "reuse-primary", "no-subpages", "no-live-reload", "baseline-restored")) {
+            Remove-Item Env:DEBUG_REUSE_PRIMARY, Env:DEBUG_SKIP_SUBPAGES, Env:DEBUG_SKIP_LIVE_RELOAD -ErrorAction SilentlyContinue
+            if ($case -eq "reuse-primary") { $env:DEBUG_REUSE_PRIMARY="1" }
+            if ($case -eq "no-subpages") { $env:DEBUG_SKIP_SUBPAGES="1" }
+            if ($case -eq "no-live-reload") { $env:DEBUG_SKIP_LIVE_RELOAD="1" }
+            & ./build/speecher_tests.exe --suite app_window @focused -maxwarnings 1000000 -o "evidence/$case.xml,xml" -o "evidence/$case.txt,txt"
+            if ($LASTEXITCODE -ne 0) { throw "$case failed" }
           }
-      - name: Single-variable focused toggles
+          $env:DEBUG_REUSE_PRIMARY="1"
+          & ./build/speecher_tests.exe --suite app_window -maxwarnings 1000000 -o evidence/reuse-primary-full.xml,xml -o evidence/reuse-primary-full.txt,txt
+          if ($LASTEXITCODE -ne 0) { throw "patched full suite failed" }
+          Remove-Item Env:DEBUG_REUSE_PRIMARY
+      - name: Verify the clean proposed core patch
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          $focused = @("sidebarListsTheSchemaPanesInTheirGroups", "saveReportsFailedValidator", "controllerKeepsTheRecordOfTheLastTranscript")
-          foreach ($case in @("baseline", "no-discovery", "no-model-scan", "no-hardware", "baseline-restored")) {
-            Remove-Item Env:SPEECHER_TEST_CODEX_INSTALLED, Env:SPEECHER_TEST_CLAUDE_INSTALLED, Env:DEBUG_SKIP_MODEL_SCAN, Env:DEBUG_SKIP_HARDWARE -ErrorAction SilentlyContinue
-            if ($case -eq "no-discovery") { $env:SPEECHER_TEST_CODEX_INSTALLED="0"; $env:SPEECHER_TEST_CLAUDE_INSTALLED="0" }
-            if ($case -eq "no-model-scan") { $env:DEBUG_SKIP_MODEL_SCAN="1" }
-            if ($case -eq "no-hardware") { $env:DEBUG_SKIP_HARDWARE="1" }
-            & ./build/speecher_tests.exe --suite app_window @focused -maxwarnings 1000000 -o "evidence/$case.xml,xml" -o "evidence/$case.txt,txt"
-            if ($LASTEXITCODE -ne 0) { throw "$case tests failed" }
-          }
+          git restore --source=ec8a48dc -- src tests
+          git apply diagnostics/core.patch
+          if ($LASTEXITCODE -ne 0) { throw "patch failed" }
+          git diff -- src tests > evidence/clean-production.patch
+          if (Select-String -Path src/core/settings/SettingsCodecs.cpp, src/app/LocalSetup.cpp, src/core/SettingsStore.cpp, src/core/CliToolDiscovery.cpp, src/ui/settings/SettingsPageSet.cpp -Pattern "DEBUG-win-slow-2|DEBUG_REUSE_PRIMARY|DEBUG_SKIP_SUBPAGES|DEBUG_SKIP_LIVE_RELOAD|DEBUG_SKIP_MODEL_SCAN|DEBUG_SKIP_HARDWARE") { throw "instrumentation survived" }
+          cmake --build build --target speecher speecher_tests --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw "clean build failed" }
+          & ./build/speecher_tests.exe --suite app_window -o evidence/clean-patch.xml,xml -o evidence/clean-patch.txt,txt
+          if ($LASTEXITCODE -ne 0) { throw "clean suite failed" }
+          & ./build/speecher_tests.exe --suite settings -o evidence/settings.txt,txt
+          if ($LASTEXITCODE -ne 0) { throw "settings failed" }
+          & ./build/speecher_tests.exe --suite settings_schema -o evidence/settings-schema.txt,txt
+          if ($LASTEXITCODE -ne 0) { throw "settings schema failed" }
+          ctest --test-dir build -R "^speecher_app_window$" --output-on-failure *> evidence/ctest.txt
+          if ($LASTEXITCODE -ne 0) { throw "ctest failed" }
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: windows-local-speech-timings
+          name: windows-local-speech-patch-verification
           path: evidence/

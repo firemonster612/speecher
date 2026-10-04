@@ -18,3 +18,9 @@ p=Path('src/ui/settings/SettingsPageSet.cpp');s=p.read_text();anchor='    const 
 s=s.replace(anchor,'    QElapsedTimer debugCtorTimer; debugCtorTimer.start();\n    const auto debugCtorTiming = qScopeGuard([&] { qInfo() << "[DEBUG-win-slow-2] pages_ctor" << debugCtorTimer.nsecsElapsed(); });\n'+anchor)
 p.write_text(s)
 p=Path('src/app/LocalSetup.cpp');s=p.read_text();s=s.replace('if (m_models.isDownloaded(model)) {','if (!qEnvironmentVariableIsSet("DEBUG_SKIP_MODEL_SCAN") && m_models.isDownloaded(model)) {');s=s.replace('    if (m_hardwareKnown || m_hardwareProbing) {','    if (qEnvironmentVariableIsSet("DEBUG_SKIP_HARDWARE")) return;\n    if (m_hardwareKnown || m_hardwareProbing) {');p.write_text(s)
+
+p=Path('src/core/settings/SettingsCodecs.cpp');s=p.read_text();s=s.replace('    settings.refinement.fallbackProviderIds = refinementFallbackProviders();','''    settings.refinement.fallbackProviderIds = qEnvironmentVariableIsSet("DEBUG_REUSE_PRIMARY")
+        ? normalizedFallbackProviders(ProviderRole::Refinement, settings.refinement.providerId,
+            value(SettingsKeys::RefinementFallbackProviders, QStringList()).toStringList())
+        : refinementFallbackProviders();''');p.write_text(s)
+p=Path('src/ui/settings/SettingsPageSet.cpp');s=p.read_text();s=s.replace('    for (const SettingsSubpage &subpage : std::as_const(m_schema.subpages)) {','    for (const SettingsSubpage &subpage : std::as_const(m_schema.subpages)) {\n        if (qEnvironmentVariableIsSet("DEBUG_SKIP_SUBPAGES")) continue;');s=s.replace('connect(controller->localSetup(), &LocalSetup::changed, this, [this] {','connect(controller->localSetup(), &LocalSetup::changed, this, [this] {\n        if (qEnvironmentVariableIsSet("DEBUG_SKIP_LIVE_RELOAD")) return;');p.write_text(s)

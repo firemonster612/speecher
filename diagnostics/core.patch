@@ -1,0 +1,15 @@
+diff --git a/src/core/settings/SettingsCodecs.cpp b/src/core/settings/SettingsCodecs.cpp
+index 63e12015..d6a5cd92 100644
+--- a/src/core/settings/SettingsCodecs.cpp
++++ b/src/core/settings/SettingsCodecs.cpp
+@@ -1387,7 +1387,9 @@ AppSettings SettingsCodecs::snapshot() const
+     settings.speech.vocabulary = speechVocabulary(settings.vocabulary, settings.learnedCorrections, QString());
+ 
+     settings.refinement.providerId = refinementProvider();
+-    settings.refinement.fallbackProviderIds = refinementFallbackProviders();
++    settings.refinement.fallbackProviderIds = normalizedFallbackProviders(
++        ProviderRole::Refinement, settings.refinement.providerId,
++        value(SettingsKeys::RefinementFallbackProviders, QStringList()).toStringList());
+     settings.refinement.style = refinementStyle();
+     settings.refinement.openAiModel = openAiModel();
+     settings.refinement.openAiAuthMode = openAiAuthMode();
