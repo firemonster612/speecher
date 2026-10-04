@@ -55,7 +55,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          git restore src/app/NetworkReachability.cpp src/frontend/qt/QtFrontEnd.cpp src/ui/AppWindow.cpp
+          git restore --source=1f49b82a src/app/NetworkReachability.cpp src/frontend/qt/QtFrontEnd.cpp src/ui/AppWindow.cpp
           $path = "src/frontend/qt/QtFrontEnd.cpp"
           $code = [IO.File]::ReadAllText((Join-Path $PWD $path))
           $code = $code.Replace("    delete m_popup;", "    delete m_appWindow;`n    delete m_popup;")
