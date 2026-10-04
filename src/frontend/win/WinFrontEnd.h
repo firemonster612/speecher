@@ -13,6 +13,9 @@ class DictationPanel;
 class TrayFlyout;
 class WinFrontEndTests;
 class WinUiHost;
+namespace win {
+class SettingsWindow;
+}
 class WinFrontEnd final : public QObject, public AppFrontEnd {
 public:
     WinFrontEnd(ApplicationController *controller, std::unique_ptr<WinUiHost> host);
@@ -37,6 +40,7 @@ private:
     quint64 panelPresentedGenerationForTest() const;
     qintptr panelWindowStyleForTest() const;
     TrayFlyout *trayFlyoutForTest();
+    win::SettingsWindow *settingsWindowForTest();
     void actionTriggered(const QString &rowId);
     void reportReady();
 

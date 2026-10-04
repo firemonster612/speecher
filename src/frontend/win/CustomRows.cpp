@@ -3,6 +3,7 @@
 
 #include "app/ApplicationController.h"
 #include "app/MicrophoneTest.h"
+#include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "core/Target.h"
 #include "core/settings/SettingsSchema.h"
@@ -498,7 +499,114 @@ UIElement microphoneTestElement(const RowSnapshot &row, PaneHost &host)
     return element;
 }
 
+// One of a fallback row's tool buttons: the platform's glyph, named with
+// core's caption, which is also its tooltip.
+Button fallbackTool(wchar_t glyph, const QString &caption, bool enabled)
+{
+    Button button;
+    FontIcon icon;
+    icon.Glyph(hstring(std::wstring_view(&glyph, 1)));
+    icon.FontSize(16);
+    button.Content(icon);
+    button.IsEnabled(enabled);
+    Automation::AutomationProperties::SetName(button, hs(caption));
+    ToolTipService::SetToolTip(button, box_value(hs(caption)));
+    return button;
+}
+
+// Where a fallback stands in the role's list as settings has it, as the
+// withFallback edits count; -1 once it is gone.
+int fallbackIndex(const AppSettings &settings, ProviderRole role, const QString &providerId)
+{
+    const bool speech = role == ProviderRole::Speech;
+    const QStringList fallbacks = normalizedFallbackProviders(
+        role, speech ? settings.speech.providerId : settings.refinement.providerId,
+        speech ? settings.speech.fallbackProviderIds : settings.refinement.fallbackProviderIds);
+    return int(fallbacks.indexOf(providerId));
+}
+
 } // namespace
+
+UIElement fallbackListElement(ProviderRole role,
+                               const FallbackListPresentation &list,
+                               const std::function<AppSettings()> &settings,
+                               const std::function<void(const QStringList &)> &write,
+                               PaneHost &host)
+{
+    StackPanel element;
+    if (list.heading.isEmpty()) {
+        return element;
+    }
+    element.Children().Append(styledTextBlock(list.heading, L"SettingsSectionHeaderStyle"));
+    if (!list.subtitle.isEmpty()) {
+        TextBlock subtitle = secondaryText(list.subtitle, host);
+        subtitle.Margin({1, 0, 0, 8});
+        element.Children().Append(subtitle);
+    }
+    // An edit works from the settings at the click and finds its fallback by
+    // id: an earlier edit may have moved it before this list was redrawn.
+    const auto moveBy = [=](const QString &id, int offset) {
+        const AppSettings current = settings();
+        write(withFallbackMoved(current, role, fallbackIndex(current, role, id), offset));
+    };
+    StackPanel rows;
+    for (qsizetype index = 0; index < list.items.size(); ++index) {
+        const FallbackItem &item = list.items.at(index);
+        StackPanel tools;
+        tools.Orientation(Orientation::Horizontal);
+        tools.Spacing(4);
+        Button up = fallbackTool(L'\uE74A', list.moveUpCaption, item.canMoveUp);
+        up.Click([=, id = item.providerId](const auto &, const auto &) { moveBy(id, -1); });
+        Button down = fallbackTool(L'\uE74B', list.moveDownCaption, item.canMoveDown);
+        down.Click([=, id = item.providerId](const auto &, const auto &) { moveBy(id, 1); });
+        Button remove = fallbackTool(L'\uE74D', list.removeCaption, true);
+        remove.Click([=, id = item.providerId](const auto &, const auto &) {
+            const AppSettings current = settings();
+            write(withFallbackRemoved(current, role, fallbackIndex(current, role, id)));
+        });
+        tools.Children().Append(up);
+        tools.Children().Append(down);
+        tools.Children().Append(remove);
+        RowSnapshot row;
+        row.label = item.label;
+        row.help = item.status;
+        row.helpTone = item.tone;
+        rows.Children().Append(rowGrid(row, tools, host, index > 0));
+        // rowGrid describes the first button by its row; the others say the
+        // same.
+        const hstring help = Automation::AutomationProperties::GetHelpText(up);
+        Automation::AutomationProperties::SetHelpText(down, help);
+        Automation::AutomationProperties::SetHelpText(remove, help);
+    }
+    if (list.canAdd) {
+        ComboBox add;
+        add.MinWidth(200);
+        add.PlaceholderText(hs(list.addPlaceholder));
+        for (const RowOption &choice : list.addChoices) {
+            ComboBoxItem item;
+            item.Content(box_value(hs(choice.label)));
+            item.Tag(box_value(hs(choice.id)));
+            add.Items().Append(item);
+        }
+        add.SelectionChanged([=](const IInspectable &sender, const auto &) {
+            if (const auto item = sender.as<ComboBox>().SelectedItem()) {
+                write(withFallbackAdded(settings(), role,
+                                        qs(unbox_value<hstring>(item.as<ComboBoxItem>().Tag()))));
+            }
+        });
+        RowSnapshot row;
+        row.label = list.addLabel;
+        row.help = list.addHelp;
+        rows.Children().Append(rowGrid(row, add, host, !list.items.isEmpty()));
+    }
+    if (rows.Children().Size() > 0) {
+        element.Children().Append(cardContainer(rows));
+    }
+    if (!list.footer.isEmpty()) {
+        element.Children().Append(secondaryTextBlock(list.footer, L"SettingsFootnoteStyle", host));
+    }
+    return element;
+}
 
 void endMicrophoneTest(PaneHost &host)
 {
@@ -508,6 +616,11 @@ void endMicrophoneTest(PaneHost &host)
     host.microphoneTest->stop();
     host.microphoneTest->disconnect();
     host.microphoneTest.reset();
+}
+
+bool customRowIsSection(const QString &rowId)
+{
+    return rowId == QStringLiteral("speechFallbackList") || rowId == QStringLiteral("refinementFallbackList");
 }
 
 bool customRowIsFullWidth(const QString &rowId)
@@ -525,6 +638,15 @@ UIElement customRowElement(const RowSnapshot &row, PaneHost &host)
     }
     if (row.id == QStringLiteral("whatsNewNotes")) {
         return releaseNotes(row);
+    }
+    if (customRowIsSection(row.id)) {
+        const ProviderRole role = row.id == QStringLiteral("speechFallbackList") ? ProviderRole::Speech
+                                                                                 : ProviderRole::Refinement;
+        return fallbackListElement(role, host.model->fallbackList(role), [&host] { return host.model->draft(); },
+                                   [rowId = row.id, &host](const QStringList &fallbacks) {
+                                       setValueAndCommit(host, rowId, fallbacks);
+                                   },
+                                   host);
     }
     if (globalShortcutRoleForRow(row.id)) {
         return ShortcutRecorder::element(row, host);

@@ -23,6 +23,7 @@
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Automation.h>
 #include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Provider.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
@@ -81,6 +82,8 @@ constexpr int bottomMargin = 28;
 constexpr int bannerGap = 12;
 // A problem's padding, warning glyph, Dismiss button and the gaps between.
 constexpr int problemChromeWidth = 150;
+// A receipt's padding and glyph beside its message.
+constexpr int receiptChromeWidth = 68;
 // A button's padding and border around its caption, and the gap before it.
 constexpr int buttonChromeWidth = 36;
 // The countdown bar under a problem and its margin.
@@ -237,9 +240,10 @@ struct DictationPanel::Native : QObject {
             setStatus(QStringLiteral("Listening"));
         });
         connect(session, &DictationSession::popupMessageRequested, this,
-                [this](const QString &message, PopupOutcome value) {
+                [this](const QString &message, PopupOutcome value, const PopupErrorAction &action) {
                     status = message;
                     outcome = value;
+                    fix = fixAvailable(action) ? action : PopupErrorAction{};
                     completed = true;
                     refresh();
                 });
@@ -399,7 +403,8 @@ struct DictationPanel::Native : QObject {
         previewText.Margin({popup::kPreviewSideMargin, previewTopPadding, popup::kPreviewSideMargin, 0});
         content.Children().Append(previewText);
 
-        // The error's one fix, ahead of Dismiss as the way forward.
+        // The one fix of an error or an outcome, ahead of Dismiss as the way
+        // forward.
         fixButton = Button();
         fixButton.Style(Application::Current().Resources()
                             .Lookup(box_value(hstring(L"AccentButtonStyle")))
@@ -611,6 +616,7 @@ struct DictationPanel::Native : QObject {
         countdownTick.stop();
         pausedRemainingMs = 0;
         problem.clear();
+        fix = {};
         // The previous dictation's words are spent; the session's clearing
         // preview can be dropped by the frozen guard, so clear here too.
         preview.clear();
@@ -654,7 +660,6 @@ struct DictationPanel::Native : QObject {
         countdown.Maximum(dismissMs);
         countdown.Value(dismissMs);
         countdownTick.start();
-        fixButton.Content(box_value(win::hs(popupErrorActionLabel(fix))));
         refresh();
         reposition();
         ShowWindow(window, SW_SHOWNOACTIVATE);
@@ -816,10 +821,14 @@ struct DictationPanel::Native : QObject {
         const int controlsWidth = (leftSlotVisible ? sessionButtonSize + sessionButtonGap : 0)
             + (controls.cancelVisible ? sessionButtonSize + sessionButtonGap : 0);
         const bool paused = controls.paused;
-        // Only errors and the session buttons take clicks. Otherwise the
+        // An outcome with a fix is laid out like an error, without Dismiss or
+        // the countdown: its line wraps and its capsule grows taller.
+        const bool offersFix = (hasProblem || finished) && fix.fix != ErrorFix::None;
+        const bool wraps = hasProblem || offersFix;
+        // Only errors, a fix and the session buttons take clicks. Otherwise the
         // transparent space around a live capsule must not intercept clicks in
         // the target application.
-        const bool interactive = hasProblem || controlsWidth > 0;
+        const bool interactive = hasProblem || offersFix || controlsWidth > 0;
         const LONG_PTR style = GetWindowLongPtrW(window, GWL_EXSTYLE);
         const LONG_PTR wantedStyle = interactive ? style & ~WS_EX_TRANSPARENT : style | WS_EX_TRANSPARENT;
         if (style != wantedStyle) {
@@ -847,8 +856,7 @@ struct DictationPanel::Native : QObject {
         GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
         const int screenWidth =
             int((monitor.rcWork.right - monitor.rcWork.left) / scale()) - screenEdgeMargin;
-        const bool offersFix = hasProblem && fix.fix != ErrorFix::None;
-        const int chromeWidth = problemChromeWidth
+        const int chromeWidth = (hasProblem ? problemChromeWidth : receiptChromeWidth)
             + (offersFix ? measuredTextWidth(popupErrorActionLabel(fix)) + buttonChromeWidth : 0);
         // Measure the native font so both the contour and strip clear its ink.
         probe.FontSize(previewFontSize);
@@ -863,12 +871,12 @@ struct DictationPanel::Native : QObject {
         const double inkWidth = (listening ? wave->stripWidth() : statusWidth) + controlsWidth;
         const int lobeWidth = int(std::ceil(inkWidth)) + 2 * popup::kLobeAir;
         // A problem wraps at the width every platform shares and grows taller.
-        const int maximumWidth = hasProblem
+        const int maximumWidth = wraps
             ? std::min(kPopupErrorWrapWidth + chromeWidth, screenWidth)
             : std::max(problemMinimumWidth, screenWidth);
         int wantedWidth = hasProblem ? std::clamp(measuredTextWidth(shown) + chromeWidth,
                                                   problemMinimumWidth, maximumWidth)
-            : finished ? std::clamp(measuredTextWidth(shown) + 68, panelWidth, maximumWidth)
+            : finished ? std::clamp(measuredTextWidth(shown) + chromeWidth, panelWidth, maximumWidth)
             : controlsWidth > 0 ? lobeWidth
             : waiting ? std::max(panelWidth, statusWidth + 32)
                       : panelWidth;
@@ -897,12 +905,11 @@ struct DictationPanel::Native : QObject {
         text.Text(hstring(shown.toStdWString()));
         text.FontSize(waiting ? previewFontSize : bodyFontSize);
         text.Visibility(listening ? Visibility::Collapsed : Visibility::Visible);
-        text.Width(hasProblem ? wantedWidth - chromeWidth
-                   : finished ? wantedWidth - 68
+        text.Width(hasProblem || finished ? wantedWidth - chromeWidth
                    : controlsWidth > 0 ? statusWidth
                                        : wantedWidth);
-        text.TextWrapping(hasProblem ? TextWrapping::Wrap : TextWrapping::NoWrap);
-        text.MaxLines(hasProblem ? 0 : 1);
+        text.TextWrapping(wraps ? TextWrapping::Wrap : TextWrapping::NoWrap);
+        text.MaxLines(wraps ? 0 : 1);
         text.TextAlignment(TextAlignment::Center);
         row.HorizontalAlignment(HorizontalAlignment::Center);
         glyph.Visibility(hasProblem || finished ? Visibility::Visible : Visibility::Collapsed);
@@ -928,29 +935,33 @@ struct DictationPanel::Native : QObject {
         ToolTipService::SetToolTip(waveform, paused ? box_value(win::hs(waveName)) : nullptr);
         dismiss.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
         fixButton.Visibility(offersFix ? Visibility::Visible : Visibility::Collapsed);
+        if (offersFix) {
+            fixButton.Content(box_value(win::hs(popupErrorActionLabel(fix))));
+        }
         countdown.Visibility(hasProblem ? Visibility::Visible : Visibility::Collapsed);
-        int problemHeight = 0;
-        if (hasProblem) {
+        int messageHeight = 0;
+        if (wraps) {
             text.Measure({float(wantedWidth - chromeWidth),
                           std::numeric_limits<float>::infinity()});
-            problemHeight = std::max(problemMinimumHeight - problemBarHeight,
+            messageHeight = std::max(hasProblem ? problemMinimumHeight - problemBarHeight : panelHeight,
                                      int(std::ceil(text.DesiredSize().Height)) + 2 * problemPadding);
         }
         // Under the words the strip is still as tall as the buttons beside it.
         const int buttonRowHeight = controlsWidth > 0 ? sessionButtonSize : 0;
-        const int stripHeight = hasProblem ? problemHeight
+        const int stripHeight = wraps ? messageHeight
             : showPreview ? std::max(buttonRowHeight, waiting ? lineHeight + 6 : compactStripHeight)
                           : panelHeight;
         row.Height(stripHeight);
         wave->element().Height(stripHeight);
-        const int wantedHeight = hasProblem ? problemHeight + problemBarHeight
+        const int wantedHeight = hasProblem ? messageHeight + problemBarHeight
+            : wraps ? messageHeight
             : showPreview
             ? previewTopPadding + lineHeight + previewStripSpacing + stripHeight + previewBottomPadding
             : panelHeight;
         // Keep the native host stable while XAML resizes the visible capsule.
         // Resizing the HWND first can clip the previous composition frame.
-        surfaceWidth = hasProblem ? wantedWidth : std::max(wantedWidth, std::min(maximumPreviewWidth, maximumWidth));
-        surfaceHeight = hasProblem ? wantedHeight
+        surfaceWidth = wraps ? wantedWidth : std::max(wantedWidth, std::min(maximumPreviewWidth, maximumWidth));
+        surfaceHeight = wraps ? wantedHeight
             : previewTopPadding + lineHeight + previewStripSpacing
                 + std::max({compactStripHeight, sessionButtonSize, lineHeight + 6}) + previewBottomPadding;
         resize(wantedWidth, wantedHeight);
@@ -1358,6 +1369,22 @@ quint64 DictationPanel::presentedGenerationForTest() const
 qintptr DictationPanel::windowStyleForTest() const
 {
     return m_native->window ? GetWindowLongPtrW(m_native->window, GWL_EXSTYLE) : 0;
+}
+
+bool DictationPanel::fixVisibleForTest() const
+{
+    return m_native->fixButton && m_native->fixButton.Visibility() == Visibility::Visible;
+}
+
+bool DictationPanel::errorChromeVisibleForTest() const
+{
+    return (m_native->dismiss && m_native->dismiss.Visibility() == Visibility::Visible)
+        || (m_native->countdown && m_native->countdown.Visibility() == Visibility::Visible);
+}
+
+void DictationPanel::pressFixForTest()
+{
+    winrt::Microsoft::UI::Xaml::Automation::Peers::ButtonAutomationPeer(m_native->fixButton).Invoke();
 }
 
 void DictationPanel::driveStatusForTest(const QString &status)

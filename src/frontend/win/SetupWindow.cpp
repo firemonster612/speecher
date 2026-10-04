@@ -11,6 +11,7 @@
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
+#include "frontend/win/CustomRows.h"
 #include "frontend/win/LocalModelBrowser.h"
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/ShortcutRecorder.h"
@@ -28,6 +29,10 @@
 
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
+// The headers above declared the automation peers before windows.h renamed
+// GetClassName, so their definitions must not see the rename either.
+#pragma push_macro("GetClassName")
+#undef GetClassName
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.System.h>
@@ -36,11 +41,14 @@
 #include <winrt/Microsoft.UI.Interop.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Automation.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Peers.h>
+#include <winrt/Microsoft.UI.Xaml.Automation.Provider.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
+#pragma pop_macro("GetClassName")
 #pragma pop_macro("GetCurrentTime")
 
 #include <QDebug>
@@ -52,6 +60,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -108,6 +117,29 @@ constexpr wchar_t kServerGlyph = L'\uE968';
 void setShown(const UIElement &element, bool shown)
 {
     element.Visibility(shown ? Visibility::Visible : Visibility::Collapsed);
+}
+
+// Everything the setup fallback section draws, in order, to tell whether
+// drawing it again would change anything.
+QStringList drawnText(const SetupFallbackPresentation &section)
+{
+    if (!section.visible) {
+        return {};
+    }
+    const FallbackListPresentation &list = section.list;
+    QStringList text{section.hint, section.suggestion, section.suggestionAction, list.heading, list.footer,
+                     list.moveUpCaption, list.moveDownCaption, list.removeCaption};
+    for (const FallbackItem &item : list.items) {
+        text << item.providerId << item.label << item.status << QString::number(int(item.tone))
+             << QString::number(item.canMoveUp) << QString::number(item.canMoveDown);
+    }
+    if (list.canAdd) {
+        text << list.addLabel << list.addHelp << list.addPlaceholder;
+        for (const RowOption &choice : list.addChoices) {
+            text << choice.id << choice.label;
+        }
+    }
+    return text;
 }
 
 // Where a status sits on the mockup's scale: neutral while a probe runs or
@@ -821,6 +853,8 @@ struct SetupWindow::Native {
         endpointForm = {};
         refinementRefresh = nullptr;
         transcriptionRefresh = nullptr;
+        fallbacks = nullptr;
+        fallbacksDrawn.reset();
         pageScope = std::make_unique<QObject>();
         ++checkGeneration;
     }
@@ -1441,6 +1475,7 @@ struct SetupWindow::Native {
         };
         const auto describeSelected = [this, describeProvider, deadEnd, status] {
             describeProvider();
+            showFallbacks(ProviderRole::Speech);
             const QString note = speechDeadEnd();
             deadEnd.Message(win::hs(note));
             deadEnd.IsOpen(!note.isEmpty());
@@ -1582,7 +1617,14 @@ struct SetupWindow::Native {
         message.Children().Append(status.root);
         message.Children().Append(hint);
         panel.Children().Append(cardRow(FrameworkElement{nullptr}, message, check));
+        fallbacks = StackPanel();
+        panel.Children().Append(fallbacks);
         content.Children().Append(panel);
+        showFallbacks(ProviderRole::Speech);
+        // Reachability and sign-ins change the fallbacks' statuses, with or
+        // without Local Model support.
+        QObject::connect(controller->localSetup(), &LocalSetup::changed, pageScope.get(),
+                         [this] { showFallbacks(ProviderRole::Speech); });
         runChecks();
     }
 
@@ -1772,6 +1814,8 @@ struct SetupWindow::Native {
         StackPanel speedRow = settingRow(setupSchemaRow(QStringLiteral("openAiSpeed")).label, speed);
         speedRow.Children().Append(speedHelp);
         panel.Children().Append(speedRow);
+        fallbacks = StackPanel();
+        panel.Children().Append(fallbacks);
 
         refinementRefresh = [this, options, skip, speed, speedHelp, speedRow, stats, warning] {
             const QString id = controller->settings()->refinementProvider();
@@ -1819,6 +1863,7 @@ struct SetupWindow::Native {
             }
             showRunner(*options);
             showEndpointCheck();
+            showFallbacks(ProviderRole::Refinement);
         };
         for (const RefinementOption &option : *options) {
             option.button.Checked([this, id = option.id](const auto &, const auto &) {
@@ -1868,6 +1913,7 @@ struct SetupWindow::Native {
         QObject::connect(local, &LocalSetup::changed, pageScope.get(), [this, options] {
             showRunner(*options);
             showEndpointCheck();
+            showFallbacks(ProviderRole::Refinement);
             autoSelectRefinementProvider(*options);
         });
         QObject::connect(local, &LocalSetup::pullProgress, pageScope.get(), [this] { showPull(); });
@@ -1890,6 +1936,66 @@ struct SetupWindow::Native {
                 refinementRefresh();
             });
         }
+    }
+
+    // The optional section under the chosen provider's details: the role's
+    // fallbacks as the Fallbacks subpage lists them, with the hint in place
+    // of its subtitle, and the local fallback this computer could add. It
+    // never holds Next, and hides while there is nothing to fall back from.
+    // Every probe result lands here, so a section that would look the same is
+    // left alone, keeping an open Add combo and the focus.
+    void showFallbacks(ProviderRole role)
+    {
+        if (!fallbacks) {
+            return;
+        }
+        LocalSetup *local = controller->localSetup();
+        const SetupFallbackPresentation section =
+            setupFallbackPresentation(role, controller->settings()->snapshot(), local->liveFacts(),
+                                      win::providerOptions(role, *controller->providerRegistry()),
+                                      local->setupFallbackOffer(role));
+        const QStringList drawn = drawnText(section);
+        if (fallbacksDrawn == drawn) {
+            return;
+        }
+        fallbacksDrawn = drawn;
+        fallbacks.Children().Clear();
+        setShown(fallbacks, section.visible);
+        if (!section.visible) {
+            return;
+        }
+        // Redrawn a turn later: the edit comes from a control in the section.
+        const auto redraw = [this, role] {
+            QTimer::singleShot(0, pageScope.get(), [this, role] { showFallbacks(role); });
+        };
+        FallbackListPresentation list = section.list;
+        list.subtitle = section.hint;
+        fallbacks.Children().Append(win::fallbackListElement(
+            role, list, [this] { return controller->settings()->snapshot(); },
+            [this, role, redraw](const QStringList &chosen) {
+                if (role == ProviderRole::Speech) {
+                    controller->settings()->setSpeechFallbackProviders(chosen);
+                } else {
+                    controller->settings()->setRefinementFallbackProviders(chosen);
+                }
+                redraw();
+            },
+            paneHost));
+        if (section.suggestion.isEmpty()) {
+            return;
+        }
+        StackPanel suggestion;
+        suggestion.Margin({0, 8, 0, 0});
+        suggestion.Children().Append(textBlock(section.suggestion));
+        HyperlinkButton add;
+        add.Content(box_value(win::hs(section.suggestionAction)));
+        add.Padding({0, 4, 0, 0});
+        add.Click([this, role, redraw](const auto &, const auto &) {
+            controller->localSetup()->acceptSetupFallbackOffer(role);
+            redraw();
+        });
+        suggestion.Children().Append(add);
+        fallbacks.Children().Append(suggestion);
     }
 
     // Refinement through a Local Runner: what was found, the model to use,
@@ -2667,6 +2773,10 @@ struct SetupWindow::Native {
         TextBlock status{nullptr};
     } endpointForm;
     std::function<void()> refinementRefresh;
+    // The Transcription or Refinement page's fallback section, null while
+    // another page is up, and the text it last drew.
+    StackPanel fallbacks{nullptr};
+    std::optional<QStringList> fallbacksDrawn;
     // The provider to go back to when Skip cleanup is cleared.
     QString lastRefinementProvider;
     // Owns the Qt connections of the page on screen.
@@ -2762,6 +2872,52 @@ void SetupWindow::showPageForTest(const QString &stepId)
 bool SetupWindow::finishEnabledForTest() const
 {
     return m_native->next && m_native->next.IsEnabled();
+}
+
+bool SetupWindow::fallbacksShownForTest() const
+{
+    const StackPanel &section = m_native->fallbacks;
+    return section && section.Visibility() == Visibility::Visible && section.Children().Size() > 0;
+}
+
+namespace {
+
+// The first link inside element, at any depth of its panels.
+HyperlinkButton findLink(const UIElement &element)
+{
+    if (const auto link = element.try_as<HyperlinkButton>()) {
+        return link;
+    }
+    if (const auto panel = element.try_as<Panel>()) {
+        for (const UIElement &child : panel.Children()) {
+            if (const auto link = findLink(child)) {
+                return link;
+            }
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+bool SetupWindow::pressFallbackSuggestionForTest()
+{
+    const auto link = m_native->fallbacks ? findLink(m_native->fallbacks) : nullptr;
+    if (!link) {
+        return false;
+    }
+    Automation::Peers::HyperlinkButtonAutomationPeer(link).Invoke();
+    return true;
+}
+
+void SetupWindow::revealFallbacksForTest()
+{
+    if (m_native->fallbacks) {
+        BringIntoViewOptions options;
+        options.VerticalAlignmentRatio(1);
+        options.AnimationDesired(false);
+        m_native->fallbacks.StartBringIntoView(options);
+    }
 }
 
 bool SetupWindow::captureForTest(const QString &path)

@@ -65,6 +65,18 @@ private:
     // What the search box suggests for query: each suggestion's "pane\nrow"
     // target, or its text when it has none.
     QStringList searchSuggestionsForTest(const QString &query);
+    // The page on screen: a subpage's id, or else its pane's.
+    QString shownPageForTest() const;
+    // The sidebar's selected pane.
+    QString selectedPaneForTest() const;
+    bool backVisibleForTest() const;
+    void goBackForTest();
+    // Presses the index-th button on the page with this accessible name;
+    // false when there is none or it is disabled.
+    bool pressForTest(const QString &name, int index = 0);
+    // Chooses the item labelled choice in the page's combo with this
+    // accessible name.
+    bool chooseForTest(const QString &name, const QString &choice);
     struct Native;
     std::unique_ptr<Native> m_native;
 };

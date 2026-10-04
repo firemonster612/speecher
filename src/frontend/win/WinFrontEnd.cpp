@@ -256,6 +256,11 @@ qintptr WinFrontEnd::panelWindowStyleForTest() const
     return m_native->panel->windowStyleForTest();
 }
 
+win::SettingsWindow *WinFrontEnd::settingsWindowForTest()
+{
+    return m_native->settingsWindow();
+}
+
 TrayFlyout *WinFrontEnd::trayFlyoutForTest()
 {
     return m_native->tray->flyoutForTest();

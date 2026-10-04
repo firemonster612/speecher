@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/settings/FallbackPresentation.h"
 #include "core/settings/SettingsSchema.h"
 
 #include <QFileSystemWatcher>
@@ -11,6 +12,7 @@
 namespace speecher {
 
 class ApplicationController;
+class ProviderRegistry;
 class SettingsStore;
 
 namespace win {
@@ -69,8 +71,12 @@ struct RowSnapshot {
     QString id;
     QString label;
     QString help;
+    // Negative where help says why something can't work right now.
+    StatusTone helpTone = StatusTone::Normal;
     RowKind kind = RowKind::Info;
     QString actionLabel;
+    // An Action row that opens a subpage, by its page id.
+    QString targetPage;
     NumberRange range;
     QList<NumberUnit> units;
     int contentWidthHint = 0;
@@ -103,6 +109,10 @@ struct SectionSnapshot {
     QList<RowSnapshot> rows;
 };
 
+// A role's providers this build offers, with their registry labels and
+// summaries: the schema's speech providers, and every fallback list's.
+QList<RowOption> providerOptions(ProviderRole role, const ProviderRegistry &registry);
+
 // The settings surface as the schema describes it, over a draft of the stored
 // settings — SpeecherBridge's SchemaState for the Windows front end. Reading
 // section() re-derives every row's value, choices and enabled flag from the
@@ -119,6 +129,8 @@ public:
     // The panes and rows a search finds, with rows as the draft shows them.
     QList<SearchMatch> search(const QString &query) const;
     void setValue(const QString &rowId, const QVariant &value);
+    // A role's fallbacks as the draft and LocalSetup's facts have them.
+    FallbackListPresentation fallbackList(ProviderRole role) const;
     // Writes the draft back to the store, applies the theme and re-reads it.
     void commit();
     // Discards edits left from the last showing and re-reads the store.
