@@ -129,40 +129,66 @@ AppSettings SettingsStore::dictationSnapshot() const
     return snapshotReading(false);
 }
 
-QString SettingsStore::resolveDictationSecrets(AppSettings &settings)
+namespace {
+
+// A keyring key and the field of the settings it fills.
+struct ProviderSecret {
+    SecretStore::Secret secret;
+    QString &(*field)(AppSettings &);
+};
+
+// The keyring keys a provider reads in a role that the snapshot has not read.
+QList<ProviderSecret> unreadProviderSecrets(const AppSettings &settings, ProviderRole role,
+                                            const QString &providerId)
 {
     using Secret = SecretStore::Secret;
-    QList<std::pair<Secret, QString *>> required;
-    const auto require = [&](Secret secret, QString &value) {
-        if (settings.unreadSecretKeys.contains(SecretStore::settingsKey(secret))) {
-            required.append({secret, &value});
-        }
-    };
-    auto &refinement = settings.refinement;
-    if (settings.speech.providerId == QStringLiteral("endpoint")) {
-        require(Secret::SpeechEndpointKey, settings.speech.endpoint.apiKey);
-    }
-    if (refinement.providerId == QStringLiteral("endpoint") && refinement.endpoint.preset.isEmpty()
-        && !refinement.endpoint.useCliproxyKey) {
-        require(Secret::RefinementEndpointKey, refinement.endpoint.apiKey);
-    }
+    const QString endpoint = QStringLiteral("endpoint");
+    const QString cliproxy = QStringLiteral("cliproxy");
+    QList<ProviderSecret> secrets;
     // Speech uses local OAuth account files, never the remote proxy API key.
-    const bool proxyPreset = refinement.providerId == QStringLiteral("endpoint")
-        && (refinement.endpoint.preset == QStringLiteral("cliproxy") || refinement.endpoint.useCliproxyKey);
-    const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
-        && ((refinement.providerId == QStringLiteral("openai") && refinement.openAiAuthMode == QStringLiteral("cliproxy"))
-            || (refinement.providerId == QStringLiteral("anthropic") && refinement.anthropicAuthMode == QStringLiteral("cliproxy")));
-    if (proxyPreset || remoteProxy) {
-        require(Secret::CliproxyApiKey, refinement.cliproxyApiKey);
+    if (role == ProviderRole::Speech && providerId == endpoint) {
+        secrets.append({Secret::SpeechEndpointKey, [](AppSettings &s) -> QString & { return s.speech.endpoint.apiKey; }});
     }
-    if (required.isEmpty()) return {};
+    const RefinementSettings &refinement = settings.refinement;
+    const bool refines = role == ProviderRole::Refinement;
+    if (refines && providerId == endpoint && refinement.endpoint.preset.isEmpty()
+        && !refinement.endpoint.useCliproxyKey) {
+        secrets.append(
+            {Secret::RefinementEndpointKey, [](AppSettings &s) -> QString & { return s.refinement.endpoint.apiKey; }});
+    }
+    const bool proxyPreset = providerId == endpoint
+        && (refinement.endpoint.preset == cliproxy || refinement.endpoint.useCliproxyKey);
+    const bool remoteProxy = !refinement.cliproxyBaseUrl.isEmpty()
+        && ((providerId == QStringLiteral("openai") && refinement.openAiAuthMode == cliproxy)
+            || (providerId == QStringLiteral("anthropic") && refinement.anthropicAuthMode == cliproxy));
+    if (refines && (proxyPreset || remoteProxy)) {
+        secrets.append({Secret::CliproxyApiKey, [](AppSettings &s) -> QString & { return s.refinement.cliproxyApiKey; }});
+    }
+    secrets.removeIf([&settings](const ProviderSecret &secret) {
+        return !settings.unreadSecretKeys.contains(SecretStore::settingsKey(secret.secret));
+    });
+    return secrets;
+}
+
+} // namespace
+
+bool SettingsStore::hasUnreadProviderSecrets(const AppSettings &settings, ProviderRole role, const QString &providerId)
+{
+    return !unreadProviderSecrets(settings, role, providerId).isEmpty();
+}
+
+QString SettingsStore::resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId)
+{
+    const QList<ProviderSecret> unread = unreadProviderSecrets(settings, role, providerId);
+    if (unread.isEmpty()) return {};
 
     // Own QSettings and SecretStore in this worker; never access the GUI cache
     // or its in-flight prefetch jobs from another thread.
     SettingsStore source;
-    for (const auto &[secret, value] : required) {
-        *value = source.secrets()->secret(secret);
-        if (value->isEmpty() && !source.secrets()->isSecretKnown(secret)) {
+    for (const auto &[secret, field] : unread) {
+        QString &value = field(settings);
+        value = source.secrets()->secret(secret);
+        if (value.isEmpty() && !source.secrets()->isSecretKnown(secret)) {
             return QStringLiteral("Desktop keyring unavailable for %1: %2")
                 .arg(SecretStore::settingsKey(secret), source.secrets()->lastError());
         }

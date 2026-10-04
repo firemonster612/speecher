@@ -188,7 +188,7 @@ public:
 
     QString id() const override
     {
-        return QStringLiteral("claude");
+        return providerId;
     }
 
     QString label() const override
@@ -234,6 +234,9 @@ public:
         currentAttemptId = attemptId;
         lastVocabulary = settings.vocabulary;
         lastLanguage = settings.language;
+        if (onStartAttempt) {
+            onStartAttempt();
+        }
     }
 
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override
@@ -271,9 +274,12 @@ public:
         emit attemptTranscript(currentAttemptId, text);
     }
 
-    void emitFailure(const QString &message, bool retryable = false, const QString &phase = {})
+    void emitFailure(const QString &message,
+                     bool retryable = false,
+                     const QString &phase = {},
+                     ProviderFailureKind kind = ProviderFailureKind::Other)
     {
-        emit failed({currentAttemptId, message, retryable, phase});
+        emit failed({currentAttemptId, message, retryable, phase, kind});
     }
 
     void emitCompletion()
@@ -281,10 +287,13 @@ public:
         emit attemptCompleted(currentAttemptId);
     }
 
+    QString providerId = QStringLiteral("claude");
     bool refreshRequired = false;
     bool backgroundPrepare = false;
     unsigned long backgroundPrepareDelayMs = 0;
     SpeechPrepareResult prepareResult{true, {}};
+    // Runs inside startAttempt(), as a provider that fails at once would.
+    std::function<void()> onStartAttempt;
     int backgroundPrepareCalls = 0;
     int prepareCalls = 0;
     int startCalls = 0;
@@ -306,7 +315,7 @@ public:
 
     QString id() const override
     {
-        return QStringLiteral("openai");
+        return providerId;
     }
 
     QString label() const override
@@ -388,11 +397,12 @@ public:
         emit completed(text);
     }
 
-    void emitFailure(const QString &message)
+    void emitFailure(const QString &message, ProviderFailureKind kind = ProviderFailureKind::Other)
     {
-        emit failed({ProviderFailureKind::Other, message});
+        emit failed({kind, message});
     }
 
+    QString providerId = QStringLiteral("openai");
     bool refreshRequired = false;
     bool backgroundRefresh = false;
     unsigned long backgroundRefreshDelayMs = 0;
@@ -441,18 +451,26 @@ public:
     QString lastText;
 };
 
-inline void registerFakeSpeechProvider(ProviderRegistry &registry, FakeSpeechTranscriber **speech)
+inline void registerFakeSpeechProvider(ProviderRegistry &registry,
+                                       FakeSpeechTranscriber **speech,
+                                       const QString &id = QStringLiteral("claude"),
+                                       const QString &label = QStringLiteral("Fake Speech"))
 {
-    registry.registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Fake Speech")}, [speech](QObject *parent) {
+    registry.registerSpeechProvider({id, label}, [speech, id](QObject *parent) {
         *speech = new FakeSpeechTranscriber(parent);
+        (*speech)->providerId = id;
         return *speech;
     });
 }
 
-inline void registerFakeRefiner(ProviderRegistry &registry, FakeRefiner **refiner)
+inline void registerFakeRefiner(ProviderRegistry &registry,
+                                FakeRefiner **refiner,
+                                const QString &id = QStringLiteral("openai"),
+                                const QString &label = QStringLiteral("Fake Refiner"))
 {
-    registry.registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake Refiner")}, [refiner](QObject *parent) {
+    registry.registerRefinementProvider({id, label}, [refiner, id](QObject *parent) {
         *refiner = new FakeRefiner(parent);
+        (*refiner)->providerId = id;
         return *refiner;
     });
 }

@@ -123,6 +123,12 @@ private:
     void continueStartupAfterPreparation(quint64 generation, const AppSettings &settings);
     void failStartup(quint64 generation, const QString &message);
     void beginRefinement(quint64 generation);
+    void prepareRefiner();
+    void finishRefinerPreparation(const StartupPreparationResult &result);
+    void startRefiner();
+    void enterRefining();
+    RefinementSettings refinerSettings() const;
+    void handleRefinementFailure(const ProviderFailure &failure);
     void failSelectionEdit(const QString &message);
     void handleSpeechFailure(const SpeechFailure &failure);
     void rollOverSpeechAttempt();
@@ -157,6 +163,9 @@ private:
     ProviderRegistry *m_providers = nullptr;
     TranscriptState *m_transcript = nullptr;
     StartupPreparationRunner *m_startupRunner = nullptr;
+    // Numbers each preparation the runner is asked for; only the latest's
+    // result counts.
+    quint64 m_preparationRevision = 0;
     QTimer *m_completionTimer = nullptr;
     // The registry owns these and may be destroyed first; never call a dead one.
     QPointer<SpeechTranscriber> m_transcriber;

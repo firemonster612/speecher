@@ -902,20 +902,25 @@ private slots:
         QCOMPARE(reopened.snapshot().refinement.cliproxyApiKey, QString());
     }
 
+    // Each provider's key is read on the worker when that provider is tried,
+    // and one that can't be read fails only that provider: a refiner's never
+    // stops dictation from starting.
     void dictationResolvesOnlySelectedSecretsOffThread_data()
     {
         QTest::addColumn<QString>("refiner");
         QTest::addColumn<QString>("speechProvider");
         QTest::addColumn<bool>("remote");
-        QTest::addColumn<bool>("unavailable");
-        QTest::newRow("openai-proxy") << QStringLiteral("openai") << QStringLiteral("claude") << true << true;
-        QTest::newRow("anthropic-proxy") << QStringLiteral("anthropic") << QStringLiteral("claude") << true << true;
-        QTest::newRow("proxy-preset") << QStringLiteral("endpoint") << QStringLiteral("claude") << true << true;
-        QTest::newRow("inherited-proxy-key") << QStringLiteral("endpoint-inherited") << QStringLiteral("claude") << true << true;
-        QTest::newRow("speech-endpoint") << QStringLiteral("none") << QStringLiteral("endpoint") << true << true;
-        QTest::newRow("none-inactive-proxy") << QStringLiteral("none") << QStringLiteral("claude") << true << false;
-        QTest::newRow("local-inactive-proxy") << QStringLiteral("local") << QStringLiteral("claude") << true << false;
-        QTest::newRow("local-account-files") << QStringLiteral("openai") << QStringLiteral("claude") << false << false;
+        QTest::addColumn<QString>("unavailable");
+        const QString speech = QStringLiteral("speech");
+        const QString refinement = QStringLiteral("refinement");
+        QTest::newRow("openai-proxy") << QStringLiteral("openai") << QStringLiteral("claude") << true << refinement;
+        QTest::newRow("anthropic-proxy") << QStringLiteral("anthropic") << QStringLiteral("claude") << true << refinement;
+        QTest::newRow("proxy-preset") << QStringLiteral("endpoint") << QStringLiteral("claude") << true << refinement;
+        QTest::newRow("inherited-proxy-key") << QStringLiteral("endpoint-inherited") << QStringLiteral("claude") << true << refinement;
+        QTest::newRow("speech-endpoint") << QStringLiteral("none") << QStringLiteral("endpoint") << true << speech;
+        QTest::newRow("none-inactive-proxy") << QStringLiteral("none") << QStringLiteral("claude") << true << QString();
+        QTest::newRow("local-inactive-proxy") << QStringLiteral("local") << QStringLiteral("claude") << true << QString();
+        QTest::newRow("local-account-files") << QStringLiteral("openai") << QStringLiteral("claude") << false << QString();
     }
 
     void dictationResolvesOnlySelectedSecretsOffThread()
@@ -923,7 +928,7 @@ private slots:
         QFETCH(QString, refiner);
         QFETCH(QString, speechProvider);
         QFETCH(bool, remote);
-        QFETCH(bool, unavailable);
+        QFETCH(QString, unavailable);
         {
             SettingsStore reset;
             reset.raw().clear();
@@ -958,10 +963,25 @@ private slots:
         registerFakeSpeechProvider(registry, &speech);
         registry.registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Endpoint")},
             [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
+        FakeRefiner *fakeRefiner = nullptr;
+        registerFakeRefiner(registry, &fakeRefiner,
+                            refiner == QStringLiteral("endpoint-inherited") ? QStringLiteral("endpoint") : refiner);
         DictationSession session(&settings, &audio, &media, &delivery, &registry);
         session.startListening();
         QVERIFY(settings.secrets()->lastError().isEmpty());
-        if (unavailable) {
+        if (unavailable == QStringLiteral("refinement")) {
+            QTRY_COMPARE_WITH_TIMEOUT(session.state(), DictationState::Listening, 200);
+            speech->emitFinalText(QStringLiteral("spoken words"));
+            session.stopListening();
+            // The read runs on the worker while the session waits in Refining.
+            QCOMPARE(session.state(), DictationState::Refining);
+            QTRY_COMPARE_WITH_TIMEOUT(delivery.calls, 1, 2000);
+            QCOMPARE(delivery.lastText, QStringLiteral("spoken words"));
+            QVERIFY2(session.lastMessage().startsWith(QStringLiteral("Used raw transcript")),
+                     qPrintable(session.lastMessage()));
+            QCOMPARE(fakeRefiner->prepareCalls, 0);
+            QVERIFY(settings.secrets()->lastError().isEmpty());
+        } else if (unavailable == QStringLiteral("speech")) {
             // The GUI thread goes on handling events while the worker reads:
             // a call queued now runs before the read's answer arrives.
             QCOMPARE(session.state(), DictationState::Starting);

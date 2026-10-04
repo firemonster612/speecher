@@ -157,7 +157,7 @@ private:
     qsizetype m_sent = 0;
     bool m_inputFinished = false;
     quint64 m_attemptId = 0;
-    quint64 m_preparationGeneration = 0;
+    quint64 m_preparationRevision = 0;
     int m_reconnectsLeft = 0;
     QElapsedTimer m_attemptClock;
     // Where in the file the current attempt's audio starts.

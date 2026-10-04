@@ -366,8 +366,9 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         m_mediaController->pausePlaying();
     }
 
-    if (!settings.unreadSecretKeys.isEmpty()) {
-        m_startupRunner->start(generation, std::nullopt, std::nullopt, {true, {}}, settings);
+    if (SettingsStore::hasUnreadProviderSecrets(settings, ProviderRole::Speech, settings.speech.providerId)) {
+        m_startupRunner->resolveSecrets(++m_preparationRevision, ProviderRole::Speech, settings.speech.providerId,
+                                        settings);
         return;
     }
     prepareProviders(generation);
@@ -408,7 +409,7 @@ void DictationSession::prepareProviders(quint64 generation)
     }
 
     if (speechPrepareJob || refinerRefreshJob) {
-        m_startupRunner->start(generation,
+        m_startupRunner->start(++m_preparationRevision,
                                std::move(speechPrepareJob),
                                std::move(refinerRefreshJob),
                                speechPrepared);
@@ -428,6 +429,7 @@ void DictationSession::stopListening()
         return;
     }
     if (m_state == DictationState::Refining) {
+        m_startupRunner->cancel();
         if (m_refiner) {
             m_refiner->cancel();
         }
@@ -712,21 +714,27 @@ void DictationSession::setState(DictationState state, const QString &message, co
 
 void DictationSession::finishStartupPreparation(const StartupPreparationResult &result)
 {
-    if (result.generation != m_generation
-        || m_state != DictationState::Starting
-        || !m_sessionSettings) {
+    if (result.revision != m_preparationRevision) {
+        qInfo() << "startup preparation result ignored";
+        return;
+    }
+    if (result.role == ProviderRole::Refinement) {
+        finishRefinerPreparation(result);
+        return;
+    }
+    if (m_state != DictationState::Starting || !m_sessionSettings) {
         qInfo() << "startup preparation result ignored";
         return;
     }
 
     if (!result.speech.ok) {
-        failStartup(result.generation, result.speech.message);
+        failStartup(m_generation, result.speech.message);
         return;
     }
 
     if (result.resolvedSettings) {
         m_sessionSettings = *result.resolvedSettings;
-        prepareProviders(result.generation);
+        prepareProviders(m_generation);
         return;
     }
 
@@ -735,7 +743,7 @@ void DictationSession::finishStartupPreparation(const StartupPreparationResult &
     }
 
     emit previewDisplayChanged({});
-    continueStartupAfterPreparation(result.generation, *m_sessionSettings);
+    continueStartupAfterPreparation(m_generation, *m_sessionSettings);
 }
 
 void DictationSession::continueStartupAfterPreparation(quint64 generation, const AppSettings &settings)
@@ -857,27 +865,65 @@ void DictationSession::beginRefinement(quint64 generation)
         return;
     }
 
+    prepareRefiner();
+}
+
+// The refiner's keys come from the keyring, and an expired sign-in renews,
+// on the worker: never on this thread, where prepare() would do both.
+void DictationSession::prepareRefiner()
+{
+    const QString providerId = m_sessionSettings->refinement.providerId;
+    if (SettingsStore::hasUnreadProviderSecrets(*m_sessionSettings, ProviderRole::Refinement, providerId)) {
+        enterRefining();
+        m_startupRunner->resolveSecrets(++m_preparationRevision, ProviderRole::Refinement, providerId,
+                                        *m_sessionSettings);
+        return;
+    }
+    if (std::optional<RefinementRefreshJob> refresh = m_refiner->createRefreshJob(refinerSettings())) {
+        enterRefining();
+        m_startupRunner->start(++m_preparationRevision, std::nullopt, std::move(refresh), {true, {}},
+                               ProviderRole::Refinement);
+        return;
+    }
+    startRefiner();
+}
+
+void DictationSession::finishRefinerPreparation(const StartupPreparationResult &result)
+{
+    if (m_state != DictationState::Refining || m_refinementGeneration != m_generation || !m_sessionSettings) {
+        qInfo() << "refinement preparation result ignored";
+        return;
+    }
+    if (result.refinerRefreshAttempted && !result.refinerRefresh.ok) {
+        handleRefinementFailure(
+            {result.refinerRefresh.kind, result.refinerRefresh.message, result.refinerRefresh.httpStatus});
+        return;
+    }
+    if (result.resolvedSettings) {
+        m_sessionSettings = *result.resolvedSettings;
+        prepareRefiner();
+        return;
+    }
+    startRefiner();
+}
+
+void DictationSession::startRefiner()
+{
+    const RefinementSettings refinement = refinerSettings();
     const RefinementPrepareResult prepared = m_refiner->prepare(refinement);
     if (!prepared.ok) {
-        qWarning().noquote() << "refinement auth unavailable status=" + prepared.message;
-        if (pipeline.editsSelection) {
-            failSelectionEdit(prepared.message);
-            return;
-        }
-        m_lastMessage = prepared.message;
-        deliverFinal(pipeline.deliveryFallback);
+        handleRefinementFailure({prepared.kind, prepared.message, prepared.httpStatus});
         return;
     }
 
-    setState(DictationState::Refining, m_lastMessage);
-    m_refinementGeneration = generation;
+    enterRefining();
     m_refinementStream.clear();
-    emit popupRefiningChanged(true);
+    TranscriptPipelineResult &pipeline = m_transcriptPipeline;
     TranscriptPipeline::includeScreenshotContext(pipeline,
                                                  m_refiner->supportsScreenshotContext(refinement),
                                                  m_screenshotData,
                                                  m_screenshotMediaType);
-    qInfo() << "refinement started provider=" << settings.refinement.providerId
+    qInfo() << "refinement started provider=" << refinement.providerId
             << "rawLength=" << m_transcript->text().size()
             << "placeholderLength=" << pipeline.refinementInput.size()
             << "selectionEdit=" << pipeline.editsSelection
@@ -891,6 +937,36 @@ void DictationSession::beginRefinement(quint64 generation)
                       pipeline.refinementVocabulary,
                       pipeline.refinementContext,
                       refinement);
+}
+
+void DictationSession::enterRefining()
+{
+    if (m_state == DictationState::Refining) {
+        return;
+    }
+    setState(DictationState::Refining, m_lastMessage);
+    m_refinementGeneration = m_generation;
+    emit popupRefiningChanged(true);
+}
+
+// The pipeline's refinement settings with the keys read since it was built.
+RefinementSettings DictationSession::refinerSettings() const
+{
+    RefinementSettings refinement = m_transcriptPipeline.refinementSettings;
+    refinement.endpoint.apiKey = m_sessionSettings->refinement.endpoint.apiKey;
+    refinement.cliproxyApiKey = m_sessionSettings->refinement.cliproxyApiKey;
+    return refinement;
+}
+
+void DictationSession::handleRefinementFailure(const ProviderFailure &failure)
+{
+    qWarning().noquote() << "refinement failed message=" + failure.message;
+    if (m_transcriptPipeline.editsSelection) {
+        failSelectionEdit(failure.message);
+        return;
+    }
+    m_lastMessage = failure.message;
+    deliverFinal(m_transcriptPipeline.deliveryFallback);
 }
 
 void DictationSession::failSelectionEdit(const QString &message)
@@ -1276,14 +1352,7 @@ void DictationSession::connectTranscriptRefiner(TranscriptRefiner *refiner)
         if (m_state != DictationState::Refining || m_refinementGeneration != m_generation) {
             return;
         }
-        const QString &message = failure.message;
-        qWarning().noquote() << "refinement failed message=" + message;
-        if (m_transcriptPipeline.editsSelection) {
-            failSelectionEdit(message);
-            return;
-        }
-        m_lastMessage = message;
-        deliverFinal(m_transcriptPipeline.deliveryFallback);
+        handleRefinementFailure(failure);
     });
 }
 

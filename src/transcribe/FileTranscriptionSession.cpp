@@ -145,7 +145,7 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
     connect(&m_sendTimer, &QTimer::timeout, this, &FileTranscriptionSession::sendNextChunk);
     connect(m_preparation, &StartupPreparationRunner::completed, this,
             [this](const StartupPreparationResult &result) {
-                if (result.generation != m_preparationGeneration) {
+                if (result.revision != m_preparationRevision) {
                     return;
                 }
                 if (!result.speech.ok) {
@@ -326,7 +326,7 @@ void FileTranscriptionSession::prepareProviders()
     } else if (!speechJob) {
         prepared = m_transcriber->prepare(m_batchSettings.speech);
     }
-    m_preparation->start(++m_preparationGeneration, std::move(speechJob), std::move(refreshJob), prepared);
+    m_preparation->start(++m_preparationRevision, std::move(speechJob), std::move(refreshJob), prepared);
 }
 
 void FileTranscriptionSession::beginStreaming()
@@ -518,7 +518,7 @@ void FileTranscriptionSession::releaseFileResources()
 {
     m_sendTimer.stop();
     m_preparation->cancel();
-    ++m_preparationGeneration;
+    ++m_preparationRevision;
     // Signals from a retired provider must not reach the next file.
     if (m_decoder) {
         disconnect(m_decoder, nullptr, this, nullptr);

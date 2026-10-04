@@ -13,6 +13,7 @@ struct StartupPreparationRunner::Preparation {
     StartupPreparationResult result;
     std::optional<SpeechPrepareJob> speechJob;
     std::optional<RefinementRefreshJob> refinerJob;
+    QString secretsProviderId;
     std::atomic_bool cancelled = false;
 };
 
@@ -34,37 +35,64 @@ StartupPreparationRunner::~StartupPreparationRunner()
     }
 }
 
-void StartupPreparationRunner::start(quint64 generation,
+void StartupPreparationRunner::start(quint64 revision,
                                      std::optional<SpeechPrepareJob> speechJob,
                                      std::optional<RefinementRefreshJob> refinerJob,
                                      SpeechPrepareResult speechPrepared,
-                                     std::optional<AppSettings> secretsToResolve)
+                                     ProviderRole role)
+{
+    auto preparation = std::make_shared<Preparation>();
+    preparation->result.revision = revision;
+    preparation->result.role = role;
+    preparation->result.speech = std::move(speechPrepared);
+    preparation->speechJob = std::move(speechJob);
+    preparation->refinerJob = std::move(refinerJob);
+    run(std::move(preparation));
+}
+
+void StartupPreparationRunner::resolveSecrets(quint64 revision,
+                                              ProviderRole role,
+                                              const QString &providerId,
+                                              AppSettings settings)
+{
+    auto preparation = std::make_shared<Preparation>();
+    preparation->result.revision = revision;
+    preparation->result.role = role;
+    preparation->result.speech = {true, {}};
+    preparation->result.resolvedSettings = std::move(settings);
+    preparation->secretsProviderId = providerId;
+    run(std::move(preparation));
+}
+
+void StartupPreparationRunner::run(std::shared_ptr<Preparation> preparation)
 {
     cancel();
 
-    auto preparation = std::make_shared<Preparation>();
-    preparation->result.generation = generation;
-    preparation->result.speech = std::move(speechPrepared);
-    preparation->result.resolvedSettings = std::move(secretsToResolve);
-    preparation->speechJob = std::move(speechJob);
-    preparation->refinerJob = std::move(refinerJob);
-
     QThread *thread = QThread::create([preparation] {
-        if (!preparation->cancelled && preparation->result.resolvedSettings) {
-            const QString error = SettingsStore::resolveDictationSecrets(*preparation->result.resolvedSettings);
-            preparation->result.speech = {error.isEmpty(), error};
-            if (!error.isEmpty()) return;
+        StartupPreparationResult &result = preparation->result;
+        if (!preparation->cancelled && result.resolvedSettings) {
+            const QString error =
+                SettingsStore::resolveProviderSecrets(*result.resolvedSettings, result.role, preparation->secretsProviderId);
+            if (!error.isEmpty()) {
+                if (result.role == ProviderRole::Speech) {
+                    result.speech = {false, error};
+                } else {
+                    result.refinerRefreshAttempted = true;
+                    result.refinerRefresh = {false, error};
+                }
+                return;
+            }
         }
         if (!preparation->cancelled && preparation->speechJob) {
-            preparation->result.speech = preparation->speechJob->run
+            result.speech = preparation->speechJob->run
                 ? preparation->speechJob->run()
                 : SpeechPrepareResult{false, QStringLiteral("Speech provider startup job unavailable")};
         }
         if (!preparation->cancelled
-            && preparation->result.speech.ok
+            && result.speech.ok
             && preparation->refinerJob) {
-            preparation->result.refinerRefreshAttempted = true;
-            preparation->result.refinerRefresh = preparation->refinerJob->run
+            result.refinerRefreshAttempted = true;
+            result.refinerRefresh = preparation->refinerJob->run
                 ? preparation->refinerJob->run()
                 : RefinementRefreshResult{false, QStringLiteral("Refinement refresh job unavailable")};
         }

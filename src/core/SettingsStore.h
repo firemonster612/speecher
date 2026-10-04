@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/ProviderChain.h"
 #include "core/settings/SettingsCodecs.h"
 
 #include <QObject>
@@ -35,10 +36,15 @@ public:
     // cached yet waits for the keyring (1.5 s at most).
     AppSettings snapshot() const;
     // Never waits for the keyring on the GUI thread. Startup preparation
-    // resolves unread keys for the selected providers on its worker.
+    // resolves unread keys for each provider it tries on its worker.
     AppSettings dictationSnapshot() const;
-    // Run on the startup worker. Returns an error if a required key is unreadable.
-    static QString resolveDictationSecrets(AppSettings &settings);
+    // Whether this provider, in this role, needs a key the snapshot has not
+    // read from the keyring yet.
+    static bool hasUnreadProviderSecrets(const AppSettings &settings, ProviderRole role, const QString &providerId);
+    // Reads those keys into settings, and no others, so one provider's
+    // unreadable key never stops another. Run on the startup worker. Returns
+    // an error if one is unreadable.
+    static QString resolveProviderSecrets(AppSettings &settings, ProviderRole role, const QString &providerId);
     void applySnapshot(const AppSettings &draft);
     SecretStore *secrets() const;
     QString cliproxyApiKey() const;

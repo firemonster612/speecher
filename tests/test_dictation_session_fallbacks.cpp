@@ -116,6 +116,37 @@ private slots:
         QTEST(outcome.fix.pageId, "fixPage");
     }
 
+    // An expired sign-in renews on the worker before refinement, and one that
+    // can't renew fails the refiner there: prepare(), which would renew it on
+    // the GUI thread, is never reached.
+    void aRefinerRenewsItsSignInOffTheGuiThread()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        refiner->refreshRequired = true;
+        refiner->backgroundRefresh = true;
+        refiner->refreshResult = {false, QStringLiteral("refresh failed"), ProviderFailureKind::Network};
+        speech->emitFinalText(QStringLiteral("spoken words"));
+        session.stopListening();
+        QCOMPARE(session.state(), DictationState::Refining);
+        QTRY_COMPARE(delivery.calls, 1);
+        QCOMPARE(refiner->backgroundRefreshCalls, 1);
+        QCOMPARE(refiner->prepareCalls, 0);
+        QCOMPARE(delivery.lastText, QStringLiteral("spoken words"));
+    }
+
     void noSpeechServiceNamesEachProviderAndWhy()
     {
         QCOMPARE(noSpeechServiceText({speechIssue(QStringLiteral("codex"), Stage::Prepare, ProviderFailureKind::Network),
