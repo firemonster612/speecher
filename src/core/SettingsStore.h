@@ -92,6 +92,7 @@ public:
     using SettingsCodecs::recordVocabularyUsage;
     using SettingsCodecs::refinementPreviewEnabled;
     using SettingsCodecs::refinementProvider;
+    using SettingsCodecs::refinementFallbackProviders;
     using SettingsCodecs::refinementProviderChosen;
     using SettingsCodecs::refinementStyle;
     using SettingsCodecs::transcriptionPreviewEnabled;
@@ -123,10 +124,12 @@ public:
     using SettingsCodecs::setPreviewWords;
     using SettingsCodecs::setRefinementPreviewEnabled;
     using SettingsCodecs::setRefinementProvider;
+    using SettingsCodecs::setRefinementFallbackProviders;
     using SettingsCodecs::setRefinementStyle;
     using SettingsCodecs::setRestoreClipboardAfterTyping;
     using SettingsCodecs::setSoundsEnabled;
     using SettingsCodecs::setSpeechProvider;
+    using SettingsCodecs::setSpeechFallbackProviders;
     using SettingsCodecs::localSpeechSettings;
     using SettingsCodecs::setLocalSpeechSettings;
     using SettingsCodecs::localRunnerSettings;
@@ -153,6 +156,7 @@ public:
     using SettingsCodecs::setUpdatesLastCheckTime;
     using SettingsCodecs::soundsEnabled;
     using SettingsCodecs::speechProvider;
+    using SettingsCodecs::speechFallbackProviders;
     using SettingsCodecs::codexFinalRetranscribe;
     using SettingsCodecs::spokenLanguage;
     using SettingsCodecs::setShortcutActivationMode;

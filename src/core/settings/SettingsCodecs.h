@@ -23,6 +23,7 @@ public:
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);
     QString speechProvider() const; void setSpeechProvider(const QString &value);
+    QStringList speechFallbackProviders() const; void setSpeechFallbackProviders(const QStringList &value);
     bool codexFinalRetranscribe() const; void setCodexFinalRetranscribe(bool value);
     QString spokenLanguage() const; void setSpokenLanguage(const QString &value);
     LocalSpeechSettings localSpeechSettings() const; void setLocalSpeechSettings(const LocalSpeechSettings &value);
@@ -41,6 +42,7 @@ public:
     QList<LearnedCorrection> learnedCorrections() const; void setLearnedCorrections(const QList<LearnedCorrection> &corrections);
     void setLearnedCorrectionEnabled(const QString &id, bool enabled); void removeLearnedCorrection(const QString &id);
     QString refinementProvider() const; void setRefinementProvider(const QString &value);
+    QStringList refinementFallbackProviders() const; void setRefinementFallbackProviders(const QStringList &value);
     // A provider was saved, as opposed to the default read from installed CLIs.
     bool refinementProviderChosen() const;
     QString refinementStyle() const; void setRefinementStyle(const QString &value);

@@ -246,6 +246,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/EndpointSettings.cpp
   src/core/LocalModelCatalog.cpp
   src/core/OutputMethod.cpp
+  src/core/ProviderChain.cpp
   src/core/OutputFormat.cpp
   src/core/PasteRules.cpp
   src/core/ReleaseNotesPresentation.cpp

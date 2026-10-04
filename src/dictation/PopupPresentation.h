@@ -14,7 +14,8 @@ enum class PopupOutcome {
     Inserted,
     // The text is on the clipboard only.
     Copied,
-    // Refinement failed, so the raw transcript was delivered instead.
+    // A fallback did the work: another provider stood in for an unavailable
+    // one, or refinement failed and the raw transcript was delivered.
     Fallback,
     Error,
     // The person cancelled the session; nothing was delivered.

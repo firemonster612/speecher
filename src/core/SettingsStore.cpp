@@ -205,6 +205,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setRefinementPreviewEnabled(draft.ui.refinementPreviewEnabled);
     setPreviewWords(draft.ui.previewWords);
     setSpeechProvider(draft.speech.providerId);
+    setSpeechFallbackProviders(draft.speech.fallbackProviderIds);
     setCodexFinalRetranscribe(draft.speech.codexFinalRetranscribe);
     setSpokenLanguage(draft.speech.language);
     setLocalSpeechSettings(draft.speech.local);
@@ -212,6 +213,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     save(SecretStore::Secret::SpeechEndpointKey, draft.speech.endpoint.apiKey);
     setAudioCaptureSettings(draft.audio);
     setRefinementProvider(draft.refinement.providerId);
+    setRefinementFallbackProviders(draft.refinement.fallbackProviderIds);
     // Before the profiles, which fall back from a tone or level deleted here.
     setCustomTones(draft.refinement.customTones);
     setCustomCleanupLevels(draft.refinement.customCleanupLevels);

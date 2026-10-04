@@ -1,6 +1,7 @@
 #include "core/settings/SettingsCodecs.h"
 
 #include "core/EndpointUrl.h"
+#include "core/ProviderChain.h"
 #include "core/settings/SettingsKeys.h"
 #include "core/settings/SettingsSchema.h"
 
@@ -187,7 +188,22 @@ QString SettingsCodecs::speechProvider() const
 
 void SettingsCodecs::setSpeechProvider(const QString &value)
 {
+    const QStringList fallbacks = speechFallbackProviders();
     m_settings.setValue(SettingsKeys::SpeechProvider, value.isEmpty() ? QStringLiteral("claude") : value);
+    // A new primary leaves the fallbacks.
+    setSpeechFallbackProviders(fallbacks);
+}
+
+QStringList SettingsCodecs::speechFallbackProviders() const
+{
+    return normalizedFallbackProviders(ProviderRole::Speech, speechProvider(),
+                                       value(SettingsKeys::SpeechFallbackProviders, QStringList()).toStringList());
+}
+
+void SettingsCodecs::setSpeechFallbackProviders(const QStringList &value)
+{
+    m_settings.setValue(SettingsKeys::SpeechFallbackProviders,
+                        normalizedFallbackProviders(ProviderRole::Speech, speechProvider(), value));
 }
 
 bool SettingsCodecs::codexFinalRetranscribe() const
@@ -568,7 +584,22 @@ void SettingsCodecs::setRefinementProvider(const QString &value)
     // which the setup assistant may replace; only a different provider is a
     // choice.
     if (!refinementProviderChosen() && provider == refinementProvider()) return;
+    const QStringList fallbacks = refinementFallbackProviders();
     m_settings.setValue(SettingsKeys::RefinementProvider, provider);
+    // A new primary leaves the fallbacks, and None clears them.
+    setRefinementFallbackProviders(fallbacks);
+}
+
+QStringList SettingsCodecs::refinementFallbackProviders() const
+{
+    return normalizedFallbackProviders(ProviderRole::Refinement, refinementProvider(),
+                                       value(SettingsKeys::RefinementFallbackProviders, QStringList()).toStringList());
+}
+
+void SettingsCodecs::setRefinementFallbackProviders(const QStringList &value)
+{
+    m_settings.setValue(SettingsKeys::RefinementFallbackProviders,
+                        normalizedFallbackProviders(ProviderRole::Refinement, refinementProvider(), value));
 }
 
 QString SettingsCodecs::refinementStyle() const
@@ -1332,6 +1363,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.ui.soundsEnabled = soundsEnabled();
 
     settings.speech.providerId = speechProvider();
+    settings.speech.fallbackProviderIds = speechFallbackProviders();
     settings.speech.codexFinalRetranscribe = codexFinalRetranscribe();
     settings.speech.language = spokenLanguage();
     settings.speech.local = localSpeechSettings();
@@ -1355,6 +1387,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.speech.vocabulary = speechVocabulary(settings.vocabulary, settings.learnedCorrections, QString());
 
     settings.refinement.providerId = refinementProvider();
+    settings.refinement.fallbackProviderIds = refinementFallbackProviders();
     settings.refinement.style = refinementStyle();
     settings.refinement.openAiModel = openAiModel();
     settings.refinement.openAiAuthMode = openAiAuthMode();

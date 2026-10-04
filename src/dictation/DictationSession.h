@@ -104,8 +104,12 @@ signals:
     void popupRefinementPreviewChanged(const QString &preview);
     void popupOAuthRefreshRequested();
     void popupListeningIndicatorRequested();
-    // A delivery's receipt, and which kind of outcome it reports.
-    void popupMessageRequested(const QString &message, PopupOutcome outcome);
+    // A delivery's receipt, which kind of outcome it reports, and the fix it
+    // offers when a fallback provider stood in for one that needs attention
+    // (an expired sign-in); ErrorFix::None otherwise.
+    void popupMessageRequested(const QString &message,
+                               PopupOutcome outcome,
+                               const speecher::PopupErrorAction &fix = {});
     void popupErrorRequested(const QString &message, const speecher::PopupErrorAction &fix);
 
 private:

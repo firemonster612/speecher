@@ -190,6 +190,9 @@ inline constexpr auto kAutomaticSpokenLanguage = "auto";
 
 struct SpeechSettings {
     QString providerId = QStringLiteral("claude");
+    // Up to two providers tried in order when providerId is unavailable;
+    // never providerId itself. See ProviderChain.h.
+    QStringList fallbackProviderIds;
     QString claudeAuthMode = QStringLiteral("oauth");
     QString codexAuthMode = QStringLiteral("auto");
     bool codexFinalRetranscribe = true;
@@ -274,6 +277,8 @@ inline QString localRunnerName(const QString &runnerId)
 
 struct RefinementSettings {
     QString providerId = QStringLiteral("openai");
+    // As SpeechSettings::fallbackProviderIds; empty while providerId is "none".
+    QStringList fallbackProviderIds;
     QString style = QStringLiteral("balanced");
     QString openAiModel = QStringLiteral("gpt-6-luna");
     QString openAiAuthMode = QStringLiteral("auto");
