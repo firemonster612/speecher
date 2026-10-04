@@ -1330,6 +1330,32 @@ private slots:
         QVERIFY(dictation->isVisible());
     }
 
+    // SPEECHER_GRAB_PAGE takes a subpage's id as it takes a page's.
+    void grabPageShowsASubpage()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        // Earlier tests leave their windows behind; this one is the new one.
+        const QWidgetList before = QApplication::topLevelWidgets();
+        frontEnd.showMainWindow();
+        AppWindow *window = nullptr;
+        for (QWidget *widget : QApplication::topLevelWidgets()) {
+            if (!before.contains(widget)) {
+                window = window ? window : qobject_cast<AppWindow *>(widget);
+            }
+        }
+        QVERIFY(window);
+        const auto hide = qScopeGuard([window] { window->hide(); });
+
+        qputenv("SPEECHER_GRAB_PAGE", "dictation:fallbacks");
+        const auto unset = qScopeGuard([] { qunsetenv("SPEECHER_GRAB_PAGE"); });
+        QTemporaryDir directory;
+        QVERIFY(frontEnd.captureMainWindow(directory.filePath(QStringLiteral("grab.png"))));
+        QVERIFY(window->findChild<QWidget *>(QStringLiteral("dictation:fallbacks"))->isVisible());
+    }
+
     // A successful outcome with a fix, such as a sign-in that expired while a
     // fallback did the work, opens the fix's page from its button.
     void anOutcomeFixOpensItsPage()

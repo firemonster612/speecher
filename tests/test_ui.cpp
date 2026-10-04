@@ -1240,6 +1240,40 @@ private slots:
         QCOMPARE(added.first().first().toString(), QStringLiteral("anthropic"));
     }
 
+    // The Dictation subpage edits the speech chain too, and it and the
+    // Fallbacks row follow the Dictation page: choosing a fallback as the
+    // primary takes it out of the chain.
+    void dictationFallbacksFollowTheirPage()
+    {
+        ApplicationController controller(true);
+        SettingsStore *settings = controller.settings();
+        settings->setSpeechProvider(QStringLiteral("codex"));
+        settings->setSpeechFallbackProviders({QStringLiteral("claude"), QStringLiteral("endpoint")});
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.loadBeforeShow();
+        SchemaSettingsPage *dictation = pages.page(QStringLiteral("dictation"));
+        SchemaSettingsPage *subpage = pages.page(QStringLiteral("dictation:fallbacks"));
+        QVERIFY(dictation && subpage);
+        auto *summary = dictation->findChild<QPushButton *>(QStringLiteral("speechFallbacks"))
+                            ->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        const QString twoFallbacks = summary->text();
+
+        subpage->findChild<QToolButton *>(QStringLiteral("fallbackRemove_endpoint"))->click();
+        QCoreApplication::processEvents();
+        QVERIFY(summary->text() != twoFallbacks);
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->speechFallbackProviders(), QStringList{QStringLiteral("claude")});
+
+        const QStringList heading = sectionLabels(*subpage);
+        auto *primary = dictation->findChild<QComboBox *>(QStringLiteral("speechProvider"));
+        primary->setCurrentIndex(primary->findData(QStringLiteral("claude")));
+        QVERIFY(sectionLabels(*subpage) != heading);
+        QVERIFY(!subpage->findChild<QWidget *>(QStringLiteral("fallback_claude")));
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->speechFallbackProviders(), QStringList{});
+    }
+
     // A primary or a fallback that can't work right now says so in the
     // negative tone, which follows a switch of colour scheme.
     void providerProblemsReadInTheNegativeTone()
