@@ -393,9 +393,6 @@ public:
         m_list = new FallbackList(card->parentWidget());
         settings::addCardRow(card, m_list, card->parentWidget());
         layout->addWidget(section);
-        m_footer = makeNote(QString(), this);
-        m_footer->setContentsMargins(settings::gridUnit(), 0, settings::gridUnit(), 0);
-        layout->addWidget(m_footer);
         m_suggestion = new InlineMessage(this);
         m_suggestion->setObjectName(QStringLiteral("fallbackSuggestion"));
         m_suggestion->setCloseButtonVisible(false);
@@ -413,11 +410,12 @@ public:
         connect(m_list, &FallbackList::addRequested, this, [this](const QString &providerId) {
             save(withFallbackAdded(m_settings.snapshot(), m_role, providerId));
         });
-        connect(m_accept, &QPushButton::clicked, this, [this] {
-            m_local->acceptSetupFallbackOffer(m_role);
-            refresh();
-        });
+        // Only LocalSetup makes an offer, so without it there is nothing to accept.
         if (m_local) {
+            connect(m_accept, &QPushButton::clicked, this, [this] {
+                m_local->acceptSetupFallbackOffer(m_role);
+                refresh();
+            });
             connect(m_local, &LocalSetup::changed, this, &SetupFallbackSection::refresh);
         }
         refresh();
@@ -434,8 +432,6 @@ public:
         m_heading->setText(section.list.heading);
         m_hint->setText(section.hint);
         m_list->setPresentation(section.list);
-        m_footer->setText(section.list.footer);
-        m_footer->setVisible(!section.list.footer.isEmpty());
         m_suggestion->setText(section.suggestion);
         m_accept->setText(section.suggestionAction);
         m_suggestion->setVisible(!section.suggestion.isEmpty());
@@ -459,7 +455,6 @@ private:
     QLabel *m_heading;
     QLabel *m_hint;
     FallbackList *m_list;
-    QLabel *m_footer;
     InlineMessage *m_suggestion;
     QPushButton *m_accept;
 };
