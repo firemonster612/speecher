@@ -19,16 +19,27 @@
 
 namespace speecher::win {
 
+// A row of dots in DIPs. The defaults are Home's fifteen, at the Linux
+// waveform's 3.2 wide with 3.2 between; the popup passes its own.
+struct WaveformGeometry {
+    int count = waveform::barCount;
+    double barWidth = 3.2;
+    double barGap = 3.2;
+    double dotHeight = 3.2;
+
+    double stripWidth() const { return count * barWidth + (count - 1) * barGap; }
+};
+
 // The dictation waveform's dots, as the panel and Home draw them: the level
 // model and travelling crest shared with Linux and macOS (ui/WaveformModel.h),
 // as rectangles in a horizontal strip. Paused, the row lies flat and still in
 // the caution colour.
 class WaveformBars final : public QObject {
 public:
-    // The fifteen dots' width in DIPs: 3.2 wide with 3.2 between.
-    static constexpr double stripWidth = waveform::barCount * 3.2 + (waveform::barCount - 1) * 3.2;
+    explicit WaveformBars(WaveformGeometry geometry = {}, QObject *parent = nullptr);
 
-    explicit WaveformBars(QObject *parent = nullptr);
+    // The dots' width in DIPs.
+    double stripWidth() const { return m_geometry.stripWidth(); }
 
     winrt::Microsoft::UI::Xaml::Controls::StackPanel element() const { return m_bars; }
     int count() const { return int(m_rects.size()); }
@@ -48,6 +59,7 @@ private:
     void fill(const winrt::Microsoft::UI::Xaml::Media::Brush &brush);
     void flatten();
 
+    WaveformGeometry m_geometry;
     winrt::Microsoft::UI::Xaml::Controls::StackPanel m_bars;
     std::vector<winrt::Microsoft::UI::Xaml::Shapes::Rectangle> m_rects;
     winrt::Microsoft::UI::Xaml::Media::Brush m_ink{nullptr};

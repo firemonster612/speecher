@@ -53,7 +53,10 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   `CircleButton` in `src/ui/TranscriberPopup.cpp` paints them as circles in
   palette colours (Button inside a ring at the frame contrast, more ButtonText
   mixed in on hover and press), leaving the icon and behaviour to the tool
-  button.
+  button. Beside them, `BusyCircle` paints the spinner that takes pause's
+  place while transcribing and refining, an arc of PlaceholderText over a
+  faint ring of it, because Qt Widgets has no circular busy indicator; macOS
+  and Windows use their native spinners there.
 - **Settings pages follow Kirigami Addons FormCard.** Bold header above the
   card, title and small grey description on the left, control on the right,
   inset separators, button rows with a trailing arrow, cards capped at 30

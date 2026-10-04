@@ -75,6 +75,33 @@ bool hotKeyComboIsFree(UInt32 keyCode = kVK_F9)
     return status == noErr;
 }
 
+// An NSAccessibility attribute, which the protocol leaves optional; nil when
+// the element has none.
+id accessibilityAttribute(id element, SEL getter)
+{
+    return [element respondsToSelector:getter] ? [element valueForKey:NSStringFromSelector(getter)]
+                                               : nil;
+}
+
+// What VoiceOver is given under element: role, subrole, label, title, value and
+// frame of every node, one line each and indented by depth.
+QString accessibilityTree(id element, int depth = 0)
+{
+    NSString *line = [NSString stringWithFormat:@"%*s%@ %@ label=%@ title=%@ value=%@ frame=%@\n",
+        depth * 2, "",
+        accessibilityAttribute(element, @selector(accessibilityRole)),
+        accessibilityAttribute(element, @selector(accessibilitySubrole)),
+        accessibilityAttribute(element, @selector(accessibilityLabel)),
+        accessibilityAttribute(element, @selector(accessibilityTitle)),
+        accessibilityAttribute(element, @selector(accessibilityValue)),
+        accessibilityAttribute(element, @selector(accessibilityFrame))];
+    QString tree = QString::fromNSString(line);
+    for (id child in accessibilityAttribute(element, @selector(accessibilityChildren))) {
+        tree += accessibilityTree(child, depth + 1);
+    }
+    return tree;
+}
+
 } // namespace
 
 class MacFrontEndTests : public QObject {
@@ -206,8 +233,8 @@ private slots:
         }
         QVERIFY(panel);
         const auto cleanup = qScopeGuard([&] { [ui dismissDictationPanel]; });
-        const NSRect initial = panel.frame;
-        QCOMPARE(initial.size.height, CGFloat(48));
+        // Each state is captured before its layout is checked, so a failing
+        // check still leaves the pictures of it and every state before it.
         const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
         const auto capture = [&](const QString &name) {
             if (directory.isEmpty()) return true;
@@ -221,16 +248,43 @@ private slots:
                               atomically:YES]);
         };
         QVERIFY(capture("listening"));
+        const NSRect initial = panel.frame;
+        QCOMPARE(initial.size.height, SpeecherPopupGeometry.pillHeight);
+        // Paused keeps the pill, its bars flat in the caution colour.
+        bridge.popupStatusChanged(@"Paused", SpeecherDictationStatePaused);
+        settle();
+        QVERIFY(capture("paused"));
+        QCOMPARE(panel.frame.size.height, initial.size.height);
+        bridge.popupStatusChanged(@"Listening", SpeecherDictationStateListening);
         bridge.popupPreviewChanged(@"short preview");
         settle();
+        QVERIFY(capture("short-preview"));
         QVERIFY(panel.frame.size.height > initial.size.height);
         QCOMPARE(panel.frame.origin.y, initial.origin.y);
-        QVERIFY(capture("short-preview"));
+        // However few the words, the text bar stays wide enough to carve the
+        // contour around the lobe of pause, dots and cancel, and nothing was
+        // cut, so nothing fades.
+        NSFont *font = [NSFont systemFontOfSize:NSFont.systemFontSize
+                                                * SpeecherPopupGeometry.previewFontScale];
+        const CGFloat dots = SpeecherPopupGeometry.barCount * SpeecherPopupGeometry.barWidth
+                             + (SpeecherPopupGeometry.barCount - 1) * SpeecherPopupGeometry.barGap;
+        const CGFloat lobe = 2 * (SpeecherPopupGeometry.lobeAir + SpeecherPopupGeometry.buttonSize
+                                  + SpeecherPopupGeometry.buttonGap)
+                             + dots;
+        const CGFloat shoulder = SpeecherPopupGeometry.previewTopMargin
+                                 + ceil(font.ascender - font.descender + font.leading)
+                                 + SpeecherPopupGeometry.shoulderDrop;
+        QVERIFY(panel.frame.size.width + 1
+                >= [SpeecherPopupGeometry minimumPreviewBarWidthForLobeWidth:lobe shoulderHeight:shoulder]);
+        QVERIFY(!ui.dictationPreviewFades);
         bridge.popupPreviewChanged(@"We should probably move the meeting to Thursday afternoon, after everyone has reviewed the latest draft.");
         settle();
-        QVERIFY(panel.frame.size.width <= 488);
-        QCOMPARE(panel.frame.origin.y, initial.origin.y);
         QVERIFY(capture("long-preview"));
+        QVERIFY(panel.frame.size.width
+                <= SpeecherPopupGeometry.maxPreviewWidth + 2 * SpeecherPopupGeometry.previewSideMargin);
+        QCOMPARE(panel.frame.origin.y, initial.origin.y);
+        // The oldest words were cut, so the line's start fades out.
+        QVERIFY(ui.dictationPreviewFades);
         // Streaming text repeatedly changes the width; the palette must keep
         // its original center rather than accumulate rounding or layout drift.
         for (int update = 0; update < 20; ++update) {
@@ -248,21 +302,40 @@ private slots:
         QVERIFY(capture("frozen-preview"));
         bridge.popupStatusChanged(@"Stopping", SpeecherDictationStateStopping);
         settle();
-        QCOMPARE(panel.frame.size.height, initial.size.height);
         QVERIFY(capture("transcribing"));
+        QCOMPARE(panel.frame.size.height, initial.size.height);
+        // The label hugs its text, centred between the spinner in pause's
+        // place and the cancel button.
+        bridge.popupStatusChanged(@"Refining", SpeecherDictationStateRefining);
         bridge.popupRefiningChanged(true);
+        settle();
+        QVERIFY(capture("refining-no-text"));
+        QCOMPARE(panel.frame.size.height, initial.size.height);
+        qInfo().noquote() << "Refining panel's accessibility tree:\n"
+                          << accessibilityTree(panel.contentView);
+        // The frames are in the panel's coordinates, so its centre is half its width.
+        const NSRect label = ui.dictationStatusFrame;
+        const NSRect spinner = ui.dictationBusyFrame;
+        const NSRect cancel = ui.dictationCancelFrame;
+        QVERIFY2(!NSIsEmptyRect(label) && !NSIsEmptyRect(spinner) && !NSIsEmptyRect(cancel),
+                 qPrintable(QStringLiteral("status %1, spinner %2, cancel %3")
+                     .arg(QString::fromNSString(NSStringFromRect(label)),
+                          QString::fromNSString(NSStringFromRect(spinner)),
+                          QString::fromNSString(NSStringFromRect(cancel)))));
+        QVERIFY(qAbs(NSMidX(label) - NSWidth(panel.frame) / 2) <= 1);
+        QVERIFY(qAbs((NSMidX(label) - NSMidX(spinner)) - (NSMidX(cancel) - NSMidX(label))) <= 1);
         bridge.popupRefinementPreviewChanged(@"Move the meeting to Thursday afternoon.");
         settle();
+        QVERIFY(capture("refining"));
         QVERIFY(panel.frame.size.height > initial.size.height);
         QCOMPARE(panel.frame.origin.y, initial.origin.y);
-        QVERIFY(capture("refining"));
         QVERIFY(qAbs(NSMidX(panel.frame) - NSMidX(initial)) <= 1);
         bridge.popupFrozenChanged(false);
         bridge.popupOAuthRefreshRequested();
         settle();
+        QVERIFY(capture("renewal"));
         QCOMPARE(panel.frame.size.height, initial.size.height);
         QVERIFY(panel.frame.size.width < 200);
-        QVERIFY(capture("renewal"));
         bridge.popupListeningIndicatorRequested();
         settle();
         QCOMPARE(panel.frame.size.width, initial.size.width);
@@ -274,6 +347,8 @@ private slots:
         bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted);
         settle();
         QVERIFY(capture("receipt-inserted"));
+        // A receipt shares the waveform's pill.
+        QCOMPARE(panel.frame.size.height, SpeecherPopupGeometry.pillHeight);
         bridge.popupMessageRequested(@"Copied", SpeecherPopupOutcomeCopied);
         settle();
         QVERIFY(capture("receipt-copied"));
@@ -286,15 +361,15 @@ private slots:
                                    @"page, then try again.",
                                    noFix);
         settle();
+        QVERIFY(capture("error-long"));
         QVERIFY(panel.frame.size.height > shortError);
         QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
-        QVERIFY(capture("error-long"));
         bridge.popupErrorRequested(@"Could not reach https://example.com/"
                                    @"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
                                    noFix);
         settle();
-        QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
         QVERIFY(capture("error-unbroken"));
+        QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
     }
 
     // Skip, all nine pages, and Finish are driven through the native AX tree

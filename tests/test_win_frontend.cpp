@@ -5,6 +5,7 @@
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "dictation/DictationSession.h"
+#include "dictation/PopupGeometry.h"
 #include "dictation/PopupPresentation.h"
 #include "frontend/win/CustomRows.h"
 #include "frontend/win/DictationPanel.h"
@@ -13,6 +14,7 @@
 #include "frontend/win/SetupWindow.h"
 #include "frontend/win/TranscribePane.h"
 #include "frontend/win/TrayFlyout.h"
+#include "frontend/win/WaveformBars.h"
 #include "frontend/win/WinFrontEnd.h"
 #include "frontend/win/WinUiHost.h"
 #include "ui/TranscriberPopup.h"
@@ -21,11 +23,13 @@
 #include <shellapi.h>
 
 #include <QApplication>
+#include <QDebug>
 #include <QTest>
 #include <QFile>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 
+#include <cmath>
 #include <memory>
 
 namespace speecher {
@@ -34,6 +38,20 @@ namespace {
 bool nativeUiAvailable()
 {
     return QGuiApplication::platformName() != QStringLiteral("offscreen");
+}
+
+// DIPs to the physical pixels the panel's geometry hooks report.
+double dipScale()
+{
+    return GetDpiForSystem() / 96.0;
+}
+
+// The boxes a layout check compared, for its failure message.
+QString describeBoxes(const QList<QRect> &boxes)
+{
+    QString text;
+    QDebug(&text) << boxes;
+    return text;
 }
 
 template<typename Widget>
@@ -193,9 +211,113 @@ private slots:
             QSKIP("WinUI islands require an interactive desktop");
         }
         frontEnd->showPanelForTest(11);
-        // Fifteen dots at the same thickness and spacing as the Linux waveform.
-        QCOMPARE(frontEnd->dictationPanelForTest()->levelBarCountForTest(), 15);
+        // The popup's nine fine dots; Home keeps the Linux waveform's fifteen.
+        QCOMPARE(frontEnd->dictationPanelForTest()->levelBarCountForTest(), 9);
         frontEnd->dismissPanelForTest();
+        QCOMPARE(win::WaveformBars().count(), 15);
+    }
+
+    // The slim capsule: a 32 pill hugging [pause] 8 [dots] 8 [X] with 6 of
+    // lobe either end.
+    void nativeDictationPanelIsTheSlimPill()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI islands require an interactive desktop");
+        }
+        auto *panel = frontEnd->dictationPanelForTest();
+        panel->showForTest(17);
+        controller->session()->stateChanged(QStringLiteral("listening"));
+        QTest::qWait(100);
+        const QRect capsule = panel->capsuleGeometryForTest();
+        // 6 + 24 + 8 + (9 dots 2 wide, 2 apart) + 8 + 24 + 6.
+        QVERIFY(std::abs(capsule.width() - 110 * dipScale()) <= 1);
+        QVERIFY(std::abs(capsule.height() - 32 * dipScale()) <= 1);
+        QVERIFY(std::abs(panel->cancelGeometryForTest().width() - 24 * dipScale()) <= 1);
+        controller->session()->stateChanged(QStringLiteral("idle"));
+        panel->dismissForTest();
+    }
+
+    // A preview shorter than the lobe's carving still sits in a text bar over
+    // the lobe, centred in the narrowest bar that carves it, on one axis with
+    // the row under it: [pause] 8 [dots] 8 [X].
+    void nativeShortPreviewKeepsTheCarvedContour()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI islands require an interactive desktop");
+        }
+        auto *panel = frontEnd->dictationPanelForTest();
+        panel->showForTest(18);
+        controller->session()->stateChanged(QStringLiteral("listening"));
+        panel->drivePreviewForTest(QStringLiteral("Hi"));
+        QRect capsule;
+        QRect preview;
+        QRect pause;
+        QRect dots;
+        QRect cancel;
+        const auto centred = [&] {
+            capsule = panel->capsuleGeometryForTest();
+            preview = panel->previewGeometryForTest();
+            pause = panel->pauseGeometryForTest();
+            dots = panel->waveformGeometryForTest();
+            cancel = panel->cancelGeometryForTest();
+            return std::abs(preview.center().x() - capsule.center().x()) <= 1
+                && std::abs(dots.center().x() - capsule.center().x()) <= 1
+                && std::abs((dots.left() - pause.right()) - (cancel.left() - dots.right())) <= 1;
+        };
+        QTRY_VERIFY2(centred(), qPrintable(describeBoxes({capsule, preview, pause, dots, cancel})));
+        QVERIFY(std::abs((dots.left() - pause.right()) - 8 * dipScale()) <= 2);
+        const double shoulder = panel->outlineShoulderForTest();
+        QVERIFY2(shoulder > 0, "a short preview collapsed into a plain rounded box");
+        QCOMPARE(panel->outlineLobeWidthForTest(), 110.0);
+        QVERIFY(capsule.width() / dipScale() + 1 >= popup::minimumPreviewBarWidth(110, shoulder));
+        controller->session()->stateChanged(QStringLiteral("idle"));
+        panel->dismissForTest();
+    }
+
+    // While refining a spinner takes pause's slot and the label hugs its
+    // text, so [spinner] 8 [label] 8 [X] is one row centred in the capsule.
+    void nativeRefiningCentresItsLabelBetweenSpinnerAndCancel_data()
+    {
+        QTest::addColumn<QString>("refinedText");
+        QTest::newRow("no text") << QString();
+        QTest::newRow("with text") << QStringLiteral("Move the meeting to Thursday.");
+    }
+
+    void nativeRefiningCentresItsLabelBetweenSpinnerAndCancel()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI islands require an interactive desktop");
+        }
+        QFETCH(QString, refinedText);
+        auto *panel = frontEnd->dictationPanelForTest();
+        panel->showForTest(19);
+        controller->session()->stateChanged(QStringLiteral("refining"));
+        panel->driveStatusForTest(QStringLiteral("Stopping"));
+        controller->session()->popupRefiningChanged(true);
+        controller->session()->popupRefinementPreviewChanged(refinedText);
+        QRect capsule;
+        QRect spinner;
+        QRect label;
+        QRect cancel;
+        const auto centred = [&] {
+            capsule = panel->capsuleGeometryForTest();
+            spinner = panel->spinnerGeometryForTest();
+            label = panel->statusGeometryForTest();
+            cancel = panel->cancelGeometryForTest();
+            return !spinner.isEmpty() && !cancel.isEmpty()
+                && std::abs(label.center().x() - capsule.center().x()) <= 1
+                && std::abs((label.left() - spinner.right()) - (cancel.left() - label.right())) <= 1;
+        };
+        QTRY_VERIFY2(centred(), qPrintable(describeBoxes({capsule, spinner, label, cancel})));
+        QCOMPARE(spinner.width(), cancel.width());
+        QVERIFY(std::abs((label.left() - spinner.right()) - 8 * dipScale()) <= 2);
+        if (refinedText.isEmpty()) {
+            QVERIFY(std::abs((spinner.left() - capsule.left()) - 6 * dipScale()) <= 2);
+            QVERIFY(std::abs((capsule.right() - cancel.right()) - 6 * dipScale()) <= 2);
+        }
+        controller->session()->popupRefiningChanged(false);
+        controller->session()->stateChanged(QStringLiteral("idle"));
+        panel->dismissForTest();
     }
 
     void nativeDictationPanelSharesCapsuleAndClearsPreview()
@@ -281,7 +403,10 @@ private slots:
         controller->session()->popupRefiningChanged(true);
         controller->session()->popupRefinementPreviewChanged(QStringLiteral("Hello"));
         QTest::qWait(100);
-        QCOMPARE(panel->capsuleGeometryForTest().width(), shortPreview.width());
+        // The refined words hug their text too, in the narrowest bar that
+        // still carves around the status row beneath them.
+        QVERIFY(panel->capsuleGeometryForTest().width() < longerPreview.width());
+        QVERIFY(panel->outlineShoulderForTest() > 0);
         QVERIFY(std::abs(panel->capsuleGeometryForTest().center().x() - shortPreview.center().x()) <= 1);
         controller->session()->popupRefinementPreviewChanged(QString());
         QVERIFY(panel->previewGeometryForTest().isEmpty());
@@ -307,12 +432,18 @@ private slots:
         panel->drivePreviewForTest(prefix + newest);
         QTRY_VERIFY(panel->previewTextFitsForTest());
         const QString rendered = panel->previewTextForTest();
-        QVERIFY(rendered.startsWith(QChar(0x2026)));
-        QVERIFY(rendered.endsWith(newest));
-        const QChar first = rendered.at(1);
+        // Cut words fade out on the left rather than giving way to an ellipsis.
+        QVERIFY(!rendered.startsWith(QChar(0x2026)));
+        QVERIFY(panel->previewFadesForTest());
+        QVERIFY(rendered.endsWith(newest.trimmed()));
+        const QChar first = rendered.at(0);
         QVERIFY(!first.isLowSurrogate());
         QVERIFY(first != QChar(0x200d));
         QVERIFY(first.category() != QChar::Mark_NonSpacing);
+        // A preview that fits whole does not fade.
+        panel->drivePreviewForTest(newest);
+        QTRY_COMPARE(panel->previewTextForTest(), newest.simplified());
+        QVERIFY(!panel->previewFadesForTest());
         panel->dismissForTest();
     }
 
@@ -369,10 +500,14 @@ private slots:
         controller->session()->popupFrozenChanged(true);
         QTest::qWait(150);
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-frozen-preview.png")));
+        controller->session()->stateChanged(QStringLiteral("stopping"));
         panel->driveStatusForTest(QStringLiteral("Stopping"));
         QTest::qWait(150);
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-transcribing.png")));
+        controller->session()->stateChanged(QStringLiteral("refining"));
         controller->session()->popupRefiningChanged(true);
+        QTest::qWait(150);
+        QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-refining-empty.png")));
         controller->session()->popupRefinementPreviewChanged(QStringLiteral("The meeting is on Thursday."));
         QTest::qWait(150);
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-refining.png")));

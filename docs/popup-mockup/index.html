@@ -1,0 +1,691 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Mockups of smaller dictation popups and of the
+  Transcribing/Refining states with the cancel button. Open this file in a
+  browser; ← and → (or the bar at the bottom) switch variants, ?variant=<key>
+  keeps one across reloads. Sizes are logical pixels taken from
+  src/ui/TranscriberPopup.cpp and src/ui/WaveformWidget.cpp.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher: dictation popup (mockup)</title>
+<style>
+  :root {
+    --desk: #232129;
+    --base: #1b1e20;
+    --button: #292c30;
+    --button-hover: #3a3d40;
+    --button-down: #4a4c50;
+    --ring: #545659;
+    --text: #fcfcfc;
+    --ph: #a1a9b1;
+    --mid: #4d5257;
+    --highlight: #3daee9;
+    --neutral: #f67400;
+    --hair: drop-shadow(0 0 .5px rgba(130, 136, 142, .95));
+    --font: "Noto Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 32px 90px;
+    background: #16151a; color: var(--text);
+    font: 13px/1.45 var(--font);
+  }
+  button { font: inherit; color: inherit; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  h2 { font-size: 14px; margin: 0 0 4px; }
+  .lead { color: var(--ph); max-width: 900px; margin: 0 0 18px; }
+  .toolbar {
+    position: fixed; top: 14px; right: 18px; z-index: 5;
+    display: flex; gap: 10px; align-items: center;
+    background: #2b2a31; border-radius: 8px; padding: 6px 12px; color: var(--ph);
+  }
+  .toolbar output { color: var(--text); width: 2ch; display: inline-block; }
+
+  /* ----------------------------------------------------------- page bits */
+  .demo {
+    position: relative; height: 210px; max-width: 1110px;
+    background: var(--desk); border-radius: 10px; margin-bottom: 8px;
+    display: flex; align-items: flex-end; justify-content: center; padding-bottom: 22px;
+  }
+  .demo-note { color: var(--ph); margin: 0 0 22px; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 545px); gap: 14px 20px; }
+  .grid.three { grid-template-columns: repeat(3, 370px); }
+  .cell { background: var(--desk); border-radius: 10px; overflow: hidden; }
+  .stage {
+    position: relative; height: 128px;
+    display: flex; align-items: flex-end; justify-content: center; padding-bottom: 16px;
+  }
+  .cap { display: flex; justify-content: space-between; padding: 6px 12px; font-size: 12px; color: var(--ph); background: #1d1c22; }
+  .cap b { color: var(--text); font-weight: 400; }
+  .measure { position: absolute; visibility: hidden; bottom: 16px; }
+  .ghost {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    border: 1px dashed rgba(255, 255, 255, .2); border-radius: 24px; pointer-events: none;
+  }
+  .option { margin: 0 0 26px; }
+  .option p { color: var(--ph); margin: 0 0 8px; max-width: 900px; }
+  .card {
+    width: 540px; background: var(--base); border-radius: 6px; margin: 0 0 18px;
+    box-shadow: 0 0 0 1px #34373b;
+  }
+  .row { display: flex; align-items: center; gap: 16px; padding: 10px 14px; }
+  .row + .row { border-top: 1px solid #2c2f33; margin: 0 14px; padding: 10px 0; }
+  .row div { flex: 1; }
+  .row small { display: block; color: var(--ph); font-size: 12px; }
+  select {
+    background: var(--button); color: var(--text); border: 1px solid var(--ring);
+    border-radius: 4px; padding: 4px 8px; font: inherit;
+  }
+  .card-title { font-weight: 700; margin: 0 0 6px; }
+
+  #switcher {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 10;
+    display: flex; align-items: center; gap: 4px;
+    background: #f2f2f2; color: #111; border-radius: 999px; padding: 4px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .5); font-size: 13px;
+  }
+  #switcher button { border: 0; background: none; width: 32px; height: 28px; border-radius: 999px; cursor: pointer; font-size: 15px; }
+  #switcher button:hover { background: #ddd; }
+  #switcher span { min-width: 260px; text-align: center; font-weight: 600; }
+
+  /* -------------------------------------------------------- popup parts */
+  .pop {
+    --fill: var(--base);
+    display: inline-flex; flex-direction: column; align-items: center;
+    filter: var(--hair); font-size: var(--fs); line-height: var(--lh); white-space: nowrap;
+  }
+  .pop .top { background: var(--fill); border-radius: 999px; padding: var(--tpv) var(--tph); text-align: center; }
+  .pop .lobe { background: var(--fill); display: flex; align-items: center; gap: var(--gap); position: relative; transition: background .12s; }
+  .pop.one .lobe { border-radius: 999px; height: var(--sh); padding: 0 var(--px); }
+  .pop.two .lobe { margin-top: -1px; border-radius: 0 0 var(--lr) var(--lr); padding: 0 var(--px) var(--pb); }
+  .pop.two .lobe > * { margin-top: calc(-1 * var(--lift)); }
+  .pop.two .lobe::before, .pop.two .lobe::after { content: ""; position: absolute; top: 0; width: var(--f, 0px); height: var(--f, 0px); }
+  .pop.two .lobe::before { right: 100%; background: radial-gradient(circle at 0 100%, transparent calc(var(--f) - .5px), var(--fill) var(--f)); }
+  .pop.two .lobe::after { left: 100%; background: radial-gradient(circle at 100% 100%, transparent calc(var(--f) - .5px), var(--fill) var(--f)); }
+  .pop.plain { background: var(--base); border-radius: var(--pr); align-items: stretch; }
+  .pop.plain .top, .pop.plain .lobe { background: transparent; border-radius: 0; }
+  .pop.plain .lobe { justify-content: center; }
+  .pop.plain .lobe::before, .pop.plain .lobe::after { display: none; }
+
+  .cb {
+    width: var(--b); height: var(--b); flex: none; position: relative;
+    border: 0; padding: 0; border-radius: 50%; display: grid; place-items: center;
+    background: var(--button); box-shadow: inset 0 0 0 .5px var(--ring); color: var(--text);
+  }
+  .cb:hover { background: var(--button-hover); }
+  .cb:active { background: var(--button-down); }
+  .cb:disabled { background: var(--button); color: var(--ph); opacity: .45; }
+  .cb svg { width: var(--i); height: var(--i); fill: currentColor; }
+  .cb svg.s { fill: none; stroke: currentColor; }
+  .cb svg.ring { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); animation: spin 1.1s linear infinite; pointer-events: none; }
+  .spin { width: var(--b); height: var(--b); flex: none; display: grid; place-items: center; color: var(--ph); }
+  .spin svg { width: 62%; height: 62%; animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .bars { display: flex; align-items: center; flex: none; }
+  .bars .b { background: var(--text); flex: none; }
+  .bars.flat .b { background: var(--neutral); }
+  .bars.think .b { background: var(--ph); }
+
+  .pv { display: block; }
+  .pv.fade { -webkit-mask-image: linear-gradient(90deg, transparent, #000 2.4em); mask-image: linear-gradient(90deg, transparent, #000 2.4em); }
+  .shim {
+    background: linear-gradient(90deg, var(--ph) 38%, var(--text) 50%, var(--ph) 62%);
+    background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shim 1.7s linear infinite;
+  }
+  @keyframes shim { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  .status { display: inline-block; text-align: center; }
+
+  .slot { display: flex; max-width: 60px; transition: max-width .16s, opacity .16s, margin .16s; }
+  .hb:not(:hover):not(.hov) .slot { max-width: 0; opacity: 0; overflow: hidden; }
+  .hb:not(:hover):not(.hov) .slot.l { margin-right: calc(-1 * var(--gap)); }
+  .hb:not(:hover):not(.hov) .slot.r { margin-left: calc(-1 * var(--gap)); }
+
+  .dots { display: inline-flex; gap: 3px; flex: none; }
+  .dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--ph); animation: dot 1.2s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .15s; }
+  .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes dot { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+  .hb:hover .dots, .hb.hov .dots { display: none; }
+
+  /* E: the pill is the button */
+  .asbtn .pb-cancel { display: none; align-items: center; gap: 6px; color: var(--text); }
+  .asbtn .pb-cancel svg { width: 10px; height: 10px; fill: none; stroke: currentColor; }
+  .pop:hover .asbtn, .pop.hov .asbtn { --fill: #2a2d30; }
+  .pop:hover .asbtn .pb-cancel, .pop.hov .asbtn .pb-cancel { display: inline-flex; }
+  .pop:hover .asbtn .pb-label, .pop.hov .asbtn .pb-label { display: none; }
+  /* E: label and Cancel */
+  .divider { width: 1px; align-self: stretch; margin: 7px 0; background: var(--mid); }
+  .pop.two .lobe > .divider { margin-top: 4px; }
+  .textbtn { border: 0; background: none; height: var(--b); padding: 0 9px; border-radius: 999px; color: var(--text); }
+  .textbtn:hover, .hov .textbtn { background: var(--button-hover); }
+
+  /* D: caption and capsule */
+  .dstack { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; white-space: nowrap; }
+  .caption {
+    background: rgba(27, 30, 32, .88); border-radius: 9px; padding: 3px 10px;
+    font-size: 12.5px; line-height: 18px; filter: var(--hair);
+  }
+  .capsule {
+    background: var(--base); border-radius: 999px; height: 28px; padding: 0 4px;
+    display: flex; align-items: center; gap: 6px; filter: var(--hair);
+  }
+  .capsule.round { width: 28px; padding: 0; justify-content: center; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <label for="words">Preview words</label>
+  <input id="words" type="range" min="1" max="40" value="20">
+  <output id="wordsOut">20</output>
+</div>
+<div id="app"></div>
+<div id="switcher">
+  <button id="prev" title="Previous (←)">◀</button>
+  <span id="label"></span>
+  <button id="next" title="Next (→)">▶</button>
+</div>
+
+<script>
+// ------------------------------------------------------------------ data
+const SPOKEN = ("so I was thinking we could move the standup to Thursday morning because half "
+  + "the team is out on Wednesday and honestly nobody reads the notes anyway").split(" ");
+const REFINED = ("So I was thinking we could move the stand-up to Thursday morning, because half "
+  + "the team is out on Wednesday and nobody reads the notes anyway.").split(" ");
+let previewWords = 20;
+const lastWords = (words, n) => words.slice(-n).join(" ");
+
+// Today's popup, from TranscriberPopup.cpp and WaveformWidget.cpp.
+const STD = {
+  fs: 13.33, lh: 19, tpv: 12, tph: 24, b: 34, i: 16, gap: 12, px: 12, pb: 8, lift: 4,
+  sh: 48, fillet: 12, lr: 24, pr: 24, pw: 440, fade: false, statusW: 126,
+  bars: { n: 15, bw: 3.2, gap: 3.2, dot: 3.2, max: 26, maxCompact: 20 },
+};
+const SLIM = {
+  fs: 12, lh: 16, tpv: 8, tph: 16, b: 24, i: 11, gap: 8, px: 6, pb: 5, lift: 3,
+  sh: 32, fillet: 8, lr: 14, pr: 16, pw: 320, fade: true,
+  bars: { n: 9, bw: 2, gap: 2, dot: 2, max: 16, maxCompact: 12 },
+};
+const ONE = { ...SLIM, fs: 12.5, lh: 17, pw: 300 };
+
+// ---------------------------------------------------------------- helpers
+const $ = (tag, cls, ...kids) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k);
+  return e;
+};
+const ICON = {
+  pause: '<svg viewBox="0 0 16 16"><rect x="3.5" y="2.5" width="3" height="11" rx=".8"/><rect x="9.5" y="2.5" width="3" height="11" rx=".8"/></svg>',
+  play: '<svg viewBox="0 0 16 16"><path d="M4.5 2.9v10.2a.7.7 0 0 0 1.05.6l8.3-5.1a.7.7 0 0 0 0-1.2L5.55 2.3a.7.7 0 0 0-1.05.6z"/></svg>',
+  x: '<svg class="s" viewBox="0 0 16 16" stroke-width="2.2" stroke-linecap="round"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>',
+};
+const RING = '<svg class="ring" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18.5" fill="none" stroke="var(--highlight)" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="30 200"/></svg>';
+const SPINNER = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-opacity=".22" stroke-width="2.4"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="16 100"/></svg>';
+
+function circleBtn(icon, b, i, act, disabled) {
+  const e = $("button", "cb");
+  e.style.setProperty("--b", b + "px");
+  e.style.setProperty("--i", i + "px");
+  e.innerHTML = ICON[icon];
+  if (act) e.dataset.act = act;
+  if (disabled) e.disabled = true;
+  e.title = { pause: "Pause", play: "Resume", x: "Cancel" }[icon];
+  return e;
+}
+function ringX(b, i) {
+  const e = circleBtn("x", b, i, "cancel");
+  e.insertAdjacentHTML("beforeend", RING);
+  return e;
+}
+function spinner(b) {
+  const e = $("div", "spin");
+  e.style.setProperty("--b", b + "px");
+  e.innerHTML = SPINNER;
+  return e;
+}
+const slot = (child, side) => $("div", "slot " + side, child);
+const shimmer = (text) => $("span", "shim", text);
+const dots = () => $("span", "dots", $("i"), $("i"), $("i"));
+
+function bars(cfg, mode, speaking, compact) {
+  const e = $("div", "bars " + mode);
+  const max = compact ? cfg.maxCompact : cfg.max;
+  e.style.gap = cfg.gap + "px";
+  e.style.height = max + "px";
+  e._cfg = { ...cfg, max };
+  e._lv = 0;
+  e._seed = Math.random() * 100;
+  e.dataset.speaking = speaking ? "1" : "0";
+  for (let k = 0; k < cfg.n; k++) {
+    const b = $("span", "b");
+    b.style.width = cfg.bw + "px";
+    b.style.height = cfg.dot + "px";
+    b.style.borderRadius = cfg.bw / 2 + "px";
+    e.append(b);
+  }
+  return e;
+}
+
+const canvas = document.createElement("canvas").getContext("2d");
+// Drops whole words from the front until the line fits, as trimPreviewToFit does.
+function preview(text, d) {
+  canvas.font = `${d.fs}px "Noto Sans", "Segoe UI", system-ui, sans-serif`;
+  let words = text.split(" ");
+  let trimmed = false;
+  while (words.length > 1 && canvas.measureText(words.join(" ")).width > d.pw) {
+    words.shift();
+    trimmed = true;
+  }
+  return $("span", "pv" + (trimmed && d.fade ? " fade" : ""), words.join(" "));
+}
+
+const isProc = (s) => s.phase === "transcribing" || s.phase === "refining";
+const statusLabel = (s) => (s.phase === "transcribing" ? "Transcribing…" : "Refining…");
+const hasText = (s) => s.text && s.phase !== "transcribing";
+
+function setVars(e, d) {
+  for (const k of ["fs", "lh", "tpv", "tph", "gap", "px", "pb", "lift", "sh", "lr", "pr"]) {
+    e.style.setProperty("--" + k, d[k] + "px");
+  }
+  e.dataset.fillet = d.fillet;
+}
+
+// ------------------------------------------------- the two-tier capsule
+// Today's shape: a text bar over a lobe hugging the strip, joined by
+// concave fillets. Every variant built on it changes sizes and what the
+// lobe holds while processing.
+function tier(s, d, o = {}) {
+  const proc = isProc(s);
+  const label = statusLabel(s);
+  let top = null;
+  if (hasText(s)) top = preview(s.text, d);
+  else if (proc && (o.proc === "ring" || o.proc === "continuity")) top = shimmer(label);
+
+  const pop = $("div", "pop " + (top ? "two" : "one") + (o.hb ? " hb" : "") + (s.hov ? " hov" : ""));
+  setVars(pop, d);
+  const lobe = $("div", "lobe");
+  const { b, i } = d;
+  if (!proc) {
+    const paused = s.phase === "paused";
+    lobe.append(
+      slot(circleBtn(paused ? "play" : "pause", b, i, "pause"), "l"),
+      bars(d.bars, paused ? "flat" : "wave", s.speaking, !!top),
+      slot(circleBtn("x", b, i, "cancel"), "r"));
+  } else if (o.proc === "current") {
+    const box = $("span", "status", shimmer(label));
+    box.style.width = d.statusW + "px";
+    lobe.append(box, circleBtn("x", b, i, "cancel"));
+  } else if (o.proc === "mirror") {
+    lobe.append(slot(spinner(b), "l"), shimmer(label), slot(circleBtn("x", b, i, "cancel"), "r"));
+    if (!o.hb) lobe.style.paddingInline = d.px + "px";
+  } else if (o.proc === "ring") {
+    lobe.append(ringX(b, i));
+    lobe.style.paddingInline = d.px + 4 + "px";
+  } else if (o.proc === "continuity") {
+    lobe.append(circleBtn("pause", b, i, null, true), bars(d.bars, "think", false, !!top), circleBtn("x", b, i, "cancel"));
+  } else if (o.proc === "pillbutton") {
+    lobe.classList.add("asbtn");
+    lobe.dataset.act = "cancel";
+    const x = $("span", "pb-cancel");
+    x.innerHTML = '<svg viewBox="0 0 16 16" stroke-width="2.4" stroke-linecap="round"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>Cancel';
+    const sz = $("span", "", $("span", "pb-label", shimmer(label)), x);
+    sz.style.cssText = `display:grid;place-items:center;height:${b}px;padding:0 10px`;
+    lobe.append(sz);
+  } else if (o.proc === "toast") {
+    const btn = $("button", "textbtn", "Cancel");
+    btn.dataset.act = "cancel";
+    btn.style.setProperty("--b", b + "px");
+    lobe.append(shimmer(label), $("span", "divider"), btn);
+    lobe.style.paddingLeft = d.px + 10 + "px";
+  }
+  if (top) pop.append($("div", "top", top));
+  pop.append(lobe);
+  return pop;
+}
+
+// Fillets and the plain fallback depend on laid-out widths, as in PillFrame.
+function fixShapes(root) {
+  root.querySelectorAll(".pop.two").forEach((p) => {
+    p.classList.remove("plain");
+    const top = p.querySelector(":scope > .top");
+    const lobe = p.querySelector(":scope > .lobe");
+    const capR = top.offsetHeight / 2;
+    const shelf = (top.offsetWidth - lobe.offsetWidth) / 2;
+    const f = Math.min(+p.dataset.fillet, shelf - capR);
+    if (f < 4) p.classList.add("plain");
+    else p.style.setProperty("--f", f + "px");
+  });
+}
+
+// ------------------------------------------------------- other variants
+function oneLine(s, d = ONE) {
+  const proc = isProc(s);
+  const paused = s.phase === "paused";
+  const pop = $("div", "pop one");
+  setVars(pop, d);
+  const text = hasText(s) ? preview(s.text, d) : null;
+  const lobe = $("div", "lobe");
+  if (!proc) {
+    lobe.append(...[circleBtn(paused ? "play" : "pause", d.b, d.i, "pause"), bars(d.bars, paused ? "flat" : "wave", s.speaking),
+      text, circleBtn("x", d.b, d.i, "cancel")].filter(Boolean));
+  } else {
+    lobe.append(spinner(d.b), text || shimmer(statusLabel(s)), circleBtn("x", d.b, d.i, "cancel"));
+  }
+  pop.append(lobe);
+  return pop;
+}
+
+const TINY = { ...SLIM, fs: 12, lh: 16, b: 22, i: 10, gap: 7, px: 10, sh: 26, pw: 280,
+  bars: { n: 7, bw: 2, gap: 2, dot: 2, max: 12, maxCompact: 12 } };
+function reveal(s, d = TINY) {
+  const proc = isProc(s);
+  const paused = s.phase === "paused";
+  const pop = $("div", "pop one hb" + (s.hov ? " hov" : ""));
+  setVars(pop, d);
+  const lobe = $("div", "lobe");
+  const text = hasText(s) ? preview(s.text, d) : null;
+  if (!proc) {
+    lobe.append(...[slot(circleBtn(paused ? "play" : "pause", d.b, d.i, "pause"), "l"),
+      bars(d.bars, paused ? "flat" : "wave", s.speaking), text, slot(circleBtn("x", d.b, d.i, "cancel"), "r")].filter(Boolean));
+  } else {
+    lobe.append(slot(spinner(d.b), "l"), dots(), text || shimmer(statusLabel(s)), slot(circleBtn("x", d.b, d.i, "cancel"), "r"));
+  }
+  lobe.style.transition = "height .16s";
+  pop.addEventListener("mouseenter", () => (lobe.style.height = "32px"));
+  pop.addEventListener("mouseleave", () => (lobe.style.height = ""));
+  if (s.hov) lobe.style.height = "32px";
+  pop.append(lobe);
+  return pop;
+}
+
+const CAP = { ...SLIM, fs: 12.5, pw: 360, fade: true, bars: { n: 9, bw: 2, gap: 2, dot: 2, max: 14, maxCompact: 14 } };
+function caption(s) {
+  const proc = isProc(s);
+  const paused = s.phase === "paused";
+  const stack = $("div", "dstack");
+  if (hasText(s)) stack.append($("div", "caption", preview(s.text, CAP)));
+  else if (proc) stack.append($("div", "caption", shimmer(statusLabel(s))));
+  if (!proc) {
+    stack.append($("div", "capsule", circleBtn(paused ? "play" : "pause", 20, 9, "pause"),
+      bars(CAP.bars, paused ? "flat" : "wave", s.speaking), circleBtn("x", 20, 9, "cancel")));
+  } else {
+    stack.append($("div", "capsule round", ringX(20, 9)));
+  }
+  return stack;
+}
+
+const MIN = { ...SLIM, px: 8, sh: 20, gap: 6, bars: { n: 5, bw: 2, gap: 2, dot: 2, max: 10, maxCompact: 10 } };
+function minimal(s) {
+  const pop = $("div", "pop one");
+  setVars(pop, MIN);
+  const lobe = $("div", "lobe");
+  if (isProc(s)) lobe.append(dots());
+  else lobe.append(bars(MIN.bars, s.phase === "paused" ? "flat" : "wave", s.speaking));
+  pop.append(lobe);
+  return pop;
+}
+
+const current = (s) => tier(s, STD, { proc: "current" });
+
+// --------------------------------------------------------------- variants
+const sizeCfg = { size: "compact", buttons: "always" };
+function sizeSetting(s) {
+  if (sizeCfg.size === "minimal") return minimal(s);
+  const d = sizeCfg.size === "standard" ? { ...STD, fade: true } : SLIM;
+  return tier(s, d, { proc: "mirror", hb: sizeCfg.buttons === "hover" });
+}
+
+const PROC_OPTIONS = [
+  ["mirror", "1. Mirrored ends",
+    "A spinner takes the pause button's slot, so the label sits between two circles of the same size. The smallest change from today."],
+  ["ring", "2. Ring around the X",
+    "The lobe holds only the X, with a spinning ring around it. The status moves up into the text bar, where the refined words stream in later. One centred line over one centred button."],
+  ["continuity", "3. Nothing moves",
+    "The strip keeps its listening layout: pause greys out, the bars switch to a slow travelling crest, the X stays where it was. The status goes in the text bar. Nothing jumps when you stop talking."],
+  ["pillbutton", "4. The pill is the button",
+    "Only the shimmering label shows. Under the pointer the label becomes \"Cancel\" and the lobe tints like a button. Fully symmetric, but you can't see there's a cancel until you point at it."],
+  ["toast", "5. Label and Cancel",
+    "The label and a text Cancel button share the row, split by a hairline, like a notification with an action. Still two-sided, but it reads as one designed control rather than a button stuck on."],
+];
+
+const VARIANTS = [
+  { key: "0", name: "Current", render: current,
+    blurb: "Today's popup at its real sizes: a 48px pill, 15 bars, 34px buttons and a 440px preview line, 81px tall with words. While processing, the label is centred in a fixed 126px box with the X beside it, so the label drifts left of the popup's centre. That's the screenshot." },
+  { key: "A", name: "Slim", render: (s) => tier(s, SLIM, { proc: "mirror" }),
+    blurb: "Same shape, every number smaller: a 32px pill, 9 bars, 24px buttons and a 12px preview capped at 320px, with the oldest visible words fading out on the left. During Transcribing and Refining a spinner takes the pause button's place, so the label sits centred between two equal circles. About 58px tall with words instead of 81." },
+  { key: "B", name: "One line", render: oneLine,
+    blurb: "The words sit inside the pill, between the bars and the X, so the popup is 32px tall in every state and never grows upward. It gets wider while you talk instead. Processing swaps the bars for a spinner and streams the refined text in the same slot." },
+  { key: "C", name: "Buttons under the pointer", render: reveal, hover: true,
+    blurb: "At rest it is a 26px strip of bars and words, about the size of Wispr Flow's pill. Point at it and pause and X slide in at both ends; while processing, the ends are a spinner and an X. Esc still cancels without the pointer. The cost is that nothing on screen says the buttons exist." },
+  { key: "D", name: "Caption and capsule", render: caption,
+    blurb: "The preview becomes a caption floating over a small 28px control capsule, so the text no longer decides the pill's shape. While processing, the capsule shrinks to one X with a spinning ring, and the status shows in the caption. Everything lines up on one vertical axis." },
+  { key: "E", name: "Processing states", page: procPage,
+    blurb: "Five ways to show Transcribing and Refining with a cancel button, all on the Slim shape. The lopsided look today comes from the label and the X sharing a row with nothing on the other side to balance the X." },
+  { key: "F", name: "Popup size setting", render: sizeSetting, hover: () => sizeCfg.buttons === "hover", controls: sizeControls,
+    blurb: "A Popup size setting with three steps, and a choice of showing the buttons always or only under the pointer. Standard keeps today's sizes with the mirrored processing layout. Compact is variant A. Minimal drops the preview and buttons, for people who only want a recording light; Esc and the shortcut still work." },
+];
+
+function sizeControls() {
+  const select = (key, options) => {
+    const sel = $("select");
+    for (const [v, t] of options) {
+      const o = $("option", "", t);
+      o.value = v;
+      o.selected = sizeCfg[key] === v;
+      sel.append(o);
+    }
+    sel.onchange = () => { sizeCfg[key] = sel.value; render(); };
+    return sel;
+  };
+  return $("div", "",
+    $("div", "card-title", "Dictation popup"),
+    $("div", "card",
+      $("div", "row", $("div", "", "Popup size", $("small", "", "Minimal shows a small light without the word preview.")),
+        select("size", [["standard", "Standard"], ["compact", "Compact"], ["minimal", "Minimal"]])),
+      $("div", "row", $("div", "", "Pause and cancel buttons", $("small", "", "Esc cancels either way.")),
+        select("buttons", [["always", "Always shown"], ["hover", "When pointed at"]]))));
+}
+
+// ------------------------------------------------------------ gallery
+function galleryStates(v) {
+  const spoken = lastWords(SPOKEN, previewWords);
+  const refined = lastWords(REFINED.slice(0, 16), previewWords);
+  const cells = [
+    ["Listening, no words yet", { phase: "listening", text: "", speaking: false }],
+    ["Speaking", { phase: "listening", text: spoken, speaking: true }],
+    ["Paused", { phase: "paused", text: spoken }],
+    ["Transcribing", { phase: "transcribing", text: "" }],
+    ["Refining", { phase: "refining", text: "" }],
+    ["Refining, text streaming", { phase: "refining", text: refined }],
+  ];
+  const hover = typeof v.hover === "function" ? v.hover() : v.hover;
+  if (hover) {
+    cells.push(["Speaking, pointed at", { phase: "listening", text: spoken, speaking: true, hov: true }]);
+    cells.push(["Refining, pointed at", { phase: "refining", text: refined, hov: true }]);
+  }
+  return cells;
+}
+
+const sized = (e) => `${Math.round(e.offsetWidth)} × ${Math.round(e.offsetHeight)}`;
+function cell(label, s, renderFn, compare) {
+  const stage = $("div", "stage");
+  const ghostSrc = compare ? current({ ...s, hov: false }) : null;
+  if (ghostSrc) { ghostSrc.classList.add("measure"); stage.append(ghostSrc); }
+  const pop = renderFn(s);
+  stage.append(pop);
+  const size = $("span");
+  const c = $("div", "cell", stage, $("div", "cap", $("b", "", label), size));
+  requestAnimationFrame(() => {
+    fixShapes(stage);
+    size.textContent = sized(pop) + (ghostSrc ? `  ·  today ${sized(ghostSrc)}` : "");
+    if (ghostSrc) {
+      const g = $("div", "ghost");
+      g.style.width = ghostSrc.offsetWidth + "px";
+      g.style.height = ghostSrc.offsetHeight + "px";
+      stage.prepend(g);
+    }
+  });
+  return c;
+}
+
+function procPage(app) {
+  const refined = lastWords(REFINED.slice(0, 16), previewWords);
+  for (const [proc, name, blurb] of PROC_OPTIONS) {
+    const fn = (s) => tier(s, SLIM, { proc });
+    app.append($("div", "option", $("h2", "", name), $("p", "", blurb),
+      $("div", "grid three",
+        cell("Transcribing", { phase: "transcribing", text: "" }, fn, false),
+        cell("Refining, text streaming", { phase: "refining", text: refined }, fn, false),
+        cell("Refining, pointed at", { phase: "refining", text: refined, hov: true }, fn, false))));
+  }
+}
+
+// --------------------------------------------------------------- demo
+let demo = null;
+function startDemo(host, renderFn) {
+  const st = { phase: "listening", spoken: 0, refined: 0, paused: false, at: 0, hidden: false };
+  let last = "";
+  const view = () => {
+    if (st.hidden) return { key: "hidden" };
+    if (st.phase === "listening" || st.phase === "paused") {
+      return { phase: st.phase, text: lastWords(SPOKEN.slice(0, st.spoken), previewWords), speaking: st.phase === "listening" && st.spoken > 0 };
+    }
+    if (st.phase === "refining") return { phase: "refining", text: lastWords(REFINED.slice(0, st.refined), previewWords) };
+    return { phase: st.phase, text: "" };
+  };
+  const draw = () => {
+    const v = view();
+    const key = JSON.stringify(v);
+    if (key === last) return;
+    last = key;
+    if (v.key === "hidden") { host.replaceChildren(); return; }
+    host.replaceChildren(renderFn(v));
+    fixShapes(host);
+  };
+  const restart = () => Object.assign(st, { phase: "listening", spoken: 0, refined: 0, at: 0, hidden: false });
+  const step = 60;
+  const timer = setInterval(() => {
+    st.at += step;
+    if (st.hidden) { if (st.at > 1200) restart(); }
+    else if (st.phase === "listening") {
+      if (st.at > 1200 && st.at % 300 < step) st.spoken++;
+      if (st.spoken >= SPOKEN.length) Object.assign(st, { phase: "transcribing", at: 0 });
+    } else if (st.phase === "transcribing") {
+      if (st.at > 1600) Object.assign(st, { phase: "refining", at: 0 });
+    } else if (st.phase === "refining") {
+      if (st.at > 900 && st.at % 120 < step) st.refined++;
+      if (st.refined > REFINED.length + 12) Object.assign(st, { hidden: true, at: 0 });
+    }
+    draw();
+  }, step);
+  host.onclick = (e) => {
+    const act = e.target.closest("[data-act]")?.dataset.act;
+    if (act === "cancel") Object.assign(st, { hidden: true, at: 0 });
+    if (act === "pause" && (st.phase === "listening" || st.phase === "paused")) {
+      st.phase = st.phase === "paused" ? "listening" : "paused";
+    }
+    draw();
+  };
+  draw();
+  return { stop: () => clearInterval(timer), cancel: () => { Object.assign(st, { hidden: true, at: 0 }); draw(); } };
+}
+
+// ---------------------------------------------------------------- page
+function currentKey() {
+  const k = new URLSearchParams(location.search).get("variant");
+  return VARIANTS.some((v) => v.key === k) ? k : "0";
+}
+function render() {
+  const v = VARIANTS.find((x) => x.key === currentKey());
+  document.getElementById("label").textContent = `${v.key} · ${v.name}`;
+  demo?.stop();
+  demo = null;
+  const app = document.getElementById("app");
+  app.replaceChildren($("h1", "", `${v.key} · ${v.name}`), $("p", "lead", v.blurb));
+  if (v.page) { v.page(app); return; }
+  if (v.controls) app.append(v.controls());
+  const host = $("div", "demo");
+  app.append(host, $("p", "demo-note", "A session on loop: talk, stop, transcribe, refine. The buttons work, and Esc cancels."
+    + (v.key === "0" ? "" : " Dashed outlines in the cells below are today's popup in the same state.")));
+  const grid = $("div", "grid");
+  for (const [label, s] of galleryStates(v)) grid.append(cell(label, s, v.render, v.key !== "0"));
+  app.append(grid);
+  demo = startDemo(host, v.render);
+}
+
+function go(delta) {
+  const i = VARIANTS.findIndex((v) => v.key === currentKey());
+  const next = VARIANTS[(i + delta + VARIANTS.length) % VARIANTS.length];
+  history.replaceState(null, "", "?variant=" + next.key);
+  render();
+}
+document.getElementById("prev").onclick = () => go(-1);
+document.getElementById("next").onclick = () => go(1);
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, select, textarea, [contenteditable]")) return;
+  if (e.key === "ArrowLeft") go(-1);
+  if (e.key === "ArrowRight") go(1);
+  if (e.key === "Escape") demo?.cancel();
+});
+const words = document.getElementById("words");
+words.oninput = () => {
+  previewWords = +words.value;
+  document.getElementById("wordsOut").textContent = words.value;
+  render();
+};
+
+// ------------------------------------------------------------- waveform
+// The bars follow WaveformWidget: a crest crossing the row once a second,
+// a bulge towards the middle, and a smoothed level.
+const KEYS = [[0, 1], [0.2, 1.2], [0.4, 1.5], [0.8, 1.1], [0.9, 1.3], [1, 1]];
+function wave(p) {
+  for (let k = 0; k < KEYS.length - 1; k++) {
+    const [a, va] = KEYS[k], [b, vb] = KEYS[k + 1];
+    if (p > b) continue;
+    const t = (p - a) / (b - a);
+    return va + (vb - va) * t * t * (3 - 2 * t);
+  }
+  return 1;
+}
+function frame(now) {
+  const t = now / 1000;
+  document.querySelectorAll(".bars").forEach((e) => {
+    const c = e._cfg;
+    const kids = e.children;
+    if (e.classList.contains("flat")) {
+      for (const b of kids) b.style.height = c.dot + "px";
+      return;
+    }
+    if (e.classList.contains("think")) {
+      for (let k = 0; k < c.n; k++) {
+        const crest = Math.max(0, Math.cos(2 * Math.PI * (t * 0.7 - k / c.n)));
+        kids[k].style.height = c.dot + (c.max * 0.6 - c.dot) * crest ** 6 + "px";
+      }
+      return;
+    }
+    const s = t + e._seed;
+    const noise = Math.abs(Math.sin(s * 7.1) + Math.sin(s * 11.3 + 2) + Math.sin(s * 3.7 + 1)) / 3;
+    const target = e.dataset.speaking === "1" ? 0.45 + 0.55 * noise : 0.05;
+    e._lv += (target - e._lv) * 0.15;
+    const half = (c.n - 1) / 2;
+    for (let k = 0; k < c.n; k++) {
+      const bulge = 1 - 0.3 * Math.abs(half - k) / half;
+      const p = t - k / c.n;
+      const w = wave(p - Math.floor(p)) - 0.5;
+      kids[k].style.height = c.dot + (c.max - c.dot) * e._lv * bulge * w + "px";
+    }
+  });
+  requestAnimationFrame(frame);
+}
+
+document.fonts.ready.then(() => {
+  render();
+  requestAnimationFrame(frame);
+});
+</script>
+</body>
+</html>

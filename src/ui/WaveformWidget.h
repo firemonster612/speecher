@@ -20,8 +20,11 @@ class WaveformWidget : public QWidget {
 public:
     // Paused: a still, flat row of dots in the colour scheme's caution colour.
     enum class Mode { Waveform, Frozen, Paused, Message, Status };
+    // Home's row of fifteen dots, or the dictation popup's slimmer nine in
+    // its 32px pill (dictation/PopupGeometry.h).
+    enum class Size { Standard, Popup };
 
-    explicit WaveformWidget(QWidget *parent = nullptr);
+    explicit WaveformWidget(QWidget *parent = nullptr, Size size = Size::Standard);
     void setBackgroundVisible(bool visible);
     // The width of what paintEvent actually draws in the current mode — the
     // bar row or the message text — as opposed to the fixed widget
@@ -31,8 +34,8 @@ public:
     // the transcript line rather than standing alone. Off by default; the
     // Dictation page keeps the full-height pill.
     void setCompact(bool compact);
-    // Only as wide as the dots, for the popup's tab beside its buttons;
-    // text modes keep their own width.
+    // Only as wide as the dots or the status label, for the popup's tab
+    // beside its buttons.
     void setHugsInk(bool hugs);
 
 public slots:
@@ -66,6 +69,7 @@ private:
     float m_wavePhase = 0.0f;
     float m_idlePhase = 0.0f;
     Mode m_mode = Mode::Waveform;
+    Size m_size = Size::Standard;
     bool m_backgroundVisible = true;
     bool m_compact = false;
     bool m_hugsInk = false;

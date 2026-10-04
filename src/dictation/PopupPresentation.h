@@ -59,12 +59,19 @@ PopupErrorAction speechSetupAction(const QString &providerId);
 QString popupDismissCaption();
 QString renewingSignInText();
 
+// The live preview line as the popups show it: text, and whether words were
+// cut from its front, which the popups say by fading its start.
+struct PreviewLine {
+    QString text;
+    bool cut = false;
+};
+
 // A live preview that overflows loses words from the front, so the newest
-// words stay visible, and "… " says something came before them. Words are
-// Unicode's, so CJK text is cut between words, not only at spaces. fits
-// reports whether a candidate string fits the preview line. A single word too
-// long to fit is cut from the front at a grapheme boundary.
-QString trimPreviewToFit(const QString &preview, const std::function<bool(const QString &)> &fits);
+// words stay visible. Words are Unicode's, so CJK text is cut between words,
+// not only at spaces. fits reports whether a candidate string fits the preview
+// line. A single word too long to fit is cut from the front at a grapheme
+// boundary.
+PreviewLine trimPreviewToFit(const QString &preview, const std::function<bool(const QString &)> &fits);
 
 } // namespace speecher
 

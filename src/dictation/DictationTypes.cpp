@@ -98,10 +98,10 @@ SessionControls sessionControls(const QString &stateName)
     const QString lowered = stateName.toLower();
     const bool paused = lowered == QStringLiteral("paused");
     const bool listening = lowered == QStringLiteral("listening");
-    return {lowered == QStringLiteral("starting") || listening || paused,
-            listening || paused,
-            paused,
-            dictationCancelable(lowered)};
+    const bool pauseVisible = lowered == QStringLiteral("starting") || listening || paused;
+    const bool cancelVisible = dictationCancelable(lowered);
+    return {pauseVisible, listening || paused, paused, cancelVisible,
+            cancelVisible && !pauseVisible};
 }
 
 QString pauseCaption()
