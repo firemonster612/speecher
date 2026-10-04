@@ -1,5 +1,7 @@
 #include "app/LocalSetup.h"
 
+#include "app/ProviderAvailability.h"
+#include "core/ProviderChain.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
 #include "providers/LocalModelStore.h"
@@ -34,10 +36,13 @@ Endpoint connection(Endpoint endpoint)
     return endpoint;
 }
 
-// The endpoint dictation would use, once it has a server to ask.
+// The endpoint dictation may use, as the primary or a fallback, once it has a
+// server to ask.
 std::optional<SpeechEndpointSettings> speechEndpointInUse(const AppSettings &settings)
 {
-    if (settings.speech.providerId != QStringLiteral("endpoint") || settings.speech.endpoint.baseUrl.isEmpty()) {
+    const QStringList chain =
+        providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
+    if (!chain.contains(QStringLiteral("endpoint")) || settings.speech.endpoint.baseUrl.isEmpty()) {
         return std::nullopt;
     }
     return connection(settings.speech.endpoint);
@@ -46,7 +51,9 @@ std::optional<SpeechEndpointSettings> speechEndpointInUse(const AppSettings &set
 std::optional<RefinementEndpoint> refinementEndpointInUse(const AppSettings &settings)
 {
     const RefinementEndpoint endpoint = resolvedRefinementEndpoint(settings.refinement);
-    if (settings.refinement.providerId != QStringLiteral("endpoint") || endpoint.apiBase.isEmpty()) {
+    const QStringList chain = providerChain(ProviderRole::Refinement, settings.refinement.providerId,
+                                            settings.refinement.fallbackProviderIds);
+    if (!chain.contains(QStringLiteral("endpoint")) || endpoint.apiBase.isEmpty()) {
         return std::nullopt;
     }
     return connection(endpoint);
@@ -569,6 +576,7 @@ void LocalSetup::detectRunners()
                                             [this](const QList<DetectedRunner> &runners) {
                                                 m_runners = runners;
                                                 m_detectingRunners = false;
+                                                m_runnersChecked = true;
                                                 initializeRunner();
                                                 emit changed();
                                             });
@@ -673,6 +681,46 @@ bool LocalSetup::runSettingsAction(const QString &rowId, const AppSettings &show
     return true;
 }
 
+std::optional<SetupFallbackOffer> LocalSetup::setupFallbackOffer(ProviderRole role) const
+{
+    const QString local = QStringLiteral("local");
+    if (role == ProviderRole::Speech) {
+        const LocalModel &model = suggestedModel();
+        if (fit(model) != ModelFit::Fits || !localModelListensFor(model, m_settings.spokenLanguage())) {
+            return std::nullopt;
+        }
+        return SetupFallbackOffer{local, model.id, model.name};
+    }
+    const RunnerChoice choice = runnerChoice();
+    if (!choice.available || !choice.available->models.contains(choice.selection.model)) {
+        return std::nullopt;
+    }
+    return SetupFallbackOffer{local, choice.selection.model, localRunnerName(choice.available->id)};
+}
+
+void LocalSetup::acceptSetupFallbackOffer(ProviderRole role)
+{
+    const std::optional<SetupFallbackOffer> offer = setupFallbackOffer(role);
+    if (!offer) {
+        return;
+    }
+    if (role == ProviderRole::Speech) {
+        m_settings.setSpeechFallbackProviders(m_settings.speechFallbackProviders() << offer->providerId);
+        chooseSpeechModel(offer->modelId);
+        download(*findLocalModel(offer->modelId));
+        return;
+    }
+    m_settings.setLocalRunnerSettings(runnerChoice().selection);
+    m_settings.setRefinementFallbackProviders(m_settings.refinementFallbackProviders() << offer->providerId);
+    emit changed();
+}
+
+void LocalSetup::setProviderAvailability(const ProviderAvailability &availability)
+{
+    m_availability = &availability;
+    connect(&availability, &ProviderAvailability::changed, this, &LocalSetup::changed);
+}
+
 LiveFacts LocalSetup::liveFacts() const
 {
     return liveFacts(m_settings.dictationSnapshot());
@@ -697,6 +745,10 @@ LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
         facts.runnerModels.insert(runner.id, runner.models);
     }
     facts.detectingRunners = m_detectingRunners;
+    facts.runnersChecked = m_runnersChecked;
+    if (m_availability) {
+        m_availability->addTo(facts);
+    }
     qint64 used = 0;
     for (const LocalModel &model : localModelCatalog()) {
         if (m_models.isDownloaded(model)) {

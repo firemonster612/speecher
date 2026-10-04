@@ -256,6 +256,8 @@ copy_plugin_dir styles
 copy_plugin_dir iconengines
 copy_plugin_dir tls
 copy_plugin_dir multimedia
+# Reachability, which tells settings and dictation when the computer is offline.
+copy_plugin_dir networkinformation
 copy_plugin_dir platforminputcontexts
 copy_plugin_dir imageformats
 copy_plugin_dir xcbglintegrations

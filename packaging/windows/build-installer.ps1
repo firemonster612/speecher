@@ -85,6 +85,11 @@ if (-not (Test-Path $OffscreenPlugin)) {
 }
 New-Item (Join-Path $AppDir "platforms") -ItemType Directory -Force | Out-Null
 Copy-Item $OffscreenPlugin (Join-Path $AppDir "platforms") -Force
+# windeployqt brings it along with QtNetwork; without it Speecher can't tell
+# when the computer is offline.
+if (-not (Test-Path (Join-Path $AppDir "networkinformation\qnetworklistmanager.dll"))) {
+    throw "windeployqt did not deploy Qt's network reachability plugin"
+}
 
 Invoke-WebRequest $RuntimeUrl -OutFile $RuntimeInstaller
 $ActualRuntimeSha256 = (Get-FileHash $RuntimeInstaller -Algorithm SHA256).Hash.ToLowerInvariant()

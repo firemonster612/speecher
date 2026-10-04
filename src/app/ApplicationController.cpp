@@ -2,6 +2,8 @@
 
 #include "app/AppFrontEnd.h"
 #include "app/LocalSetup.h"
+#include "app/NetworkReachability.h"
+#include "app/ProviderAvailability.h"
 #include "app/ProviderSetup.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "app/UpdateBanner.h"
@@ -159,6 +161,10 @@ ApplicationController::ApplicationController(bool popupOnly,
     m_secrets->prefetch();
     registerProviders(*m_providers, m_secrets, m_localModels);
     m_localSetup = new LocalSetup(*m_settings, *m_providers, *m_localModels, this);
+    m_reachability = new NetworkReachability(this);
+    m_reachability->watchSystem();
+    m_availability = new ProviderAvailability(*m_reachability, this);
+    m_localSetup->setProviderAvailability(*m_availability);
     connect(m_localModels, &LocalModelStore::downloadFinished,
             this, &ApplicationController::notifyModelReady);
     TargetProvider *targetProvider = m_platform->createTargetProvider(this);
@@ -450,6 +456,16 @@ LocalModelStore *ApplicationController::localModelStore() const
 LocalSetup *ApplicationController::localSetup() const
 {
     return m_localSetup;
+}
+
+NetworkReachability *ApplicationController::networkReachability() const
+{
+    return m_reachability;
+}
+
+ProviderAvailability *ApplicationController::providerAvailability() const
+{
+    return m_availability;
 }
 
 // A download the setup assistant left running finishes long after its window

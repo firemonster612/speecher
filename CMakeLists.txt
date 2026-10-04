@@ -253,6 +253,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
+  src/core/settings/FallbackPresentation.cpp
   src/core/settings/SettingsCodecs.cpp
   src/core/settings/SettingsSchema.cpp
   src/core/settings/SpokenLanguages.cpp
@@ -286,6 +287,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
+  src/core/settings/FallbackPresentation.h
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SettingsSchema.h
@@ -519,6 +521,8 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
 set(SPEECHER_APP_SOURCES
   src/app/ApplicationController.cpp
   src/app/LocalSetup.cpp
+  src/app/NetworkReachability.cpp
+  src/app/ProviderAvailability.cpp
   src/app/CommandLine.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
@@ -539,6 +543,8 @@ set(SPEECHER_APP_HEADERS
   src/app/AppFrontEnd.h
   src/app/ApplicationController.h
   src/app/LocalSetup.h
+  src/app/NetworkReachability.h
+  src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CommandLine.h
   src/app/CompositionSockets.h

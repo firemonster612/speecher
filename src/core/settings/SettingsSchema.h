@@ -205,6 +205,10 @@ struct SettingsRow {
     // Replaces actionLabel when the click does different things in different
     // states, so the caption always says what it will do.
     std::function<QString(const AppSettings &)> actionLabelValue;
+    // Set on an Action row that opens a subpage, by its id
+    // ("dictation:fallbacks"). The whole row is the button, with the
+    // platform's navigation indicator at its end.
+    QString targetPage;
     NumberRange range;
     // Room to reserve for a Choice row's value, in characters, so a list that
     // arrives late does not resize the row under the reader. Zero sizes the
@@ -323,6 +327,19 @@ struct SidebarGroup {
     bool operator==(const SidebarGroup &) const = default;
 };
 
+// A page one step below a pane, opened from a row's targetPage and left with a
+// back control to the parent. It has no sidebar entry: the sidebar keeps the
+// parent selected while it shows.
+struct SettingsSubpage {
+    // "pane:subpage", as resolvePage() takes it.
+    QString id;
+    // The pane id the back control returns to.
+    QString parent;
+    // Shown as the page title, with the back control beside it.
+    QString title;
+    QList<SettingsPaneGroup> groups;
+};
+
 struct SettingsSchema {
     // localModels is among them only when speechProviders offers "local",
     // and so is its pane.
@@ -331,23 +348,30 @@ struct SettingsSchema {
     // The sidebar's groups, in order. A pane in no group (What's New) appears
     // only while pending or selected, first in the untitled top group.
     QList<SidebarGroup> sidebarGroups;
+    // Their rows are defined on pages, like any other.
+    QList<SettingsSubpage> subpages;
 
     const SettingsPage &page(const QString &id) const;
     bool hasPage(const QString &id) const;
     // Null for an id this schema does not have.
     const SettingsPane *pane(const QString &id) const;
+    const SettingsSubpage *subpage(const QString &id) const;
     const SettingsRow *row(const QString &id) const;
     // A group as a section of the schema's rows, ready to render.
     SettingsSection section(const SettingsPaneGroup &group) const;
 };
 
-// Every page a front end can show is named by one id: a pane id, or
-// "pane:view" for one view of an Alternatives pane (vocabulary:corrections).
-// The same ids serve SPEECHER_GRAB_PAGE, links between pages and notification
-// targets. A window opened from hidden shows Home; "Settings…" shows General.
+// Every page a front end can show is named by one id: a pane id, "pane:view"
+// for one view of an Alternatives pane (vocabulary:corrections), or a
+// subpage's id (dictation:fallbacks). The same ids serve SPEECHER_GRAB_PAGE,
+// links between pages and notification targets. A window opened from hidden
+// shows Home; "Settings…" shows General.
 struct PageId {
     QString pane;
     QString view;
+    // A subpage of the pane, by its SettingsSubpage::id; empty for the pane
+    // itself.
+    QString subpage;
 };
 // Case-insensitive. A bare Alternatives pane id gives its first view. Ids of
 // panes since merged into others (shortcut, apps) give the pane that holds
@@ -392,6 +416,10 @@ struct LocalGpu {
     QString description;
 };
 
+// Whether this computer can reach the internet, as the operating system says.
+// Unknown, where it cannot say, never counts as offline.
+enum class Reachability { Unknown, Offline, Online };
+
 // What the app layer last learned about this computer and the servers a
 // person named, for the rows that report it. ApplicationController's
 // LocalSetup builds it; a front end hands the schema a way to read it, runs the
@@ -417,6 +445,13 @@ struct LiveFacts {
     // What each found runner can serve, by runner id.
     QHash<QString, QStringList> runnerModels;
     bool detectingRunners = false;
+    // A look for runners has finished, so an empty runners means none runs.
+    bool runnersChecked = false;
+    Reachability reachability = Reachability::Unknown;
+    // Whether a provider's sign-in was last seen present, by provider id. A
+    // provider missing here is unknown: nothing asks a keyring or refreshes a
+    // sign-in to fill this in.
+    QHash<QString, bool> signedIn;
     // Where Local Model files live and how much room they take.
     QString modelFolder;
     // Local Model ids with a finished download, in catalog order.
