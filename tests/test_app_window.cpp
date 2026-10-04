@@ -1315,8 +1315,8 @@ private slots:
         back->click();
         QCOMPARE(title->text(), QStringLiteral("Refinement"));
 
-        // Picking the parent's entry again, by mouse or by Enter, leaves the
-        // subpage for the parent too.
+        // Picking the parent's entry again, by mouse or by the keyboard's
+        // activation key, leaves the subpage for the parent too.
         auto *dictation = window.findChild<QWidget *>(QStringLiteral("dictation"));
         auto *subpage = window.findChild<QWidget *>(QStringLiteral("dictation:fallbacks"));
         window.showPage(QStringLiteral("dictation:fallbacks"));
@@ -1326,7 +1326,12 @@ private slots:
         QVERIFY(dictation->isVisible());
         window.showPage(QStringLiteral("dictation:fallbacks"));
         QVERIFY(subpage->isVisible());
+#ifdef Q_OS_MACOS
+        // Return edits an item on macOS; Command-O activates it.
+        QTest::keyClick(navigation, Qt::Key_O, Qt::ControlModifier);
+#else
         QTest::keyClick(navigation, Qt::Key_Return);
+#endif
         QVERIFY(dictation->isVisible());
     }
 
