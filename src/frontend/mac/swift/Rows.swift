@@ -195,28 +195,38 @@ struct RowView: View {
     }
 
     private var label: some View {
-        Self.label(row.label, help: description)
+        Self.label(row.label, help: description, negative: showsOwnHelp && row.helpNegative)
     }
 
     // Why a lone disabled row is disabled replaces its description, matching
     // the Qt and Windows front ends; showing both would give a gated row two
     // competing descriptions. A grouped row keeps its own, under the group's
     // note.
+    private var showsOwnHelp: Bool {
+        row.enabled || !gateNote || row.disabledHelp.isEmpty
+    }
+
     private var description: String {
-        row.enabled || !gateNote || row.disabledHelp.isEmpty ? row.help : row.disabledHelp
+        showsOwnHelp ? row.help : row.disabledHelp
     }
 
     /// The name of a setting and, under it, what it does. Two Texts in a stock
     /// label is how a settings row says that; SwiftUI sizes and colours the
-    /// second one, which is why there is no font or colour here. A builder
-    /// rather than a view, so the form still sees two Texts. A row whose card
-    /// heading names it has no title of its own.
-    @ViewBuilder static func label(_ title: String, help: String) -> some View {
+    /// second one, which is why there is no font or colour here, save the red
+    /// of a negative help, which says the row's choice can't work right now,
+    /// as the other negative text here is. A builder rather than a view, so
+    /// the form still sees two Texts. A row whose card heading names it has
+    /// no title of its own.
+    @ViewBuilder static func label(_ title: String, help: String, negative: Bool = false) -> some View {
         if !title.isEmpty {
             Text(title)
         }
         if !help.isEmpty {
-            Text(help)
+            if negative {
+                Text(help).foregroundStyle(.red)
+            } else {
+                Text(help)
+            }
         }
     }
 

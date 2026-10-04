@@ -705,6 +705,7 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) BOOL secret;
 @property (nonatomic, copy) NSString *placeholder;
 @property (nonatomic) BOOL multiline;
+@property (nonatomic) BOOL helpNegative;
 @property (nonatomic, copy) NSString *targetPage;
 @property (nonatomic, strong, nullable) SpeecherFallbackList *fallbackList;
 @end
@@ -1591,6 +1592,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     model.rowId = row.id.toNSString();
     model.label = (row.labelValue ? row.labelValue(_state->draft) : row.label).toNSString();
     model.help = (row.helpValue ? row.helpValue(_state->draft) : row.help).toNSString();
+    model.helpNegative = row.helpTone && row.helpTone(_state->draft) == speecher::StatusTone::Negative;
     model.kind = bridgedKind(row.kind);
     model.actionLabel = (row.actionLabelValue ? row.actionLabelValue(_state->draft)
                                               : row.actionLabel)

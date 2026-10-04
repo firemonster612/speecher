@@ -208,6 +208,9 @@ typedef NS_ENUM(NSInteger, SpeecherProviderRole) {
 @property (nonatomic, readonly, copy) NSString *placeholder;
 // Text rows only: the value may hold several lines.
 @property (nonatomic, readonly) BOOL multiline;
+// The help says the row's choice can't work right now, and reads in the
+// negative role (speecher::SettingsRow::helpTone).
+@property (nonatomic, readonly) BOOL helpNegative;
 // Action rows only: the subpage the whole row opens, or empty.
 @property (nonatomic, readonly, copy) NSString *targetPage;
 // The fallback list rows only, as the draft and the live facts present them.
