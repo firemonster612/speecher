@@ -257,6 +257,9 @@ public:
     void cancelAttempt(quint64 attemptId) override
     {
         cancelledAttempts.append(attemptId);
+        if (onCancelAttempt) {
+            onCancelAttempt(attemptId);
+        }
     }
 
     void emitPartialText(const QString &text)
@@ -294,6 +297,8 @@ public:
     SpeechPrepareResult prepareResult{true, {}};
     // Runs inside startAttempt(), as a provider that fails at once would.
     std::function<void()> onStartAttempt;
+    // Runs inside cancelAttempt(), as a provider that emits while it stops.
+    std::function<void(quint64)> onCancelAttempt;
     int backgroundPrepareCalls = 0;
     int prepareCalls = 0;
     int startCalls = 0;

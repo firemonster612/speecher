@@ -200,6 +200,10 @@ ApplicationController::ApplicationController(bool popupOnly,
                                      this);
     m_session->setScreenshotContextProvider(
         m_platform->createScreenshotContextProvider(this));
+    m_session->setReachability(m_reachability->reachability());
+    connect(m_reachability, &NetworkReachability::changed, m_session,
+            [this] { m_session->setReachability(m_reachability->reachability()); });
+    connect(m_session, &DictationSession::providerSignInObserved, m_availability, &ProviderAvailability::noteSignIn);
     m_fileTranscription = new FileTranscriptionSession(m_settings, m_providers, this);
 #ifdef Q_OS_MACOS
     m_updates = new MacSparkleUpdater(m_settings, m_session, this);
