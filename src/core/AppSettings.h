@@ -332,10 +332,17 @@ struct OutputSettings {
 };
 
 struct UpdateSettings {
+    static constexpr int minimumCheckIntervalMinutes = 5;
+    static constexpr int maximumCheckIntervalMinutes = 30 * 24 * 60;
+
     UpdateChannel channel = UpdateChannel::Stable;
     bool autoCheck = true;
     bool autoInstall = false;
     int checkIntervalMinutes = 30;
+    // The unit a custom interval was given in ("minutes", "hours" or "days"),
+    // so 8 hours reads back as 8 hours rather than 480 minutes. Empty while
+    // one of the listed frequencies is chosen.
+    QString checkIntervalUnit;
 };
 
 struct AppSettings {

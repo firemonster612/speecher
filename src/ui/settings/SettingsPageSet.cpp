@@ -133,14 +133,13 @@ SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
     return [controller](const SettingsRow &descriptor,
                         QWidget *parent,
                         std::function<void()>) {
-        const bool cancel = descriptor.id == QStringLiteral("cancelShortcut");
-        if (descriptor.id != QStringLiteral("globalShortcut") && !cancel) {
+        const std::optional<GlobalShortcutRole> role = globalShortcutRoleForRow(descriptor.id);
+        if (!role) {
             return SchemaCustomRow{};
         }
         SchemaCustomRow row;
         row.widget = new LinuxGlobalShortcutSetupPage(
-            *controller, parent, LinuxGlobalShortcutSetupPage::Placement::SettingsCard,
-            cancel ? GlobalShortcutRole::Cancel : GlobalShortcutRole::Dictation);
+            *controller, parent, LinuxGlobalShortcutSetupPage::Placement::SettingsCard, *role);
         row.cardRows = true;
         return row;
     };
@@ -149,8 +148,7 @@ SchemaCustomRowFactory generalCustomRows(ApplicationController *controller)
     // recorder, so this build of it only has to stand the row in.
     Q_UNUSED(controller)
     return [](const SettingsRow &descriptor, QWidget *parent, std::function<void()>) {
-        return descriptor.id == QStringLiteral("globalShortcut")
-                || descriptor.id == QStringLiteral("cancelShortcut")
+        return globalShortcutRoleForRow(descriptor.id)
             ? SchemaCustomRow{new QWidget(parent), {}, {}, true}
             : SchemaCustomRow{};
     };

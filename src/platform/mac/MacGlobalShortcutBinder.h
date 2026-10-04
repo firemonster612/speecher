@@ -1,8 +1,15 @@
 #pragma once
 
 #include "platform/GlobalShortcutBinder.h"
+#include "platform/SessionShortcutBinder.h"
+
+#include <memory>
 
 namespace speecher {
+
+// One Carbon hot key, shared by both binders below; defined in the .mm so
+// this header stays plain C++ for moc.
+class CarbonHotKey;
 
 // Carbon hot keys are the only macOS API that reports key release as well as
 // press without an Accessibility grant, which is what push-to-talk needs. macOS
@@ -25,26 +32,35 @@ public:
     void suspend() override;
     QString resume() override;
     bool removeRegistration(QString *error = nullptr) override;
-    // What this binder's Carbon hot key is registered under.
-    quint32 hotKeyIdentifier() const;
 
 private:
-    bool registerHotKey(const QKeySequence &shortcut, QString *error);
-    void unregisterHotKey();
-    void refreshKeyboardLayout();
-
     QKeySequence m_shortcut;
-    quint32 m_hotKeyIdentifier = 0;
     // Setup and settings can record concurrently; only the last resume binds.
     int m_suspensionCount = 0;
     bool m_resumeBinding = false;
-    // EventHotKeyRef, EventHandlerRef and EventHandlerUPP, kept opaque so this
-    // header stays plain C++ for moc.
-    void *m_hotKey = nullptr;
-    quint32 m_registeredKeyCode = 0;
-    quint32 m_registeredModifiers = 0;
-    void *m_eventHandler = nullptr;
-    void *m_eventHandlerUpp = nullptr;
+    std::unique_ptr<CarbonHotKey> m_hotKey;
+};
+
+// A session shortcut (Cancel or Pause) as a Carbon hot key registered only for
+// the length of a Dictation Session, so Carbon takes a bare key such as C or
+// Escape from other apps just while it is armed.
+class MacSessionShortcutBinder final : public SessionShortcutBinder {
+    Q_OBJECT
+
+public:
+    explicit MacSessionShortcutBinder(GlobalShortcutAction action, QObject *parent = nullptr);
+    ~MacSessionShortcutBinder() override;
+
+    bool supported() const override;
+    QString unsupportedReason() const override;
+    QString unsupportedBindingReason(const ShortcutBinding &binding) const override;
+
+protected:
+    bool take(const QKeySequence &keys) override;
+    void letGo() override;
+
+private:
+    std::unique_ptr<CarbonHotKey> m_hotKey;
 };
 
 } // namespace speecher

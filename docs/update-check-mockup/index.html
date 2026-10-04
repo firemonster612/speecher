@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Check frequency mockup</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #d9d9d6; color: #1c1b18; }
+  .tabs { display: flex; gap: 4px; padding: 12px 16px 0; }
+  .tab { border: 0; background: transparent; padding: 8px 14px; border-radius: 8px 8px 0 0; font: inherit; cursor: pointer; color: #555; }
+  .tab[aria-selected="true"] { background: #f4f4f2; color: #111; font-weight: 600; }
+  .stage { background: #f4f4f2; min-height: calc(100vh - 46px); display: flex; justify-content: center; align-items: flex-start; padding: 28px 16px; }
+  .platform { display: none; }
+  .platform.active { display: block; }
+  .menu { position: absolute; z-index: 10; display: none; }
+  .menu.open { display: block; }
+  .hidden { display: none !important; }
+
+  /* ---------- KDE Plasma / Breeze ---------- */
+  .kde { width: 980px; height: 640px; display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 48px 1fr;
+    font: 13.3px "Noto Sans", "Open Sans", sans-serif; color: #232629; background: #eff0f1; border: 1px solid #b0b3b6; border-radius: 6px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.18); }
+  .kde .search { grid-column: 1; background: #dee0e2; border-bottom: 1px solid #c4c6c8; padding: 8px; }
+  .kde .search div { height: 31px; background: #fff; border: 1px solid #3daee9; border-radius: 3px; padding: 6px 10px 0 32px; color: #7f8c8d; position: relative; }
+  .kde .search div::before { content: ""; position: absolute; left: 11px; top: 9px; width: 9px; height: 9px; border: 1.5px solid #232629; border-radius: 50%; }
+  .kde .title { grid-column: 2; background: #dee0e2; border-bottom: 1px solid #c4c6c8; padding: 13px 8px; font-size: 17px; font-weight: 600; border-left: 1px solid #c4c6c8; }
+  .kde .side { background: #fff; border-right: 1px solid #c4c6c8; padding: 14px 12px; }
+  .kde .side div { padding: 7px 33px; border-radius: 3px; margin-bottom: 4px; }
+  .kde .side .sel { background: #3daee9; color: #fff; }
+  .kde .side .grp { font-weight: 600; padding: 10px 6px 4px; }
+  .kde .content { overflow: auto; padding: 8px 0 40px; }
+  .kde .col { width: 702px; margin: 0 auto; }
+  .kde h3 { font-size: 13.3px; margin: 8px 17px 10px; }
+  .kde .card { background: #fff; border: 1px solid #d1d3d5; border-radius: 4px; padding: 0 17px; margin-bottom: 16px; }
+  .kde .row { display: flex; align-items: center; justify-content: space-between; min-height: 64px; border-bottom: 1px solid #e3e5e7; gap: 16px; }
+  .kde .row:last-child { border-bottom: 0; }
+  .kde .row small { display: block; color: #7f8c8d; font-size: 12.3px; margin-top: 2px; }
+  .kde .row.new { animation: kdein .18s ease-out; }
+  @keyframes kdein { from { opacity: 0; } }
+  .kde .check { display: flex; align-items: center; gap: 8px; }
+  .kde .check i { width: 16px; height: 16px; border: 1px solid #3daee9; border-radius: 3px; background: #fff; position: relative; }
+  .kde .check i::after { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #232629; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .kde .combo, .kde .btn { height: 31px; border: 1px solid #bcbebf; border-radius: 3px; background: #fcfcfc; padding: 0 30px 0 7px; display: inline-flex; align-items: center; position: relative; cursor: default; white-space: nowrap; }
+  .kde .btn { padding: 0 7px; }
+  .kde .combo::after { content: ""; position: absolute; right: 11px; top: 10px; width: 6px; height: 6px; border: solid #232629; border-width: 0 1.2px 1.2px 0; transform: rotate(45deg); }
+  .kde .combo:hover, .kde .combo.open { border-color: #3daee9; }
+  .kde .spin { height: 31px; width: 70px; border: 1px solid #bcbebf; border-radius: 3px; background: #fff; display: inline-flex; align-items: center; padding-left: 7px; position: relative; }
+  .kde .spin.focus { border-color: #3daee9; }
+  .kde .spin::before, .kde .spin::after { content: ""; position: absolute; right: 9px; width: 5px; height: 5px; border: solid #232629; border-width: 1.2px 0 0 1.2px; }
+  .kde .spin::before { top: 8px; transform: rotate(45deg); }
+  .kde .spin::after { bottom: 8px; transform: rotate(225deg); }
+  .kde .pair { display: flex; gap: 6px; }
+  #kde .menu { background: #fff; border: 1px solid #bcbebf; border-radius: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.22); padding: 3px; font: 13.3px "Noto Sans", sans-serif; }
+  #kde .menu div { padding: 4px 10px 4px 8px; border: 1px solid transparent; border-radius: 3px; white-space: nowrap; }
+  #kde .menu div:hover, #kde .menu div.hl { background: rgba(61,174,233,.2); border-color: #3daee9; }
+
+  /* ---------- macOS ---------- */
+  .mac { width: 900px; height: 640px; display: grid; grid-template-columns: 215px 1fr; font: 13px -apple-system, "SF Pro Text", "Inter", "Helvetica Neue", sans-serif; color: #1d1d1f;
+    border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 .5px rgba(0,0,0,.25), 0 18px 50px rgba(0,0,0,.25); background: #ececec; }
+  .mac .side { background: #e3e3e6; padding: 14px 10px; border-right: .5px solid #c9c9cc; }
+  .mac .lights { display: flex; gap: 8px; margin: 2px 0 20px 8px; }
+  .mac .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+  .mac .lights i:nth-child(2) { background: #febc2e; } .mac .lights i:nth-child(3) { background: #28c840; }
+  .mac .side div { padding: 5px 10px; border-radius: 6px; }
+  .mac .side .sel { background: #0a64d8; color: #fff; }
+  .mac .main { background: #ececec; overflow: auto; }
+  .mac .bar { height: 52px; padding: 16px 20px; font-weight: 700; font-size: 15px; }
+  .mac .col { width: 600px; margin: 0 auto; padding-bottom: 40px; }
+  .mac h3 { font-size: 13px; font-weight: 700; margin: 18px 10px 7px; }
+  .mac .group { background: #f6f6f6; border: .5px solid #d8d8d8; border-radius: 10px; padding: 0 10px; }
+  .mac .row { display: flex; align-items: center; justify-content: space-between; min-height: 40px; border-bottom: .5px solid #dcdcdc; gap: 12px; padding: 6px 0; }
+  .mac .row:last-child { border-bottom: 0; }
+  .mac .row small { display: block; color: #86868b; font-size: 11px; margin-top: 1px; }
+  .mac .switch { width: 26px; height: 15px; border-radius: 8px; background: #0a64d8; position: relative; }
+  .mac .switch::after { content: ""; position: absolute; right: 1px; top: 1px; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 .5px 1.5px rgba(0,0,0,.3); }
+  .mac .combo, .mac .btn { height: 22px; padding: 0 24px 0 9px; background: #fff; border-radius: 6px; box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 .5px 1.5px rgba(0,0,0,.15); display: inline-flex; align-items: center; position: relative; white-space: nowrap; cursor: default; }
+  .mac .btn { padding: 0 10px; }
+  .mac .combo::after { content: "\2303\A\2304"; white-space: pre; position: absolute; right: 7px; top: 1px; font-size: 7px; line-height: 9px; color: #333; }
+  .mac .stepper { display: inline-flex; align-items: center; gap: 4px; }
+  .mac .field { width: 46px; height: 22px; background: #fff; border-radius: 5px; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.25); display: inline-flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
+  .mac .field.focus { box-shadow: 0 0 0 3px rgba(10,100,216,.45); }
+  .mac .arrows { width: 13px; height: 22px; background: #fff; border-radius: 4px; box-shadow: 0 0 0 .5px rgba(0,0,0,.2); font-size: 7px; line-height: 10px; text-align: center; color: #333; }
+  .mac .pair { display: flex; gap: 8px; align-items: center; }
+  #mac .menu { background: rgba(246,246,246,.96); backdrop-filter: blur(20px); border-radius: 8px; box-shadow: 0 0 0 .5px rgba(0,0,0,.2), 0 10px 30px rgba(0,0,0,.25); padding: 5px; font: 13px -apple-system, "Inter", sans-serif; }
+  #mac .menu div { padding: 3px 14px 3px 22px; border-radius: 4px; white-space: nowrap; position: relative; }
+  #mac .menu div.on::before { content: "\2713"; position: absolute; left: 7px; font-size: 11px; top: 4px; }
+  #mac .menu div:hover, #mac .menu div.hl { background: #0a64d8; color: #fff; }
+
+  /* ---------- Windows 11 ---------- */
+  .win { width: 980px; height: 640px; display: grid; grid-template-columns: 260px 1fr; font: 14px "Segoe UI Variable Text", "Segoe UI", "Inter", sans-serif; color: #1b1b1b;
+    background: #f3f3f3; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0,0,0,.12), 0 18px 50px rgba(0,0,0,.22); }
+  .win .side { padding: 14px 8px; }
+  .win .side .app { font-size: 12px; padding: 0 12px 22px; }
+  .win .side div.item { padding: 9px 14px; border-radius: 4px; position: relative; margin-bottom: 2px; }
+  .win .side .sel { background: #eaeaea; }
+  .win .side .sel::before { content: ""; position: absolute; left: 0; top: 11px; width: 3px; height: 16px; border-radius: 2px; background: #005fb8; }
+  .win .main { overflow: auto; padding: 18px 40px 40px 12px; }
+  .win h1 { font: 600 28px "Segoe UI Variable Display", "Segoe UI", "Inter", sans-serif; margin: 6px 0 20px; }
+  .win h3 { font-size: 14px; font-weight: 600; margin: 18px 0 8px; }
+  .win .card { background: #fbfbfb; border: 1px solid #e5e5e5; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; min-height: 68px; padding: 0 18px; margin-bottom: 3px; gap: 16px; }
+  .win .card.sub { margin-left: 0; padding-left: 58px; background: #fbfbfb; }
+  .win .card small { display: block; color: #5e5e5e; font-size: 12px; }
+  .win .toggle { display: flex; align-items: center; gap: 12px; }
+  .win .toggle i { width: 40px; height: 20px; border-radius: 10px; background: #005fb8; position: relative; }
+  .win .toggle i::after { content: ""; position: absolute; right: 4px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+  .win .combo, .win .btn { min-width: 160px; height: 32px; background: #fff; border: 1px solid #e5e5e5; border-bottom-color: #c4c4c4; border-radius: 4px; padding: 0 34px 0 11px; display: inline-flex; align-items: center; position: relative; white-space: nowrap; cursor: default; }
+  .win .btn { min-width: 0; padding: 0 14px; }
+  .win .combo::after { content: ""; position: absolute; right: 14px; top: 11px; width: 5px; height: 5px; border: solid #444; border-width: 0 1.2px 1.2px 0; transform: rotate(45deg); }
+  .win .combo:hover { background: #f9f9f9; }
+  .win .number { width: 96px; height: 32px; background: #fff; border: 1px solid #e5e5e5; border-bottom: 1px solid #c4c4c4; border-radius: 4px; display: inline-flex; align-items: center; padding-left: 11px; position: relative; }
+  .win .number.focus { border-bottom: 2px solid #005fb8; }
+  .win .number::after { content: "\2303  \2304"; position: absolute; right: 8px; top: 5px; font-size: 10px; color: #555; letter-spacing: 1px; }
+  .win .pair { display: flex; gap: 8px; }
+  .win .pair .combo { min-width: 110px; }
+  #win .menu { background: #f9f9f9; border: 1px solid #dcdcdc; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; font: 14px "Segoe UI", "Inter", sans-serif; }
+  #win .menu div { padding: 7px 14px 7px 16px; border-radius: 4px; white-space: nowrap; position: relative; margin: 1px 0; }
+  #win .menu div.on { background: #eaeaea; }
+  #win .menu div.on::before { content: ""; position: absolute; left: 3px; top: 10px; width: 3px; height: 14px; border-radius: 2px; background: #005fb8; }
+  #win .menu div:hover, #win .menu div.hl { background: #e5e5e5; }
+
+  /* ---------- Android (Material 3, Speecher fallback scheme) ---------- */
+  .droid { width: 380px; height: 780px; border-radius: 40px; background: #111; padding: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.3); }
+  .droid .screen { width: 100%; height: 100%; border-radius: 31px; overflow: hidden; background: #faf9f4; position: relative; font: 16px "Roboto", "Google Sans", "Inter", sans-serif; color: #1c1b18; }
+  .droid .status { height: 34px; padding: 10px 24px; font-size: 13px; display: flex; justify-content: space-between; }
+  .droid .appbar { height: 64px; display: flex; align-items: center; gap: 22px; padding: 0 18px; font-size: 22px; }
+  .droid .appbar span { font-size: 22px; }
+  .droid .sec { font-size: 14px; font-weight: 500; color: #1f1f1f; padding: 24px 16px 8px; }
+  .droid .item { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px 12px 16px; min-height: 56px; gap: 12px; cursor: default; }
+  .droid .item small { display: block; font-size: 14px; color: #5f5c53; }
+  .droid .val { color: #1f1f1f; display: flex; align-items: center; font-weight: 500; white-space: nowrap; }
+  .droid .val::after { content: ""; border: 5px solid transparent; border-top-color: #1f1f1f; margin: 5px 0 0 6px; }
+  .droid .menu { background: #f0eee6; border-radius: 4px; box-shadow: 0 3px 10px rgba(0,0,0,.2); padding: 8px 0; min-width: 190px; font: 16px "Roboto", "Inter", sans-serif; }
+  .droid .menu div { padding: 0 12px; height: 48px; display: flex; align-items: center; }
+  .droid .menu div:hover, .droid .menu div.hl { background: rgba(28,27,24,.08); }
+  .droid .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.32); display: none; align-items: center; justify-content: center; z-index: 20; }
+  .droid .scrim.open { display: flex; }
+  .droid .dialog { width: 312px; background: #f0eee6; border-radius: 28px; padding: 24px; }
+  .droid .dialog h2 { font-size: 24px; font-weight: 400; margin: 0 0 16px; }
+  .droid .outlined { border: 2px solid #1f1f1f; border-radius: 4px; height: 56px; padding: 0 16px; display: flex; align-items: center; position: relative; margin-bottom: 16px; }
+  .droid .outlined label { position: absolute; top: -9px; left: 12px; background: #f0eee6; font-size: 12px; padding: 0 4px; }
+  .droid .seg { display: flex; border: 1px solid #79766c; border-radius: 20px; overflow: hidden; height: 40px; }
+  .droid .seg div { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 500; border-left: 1px solid #79766c; cursor: default; }
+  .droid .seg div:first-child { border-left: 0; }
+  .droid .seg div.on { background: #e6e3d8; }
+  .droid .seg div.on::before { content: "\2713"; margin-right: 6px; }
+  .droid .hint { font-size: 12px; color: #5f5c53; margin: 8px 16px 0; }
+  .droid .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+  .droid .actions div { padding: 10px 12px; font-size: 14px; font-weight: 500; color: #1f1f1f; cursor: default; }
+</style>
+</head>
+<body>
+<div class="tabs" role="tablist">
+  <button class="tab" role="tab" data-p="kde" aria-selected="true">Linux (KDE Plasma)</button>
+  <button class="tab" role="tab" data-p="mac">macOS</button>
+  <button class="tab" role="tab" data-p="win">Windows</button>
+  <button class="tab" role="tab" data-p="droid">Android</button>
+</div>
+<div class="stage">
+
+<!-- KDE -->
+<section class="platform active" id="kde">
+  <div class="kde">
+    <div class="search"><div>Search settings…</div></div>
+    <div class="title">General</div>
+    <div class="side">
+      <div>Home</div><div>Transcribe</div><div class="sel">General</div><div>Accounts</div>
+      <div class="grp">Speech</div><div>Dictation</div>
+      <div class="grp">Text</div><div>Refinement</div><div>Writing Profiles</div><div>Vocabulary</div><div>Output</div>
+    </div>
+    <div class="content"><div class="col">
+      <h3>Updates</h3>
+      <div class="card">
+        <div class="row"><span>Update channel</span><span class="combo">Stable</span></div>
+        <div class="row"><span class="check"><i></i>Check for updates automatically</span></div>
+        <div class="row"><span>Check frequency</span><span class="combo freq" data-menu></span></div>
+        <div class="row custom"><span>Custom interval<small>Between 5 minutes and 30 days.</small></span>
+          <span class="pair"><span class="spin num"></span><span class="combo unit" data-menu></span></span></div>
+        <div class="row"><span>Check for updates<small>Speecher is up to date.</small></span><span class="btn">Check again</span></div>
+        <div class="row"><span>Current version</span><span>0.2.1</span></div>
+      </div>
+    </div></div>
+  </div>
+  <div class="menu"></div>
+</section>
+
+<!-- macOS -->
+<section class="platform" id="mac">
+  <div class="mac">
+    <div class="side">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div>Home</div><div>Transcribe</div><div class="sel">General</div><div>Accounts</div><div>Dictation</div><div>Refinement</div><div>Writing Profiles</div><div>Vocabulary</div><div>Output</div>
+    </div>
+    <div class="main">
+      <div class="bar">General</div>
+      <div class="col">
+        <h3>Updates</h3>
+        <div class="group">
+          <div class="row"><span>Update channel</span><span class="combo">Stable</span></div>
+          <div class="row"><span>Check for updates automatically</span><span class="switch"></span></div>
+          <div class="row"><span>Check frequency</span><span class="combo freq" data-menu></span></div>
+          <div class="row custom"><span>Custom interval<small>Between 5 minutes and 30 days.</small></span>
+            <span class="pair"><span class="stepper"><span class="field num"></span><span class="arrows">&#x2303;<br>&#x2304;</span></span><span class="combo unit" data-menu></span></span></div>
+          <div class="row"><span>Download and install updates automatically</span><span class="switch"></span></div>
+          <div class="row"><span>Check for updates<small>Speecher is up to date.</small></span><span class="btn">Check again</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="menu"></div>
+</section>
+
+<!-- Windows -->
+<section class="platform" id="win">
+  <div class="win">
+    <div class="side">
+      <div class="app">Speecher</div>
+      <div class="item">Home</div><div class="item">Transcribe</div><div class="item sel">General</div><div class="item">Accounts</div><div class="item">Dictation</div><div class="item">Refinement</div><div class="item">Writing Profiles</div><div class="item">Vocabulary</div><div class="item">Output</div>
+    </div>
+    <div class="main">
+      <h1>General</h1>
+      <h3>Updates</h3>
+      <div class="card"><span>Update channel</span><span class="combo">Stable</span></div>
+      <div class="card"><span>Check for updates automatically</span><span class="toggle">On<i></i></span></div>
+      <div class="card"><span>Check frequency</span><span class="combo freq" data-menu></span></div>
+      <div class="card custom"><span>Custom interval<small>Between 5 minutes and 30 days.</small></span>
+        <span class="pair"><span class="number num"></span><span class="combo unit" data-menu></span></span></div>
+      <div class="card"><span>Download and install updates automatically</span><span class="toggle">On<i></i></span></div>
+      <div class="card"><span>Check for updates<small>Speecher is up to date.</small></span><span class="btn">Check again</span></div>
+    </div>
+  </div>
+  <div class="menu"></div>
+</section>
+
+<!-- Android -->
+<section class="platform" id="droid">
+  <div class="droid"><div class="screen">
+    <div class="status"><span>9:41</span><span>&#9679; &#9679; &#9646;</span></div>
+    <div class="appbar"><span>&#8592;</span>Settings</div>
+    <div class="sec">Dictation</div>
+    <div class="item"><span>Transcription<small>ChatGPT</small></span></div>
+    <div class="item"><span>Vocabulary<small>12 words</small></span></div>
+    <div class="sec">Updates</div>
+    <div class="item freqrow"><span>Check for updates</span><span class="val freq" data-menu></span></div>
+    <div class="item"><span>Current version<small>0.4.0</small></span></div>
+    <div class="scrim"><div class="dialog">
+      <h2>Custom interval</h2>
+      <div class="outlined"><label>Every</label><span class="num"></span></div>
+      <div class="seg"><div data-u="minutes">Minutes</div><div data-u="hours">Hours</div><div data-u="days">Days</div></div>
+      <div class="hint">Between 5 minutes and 30 days.</div>
+      <div class="actions"><div class="cancel">Cancel</div><div class="ok">OK</div></div>
+    </div></div>
+    <div class="menu"></div>
+  </div></div>
+</section>
+</div>
+
+<script>
+const PRESETS = [
+  ["5", "Every 5 minutes"], ["15", "Every 15 minutes"], ["30", "Every 30 minutes"],
+  ["60", "Every hour"], ["360", "Every 6 hours"], ["720", "Every 12 hours"],
+  ["1440", "Every day"], ["10080", "Every week"],
+];
+const UNITS = [["minutes", "minutes"], ["hours", "hours"], ["days", "days"]];
+const RANGE = { minutes: [5, 1440], hours: [1, 720], days: [1, 30] };
+
+const state = {};
+for (const p of ["kde", "mac", "win", "droid"]) state[p] = { freq: p === "droid" ? "1440" : "30", n: 3, unit: "days" };
+
+function customLabel(s) {
+  const unit = s.n === 1 ? s.unit.slice(0, -1) : s.unit;
+  return s.n === 1 ? `Every ${unit}` : `Every ${s.n} ${unit}`;
+}
+
+function render(p) {
+  const root = document.getElementById(p), s = state[p];
+  const freqOptions = [...PRESETS, ["custom", p === "droid" ? "Custom…" : "Custom"]];
+  const freq = root.querySelector(".freq");
+  freq.textContent = p === "droid" && s.freq === "custom"
+    ? customLabel(s) : freqOptions.find(o => o[0] === s.freq)[1];
+  freq.options = freqOptions;
+  freq.onPick = v => {
+    if (p === "droid" && v === "custom") return openDialog();
+    s.freq = v; render(p);
+  };
+  if (p === "droid") { renderDialog(); return; }
+  const custom = root.querySelector(".custom");
+  const wasHidden = custom.classList.contains("hidden");
+  custom.classList.toggle("hidden", s.freq !== "custom");
+  if (wasHidden && s.freq === "custom") { custom.classList.remove("new"); void custom.offsetWidth; custom.classList.add("new"); }
+  root.querySelector(".num").textContent = s.n;
+  const unit = root.querySelector(".unit");
+  unit.textContent = s.unit;
+  unit.options = UNITS;
+  unit.onPick = v => { s.unit = v; s.n = Math.min(Math.max(s.n, RANGE[v][0]), RANGE[v][1]); render(p); };
+}
+
+// Android's custom interval dialog edits a draft and commits on OK.
+let draft;
+function openDialog() { draft = { ...state.droid }; document.querySelector("#droid .scrim").classList.add("open"); renderDialog(); }
+function renderDialog() {
+  const d = draft || state.droid, root = document.querySelector("#droid .dialog");
+  root.querySelector(".num").textContent = d.n;
+  root.querySelectorAll(".seg div").forEach(el => el.classList.toggle("on", el.dataset.u === d.unit));
+}
+document.querySelectorAll("#droid .seg div").forEach(el => el.onclick = () => {
+  draft.unit = el.dataset.u; draft.n = Math.min(Math.max(draft.n, RANGE[draft.unit][0]), RANGE[draft.unit][1]); renderDialog();
+});
+document.querySelector("#droid .cancel").onclick = () => { draft = null; document.querySelector("#droid .scrim").classList.remove("open"); };
+document.querySelector("#droid .ok").onclick = () => {
+  Object.assign(state.droid, draft, { freq: "custom" }); draft = null;
+  document.querySelector("#droid .scrim").classList.remove("open"); render("droid");
+};
+
+// Typing a number into the focused number field.
+let numTarget = null;
+document.addEventListener("click", e => {
+  const num = e.target.closest(".num");
+  document.querySelectorAll(".focus").forEach(el => el.classList.remove("focus"));
+  numTarget = null;
+  if (!num) return;
+  const p = num.closest(".platform").id;
+  numTarget = { p, typed: "" };
+  num.classList.add("focus");
+});
+document.addEventListener("keydown", e => {
+  if (!numTarget || !/^[0-9]$|Backspace/.test(e.key)) return;
+  numTarget.typed = e.key === "Backspace" ? numTarget.typed.slice(0, -1) : numTarget.typed + e.key;
+  const s = numTarget.p === "droid" ? draft : state[numTarget.p];
+  const [min, max] = RANGE[s.unit];
+  s.n = Math.min(Math.max(Number(numTarget.typed || 0), min), max);
+  numTarget.p === "droid" ? renderDialog() : render(numTarget.p);
+});
+
+// Dropdown menus drawn in each platform's style.
+let openCombo = null;
+function closeMenu() {
+  document.querySelectorAll(".menu.open").forEach(m => m.classList.remove("open"));
+  openCombo?.classList.remove("open"); openCombo = null;
+}
+document.addEventListener("click", e => {
+  const item = e.target.closest(".menu div");
+  if (item) { const c = openCombo; closeMenu(); c.onPick(item.dataset.v); return; }
+  const combo = e.target.closest("[data-menu]") || e.target.closest(".freqrow")?.querySelector("[data-menu]");
+  closeMenu();
+  if (!combo) return;
+  const section = combo.closest(".platform");
+  const menu = section.querySelector(".menu");
+  const current = combo.textContent;
+  menu.innerHTML = combo.options.map(([v, l]) =>
+    `<div data-v="${v}" class="${l === current || (v === "custom" && !combo.options.some(o => o[1] === current)) ? "on" : ""}">${l}</div>`).join("");
+  const r = combo.getBoundingClientRect(), h = (menu.parentElement.closest(".screen") || document.body).getBoundingClientRect();
+  menu.classList.add("open");
+  const base = menu.parentElement.classList.contains("screen") ? h : { left: 0, top: -window.scrollY };
+  menu.style.minWidth = r.width + "px";
+  menu.style.left = (r.right - base.left - Math.max(menu.offsetWidth, r.width)) + "px";
+  const limit = menu.parentElement.classList.contains("screen") ? h.height : window.innerHeight + window.scrollY;
+  const below = r.bottom - base.top + 3;
+  menu.style.top = (below + menu.offsetHeight > limit ? Math.max(8, limit - menu.offsetHeight - 8) : below) + "px";
+  combo.classList.add("open"); openCombo = combo;
+});
+
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  closeMenu();
+  document.querySelectorAll(".tab").forEach(x => x.setAttribute("aria-selected", x === t));
+  document.querySelectorAll(".platform").forEach(x => x.classList.toggle("active", x.id === t.dataset.p));
+});
+
+["kde", "mac", "win", "droid"].forEach(render);
+</script>
+</body>
+</html>

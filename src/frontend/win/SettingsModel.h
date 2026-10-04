@@ -72,9 +72,11 @@ struct RowSnapshot {
     RowKind kind = RowKind::Info;
     QString actionLabel;
     NumberRange range;
+    QList<NumberUnit> units;
     int contentWidthHint = 0;
-    // bool for a Toggle, int for a Number, a QList<QVariantMap> for a
-    // Collection, a QString otherwise; invalid for a row without a value.
+    // bool for a Toggle, int for a Number, a QVariantMap of "number" and
+    // "unit" for a Number with units, a QList<QVariantMap> for a Collection,
+    // a QString otherwise; invalid for a row without a value.
     QVariant value;
     QList<RowOption> options;
     QList<RowOption> suggestions;

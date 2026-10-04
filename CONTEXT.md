@@ -61,8 +61,12 @@ The system-wide key combination that toggles a Dictation Session from anywhere o
 _Avoid_: Hotkey, global hotkey, keybinding
 
 **Cancel Shortcut**:
-An optional second Global Shortcut that cancels the Dictation Session in progress: nothing is pasted, copied or recorded, and the tray keeps the words heard so far to copy. Unbound until the user sets one. On Windows and macOS, Escape also cancels while a session is active.
+An optional Global Shortcut that cancels the Dictation Session in progress: nothing is pasted, copied or recorded, and the tray keeps the words heard so far to copy. Unbound until the user sets one. It acts only during a session, so where the desktop lets Speecher take a key just for the session (Windows, macOS, Plasma, X11) it may be a bare key such as C or Escape. On Windows and macOS, Escape also cancels while a session is active, unless Escape is the Cancel or Pause Shortcut.
 _Avoid_: Abort key, escape shortcut
+
+**Pause Shortcut**:
+An optional Global Shortcut that pauses the Dictation Session in progress and, pressed again, resumes it. Unbound until the user sets one, and like the Cancel Shortcut it acts only during a session and may be a bare key where the desktop allows. The two together are the session shortcuts.
+_Avoid_: Hold key, mute shortcut
 
 **Update Channel**:
 The stream of releases an installed Speecher follows: Stable or Nightly. A per-user setting, defaulting to Stable.

@@ -28,6 +28,7 @@ public:
     QString shortcutDisplay() const override;
     QString unsupportedBindingReason(const ShortcutBinding &binding) const override;
     bool setShortcut(const ShortcutBinding &shortcut, QString *error = nullptr) override;
+    void setArmed(bool armed) override;
     void suspend() override;
     QString resume() override;
     bool removeRegistration(QString *error = nullptr) override;
