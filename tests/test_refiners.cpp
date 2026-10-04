@@ -345,7 +345,9 @@ private slots:
         OpenAiRefiner refiner;
         QSignalSpy failed(&refiner, &OpenAiRefiner::failed);
         refiner.refine("hello", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
-        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 2000);
+        // Windows retries a refused connection for a few seconds before it
+        // reports it; the 10 s connect budget is not what fails it.
+        QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 8000);
         const ProviderFailure failure = failed.first().first().value<ProviderFailure>();
         QCOMPARE(failure.kind, kind);
         QCOMPARE(failure.httpStatus, httpStatus);
