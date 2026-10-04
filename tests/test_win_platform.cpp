@@ -79,10 +79,16 @@ private slots:
             // Punctuation maps through the active layout; comma sits on
             // VK_OEM_COMMA on effectively every layout.
             QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Comma),
+            QKeySequence(Qt::CTRL | Qt::Key_Return),
+            // Navigation keys, which session shortcuts may also use bare.
+            QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_Home),
+            QKeySequence(Qt::SHIFT | Qt::Key_PageDown),
+            QKeySequence(Qt::Key_Delete),
+            QKeySequence(Qt::Key_Left),
         };
         for (const QKeySequence &shortcut : shortcuts) {
             QString error;
-            const auto hotKey = WinGlobalShortcutBinder::nativeHotKey(shortcut, &error);
+            const auto hotKey = WinGlobalShortcutBinder::nativeHotKey(shortcut, &error, true);
             QVERIFY2(hotKey.has_value(), qPrintable(error));
             QCOMPARE(WinGlobalShortcutBinder::keySequenceForHotKey(
                          hotKey->modifiers, hotKey->virtualKey),
@@ -148,34 +154,43 @@ private slots:
         WinGlobalShortcutBinder dictation;
         QVERIFY(!dictation.setShortcut(bare, &error));
 
-        WinGlobalShortcutBinder binder(GlobalShortcutBinder::actionFor(GlobalShortcutRole(role)));
+        WinSessionShortcutBinder binder(GlobalShortcutBinder::actionFor(GlobalShortcutRole(role)));
         QVERIFY2(binder.setShortcut(bare, &error), qPrintable(error));
-        QCOMPARE(binder.m_hotKeyId, 0);
+        QVERIFY(!binder.m_registered);
         binder.setArmed(true);
-        QVERIFY(binder.m_hotKeyId != 0);
+        QVERIFY(binder.m_registered);
         // Recording a replacement mid-session still needs the keys free.
         binder.suspend();
-        QCOMPARE(binder.m_hotKeyId, 0);
+        QVERIFY(!binder.m_registered);
         QCOMPARE(binder.resume(), QString());
-        QVERIFY(binder.m_hotKeyId != 0);
+        QVERIFY(binder.m_registered);
         binder.setArmed(false);
-        QCOMPARE(binder.m_hotKeyId, 0);
+        QVERIFY(!binder.m_registered);
 
         // A key another app owns is refused while it is being chosen,
-        // although nothing would be held until the next session.
+        // although nothing would be held until the next session, and also
+        // while suspended, as the recorder binds before it resumes.
         QVERIFY(RegisterHotKey(nullptr, 0x5ee8, MOD_NOREPEAT, VK_F21));
         const auto release = qScopeGuard([] { UnregisterHotKey(nullptr, 0x5ee8); });
-        QVERIFY(!binder.setShortcut(QKeySequence(Qt::Key_F21), &error));
-        QVERIFY(WinGlobalShortcutBinder::describesConflict(error));
+        const ShortcutBinding owned{QKeySequence(Qt::Key_F21)};
+        QVERIFY(!binder.setShortcut(owned, &error));
+        QCOMPARE(error, globalShortcutOwnedElsewhereText(owned));
+        binder.suspend();
+        QVERIFY(!binder.setShortcut(owned, &error));
+        QCOMPARE(binder.resume(), QString());
         QCOMPARE(binder.shortcut().combination(), bare);
-        QCOMPARE(binder.m_hotKeyId, 0);
+        QVERIFY(!binder.m_registered);
+        // A key Windows cannot register at all says so, not that it is owned.
+        QVERIFY(!binder.setShortcut(QKeySequence(Qt::Key_F12), &error));
+        QVERIFY(!WinGlobalShortcutBinder::describesConflict(error));
+        QVERIFY(error != globalShortcutOwnedElsewhereText(ShortcutBinding{QKeySequence(Qt::Key_F12)}));
 
         // A single key took over through the router: arming must not bring
         // the replaced hot key back beside it.
         QVERIFY(binder.removeRegistration());
         binder.setArmed(true);
-        QCOMPARE(binder.m_hotKeyId, 0);
-        QVERIFY2(binder.setShortcut({}, &error), qPrintable(error));
+        QVERIFY(!binder.m_registered);
+        QVERIFY(binder.shortcut().isEmpty());
     }
 
     // Raw input only watches, so a Cancel or Pause key that types would also

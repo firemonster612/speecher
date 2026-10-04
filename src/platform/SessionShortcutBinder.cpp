@@ -6,6 +6,8 @@
 #include <QDebug>
 #include <QSettings>
 
+#include <algorithm>
+
 namespace speecher {
 namespace {
 
@@ -49,7 +51,8 @@ bool SessionShortcutBinder::setShortcut(const ShortcutBinding &shortcut, QString
     QString reason = unsupportedBindingReason(shortcut);
     // Taking the keys now, armed or not, is what tells another app already
     // holds them while the person is still choosing.
-    if (reason.isEmpty() && !shortcut.isEmpty() && m_suspensions == 0) {
+    if (reason.isEmpty() && !shortcut.isEmpty()
+        && (m_suspensions == 0 || testsKeysWhileSuspended())) {
         letGo();
         m_holding = false;
         if (!take(shortcut.combination())) {
