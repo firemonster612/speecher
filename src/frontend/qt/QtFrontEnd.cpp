@@ -120,6 +120,7 @@ QtFrontEnd::~QtFrontEnd()
     // The updater outlives the front end, so drop the provider that reaches
     // back into this object and its windows.
     m_controller->updates()->setRestoreStateProvider({});
+    delete m_appWindow;
     delete m_popup;
     delete m_transcribeWindow;
 }
