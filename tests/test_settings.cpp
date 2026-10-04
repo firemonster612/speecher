@@ -296,6 +296,10 @@ private slots:
                     .overlaps(ShortcutBinding::singleKey(QStringLiteral("KeyC"))));
         QVERIFY(ShortcutBinding::singleKey(QStringLiteral("Escape"))
                     .overlaps(ShortcutBinding(QKeySequence(Qt::Key_Escape))));
+        QVERIFY(ShortcutBinding::singleKey(QStringLiteral("Enter"))
+                    .overlaps(ShortcutBinding(QKeySequence(Qt::CTRL | Qt::Key_Return))));
+        QVERIFY(ShortcutBinding::singleKey(QStringLiteral("PrintScreen"))
+                    .overlaps(ShortcutBinding(QKeySequence(Qt::Key_Print))));
         QVERIFY(!f13.overlaps(ShortcutBinding(QKeySequence(Qt::Key_F14))));
         QVERIFY(!f13.overlaps(ShortcutBinding()));
         // Desktop shortcut services match combinations exactly.

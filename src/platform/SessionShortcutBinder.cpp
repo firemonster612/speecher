@@ -11,9 +11,12 @@
 namespace speecher {
 namespace {
 
+// defaultFormat, like the rest of the settings, so tests that point it at a
+// temporary file never touch the real app's preferences.
 QSettings speecherSettings()
 {
-    return QSettings(QString::fromLatin1(SettingsKeys::Organization),
+    return QSettings(QSettings::defaultFormat(), QSettings::UserScope,
+                     QString::fromLatin1(SettingsKeys::Organization),
                      QString::fromLatin1(SettingsKeys::Application));
 }
 

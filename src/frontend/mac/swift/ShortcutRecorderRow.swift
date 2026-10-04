@@ -65,9 +65,11 @@ final class ShortcutRecorder: ObservableObject {
                 stop()
                 return nil
             }
-            // Keypad keys stay single keys: a hot key named by their character
-            // would take the top-row key instead.
-            if (bareKeysCombine && !keypadKeyCodes.contains(event.keyCode))
+            // For the session shortcuts, keypad keys stay single keys with or
+            // without modifiers: a hot key named by their character would
+            // take the top-row key instead.
+            let keypad = bareKeysCombine && keypadKeyCodes.contains(event.keyCode)
+            if !keypad, bareKeysCombine
                 || !event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
                 // Bound before the recording ends, as single keys are:
                 // ending it gives the shortcuts their keys back, and during a

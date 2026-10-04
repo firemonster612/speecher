@@ -751,6 +751,21 @@ private slots:
         QCOMPARE(int(failed), int(GlobalShortcutRole::Pause));
     }
 
+    // A watcher cannot stop a key, so it refuses a session shortcut on a key
+    // that types; the dictation shortcut may still take one.
+    void watchersRefuseTypingKeysForSessionShortcuts()
+    {
+        const ShortcutBinding c = ShortcutBinding::singleKey(QStringLiteral("KeyC"));
+        const ShortcutBinding f13 = ShortcutBinding::singleKey(QStringLiteral("F13"));
+        for (const GlobalShortcutRole role : {GlobalShortcutRole::Cancel, GlobalShortcutRole::Pause}) {
+            FakeSingleKeyShortcutBinder session(GlobalShortcutBinder::actionFor(role));
+            QCOMPARE(session.unsupportedBindingReason(c), watchedKeyStillTypesText(c));
+            QVERIFY(session.unsupportedBindingReason(f13).isEmpty());
+        }
+        FakeSingleKeyShortcutBinder dictation(GlobalShortcutBinder::actionFor(GlobalShortcutRole::Dictation));
+        QVERIFY(dictation.unsupportedBindingReason(c).isEmpty());
+    }
+
     // The Cancel Shortcut keeps its binding under its own key, next to the
     // dictation shortcut's, and a new binder reads it back.
     void cancelShortcutPersistsUnderItsOwnKey()

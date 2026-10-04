@@ -3013,15 +3013,6 @@ QString globalShortcutOwnedElsewhereText(const ShortcutBinding &binding)
     return QStringLiteral("%1 is already a shortcut in another app.").arg(binding.displayText());
 }
 
-QString bareKeyNeedsSessionGrabText(const ShortcutBinding &binding)
-{
-    return QStringLiteral(
-        "Your desktop cannot give %1 to Speecher only while you dictate, so it would stop "
-        "working in every other app. Use a key combination, or a key that cannot type, such "
-        "as F13 or Right Ctrl.")
-        .arg(binding.displayText());
-}
-
 QString watchedKeyStillTypesText(const ShortcutBinding &binding)
 {
     return QStringLiteral(

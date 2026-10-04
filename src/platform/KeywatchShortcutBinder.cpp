@@ -61,9 +61,6 @@ QString KeywatchShortcutBinder::unsupportedBindingReason(const ShortcutBinding &
         return reason;
     }
     if (!keywatch::permittedKeyByCode(binding.keyCode().toStdString())) {
-        if (action().sessionOnly) {
-            return bareKeyNeedsSessionGrabText(binding);
-        }
         return QStringLiteral(
             "On Wayland, Speecher's key helper watches only keys that cannot type text: "
             "Shift, Ctrl, Alt, Meta, Caps Lock and F13 to F24. %1 is not one of them.")

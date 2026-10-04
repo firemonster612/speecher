@@ -219,13 +219,17 @@ void ShortcutRecorder::record(PaneHost &host, const QString &title, std::functio
         // dictating, so a bare key such as C or Escape is a combination
         // without modifiers there and types as usual the rest of the time. A
         // key no hot key can name stays a single key, which the binder vets.
-        // Keypad keys stay single keys: a hot key named by their character
-        // would take the top-row key instead.
+        // Keypad keys stay single keys for these two, modifiers or not: a hot
+        // key named by their character or navigation key would take the
+        // main key instead. The scancode tells them apart whatever Num Lock
+        // says: 7 to . without the E0 prefix, *, and Enter and / with it.
         const int virtualKey = static_cast<int>(args.Key());
-        const bool keypad = virtualKey >= VK_NUMPAD0 && virtualKey <= VK_DIVIDE;
-        const bool combination = ShortcutRecorder::heldModifiers() != Qt::NoModifier
-            || (role != GlobalShortcutRole::Dictation && !keypad
-                && ShortcutRecorder::qtKeyForVirtualKey(virtualKey) != 0);
+        const bool keypad = (scanCode >= 0x47 && scanCode <= 0x53) || scanCode == 0x37
+            || scanCode == 0xE01C || scanCode == 0xE035;
+        const bool session = role != GlobalShortcutRole::Dictation;
+        const bool combination = !(session && keypad)
+            && (ShortcutRecorder::heldModifiers() != Qt::NoModifier
+                || (session && ShortcutRecorder::qtKeyForVirtualKey(virtualKey) != 0));
         recording->chordKeyed = combination;
         recording->capture = combination ? combinationCapture(host, args.Key(), role)
                                          : singleKeyCapture(host, scanCode, role);
