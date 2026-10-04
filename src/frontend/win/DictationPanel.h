@@ -38,6 +38,9 @@ private:
     bool visibleForTest() const;
     quint64 presentedGenerationForTest() const;
     qintptr windowStyleForTest() const;
+    // The fix button an error or an outcome offers, and pressing it.
+    bool fixVisibleForTest() const;
+    void pressFixForTest();
     // Drive the panel's states without a live dictation session, and film the
     // result, for the UI-evidence grabs on the pattern of the E2E rigs.
     void driveStatusForTest(const QString &status);
