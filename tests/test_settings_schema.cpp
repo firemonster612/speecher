@@ -6,6 +6,7 @@
 #include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
 #include "core/ReleaseNotesPresentation.h"
+#include "core/settings/FallbackPresentation.h"
 #include "core/settings/SettingsSchema.h"
 #include "core/settings/SpokenLanguages.h"
 #include "transcribe/TranscribePresentation.h"
@@ -52,6 +53,44 @@ bool hasRow(const SettingsPage &page, const QString &id)
         }
     }
     return false;
+}
+
+// Every provider of both roles, with their registry labels.
+SchemaContext chainContext()
+{
+    SchemaContext context = fakeContext();
+    context.speechProviders = {{QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+                               {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                               {QStringLiteral("local"), QStringLiteral("Local Model")},
+                               {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")}};
+    context.refinementProviders = {{QStringLiteral("openai"), QStringLiteral("OpenAI"), true},
+                                   {QStringLiteral("anthropic"), QStringLiteral("Anthropic"), true},
+                                   {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint"), false},
+                                   {QStringLiteral("local"), QStringLiteral("Local Runner"), false}};
+    return context;
+}
+
+QList<RowOption> speechChoices()
+{
+    return chainContext().speechProviders;
+}
+
+QList<RowOption> refinementChoices()
+{
+    QList<RowOption> choices;
+    for (const RefinementProvider &provider : chainContext().refinementProviders) {
+        choices.append({provider.id, provider.label});
+    }
+    return choices;
+}
+
+QStringList ids(const QList<RowOption> &options)
+{
+    QStringList ids;
+    for (const RowOption &option : options) {
+        ids.append(option.id);
+    }
+    return ids;
 }
 
 } // namespace
@@ -1489,6 +1528,11 @@ private slots:
                     }
                 }
             }
+            for (const SettingsSubpage &subpage : schema.subpages) {
+                for (const SettingsPaneGroup &group : subpage.groups) {
+                    placed += group.rows;
+                }
+            }
             for (const SettingsPage &page : schema.pages) {
                 if (page.id == QStringLiteral("whatsNew")) {
                     continue;
@@ -1672,55 +1716,69 @@ private slots:
         QVERIFY(named >= 2);
     }
 
-    void customEndpointRowsSitUnderTheirPickerWhileItIsChosen()
+    // A provider's own rows are a card named after it, shown while the
+    // provider is anywhere in the chain.
+    void providerRowsAreCardsShownWhileTheProviderIsInTheChain()
     {
         const SettingsSchema schema = buildSettingsSchema(fakeContext());
-        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
-        const SettingsPage &refinement = schema.page(QStringLiteral("refinement"));
-        const auto idsAfter = [](const SettingsPage &page, const QString &picker) {
-            for (const SettingsSection &section : page.sections) {
-                QStringList ids;
-                for (const SettingsRow &row : section.rows) {
-                    ids.append(row.id);
-                }
-                const int at = ids.indexOf(picker);
-                if (at >= 0) {
-                    return ids.mid(at + 1);
+        const auto cardRows = [&schema](const QString &pane, const QString &title) {
+            for (const SettingsPaneGroup &group : schema.pane(pane)->groups) {
+                if (group.title == title) {
+                    return group.rows;
                 }
             }
             return QStringList();
         };
-        // After the Spoken language and its caution, and Codex's second pass.
-        QCOMPARE(idsAfter(audio, QStringLiteral("speechProvider")).mid(3, 7),
-                 QStringList({QStringLiteral("speechLocalModel"), QStringLiteral("speechLocalModelDownload"),
-                              QStringLiteral("speechEndpointUrl"), QStringLiteral("speechEndpointPath"),
+        QCOMPARE(cardRows(QStringLiteral("dictation"), QStringLiteral("Transcription")),
+                 QStringList({QStringLiteral("speechProvider"), QStringLiteral("speechFallbacks"),
+                              QStringLiteral("spokenLanguage"), QStringLiteral("spokenLanguageCaution"),
+                              QStringLiteral("codexFinalRetranscribe")}));
+        QCOMPARE(cardRows(QStringLiteral("dictation"), QStringLiteral("Local Model")),
+                 QStringList({QStringLiteral("speechLocalModel"), QStringLiteral("speechLocalModelDownload")}));
+        QCOMPARE(cardRows(QStringLiteral("dictation"), QStringLiteral("Custom Endpoint")),
+                 QStringList({QStringLiteral("speechEndpointUrl"), QStringLiteral("speechEndpointPath"),
                               QStringLiteral("speechEndpointApiKey"), QStringLiteral("speechEndpointModel"),
                               QStringLiteral("speechEndpointTest")}));
-        // After each account's Model, Effort and Speed (and Haiku's caution).
-        QCOMPARE(idsAfter(refinement, QStringLiteral("refinementProvider")).mid(7, 9),
+        QCOMPARE(cardRows(QStringLiteral("refinement"), QStringLiteral("Provider")),
+                 QStringList({QStringLiteral("refinementProvider"), QStringLiteral("refinementFallbacks")}));
+        QCOMPARE(cardRows(QStringLiteral("refinement"), QStringLiteral("Anthropic")),
+                 QStringList({QStringLiteral("anthropicModel"), QStringLiteral("anthropicModelCaution"),
+                              QStringLiteral("anthropicEffort"), QStringLiteral("anthropicFastMode")}));
+        QCOMPARE(cardRows(QStringLiteral("refinement"), QStringLiteral("Local Runner")),
                  QStringList({QStringLiteral("localRunner"), QStringLiteral("localRunnerModel"),
-                              QStringLiteral("localRunnerDetect"), QStringLiteral("refinementEndpointServer"),
-                              QStringLiteral("refinementEndpointFormat"),
+                              QStringLiteral("localRunnerDetect")}));
+        QCOMPARE(cardRows(QStringLiteral("refinement"), QStringLiteral("Custom Endpoint")),
+                 QStringList({QStringLiteral("refinementEndpointServer"), QStringLiteral("refinementEndpointFormat"),
                               QStringLiteral("refinementEndpointUrl"), QStringLiteral("refinementEndpointApiKey"),
-                              QStringLiteral("refinementEndpointModel"),
-                              QStringLiteral("refinementEndpointTest")}));
+                              QStringLiteral("refinementEndpointModel"), QStringLiteral("refinementEndpointTest")}));
 
+        const SettingsPage &audio = schema.page(QStringLiteral("audio"));
+        const SettingsPage &refinement = schema.page(QStringLiteral("refinement"));
         AppSettings settings;
         const Capabilities capabilities;
         const SettingsRow &speechUrl = rowById(audio, QStringLiteral("speechEndpointUrl"));
+        const SettingsRow &retranscribe = rowById(audio, QStringLiteral("codexFinalRetranscribe"));
         const SettingsRow &runner = rowById(refinement, QStringLiteral("localRunner"));
         const SettingsRow &refinementUrl = rowById(refinement, QStringLiteral("refinementEndpointUrl"));
+        const SettingsRow &anthropicModel = rowById(refinement, QStringLiteral("anthropicModel"));
         QVERIFY(!speechUrl.visible(settings, capabilities));
+        QVERIFY(!retranscribe.visible(settings, capabilities));
         QVERIFY(!runner.visible(settings, capabilities));
-        QVERIFY(!refinementUrl.visible(settings, capabilities));
+        QVERIFY(!anthropicModel.visible(settings, capabilities));
         settings.speech.providerId = QStringLiteral("endpoint");
         settings.refinement.providerId = QStringLiteral("local");
         QVERIFY(speechUrl.visible(settings, capabilities));
         QVERIFY(runner.visible(settings, capabilities));
         QVERIFY(!refinementUrl.visible(settings, capabilities));
-        settings.refinement.providerId = QStringLiteral("endpoint");
-        QVERIFY(!runner.visible(settings, capabilities));
+        // As fallbacks, too.
+        settings.speech.fallbackProviderIds = {QStringLiteral("codex")};
+        settings.refinement.fallbackProviderIds = {QStringLiteral("endpoint"), QStringLiteral("anthropic")};
+        QVERIFY(retranscribe.visible(settings, capabilities));
         QVERIFY(refinementUrl.visible(settings, capabilities));
+        QVERIFY(anthropicModel.visible(settings, capabilities));
+        // None runs nothing, whatever the fallbacks say.
+        settings.refinement.providerId = QStringLiteral("none");
+        QVERIFY(!refinementUrl.visible(settings, capabilities));
 
         QVERIFY(rowById(audio, QStringLiteral("speechEndpointApiKey")).secret);
         QVERIFY(rowById(refinement, QStringLiteral("refinementEndpointApiKey")).secret);
@@ -1730,6 +1788,203 @@ private slots:
         QCOMPARE(settings.speech.endpoint.path, QStringLiteral("/inference"));
         QCOMPARE(settings.refinement.endpoint.model, QStringLiteral("gemma4:e4b"));
         QCOMPARE(settings.refinement.localRunner.model, QStringLiteral("lfm"));
+    }
+
+    void theFallbacksRowOpensASubpageAndSaysWhatItHolds()
+    {
+        const SettingsSchema schema = buildSettingsSchema(chainContext());
+        const SettingsRow *speech = schema.row(QStringLiteral("speechFallbacks"));
+        const SettingsRow *refinement = schema.row(QStringLiteral("refinementFallbacks"));
+        QCOMPARE(speech->kind, RowKind::Action);
+        QCOMPARE(speech->targetPage, QStringLiteral("dictation:fallbacks"));
+        QCOMPARE(refinement->targetPage, QStringLiteral("refinement:fallbacks"));
+
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        QCOMPARE(speech->helpValue(settings), QStringLiteral("None. Dictation stops if ChatGPT Codex is unavailable."));
+        QCOMPARE(refinement->helpValue(settings),
+                 QStringLiteral("None. Your words are pasted as spoken if OpenAI is unavailable."));
+        settings.speech.fallbackProviderIds = {QStringLiteral("endpoint"), QStringLiteral("local")};
+        QCOMPARE(speech->helpValue(settings), QStringLiteral("Custom Endpoint, then Local Model"));
+        QVERIFY(refinement->visible(settings, Capabilities{}));
+        settings.refinement.providerId = QStringLiteral("none");
+        QVERIFY(!refinement->visible(settings, Capabilities{}));
+
+        // The subpage is no pane of its own: the sidebar keeps its parent.
+        const PageId page = resolvePage(schema, QStringLiteral("Dictation:Fallbacks"));
+        QCOMPARE(page.pane, QStringLiteral("dictation"));
+        QCOMPARE(page.subpage, QStringLiteral("dictation:fallbacks"));
+        QVERIFY(resolvePage(schema, QStringLiteral("dictation")).subpage.isEmpty());
+        const SettingsSubpage *subpage = schema.subpage(QStringLiteral("refinement:fallbacks"));
+        QCOMPARE(subpage->parent, QStringLiteral("refinement"));
+        QCOMPARE(subpage->title, QStringLiteral("Fallbacks"));
+        QCOMPARE(subpage->groups.first().rows, QStringList{QStringLiteral("refinementFallbackList")});
+        QVERIFY(!schema.pane(QStringLiteral("dictation:fallbacks")));
+    }
+
+    void aNewPrimaryLeavesTheFallbacksThroughTheRows()
+    {
+        const SettingsSchema schema = buildSettingsSchema(chainContext());
+        AppSettings settings;
+        schema.row(QStringLiteral("speechFallbackList"))
+            ->apply(settings, QStringList{QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("local"),
+                                          QStringLiteral("codex")});
+        QCOMPARE(settings.speech.fallbackProviderIds, (QStringList{QStringLiteral("codex"), QStringLiteral("local")}));
+        schema.row(QStringLiteral("speechProvider"))->apply(settings, QStringLiteral("codex"));
+        QCOMPARE(settings.speech.fallbackProviderIds, QStringList{QStringLiteral("local")});
+
+        schema.row(QStringLiteral("refinementFallbackList"))->apply(settings, QStringList{QStringLiteral("local")});
+        schema.row(QStringLiteral("refinementProvider"))->apply(settings, QStringLiteral("none"));
+        QVERIFY(settings.refinement.fallbackProviderIds.isEmpty());
+        QCOMPARE(schema.row(QStringLiteral("refinementFallbackList"))->value(settings).toStringList(), QStringList());
+    }
+
+    void theFallbackListOffersWhatIsLeftUntilTheChainIsFull()
+    {
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.fallbackProviderIds = {QStringLiteral("local")};
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        LiveFacts facts;
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+
+        FallbackListPresentation list =
+            fallbackListPresentation(ProviderRole::Speech, settings, facts, speechChoices(), FallbackSurface::Settings);
+        QCOMPARE(list.heading, QStringLiteral("If ChatGPT Codex is unavailable"));
+        QVERIFY(list.footer.isEmpty());
+        QCOMPARE(list.items.size(), 1);
+        QCOMPARE(list.items.first().label, QStringLiteral("Local Model"));
+        QVERIFY(!list.items.first().canMoveUp && !list.items.first().canMoveDown);
+        QVERIFY(list.canAdd);
+        QCOMPARE(ids(list.addChoices), (QStringList{QStringLiteral("claude"), QStringLiteral("endpoint")}));
+        // Setup sets up no speech Custom Endpoint.
+        QCOMPARE(ids(fallbackListPresentation(ProviderRole::Speech, settings, facts, speechChoices(),
+                                              FallbackSurface::Setup)
+                         .addChoices),
+                 QStringList{QStringLiteral("claude")});
+
+        settings.speech.fallbackProviderIds = withFallbackAdded(settings, ProviderRole::Speech, QStringLiteral("claude"));
+        list = fallbackListPresentation(ProviderRole::Speech, settings, facts, speechChoices(), FallbackSurface::Settings);
+        QCOMPARE(list.items.size(), 2);
+        QVERIFY(!list.items[0].canMoveUp && list.items[0].canMoveDown);
+        QVERIFY(list.items[1].canMoveUp && !list.items[1].canMoveDown);
+        QVERIFY(!list.canAdd);
+
+        // Refinement says what happens when none answers, and None has no list.
+        settings.refinement.providerId = QStringLiteral("anthropic");
+        list = fallbackListPresentation(ProviderRole::Refinement, settings, facts, refinementChoices(),
+                                        FallbackSurface::Settings);
+        QCOMPARE(list.footer, QStringLiteral("If none of these answers, your words are pasted as spoken."));
+        QCOMPARE(ids(list.addChoices),
+                 (QStringList{QStringLiteral("openai"), QStringLiteral("endpoint"), QStringLiteral("local")}));
+        settings.refinement.providerId = QStringLiteral("none");
+        list = fallbackListPresentation(ProviderRole::Refinement, settings, facts, refinementChoices(),
+                                        FallbackSurface::Settings);
+        QVERIFY(list.heading.isEmpty() && list.items.isEmpty() && !list.canAdd);
+    }
+
+    void fallbackEditsKeepTheChainNormalized()
+    {
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.fallbackProviderIds = {QStringLiteral("endpoint"), QStringLiteral("local")};
+        QCOMPARE(withFallbackMoved(settings, ProviderRole::Speech, 1, -1),
+                 (QStringList{QStringLiteral("local"), QStringLiteral("endpoint")}));
+        // A move past either end changes nothing.
+        QCOMPARE(withFallbackMoved(settings, ProviderRole::Speech, 1, 1), settings.speech.fallbackProviderIds);
+        QCOMPARE(withFallbackRemoved(settings, ProviderRole::Speech, 0), QStringList{QStringLiteral("local")});
+        // The chain is full, and the primary is never its own fallback.
+        QCOMPARE(withFallbackAdded(settings, ProviderRole::Speech, QStringLiteral("claude")),
+                 settings.speech.fallbackProviderIds);
+        settings.speech.fallbackProviderIds.removeLast();
+        QCOMPARE(withFallbackAdded(settings, ProviderRole::Speech, QStringLiteral("codex")),
+                 QStringList{QStringLiteral("endpoint")});
+        QCOMPARE(withFallbackAdded(settings, ProviderRole::Speech, QStringLiteral("claude")),
+                 (QStringList{QStringLiteral("endpoint"), QStringLiteral("claude")}));
+    }
+
+    // A fallback's row says why it can't stand in, from cached facts alone,
+    // and otherwise which turn it gets.
+    void aFallbackSaysWhyItCantStandInRightNow()
+    {
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        settings.speech.language = QStringLiteral("en");
+        settings.refinement.providerId = QStringLiteral("openai");
+        LiveFacts facts;
+        const auto speech = [&](const QString &id) {
+            return fallbackProblem(ProviderRole::Speech, id, settings, facts);
+        };
+        const auto refinement = [&](const QString &id) {
+            return fallbackProblem(ProviderRole::Refinement, id, settings, facts);
+        };
+
+        // Unknown reachability and an unread sign-in are not problems.
+        QCOMPARE(speech(QStringLiteral("claude")), FallbackProblem::None);
+        facts.signedIn.insert(QStringLiteral("claude"), false);
+        QCOMPARE(speech(QStringLiteral("claude")), FallbackProblem::SignedOut);
+        QCOMPARE(speech(QStringLiteral("local")), FallbackProblem::NoModel);
+        QCOMPARE(speech(QStringLiteral("endpoint")), FallbackProblem::NoServer);
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        QCOMPARE(speech(QStringLiteral("local")), FallbackProblem::None);
+        settings.speech.language = QStringLiteral("fr");
+        QCOMPARE(speech(QStringLiteral("local")), FallbackProblem::SpokenLanguage);
+        QVERIFY(fallbackSkipsSpokenLanguage(settings.speech, QStringLiteral("local")));
+        QVERIFY(!fallbackSkipsSpokenLanguage(settings.speech, QStringLiteral("codex")));
+
+        // Offline stops the cloud and a server out on the internet, not one
+        // on this computer or its network.
+        facts.reachability = Reachability::Offline;
+        QCOMPARE(refinement(QStringLiteral("anthropic")), FallbackProblem::Offline);
+        settings.speech.endpoint.baseUrl = QStringLiteral("http://192.168.1.20:8000");
+        QCOMPARE(speech(QStringLiteral("endpoint")), FallbackProblem::None);
+        settings.speech.endpoint.baseUrl = QStringLiteral("http://localhost:8080");
+        QCOMPARE(speech(QStringLiteral("endpoint")), FallbackProblem::None);
+        settings.speech.endpoint.baseUrl = QStringLiteral("https://api.example.com");
+        QCOMPARE(speech(QStringLiteral("endpoint")), FallbackProblem::Offline);
+
+        // A runner is missing only once a look has found it isn't running.
+        settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::None);
+        facts.runnersChecked = true;
+        QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::NoRunner);
+        facts.runners = {{QStringLiteral("ollama"), QStringLiteral("Ollama 0.34.4")}};
+        QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::None);
+
+        settings.refinement.fallbackProviderIds = {QStringLiteral("local"), QStringLiteral("anthropic")};
+        const FallbackListPresentation list = fallbackListPresentation(
+            ProviderRole::Refinement, settings, facts, refinementChoices(), FallbackSurface::Settings);
+        QCOMPARE(list.items[0].tone, StatusTone::Normal);
+        QCOMPARE(list.items[0].status, QStringLiteral("Used when OpenAI is unavailable."));
+        QCOMPARE(list.items[1].tone, StatusTone::Negative);
+    }
+
+    void aMixedChainSaysWhichProvidersReadTheScreenshot()
+    {
+        const SettingsSchema schema = buildSettingsSchema(chainContext());
+        const SettingsRow *screenshots = schema.row(QStringLiteral("includeScreenshotContext"));
+        AppSettings settings;
+        settings.refinement.providerId = QStringLiteral("local");
+        QVERIFY(!screenshots->enabled(settings, Capabilities{}));
+        const QString plain = screenshots->helpValue(settings);
+        settings.refinement.fallbackProviderIds = {QStringLiteral("anthropic")};
+        QVERIFY(screenshots->enabled(settings, Capabilities{}));
+        QCOMPARE(screenshots->helpValue(settings),
+                 plain + QStringLiteral(" Only OpenAI and Anthropic can read it; the others clean up without it."));
+        settings.refinement.providerId = QStringLiteral("openai");
+        QCOMPARE(screenshots->helpValue(settings), plain);
+    }
+
+    void theCliProxyServerShowsForAnEndpointFallbackThroughIt()
+    {
+        const SettingsSchema schema = buildSettingsSchema(chainContext());
+        const SettingsRow *server = schema.row(QStringLiteral("cliproxyBaseUrl"));
+        AppSettings settings;
+        settings.refinement.endpoint.preset = QStringLiteral("cliproxy");
+        QVERIFY(!server->visible(settings, Capabilities{}));
+        settings.refinement.fallbackProviderIds = {QStringLiteral("endpoint")};
+        QVERIFY(server->visible(settings, Capabilities{}));
     }
 
     void endpointAndRunnerRowsReportWhatTheAppLayerLearned()

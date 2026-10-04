@@ -1,4 +1,6 @@
 #include "common/test_suites.h"
+#include "app/ProviderSetup.h"
+#include "core/settings/SettingsSchema.h"
 #include "providers/ProviderRegistry.h"
 #include "common/test_doubles.h"
 
@@ -30,6 +32,30 @@ private slots:
         QCOMPARE(registry.refinementProvider(QStringLiteral("openai")), refinementProvider);
         QCOMPARE(speechProvider, speech);
         QCOMPARE(refinementProvider, refiner);
+    }
+
+    // Settings names a provider's card after it, as the registry does.
+    void providerCardsCarryTheRegistryLabels()
+    {
+        ProviderRegistry registry;
+        registerProviders(registry, nullptr, nullptr);
+        const SettingsSchema schema = buildSettingsSchema({});
+        const auto cardTitles = [&schema](const QString &pane) {
+            QStringList titles;
+            for (const SettingsPaneGroup &group : schema.pane(pane)->groups) {
+                titles.append(group.title);
+            }
+            return titles;
+        };
+        const QStringList withCards{QStringLiteral("local"), QStringLiteral("endpoint")};
+        for (const ProviderDescriptor &provider : registry.speechProviders()) {
+            if (withCards.contains(provider.id)) {
+                QVERIFY2(cardTitles(QStringLiteral("dictation")).contains(provider.label), qPrintable(provider.label));
+            }
+        }
+        for (const ProviderDescriptor &provider : registry.refinementProviders()) {
+            QVERIFY2(cardTitles(QStringLiteral("refinement")).contains(provider.label), qPrintable(provider.label));
+        }
     }
 };
 

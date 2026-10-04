@@ -253,6 +253,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/SettingsStore.cpp
   src/core/ShortcutBinding.cpp
   src/core/settings/CorrectionSettingsCodec.cpp
+  src/core/settings/FallbackPresentation.cpp
   src/core/settings/SettingsCodecs.cpp
   src/core/settings/SettingsSchema.cpp
   src/core/settings/SpokenLanguages.cpp
@@ -286,6 +287,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/SettingsStore.h
   src/core/ShortcutBinding.h
   src/core/settings/CorrectionSettingsCodec.h
+  src/core/settings/FallbackPresentation.h
   src/core/settings/SettingsCodecs.h
   src/core/settings/SettingsKeys.h
   src/core/settings/SettingsSchema.h
