@@ -243,6 +243,15 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc public var dictationCancelFrame: CGRect { panel.cancelFrame }
 
+    /// Where a finished delivery's fix button was laid out; empty while it
+    /// offers none.
+    @MainActor
+    @objc public var dictationOutcomeFixFrame: CGRect { panel.outcomeFixFrame }
+
+    /// What the outcome's fix button does.
+    @MainActor
+    @objc public func performDictationOutcomeFix() { panel.performOutcomeFix() }
+
     @MainActor
     @objc public var whatsNewOfferVisible: Bool { model.whatsNewPending }
 

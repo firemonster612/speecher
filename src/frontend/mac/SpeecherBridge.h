@@ -1060,9 +1060,11 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, copy, nullable) void (^popupOAuthRefreshRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupListeningIndicatorRequested)(void);
 @property (nonatomic, copy, nullable) void (^popupErrorRequested)(NSString *message, SpeecherErrorAction *fix);
-// A delivery's receipt, with the outcome that picks its symbol.
+// A delivery's receipt, with the outcome that picks its symbol and what it
+// offers to fix, such as an expired sign-in a fallback stood in for.
 @property (nonatomic, copy, nullable) void (^popupMessageRequested)(NSString *message,
-                                                                   SpeecherPopupOutcome outcome);
+                                                                   SpeecherPopupOutcome outcome,
+                                                                   SpeecherErrorAction *fix);
 // speecher::checkingCredentialsStatus() and accessibilityGrantActionLabel().
 @property (class, nonatomic, readonly, copy) NSString *checkingCredentialsStatus;
 @property (class, nonatomic, readonly, copy) NSString *accessibilityGrantActionLabel;

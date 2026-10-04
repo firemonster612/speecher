@@ -2308,11 +2308,13 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     QObject::connect(session,
                      &DictationSession::popupMessageRequested,
                      &_state->lifetime,
-                     [weakSelf](const QString &message, speecher::PopupOutcome outcome) {
+                     [weakSelf](const QString &message, speecher::PopupOutcome outcome,
+                                const speecher::PopupErrorAction &fix) {
                          SpeecherBridge *bridge = weakSelf;
                          if (bridge.popupMessageRequested) {
                              bridge.popupMessageRequested(message.toNSString(),
-                                                          SpeecherPopupOutcome(outcome));
+                                                          SpeecherPopupOutcome(outcome),
+                                                          [SpeecherErrorAction actionWithCore:fix]);
                          }
                      });
     QObject::connect(session,

@@ -112,6 +112,17 @@ void settle()
     }
 }
 
+// The visible dictation panel, which floats at the status bar's level.
+NSWindow *dictationPanel()
+{
+    for (NSWindow *window in NSApp.windows) {
+        if ([window isKindOfClass:[NSPanel class]] && window.visible && window.level == NSStatusWindowLevel) {
+            return window;
+        }
+    }
+    return nil;
+}
+
 } // namespace
 
 class MacFrontEndTests : public QObject {
@@ -354,12 +365,12 @@ private slots:
         // width and grows taller, with its countdown beneath.
         SpeecherErrorAction *noFix = [[SpeecherErrorAction alloc] initWithFix:SpeecherErrorFixNone pageId:@""];
         QVERIFY(bridge.popupMessageRequested);
-        bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted);
+        bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted, noFix);
         settle();
         QVERIFY(capture("receipt-inserted"));
         // A receipt shares the waveform's pill.
         QCOMPARE(panel.frame.size.height, SpeecherPopupGeometry.pillHeight);
-        bridge.popupMessageRequested(@"Copied", SpeecherPopupOutcomeCopied);
+        bridge.popupMessageRequested(@"Copied", SpeecherPopupOutcomeCopied, noFix);
         settle();
         QVERIFY(capture("receipt-copied"));
         bridge.popupErrorRequested(@"Microphone unavailable", noFix);
@@ -380,6 +391,56 @@ private slots:
         settle();
         QVERIFY(capture("error-unbroken"));
         QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 200);
+    }
+
+    // A fixable outcome carries its fix as a button, which opens the page the
+    // error path would; an outcome with none looks as it always has.
+    void outcomeOffersItsFixOnlyWithOne()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SpeecherMacUI *ui = [[SpeecherMacUI alloc] initWithBridge:bridge];
+        const auto cleanup = qScopeGuard([&] {
+            [ui dismissDictationPanel];
+            [ui hideSettings];
+        });
+        bridge.popupStatusChanged(@"Listening", SpeecherDictationStateListening);
+        bridge.popupShowRequested(75);
+        settle();
+        NSWindow *panel = dictationPanel();
+        QVERIFY(panel);
+        const auto capture = [&](const QString &name) {
+            const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
+            if (directory.isEmpty()) return;
+            QDir().mkpath(directory);
+            NSView *view = panel.contentView;
+            NSBitmapImageRep *bitmap = [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+            [view cacheDisplayInRect:view.bounds toBitmapImageRep:bitmap];
+            [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+                writeToFile:(directory + "/mac-" + name + ".png").toNSString() atomically:YES];
+        };
+
+        SpeecherErrorAction *noFix = [[SpeecherErrorAction alloc] initWithFix:SpeecherErrorFixNone pageId:@""];
+        bridge.popupMessageRequested(@"Input sent", SpeecherPopupOutcomeInserted, noFix);
+        settle();
+        QVERIFY(NSIsEmptyRect(ui.dictationOutcomeFixFrame));
+        QCOMPARE(panel.frame.size.height, SpeecherPopupGeometry.pillHeight);
+
+        SpeecherErrorAction *accounts = [[SpeecherErrorAction alloc] initWithFix:SpeecherErrorFixSettingsPage
+                                                                          pageId:@"accounts"];
+        QVERIFY(accounts.label.length > 0);
+        bridge.popupMessageRequested(@"Input sent • Used Local Model. Your ChatGPT sign-in has expired.",
+                                     SpeecherPopupOutcomeFallback, accounts);
+        settle();
+        capture("outcome-fix");
+        const NSRect fix = ui.dictationOutcomeFixFrame;
+        QVERIFY2(!NSIsEmptyRect(fix), qPrintable(QString::fromNSString(NSStringFromRect(fix))));
+        QVERIFY(panel.frame.size.width <= SpeecherBridge.popupErrorWrapWidth + 300);
+        [ui performDictationOutcomeFix];
+        settle();
+        QVERIFY(!ui.dictationPanelVisible);
+        QVERIFY(ui.settingsWindowVisible);
+        QCOMPARE(QString::fromNSString(ui.settingsPane), QStringLiteral("accounts"));
     }
 
     // The Fallbacks row opens its subpage with the parent still selected, and
