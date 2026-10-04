@@ -41,9 +41,9 @@ public:
                     SettingsSchema schema);
 
     const SettingsSchema &schema() const;
-    // The page showing a pane's groups, by pane id, or by "pane:view" for one
-    // view of an Alternatives pane. Null for a pane with no schema rows (Home,
-    // Transcribe) and for one this build does not have.
+    // The page showing a pane's groups, by pane id, by "pane:view" for one
+    // view of an Alternatives pane, or by a subpage's id. Null for a pane with
+    // no schema rows (Home, Transcribe) and for one this build does not have.
     SchemaSettingsPage *page(const QString &id) const;
     // The panes a sidebar search shows, with rows as the pages now show them.
     QList<SearchMatch> searchSettings(const QString &query) const;
@@ -61,6 +61,8 @@ signals:
     void settingsDeletionStarted();
     void whatsNewRequested();
     void localModelsRequested();
+    // A row asked for a page, by the id resolvePage() takes.
+    void pageRequested(const QString &pageId);
 
 private:
     void addPage(const QString &id,

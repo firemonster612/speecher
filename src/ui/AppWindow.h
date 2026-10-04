@@ -37,8 +37,8 @@ public:
 
     // The pane ids in the sidebar, in order, without What's New.
     QStringList sidebarPanes() const;
-    // Shows a page by id: a pane id, or "pane:view" for one of its views.
-    // An unknown id shows Home (see resolvePage).
+    // Shows a page by id: a pane id, "pane:view" for one of its views, or a
+    // subpage's id. An unknown id shows Home (see resolvePage).
     void showPage(const QString &pageId);
     // Where a window opened from hidden starts.
     void showHome();
@@ -65,12 +65,16 @@ private:
     void selectPane(const QString &paneId);
     bool sidebarListsWhatsNew() const;
     QString currentPane() const;
+    // The subpage showing, or empty.
+    QString currentSubpage() const;
     void refreshHeaderStripColor();
     void runAutoSave();
 
     void refreshUpdateBanner();
     void warnThatClosingDoesNotQuitOnce();
-    void leaveWhatsNew();
+    // Leaves What's New for the page it was opened from, or a subpage for its
+    // parent.
+    void goBack();
 
     ApplicationController *m_controller;
     SettingsPageSet *m_pages;
@@ -79,6 +83,8 @@ private:
     // Each pane's widget in the stack, and each Alternatives pane's views by id.
     QHash<QString, QWidget *> m_paneWidgets;
     QHash<QString, QTabBar *> m_viewTabs;
+    // Each subpage's widget in the stack, by its id.
+    QHash<QString, QWidget *> m_subpageWidgets;
     QString m_query;
     // Whether the list was last built with What's New at its top.
     bool m_sidebarListsWhatsNew = false;

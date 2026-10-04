@@ -1105,6 +1105,62 @@ private slots:
         }
     }
 
+    // The Fallbacks subpage shows core's list and edits it through core's
+    // mutations, saving like any other row; what can stand in follows the
+    // facts LocalSetup learns.
+    void fallbacksSubpageEditsTheChainThroughSettings()
+    {
+        ApplicationController controller(true);
+        SettingsStore *settings = controller.settings();
+        settings->setRefinementProvider(QStringLiteral("openai"));
+        settings->setRefinementFallbackProviders({QStringLiteral("anthropic"), QStringLiteral("local")});
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        // Not loadAfterShow(), which would start looking for runners.
+        pages.loadBeforeShow();
+        SchemaSettingsPage *subpage = pages.page(QStringLiteral("refinement:fallbacks"));
+        QVERIFY(subpage);
+        QCOMPARE(sectionLabels(*subpage), QStringList{QStringLiteral("If OpenAI is unavailable")});
+        QCOMPARE(subpage->findChild<QLabel *>(QStringLiteral("noteText"))->text(),
+                 QStringLiteral("If none of these answers, your words are pasted as spoken."));
+        const auto button = [subpage](const QString &name) {
+            return subpage->findChild<QToolButton *>(name);
+        };
+        QVERIFY(!button(QStringLiteral("fallbackMoveUp_anthropic"))->isEnabled());
+        QVERIFY(!button(QStringLiteral("fallbackMoveDown_local"))->isEnabled());
+        QCOMPARE(button(QStringLiteral("fallbackRemove_local"))->accessibleName(), QStringLiteral("Remove"));
+        // Two fallbacks fill the chain.
+        QVERIFY(!subpage->findChild<QComboBox *>(QStringLiteral("fallbackAdd")));
+
+        // A runner that is known to be missing shows on its row at once.
+        auto *localRow = subpage->findChild<QWidget *>(QStringLiteral("fallback_local"));
+        auto *localStatus = localRow->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QCOMPARE(localStatus->foregroundRole(), QPalette::PlaceholderText);
+        LocalSetupTestAccess::setRunners(*controller.localSetup(), {});
+        QCOMPARE(localStatus->foregroundRole(), QPalette::WindowText);
+
+        button(QStringLiteral("fallbackMoveDown_anthropic"))->click();
+        QCoreApplication::processEvents();
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->refinementFallbackProviders(),
+                 (QStringList{QStringLiteral("local"), QStringLiteral("anthropic")}));
+
+        button(QStringLiteral("fallbackRemove_anthropic"))->click();
+        QCoreApplication::processEvents();
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+
+        auto *add = subpage->findChild<QComboBox *>(QStringLiteral("fallbackAdd"));
+        QVERIFY(add);
+        QCOMPARE(add->itemText(0), QStringLiteral("Choose…"));
+        QVERIFY(add->findData(QStringLiteral("openai")) < 0);
+        emit add->activated(add->findData(QStringLiteral("anthropic")));
+        QCoreApplication::processEvents();
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->refinementFallbackProviders(),
+                 (QStringList{QStringLiteral("local"), QStringLiteral("anthropic")}));
+    }
+
     // Paste with picks how to paste; inserting directly is a Default paste choice.
     void defaultPasteOffersAccessibilityInsertion()
     {
