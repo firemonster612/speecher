@@ -38,16 +38,16 @@ void NetworkReachability::setReachability(Reachability reachability)
 Reachability NetworkReachability::fromSystem(QNetworkInformation::Reachability reachability)
 {
     switch (reachability) {
-    case QNetworkInformation::Reachability::Unknown:
-        return Reachability::Unknown;
     case QNetworkInformation::Reachability::Online:
         return Reachability::Online;
     case QNetworkInformation::Reachability::Disconnected:
+        return Reachability::Offline;
+    case QNetworkInformation::Reachability::Unknown:
     case QNetworkInformation::Reachability::Local:
     case QNetworkInformation::Reachability::Site:
         break;
     }
-    return Reachability::Offline;
+    return Reachability::Unknown;
 }
 
 } // namespace speecher

@@ -1995,13 +1995,15 @@ private slots:
         QVERIFY(server->visible(settings, Capabilities{}));
     }
 
-    void onlyTheOperatingSystemsOnlineCountsAsOnline()
+    void onlyADisconnectedSystemCountsAsOffline()
     {
-        QCOMPARE(NetworkReachability::fromSystem(QNetworkInformation::Reachability::Unknown), Reachability::Unknown);
         QCOMPARE(NetworkReachability::fromSystem(QNetworkInformation::Reachability::Online), Reachability::Online);
-        for (const auto offline : {QNetworkInformation::Reachability::Disconnected,
-                                   QNetworkInformation::Reachability::Local, QNetworkInformation::Reachability::Site}) {
-            QCOMPARE(NetworkReachability::fromSystem(offline), Reachability::Offline);
+        QCOMPARE(NetworkReachability::fromSystem(QNetworkInformation::Reachability::Disconnected),
+                 Reachability::Offline);
+        // A blocked connectivity probe reports Local or Site on working networks.
+        for (const auto unknown : {QNetworkInformation::Reachability::Unknown, QNetworkInformation::Reachability::Local,
+                                   QNetworkInformation::Reachability::Site}) {
+            QCOMPARE(NetworkReachability::fromSystem(unknown), Reachability::Unknown);
         }
     }
 
