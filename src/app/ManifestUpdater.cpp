@@ -62,7 +62,7 @@ ManifestUpdater::ManifestUpdater(SettingsStore *settings,
     , m_settings(settings)
     , m_session(session)
     , m_network(new QNetworkAccessManager(this))
-    , m_dailyTimer(new QTimer(this))
+    , m_checkTimer(new QTimer(this))
     , m_platformKey(std::move(platformKey))
     , m_downloadKey(std::move(downloadKey))
     , m_downloadDescription(std::move(downloadDescription))
@@ -70,6 +70,7 @@ ManifestUpdater::ManifestUpdater(SettingsStore *settings,
     , m_selectedChannel(settings->updateChannel())
 {
     m_network->setTransferTimeout(30000);
+    m_checkTimer->setSingleShot(true);
     m_dismissedVersion = m_settings->updatesDismissedVersion();
 
     connect(m_session, &DictationSession::stateChanged, this, [this] {
@@ -91,26 +92,39 @@ ManifestUpdater::~ManifestUpdater()
 
 void ManifestUpdater::start()
 {
-    m_dailyTimer->setInterval(baseCheckIntervalMs());
-    connect(m_dailyTimer, &QTimer::timeout, this, [this] {
-        if (m_settings->autoCheckUpdates()) {
+    connect(m_checkTimer, &QTimer::timeout, this, [this] {
+        // A failed automatic check is retried on its backoff, due or not.
+        if (m_settings->autoCheckUpdates() && (m_automaticCheckFailures > 0 || automaticCheckDue())) {
             beginCheck(m_settings->updateChannel(), true);
         }
+        scheduleAutomaticCheck();
     });
-    m_dailyTimer->start();
+    scheduleAutomaticCheck();
 
     QTimer::singleShot(0, this, [this] {
-        const qint64 lastCheck = m_settings->updatesLastCheckTime();
-        if (m_settings->autoCheckUpdates()
-            && QDateTime::currentMSecsSinceEpoch() - lastCheck > baseCheckIntervalMs()) {
+        if (m_settings->autoCheckUpdates() && automaticCheckDue()) {
             beginCheck(m_settings->updateChannel(), true);
         }
     });
 }
 
-int ManifestUpdater::baseCheckIntervalMs() const
+bool ManifestUpdater::automaticCheckDue() const
 {
-    return m_settings->updateCheckIntervalMinutes() * 60 * 1000;
+    return speecher::automaticCheckDue(m_settings->updatesLastCheckTime(),
+                                       m_settings->updateCheckIntervalMinutes(),
+                                       QDateTime::currentMSecsSinceEpoch());
+}
+
+void ManifestUpdater::scheduleAutomaticCheck()
+{
+    const int intervalMinutes = m_settings->updateCheckIntervalMinutes();
+    // Backoff never retries slower than the interval itself.
+    m_checkTimer->start(m_automaticCheckFailures > 0
+                            ? int(qMin<qint64>(automaticRetryInterval(m_automaticCheckFailures),
+                                               intervalMinutes * 60'000LL))
+                            : automaticCheckDelayMs(m_settings->updatesLastCheckTime(),
+                                                    intervalMinutes,
+                                                    QDateTime::currentMSecsSinceEpoch()));
 }
 
 UpdateController::State ManifestUpdater::state() const
@@ -489,13 +503,13 @@ void ManifestUpdater::decideCheck(const std::optional<UpdateManifest> &candidate
         }
         m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
         m_automaticCheckFailures = 0;
-        m_dailyTimer->setInterval(baseCheckIntervalMs());
+        scheduleAutomaticCheck();
         setState(State::UpToDate);
         return;
     }
     m_settings->setUpdatesLastCheckTime(QDateTime::currentMSecsSinceEpoch());
     m_automaticCheckFailures = 0;
-    m_dailyTimer->setInterval(baseCheckIntervalMs());
+    scheduleAutomaticCheck();
 
     m_manifest = *candidate;
     setState(State::UpdateAvailable);
@@ -512,14 +526,13 @@ void ManifestUpdater::recordAutomaticCheckFailure()
         return;
     }
     ++m_automaticCheckFailures;
-    m_dailyTimer->setInterval(
-        qMin(automaticRetryInterval(m_automaticCheckFailures), baseCheckIntervalMs()));
+    scheduleAutomaticCheck();
 }
 
 void ManifestUpdater::updateSettingsChanged()
 {
     if (m_automaticCheckFailures == 0) {
-        m_dailyTimer->setInterval(baseCheckIntervalMs());
+        scheduleAutomaticCheck();
     }
     const UpdateChannel channel = m_settings->updateChannel();
     if (channel == m_selectedChannel) {

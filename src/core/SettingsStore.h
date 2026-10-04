@@ -167,6 +167,8 @@ public:
     using SettingsCodecs::ydotoolEnabled;
     using SettingsCodecs::updateChannel;
     using SettingsCodecs::updateCheckIntervalMinutes;
+    using SettingsCodecs::updateCheckIntervalUnit;
+    using SettingsCodecs::setUpdateCheckIntervalUnit;
     using SettingsCodecs::updatesRestoreState;
     using SettingsCodecs::updatesRestoreStateTime;
     using SettingsCodecs::setUpdatesRestoreState;

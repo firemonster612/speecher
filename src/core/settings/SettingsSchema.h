@@ -161,6 +161,15 @@ struct NumberRange {
     QString suffix;
 };
 
+// A unit a Number row's value can be given in, such as hours, with the range
+// the number keeps to in it.
+struct NumberUnit {
+    QString id;
+    QString label;
+    int minimum = 0;
+    int maximum = 0;
+};
+
 // What the machine Speecher is running on can do, for rows that are only
 // meaningful when it can. Grows a member when a row needs one, not before.
 struct Capabilities {
@@ -206,6 +215,11 @@ struct SettingsRow {
     // states, so the caption always says what it will do.
     std::function<QString(const AppSettings &)> actionLabelValue;
     NumberRange range;
+    // Number rows only: the units the number can be given in, offered as a
+    // choice beside it. The row's value is then a QVariantMap holding the
+    // "number" and the id of its "unit", and the number keeps to that unit's
+    // range instead of range's.
+    QList<NumberUnit> units;
     // Room to reserve for a Choice row's value, in characters, so a list that
     // arrives late does not resize the row under the reader. Zero sizes the
     // control to whatever it holds.

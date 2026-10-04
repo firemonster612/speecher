@@ -421,6 +421,47 @@ private slots:
                  QStringLiteral("- The tray, with two parts:\n  - a menu\n  - a panel"));
     }
 
+    // Custom keeps the interval and reads it back in the largest unit that
+    // divides it, the unit given stays, and a listed frequency chosen later
+    // wins over the hidden custom row that front ends still apply.
+    void customCheckIntervalKeepsTheUnitItWasGivenIn()
+    {
+        const SettingsPage page = buildSettingsSchema(fakeContext()).page(QStringLiteral("general"));
+        const SettingsRow &frequency = rowById(page, QStringLiteral("updateCheckInterval"));
+        const SettingsRow &custom = rowById(page, QStringLiteral("updateCheckCustomInterval"));
+        AppSettings settings;
+        QStringList labels;
+        for (const RowOption &option : frequency.options(settings)) {
+            labels.append(option.label);
+        }
+        QCOMPARE(labels,
+                 (QStringList{"Every 5 minutes", "Every 15 minutes", "Every 30 minutes", "Every hour",
+                              "Every 6 hours", "Every 12 hours", "Every day", "Every week", "Custom"}));
+        QCOMPARE(frequency.value(settings).toString(), QStringLiteral("30"));
+        QVERIFY(!custom.visible(settings, {}));
+
+        settings.updates.checkIntervalMinutes = 1440;
+        frequency.apply(settings, QStringLiteral("custom"));
+        QVERIFY(custom.visible(settings, {}));
+        QCOMPARE(custom.value(settings).toMap(),
+                 (QVariantMap{{QStringLiteral("number"), 1}, {QStringLiteral("unit"), QStringLiteral("days")}}));
+
+        custom.apply(settings, QVariantMap{{QStringLiteral("number"), 60}, {QStringLiteral("unit"), QStringLiteral("minutes")}});
+        QCOMPARE(settings.updates.checkIntervalMinutes, 60);
+        QCOMPARE(frequency.value(settings).toString(), QStringLiteral("custom"));
+        QCOMPARE(custom.value(settings).toMap(),
+                 (QVariantMap{{QStringLiteral("number"), 60}, {QStringLiteral("unit"), QStringLiteral("minutes")}}));
+
+        custom.apply(settings, QVariantMap{{QStringLiteral("number"), 30}, {QStringLiteral("unit"), QStringLiteral("days")}});
+        QCOMPARE(settings.updates.checkIntervalMinutes, 43200);
+
+        frequency.apply(settings, QStringLiteral("10080"));
+        custom.apply(settings, QVariantMap{{QStringLiteral("number"), 8}, {QStringLiteral("unit"), QStringLiteral("hours")}});
+        QCOMPARE(settings.updates.checkIntervalMinutes, 10080);
+        QCOMPARE(frequency.value(settings).toString(), QStringLiteral("10080"));
+        QVERIFY(!custom.visible(settings, {}));
+    }
+
     void whatsNewPageSelectsLiveRowsInTheVersionRange()
     {
         SchemaContext context = fakeContext();

@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -44,8 +45,10 @@ import app.speecher.android.ui.SpeecherTheme
 import app.speecher.android.update.ApkUpdate
 import app.speecher.android.update.installApk
 import app.speecher.android.update.newerApk
+import app.speecher.android.update.untilCheck
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -166,6 +169,7 @@ class MainActivity : ComponentActivity() {
                                     { settingsPage = it },
                                     { signInSteps = it },
                                     ::signOut,
+                                    ::changeSettings,
                                     sessionEnded = status.sessionEnded,
                                     signingIn = signIn.activeProvider,
                                     signInError = signIn.error,
@@ -214,7 +218,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        checkForUpdate()
+        showSavedUpdate()
+        // Only while the app is in the foreground: on opening or returning to it once the interval
+        // has passed, then each time it passes again. A new interval applies at once.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                snapshotFlow { settings.updateCheckMinutes }
+                    .collectLatest { minutes ->
+                        while (true) {
+                            delay(untilUpdateCheck(minutes * 60_000L))
+                            checkForUpdate()
+                        }
+                    }
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -271,40 +288,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun checkForUpdate() {
-        val preferences = getSharedPreferences("updates", MODE_PRIVATE)
-        val sameVersion =
-            preferences.getString("installed-version", null) == BuildConfig.VERSION_NAME
-        if (sameVersion) {
-            val version = preferences.getString("version", null)
-            val url = preferences.getString("url", null)
-            if (version != null && url != null) update = ApkUpdate(version, url)
-        }
+    private val updatePreferences by lazy { getSharedPreferences("updates", MODE_PRIVATE) }
+
+    private val sameVersion: Boolean
+        get() = updatePreferences.getString("installed-version", null) == BuildConfig.VERSION_NAME
+
+    /** The update the last check found, if this version made that check. */
+    private fun showSavedUpdate() {
+        if (!sameVersion) return
+        val version = updatePreferences.getString("version", null) ?: return
+        val url = updatePreferences.getString("url", null) ?: return
+        update = ApkUpdate(version, url)
+    }
+
+    /**
+     * Milliseconds until the next check: none once the app itself has updated, else what is left of
+     * [interval] since the last.
+     */
+    private fun untilUpdateCheck(interval: Long): Long =
+        if (!sameVersion) 0
+        else
+            untilCheck(
+                updatePreferences.getLong("last-check", 0),
+                System.currentTimeMillis(),
+                interval,
+            )
+
+    private suspend fun checkForUpdate() {
         val now = System.currentTimeMillis()
-        if (sameVersion && now - preferences.getLong("last-check", 0) < 86_400_000) return
-        lifecycleScope.launch {
-            val result =
-                withContext(Dispatchers.IO) {
-                    runCatching { newerApk(sharedHttp, BuildConfig.VERSION_NAME) }
-                }
-            preferences.edit {
-                putLong("last-check", now)
-                putString("installed-version", BuildConfig.VERSION_NAME)
-                if (!sameVersion) {
+        val result =
+            withContext(Dispatchers.IO) {
+                runCatching { newerApk(sharedHttp, BuildConfig.VERSION_NAME) }
+            }
+        updatePreferences.edit {
+            if (!sameVersion) {
+                remove("version")
+                remove("url")
+            }
+            putLong("last-check", now)
+            putString("installed-version", BuildConfig.VERSION_NAME)
+        }
+        result.onSuccess { release ->
+            update = release
+            updatePreferences.edit {
+                if (release == null) {
                     remove("version")
                     remove("url")
-                }
-            }
-            result.onSuccess { release ->
-                update = release
-                preferences.edit {
-                    if (release == null) {
-                        remove("version")
-                        remove("url")
-                    } else {
-                        putString("version", release.version)
-                        putString("url", release.downloadUrl)
-                    }
+                } else {
+                    putString("version", release.version)
+                    putString("url", release.downloadUrl)
                 }
             }
         }

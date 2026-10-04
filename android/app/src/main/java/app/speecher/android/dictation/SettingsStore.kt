@@ -3,6 +3,7 @@ package app.speecher.android.dictation
 import android.content.Context
 import androidx.core.content.edit
 import app.speecher.android.auth.TokenStore
+import app.speecher.android.update.IntervalUnit
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
@@ -130,6 +131,12 @@ class SettingsStore(private val context: Context) {
                         ButtonLayout.RefinedPrimary,
                     ),
                 panelSize = enumOf(preferences.getString("panelSize", null), PanelSize.Full),
+                updateCheckMinutes =
+                    preferences.getInt("updateCheckMinutes", IntervalUnit.Days.minutes),
+                updateCheckUnit =
+                    preferences.getString("updateCheckUnit", null)?.let { name ->
+                        IntervalUnit.entries.firstOrNull { it.name == name }
+                    },
             )
             // So no profile names a tone or level that is gone, and no rule a profile.
             .withCustomChoices()
@@ -242,6 +249,9 @@ class SettingsStore(private val context: Context) {
             )
             putString("buttonLayout", settings.buttonLayout.name)
             putString("panelSize", settings.panelSize.name)
+            putInt("updateCheckMinutes", settings.updateCheckMinutes)
+            settings.updateCheckUnit?.let { putString("updateCheckUnit", it.name) }
+                ?: remove("updateCheckUnit")
             putInt("version", VERSION)
         }
     }

@@ -26,6 +26,7 @@ class AccountsTest {
                     {},
                     {},
                     {},
+                    {},
                     sessionEnded = setOf(Provider.Claude),
                     signingIn = Provider.Claude,
                 )
@@ -45,6 +46,7 @@ class AccountsTest {
                     {},
                     {},
                     { signedOut = it },
+                    {},
                     sessionEnded = setOf(Provider.Claude),
                 )
             }

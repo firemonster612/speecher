@@ -234,6 +234,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.kind = row.kind;
     snapshot.actionLabel = row.actionLabelValue ? row.actionLabelValue(m_draft) : row.actionLabel;
     snapshot.range = row.range;
+    snapshot.units = row.units;
     snapshot.contentWidthHint = row.contentWidthHint;
     snapshot.options = optionsForRow(row);
     snapshot.suggestions = row.suggestions ? row.suggestions(m_draft) : QList<RowOption>();
@@ -293,7 +294,8 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
             snapshot.value = row.value(m_draft).toBool();
             break;
         case RowKind::Number:
-            snapshot.value = row.value(m_draft).toInt();
+            snapshot.value = row.units.isEmpty() ? QVariant(row.value(m_draft).toInt())
+                                                 : QVariant(row.value(m_draft).toMap());
             break;
         default:
             snapshot.value = row.value(m_draft).toString();

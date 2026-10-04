@@ -289,6 +289,65 @@ Options fixedOptions(QList<RowOption> options)
     return [options = std::move(options)](const AppSettings &) { return options; };
 }
 
+// The update check frequencies offered by name, keyed by their minutes.
+const QList<RowOption> checkFrequencies{
+    {QStringLiteral("5"), QStringLiteral("Every 5 minutes"), QString()},
+    {QStringLiteral("15"), QStringLiteral("Every 15 minutes"), QString()},
+    {QStringLiteral("30"), QStringLiteral("Every 30 minutes"), QString()},
+    {QStringLiteral("60"), QStringLiteral("Every hour"), QString()},
+    {QStringLiteral("360"), QStringLiteral("Every 6 hours"), QString()},
+    {QStringLiteral("720"), QStringLiteral("Every 12 hours"), QString()},
+    {QStringLiteral("1440"), QStringLiteral("Every day"), QString()},
+    {QStringLiteral("10080"), QStringLiteral("Every week"), QString()},
+};
+
+const QString customCheckFrequency = QStringLiteral("custom");
+
+// A custom interval's units, each ranging up to the longest interval allowed.
+const QList<NumberUnit> checkIntervalUnits{
+    {QStringLiteral("minutes"), QStringLiteral("minutes"), UpdateSettings::minimumCheckIntervalMinutes, 24 * 60},
+    {QStringLiteral("hours"), QStringLiteral("hours"), 1, UpdateSettings::maximumCheckIntervalMinutes / 60},
+    {QStringLiteral("days"), QStringLiteral("days"), 1, UpdateSettings::maximumCheckIntervalMinutes / (24 * 60)},
+};
+
+int minutesPerCheckIntervalUnit(const QString &unit)
+{
+    if (unit == QLatin1String("days")) {
+        return 24 * 60;
+    }
+    return unit == QLatin1String("hours") ? 60 : 1;
+}
+
+// An interval given in a unit, or one none of the listed frequencies matches,
+// such as a hand-edited 45 minutes.
+bool isCustomCheckInterval(const UpdateSettings &updates)
+{
+    const QString minutes = QString::number(updates.checkIntervalMinutes);
+    return !updates.checkIntervalUnit.isEmpty()
+        || std::none_of(checkFrequencies.cbegin(), checkFrequencies.cend(), [&](const RowOption &option) {
+               return option.id == minutes;
+           });
+}
+
+// The unit a custom interval reads back in: the one it was given in, or else
+// the largest that divides it evenly, so a day picked from the list becomes
+// 1 day rather than 1440 minutes.
+QString checkIntervalUnit(const UpdateSettings &updates)
+{
+    const auto divides = [&](const QString &unit) {
+        return updates.checkIntervalMinutes % minutesPerCheckIntervalUnit(unit) == 0;
+    };
+    if (!updates.checkIntervalUnit.isEmpty() && divides(updates.checkIntervalUnit)) {
+        return updates.checkIntervalUnit;
+    }
+    for (auto unit = checkIntervalUnits.crbegin(); unit != checkIntervalUnits.crend(); ++unit) {
+        if (divides(unit->id)) {
+            return unit->id;
+        }
+    }
+    return checkIntervalUnits.first().id;
+}
+
 SettingsRow choiceRow(QString id, QString label, QString help, Options options, Getter get, Setter set)
 {
     SettingsRow row;
@@ -950,21 +1009,57 @@ SettingsPage generalPage(const SchemaContext &context)
         QStringLiteral("updateCheckInterval"),
         QStringLiteral("Check frequency"),
         QString(),
-        fixedOptions({
-            {QStringLiteral("30"), QStringLiteral("Every 30 minutes"), QString()},
-            {QStringLiteral("60"), QStringLiteral("Every hour"), QString()},
-            {QStringLiteral("360"), QStringLiteral("Every 6 hours"), QString()},
-            {QStringLiteral("1440"), QStringLiteral("Once a day"), QString()},
-        }),
+        fixedOptions(checkFrequencies
+                     + QList<RowOption>{{customCheckFrequency, QStringLiteral("Custom"), QString()}}),
         [](const AppSettings &settings) {
-            return QString::number(settings.updates.checkIntervalMinutes);
+            return isCustomCheckInterval(settings.updates)
+                ? customCheckFrequency
+                : QString::number(settings.updates.checkIntervalMinutes);
         },
         [](AppSettings &settings, const QString &value) {
+            // Choosing Custom keeps the interval and shows it in the custom
+            // row, where it can be changed.
+            if (value == customCheckFrequency) {
+                settings.updates.checkIntervalUnit = checkIntervalUnit(settings.updates);
+                return;
+            }
+            settings.updates.checkIntervalUnit.clear();
             settings.updates.checkIntervalMinutes = value.toInt();
         });
     checkInterval.sinceVersion = QStringLiteral("0.1.5");
     checkInterval.visible = [](const AppSettings &settings, const Capabilities &) {
         return settings.updates.autoCheck;
+    };
+    SettingsRow customCheckInterval;
+    customCheckInterval.id = QStringLiteral("updateCheckCustomInterval");
+    customCheckInterval.label = QStringLiteral("Custom interval");
+    customCheckInterval.help = QStringLiteral("Between 5 minutes and 30 days.");
+    customCheckInterval.kind = RowKind::Number;
+    customCheckInterval.units = checkIntervalUnits;
+    customCheckInterval.value = [](const AppSettings &settings) {
+        const QString unit = checkIntervalUnit(settings.updates);
+        return QVariant(QVariantMap{
+            {QStringLiteral("number"), settings.updates.checkIntervalMinutes / minutesPerCheckIntervalUnit(unit)},
+            {QStringLiteral("unit"), unit},
+        });
+    };
+    customCheckInterval.apply = [](AppSettings &settings, const QVariant &value) {
+        // A front end may apply every row's control, hidden ones too; this one
+        // only has a say once Check frequency, applied before it, is Custom.
+        if (!isCustomCheckInterval(settings.updates)) {
+            return;
+        }
+        const QVariantMap interval = value.toMap();
+        const QString unit = interval.value(QStringLiteral("unit")).toString();
+        settings.updates.checkIntervalUnit = unit;
+        settings.updates.checkIntervalMinutes =
+            qBound(UpdateSettings::minimumCheckIntervalMinutes,
+                   interval.value(QStringLiteral("number")).toInt() * minutesPerCheckIntervalUnit(unit),
+                   UpdateSettings::maximumCheckIntervalMinutes);
+    };
+    customCheckInterval.sinceVersion = QStringLiteral("0.2.1");
+    customCheckInterval.visible = [](const AppSettings &settings, const Capabilities &) {
+        return settings.updates.autoCheck && isCustomCheckInterval(settings.updates);
     };
     SettingsRow autoInstall = toggleRow(
         QStringLiteral("autoInstallUpdates"),
@@ -1069,6 +1164,7 @@ SettingsPage generalPage(const SchemaContext &context)
                  std::move(updateChannel),
                  std::move(autoCheck),
                  std::move(checkInterval),
+                 std::move(customCheckInterval),
                  std::move(autoInstall),
                  actionRow(QStringLiteral("checkForUpdates"),
                            QStringLiteral("Check for updates"),

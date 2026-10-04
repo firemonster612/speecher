@@ -89,7 +89,7 @@ public:
 
     static int retryInterval(const ManifestUpdater &updater)
     {
-        return updater.m_dailyTimer->interval();
+        return updater.m_checkTimer->interval();
     }
 
     static void setAutomaticCheckFailures(ManifestUpdater &updater, int failures)
@@ -994,12 +994,30 @@ private slots:
                                             &updater),
             true);
         QVERIFY(context.settings.updatesLastCheckTime() > previousSuccess);
-        QCOMPARE(ManifestUpdaterTestAccess::retryInterval(updater), 30 * minuteMs);
+        // The next check waits the interval from the success just recorded,
+        // give or take the milliseconds between the two clock reads.
+        QVERIFY(qAbs(ManifestUpdaterTestAccess::retryInterval(updater) - 30 * minuteMs) < 1000);
         QVERIFY(!updater.repeatedAutomaticCheckFailure());
 
         // Changing the configured interval reschedules the timer immediately.
         context.settings.setUpdateCheckIntervalMinutes(60);
-        QCOMPARE(ManifestUpdaterTestAccess::retryInterval(updater), 60 * minuteMs);
+        QVERIFY(qAbs(ManifestUpdaterTestAccess::retryInterval(updater) - 60 * minuteMs) < 1000);
+    }
+
+    // Long intervals wake hourly and ask again, so a week survives sleep and
+    // QTimer's range; a due check that cannot start is asked about each minute.
+    void automaticChecksWaitUntilDueAndWakeAtLeastHourly()
+    {
+        constexpr qint64 minuteMs = 60 * 1000;
+        constexpr qint64 last = 1'000'000'000'000;
+        QCOMPARE(automaticCheckDelayMs(last, 30, last + 10 * minuteMs), int(20 * minuteMs));
+        QCOMPARE(automaticCheckDelayMs(last, 7 * 24 * 60, last + minuteMs), int(60 * minuteMs));
+        QCOMPARE(automaticCheckDelayMs(last, 30 * 24 * 60, last), int(60 * minuteMs));
+        QCOMPARE(automaticCheckDelayMs(last, 30, last + 30 * minuteMs), int(minuteMs));
+        QVERIFY(!automaticCheckDue(last, 7 * 24 * 60, last + 6 * 24 * 60 * minuteMs));
+        QVERIFY(automaticCheckDue(last, 7 * 24 * 60, last + 7 * 24 * 60 * minuteMs));
+        // A last check in the future: the clock went back.
+        QVERIFY(automaticCheckDue(last, 30, last - minuteMs));
     }
 
     void updateBannerActionsDescribeWhatTheyDo()
