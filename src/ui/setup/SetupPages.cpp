@@ -9,7 +9,9 @@
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
+#include "frontend/qt/FallbackList.h"
 #include "frontend/qt/LocalModelRows.h"
+#include "frontend/qt/SchemaSettingsPage.h"
 #ifdef SPEECHER_WITH_YDOTOOL
 #include "output/YdotoolSetup.h"
 #include "output/YdotoolSetupFlow.h"
@@ -358,6 +360,110 @@ QWidget *makeGlyphLine(QWidget *parent, const QString &iconName, QLabel **textOu
 
 } // namespace
 
+// The optional section under a step's provider details: what Speecher tries
+// when the chosen provider is unavailable, in the same list as the Fallbacks
+// subpage, with core's hint and its suggestion of a local fallback. It saves
+// as it is edited and never holds Next.
+class SetupFallbackSection final : public QWidget {
+public:
+    SetupFallbackSection(ProviderRole role, SettingsStore &store, const QList<RowOption> &providers,
+                         LocalSetup *local, QWidget *parent)
+        : QWidget(parent)
+        , m_role(role)
+        , m_settings(store)
+        , m_providers(providers)
+        , m_local(local)
+    {
+        setObjectName(role == ProviderRole::Speech ? QStringLiteral("speechSetupFallbacks")
+                                                   : QStringLiteral("refinementSetupFallbacks"));
+        auto *layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(settings::relatedSpacing());
+        // The heading and hint stay tight against the card, as a title does.
+        auto *section = new QWidget(this);
+        auto *sectionLayout = new QVBoxLayout(section);
+        sectionLayout->setContentsMargins(0, 0, 0, 0);
+        sectionLayout->setSpacing(0);
+        m_heading = settings::makeSectionLabel(QString(), section);
+        sectionLayout->addWidget(m_heading);
+        m_hint = makeNote(QString(), section);
+        m_hint->setContentsMargins(settings::gridUnit(), 0, settings::gridUnit(), settings::smallSpacing());
+        sectionLayout->addWidget(m_hint);
+        QFormLayout *card = addCard(sectionLayout, section, QString());
+        m_list = new FallbackList(card->parentWidget());
+        settings::addCardRow(card, m_list, card->parentWidget());
+        layout->addWidget(section);
+        m_footer = makeNote(QString(), this);
+        m_footer->setContentsMargins(settings::gridUnit(), 0, settings::gridUnit(), 0);
+        layout->addWidget(m_footer);
+        m_suggestion = new InlineMessage(this);
+        m_suggestion->setObjectName(QStringLiteral("fallbackSuggestion"));
+        m_suggestion->setCloseButtonVisible(false);
+        m_accept = new QPushButton(m_suggestion);
+        m_accept->setObjectName(QStringLiteral("fallbackSuggestionAccept"));
+        m_suggestion->addAction(m_accept);
+        layout->addWidget(m_suggestion);
+
+        connect(m_list, &FallbackList::moveRequested, this, [this](int index, int offset) {
+            save(withFallbackMoved(m_settings.snapshot(), m_role, index, offset));
+        });
+        connect(m_list, &FallbackList::removeRequested, this, [this](int index) {
+            save(withFallbackRemoved(m_settings.snapshot(), m_role, index));
+        });
+        connect(m_list, &FallbackList::addRequested, this, [this](const QString &providerId) {
+            save(withFallbackAdded(m_settings.snapshot(), m_role, providerId));
+        });
+        connect(m_accept, &QPushButton::clicked, this, [this] {
+            m_local->acceptSetupFallbackOffer(m_role);
+            refresh();
+        });
+        if (m_local) {
+            connect(m_local, &LocalSetup::changed, this, &SetupFallbackSection::refresh);
+        }
+        refresh();
+    }
+
+    // After the step's provider, or what this computer offers, changed.
+    void refresh()
+    {
+        const std::optional<SetupFallbackOffer> offer =
+            m_local ? m_local->setupFallbackOffer(m_role) : std::nullopt;
+        const SetupFallbackPresentation section = setupFallbackPresentation(
+            m_role, m_settings.snapshot(), m_local ? m_local->liveFacts() : LiveFacts{}, m_providers, offer);
+        setVisible(section.visible);
+        m_heading->setText(section.list.heading);
+        m_hint->setText(section.hint);
+        m_list->setPresentation(section.list);
+        m_footer->setText(section.list.footer);
+        m_footer->setVisible(!section.list.footer.isEmpty());
+        m_suggestion->setText(section.suggestion);
+        m_accept->setText(section.suggestionAction);
+        m_suggestion->setVisible(!section.suggestion.isEmpty());
+    }
+
+private:
+    void save(const QStringList &fallbacks)
+    {
+        if (m_role == ProviderRole::Speech) {
+            m_settings.setSpeechFallbackProviders(fallbacks);
+        } else {
+            m_settings.setRefinementFallbackProviders(fallbacks);
+        }
+        refresh();
+    }
+
+    ProviderRole m_role;
+    SettingsStore &m_settings;
+    QList<RowOption> m_providers;
+    LocalSetup *m_local;
+    QLabel *m_heading;
+    QLabel *m_hint;
+    FallbackList *m_list;
+    QLabel *m_footer;
+    InlineMessage *m_suggestion;
+    QPushButton *m_accept;
+};
+
 WelcomeSetupPage::WelcomeSetupPage(QWidget *parent)
     : QWidget(parent)
 {
@@ -475,6 +581,9 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     layout->addLayout(statusLine);
     layout->addWidget(m_hint);
     layout->addWidget(m_checkAgain, 0, Qt::AlignLeft);
+    m_fallbacks = new SetupFallbackSection(ProviderRole::Speech, m_settings,
+                                           providerOptions(m_providers.speechProviders()), m_local, this);
+    layout->addWidget(m_fallbacks);
     layout->addStretch();
 
     for (const ProviderOptionRow &option : m_options) {
@@ -813,6 +922,9 @@ void SpeechProviderSetupPage::selectProvider(const QString &providerId)
     updateSignInControls();
     showLocalChoice();
     showSelectedProvider();
+    if (m_fallbacks) {
+        m_fallbacks->refresh();
+    }
 }
 
 void SpeechProviderSetupPage::updateSignInControls()
@@ -1611,6 +1723,10 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     layout->addWidget(m_fastMode);
     layout->addWidget(m_openAiSpeedRow);
     layout->addWidget(m_fastModeHint);
+    // Hidden while Skip cleanup is ticked, which makes the provider None.
+    m_fallbacks = new SetupFallbackSection(ProviderRole::Refinement, m_settings,
+                                           providerOptions(providers.refinementProviders()), m_local, this);
+    layout->addWidget(m_fallbacks);
     layout->addStretch();
 
     for (const ProviderOptionRow &option : m_options) {
@@ -2007,6 +2123,9 @@ void RefinementSetupPage::selectProvider(const QString &providerId)
     updateProviderStats();
     updateFastModeControl();
     showSelectedProvider();
+    if (m_fallbacks) {
+        m_fallbacks->refresh();
+    }
 }
 
 void RefinementSetupPage::checkProviders()

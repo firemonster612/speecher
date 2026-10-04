@@ -1161,6 +1161,47 @@ private slots:
                  (QStringList{QStringLiteral("local"), QStringLiteral("anthropic")}));
     }
 
+    // The setup steps' fallback section is optional: editing it never holds
+    // Next, and Skip cleanup hides it.
+    void setupFallbackSectionIsOptional()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        ProviderRegistry providers;
+        for (const char *id : {"claude", "codex"}) {
+            providers.registerSpeechProvider({id, id, {}},
+                                             [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        }
+        for (const char *id : {"openai", "anthropic"}) {
+            providers.registerRefinementProvider({id, id}, [](QObject *parent) { return new FakeRefiner(parent); });
+        }
+
+        SpeechProviderSetupPage speech(settings, providers);
+        speech.show();
+        QVERIFY(speech.ready());
+        auto *section = speech.findChild<QWidget *>(QStringLiteral("speechSetupFallbacks"));
+        QVERIFY(section && section->isVisible());
+        QCOMPARE(section->findChild<QLabel *>(QStringLiteral("sectionLabel"))->text(),
+                 QStringLiteral("If claude is unavailable"));
+        auto *add = section->findChild<QComboBox *>(QStringLiteral("fallbackAdd"));
+        QVERIFY(add);
+        emit add->activated(add->findData(QStringLiteral("codex")));
+        QTRY_COMPARE(settings.speechFallbackProviders(), QStringList{QStringLiteral("codex")});
+        QVERIFY(speech.ready());
+        section->findChild<QToolButton *>(QStringLiteral("fallbackRemove_codex"))->click();
+        QTRY_COMPARE(settings.speechFallbackProviders(), QStringList{});
+        QVERIFY(speech.ready());
+
+        RefinementSetupPage refinement(settings, providers);
+        refinement.show();
+        auto *cleanup = refinement.findChild<QWidget *>(QStringLiteral("refinementSetupFallbacks"));
+        QVERIFY(cleanup && cleanup->isVisible());
+        refinement.findChild<QCheckBox *>(QStringLiteral("refinementSkip"))->click();
+        QVERIFY(!cleanup->isVisible());
+    }
+
     // Paste with picks how to paste; inserting directly is a Default paste choice.
     void defaultPasteOffersAccessibilityInsertion()
     {
