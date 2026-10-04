@@ -386,6 +386,35 @@ private slots:
         QCOMPARE(local->audioChunks, (QList<QByteArray>{"b", "c", "d"}));
     }
 
+    // The session holds no more than the connect budget's worth of audio,
+    // ten seconds, for a provider still preparing: past it the speech ends
+    // with what was heard, and the provider is passed over.
+    void aProviderPreparingPastTheConnectBudgetEndsTheSpeech()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        local->backgroundPrepare = true;
+        local->backgroundPrepareDelayMs = 300;
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        codex->emitFinalText(QStringLiteral("said"));
+        codex->emitFailure(QStringLiteral("refused"), false, QStringLiteral("connect"), Network);
+        const QByteArray second(16000 * 2, '\0');
+        for (int seconds = 0; seconds < 10; ++seconds) {
+            rig.audio.pushAudio(second);
+        }
+        QCOMPARE(rig.session->state(), DictationState::Listening);
+        rig.audio.pushAudio(second);
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(rig.delivery.lastText, QStringLiteral("said"));
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Used raw transcript • Input sent • ChatGPT Codex couldn't be reached and Local Model "
+                                "didn't answer. • Part of the dictation may be missing. The connection dropped."));
+        QTest::qWait(400);
+        QCOMPARE(local->startCalls, 0);
+    }
+
     // The attempt id moves on before the old provider is cancelled, so what
     // it emits while stopping, and after, never reaches the transcript; its
     // partial is kept once. A whole-attempt transcript from the next one

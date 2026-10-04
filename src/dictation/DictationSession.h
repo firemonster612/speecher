@@ -131,6 +131,7 @@ private:
     void finishSpeechPreparation(const StartupPreparationResult &result);
     void speechProviderReady();
     void speechChainExhausted();
+    void holdPendingAudio(const QByteArray &pcm);
     bool speechFallbackRemains(const SpeechFailure &failure) const;
     void switchSpeechProvider(const SpeechFailure &failure);
     void noteSpeechFailure(const SpeechFailure &failure);
@@ -229,9 +230,10 @@ private:
     // rollover, and the next attempt may only open once it has come.
     bool m_finishingPausedAttempt = false;
     // Audio no open attempt can take yet: heard after a resume while the
-    // paused attempt still finishes, or while the next provider prepares.
-    // The next attempt gets it, once.
-    QList<QByteArray> m_resumeAudio;
+    // paused attempt still finishes, while the next provider prepares, or
+    // after the last attempt ended during the stop. The next attempt gets
+    // it, once.
+    QList<QByteArray> m_pendingAudio;
     // The speech providers this session may use, primary first, and the
     // one it is on. It walks forward only.
     QStringList m_speechChain;
@@ -261,7 +263,7 @@ private:
     quint64 m_microphoneStartGeneration = 0;
     std::optional<SessionOverrides> m_pendingStart;
     // The last attempt ended while the microphone was stopping; the post-roll
-    // since waits in m_resumeAudio for stopListening().
+    // since waits in m_pendingAudio for stopListening().
     bool m_attemptEndedDuringStop = false;
 };
 
