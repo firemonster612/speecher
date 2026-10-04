@@ -16,6 +16,7 @@ cleanup() {
     cp "$log_path" "$SESSION_DIR/app.log"
   fi
   if (( result != 0 )); then
+    screencapture -x "$CASE_DIR/failure-screen.png" >"$CASE_DIR/failure-capture.out" 2>&1 || true
     fail_case "Live check stopped; see harness.log and the step's command output."
   fi
   finalize_run
@@ -23,6 +24,23 @@ cleanup() {
   exit "$result"
 }
 trap cleanup EXIT
+
+# The shared helpers use unbounded AppleEvents; CI must finish if TextEdit is blocked.
+textedit_text() {
+  bounded_osascript -e 'tell application "TextEdit" to return text of document 1'
+}
+
+textedit_reset() {
+  log "Opening TextEdit"
+  defaults write com.apple.TextEdit NSShowAppCentricOpenPanelInsteadOfUntitledFile -bool false
+  open -a TextEdit
+  sleep 2
+  screencapture -x "$CASE_DIR/textedit-open.png"
+  bounded_osascript -e 'tell application "TextEdit"' \
+    -e 'if (count documents) is 0 then make new document' \
+    -e 'set text of document 1 to ""' -e 'activate' -e 'end tell' \
+    >"$CASE_DIR/textedit-reset.out" 2>&1
+}
 
 press_key() {
   log "Hardware-style key code $1"
@@ -75,18 +93,18 @@ PY
 }
 
 find_field_count() {
-  bounded_osascript <<'APPLESCRIPT'
+  bounded_osascript -e '
 tell application "System Events" to tell process "TextEdit"
     set fieldCount to 0
-    repeat with element in entire contents of front window
-        set elementRole to role of element
+    repeat with uiElement in entire contents of front window
+        set elementRole to role of uiElement
         if elementRole is "AXTextField" or elementRole is "AXSearchField" then
             set fieldCount to fieldCount + 1
         end if
     end repeat
     return fieldCount
 end tell
-APPLESCRIPT
+'
 }
 
 case_begin SETUP
@@ -97,6 +115,10 @@ defaults write "$DOMAIN" output.completionStatusDurationMs -int 3000
 defaults write "$BUNDLE_ID" SUEnableAutomaticChecks -bool false
 defaults read "$DOMAIN" >"$CASE_DIR/settings.txt"
 seed_common_tcc
+# tcc_seed.py copies a template row, including Terminal's target identity.
+sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
+  "UPDATE access SET indirect_object_code_identity=NULL WHERE service='kTCCServiceAppleEvents' AND client='/usr/bin/osascript';"
+restart_tcc
 probe_desktop_capture
 [[ "$DESKTOP_CAPTURE" == 1 ]]
 
