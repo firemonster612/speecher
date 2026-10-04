@@ -242,11 +242,14 @@ fields_before="$(find_field_count)"
 printf '%s\n' "$fields_before" >"$CASE_DIR/find-fields-before.txt"
 (( fields_before > fields_baseline ))
 screencapture -x "$CASE_DIR/find-before-cancel.png"
+# Moving focus to Find can accept TextEdit's automatic capitalization suggestion.
+cancel_text="$(textedit_text)"
+printf '%s\n' "$cancel_text" >"$CASE_DIR/editor-before-cancel.txt"
 press_key 53 >"$CASE_DIR/key.out" 2>&1
 wait_panel_status Canceled
 capture_step
 poll_status idle 10 >"$CASE_DIR/status.txt"
-expect_text p
+expect_text "$cancel_text"
 fields_after="$(find_field_count)"
 printf '%s\n' "$fields_after" >"$CASE_DIR/find-fields-after.txt"
 [[ "$fields_after" == "$fields_before" ]]
@@ -259,7 +262,7 @@ printf '%s\n' "$fields_after" >"$CASE_DIR/find-fields-after-escape.txt"
 [[ "$fields_after" == "$fields_baseline" ]]
 screencapture -x "$CASE_DIR/escape-closed-find.png"
 press_key 35 >"$CASE_DIR/p.out" 2>&1
-expect_text pp
+expect_text "${cancel_text}p"
 capture_step
 pass_case "After the session, Escape closed Find and P typed a second p."
 
