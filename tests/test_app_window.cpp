@@ -23,6 +23,7 @@
 #include "ui/TranscribeModel.h"
 #include "ui/TranscribePage.h"
 #include "ui/TranscribeWindow.h"
+#include "ui/TranscriberPopup.h"
 #ifdef Q_OS_LINUX
 #include "ui/setup/LinuxGlobalShortcutSetupPage.h"
 #endif
@@ -244,7 +245,7 @@ private slots:
         QCOMPARE(title->text(), QStringLiteral("What's New"));
         QVERIFY(controller.pendingWhatsNewVersion().isEmpty());
 
-        window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"))->click();
+        window.findChild<QToolButton *>(QStringLiteral("pageBack"))->click();
         QCOMPARE(title->text(), QStringLiteral("Output"));
         QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Output"));
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Home"));
@@ -1286,7 +1287,7 @@ private slots:
         window.show();
         auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
         auto *whatsNew = window.findChild<QPushButton *>(QStringLiteral("whatsNew"));
-        auto *back = window.findChild<QToolButton *>(QStringLiteral("whatsNewBack"));
+        auto *back = window.findChild<QToolButton *>(QStringLiteral("pageBack"));
         auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
         QVERIFY(navigation && whatsNew && back && title);
         QVERIFY(!back->isVisible());
@@ -1307,6 +1308,123 @@ private slots:
         QVERIFY(!back->isVisible());
         // Not pending and not showing, so it leaves the sidebar.
         QCOMPARE(navigation->item(0)->text(), QStringLiteral("Home"));
+    }
+
+    // A Fallbacks row opens its subpage under the parent's sidebar entry, and
+    // Back returns to the parent. A subpage's id opens it directly.
+    void fallbacksRowsOpenTheirSubpageAndBackReturns()
+    {
+        ApplicationController controller(true);
+        AppWindow window(&controller);
+        window.show();
+        auto *navigation = window.findChild<QListWidget *>(QStringLiteral("appNavigation"));
+        auto *back = window.findChild<QToolButton *>(QStringLiteral("pageBack"));
+        auto *title = window.findChild<QLabel *>(QStringLiteral("pageTitle"));
+        QVERIFY(navigation && back && title);
+        const int sidebarRows = navigation->count();
+
+        window.showPage(QStringLiteral("dictation"));
+        window.findChild<QPushButton *>(QStringLiteral("speechFallbacks"))->click();
+        QCOMPARE(title->text(), QStringLiteral("Fallbacks"));
+        QVERIFY(window.findChild<QWidget *>(QStringLiteral("dictation:fallbacks"))->isVisible());
+        QVERIFY(back->isVisible());
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Dictation"));
+        QCOMPARE(navigation->count(), sidebarRows);
+
+        back->click();
+        QCOMPARE(title->text(), QStringLiteral("Dictation"));
+        QVERIFY(window.findChild<QWidget *>(QStringLiteral("dictation"))->isVisible());
+        QVERIFY(!back->isVisible());
+
+        window.showPage(QStringLiteral("refinement:fallbacks"));
+        QCOMPARE(title->text(), QStringLiteral("Fallbacks"));
+        QCOMPARE(navigation->currentItem()->text(), QStringLiteral("Refinement"));
+        back->click();
+        QCOMPARE(title->text(), QStringLiteral("Refinement"));
+
+        // Picking the parent's entry again, by mouse or by the keyboard's
+        // activation key, leaves the subpage for the parent too.
+        auto *dictation = window.findChild<QWidget *>(QStringLiteral("dictation"));
+        auto *subpage = window.findChild<QWidget *>(QStringLiteral("dictation:fallbacks"));
+        window.showPage(QStringLiteral("dictation:fallbacks"));
+        QVERIFY(subpage->isVisible());
+        QTest::mouseClick(navigation->viewport(), Qt::LeftButton, {},
+                          navigation->visualItemRect(navigation->currentItem()).center());
+        QVERIFY(dictation->isVisible());
+        window.showPage(QStringLiteral("dictation:fallbacks"));
+        QVERIFY(subpage->isVisible());
+#ifdef Q_OS_MACOS
+        // Return edits an item on macOS; Command-O activates it.
+        QTest::keyClick(navigation, Qt::Key_O, Qt::ControlModifier);
+#else
+        QTest::keyClick(navigation, Qt::Key_Return);
+#endif
+        QVERIFY(dictation->isVisible());
+    }
+
+    // SPEECHER_GRAB_PAGE takes a subpage's id as it takes a page's.
+    void grabPageShowsASubpage()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        // Earlier tests leave their windows behind; this one is the new one.
+        const QWidgetList before = QApplication::topLevelWidgets();
+        frontEnd.showMainWindow();
+        AppWindow *window = nullptr;
+        for (QWidget *widget : QApplication::topLevelWidgets()) {
+            if (!before.contains(widget)) {
+                window = window ? window : qobject_cast<AppWindow *>(widget);
+            }
+        }
+        QVERIFY(window);
+        const auto hide = qScopeGuard([window] { window->hide(); });
+
+        qputenv("SPEECHER_GRAB_PAGE", "dictation:fallbacks");
+        const auto unset = qScopeGuard([] { qunsetenv("SPEECHER_GRAB_PAGE"); });
+        QTemporaryDir directory;
+        QVERIFY(frontEnd.captureMainWindow(directory.filePath(QStringLiteral("grab.png"))));
+        QVERIFY(window->findChild<QWidget *>(QStringLiteral("dictation:fallbacks"))->isVisible());
+    }
+
+    // A successful outcome with a fix, such as a sign-in that expired while a
+    // fallback did the work, opens the fix's page from its button.
+    void anOutcomeFixOpensItsPage()
+    {
+        ApplicationController controller(true);
+        controller.settings()->setSetupCompleted(true);
+        QtFrontEnd frontEnd(&controller);
+        controller.setFrontEnd(&frontEnd);
+        TranscriberPopup *popup = nullptr;
+        for (QWidget *widget : QApplication::topLevelWidgets()) {
+            popup = popup ? popup : qobject_cast<TranscriberPopup *>(widget);
+        }
+        QVERIFY(popup);
+        auto *action = popup->findChild<QPushButton *>(QStringLiteral("errorAction"));
+        QVERIFY(action);
+
+        emit controller.session()->popupMessageRequested(QStringLiteral("Pasted"), PopupOutcome::Inserted);
+        QVERIFY(action->isHidden());
+        emit controller.session()->popupMessageRequested(
+            QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired."), PopupOutcome::Fallback,
+            {ErrorFix::SettingsPage, QStringLiteral("accounts")});
+        QVERIFY(!action->isHidden());
+        QCOMPARE(action->text(), QStringLiteral("Open Accounts"));
+        // Earlier tests leave their windows behind; this one is the new one.
+        const QWidgetList before = QApplication::topLevelWidgets();
+        action->click();
+
+        AppWindow *window = nullptr;
+        for (QWidget *widget : QApplication::topLevelWidgets()) {
+            if (!before.contains(widget)) {
+                window = window ? window : qobject_cast<AppWindow *>(widget);
+            }
+        }
+        QVERIFY(window);
+        const auto hide = qScopeGuard([window] { window->hide(); });
+        QVERIFY(window->isVisible());
+        QCOMPARE(window->findChild<QLabel *>(QStringLiteral("pageTitle"))->text(), QStringLiteral("Accounts"));
     }
 
     void deletingACorrectionThroughThePageSetKeepsUndoAvailable()

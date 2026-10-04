@@ -342,11 +342,23 @@ void QtFrontEnd::showDictationError(const QString &message, const PopupErrorActi
 
 // Linux has no system permission panels to open, so only a settings page
 // becomes a button.
+static QString fixButtonLabel(const PopupErrorAction &fix)
+{
+    return fix.fix == ErrorFix::SettingsPage ? popupErrorActionLabel(fix) : QString();
+}
+
 void QtFrontEnd::showPopupError(const QString &message, const PopupErrorAction &fix)
 {
     m_errorFix = fix;
-    m_popup->showErrorMessage(message,
-                              fix.fix == ErrorFix::SettingsPage ? popupErrorActionLabel(fix) : QString());
+    m_popup->showErrorMessage(message, fixButtonLabel(fix));
+}
+
+// An outcome can offer a fix too, such as a sign-in that expired while a
+// fallback did the work; its button opens the page an error's would.
+void QtFrontEnd::showPopupOutcome(const QString &message, PopupOutcome outcome, const PopupErrorAction &fix)
+{
+    m_errorFix = fix;
+    m_popup->showMessage(message, outcome, fixButtonLabel(fix));
 }
 
 void QtFrontEnd::applyErrorFix()
@@ -441,7 +453,7 @@ void QtFrontEnd::wireSessionToPopup()
     connect(session, &DictationSession::popupRefinementPreviewChanged, m_popup, &TranscriberPopup::setRefinementPreview);
     connect(session, &DictationSession::popupOAuthRefreshRequested, m_popup, &TranscriberPopup::showOAuthRefreshIndicator);
     connect(session, &DictationSession::popupListeningIndicatorRequested, m_popup, &TranscriberPopup::showListeningIndicator);
-    connect(session, &DictationSession::popupMessageRequested, m_popup, &TranscriberPopup::showMessage);
+    connect(session, &DictationSession::popupMessageRequested, this, &QtFrontEnd::showPopupOutcome);
     connect(session, &DictationSession::popupErrorRequested, this, &QtFrontEnd::showPopupError);
     connect(m_popup, &TranscriberPopup::errorActionRequested, this, &QtFrontEnd::applyErrorFix);
     connect(m_popup, &TranscriberPopup::pauseToggled, session, &DictationSession::togglePause);

@@ -25,6 +25,7 @@
 #include <QFile>
 #include <QTcpServer>
 #include "app/MicrophoneTest.h"
+#include "frontend/qt/FallbackList.h"
 #include "frontend/qt/MicrophoneTestRow.h"
 #include "frontend/qt/OutputCustomRows.h"
 #ifdef SPEECHER_WITH_YDOTOOL
@@ -529,6 +530,44 @@ private slots:
         QVERIFY(action->isHidden());
     }
 
+    // A successful outcome offers a fix only when it has one. Its button asks
+    // for the fix as an error's does, with no Dismiss and no countdown.
+    void popupOutcomeOffersAFixOnlyWithOne()
+    {
+        TranscriberPopup popup(new SizingPopupPositioner);
+        popup.showPopup(0);
+        auto *action = popup.findChild<QPushButton *>(QStringLiteral("errorAction"));
+        auto *dismiss = popup.findChild<QPushButton *>(QStringLiteral("errorDismiss"));
+        auto *countdown = popup.findChild<QPropertyAnimation *>();
+        QVERIFY(action && dismiss && countdown);
+        popup.showMessage(QStringLiteral("Pasted"), PopupOutcome::Inserted);
+        QVERIFY(action->isHidden());
+
+        // A long preview fades its first words; the outcome after it starts
+        // with none faded.
+        auto *preview = popup.findChild<QLabel *>(QStringLiteral("rawTranscript"));
+        QVERIFY(preview);
+        popup.setSessionState(DictationState::Listening);
+        popup.setPreview(QStringLiteral("more words in the middle ").repeated(20));
+        QVERIFY(preview->graphicsEffect()->isEnabled());
+        popup.setSessionState(DictationState::Delivering);
+        popup.showMessage(QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired."),
+                          PopupOutcome::Fallback, QStringLiteral("Open Accounts"));
+        QCoreApplication::processEvents();
+        QVERIFY(!preview->graphicsEffect()->isEnabled());
+        QVERIFY(!action->isHidden());
+        QCOMPARE(action->text(), QStringLiteral("Open Accounts"));
+        QVERIFY(dismiss->isHidden());
+        QCOMPARE(countdown->state(), QAbstractAnimation::Stopped);
+        QSignalSpy requested(&popup, &TranscriberPopup::errorActionRequested);
+        action->click();
+        QCOMPARE(requested.count(), 1);
+
+        popup.showPopup(0);
+        popup.showMessage(QStringLiteral("Pasted"), PopupOutcome::Inserted);
+        QVERIFY(action->isHidden());
+    }
+
     void popupDoesNotCarryAnErrorIntoTheNextDictation()
     {
         TranscriberPopup popup(new SizingPopupPositioner);
@@ -822,6 +861,12 @@ private slots:
         grab("receipt-inserted");
         popup.showMessage(QStringLiteral("Copied"), PopupOutcome::Copied);
         grab("receipt-copied");
+        popup.showMessage(QStringLiteral("Pasted • Used Local Model. Your ChatGPT sign-in has expired."),
+                          PopupOutcome::Fallback, QStringLiteral("Open Accounts"));
+        grab("receipt-fallback-fix");
+        popup.showMessage(QStringLiteral("Pasted • Transcribed with Custom Endpoint. ChatGPT Codex couldn't be reached."),
+                          PopupOutcome::Fallback);
+        grab("receipt-fallback");
         popup.showErrorMessage(QStringLiteral("Microphone unavailable"));
         grab("error-short");
         popup.showErrorMessage(QStringLiteral(
@@ -1104,6 +1149,231 @@ private slots:
                 }
             }
         }
+    }
+
+    // The Fallbacks subpage shows core's list and edits it through core's
+    // mutations, saving like any other row; what can stand in follows the
+    // facts LocalSetup learns.
+    void fallbacksSubpageEditsTheChainThroughSettings()
+    {
+        ApplicationController controller(true);
+        SettingsStore *settings = controller.settings();
+        settings->setRefinementProvider(QStringLiteral("openai"));
+        settings->setRefinementFallbackProviders({QStringLiteral("anthropic"), QStringLiteral("local")});
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        // Not loadAfterShow(), which would start looking for runners.
+        pages.loadBeforeShow();
+        SchemaSettingsPage *subpage = pages.page(QStringLiteral("refinement:fallbacks"));
+        QVERIFY(subpage);
+        QCOMPARE(sectionLabels(*subpage), QStringList{QStringLiteral("If OpenAI is unavailable")});
+        QCOMPARE(subpage->findChild<QLabel *>(QStringLiteral("noteText"))->text(),
+                 QStringLiteral("If none of these answers, your words are pasted as spoken."));
+        const auto button = [subpage](const QString &name) {
+            return subpage->findChild<QToolButton *>(name);
+        };
+        QVERIFY(!button(QStringLiteral("fallbackMoveUp_anthropic"))->isEnabled());
+        QVERIFY(!button(QStringLiteral("fallbackMoveDown_local"))->isEnabled());
+        QCOMPARE(button(QStringLiteral("fallbackRemove_local"))->accessibleName(), QStringLiteral("Remove"));
+        // Two fallbacks fill the chain.
+        QVERIFY(!subpage->findChild<QComboBox *>(QStringLiteral("fallbackAdd")));
+
+        // A runner that is known to be missing shows on its row at once.
+        auto *localRow = subpage->findChild<QWidget *>(QStringLiteral("fallback_local"));
+        auto *localStatus = localRow->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QCOMPARE(localStatus->foregroundRole(), QPalette::PlaceholderText);
+        LocalSetupTestAccess::setRunners(*controller.localSetup(), {});
+        QCOMPARE(localStatus->foregroundRole(), QPalette::WindowText);
+        // Its colour follows a switch of colour scheme.
+        QPalette switched = subpage->palette();
+        switched.setColor(QPalette::WindowText, Qt::magenta);
+        subpage->setPalette(switched);
+        QCOMPARE(localStatus->palette().color(QPalette::WindowText), speecher::settings::negativeTextColor(switched));
+
+        // Moved to the end, its Move down is disabled, so the focus stays in
+        // the row on Move up.
+        button(QStringLiteral("fallbackMoveDown_anthropic"))->setFocus();
+        button(QStringLiteral("fallbackMoveDown_anthropic"))->click();
+        QCoreApplication::processEvents();
+        QCOMPARE(subpage->focusWidget(), button(QStringLiteral("fallbackMoveUp_anthropic")));
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->refinementFallbackProviders(),
+                 (QStringList{QStringLiteral("local"), QStringLiteral("anthropic")}));
+
+        button(QStringLiteral("fallbackRemove_anthropic"))->click();
+        QCoreApplication::processEvents();
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+
+        auto *add = subpage->findChild<QComboBox *>(QStringLiteral("fallbackAdd"));
+        QVERIFY(add);
+        QCOMPARE(add->itemText(0), QStringLiteral("Choose…"));
+        QVERIFY(add->findData(QStringLiteral("openai")) < 0);
+        emit add->activated(add->findData(QStringLiteral("anthropic")));
+        QCoreApplication::processEvents();
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->refinementFallbackProviders(),
+                 (QStringList{QStringLiteral("local"), QStringLiteral("anthropic")}));
+    }
+
+    // The Add row's choice is read as it is made, so a rebuild that deletes
+    // the combo before the request is delivered still adds that choice.
+    void fallbackAddSurvivesARebuildBeforeDelivery()
+    {
+        const QList<RowOption> providers{{QStringLiteral("openai"), QStringLiteral("OpenAI")},
+                                         {QStringLiteral("anthropic"), QStringLiteral("Anthropic")}};
+        AppSettings chain;
+        chain.refinement.providerId = QStringLiteral("openai");
+        const auto present = [&] {
+            return fallbackListPresentation(ProviderRole::Refinement, chain, {}, providers, FallbackSurface::Settings);
+        };
+        FallbackList list;
+        list.setPresentation(present());
+        QSignalSpy added(&list, &FallbackList::addRequested);
+        QPointer<QComboBox> add = list.findChild<QComboBox *>(QStringLiteral("fallbackAdd"));
+        QVERIFY(add);
+
+        emit add->activated(add->findData(QStringLiteral("anthropic")));
+        chain.refinement.fallbackProviderIds = {QStringLiteral("anthropic")};
+        list.setPresentation(present());
+        QVERIFY(!add);
+        QTRY_COMPARE(added.count(), 1);
+        QCOMPARE(added.first().first().toString(), QStringLiteral("anthropic"));
+    }
+
+    // The Dictation subpage edits the speech chain too, and it and the
+    // Fallbacks row follow the Dictation page: choosing a fallback as the
+    // primary takes it out of the chain.
+    void dictationFallbacksFollowTheirPage()
+    {
+        ApplicationController controller(true);
+        SettingsStore *settings = controller.settings();
+        settings->setSpeechProvider(QStringLiteral("codex"));
+        settings->setSpeechFallbackProviders({QStringLiteral("claude"), QStringLiteral("endpoint")});
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.loadBeforeShow();
+        SchemaSettingsPage *dictation = pages.page(QStringLiteral("dictation"));
+        SchemaSettingsPage *subpage = pages.page(QStringLiteral("dictation:fallbacks"));
+        QVERIFY(dictation && subpage);
+        auto *summary = dictation->findChild<QPushButton *>(QStringLiteral("speechFallbacks"))
+                            ->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        const QString twoFallbacks = summary->text();
+
+        subpage->findChild<QToolButton *>(QStringLiteral("fallbackRemove_endpoint"))->click();
+        QCoreApplication::processEvents();
+        QVERIFY(summary->text() != twoFallbacks);
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->speechFallbackProviders(), QStringList{QStringLiteral("claude")});
+
+        const QStringList heading = sectionLabels(*subpage);
+        auto *primary = dictation->findChild<QComboBox *>(QStringLiteral("speechProvider"));
+        primary->setCurrentIndex(primary->findData(QStringLiteral("claude")));
+        QVERIFY(sectionLabels(*subpage) != heading);
+        QVERIFY(!subpage->findChild<QWidget *>(QStringLiteral("fallback_claude")));
+        QVERIFY(pages.save(false));
+        QCOMPARE(settings->speechFallbackProviders(), QStringList{});
+    }
+
+    // A primary or a fallback that can't work right now says so in the
+    // negative tone, which follows a switch of colour scheme.
+    void providerProblemsReadInTheNegativeTone()
+    {
+        ApplicationController controller(true);
+        SettingsStore *settings = controller.settings();
+        settings->setRefinementProvider(QStringLiteral("local"));
+        settings->setSpeechFallbackProviders({QStringLiteral("local")});
+        LocalSetupTestAccess::setRunners(*controller.localSetup(), {});
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.loadBeforeShow();
+        const auto description = [](QWidget *control) {
+            return control->parentWidget()->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        };
+        SchemaSettingsPage *refinement = pages.page(QStringLiteral("refinement"));
+        QLabel *primary = description(refinement->findChild<QComboBox *>(QStringLiteral("refinementProvider")));
+        QCOMPARE(primary->foregroundRole(), QPalette::WindowText);
+        QLabel *fallbacks = refinement->findChild<QPushButton *>(QStringLiteral("refinementFallbacks"))
+                                ->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QCOMPARE(fallbacks->foregroundRole(), QPalette::PlaceholderText);
+
+        SchemaSettingsPage *dictation = pages.page(QStringLiteral("dictation"));
+        QLabel *speechFallbacks = dictation->findChild<QPushButton *>(QStringLiteral("speechFallbacks"))
+                                      ->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QCOMPARE(speechFallbacks->foregroundRole(), QPalette::WindowText);
+        QPalette switched = dictation->palette();
+        switched.setColor(QPalette::WindowText, Qt::magenta);
+        dictation->setPalette(switched);
+        QCOMPARE(speechFallbacks->palette().color(QPalette::WindowText),
+                 speecher::settings::negativeTextColor(switched));
+    }
+
+    // Accepting a setup step's suggestion adds what it names to the chain.
+    void setupSuggestionAddsItsFallback()
+    {
+        QTemporaryDir directory;
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("anthropic"));
+        ProviderRegistry providers;
+        for (const char *id : {"anthropic", "local"}) {
+            providers.registerRefinementProvider({id, id}, [](QObject *parent) { return new FakeRefiner(parent); });
+        }
+        LocalModelStore models(directory.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, models);
+        LocalSetupTestAccess::setRunners(local, {{QStringLiteral("ollama"), QStringLiteral("Ollama"),
+                                                  QStringLiteral("0.34.4"),
+                                                  QStringLiteral("http://127.0.0.1:11434/v1"),
+                                                  {QStringLiteral("gemma4:e4b")}}});
+
+        RefinementSetupPage page(settings, providers, &local);
+        page.show();
+        auto *accept = page.findChild<QPushButton *>(QStringLiteral("fallbackSuggestionAccept"));
+        QVERIFY(accept && accept->isVisible());
+        accept->click();
+        QCOMPARE(settings.refinementFallbackProviders(), QStringList{QStringLiteral("local")});
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("fallback_local")));
+    }
+
+    // The setup steps' fallback section is optional: editing it never holds
+    // Next, and Skip cleanup hides it.
+    void setupFallbackSectionIsOptional()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        ProviderRegistry providers;
+        for (const char *id : {"claude", "codex"}) {
+            providers.registerSpeechProvider({id, id, {}},
+                                             [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        }
+        for (const char *id : {"openai", "anthropic"}) {
+            providers.registerRefinementProvider({id, id}, [](QObject *parent) { return new FakeRefiner(parent); });
+        }
+
+        SpeechProviderSetupPage speech(settings, providers);
+        speech.show();
+        QVERIFY(speech.ready());
+        auto *section = speech.findChild<QWidget *>(QStringLiteral("speechSetupFallbacks"));
+        QVERIFY(section && section->isVisible());
+        QCOMPARE(section->findChild<QLabel *>(QStringLiteral("sectionLabel"))->text(),
+                 QStringLiteral("If claude is unavailable"));
+        auto *add = section->findChild<QComboBox *>(QStringLiteral("fallbackAdd"));
+        QVERIFY(add);
+        emit add->activated(add->findData(QStringLiteral("codex")));
+        QTRY_COMPARE(settings.speechFallbackProviders(), QStringList{QStringLiteral("codex")});
+        QVERIFY(speech.ready());
+        section->findChild<QToolButton *>(QStringLiteral("fallbackRemove_codex"))->click();
+        QTRY_COMPARE(settings.speechFallbackProviders(), QStringList{});
+        QVERIFY(speech.ready());
+
+        RefinementSetupPage refinement(settings, providers);
+        refinement.show();
+        auto *cleanup = refinement.findChild<QWidget *>(QStringLiteral("refinementSetupFallbacks"));
+        QVERIFY(cleanup && cleanup->isVisible());
+        refinement.findChild<QCheckBox *>(QStringLiteral("refinementSkip"))->click();
+        QVERIFY(!cleanup->isVisible());
     }
 
     // Paste with picks how to paste; inserting directly is a Default paste choice.

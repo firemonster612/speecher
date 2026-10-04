@@ -457,12 +457,10 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     auto *previewRow = new QHBoxLayout;
     previewRow->setContentsMargins(0, 0, 0, 0);
     previewRow->setSpacing(10);
-    // An error's warning sign, before its text as on the other platforms.
+    // An error's warning sign, before its text as on the other platforms, or
+    // the receipt's icon of an outcome that offers a fix.
     m_errorIcon = new QLabel(m_previewPill);
     m_errorIcon->setObjectName(QStringLiteral("errorIcon"));
-    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-    m_errorIcon->setPixmap(QIcon::fromTheme(QStringLiteral("dialog-warning"))
-                               .pixmap(iconSize, iconSize));
     m_errorIcon->hide();
     previewRow->addWidget(m_errorIcon, 0, Qt::AlignVCenter);
     previewRow->addWidget(m_preview, 1);
@@ -606,6 +604,7 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     m_updateBanner = makeBanner("updateBanner", m_updateBannerText);
     m_updateBannerText->setObjectName(QStringLiteral("updateBannerText"));
     // A failed update says so with the warning sign, not only in words.
+    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
     m_updateBannerIcon = new QLabel(m_updateBanner);
     m_updateBannerIcon->setObjectName(QStringLiteral("updateBannerIcon"));
     m_updateBannerIcon->setPixmap(QIcon::fromTheme(QStringLiteral("dialog-warning"))
@@ -893,25 +892,31 @@ static QIcon outcomeIcon(PopupOutcome outcome)
     return {};
 }
 
-void TranscriberPopup::showMessage(const QString &message, PopupOutcome outcome)
+void TranscriberPopup::showMessage(const QString &message, PopupOutcome outcome, const QString &actionLabel)
 {
     m_phase = Phase::Live;
     // The receipt replaces the waveform and any last preview words.
     restoreStandardLayout();
     hidePreview();
-    m_waveform->setMessage(message, outcomeIcon(outcome));
-    m_previewPill->adjustSize();
-    adjustSize();
+    if (actionLabel.isEmpty()) {
+        m_waveform->setMessage(message, outcomeIcon(outcome));
+        m_previewPill->adjustSize();
+        adjustSize();
+        return;
+    }
+    // An outcome with a fix wraps as an error does and carries its button,
+    // but not Dismiss or the countdown: the session decides when it goes.
+    showWrappedLine(message, outcomeIcon(outcome), actionLabel, false);
 }
 
-void TranscriberPopup::showErrorMessage(const QString &message, const QString &actionLabel)
+void TranscriberPopup::showWrappedLine(const QString &message, const QIcon &icon, const QString &actionLabel,
+                                       bool countdown)
 {
-    m_phase = Phase::Live;
-    m_errorDismissAnimation->stop();
     m_waveform->hide();
-    m_errorDismiss->setVisible(true);
-    // The error capsule keeps the desktop's own font and its own width.
     applyFonts();
+    // The wrapped line is never cut short, so a long preview before it
+    // leaves no fade behind.
+    m_previewCut = false;
     m_previewFade->setEnabled(false);
     m_previewPill->setMinimumWidth(0);
     const QFontMetrics metrics(m_preview->font());
@@ -930,31 +935,36 @@ void TranscriberPopup::showErrorMessage(const QString &message, const QString &a
     m_preview->setWordWrap(true);
     m_preview->setFixedWidth(textWidth);
     m_preview->setVisible(true);
+    const int iconSize = style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
+    m_errorIcon->setPixmap(icon.pixmap(iconSize, iconSize));
     m_errorIcon->setVisible(true);
     m_errorAction->setText(actionLabel);
     m_errorAction->setVisible(!actionLabel.isEmpty());
     m_previewPill->setVisible(true);
+    m_pillLayout->setSpacing(0);
+    const int textHeight =
+        metrics.boundingRect(QRect(0, 0, textWidth, 1000), Qt::AlignCenter | wrapFlags, text).height();
     // previewRow is centred in what is left after the bar and its air, so the
     // same amount above it puts the text on the capsule's optical centre.
-    m_pillLayout->setSpacing(0);
-    m_pillLayout->setContentsMargins(24, kErrorBarInset + 3, 24, kErrorBarInset);
-    m_errorDismissProgress->setValue(m_errorDismissProgress->maximum());
-    m_errorDismissProgress->show();
-
-    const int textHeight = metrics.boundingRect(
-                                      QRect(0, 0, textWidth, 1000),
-                                      Qt::AlignCenter | wrapFlags,
-                                      text)
-                               .height();
+    const int barSpace = countdown ? 3 + kErrorBarInset : 0;
+    m_pillLayout->setContentsMargins(24, barSpace, 24, countdown ? kErrorBarInset : 0);
     // 24 keeps the label's 12px above and below the text; 3 is the countdown
     // bar; the inset is the air between the bar and the border.
-    m_previewPill->setFixedHeight(
-        qMax(48, textHeight + 24 + 2 * (3 + kErrorBarInset)));
+    m_previewPill->setFixedHeight(qMax(48, textHeight + 24 + 2 * barSpace));
     m_previewPill->resize(m_previewPill->sizeHint());
     adjustSize();
-    if (isVisible()) {
-        m_positioner->positionBottomCenter(m_surface);
-    }
+    repositionIfVisible();
+}
+
+void TranscriberPopup::showErrorMessage(const QString &message, const QString &actionLabel)
+{
+    m_phase = Phase::Live;
+    m_errorDismissAnimation->stop();
+    m_errorDismiss->setVisible(true);
+    m_errorDismissProgress->setValue(m_errorDismissProgress->maximum());
+    m_errorDismissProgress->show();
+    // The error capsule keeps the desktop's own font and its own width.
+    showWrappedLine(message, outcomeIcon(PopupOutcome::Error), actionLabel, true);
     m_errorDismissAnimation->setDuration(popupErrorDismissMs(message));
     m_errorDismissAnimation->start();
     if (m_previewPill->underMouse()) {

@@ -35,6 +35,7 @@ struct LocalModel;
 class PlatformComposition;
 class ProviderRegistry;
 class SettingsStore;
+class SetupFallbackSection;
 struct ProviderStat;
 struct RefinementPrepareResult;
 struct SpeechPrepareResult;
@@ -206,6 +207,7 @@ private:
     QPushButton *m_localCancel = nullptr;
     QToolButton *m_compareToggle = nullptr;
     QTableWidget *m_compare = nullptr;
+    SetupFallbackSection *m_fallbacks = nullptr;
 
     // The suggestion stands until the person picks a model themselves.
 
@@ -398,6 +400,7 @@ private:
     QWidget *m_openAiSpeedRow;
     QComboBox *m_openAiSpeed;
     QLabel *m_fastModeHint;
+    SetupFallbackSection *m_fallbacks = nullptr;
     quint64 m_checkGeneration = 0;
     int m_pendingProbes = 0;
     bool m_autoSelectDone = false;

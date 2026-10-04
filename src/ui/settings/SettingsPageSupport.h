@@ -88,6 +88,10 @@ void populateCliproxyAccounts(QComboBox *combo,
 QColor positiveTextColor(const QPalette &palette);
 // The colour scheme's NegativeText, or plain text without a scheme.
 QColor negativeTextColor(const QPalette &palette);
+// Shows a row's description, or a status in its place, in the colour scheme's
+// NegativeText while negative, else in the description's grey. The colour is
+// copied from palette, so call it again when the palette changes.
+void setDescriptionTone(QLabel *description, bool negative, const QPalette &palette);
 // The colour scheme's NeutralText, the caution colour a paused dictation
 // shows in; plain text without a scheme.
 QColor neutralTextColor(const QPalette &palette);
