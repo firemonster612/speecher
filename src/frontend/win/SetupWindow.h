@@ -30,6 +30,12 @@ private:
     QString currentPageTitleForTest() const;
     void showPageForTest(const QString &stepId);
     bool finishEnabledForTest() const;
+    // Whether the page on screen shows its fallback section.
+    bool fallbacksShownForTest() const;
+    // Presses the section's suggestion; false while it offers none.
+    bool pressFallbackSuggestionForTest();
+    // Scrolls the page on screen to its fallback section, for a picture.
+    void revealFallbacksForTest();
     bool captureForTest(const QString &path);
     static QStringList welcomeCopyForTest();
     struct Native;
