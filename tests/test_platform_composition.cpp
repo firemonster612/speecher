@@ -693,7 +693,7 @@ private slots:
         QCOMPARE(error, QStringLiteral("That is already the Global Shortcut for dictation."));
         QVERIFY(controller.globalShortcut(GlobalShortcutRole::Cancel).isEmpty());
 
-        const ShortcutBinding c(QKeySequence(Qt::Key_C));
+        const ShortcutBinding c{QKeySequence(Qt::Key_C)};
         QVERIFY(controller.setGlobalShortcut(c, nullptr, GlobalShortcutRole::Cancel));
         QVERIFY(!controller.setGlobalShortcut(c, &error, GlobalShortcutRole::Pause));
         QCOMPARE(error, QStringLiteral("That is already the Cancel Shortcut."));
