@@ -664,6 +664,107 @@ private slots:
         QCOMPARE(openai->refreshCalls, 1);
     }
 
+    // What the popup says after a session that used fallbacks, and what
+    // Insights keeps: "No internet" only when the system said so as they
+    // failed.
+    void theOutcomeNamesTheFallbacksThatDidTheWork_data()
+    {
+        QTest::addColumn<int>("reachability");
+        QTest::addColumn<QString>("message");
+        QTest::newRow("offline") << int(Reachability::Offline)
+                                 << QStringLiteral("Input sent • No internet, so Custom Endpoint and Local Runner did "
+                                                   "this one.");
+        QTest::newRow("unknown") << int(Reachability::Unknown)
+                                 << QStringLiteral("Input sent • Transcribed with Custom Endpoint. ChatGPT Codex "
+                                                   "couldn't be reached. Cleaned up with Local Runner. OpenAI "
+                                                   "couldn't be reached.");
+    }
+
+    void theOutcomeNamesTheFallbacksThatDidTheWork()
+    {
+        QFETCH(int, reachability);
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("endpoint")},
+                     {QStringLiteral("openai"), QStringLiteral("local")});
+        rig.settings.setInsightsEnabled(true);
+        rig.session->setReachability(Reachability(reachability));
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.refiners[QStringLiteral("openai")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        rig.refiners[QStringLiteral("local")]->autoComplete = true;
+        rig.refiners[QStringLiteral("local")]->autoCompleteText = QStringLiteral("Spoken words.");
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        QSignalSpy recorded(rig.session.get(), &DictationSession::dictationRecorded);
+        rig.listen();
+        rig.speech[QStringLiteral("endpoint")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(outcome.size(), 1);
+        QTEST(outcome.first().at(0).toString(), "message");
+        QCOMPARE(outcome.first().at(1).value<PopupOutcome>(), PopupOutcome::Fallback);
+        QCOMPARE(outcome.first().at(2).value<PopupErrorAction>().fix, ErrorFix::None);
+        const DictationRecord record = recorded.first().first().value<DictationRecord>();
+        QCOMPARE(record.speechProviders, QStringList{QStringLiteral("endpoint")});
+        QCOMPARE(record.refinementProviders, QStringList{QStringLiteral("local")});
+    }
+
+    // A provider dropping mid-dictation: the note says words may be missing,
+    // in place of the speech warning, and both providers ran.
+    void aSwitchMidDictationSaysWordsMayBeMissing()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        rig.settings.setInsightsEnabled(true);
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        QSignalSpy recorded(rig.session.get(), &DictationSession::dictationRecorded);
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("first"));
+        for (int drop = 0; drop < 3; ++drop) {
+            rig.speech[QStringLiteral("codex")]->emitFailure(QStringLiteral("dropped"), true,
+                                                            QStringLiteral("streaming"), Network);
+        }
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("second"));
+        rig.session->stopListening();
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Input sent • ChatGPT Codex dropped, so Local Model finished. A few words may be missing."));
+        QCOMPARE(recorded.first().first().value<DictationRecord>().speechProviders,
+                 (QStringList{QStringLiteral("codex"), QStringLiteral("local")}));
+    }
+
+    // A sign-in turned down: a successful outcome with Open Accounts, up
+    // for at least as long as an error would be, so the fix can be used.
+    void aTurnedDownSignInOffersAccountsAndStaysUpToBeRead()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        rig.settings.setCompletionStatusDurationMs(100);
+        rig.speech[QStringLiteral("codex")]->prepareResult = {false, QStringLiteral("expired"),
+                                                             ProviderFailureKind::Authentication};
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(outcome.first().at(0).toString(),
+                 QStringLiteral("Input sent • Used Local Model. Your ChatGPT sign-in has expired."));
+        const PopupErrorAction fix = outcome.first().at(2).value<PopupErrorAction>();
+        QCOMPARE(fix.fix, ErrorFix::SettingsPage);
+        QCOMPARE(popupErrorActionLabel(fix), QStringLiteral("Open Accounts"));
+        QTest::qWait(400);
+        QCOMPARE(rig.session->state(), DictationState::Delivering);
+    }
+
+    // Without fallbacks the outcome is today's, even though the refiner's
+    // failure is known.
+    void withoutFallbacksTheOutcomeIsTodays()
+    {
+        ChainRig rig({QStringLiteral("codex")}, {QStringLiteral("openai")});
+        rig.refiners[QStringLiteral("openai")]->prepareResult = {false, QStringLiteral("refused"), Network};
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(outcome.first().at(0).toString(), QStringLiteral("Used raw transcript • Input sent"));
+        QCOMPARE(outcome.first().at(2).value<PopupErrorAction>().fix, ErrorFix::None);
+    }
+
     // An expired sign-in renews on the worker before refinement, and one that
     // can't renew fails the refiner there: prepare(), which would renew it on
     // the GUI thread, is never reached.

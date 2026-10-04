@@ -1246,7 +1246,6 @@ void DictationSession::deliverFinal(const QString &text)
     const int words = countWords(m_transcriptPipeline.editsSelection ? m_transcript->text() : text);
     m_refinementGeneration = 0;
     m_lastTranscript = text;
-    const bool usedFallback = m_usedRawTranscript;
     emit popupRefiningChanged(false);
     setState(DictationState::Delivering);
     qInfo() << "deliverFinal length=" << text.size();
@@ -1269,23 +1268,30 @@ void DictationSession::deliverFinal(const QString &text)
         // The live setting, not the session snapshot: turning insights off
         // mid-session must stop this one being recorded.
         if (m_settings->insightsEnabled()) {
-            emit dictationRecorded(
-                {QDateTime::currentDateTime(), m_listeningMs, words, appName, profile, profileName});
+            DictationRecord record{QDateTime::currentDateTime(), m_listeningMs, words, appName, profile, profileName};
+            record.speechProviders = m_providerHistory.speechRan;
+            record.refinementProviders = m_providerHistory.refinementRan;
+            emit dictationRecorded(record);
         }
-        QString outcome = usedFallback
-            ? QStringLiteral("Used raw transcript • %1").arg(result.message)
-            : result.message;
-        if (!m_speechWarning.isEmpty()) {
-            outcome += QStringLiteral(" • ") + m_speechWarning;
-        }
-        m_lastMessage = outcome;
-        emit popupMessageRequested(outcome,
-                                   usedFallback ? PopupOutcome::Fallback
-                                   : result.receipt == DeliveryReceipt::Copied
-                                       ? PopupOutcome::Copied
-                                       : PopupOutcome::Inserted);
-        emit statusChanged(outcome);
-        m_completionTimer->start(settings.output.completionStatusDurationMs);
+        // A role without fallbacks ends as it always has, its failures unnamed.
+        ProviderHistory history = m_providerHistory;
+        history.issues.removeIf([this](const ProviderAttemptIssue &issue) {
+            return (issue.role == ProviderRole::Speech ? m_speechChain : m_refinementChain).size() < 2;
+        });
+        const DictationOutcome outcome = dictationOutcome(result.message,
+                                                          result.receipt == DeliveryReceipt::Copied,
+                                                          history,
+                                                          m_usedRawTranscript,
+                                                          m_speechWarning,
+                                                          providerLabels());
+        m_lastMessage = outcome.message;
+        emit popupMessageRequested(outcome.message, outcome.outcome, outcome.fix);
+        emit statusChanged(outcome.message);
+        // One that offers a fix stays up long enough to read and use it.
+        const int durationMs = outcome.fix.fix == ErrorFix::None
+            ? settings.output.completionStatusDurationMs
+            : std::max(popupErrorDismissMs(outcome.message), settings.output.completionStatusDurationMs);
+        m_completionTimer->start(durationMs);
     } else {
         emit popupFrozenChanged(false);
         qWarning().noquote() << "text delivery failed message=" + result.message;
