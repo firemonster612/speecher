@@ -73,7 +73,9 @@ struct RowView: View {
                 // that System Settings' navigation rows carry.
                 Button { model.showPage(row.targetPage) } label: {
                     LabeledContent {
+                        // The hint says where the row goes; the chevron only shows it.
                         Image(systemName: "chevron.forward").foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     } label: { label }
                         .contentShape(Rectangle())
                 }

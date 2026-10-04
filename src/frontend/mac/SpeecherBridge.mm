@@ -864,7 +864,6 @@ SpeecherFallbackList *bridgedFallbackList(speecher::ProviderRole role, const spe
 
 @interface SettingsSubpageModel ()
 @property (nonatomic, copy) NSString *subpageId;
-@property (nonatomic, copy) NSString *parent;
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSArray<SettingsPaneGroupModel *> *groups;
 @end
@@ -1692,7 +1691,6 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     for (const speecher::SettingsSubpage &subpage : _state->schema.subpages) {
         SettingsSubpageModel *model = [[SettingsSubpageModel alloc] init];
         model.subpageId = subpage.id.toNSString();
-        model.parent = subpage.parent.toNSString();
         model.title = subpage.title.toNSString();
         model.groups = [self bridgedGroups:subpage.groups];
         [subpages addObject:model];
@@ -2914,6 +2912,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 + (NSString *)noSettingsMatchText
 {
     return speecher::noSettingsMatchText().toNSString();
+}
+
++ (NSString *)settingsBackCaption
+{
+    return speecher::settingsBackCaption().toNSString();
 }
 
 + (CGFloat)popupErrorWrapWidth

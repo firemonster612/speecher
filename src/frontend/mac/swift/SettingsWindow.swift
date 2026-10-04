@@ -84,11 +84,8 @@ struct RootView: View {
                     .scenePadding([.top, .horizontal])
             }
             HStack {
-                if pane.id == "whatsNew" {
-                    Button("Back", systemImage: "chevron.backward") { model.leaveWhatsNew() }
-                        .labelStyle(.iconOnly)
-                } else if model.subpage != nil {
-                    Button("Back", systemImage: "chevron.backward") { model.leaveSubpage() }
+                if pane.id == "whatsNew" || model.subpage != nil {
+                    Button(SpeecherBridge.settingsBackCaption, systemImage: "chevron.backward") { model.goBack() }
                         .labelStyle(.iconOnly)
                 }
                 Text(pane.title)

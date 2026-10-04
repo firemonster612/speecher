@@ -257,8 +257,6 @@ typedef NS_ENUM(NSInteger, SpeecherPaneLayout) {
 @interface SettingsSubpageModel : NSObject
 // "dictation:fallbacks", as resolvePage takes it.
 @property (nonatomic, readonly, copy) NSString *subpageId;
-// The pane its Back returns to, which the sidebar keeps selected.
-@property (nonatomic, readonly, copy) NSString *parent;
 @property (nonatomic, readonly, copy) NSString *title;
 @property (nonatomic, readonly, copy) NSArray<SettingsPaneGroupModel *> *groups;
 @end
@@ -1075,6 +1073,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 + (NSString *)globalShortcutResetCaption:(NSString *)defaultShortcut NS_SWIFT_NAME(globalShortcutResetCaption(_:));
 // What settings search shows when nothing matches (speecher::noSettingsMatchText).
 @property (class, nonatomic, readonly, copy) NSString *noSettingsMatchText;
+// The settings window's Back caption (speecher::settingsBackCaption).
+@property (class, nonatomic, readonly, copy) NSString *settingsBackCaption;
 // The popup's captions (speecher::popupDismissCaption, renewingSignInText,
 // and dictationStatusLabel for a state).
 @property (class, nonatomic, readonly, copy) NSString *popupDismissCaption;

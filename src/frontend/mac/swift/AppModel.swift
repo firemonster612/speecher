@@ -412,9 +412,15 @@ final class AppModel: ObservableObject {
         panes.first { $0.id == id }
     }
 
-    /// Back from a subpage to the pane it belongs to.
-    func leaveSubpage() {
-        subpage = nil
+    /// Back from a subpage to the pane it belongs to, at the row that opened
+    /// it, or from What's New to the pane it was opened from.
+    func goBack() {
+        guard let subpage else {
+            pane = whatsNewReturnPane
+            return
+        }
+        requestedRow = pages.flatMap(\.sections).flatMap(\.rows).first { $0.targetPage == subpage }?.rowId
+        self.subpage = nil
     }
 
     /// The page the detail column shows: the subpage open, else the pane.
@@ -496,11 +502,6 @@ final class AppModel: ObservableObject {
         if pane != "whatsNew" { whatsNewReturnPane = pane }
         pane = "whatsNew"
         bridge.clearPendingWhatsNew()
-    }
-
-    /// Back from What's New to the pane it was opened from.
-    func leaveWhatsNew() {
-        pane = whatsNewReturnPane
     }
 
     func dismissWhatsNew() {

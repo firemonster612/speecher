@@ -270,7 +270,7 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
 
     /// What the subpage's Back button does.
     @MainActor
-    @objc public func leaveSettingsSubpage() { model.leaveSubpage() }
+    @objc public func leaveSettingsSubpage() { model.goBack() }
 
     /// News that arrives while no Speecher window is up, such as a Local
     /// Model download finishing after setup closed, goes to Notification

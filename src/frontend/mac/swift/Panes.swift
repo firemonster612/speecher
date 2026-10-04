@@ -157,9 +157,11 @@ struct PaneView: View {
         }
     }
 
-    /// Brings the row a search led to into view, once the pane has laid out.
+    /// Brings the row a search or Back led to into view, once the pane has
+    /// laid out. Another page's row is left for that page, which may be about
+    /// to replace this one, as the pane does a subpage on Back.
     private func scroll(to row: String?, _ proxy: ScrollViewProxy) {
-        guard let row else { return }
+        guard let row, pane.groups.contains(where: { $0.rows.contains(row) }) else { return }
         model.requestedRow = nil
         DispatchQueue.main.async {
             withAnimation { proxy.scrollTo(row, anchor: .top) }
