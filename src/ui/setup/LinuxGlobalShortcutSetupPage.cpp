@@ -420,6 +420,12 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
     settings::addCardRow(rows, m_activationModeRow, rowHost);
     settings::setCardRowVisible(m_activationModeRow, !m_settingsCard);
 
+    // Not shown on manual-command desktops: their command starts Speecher by
+    // itself, so "only while running" would be wrong there.
+    m_trayNote = guidanceLabel(QString(), this);
+    m_trayNote->setObjectName(QStringLiteral("globalShortcutTrayNote"));
+    layout->addWidget(m_trayNote);
+
     // The setup step asks for the Cancel and Pause Shortcuts too, in a card
     // of their own: optional, so they never hold the step.
     if (!m_settingsCard && m_role == GlobalShortcutRole::Dictation) {
@@ -444,12 +450,6 @@ LinuxGlobalShortcutSetupPage::LinuxGlobalShortcutSetupPage(
         sessionLayout->addWidget(card);
         layout->addWidget(m_sessionShortcuts);
     }
-
-    // Not shown on manual-command desktops: their command starts Speecher by
-    // itself, so "only while running" would be wrong there.
-    m_trayNote = guidanceLabel(QString(), this);
-    m_trayNote->setObjectName(QStringLiteral("globalShortcutTrayNote"));
-    layout->addWidget(m_trayNote);
 
     if (!m_settingsCard) {
         layout->addStretch();
