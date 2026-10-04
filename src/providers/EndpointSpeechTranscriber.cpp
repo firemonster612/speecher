@@ -167,6 +167,7 @@ void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
 }
 
 // transcript.text.delta events carry pieces, transcript.text.done the whole.
+// Speaches before 0.9 sends untyped {"text": …} events, one per segment.
 void EndpointSpeechTranscriber::readStream()
 {
     if (!m_streamError.isEmpty()) return;
@@ -180,11 +181,19 @@ void EndpointSpeechTranscriber::readStream()
             QMetaObject::invokeMethod(m_reply, &QNetworkReply::abort, Qt::QueuedConnection);
             return;
         }
+        QString piece;
         if (type == QStringLiteral("transcript.text.delta")) {
-            m_streamedText += event.value(QStringLiteral("delta")).toString();
-            emit partialTranscript(m_attemptId, m_streamedText);
+            piece = event.value(QStringLiteral("delta")).toString();
+        } else if (type.isEmpty()) {
+            // These segments come trimmed, so they need a space between them.
+            const QString segment = event.value(QStringLiteral("text")).toString().trimmed();
+            piece = m_streamedText.isEmpty() || segment.isEmpty() ? segment : QLatin1Char(' ') + segment;
         } else if (type == QStringLiteral("transcript.text.done")) {
             m_doneText = event.value(QStringLiteral("text")).toString();
+        }
+        if (!piece.isEmpty()) {
+            m_streamedText += piece;
+            emit partialTranscript(m_attemptId, m_streamedText);
         }
     }
 }

@@ -257,13 +257,36 @@ private slots:
         QCOMPARE(server.requests.size(), 1);
     }
 
+    void speechEndpointReadsAStreamedTranscript_data()
+    {
+        QTest::addColumn<QByteArray>("stream");
+        QTest::addColumn<QStringList>("partials");
+        QTest::addColumn<QString>("text");
+        QTest::newRow("openai")
+            << QByteArray("event: transcript.text.delta\ndata: {\"type\":\"transcript.text.delta\",\"delta\":\"Hello\"}\n\n"
+                          "data: {\"type\":\"transcript.text.delta\",\"delta\":\" world\"}\n\n"
+                          "data: {\"type\":\"transcript.text.done\",\"text\":\"Hello, world.\"}\n\n")
+            << QStringList{QStringLiteral("Hello"), QStringLiteral("Hello world")} << QStringLiteral("Hello, world.");
+        // Speaches 0.9 sends one delta per segment and an empty done text.
+        QTest::newRow("speaches-0.9")
+            << QByteArray("data: {\"type\":\"transcript.text.delta\",\"delta\":\" Hello there.\",\"logprobs\":null}\n\n"
+                          "data: {\"type\":\"transcript.text.delta\",\"delta\":\" How are you?\",\"logprobs\":null}\n\n"
+                          "data: {\"type\":\"transcript.text.done\",\"text\":\"\",\"logprobs\":null}\n\n")
+            << QStringList{QStringLiteral(" Hello there."), QStringLiteral(" Hello there. How are you?")}
+            << QStringLiteral("Hello there. How are you?");
+        // Speaches 0.8 sends each segment trimmed, as an untyped json transcription.
+        QTest::newRow("speaches-0.8")
+            << QByteArray("data: {\"text\":\"Hello there.\"}\n\ndata: {\"text\":\"How are you?\"}\n\n")
+            << QStringList{QStringLiteral("Hello there."), QStringLiteral("Hello there. How are you?")}
+            << QStringLiteral("Hello there. How are you?");
+    }
+
     void speechEndpointReadsAStreamedTranscript()
     {
+        QFETCH(QByteArray, stream);
+        QFETCH(QStringList, partials);
+        QFETCH(QString, text);
         FakeServer server;
-        const QByteArray stream =
-            "event: transcript.text.delta\ndata: {\"type\":\"transcript.text.delta\",\"delta\":\"Hello\"}\n\n"
-            "data: {\"type\":\"transcript.text.delta\",\"delta\":\" world\"}\n\n"
-            "data: {\"type\":\"transcript.text.done\",\"text\":\"Hello, world.\"}\n\n";
         server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "text/event-stream", stream));
         EndpointSpeechTranscriber transcriber;
         QSignalSpy partial(&transcriber, &SpeechTranscriber::partialTranscript);
@@ -273,9 +296,11 @@ private slots:
         dictate(transcriber, server.origin());
 
         QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
-        QCOMPARE(partial.last().at(1).toString(), QStringLiteral("Hello world"));
+        QStringList streamed;
+        for (const QList<QVariant> &signal : partial) streamed << signal.at(1).toString();
+        QCOMPARE(streamed, partials);
         QCOMPARE(transcript.size(), 1);
-        QCOMPARE(transcript.first().at(1).toString(), QStringLiteral("Hello, world."));
+        QCOMPARE(transcript.first().at(1).toString(), text);
     }
 
     // Rule A7: a failed upload is not sent again, and text the stream already
