@@ -77,18 +77,19 @@ class SpeecherImeService : InputMethodService() {
                         onToggleSize = { sizeToggled.value = !sizeToggled.value },
                         onCancel = ::switchBack,
                         onInsert = {
-                            vibrateForStop()
-                            ActiveDictation.engine?.insert()
+                            if (ActiveDictation.engine?.insert() == true)
+                                view.vibrateForStartOrStop()
                         },
                         onInsertRefined = {
-                            vibrateForStop()
-                            ActiveDictation.engine?.insertRefined(
-                                resolveSignedIn(
-                                        ActiveDictation.settings.refinementProvider.account,
-                                        TokenStore(this).signedIn(),
-                                    )
-                                    .cleanup
-                            )
+                            val stopped =
+                                ActiveDictation.engine?.insertRefined(
+                                    resolveSignedIn(
+                                            ActiveDictation.settings.refinementProvider.account,
+                                            TokenStore(this).signedIn(),
+                                        )
+                                        .cleanup
+                                ) == true
+                            if (stopped) view.vibrateForStartOrStop()
                         },
                         onRecover = ::recover,
                         onPause = { ActiveDictation.engine?.pause() },
@@ -187,18 +188,6 @@ class SpeecherImeService : InputMethodService() {
     }
 
     /**
-     * The desktop's stop sound: an Insert that stops the microphone, running or paused, vibrates.
-     * The view's haptics follow the system's touch feedback setting.
-     */
-    private fun vibrateForStop() {
-        if (
-            ActiveDictation.settings.vibrationEnabled &&
-                panelState.value is DictationState.Listening
-        )
-            panel?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-    }
-
-    /**
      * A denied microphone, an ended sign-in and an unsupported spoken language need the app; the
      * other failures retry in place.
      */
@@ -210,7 +199,7 @@ class SpeecherImeService : InputMethodService() {
                 reason != FailureReason.MicrophoneDenied &&
                 reason != FailureReason.SpokenLanguage
         ) {
-            ActiveDictation.engine?.retry()
+            if (ActiveDictation.engine?.retry() == true) panel?.vibrateForStartOrStop()
             return
         }
         switchBack()
@@ -239,3 +228,12 @@ class SpeecherImeService : InputMethodService() {
 }
 
 private const val DISMISS_GRACE_MILLIS = 750L
+
+/**
+ * The desktop's start and stop sounds, as a vibration when the person turned it on. The view's
+ * haptics follow the phone's touch feedback setting.
+ */
+fun View.vibrateForStartOrStop() {
+    if (ActiveDictation.settings.vibrationEnabled)
+        performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+}

@@ -212,22 +212,23 @@ class DictationEngine(
             state !is DictationState.Refining &&
             state !is DictationState.Failed
 
-    @Synchronized
-    fun stop() {
+    /** Ends the listening, running or paused; false when there was none to end. */
+    private fun stop(): Boolean {
         if (paused) {
             paused = false
             resumeMedia()
             // An Insert while paused takes what was heard once the paused stream has ended.
             if (!finishingPause) finishPendingInsert() else publish(listening(0f))
-            return
+            return true
         }
-        if (!recording) return
+        if (!recording) return false
         recording = false
         stopCapture()
         resumeMedia()
         // A stream finishing a pause was already told; its end opens the one for what came after.
         if (!finishingPause) client?.stop()
         publish(listening(0f))
+        return true
     }
 
     /**
@@ -266,34 +267,48 @@ class DictationEngine(
         resumeMedia()
     }
 
+    /**
+     * Inserts what was heard once the stream has finished it. True when this stopped the listening,
+     * the moment the desktop plays its stop sound; a repeated tap or a failure's Insert stops
+     * nothing.
+     */
     @Synchronized
-    fun insert() {
-        if (inserted || pendingInsert != null) return
+    fun insert(): Boolean {
+        if (inserted || pendingInsert != null) return false
         if (state is DictationState.Failed) {
             commitTranscript((state as DictationState.Failed).transcript)
-            return
+            return false
         }
         pendingInsert = PendingInsert(null)
-        stop()
+        return stop()
     }
 
+    /** [insert] with [cleanup], if any, tidying the text first. */
     @Synchronized
-    fun insertRefined(cleanup: CleanupProvider?) {
-        if (inserted || pendingInsert != null) return
+    fun insertRefined(cleanup: CleanupProvider?): Boolean {
+        if (inserted || pendingInsert != null) return false
         pendingInsert = PendingInsert(cleanup)
-        stop()
+        return stop()
     }
 
+    /**
+     * Repeats what failed. True when that starts listening again, the moment the desktop plays its
+     * start sound; a repeated refinement or commit does not listen.
+     */
     @Synchronized
-    fun retry() {
-        val failed = state as? DictationState.Failed ?: return
+    fun retry(): Boolean {
+        val failed = state as? DictationState.Failed ?: return false
         failedCommit?.let {
             commitTranscript(it)
-            return
+            return false
         }
         val provider = failedRefinement
-        if (provider != null) refineTranscript(provider, failed.transcript)
-        else startSession(sourceProvider, failed.transcript)
+        if (provider != null) {
+            refineTranscript(provider, failed.transcript)
+            return false
+        }
+        startSession(sourceProvider, failed.transcript)
+        return true
     }
 
     private fun captureAudio(current: Int) {
@@ -732,6 +747,8 @@ fun createDictationEngine(
         },
         sharedExecutor,
         { next -> main.post { onState(next) } },
+        // A refused request, as during a phone call, needs nothing: the media plays on, the
+        // dictation goes ahead, and abandoning focus never granted does nothing.
         pauseMedia = { if (settings.pauseMedia) audio.requestAudioFocus(mediaPause) },
         resumeMedia = { audio.abandonAudioFocusRequest(mediaPause) },
     )

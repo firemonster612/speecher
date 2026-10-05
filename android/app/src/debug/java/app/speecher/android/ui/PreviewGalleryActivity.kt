@@ -114,6 +114,7 @@ private val states: Map<String, @Composable () -> Unit> =
         "panel-failed-microphone" to bottom { PanelFailedMicrophonePreview() },
         "panel-failed-microphone-unavailable" to
             bottom { PanelFailedPreview(FailureReason.MicrophoneUnavailable) },
+        "panel-failed-network-live-text-off" to bottom { PanelFailedNetworkLiveTextOffPreview() },
         "panel-failed-spoken-language" to bottom { PanelFailedSpokenLanguagePreview() },
         "panel-failed-commit" to bottom { PanelFailedPreview(FailureReason.Commit, heard = true) },
     ) +

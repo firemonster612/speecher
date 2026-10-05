@@ -172,8 +172,8 @@ fun DictationPanel(
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
             ) {
                 FailureMessage(state, Modifier.fillMaxWidth().then(announced))
-                if (state.transcript.isNotBlank()) {
-                    Transcript(state, Modifier.fillMaxWidth().heightIn(max = 96.dp))
+                if (shown.transcript.isNotBlank()) {
+                    Transcript(shown, Modifier.fillMaxWidth().heightIn(max = 96.dp))
                 }
                 buttons()
             }
@@ -262,9 +262,9 @@ internal fun panelHeight(size: PanelSize, displayHeight: Dp): Dp {
 
 /**
  * [state] as the panel previews its words: a preview turned off in Settings shows none. The
- * transcription preview covers the words heard, also as the dimmed text a refinement starts from,
- * and the refinement preview the cleaned text streaming in. A failure keeps its transcript, which
- * its Insert takes.
+ * transcription preview covers the words heard, also as the dimmed text a refinement starts from
+ * and under a failure, and the refinement preview the cleaned text streaming in. Only the shown
+ * words go: a failure's Insert still inserts its transcript.
  */
 internal fun DictationState.withPreviews(
     transcription: Boolean,
@@ -278,7 +278,7 @@ internal fun DictationState.withPreviews(
                 transcript = if (transcription) transcript else "",
                 refined = if (refinement) refined else "",
             )
-        is DictationState.Failed -> this
+        is DictationState.Failed -> if (transcription) this else copy(transcript = "")
     }
 
 /**
@@ -732,6 +732,18 @@ internal fun PanelFailedCleanupPreview() =
     PanelFailedPreview(
         FailureReason.Cleanup(CleanupProvider.Claude, ProviderFailureKind.RateLimited),
         heard = true,
+    )
+
+@PreviewLightDark
+@Composable
+internal fun PanelFailedNetworkLiveTextOffPreview() =
+    PanelPreview(
+        DictationState.Failed(
+            FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Network),
+            "",
+            SAMPLE_TEXT,
+        ),
+        transcriptionPreview = false,
     )
 
 @PreviewLightDark

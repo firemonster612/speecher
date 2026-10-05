@@ -10,7 +10,6 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.Display
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -328,10 +327,7 @@ class SpeecherChipService : AccessibilityService() {
         }
             .getOrDefault(false)
         if (switched) {
-            // The desktop's start sound. The view's haptics follow the system's touch feedback
-            // setting.
-            if (ActiveDictation.settings.vibrationEnabled)
-                chip?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            chip?.vibrateForStartOrStop()
             removeChip()
         } else {
             // Our keyboard isn't enabled; setup isn't finished, so send them there.
