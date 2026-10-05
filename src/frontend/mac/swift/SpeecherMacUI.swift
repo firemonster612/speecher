@@ -200,6 +200,20 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Screenshot automation: the setup assistant on a step ("transcription",
+    /// "refinement") with a provider chosen and the step's Advanced open, in a
+    /// window of the given content size. False for a step it does not have.
+    @MainActor
+    @objc public func showSetupStep(_ stepId: String, provider: String, size: CGSize) -> Bool {
+        showSetupAssistant(completion: {})
+        return setupAssistant?.show(step: stepId, provider: provider, size: size) ?? false
+    }
+
+    @MainActor
+    @objc public func captureSetupAssistant(toPath path: String) -> Bool {
+        setupAssistant?.capture(toPath: path) ?? false
+    }
+
     /// For the front end's teardown: an assistant left open would outlive the
     /// controller its callbacks reach into.
     @MainActor

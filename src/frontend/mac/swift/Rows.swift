@@ -101,6 +101,21 @@ struct RowView: View {
             CollectionRow(row: row, model: model)
         case .custom:
             custom
+        case .rating:
+            // The bars stacked on the control side, each labelled, in a grid
+            // so the bars and values line up.
+            LabeledContent {
+                Grid(alignment: .leading) {
+                    ForEach(row.ratings, id: \.label) { bar in
+                        GridRow {
+                            Text(bar.label).foregroundStyle(.secondary)
+                            bar.meter
+                        }
+                    }
+                }
+            } label: { label }
+        case .modelList:
+            ModelListRow(row: row)
         @unknown default:
             EmptyView()
         }
@@ -773,5 +788,83 @@ struct WritingProfileRows: View {
                     edited[index][columnId] = newValue
                     _ = model.save(records: edited, previous: records, for: row.rowId)
                 })
+    }
+}
+
+extension SpeecherRating {
+    /// The stock progress bar out of 10 and the value beside it, as two views
+    /// so a grid gives each a column. Without a figure the bar keeps its
+    /// place, hidden, and the "?" stands where the value would.
+    @ViewBuilder var meter: some View {
+        ProgressView(value: value?.doubleValue ?? 0, total: 10)
+            .opacity(value == nil ? 0 : 1)
+            .accessibilityLabel(label)
+            .accessibilityValue(valueText)
+        Text(valueText)
+            .monospacedDigit()
+            .accessibilityHidden(true)
+    }
+}
+
+/// The models behind a provider, as its Advanced disclosure lists them: a
+/// service's models by name and note, one form row each, or the models on
+/// this computer in one grid with their own bars under core's headings.
+struct RatedModelList: View {
+    let models: [SpeecherRatedModel]
+
+    var body: some View {
+        if let measures = models.first(where: { !$0.bars.isEmpty })?.bars {
+            Grid(alignment: .leading) {
+                GridRow {
+                    Text(SpeecherBridge.modelColumnHeader).foregroundStyle(.secondary)
+                    ForEach(measures, id: \.label) {
+                        Text($0.label).foregroundStyle(.secondary).gridCellColumns(2)
+                    }
+                }
+                ForEach(models, id: \.name) { model in
+                    Divider()
+                    GridRow {
+                        Self.name(model)
+                        ForEach(model.bars, id: \.label) { $0.meter }
+                    }
+                }
+            }
+        } else {
+            // Leading, as a form row's label is.
+            ForEach(models, id: \.name) { Self.name($0).frame(maxWidth: .infinity, alignment: .leading) }
+        }
+    }
+
+    private static func name(_ model: SpeecherRatedModel) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(model.name)
+            if !model.note.isEmpty {
+                // Wraps rather than truncates where the bars leave it little width.
+                Text(model.note)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// A row that expands in place to the chosen provider's models, collapsed
+/// until opened.
+private struct ModelListRow: View {
+    let row: SettingsRowModel
+    @State private var expanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            RatedModelList(models: row.ratedModels)
+        } label: {
+            // A labelled row with no control, so the form sets the title over
+            // its description as on every other row.
+            LabeledContent {
+                EmptyView()
+            } label: {
+                RowView.label(row.label, help: row.help)
+            }
+        }
     }
 }
