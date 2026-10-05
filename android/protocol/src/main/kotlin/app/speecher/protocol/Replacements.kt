@@ -232,6 +232,13 @@ internal constructor(
     }
 
     /**
+     * [restore] for a revised selection. Its words are the document's, not the dictation's, so no
+     * phrase in them is replaced, as on the desktop; only the placeholders are restored.
+     */
+    fun restoreEdit(revised: String): String? =
+        revised.trim().takeIf(String::isNotEmpty)?.let(::restorePlaceholders)
+
+    /**
      * The refined text streamed so far, for the panel: complete placeholders show their text and
      * one still arriving at the end is hidden until it is complete.
      */

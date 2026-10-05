@@ -260,6 +260,39 @@ class TargetTest {
     }
 
     @Test
+    fun `a selection edit gets the desktop's editing prompt, without the output language`() {
+        val prompt =
+            CustomCleanupLevel(
+                "custom_terse_prompt",
+                "Terse prompt",
+                CleanupStrength.CustomOnly,
+                "Keep the prompt under three sentences.",
+            )
+        val context =
+            resolve(
+                    "com.openai.chatgpt",
+                    "ChatGPT",
+                    NearbyText("Dinner at ", " works for me", 10, 15),
+                    mapOf(
+                        WritingProfile.AiCoding to
+                            WritingProfileSettings(
+                                customCleanupLevel = prompt.id,
+                                customTone = terse.id,
+                                outputLanguage = "French",
+                            )
+                    ),
+                    listOf(terse),
+                    listOf(prompt),
+                )
+                .copy(
+                    additionalInstructions = "Spell it Speecher.",
+                    spokenLanguage = "es",
+                    selectedText = "seven",
+                )
+        assertEquals(desktopPrompt("edit-chatgpt"), refinementSystemPrompt(context))
+    }
+
+    @Test
     fun `custom ids are slugs of the name, unique among the others`() {
         assertEquals("custom_very_terse_", customChoiceId(" Very Terse! ", emptyList()))
         assertEquals(

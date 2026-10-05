@@ -189,15 +189,20 @@ class SpeecherImeService : InputMethodService() {
     }
 
     /**
-     * A denied microphone, an ended sign-in, a server's settings and an unsupported spoken language
-     * need the app; the other failures retry in place.
+     * A denied microphone, an ended sign-in, a server's settings, an unsupported spoken language
+     * and an edit with no cleanup need the app; the other failures retry in place.
      */
     private fun recover() {
         val reason = (panelState.value as? DictationState.Failed)?.reason ?: return
         val signIn = reason.signInAccount
         val transcriptionSettings =
             reason == FailureReason.SpokenLanguage || reason.needsServerSettings
-        if (signIn == null && reason != FailureReason.MicrophoneDenied && !transcriptionSettings) {
+        if (
+            signIn == null &&
+                reason != FailureReason.MicrophoneDenied &&
+                reason != FailureReason.SelectionNeedsCleanup &&
+                !transcriptionSettings
+        ) {
             if (ActiveDictation.engine?.retry() == true) panel?.vibrateForStartOrStop()
             return
         }
@@ -205,6 +210,8 @@ class SpeecherImeService : InputMethodService() {
         val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (signIn != null) intent.putExtra("sign_in_provider", signIn.name)
         if (transcriptionSettings) intent.putExtra("settings_page", SettingsPage.Transcription.name)
+        if (reason == FailureReason.SelectionNeedsCleanup)
+            intent.putExtra("settings_page", SettingsPage.Profiles.name)
         startActivity(intent)
     }
 

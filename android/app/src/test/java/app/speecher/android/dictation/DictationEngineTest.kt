@@ -1491,4 +1491,164 @@ class DictationEngineTest {
             engine.state,
         )
     }
+
+    /**
+     * Dictates [heard] and taps Insert refined while the field's selection is what [selection]
+     * holds, the edit answering as [edit] does with the selection and the instructions.
+     */
+    private fun editSelection(
+        heard: String,
+        selection: () -> String?,
+        commits: MutableList<String>,
+        edit: (String, String) -> String?,
+        onState: (DictationState) -> Unit = {},
+        onCommitted: (Inserted) -> Unit = {},
+    ): DictationEngine {
+        lateinit var speech: (SpeechEvent) -> Unit
+        val engine =
+            DictationEngine(
+                { _, _ -> },
+                {},
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, _, _, _ -> error("an edit is not a dictation") },
+                null,
+                { commits.add(it) },
+                Executor { it.run() },
+                onState,
+                replacements = { listOf(Replacement("sign off", "Regards,\nEfox")) },
+                onCommitted = onCommitted,
+                selection = selection,
+                editSelection = { _, selected, instructions, _ -> edit(selected, instructions) },
+            )
+        engine.start(SpeechProvider.Claude)
+        speech(SpeechEvent.Final(heard))
+        engine.insertRefined(CleanupProvider.Claude)
+        speech(SpeechEvent.Completed)
+        return engine
+    }
+
+    @Test
+    fun `Insert refined over a selection replaces it with the revision, phrases in it untouched`() {
+        val commits = mutableListOf<String>()
+        val edits = mutableListOf<Pair<String, String>>()
+        val states = mutableListOf<DictationState>()
+        val inserted = mutableListOf<Inserted>()
+        editSelection(
+            "make it eight",
+            { "Dinner at seven, sign off" },
+            commits,
+            { selected, instructions ->
+                edits.add(selected to instructions)
+                "Dinner at eight, sign off"
+            },
+            onState = { states.add(it) },
+            onCommitted = { inserted.add(it) },
+        )
+        // Words that are all a spoken phrase still go to the model, as instructions.
+        editSelection(
+            "sign off",
+            { "Dinner" },
+            commits,
+            { selected, instructions ->
+                edits.add(selected to instructions)
+                "Dinner SPEECHER_BINDING_0"
+            },
+        )
+        assertEquals(
+            listOf(
+                "Dinner at seven, sign off" to "make it eight",
+                "Dinner" to "SPEECHER_BINDING_0",
+            ),
+            edits,
+        )
+        assertEquals(listOf("Dinner at eight, sign off", "Dinner Regards,\nEfox"), commits)
+        assertEquals(
+            listOf(DictationState.Refining("make it eight", editsSelection = true)),
+            states.filterIsInstance<DictationState.Refining>(),
+        )
+        assertEquals("make it eight", inserted.single().dictated)
+    }
+
+    @Test
+    fun `a failed edit leaves the field alone until a retry revises the same selection`() {
+        val commits = mutableListOf<String>()
+        var selection = "Dinner at seven"
+        var answers = 0
+        val engine =
+            editSelection(
+                "make it eight",
+                { selection },
+                commits,
+                { _, _ ->
+                    if (answers++ == 0) throw ProviderFailure(ProviderFailureKind.Server, "502")
+                    "Dinner at eight"
+                },
+            )
+        assertEquals(
+            DictationState.Failed(
+                FailureReason.Cleanup(CleanupProvider.Claude, ProviderFailureKind.Server),
+                "Could not refine the transcript",
+                "make it eight",
+                editsSelection = true,
+            ),
+            engine.state,
+        )
+        assertFalse(engine.insert()) // The instructions never go in as text.
+        selection = "Dinner"
+        engine.retry()
+        assertEquals(
+            FailureReason.SelectionChanged,
+            (engine.state as DictationState.Failed).reason,
+        )
+        selection = "Dinner at seven"
+        engine.retry()
+        assertEquals(listOf("Dinner at eight"), commits)
+
+        val noCleanup = editSelection("make it eight", { "Dinner" }, commits, { _, _ -> null })
+        assertEquals(
+            FailureReason.SelectionNeedsCleanup,
+            (noCleanup.state as DictationState.Failed).reason,
+        )
+        val invented =
+            editSelection("add sign off", { "Dinner" }, commits, { _, _ -> "SPEECHER_BINDING_7" })
+        assertEquals(
+            FailureReason.Cleanup(CleanupProvider.Claude, ProviderFailureKind.InvalidResult),
+            (invented.state as DictationState.Failed).reason,
+        )
+        assertEquals(listOf("Dinner at eight"), commits)
+    }
+
+    @Test
+    fun `Insert while an edit is cleaning up inserts nothing, and the edit still goes in`() {
+        lateinit var speech: (SpeechEvent) -> Unit
+        val tasks = ArrayDeque<Runnable>()
+        val commits = mutableListOf<String>()
+        val engine =
+            DictationEngine(
+                { _, _ -> },
+                {},
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, _, _, _ -> error("an edit is not a dictation") },
+                null,
+                { commits.add(it) },
+                Executor { tasks.add(it) },
+                {},
+                selection = { "seven" },
+                editSelection = { _, _, _, _ -> "eight" },
+            )
+        engine.start(SpeechProvider.Claude)
+        while (tasks.isNotEmpty()) tasks.removeFirst().run()
+        speech(SpeechEvent.Final("make it eight"))
+        engine.insertRefined(CleanupProvider.Claude)
+        speech(SpeechEvent.Completed)
+        assertFalse(engine.insert())
+        tasks.removeFirst().run() // The edit.
+        assertEquals(listOf("eight"), commits)
+    }
 }

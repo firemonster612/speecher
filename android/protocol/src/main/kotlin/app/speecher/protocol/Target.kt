@@ -171,6 +171,11 @@ data class RefinementContext(
     val outputLanguage: String = "",
     /** The replacements' spoken phrases, sent as binding_aliases; see [replacementAliases]. */
     val bindingAliases: List<String> = emptyList(),
+    /**
+     * The field's selected text, which the dictation's words say how to edit; null for an ordinary
+     * dictation. Set, the refiner returns the revised selection.
+     */
+    val selectedText: String? = null,
 )
 
 /** An app a rule recognises by [match], and the app type and profile it gets. */

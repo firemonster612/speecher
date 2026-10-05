@@ -101,20 +101,28 @@ sealed interface DictationState {
     /**
      * The user pressed Insert and the batch or cleanup pass is running: ChatGPT's second
      * transcription pass while [transcribingAgain], then the cleanup. [refined] is the cleanup text
-     * streamed so far, empty until its first token arrives.
+     * streamed so far, empty until its first token arrives. [editsSelection] is set while the
+     * cleanup edits the field's selection: the words are instructions, so Insert cannot take them.
      */
     data class Refining(
         val transcript: String,
         val refined: String = "",
         val transcribingAgain: Boolean = false,
+        val editsSelection: Boolean = false,
     ) : DictationState
 
     /**
      * Dictation stopped. [transcript] holds whatever was heard before the failure. [detail] is
      * diagnostic and never shown, except a spoken language mismatch's, which is already its words.
+     * [editsSelection] is set when the dictation was editing the field's selection: the words are
+     * instructions, so the panel offers no Insert and the field stays as it was.
      */
-    data class Failed(val reason: FailureReason, val detail: String, val transcript: String) :
-        DictationState
+    data class Failed(
+        val reason: FailureReason,
+        val detail: String,
+        val transcript: String,
+        val editsSelection: Boolean = false,
+    ) : DictationState
 }
 
 /** Why dictation failed. Each reason maps to one recovery action in the panel. */
@@ -133,6 +141,15 @@ sealed interface FailureReason {
      * instead of two buttons that do the same commit.
      */
     data object Commit : FailureReason
+
+    /** A selection edit with the profile's cleanup set to None. Recovery: open the app. */
+    data object SelectionNeedsCleanup : FailureReason
+
+    /**
+     * The field's selection is no longer the text that was edited, so the revision is held back.
+     * Recovery: retry, once the same text is selected again.
+     */
+    data object SelectionChanged : FailureReason
 
     /**
      * A speech or cleanup provider could not do its part, as [kind]. Recovery: sign in to [account]
