@@ -382,7 +382,7 @@ EndpointModelControls makeEndpointModelControls(QWidget *host, const QString &ob
     model->lineEdit()->setClearButtonEnabled(true);
     model->setEditText(saved);
     layout->addWidget(model);
-    auto *connect = new QPushButton(QStringLiteral("Connect"), controls);
+    auto *connect = new QPushButton(setupText(SetupText::EndpointConnect), controls);
     connect->setObjectName(objectNamePrefix + QStringLiteral("Connect"));
     layout->addWidget(connect);
     return {controls, model, connect};
@@ -856,8 +856,11 @@ void SpeechProviderSetupPage::saveEndpointField(const QString &rowId, const QStr
     AppSettings settings = m_settings.snapshot();
     setupSchemaRow(rowId).apply(settings, value);
     m_settings.applySnapshot(settings);
-    // Readiness is whether the endpoint has a server, which this may change.
-    reprobeSelectedProvider();
+    // Readiness is whether the endpoint has a server, which only the URL
+    // changes; the model saves on every keystroke.
+    if (rowId == QStringLiteral("speechEndpointUrl")) {
+        reprobeSelectedProvider();
+    }
     showEndpointCheck();
 }
 

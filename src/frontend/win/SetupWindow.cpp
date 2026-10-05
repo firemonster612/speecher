@@ -385,20 +385,33 @@ StackPanel rowList(const StackPanel &body)
     return list;
 }
 
-// A Custom Endpoint form's Model control. An editable ComboBox drops Text set
-// before it loads, and a save would then clear the model, so the saved one
-// goes in as an item.
-ComboBox endpointModelCombo(const QString &saved)
-{
+// A Custom Endpoint form's Model row: a model the server lists once
+// connected, or one typed, with Connect beside it. Both pages' endpoint forms
+// use it.
+struct EndpointModelControls {
+    StackPanel panel;
     ComboBox model;
-    model.IsEditable(true);
-    model.MinWidth(200);
+    Button connect;
+};
+
+EndpointModelControls endpointModelControls(const QString &saved)
+{
+    EndpointModelControls controls;
+    controls.panel.Orientation(Orientation::Horizontal);
+    controls.panel.Spacing(8);
+    controls.model.IsEditable(true);
+    controls.model.MinWidth(200);
+    // An editable ComboBox drops Text set before it loads, and a save would
+    // then clear the model, so the saved one goes in as an item.
     if (!saved.isEmpty()) {
-        model.Items().Append(box_value(win::hs(saved)));
-        model.SelectedIndex(0);
+        controls.model.Items().Append(box_value(win::hs(saved)));
+        controls.model.SelectedIndex(0);
     }
-    AutomationProperties::SetName(model, L"Endpoint model");
-    return model;
+    AutomationProperties::SetName(controls.model, L"Endpoint model");
+    controls.panel.Children().Append(controls.model);
+    controls.connect.Content(box_value(win::hs(setupText(SetupText::EndpointConnect))));
+    controls.panel.Children().Append(controls.connect);
+    return controls;
 }
 
 // The model a Custom Endpoint form holds: picked from the server's list, or
@@ -410,13 +423,14 @@ QString endpointModelText(const ComboBox &model)
 }
 
 // Refills a Custom Endpoint form's model list once per list a connection check
-// returns. A typed model the server does not list stays on offer, first; with
-// none typed, `saved` is the server's first model, which LocalSetup saved.
-// `refilling` is up while the list changes, which is not the person picking.
+// returns, an empty one included, so another server's models do not linger. A
+// typed model the server does not list stays on offer, first; with none typed,
+// `saved` is the server's first model, which LocalSetup saved. `refilling` is
+// up while the list changes, which is not the person picking.
 void refillEndpointModels(const ComboBox &model, QStringList &shownModels, bool &refilling,
                           const QStringList &models, const QString &saved)
 {
-    if (models.isEmpty() || shownModels == models) {
+    if (shownModels == models) {
         return;
     }
     shownModels = models;
@@ -2260,16 +2274,10 @@ struct SetupWindow::Native {
         endpointForm.key.PlaceholderText(L"Optional");
         endpointForm.key.Password(win::hs(saved.apiKey));
         addRow(setupSchemaRow(QStringLiteral("refinementEndpointApiKey")).label, keyStorageHelp(), endpointForm.key);
-        StackPanel modelControls;
-        modelControls.Orientation(Orientation::Horizontal);
-        modelControls.Spacing(8);
-        endpointForm.model = endpointModelCombo(saved.model);
-        modelControls.Children().Append(endpointForm.model);
-        Button connect;
-        connect.Content(box_value(L"Connect"));
-        modelControls.Children().Append(connect);
+        const EndpointModelControls modelControls = endpointModelControls(saved.model);
+        endpointForm.model = modelControls.model;
         addRow(setupSchemaRow(QStringLiteral("refinementEndpointModel")).label, setupText(SetupText::EndpointModelHint),
-               modelControls);
+               modelControls.panel);
         endpointForm.status = textBlock(QString());
         endpointForm.root.Children().Append(endpointForm.status);
 
@@ -2286,7 +2294,7 @@ struct SetupWindow::Native {
         });
         endpointForm.model.LostFocus([this](const auto &, const auto &) { saveEndpointModel(); });
         endpointForm.model.SelectionChanged([this](const auto &, const auto &) { saveEndpointModel(); });
-        connect.Click([this](const auto &, const auto &) {
+        modelControls.connect.Click([this](const auto &, const auto &) {
             saveEndpointUrl();
             saveEndpointKey();
             saveEndpointModel();
@@ -2380,28 +2388,32 @@ struct SetupWindow::Native {
         form.key.MinWidth(280);
         form.key.Password(win::hs(endpoint.apiKey));
         addTextRow(QStringLiteral("speechEndpointApiKey"), form.key);
-        StackPanel modelControls;
-        modelControls.Orientation(Orientation::Horizontal);
-        modelControls.Spacing(8);
-        form.model = endpointModelCombo(endpoint.model);
-        modelControls.Children().Append(form.model);
-        Button connect;
-        connect.Content(box_value(L"Connect"));
-        modelControls.Children().Append(connect);
-        addRow(QStringLiteral("speechEndpointModel"), setupText(SetupText::EndpointModelHint), modelControls);
+        const EndpointModelControls modelControls = endpointModelControls(endpoint.model);
+        form.model = modelControls.model;
+        addRow(QStringLiteral("speechEndpointModel"), setupText(SetupText::EndpointModelHint), modelControls.panel);
         form.status = textBlock(QString());
         form.root.Children().Append(form.status);
 
         form.shownUrl = endpoint.baseUrl;
         form.shownPath = endpoint.path;
         form.shownKey = endpoint.apiKey;
+        // On Enter too: a shut Next takes no focus, so leaving the field is
+        // not how a typed server gets saved.
         const auto saveFields = [this](const auto &, const auto &) { saveSpeechEndpointFields(); };
+        const auto saveOnEnter = [this](const auto &, const Input::KeyRoutedEventArgs &args) {
+            if (args.Key() == Windows::System::VirtualKey::Enter) {
+                saveSpeechEndpointFields();
+            }
+        };
         form.url.LostFocus(saveFields);
         form.path.LostFocus(saveFields);
         form.key.LostFocus(saveFields);
+        form.url.KeyDown(saveOnEnter);
+        form.path.KeyDown(saveOnEnter);
+        form.key.KeyDown(saveOnEnter);
         form.model.LostFocus([this](const auto &, const auto &) { saveSpeechEndpointModel(); });
         form.model.SelectionChanged([this](const auto &, const auto &) { saveSpeechEndpointModel(); });
-        connect.Click([this](const auto &, const auto &) {
+        modelControls.connect.Click([this](const auto &, const auto &) {
             saveSpeechEndpointFields();
             saveSpeechEndpointModel();
             controller->localSetup()->checkSpeechEndpoint(controller->settings()->snapshot().speech.endpoint);

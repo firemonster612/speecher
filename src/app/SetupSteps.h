@@ -103,6 +103,7 @@ enum class SetupText {
     GetOllama,
     DownloadWithOllama,
     EndpointModelHint,
+    EndpointConnect,
     // The shortcut step's optional Cancel and Pause Shortcuts: a heading and
     // the line under it.
     SessionShortcuts,

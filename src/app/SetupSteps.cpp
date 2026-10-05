@@ -255,6 +255,8 @@ QString setupText(SetupText text)
         return QStringLiteral("Download with Ollama");
     case SetupText::EndpointModelHint:
         return QStringLiteral("Connect to list the server's models, or type one.");
+    case SetupText::EndpointConnect:
+        return QStringLiteral("Connect");
     case SetupText::SessionShortcuts:
         return QStringLiteral("Cancel and pause");
     case SetupText::SessionShortcutsLead:

@@ -129,8 +129,9 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     registry.registerSpeechProvider(
         {QStringLiteral("endpoint"),
          QStringLiteral("Custom Endpoint"),
-         QStringLiteral("Any server with an OpenAI-style audio transcriptions API works, including "
-                        "whisper.cpp and Speaches."),
+         // No setup hint: the assistants show the endpoint's fields instead,
+         // each with its settings row's help.
+         QString(),
          false,
          QStringLiteral("A server you run. Speed, accuracy and languages depend on the server "
                         "and its model."),

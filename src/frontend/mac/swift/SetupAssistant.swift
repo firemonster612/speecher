@@ -1895,7 +1895,7 @@ private struct EndpointSections: View {
                         modelName = edited
                         edit(model: edited)
                     }
-                    Button("Connect") {
+                    Button(model.bridge.setupText(.endpointConnect)) {
                         commitTypedFields()
                         model.bridge.checkRefinementEndpoint()
                     }
@@ -1960,7 +1960,7 @@ private struct SpeechEndpointSections: View {
                         TextRowField(row: row, model: model)
                         // The test action ends the field being typed in first,
                         // so the server on screen is the one checked.
-                        Button("Connect") { model.trigger("speechEndpointTest") }
+                        Button(model.bridge.setupText(.endpointConnect)) { model.trigger("speechEndpointTest") }
                     }
                 } label: {
                     RowView.label(row.label, help: model.bridge.setupText(.endpointModelHint))

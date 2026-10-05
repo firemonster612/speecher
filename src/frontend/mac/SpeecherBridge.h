@@ -681,6 +681,7 @@ typedef NS_ENUM(NSInteger, SpeecherSetupText) {
     SpeecherSetupTextGetOllama,
     SpeecherSetupTextDownloadWithOllama,
     SpeecherSetupTextEndpointModelHint,
+    SpeecherSetupTextEndpointConnect,
     SpeecherSetupTextSessionShortcuts,
     SpeecherSetupTextSessionShortcutsLead,
 };

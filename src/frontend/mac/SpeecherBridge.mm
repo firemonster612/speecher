@@ -3340,6 +3340,7 @@ static void probeSpeechProvider(BridgeState *state,
     static_assert(int(SpeecherSetupTextGetOllama) == int(speecher::SetupText::GetOllama));
     static_assert(int(SpeecherSetupTextDownloadWithOllama) == int(speecher::SetupText::DownloadWithOllama));
     static_assert(int(SpeecherSetupTextEndpointModelHint) == int(speecher::SetupText::EndpointModelHint));
+    static_assert(int(SpeecherSetupTextEndpointConnect) == int(speecher::SetupText::EndpointConnect));
     static_assert(int(SpeecherSetupTextSessionShortcuts) == int(speecher::SetupText::SessionShortcuts));
     static_assert(int(SpeecherSetupTextSessionShortcutsLead) == int(speecher::SetupText::SessionShortcutsLead));
     return speecher::setupText(static_cast<speecher::SetupText>(text)).toNSString();
