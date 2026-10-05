@@ -20,7 +20,7 @@ import org.robolectric.RuntimeEnvironment
 @RunWith(RobolectricTestRunner::class)
 class RefinementInstructionsTest {
     @Test
-    fun `instructions and the custom prompt persist, and start empty and off`() {
+    fun `instructions, output languages and the custom prompt persist, and start empty and off`() {
         val store = SettingsStore(RuntimeEnvironment.getApplication())
         assertEquals(SpeecherSettings().writingProfiles, store.load().writingProfiles)
         assertEquals(listOf("", "false", ""), store.load().let(::instructionFields))
@@ -29,7 +29,10 @@ class RefinementInstructionsTest {
                 writingProfiles =
                     SpeecherSettings().writingProfiles +
                         (WritingProfile.Email to
-                            WritingProfileSettings(instructions = "Sign off with Best,\nEnzo")),
+                            WritingProfileSettings(
+                                instructions = "Sign off with Best,\nEnzo",
+                                outputLanguage = "Spanish",
+                            )),
                 additionalInstructions = "Spell it Speecher.",
                 customSystemPromptEnabled = true,
                 customSystemPrompt = "Clean up my dictation.",
@@ -37,8 +40,8 @@ class RefinementInstructionsTest {
         store.save(saved)
         val loaded = store.load()
         assertEquals(
-            "Sign off with Best,\nEnzo",
-            loaded.writingProfiles.getValue(WritingProfile.Email).instructions,
+            saved.writingProfiles.getValue(WritingProfile.Email),
+            loaded.writingProfiles.getValue(WritingProfile.Email),
         )
         assertEquals(
             listOf("Spell it Speecher.", "true", "Clean up my dictation."),

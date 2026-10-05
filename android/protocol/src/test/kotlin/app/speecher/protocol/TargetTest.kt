@@ -2,6 +2,7 @@ package app.speecher.protocol
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /** Expected prompts are dictationRefinementSystemPrompt output from the desktop build. */
@@ -121,6 +122,47 @@ class TargetTest {
                 dictationSystemPrompt(english.copy(spokenLanguage = it)),
             )
         }
+    }
+
+    @Test
+    fun `an output language adds its rule after the spoken language rule, with a custom prompt too`() {
+        val spanish =
+            RefinementContext(
+                spokenLanguage = "de",
+                outputLanguage = " Spanish ",
+                additionalInstructions = "Spell it Speecher.",
+            )
+        val rule =
+            "conventions.\n\nRule: output_language.\nWrite the refined text in Spanish. When the dictation was spoken in another language, translate it and apply the other rules to the translation. This rule overrides the rules that preserve the original wording. Keep literal technical text, names, and binding placeholders unchanged.\n\nUser instructions."
+        assertTrue(rule in dictationSystemPrompt(spanish))
+        assertTrue(
+            rule in
+                dictationSystemPrompt(spanish.copy(customSystemPrompt = "Clean up my dictation."))
+        )
+    }
+
+    @Test
+    fun `a profile set to None that has an output language refines at Light`() {
+        val styles =
+            listOf("Spanish", " ").map {
+                resolve(
+                        "",
+                        "",
+                        profiles =
+                            mapOf(
+                                WritingProfile.Other to
+                                    WritingProfileSettings(
+                                        CleanupStrength.None,
+                                        outputLanguage = it,
+                                    )
+                            ),
+                    )
+                    .let { context -> context.style to context.outputLanguage }
+            }
+        assertEquals(
+            listOf(CleanupStrength.LightCleanup to "Spanish", CleanupStrength.None to " "),
+            styles,
+        )
     }
 
     private val terse =

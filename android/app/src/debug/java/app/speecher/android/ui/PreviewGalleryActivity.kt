@@ -120,6 +120,7 @@ private val states: Map<String, @Composable () -> Unit> =
         "settings-signed-out" to { SettingsSignedOutPreview() },
         "settings-refinement" to { SettingsRefinementPreview() },
         "settings-vocabulary" to { SettingsVocabularyPreview() },
+        "settings-profiles" to { SettingsProfilesPreview() },
         "custom-update-interval" to { CustomIntervalDialogPreview() },
         "button-layouts" to { ButtonLayoutPickerPreview() },
         "panel-sizes" to { PanelSizePickerPreview() },

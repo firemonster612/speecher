@@ -73,6 +73,7 @@ import app.speecher.android.dictation.spokenLanguageMismatch
 import app.speecher.android.dictation.spokenLanguageName
 import app.speecher.android.dictation.spokenLanguages
 import app.speecher.protocol.AUTOMATIC_LANGUAGE
+import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
@@ -997,6 +998,34 @@ internal fun SettingsVocabularyPreview() = SpeecherTheme {
     SpeecherScreen(SettingsPage.Vocabulary.title, onBack = {}) {
         SettingsPageContent(
             SettingsPage.Vocabulary,
+            settings,
+            Provider.entries.toSet(),
+            { settings = it },
+            {},
+            {},
+        )
+    }
+}
+
+@PreviewLightDark
+@Composable
+internal fun SettingsProfilesPreview() = SpeecherTheme {
+    var settings by remember {
+        mutableStateOf(
+            SpeecherSettings(
+                writingProfiles =
+                    SpeecherSettings().writingProfiles +
+                        (WritingProfile.Work to
+                            WritingProfileSettings(
+                                CleanupStrength.None,
+                                outputLanguage = "Spanish",
+                            ))
+            )
+        )
+    }
+    SpeecherScreen(SettingsPage.Profiles.title, onBack = {}) {
+        SettingsPageContent(
+            SettingsPage.Profiles,
             settings,
             Provider.entries.toSet(),
             { settings = it },
