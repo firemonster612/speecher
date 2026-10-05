@@ -77,6 +77,13 @@ private:
     // Chooses the item labelled choice in the page's combo with this
     // accessible name.
     bool chooseForTest(const QString &name, const QString &choice);
+    // The page's rating bars, in order, as "<measure> <value>"; other bars,
+    // such as the microphone's level, are left out.
+    QStringList ratingBarsForTest() const;
+    // Opens the page's disclosure with this accessible name; false when there
+    // is none.
+    bool expandForTest(const QString &name);
+    bool expandedForTest(const QString &name) const;
     struct Native;
     std::unique_ptr<Native> m_native;
 };

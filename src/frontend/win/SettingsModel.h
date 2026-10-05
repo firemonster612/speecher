@@ -101,6 +101,10 @@ struct RowSnapshot {
     QString groupId;
     // Set on a Collection row, and on the one Custom row that is a table.
     std::optional<CollectionSnapshot> collection;
+    // Rating rows only: the chosen provider's bars.
+    QList<Rating> ratings;
+    // ModelList rows only: the models, with any bars of their own.
+    QList<RatedModel> ratedModels;
 };
 
 struct SectionSnapshot {

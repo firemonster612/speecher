@@ -1,11 +1,13 @@
 #pragma once
 
 #include "core/settings/FallbackPresentation.h"
+#include "core/settings/ProviderRatings.h"
 #include "core/settings/SettingsSchema.h"
 
 #pragma push_macro("GetCurrentTime")
 #undef GetCurrentTime
 #include <winrt/Microsoft.UI.Xaml.h>
+#include <winrt/Microsoft.UI.Xaml.Controls.h>
 #pragma pop_macro("GetCurrentTime")
 
 #include <functional>
@@ -55,6 +57,21 @@ winrt::Microsoft::UI::Xaml::UIElement fallbackListElement(
     const std::function<AppSettings()> &settings,
     const std::function<void(const QStringList &)> &write,
     PaneHost &host);
+
+// A provider's rating as the setup options and the Settings Rating row show
+// it: each bar WinUI's ProgressBar out of 10 between its measure and
+// ratingValueText, and only the "?" where a bar has no figure. Side by side
+// under a setup option, stacked on a Rating row's control side.
+winrt::Microsoft::UI::Xaml::Controls::Grid ratingBarsElement(
+    const QList<Rating> &bars,
+    winrt::Microsoft::UI::Xaml::Controls::Orientation orientation,
+    const PaneHost &host);
+
+// The models behind a provider, as its Advanced disclosure lists them: each
+// name with its note under it, and, for models with bars of their own, the
+// bars in columns under a Model, Accuracy and Speed heading.
+winrt::Microsoft::UI::Xaml::Controls::StackPanel ratedModelsElement(const QList<RatedModel> &models,
+                                                                    const PaneHost &host);
 
 // Whether a Custom row lays out its own heading, card and footer, as the
 // fallback lists do, rather than sitting in a card.

@@ -608,6 +608,132 @@ UIElement fallbackListElement(ProviderRole role,
     return element;
 }
 
+namespace {
+
+// A bar's length and the room for its value, the widest being "8.5/10":
+// fixed, so the bars of one list, and of the options down a step, line up.
+constexpr double kRatingBarWidth = 96;
+constexpr double kRatingValueWidth = 44;
+
+void addColumn(const Grid &grid, GridLength width)
+{
+    ColumnDefinition column;
+    column.Width(width);
+    grid.ColumnDefinitions().Append(column);
+}
+
+void place(const Grid &grid, const FrameworkElement &element, int row, int column)
+{
+    Grid::SetRow(element, row);
+    Grid::SetColumn(element, column);
+    grid.Children().Append(element);
+}
+
+// A bar in the given column and its value in the next; a bar without a
+// figure leaves its column empty, and the value says "?".
+void placeBar(const Grid &grid, const Rating &rating, int row, int column)
+{
+    if (rating.value) {
+        ProgressBar bar;
+        bar.Minimum(0);
+        bar.Maximum(10);
+        bar.Value(*rating.value);
+        bar.VerticalAlignment(VerticalAlignment::Center);
+        Automation::AutomationProperties::SetName(bar, hs(ratingMeasureLabel(rating.measure)));
+        place(grid, bar, row, column);
+    }
+    TextBlock value = styledTextBlock(ratingValueText(rating), L"CaptionTextBlockStyle");
+    value.VerticalAlignment(VerticalAlignment::Center);
+    place(grid, value, row, column + 1);
+}
+
+void addBarColumns(const Grid &grid)
+{
+    addColumn(grid, {kRatingBarWidth, GridUnitType::Pixel});
+    addColumn(grid, {kRatingValueWidth, GridUnitType::Pixel});
+}
+
+} // namespace
+
+Grid ratingBarsElement(const QList<Rating> &bars, Orientation orientation, const PaneHost &host)
+{
+    const bool stacked = orientation == Orientation::Vertical;
+    Grid grid;
+    grid.ColumnSpacing(8);
+    grid.RowSpacing(4);
+    for (qsizetype index = 0; index < bars.size(); ++index) {
+        const int row = stacked ? int(index) : 0;
+        const int column = stacked ? 0 : int(index) * 3;
+        if (stacked) {
+            RowDefinition line;
+            line.Height({0, GridUnitType::Auto});
+            grid.RowDefinitions().Append(line);
+        }
+        if (!stacked || index == 0) {
+            addColumn(grid, {0, GridUnitType::Auto});
+            addBarColumns(grid);
+        }
+        TextBlock label = secondaryTextBlock(ratingMeasureLabel(bars.at(index).measure), L"CaptionTextBlockStyle", host);
+        label.VerticalAlignment(VerticalAlignment::Center);
+        if (!stacked && index > 0) {
+            label.Margin({12, 0, 0, 0});
+        }
+        place(grid, label, row, column);
+        placeBar(grid, bars.at(index), row, column + 1);
+    }
+    return grid;
+}
+
+StackPanel ratedModelsElement(const QList<RatedModel> &models, const PaneHost &host)
+{
+    const auto firstRated = std::find_if(models.cbegin(), models.cend(),
+                                         [](const RatedModel &model) { return !model.bars.isEmpty(); });
+    const bool rated = firstRated != models.cend();
+    // The heading and every model share one set of columns, so the bars line up.
+    const auto modelGrid = [rated](bool separated) {
+        Grid grid = separated ? separatedGrid() : Grid();
+        grid.ColumnSpacing(8);
+        addColumn(grid, {1, GridUnitType::Star});
+        if (rated) {
+            addBarColumns(grid);
+            addBarColumns(grid);
+        }
+        return grid;
+    };
+    StackPanel list;
+    if (rated) {
+        Grid heading = modelGrid(false);
+        heading.Padding({0, 0, 0, 8});
+        place(heading, secondaryTextBlock(modelColumnHeader(), L"CaptionTextBlockStyle", host), 0, 0);
+        for (qsizetype index = 0; index < firstRated->bars.size(); ++index) {
+            TextBlock measure = secondaryTextBlock(ratingMeasureLabel(firstRated->bars.at(index).measure),
+                                                   L"CaptionTextBlockStyle", host);
+            Grid::SetColumnSpan(measure, 2);
+            place(heading, measure, 0, 1 + int(index) * 2);
+        }
+        list.Children().Append(heading);
+    }
+    for (qsizetype index = 0; index < models.size(); ++index) {
+        const RatedModel &model = models.at(index);
+        // Under the heading every row is ruled off; without one, the first is not.
+        Grid row = modelGrid(rated || index > 0);
+        row.Padding({0, 8, 0, 8});
+        StackPanel text;
+        text.Spacing(2);
+        text.VerticalAlignment(VerticalAlignment::Center);
+        text.Children().Append(styledTextBlock(model.name, L"SettingsCardBodyStyle"));
+        if (!model.note.isEmpty()) {
+            text.Children().Append(secondaryText(model.note, host));
+        }
+        place(row, text, 0, 0);
+        for (qsizetype bar = 0; bar < model.bars.size(); ++bar) {
+            placeBar(row, model.bars.at(bar), 0, 1 + int(bar) * 2);
+        }
+        list.Children().Append(row);
+    }
+    return list;
+}
+
 void endMicrophoneTest(PaneHost &host)
 {
     if (!host.microphoneTest) {

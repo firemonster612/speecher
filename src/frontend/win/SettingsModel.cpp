@@ -262,6 +262,8 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.disabledAction = row.disabledAction;
     snapshot.disabledActionLabel = row.disabledActionLabel;
     snapshot.groupId = row.groupId;
+    snapshot.ratings = row.ratings ? row.ratings(m_draft) : QList<Rating>();
+    snapshot.ratedModels = row.ratedModels ? row.ratedModels(m_draft) : QList<RatedModel>();
     if (const CollectionDescriptor *collection = collectionForRow(row)) {
         CollectionSnapshot table;
         for (const CollectionColumn &column : collection->columns) {
@@ -333,8 +335,7 @@ SectionSnapshot SettingsModel::section(const SettingsPaneGroup &group) const
     SectionSnapshot snapshot{group.title, group.help, {}};
     for (const QString &rowId : group.rows) {
         const SettingsRow *row = rowWithId(rowId);
-        // Rating and ModelList rows are not drawn on Windows yet, so they show nothing.
-        if (!row || row->kind == RowKind::Rating || row->kind == RowKind::ModelList) {
+        if (!row) {
             continue;
         }
         if (!row->visible || row->visible(m_draft, m_capabilities)) {

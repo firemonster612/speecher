@@ -477,6 +477,15 @@ void showProviderStats(const StackPanel &panel, const QList<ProviderDescriptor> 
     panel.Visibility(panel.Children().Size() ? Visibility::Visible : Visibility::Collapsed);
 }
 
+// The collapsed disclosure that lists a provider's models.
+Expander modelsDisclosure()
+{
+    Expander disclosure;
+    disclosure.Header(box_value(win::hs(providerModelsCaption())));
+    disclosure.HorizontalAlignment(HorizontalAlignment::Stretch);
+    disclosure.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+    return disclosure;
+}
 
 // One choice on the Refinement step. The groups are separate cards, so the
 // choice is RadioButtons sharing a GroupName rather than one RadioButtons.
@@ -656,8 +665,12 @@ struct SetupWindow::Native {
         SetWindowPos(handle, nullptr, monitor.rcWork.left, monitor.rcWork.top, 0, 0,
                      SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
         const double scale = GetDpiForWindow(handle) / 96.0;
-        const int width = int(setupWidth * scale + 0.5);
-        const int height = int(setupHeight * scale + 0.5);
+        // Screenshot automation can ask for another size in DIPs with
+        // SPEECHER_GRAB_SIZE=WxH, as on Qt and macOS, so a step is captured whole.
+        const QStringList grabSize = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(QLatin1Char('x'));
+        const bool grabSized = grabSize.size() == 2;
+        const int width = int((grabSized ? grabSize.at(0).toInt() : setupWidth) * scale + 0.5);
+        const int height = int((grabSized ? grabSize.at(1).toInt() : setupHeight) * scale + 0.5);
         const int x = monitor.rcWork.left
             + (monitor.rcWork.right - monitor.rcWork.left - width) / 2;
         const int y = monitor.rcWork.top
@@ -855,6 +868,8 @@ struct SetupWindow::Native {
         transcriptionRefresh = nullptr;
         fallbacks = nullptr;
         fallbacksDrawn.reset();
+        ratingSlots.clear();
+        advanced = nullptr;
         pageScope = std::make_unique<QObject>();
         ++checkGeneration;
     }
@@ -1079,7 +1094,8 @@ struct SetupWindow::Native {
     }
 
     // The Local card: the hardware line, the suggested model with its facts
-    // and Download, and the comparison table behind an Expander.
+    // and Download, and behind Advanced every model's bars over the
+    // comparison table.
     StackPanel makeLocalSection()
     {
         LocalCard &card = localCard;
@@ -1181,12 +1197,14 @@ struct SetupWindow::Native {
         }
         table.Children().Append(card.compare);
         table.Children().Append(secondaryTextBlock(localModelText(LocalModelText::CompareNote)));
-        Expander compare;
-        compare.Header(box_value(win::hs(compareModelsCaption(int(localModelCatalog().size()) - 1))));
-        compare.HorizontalAlignment(HorizontalAlignment::Stretch);
-        compare.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-        compare.Content(table);
-        card.section.Children().Append(compare);
+        StackPanel advanced;
+        advanced.Spacing(16);
+        card.models = StackPanel();
+        advanced.Children().Append(card.models);
+        advanced.Children().Append(table);
+        Expander disclosure = modelsDisclosure();
+        disclosure.Content(advanced);
+        card.section.Children().Append(disclosure);
 
         card.download.Click([this](const auto &, const auto &) {
             const LocalModel &model = localChoice();
@@ -1204,6 +1222,38 @@ struct SetupWindow::Native {
             }
         });
         return card.section;
+    }
+
+    // The page's ratings as this computer and the settings have them now:
+    // each option's bars with what was rated, and the chosen service's models
+    // in the Advanced disclosure, hidden where it has none. A Local Model
+    // lists its models in its own card.
+    void showRatings(ProviderRole role)
+    {
+        const AppSettings settings = controller->settings()->snapshot();
+        const HardwareProfile &hardware = controller->localSetup()->hardware().profile;
+        for (const auto &[id, slot] : std::as_const(ratingSlots)) {
+            slot.Children().Clear();
+            const std::optional<ProviderRating> rating = providerRating(role, id, hardware, settings);
+            setShown(slot, rating.has_value());
+            if (!rating) {
+                continue;
+            }
+            slot.Children().Append(win::ratingBarsElement(rating->bars, Orientation::Horizontal, paneHost));
+            if (!rating->subject.isEmpty()) {
+                slot.Children().Append(secondaryTextBlock(rating->subject));
+            }
+        }
+        if (!advanced) {
+            return;
+        }
+        const bool speech = role == ProviderRole::Speech;
+        const QString chosen = speech ? settings.speech.providerId : settings.refinement.providerId;
+        const QList<RatedModel> models = speech && chosen == kLocal
+            ? QList<RatedModel>()
+            : providerModels(role, chosen, hardware, settings);
+        setShown(advanced, !models.isEmpty());
+        advanced.Content(win::ratedModelsElement(models, paneHost));
     }
 
     void showLocalChoice()
@@ -1241,6 +1291,11 @@ struct SetupWindow::Native {
         if (card.compare.SelectedIndex() != selected) {
             card.compare.SelectedIndex(selected);
         }
+        card.models.Children().Clear();
+        card.models.Children().Append(win::ratedModelsElement(
+            providerModels(ProviderRole::Speech, kLocal, localSpeech->hardware().profile,
+                           controller->settings()->snapshot()),
+            paneHost));
         showLocalDownload();
     }
 
@@ -1314,6 +1369,10 @@ struct SetupWindow::Native {
                     setupText(SetupText::LocalSpeechNote)));
                 localRowStatus = status;
             }
+            StackPanel rating;
+            rating.Spacing(2);
+            text.Children().Append(rating);
+            ratingSlots.append({id, rating});
             Grid item = cardRow(local ? FrameworkElement(glyphMark(kComputerGlyph)) : brandMark(id),
                                 text, status.root);
             AutomationProperties::SetName(item, win::hs(options.at(index).second));
@@ -1474,6 +1533,7 @@ struct SetupWindow::Native {
             check.Visibility(unready);
         };
         const auto describeSelected = [this, describeProvider, deadEnd, status] {
+            showRatings(ProviderRole::Speech);
             describeProvider();
             showFallbacks(ProviderRole::Speech);
             const QString note = speechDeadEnd();
@@ -1609,6 +1669,9 @@ struct SetupWindow::Native {
             localSpeech->probeHardware();
         }
         panel.Children().Append(stats);
+        advanced = modelsDisclosure();
+        panel.Children().Append(advanced);
+        showRatings(ProviderRole::Speech);
         // Under the facts about the chosen service, matching the Qt page and
         // where the refinement step puts Fast mode.
         panel.Children().Append(accuracy);
@@ -1761,6 +1824,10 @@ struct SetupWindow::Native {
                                            SetupTone::Neutral);
                 StackPanel text = rowText(strongTextBlock(option.label));
                 text.Children().Append(secondaryTextBlock(found->setupHint));
+                StackPanel rating;
+                rating.Spacing(2);
+                text.Children().Append(rating);
+                ratingSlots.append({id, rating});
                 const FrameworkElement mark = id == kLocal      ? FrameworkElement(glyphMark(kComputerGlyph))
                                               : id == kEndpoint ? FrameworkElement(glyphMark(kServerGlyph))
                                                                 : brandMark(id);
@@ -1806,6 +1873,8 @@ struct SetupWindow::Native {
         panel.Children().Append(makeEndpointForm());
         StackPanel stats;
         panel.Children().Append(stats);
+        advanced = modelsDisclosure();
+        panel.Children().Append(advanced);
         // The provider's Speed settings row as a choice: OpenAI's Standard,
         // Fast or Ultrafast, Anthropic's Standard or Fast.
         ComboBox speed;
@@ -1823,6 +1892,7 @@ struct SetupWindow::Native {
             skip.IsChecked(id == kNone);
             showProviderStats(stats, controller->providerRegistry()->refinementProviders(),
                               ownModel ? QString() : id);
+            showRatings(ProviderRole::Refinement);
             const QString speedRowId = speedRowFor(id);
             speedRow.Visibility(speedRowId.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
             if (!speedRowId.isEmpty()) {
@@ -1911,6 +1981,7 @@ struct SetupWindow::Native {
         });
         LocalSetup *local = controller->localSetup();
         QObject::connect(local, &LocalSetup::changed, pageScope.get(), [this, options] {
+            showRatings(ProviderRole::Refinement);
             showRunner(*options);
             showEndpointCheck();
             showFallbacks(ProviderRole::Refinement);
@@ -2740,6 +2811,8 @@ struct SetupWindow::Native {
         ProgressBar progress{nullptr};
         TextBlock state{nullptr};
         Button cancel{nullptr};
+        // The catalog's models with their bars, above the comparison table.
+        StackPanel models{nullptr};
         ListView compare{nullptr};
     } localCard;
     StatusCell localRowStatus;
@@ -2777,6 +2850,11 @@ struct SetupWindow::Native {
     // another page is up, and the text it last drew.
     StackPanel fallbacks{nullptr};
     std::optional<QStringList> fallbacksDrawn;
+    // The Transcription or Refinement page's rating under each option, by
+    // provider id, and its Advanced disclosure for the chosen service; empty
+    // and null while another page is up.
+    QList<QPair<QString, StackPanel>> ratingSlots;
+    Expander advanced{nullptr};
     // The provider to go back to when Skip cleanup is cleared.
     QString lastRefinementProvider;
     // Owns the Qt connections of the page on screen.
@@ -2869,6 +2947,12 @@ void SetupWindow::showPageForTest(const QString &stepId)
     m_native->showPage(stepIndex(stepId));
 }
 
+void SetupWindow::keepSavedProvidersForTest()
+{
+    m_native->speechSelectionSettled = true;
+    m_native->refinementSelectionSettled = true;
+}
+
 bool SetupWindow::finishEnabledForTest() const
 {
     return m_native->next && m_native->next.IsEnabled();
@@ -2917,6 +3001,50 @@ void SetupWindow::revealFallbacksForTest()
         options.VerticalAlignmentRatio(1);
         options.AnimationDesired(false);
         m_native->fallbacks.StartBringIntoView(options);
+    }
+}
+
+QStringList SetupWindow::ratedOptionsForTest() const
+{
+    QStringList rated;
+    for (const auto &[id, slot] : std::as_const(m_native->ratingSlots)) {
+        if (slot.Visibility() == Visibility::Visible && slot.Children().Size() > 0) {
+            rated.append(id);
+        }
+    }
+    return rated;
+}
+
+bool SetupWindow::modelsShownForTest() const
+{
+    return m_native->advanced && m_native->advanced.Visibility() == Visibility::Visible;
+}
+
+void SetupWindow::revealModelsForTest()
+{
+    std::vector<Expander> disclosures;
+    if (m_native->advanced) {
+        disclosures.push_back(m_native->advanced);
+    }
+    if (const StackPanel &section = m_native->localCard.section) {
+        for (const UIElement &child : section.Children()) {
+            if (const auto disclosure = child.try_as<Expander>()) {
+                disclosures.push_back(disclosure);
+            }
+        }
+    }
+    for (const Expander &disclosure : disclosures) {
+        disclosure.IsExpanded(true);
+    }
+    m_native->content.UpdateLayout();
+    for (const Expander &disclosure : disclosures) {
+        if (disclosure.ActualHeight() > 0) {
+            BringIntoViewOptions options;
+            options.VerticalAlignmentRatio(0);
+            options.AnimationDesired(false);
+            disclosure.StartBringIntoView(options);
+            return;
+        }
     }
 }
 
