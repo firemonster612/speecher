@@ -115,18 +115,26 @@ id axAttribute(id element, CFStringRef attribute)
     return CFBridgingRelease(value);
 }
 
-// The first button under element, depth first, whose name as VoiceOver reads
-// it starts with caption: a row button's name runs on into its description.
-id axButton(id element, NSString *caption)
+// What VoiceOver names element: its description, else its title.
+NSString *axName(id element)
 {
     NSString *description = axAttribute(element, kAXDescriptionAttribute);
-    NSString *name = description.length > 0 ? description : axAttribute(element, kAXTitleAttribute);
-    if ([axAttribute(element, kAXRoleAttribute) isEqual:(__bridge NSString *)kAXButtonRole]
-        && [name hasPrefix:caption]) {
+    return description.length > 0 ? description : axAttribute(element, kAXTitleAttribute);
+}
+
+bool axHasRole(id element, CFStringRef role)
+{
+    return [axAttribute(element, kAXRoleAttribute) isEqual:(__bridge NSString *)role];
+}
+
+// The first element under element, depth first, that matches.
+id axFind(id element, BOOL (^matches)(id element))
+{
+    if (matches(element)) {
         return element;
     }
     for (id child in axAttribute(element, kAXChildrenAttribute)) {
-        if (id found = axButton(child, caption)) {
+        if (id found = axFind(child, matches)) {
             return found;
         }
     }
@@ -137,7 +145,7 @@ id axButton(id element, NSString *caption)
 // an accessibility client, so a test reaches its controls as one, which
 // needs the Accessibility grant; the views' own NSAccessibility tree stays
 // empty until a client has asked.
-id axButtonOnScreen(NSString *caption)
+id axFindOnScreen(BOOL (^matches)(id element))
 {
     // A client lists no windows until the app has finished launching, which
     // the offscreen platform the suites run on, unlike Cocoa's, never does.
@@ -150,11 +158,36 @@ id axButtonOnScreen(NSString *caption)
     Q_UNUSED(launched);
     id application = CFBridgingRelease(AXUIElementCreateApplication(getpid()));
     for (id window in axAttribute(application, kAXWindowsAttribute)) {
-        if (id found = axButton(window, caption)) {
+        if (id found = axFind(window, matches)) {
             return found;
         }
     }
     return nil;
+}
+
+// A button on screen whose name starts with caption: a row button's name runs
+// on into its description.
+id axButtonOnScreen(NSString *caption)
+{
+    return axFindOnScreen(^BOOL(id element) {
+        return axHasRole(element, kAXButtonRole) && [axName(element) hasPrefix:caption];
+    });
+}
+
+// A progress bar on screen named name, as a rating bar is for its measure.
+id axProgressOnScreen(NSString *name)
+{
+    return axFindOnScreen(^BOOL(id element) {
+        return axHasRole(element, kAXProgressIndicatorRole) && [axName(element) isEqualToString:name];
+    });
+}
+
+// A label on screen that reads text.
+id axTextOnScreen(NSString *text)
+{
+    return axFindOnScreen(^BOOL(id element) {
+        return axHasRole(element, kAXStaticTextRole) && [axAttribute(element, kAXValueAttribute) isEqual:text];
+    });
 }
 
 bool axPress(id button)
@@ -1335,6 +1368,163 @@ private slots:
         QVERIFY(ui.whatsNewOfferVisible);
         [bridge clearPendingWhatsNew];
         QVERIFY(!ui.whatsNewOfferVisible);
+    }
+
+    // The rating tests that open windows run last, and only with
+    // SPEECHER_UPDATE_PREVIEW_DIR set, as renderUpdatePreviewsWhenRequested
+    // does. A window opened after installAndRestartWritesTheRestoreState, or
+    // before it after the setup assistant, crashes on a controller an earlier
+    // test destroyed (in globalShortcutsSupported or the device list); a
+    // capture-only test does the same on 67e3bf5a.
+
+    // The Rating and Advanced rows reach Swift with core's bars and models,
+    // and leave the page with a provider that has none to show.
+    void ratingRowsCrossTheBridge()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsSchemaModel *schema = bridge.settingsSchema;
+        [schema setValue:@"codex" forRowId:@"speechProvider"];
+        [schema setValue:@"anthropic" forRowId:@"refinementProvider"];
+        [schema commit];
+
+        SettingsRowModel *speech = settingsRow(schema, @"speechRating");
+        QVERIFY(speech);
+        QVERIFY(speech.kind == SpeecherRowKindRating);
+        QCOMPARE(speech.ratings.count, NSUInteger(2));
+        QCOMPARE(QString::fromNSString(speech.ratings[0].label), QStringLiteral("Accuracy"));
+        QCOMPARE(speech.ratings[0].value.doubleValue, 8.5);
+        QCOMPARE(QString::fromNSString(speech.ratings[0].valueText), QStringLiteral("8.5/10"));
+        QCOMPARE(QString::fromNSString(speech.ratings[1].label), QStringLiteral("Speed"));
+        QCOMPARE(QString::fromNSString(speech.ratings[1].valueText), QStringLiteral("7/10"));
+
+        SettingsRowModel *models = settingsRow(schema, @"speechModels");
+        QVERIFY(models);
+        QVERIFY(models.kind == SpeecherRowKindModelList);
+        QCOMPARE(models.ratedModels.count, NSUInteger(2));
+        QCOMPARE(QString::fromNSString(models.ratedModels[0].name), QStringLiteral("GPT Live Transcribe"));
+        QCOMPARE(QString::fromNSString(models.ratedModels[0].note), QStringLiteral("Writes each phrase as you pause."));
+        QCOMPARE(QString::fromNSString(models.ratedModels[1].name), QStringLiteral("GPT Transcribe"));
+        // A service's models have no bars of their own.
+        QCOMPARE(models.ratedModels[0].bars.count, NSUInteger(0));
+
+        SettingsRowModel *refinement = settingsRow(schema, @"refinementRating");
+        QVERIFY(refinement);
+        QCOMPARE(QString::fromNSString(refinement.ratings[0].label), QStringLiteral("Quality"));
+        QCOMPARE(QString::fromNSString(refinement.ratings[0].valueText), QStringLiteral("10/10"));
+        QCOMPARE(QString::fromNSString(refinement.ratings[1].valueText), QStringLiteral("4.5/10"));
+
+        [schema setValue:@"endpoint" forRowId:@"speechProvider"];
+        [schema setValue:@"endpoint" forRowId:@"refinementProvider"];
+        [schema commit];
+        QVERIFY(!settingsRow(schema, @"speechRating"));
+        QVERIFY(!settingsRow(schema, @"speechModels"));
+        QVERIFY(!settingsRow(schema, @"refinementRating"));
+    }
+
+    // The setup steps' bars and Advanced lists: a service's, a Local Model's
+    // naming what was rated with every model rated, and none for Custom
+    // Endpoint.
+    void setupRatingsComeFromCore()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+
+        SpeecherProviderRating *claude = [bridge setupProviderRating:SpeecherProviderRoleSpeech provider:@"claude"];
+        QVERIFY(claude);
+        QCOMPARE(QString::fromNSString(claude.bars[0].valueText), QStringLiteral("5.5/10"));
+        QCOMPARE(QString::fromNSString(claude.bars[1].valueText), QStringLiteral("10/10"));
+        QCOMPARE(claude.subject.length, NSUInteger(0));
+
+        SpeecherProviderRating *local = [bridge setupProviderRating:SpeecherProviderRoleSpeech provider:@"local"];
+        QVERIFY(local);
+        QCOMPARE(local.bars.count, NSUInteger(2));
+        QVERIFY([local.subject hasSuffix:@" on this computer"]);
+        NSArray<SpeecherRatedModel *> *localModels = [bridge setupProviderModels:SpeecherProviderRoleSpeech
+                                                                        provider:@"local"];
+        QVERIFY(localModels.count > 1);
+        for (SpeecherRatedModel *model in localModels) {
+            QCOMPARE(model.bars.count, NSUInteger(2));
+        }
+
+        SpeecherProviderRating *openAi = [bridge setupProviderRating:SpeecherProviderRoleRefinement
+                                                            provider:@"openai"];
+        QVERIFY(openAi);
+        QCOMPARE(QString::fromNSString(openAi.bars[0].valueText), QStringLiteral("10/10"));
+        QCOMPARE(QString::fromNSString(openAi.bars[1].valueText), QStringLiteral("7/10"));
+        NSArray<SpeecherRatedModel *> *openAiModels = [bridge setupProviderModels:SpeecherProviderRoleRefinement
+                                                                         provider:@"openai"];
+        QCOMPARE(openAiModels.count, NSUInteger(1));
+        QCOMPARE(QString::fromNSString(openAiModels[0].note),
+                 QStringLiteral("The default. Change it in Settings, under Refinement."));
+
+        for (SpeecherProviderRole role : {SpeecherProviderRoleSpeech, SpeecherProviderRoleRefinement}) {
+            QVERIFY(![bridge setupProviderRating:role provider:@"endpoint"]);
+            QCOMPARE([bridge setupProviderModels:role provider:@"endpoint"].count, NSUInteger(0));
+        }
+    }
+
+    // The steps open Advanced on the chosen provider's models, each state
+    // captured as a picture.
+    void setupStepsListTheChosenProvidersModels()
+    {
+        const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
+        if (directory.isEmpty()) {
+            QSKIP("SPEECHER_UPDATE_PREVIEW_DIR unset; window captures are CI-only");
+        }
+        QDir().mkpath(directory);
+        ApplicationController controller(false);
+        NativeUi native(controller);
+        SpeecherMacUI *ui = native.ui;
+        struct Shot {
+            NSString *step;
+            NSString *provider;
+            // A model the step's Advanced lists for it.
+            NSString *model;
+            QString picture;
+        };
+        const Shot shots[] = {
+            {@"transcription", @"codex", @"GPT Live Transcribe", QStringLiteral("setup-transcription-codex")},
+            {@"transcription", @"claude", @"Deepgram Nova 3", QStringLiteral("setup-transcription-claude")},
+            {@"refinement", @"openai", @"gpt-6-luna", QStringLiteral("setup-refinement-openai")},
+            // Only Advanced names the model not suggested here.
+            {@"refinement", @"local", @"Gemma 4 E4B", QStringLiteral("setup-refinement-local")},
+        };
+        QVERIFY2(AXIsProcessTrusted(), "reading the steps as VoiceOver does needs the Accessibility grant");
+        for (const Shot &shot : shots) {
+            // Tall enough for the whole step.
+            QVERIFY([ui showSetupStep:shot.step provider:shot.provider size:NSMakeSize(700, 1500)]);
+            // The hardware probe and the provider checks answer in their own time.
+            for (int turn = 0; turn < 5; ++turn) {
+                settle();
+            }
+            const QString path = directory + QStringLiteral("/mac-") + shot.picture + QStringLiteral(".png");
+            QVERIFY([ui captureSetupAssistantToPath:path.toNSString()]);
+            QVERIFY2(axTextOnScreen(shot.model), qPrintable(shot.picture));
+        }
+    }
+
+    // The Dictation page draws the Rating row's bars, for the default Claude
+    // Voice, as progress bars named for what they measure, and the Advanced
+    // row starts collapsed.
+    void settingsDrawTheRatingRows()
+    {
+        const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
+        if (directory.isEmpty()) {
+            QSKIP("SPEECHER_UPDATE_PREVIEW_DIR unset; window captures are CI-only");
+        }
+        QDir().mkpath(directory);
+        ApplicationController controller(false);
+        NativeUi native(controller);
+
+        [native.ui openSettingsPage:@"dictation"];
+        settle();
+        QVERIFY([native.ui captureSettingsToPath:(directory + QStringLiteral("/mac-settings-dictation.png"))
+                                                     .toNSString()]);
+        QVERIFY2(AXIsProcessTrusted(), "reading the page as VoiceOver does needs the Accessibility grant");
+        QVERIFY(axProgressOnScreen(@"Accuracy"));
+        QVERIFY(axProgressOnScreen(@"Speed"));
+        QVERIFY(!axTextOnScreen(@"Deepgram Nova 3"));
     }
 };
 
