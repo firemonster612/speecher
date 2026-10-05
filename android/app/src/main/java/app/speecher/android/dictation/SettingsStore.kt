@@ -77,6 +77,11 @@ class SettingsStore(private val context: Context) {
                 chipOffsetY =
                     preferences.getInt("chipOffsetY", NO_OFFSET).takeIf { it != NO_OFFSET },
                 keepScreenOn = preferences.getBoolean("keepScreenOn", true),
+                pauseMedia = preferences.getBoolean("pauseMedia", true),
+                vibrationEnabled = preferences.getBoolean("vibrationEnabled", false),
+                transcriptionPreviewEnabled =
+                    preferences.getBoolean("transcriptionPreviewEnabled", true),
+                refinementPreviewEnabled = preferences.getBoolean("refinementPreviewEnabled", true),
                 useTargetContext = preferences.getBoolean("useTargetContext", true),
                 includeScreenText = preferences.getBoolean("includeScreenText", false),
                 includeScreenshot = preferences.getBoolean("includeScreenshot", false),
@@ -188,6 +193,10 @@ class SettingsStore(private val context: Context) {
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")
             putBoolean("keepScreenOn", settings.keepScreenOn)
+            putBoolean("pauseMedia", settings.pauseMedia)
+            putBoolean("vibrationEnabled", settings.vibrationEnabled)
+            putBoolean("transcriptionPreviewEnabled", settings.transcriptionPreviewEnabled)
+            putBoolean("refinementPreviewEnabled", settings.refinementPreviewEnabled)
             putBoolean("useTargetContext", settings.useTargetContext)
             putBoolean("includeScreenText", settings.includeScreenText)
             putBoolean("includeScreenshot", settings.includeScreenshot)

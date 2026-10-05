@@ -327,6 +327,7 @@ class SpeecherChipService : AccessibilityService() {
         }
             .getOrDefault(false)
         if (switched) {
+            chip?.vibrateForStartOrStop()
             removeChip()
         } else {
             // Our keyboard isn't enabled; setup isn't finished, so send them there.

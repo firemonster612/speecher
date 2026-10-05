@@ -535,6 +535,45 @@ private fun DictationPanelSettings(
             colors = rowColors(),
         )
     }
+
+    Section("While dictating")
+    SwitchRow(
+        "Pause media while dictating",
+        settings.pauseMedia,
+        "Asks apps playing audio to pause until you insert or cancel.",
+    ) {
+        onChange(settings.copy(pauseMedia = it))
+    }
+    SwitchRow(
+        "Vibrate when dictation starts and stops",
+        settings.vibrationEnabled,
+        "Follows your phone's touch feedback setting.",
+    ) {
+        onChange(settings.copy(vibrationEnabled = it))
+    }
+    SwitchRow("Show live text while you speak", settings.transcriptionPreviewEnabled) {
+        onChange(settings.copy(transcriptionPreviewEnabled = it))
+    }
+    if (settings.refinementEnabled) {
+        SwitchRow("Show live text during refinement", settings.refinementPreviewEnabled) {
+            onChange(settings.copy(refinementPreviewEnabled = it))
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(
+    title: String,
+    checked: Boolean,
+    description: String? = null,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = description?.let { { Text(it) } },
+        trailingContent = { Switch(checked, onCheckedChange) },
+        colors = rowColors(),
+    )
 }
 
 @Composable
@@ -1093,6 +1132,22 @@ internal fun SettingsRefinementHaikuPreview() = SpeecherTheme {
                 {},
             )
         }
+    }
+}
+
+@PreviewLightDark
+@Composable
+internal fun SettingsDictationPanelPreview() = SpeecherTheme {
+    var settings by remember { mutableStateOf(SpeecherSettings()) }
+    SpeecherScreen(SettingsPage.DictationPanel.title, onBack = {}) {
+        SettingsPageContent(
+            SettingsPage.DictationPanel,
+            settings,
+            Provider.entries.toSet(),
+            { settings = it },
+            {},
+            {},
+        )
     }
 }
 

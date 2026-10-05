@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -75,19 +76,26 @@ class SpeecherImeService : InputMethodService() {
                         size,
                         onToggleSize = { sizeToggled.value = !sizeToggled.value },
                         onCancel = ::switchBack,
-                        onInsert = { ActiveDictation.engine?.insert() },
+                        onInsert = {
+                            if (ActiveDictation.engine?.insert() == true)
+                                view.vibrateForStartOrStop()
+                        },
                         onInsertRefined = {
-                            ActiveDictation.engine?.insertRefined(
-                                resolveSignedIn(
-                                        ActiveDictation.settings.refinementProvider.account,
-                                        TokenStore(this).signedIn(),
-                                    )
-                                    .cleanup
-                            )
+                            val stopped =
+                                ActiveDictation.engine?.insertRefined(
+                                    resolveSignedIn(
+                                            ActiveDictation.settings.refinementProvider.account,
+                                            TokenStore(this).signedIn(),
+                                        )
+                                        .cleanup
+                                ) == true
+                            if (stopped) view.vibrateForStartOrStop()
                         },
                         onRecover = ::recover,
                         onPause = { ActiveDictation.engine?.pause() },
                         onResume = { ActiveDictation.engine?.resume() },
+                        transcriptionPreview = ActiveDictation.settings.transcriptionPreviewEnabled,
+                        refinementPreview = ActiveDictation.settings.refinementPreviewEnabled,
                     )
                 }
             }
@@ -191,7 +199,7 @@ class SpeecherImeService : InputMethodService() {
                 reason != FailureReason.MicrophoneDenied &&
                 reason != FailureReason.SpokenLanguage
         ) {
-            ActiveDictation.engine?.retry()
+            if (ActiveDictation.engine?.retry() == true) panel?.vibrateForStartOrStop()
             return
         }
         switchBack()
@@ -220,3 +228,12 @@ class SpeecherImeService : InputMethodService() {
 }
 
 private const val DISMISS_GRACE_MILLIS = 750L
+
+/**
+ * The desktop's start and stop sounds, as a vibration when the person turned it on. The view's
+ * haptics follow the phone's touch feedback setting.
+ */
+fun View.vibrateForStartOrStop() {
+    if (ActiveDictation.settings.vibrationEnabled)
+        performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+}

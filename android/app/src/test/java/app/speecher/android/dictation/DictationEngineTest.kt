@@ -258,6 +258,7 @@ class DictationEngineTest {
             run.engine.state,
         )
         assertTrue(run.tasks.isEmpty())
+        assertTrue(run.engine.retry()) // Listens again, for the start vibration.
     }
 
     @Test
@@ -525,8 +526,9 @@ class DictationEngineTest {
         speech(SpeechEvent.Connected)
         speech(SpeechEvent.Partial("hello"))
         assertEquals(DictationState.Listening("", "hello", 0f), engine.state)
-        engine.insert()
-        engine.insert()
+        // Only the tap that stops the listening reports it, for the stop vibration.
+        assertTrue(engine.insert())
+        assertFalse(engine.insert())
         speech(SpeechEvent.Final("world"))
         speech(SpeechEvent.Completed)
         assertEquals(listOf("world"), commits)
@@ -675,6 +677,47 @@ class DictationEngineTest {
         engine.insert()
         events[1](SpeechEvent.Completed)
         assertEquals(listOf("before pause after"), commits)
+    }
+
+    @Test
+    fun `media stays paused from the tap through a pause until Insert, Cancel or a failure`() {
+        val media = mutableListOf<String>()
+        val speech = mutableListOf<(SpeechEvent) -> Unit>()
+        fun engine() =
+            DictationEngine(
+                { _, _ -> },
+                {},
+                { _, events ->
+                    speech.add(events)
+                    Client()
+                },
+                { _, raw, _, _ -> raw },
+                null,
+                { true },
+                Executor { it.run() },
+                {},
+                pauseMedia = { media.add("pause") },
+                resumeMedia = { media.add("resume") },
+            )
+        val inserted = engine()
+        inserted.start(SpeechProvider.Claude)
+        inserted.pause()
+        inserted.resume()
+        inserted.pause()
+        assertEquals(listOf("pause"), media)
+        inserted.insert()
+        assertEquals(listOf("pause", "resume"), media)
+
+        media.clear()
+        val canceled = engine()
+        canceled.start(SpeechProvider.Claude)
+        canceled.cancel()
+        assertEquals(listOf("pause", "resume"), media)
+
+        media.clear()
+        engine().start(SpeechProvider.Claude)
+        speech.last()(SpeechEvent.Failed(ProviderFailureKind.Authentication))
+        assertEquals(listOf("pause", "resume"), media)
     }
 
     private class PausingEngine(executor: Executor = Executor { it.run() }) {
@@ -914,7 +957,7 @@ class DictationEngineTest {
             ),
             engine.state,
         )
-        engine.retry()
+        assertFalse(engine.retry()) // Refines again without listening.
         assertEquals(listOf("save me refined"), commits)
     }
 
