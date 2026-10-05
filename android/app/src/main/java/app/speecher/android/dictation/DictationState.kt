@@ -7,6 +7,7 @@ import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.Replacement
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
@@ -312,6 +313,8 @@ data class SpeecherSettings(
     val chatGptSpeed: OpenAiSpeed = OpenAiSpeed.Fast,
     val claudeFastMode: Boolean = true,
     val vocabulary: List<VocabularyWord> = emptyList(),
+    /** Spoken phrases and the exact text, or Snippet, each inserts; only rules that can apply. */
+    val replacements: List<Replacement> = emptyList(),
     /** Place the chip on the keyboard's mic key; off uses the custom position below. */
     val chipDockOnMic: Boolean = true,
     /** The custom chip position, as a pixel offset from the keyboard's bottom-right corner. */

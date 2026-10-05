@@ -6,6 +6,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import android.text.format.DateFormat
 import android.view.inputmethod.InputConnection
 import app.speecher.android.BuildConfig
 import app.speecher.android.auth.TokenStore
@@ -16,16 +17,22 @@ import app.speecher.protocol.CodexDictationClient
 import app.speecher.protocol.ProviderFailure
 import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RefinementContext
+import app.speecher.protocol.ReplacedTranscript
+import app.speecher.protocol.Replacement
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
 import app.speecher.protocol.failureKind
 import app.speecher.protocol.modelSupportsUltrafast
 import app.speecher.protocol.preferredTranscript
 import app.speecher.protocol.refineTranscript
+import app.speecher.protocol.replaceSpoken
+import app.speecher.protocol.replacementAliases
 import app.speecher.protocol.speechTerms
 import app.speecher.protocol.transcribeSpeech
 import app.speecher.protocol.webSocketTransport
+import app.speecher.protocol.withVariablesFilled
 import java.io.ByteArrayOutputStream
+import java.util.Date
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -82,6 +89,8 @@ class DictationEngine(
      */
     private val pauseMedia: () -> Unit = {},
     private val resumeMedia: () -> Unit = {},
+    /** The replacements an Insert applies to the words as heard, read once per dictation. */
+    private val replacements: () -> List<Replacement> = { emptyList() },
 ) : AutoCloseable {
     @Volatile
     var state: DictationState = DictationState.Listening()
@@ -120,6 +129,8 @@ class DictationEngine(
     private var pendingInsert: PendingInsert? = null
     private var failedRefinement: CleanupProvider? = null
     private var failedCommit: String? = null
+    /** This dictation's replacement step, once an Insert ran it; see [replaced]. */
+    private var prepared: ReplacedTranscript? = null
     /** The batch or refinement request in flight, which Cancel aborts. */
     private var request: Cancellation? = null
     /** The provider streaming this dictation. */
@@ -149,6 +160,7 @@ class DictationEngine(
         pendingInsert = null
         failedRefinement = null
         failedCommit = null
+        prepared = null
         sourceProvider = provider
         recording = true
         paused = false
@@ -276,7 +288,9 @@ class DictationEngine(
     fun insert(): Boolean {
         if (inserted || pendingInsert != null) return false
         if (state is DictationState.Failed) {
-            commitTranscript((state as DictationState.Failed).transcript)
+            val text = failedCommit
+            if (text != null) commitTranscript(text)
+            else commitHeard((state as DictationState.Failed).transcript)
             return false
         }
         pendingInsert = PendingInsert(null)
@@ -340,7 +354,17 @@ class DictationEngine(
         }
     }
 
+    /**
+     * Cleans up [raw] with each replacement's text held in a placeholder the model must keep, as on
+     * the desktop. Words that are all spoken phrases need no model, and an answer that garbles or
+     * invents a placeholder goes in as heard, with the replacements.
+     */
     private fun refineTranscript(provider: CleanupProvider, raw: String) {
+        val replaced = replaced(raw)
+        if (replaced.skipsRefinement) {
+            commitTranscript(replaced.text)
+            return
+        }
         val current = session
         failedRefinement = provider
         val cancellation = Cancellation().also { request = it }
@@ -348,15 +372,15 @@ class DictationEngine(
         executor.execute {
             try {
                 val text =
-                    refine(provider, raw, cancellation) { refined ->
+                    refine(provider, replaced.refinementInput, cancellation) { refined ->
                         synchronized(this) {
                             if (current == session && state is DictationState.Refining)
-                                publish(DictationState.Refining(raw, refined))
+                                publish(DictationState.Refining(raw, replaced.preview(refined)))
                         }
                     }
                 synchronized(this) {
                     if (current != session || inserted) return@execute
-                    commitTranscript(text)
+                    commitTranscript(replaced.restore(text) ?: replaced.text)
                 }
             } catch (e: Exception) {
                 fail(
@@ -479,7 +503,7 @@ class DictationEngine(
         val streamed = transcript()
         val audio = recorded.toByteArray()
         fun finish(text: String) =
-            if (cleanup != null) refineTranscript(cleanup, text) else commitTranscript(text)
+            if (cleanup != null) refineTranscript(cleanup, text) else commitHeard(text)
         if (transcribe == null || !sourceProvider.hasBatchTranscription || audio.isEmpty()) {
             finish(streamed)
             return
@@ -517,6 +541,18 @@ class DictationEngine(
         pendingInsert = null
         publish(DictationState.Failed(reason, detail, raw))
     }
+
+    /** Commits words as heard, each spoken phrase replaced by its text. */
+    private fun commitHeard(raw: String) = commitTranscript(replaced(raw).text)
+
+    /**
+     * The replacement step for [raw], run once per dictation: a retried cleanup and the Insert
+     * after a failed one reuse it, so they insert the same {date} and {time}, as the desktop's
+     * single snapshot does. Only the first Insert's words reach here before a new session clears
+     * it.
+     */
+    private fun replaced(raw: String): ReplacedTranscript =
+        prepared ?: replaceSpoken(raw, replacements()).also { prepared = it }
 
     private fun commitTranscript(text: String) {
         if (commit(text)) {
@@ -636,6 +672,15 @@ fun createDictationEngine(
                     .build()
             )
             .build()
+    // The replacement step's rules: the user's own, {date} and {time} as the phone shows them now.
+    fun replacements(): List<Replacement> {
+        val now = Date()
+        return withVariablesFilled(
+            settings.replacements,
+            DateFormat.getDateFormat(context).format(now),
+            DateFormat.getTimeFormat(context).format(now),
+        )
+    }
     fun token(account: Provider) =
         store.validTokens(account.oauth, http)
             ?: throw ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in")
@@ -709,17 +754,18 @@ fun createDictationEngine(
         { selected, raw, cancellation, onRefined ->
             val context =
                 refinementContext(
-                    settings,
-                    ActiveDictation.target,
-                    ActiveDictation.screen,
-                    ActiveDictation.screenshotJpeg,
-                ) { length ->
-                    connection()?.getSurroundingText(length, length, 0)?.let {
-                        // A selection made backwards reports its start after its end.
-                        val (start, end) = listOf(it.selectionStart, it.selectionEnd).sorted()
-                        nearbyText(it.text, start, end, it.offset)
+                        settings,
+                        ActiveDictation.target,
+                        ActiveDictation.screen,
+                        ActiveDictation.screenshotJpeg,
+                    ) { length ->
+                        connection()?.getSurroundingText(length, length, 0)?.let {
+                            // A selection made backwards reports its start after its end.
+                            val (start, end) = listOf(it.selectionStart, it.selectionEnd).sorted()
+                            nearbyText(it.text, start, end, it.offset)
+                        }
                     }
-                }
+                    .copy(bindingAliases = replacementAliases(replacements()))
             // A profile set to no cleanup inserts the transcript as heard, as the desktop does.
             if (context.style == CleanupStrength.None) raw
             // Each cleanup provider's client; a new provider adds its branch here.
@@ -754,5 +800,6 @@ fun createDictationEngine(
         // dictation goes ahead, and abandoning focus never granted does nothing.
         pauseMedia = { if (settings.pauseMedia) audio.requestAudioFocus(mediaPause) },
         resumeMedia = { audio.abandonAudioFocusRequest(mediaPause) },
+        replacements = ::replacements,
     )
 }

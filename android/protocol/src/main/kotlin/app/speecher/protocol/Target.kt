@@ -169,6 +169,8 @@ data class RefinementContext(
     val spokenLanguage: String = ENGLISH_LANGUAGE,
     /** The profile's language to write in; blank keeps the spoken one. */
     val outputLanguage: String = "",
+    /** The replacements' spoken phrases, sent as binding_aliases; see [replacementAliases]. */
+    val bindingAliases: List<String> = emptyList(),
 )
 
 /** An app a rule recognises by [match], and the app type and profile it gets. */

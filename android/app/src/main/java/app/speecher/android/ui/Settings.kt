@@ -124,6 +124,7 @@ enum class SettingsPage(val title: String) {
     RefinementContext("What refinement can read"),
     DictationPanel("Dictation panel"),
     Vocabulary("Vocabulary"),
+    Replacements("Replacements & snippets"),
     Profiles("Profiles"),
     AppRules("Application rules"),
     Tones("Tones"),
@@ -211,6 +212,12 @@ fun Settings(
             else count(settings.vocabulary.size, "word", "words"),
             onOpen,
         )
+        PageRow(
+            SettingsPage.Replacements,
+            if (settings.replacements.isEmpty()) "No replacements or snippets"
+            else count(settings.replacements.size, "replacement", "replacements"),
+            onOpen,
+        )
 
         if (settings.refinementEnabled) {
             Section("Advanced")
@@ -277,6 +284,7 @@ fun SettingsPageContent(
         SettingsPage.RefinementContext -> RefinementContextSettings(settings, onChange)
         SettingsPage.DictationPanel -> DictationPanelSettings(settings, onChange, onSetChipPosition)
         SettingsPage.Vocabulary -> VocabularySettings(settings, onChange)
+        SettingsPage.Replacements -> ReplacementSettings(settings, onChange)
         SettingsPage.Profiles -> ProfileSettings(settings, onChange)
         SettingsPage.AppRules -> AppRuleSettings(settings, onChange)
         SettingsPage.Tones -> ToneSettings(settings, onChange)
