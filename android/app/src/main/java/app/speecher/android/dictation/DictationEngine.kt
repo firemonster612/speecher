@@ -7,7 +7,6 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateFormat
-import android.util.Log
 import android.view.inputmethod.InputConnection
 import app.speecher.android.BuildConfig
 import app.speecher.android.auth.TokenStore
@@ -61,6 +60,17 @@ private data class Endpoints(
     val transcribe: String? = null,
 )
 
+/**
+ * A commit that went through: the text, how long the microphone listened, and the providers whose
+ * words those are. [cleanup] is null when the transcript went in as heard.
+ */
+data class Inserted(
+    val text: String,
+    val audioMillis: Long,
+    val speech: SpeechProvider,
+    val cleanup: CleanupProvider?,
+)
+
 /** [cleanup] is the LLM that tidies the transcript, or null for a plain Insert. */
 private data class PendingInsert(val cleanup: CleanupProvider?)
 
@@ -70,9 +80,10 @@ class DictationEngine(
     private val connect: (SpeechProvider, (SpeechEvent) -> Unit) -> SpeechClient,
     /**
      * Refines the raw transcript, reporting the refined text so far as it streams in, until the
-     * [Cancellation] aborts it.
+     * [Cancellation] aborts it. Null when the profile does no cleanup, so the transcript goes in as
+     * heard.
      */
-    private val refine: (CleanupProvider, String, Cancellation, (String) -> Unit) -> String,
+    private val refine: (CleanupProvider, String, Cancellation, (String) -> Unit) -> String?,
     /**
      * ChatGPT's batch re-transcription of the session's PCM16 audio, until the [Cancellation]
      * aborts it; null skips that pass.
@@ -92,8 +103,7 @@ class DictationEngine(
     private val resumeMedia: () -> Unit = {},
     /** The replacements an Insert applies to the words as heard, read once per dictation. */
     private val replacements: () -> List<Replacement> = { emptyList() },
-    /** After a commit succeeds: the text inserted and how long the microphone listened. */
-    private val onCommitted: (text: String, audioMillis: Long) -> Unit = { _, _ -> },
+    private val onCommitted: (Inserted) -> Unit = {},
 ) : AutoCloseable {
     @Volatile
     var state: DictationState = DictationState.Listening()
@@ -131,7 +141,8 @@ class DictationEngine(
     private var inserted = false
     private var pendingInsert: PendingInsert? = null
     private var failedRefinement: CleanupProvider? = null
-    private var failedCommit: String? = null
+    /** The text a commit failed to insert, and the cleanup provider that wrote it, if any. */
+    private var failedCommit: Pair<String, CleanupProvider?>? = null
     /** This dictation's replacement step, once an Insert ran it; see [replaced]. */
     private var prepared: ReplacedTranscript? = null
     /** The batch or refinement request in flight, which Cancel aborts. */
@@ -294,8 +305,9 @@ class DictationEngine(
     fun insert(): Boolean {
         if (inserted || pendingInsert != null) return false
         if (state is DictationState.Failed) {
-            val text = failedCommit
-            if (text != null) commitTranscript(text)
+            // A failed commit goes in again as it was; any other failure inserts what was heard.
+            val pending = failedCommit
+            if (pending != null) commitTranscript(pending.first, pending.second)
             else commitHeard((state as DictationState.Failed).transcript)
             return false
         }
@@ -318,8 +330,8 @@ class DictationEngine(
     @Synchronized
     fun retry(): Boolean {
         val failed = state as? DictationState.Failed ?: return false
-        failedCommit?.let {
-            commitTranscript(it)
+        failedCommit?.let { (text, cleanup) ->
+            commitTranscript(text, cleanup)
             return false
         }
         val provider = failedRefinement
@@ -369,7 +381,7 @@ class DictationEngine(
     private fun refineTranscript(provider: CleanupProvider, raw: String) {
         val replaced = replaced(raw)
         if (replaced.skipsRefinement) {
-            commitTranscript(replaced.text)
+            commitTranscript(replaced.text, null)
             return
         }
         val current = session
@@ -387,7 +399,12 @@ class DictationEngine(
                     }
                 synchronized(this) {
                     if (current != session || inserted) return@execute
-                    commitTranscript(replaced.restore(text) ?: replaced.text)
+                    // Null when the profile does no cleanup; a garbled answer goes in as heard.
+                    val restored = text?.let(replaced::restore)
+                    commitTranscript(
+                        restored ?: replaced.text,
+                        provider.takeIf { restored != null },
+                    )
                 }
             } catch (e: Exception) {
                 fail(
@@ -550,7 +567,7 @@ class DictationEngine(
     }
 
     /** Commits words as heard, each spoken phrase replaced by its text. */
-    private fun commitHeard(raw: String) = commitTranscript(replaced(raw).text)
+    private fun commitHeard(raw: String) = commitTranscript(replaced(raw).text, null)
 
     /**
      * The replacement step for [raw], run once per dictation: a retried cleanup and the Insert
@@ -561,13 +578,14 @@ class DictationEngine(
     private fun replaced(raw: String): ReplacedTranscript =
         prepared ?: replaceSpoken(raw, replacements()).also { prepared = it }
 
-    private fun commitTranscript(text: String) {
+    /** Inserts [text], which [cleanup] wrote, or the transcript as heard when null. */
+    private fun commitTranscript(text: String, cleanup: CleanupProvider?) {
         if (commit(text)) {
             inserted = true
             failedCommit = null
-            onCommitted(text, heardBytes / PCM_BYTES_PER_MILLI)
+            onCommitted(Inserted(text, heardBytes / PCM_BYTES_PER_MILLI, sourceProvider, cleanup))
         } else {
-            failedCommit = text
+            failedCommit = text to cleanup
             fail(session, FailureReason.Commit, "Could not insert text", text)
         }
     }
@@ -778,7 +796,7 @@ fun createDictationEngine(
                     }
                     .copy(bindingAliases = replacementAliases(replacements()))
             // A profile set to no cleanup inserts the transcript as heard, as the desktop does.
-            if (context.style == CleanupStrength.None) raw
+            if (context.style == CleanupStrength.None) null
             // Each cleanup provider's client; a new provider adds its branch here.
             else
                 when (selected) {
@@ -812,14 +830,14 @@ fun createDictationEngine(
         pauseMedia = { if (settings.pauseMedia) audio.requestAudioFocus(mediaPause) },
         resumeMedia = { audio.abandonAudioFocusRequest(mediaPause) },
         replacements = ::replacements,
-        onCommitted = { text, audioMillis ->
-            if (settings.insightsEnabled) {
-                val record = dictationRecord(text, audioMillis, settings, ActiveDictation.target)
-                // Insights are a side record: failing to keep one never fails the insert.
-                sharedExecutor.execute {
-                    runCatching { appendInsight(insightsFile(context), record) }
-                        .onFailure { Log.w("Speecher", "insights log append failed", it) }
-                }
+        onCommitted = { inserted ->
+            // The live setting, not the session's: turning insights off mid-dictation stops this
+            // one being recorded, as on the desktop.
+            if (SettingsStore(context).insightsEnabled()) {
+                recordInsight(
+                    insightsFile(context),
+                    dictationRecord(inserted, settings, ActiveDictation.target),
+                )
             }
         },
     )

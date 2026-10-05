@@ -35,8 +35,8 @@ import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.clearInsights
 import app.speecher.android.dictation.insightsFile
+import app.speecher.android.dictation.loadInsights
 import app.speecher.android.dictation.oauth
-import app.speecher.android.dictation.readInsights
 import app.speecher.android.dictation.sharedHttp
 import app.speecher.android.ui.ChipPosition
 import app.speecher.android.ui.Home
@@ -210,10 +210,14 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    Page.Insights ->
+                    Page.Insights -> {
+                        // A dictation into Home's practice field leaves the app resumed, so the
+                        // history is read again whenever the page opens.
+                        LaunchedEffect(Unit) { reloadInsights() }
                         SpeecherScreen("Insights", onBack = ::back) {
                             Insights(insights, settings, ::changeSettings, ::deleteInsights)
                         }
+                    }
                     Page.ChipPosition ->
                         SpeecherScreen("Button position", onBack = ::back) {
                             ChipPosition(
@@ -238,8 +242,7 @@ class MainActivity : ComponentActivity() {
                 // The chip's save offer writes settings too, so never edit a stale copy.
                 settings = settingsStore.load()
                 // Dictations inserted while the app was away are in the file by now.
-                insights =
-                    withContext(Dispatchers.IO) { readInsights(insightsFile(this@MainActivity)) }
+                reloadInsights()
                 while (true) {
                     refresh()
                     delay(1_000)
@@ -399,7 +402,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun deleteInsights(): Boolean =
+    private suspend fun reloadInsights() {
+        insights = loadInsights(insightsFile(this))
+    }
+
+    private suspend fun deleteInsights(): Boolean =
         clearInsights(insightsFile(this)).also { if (it) insights = emptyList() }
 
     private fun openAccessibilitySettings() {

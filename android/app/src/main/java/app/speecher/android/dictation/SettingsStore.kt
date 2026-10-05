@@ -142,12 +142,15 @@ class SettingsStore(private val context: Context) {
                         .getString("updateCheckUnit", null)
                         ?.let { name -> IntervalUnit.entries.firstOrNull { it.name == name } }
                         ?.takeIf { updateCheckMinutes % it.minutes == 0 },
-                insightsEnabled = preferences.getBoolean("insightsEnabled", true),
+                insightsEnabled = insightsEnabled(),
             )
             // So no profile names a tone or level that is gone, and no rule a profile.
             .withCustomChoices()
             .withWritingProfiles()
     }
+
+    /** Just [SpeecherSettings.insightsEnabled], read without loading the rest. */
+    fun insightsEnabled(): Boolean = preferences.getBoolean("insightsEnabled", true)
 
     fun save(settings: SpeecherSettings) {
         preferences.edit(commit = true) {

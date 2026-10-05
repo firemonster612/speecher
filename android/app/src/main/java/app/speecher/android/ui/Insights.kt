@@ -18,7 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -32,6 +32,7 @@ import app.speecher.android.dictation.insightTiles
 import app.speecher.android.dictation.summarize
 import java.time.LocalDate
 import java.time.LocalDateTime
+import kotlinx.coroutines.launch
 
 /**
  * The stats kept of inserted dictations, for a chosen period, and the controls over keeping them.
@@ -42,7 +43,7 @@ fun Insights(
     records: List<DictationRecord>,
     settings: SpeecherSettings,
     onChange: (SpeecherSettings) -> Unit,
-    onClear: () -> Boolean,
+    onClear: suspend () -> Boolean,
     today: LocalDate = LocalDate.now(),
 ) {
     when {
@@ -140,9 +141,10 @@ private fun Tile(tile: InsightTile, modifier: Modifier) {
 
 /** Asks before deleting, and keeps asking with the reason when the delete fails. */
 @Composable
-private fun ClearHistory(onClear: () -> Boolean) {
-    var confirming by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
+private fun ClearHistory(onClear: suspend () -> Boolean) {
+    var confirming by rememberSaveable { mutableStateOf(false) }
+    var failed by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     ListItem(
         headlineContent = { Text("Clear insights history") },
         supportingContent = { Text("Delete every recorded dictation from this phone.") },
@@ -173,8 +175,10 @@ private fun ClearHistory(onClear: () -> Boolean) {
             Text("Cancel")
         }
         TextButton({
-            failed = !onClear()
-            confirming = failed
+            scope.launch {
+                failed = !onClear()
+                confirming = failed
+            }
         }) {
             Text("Delete history")
         }
@@ -195,7 +199,7 @@ private val previewRecords =
 private fun InsightsPreview(
     records: List<DictationRecord>,
     enabled: Boolean = true,
-    onClear: () -> Boolean = { true },
+    onClear: suspend () -> Boolean = { true },
 ) = SpeecherTheme {
     SpeecherScreen("Insights", onBack = {}) {
         Insights(records, SpeecherSettings(insightsEnabled = enabled), {}, onClear, previewToday)

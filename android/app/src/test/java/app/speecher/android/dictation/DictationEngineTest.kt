@@ -640,11 +640,17 @@ class DictationEngineTest {
         )
     }
 
-    @Test
-    fun `a commit reports the text and how long the microphone listened`() {
+    /**
+     * Dictates "hello there" over 150 ms of audio with Claude, inserts it with [action] while the
+     * cleanup gives back [refined], and returns what the engine reported inserting.
+     */
+    private fun dictateAndInsert(
+        refined: String?,
+        action: DictationEngine.() -> Unit,
+    ): List<Inserted> {
         val capture = Capture()
         lateinit var speech: (SpeechEvent) -> Unit
-        val committed = mutableListOf<Pair<String, Long>>()
+        val inserted = mutableListOf<Inserted>()
         val engine =
             DictationEngine(
                 capture::capture,
@@ -653,20 +659,37 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw, _, _ -> raw },
+                { _, _, _, _ -> refined },
                 null,
                 { true },
                 Executor { it.run() },
                 {},
-                onCommitted = { text, audioMillis -> committed.add(text to audioMillis) },
+                onCommitted = { inserted.add(it) },
             )
         engine.start(SpeechProvider.Claude)
         capture.audio?.invoke(ByteArray(3200), 0.4f) // 100 ms of 16 kHz PCM16.
         capture.audio?.invoke(ByteArray(1600), 0.4f)
         speech(SpeechEvent.Final("hello there"))
-        engine.insert()
+        engine.action()
         speech(SpeechEvent.Completed)
-        assertEquals(listOf("hello there" to 150L), committed)
+        return inserted
+    }
+
+    @Test
+    fun `a commit reports the text, the listening time and the providers whose words went in`() {
+        assertEquals(
+            listOf(Inserted("hello there", 150, SpeechProvider.Claude, null)),
+            dictateAndInsert("unused") { insert() },
+        )
+        assertEquals(
+            listOf(Inserted("Hello there.", 150, SpeechProvider.Claude, CleanupProvider.ChatGpt)),
+            dictateAndInsert("Hello there.") { insertRefined(CleanupProvider.ChatGpt) },
+        )
+        // A profile that does no cleanup inserts the transcript as heard.
+        assertEquals(
+            listOf(Inserted("hello there", 150, SpeechProvider.Claude, null)),
+            dictateAndInsert(null) { insertRefined(CleanupProvider.ChatGpt) },
+        )
     }
 
     @Test
