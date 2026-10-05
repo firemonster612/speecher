@@ -79,6 +79,7 @@ fun Onboarding(
             "Allow the microphone",
             "The keyboard can't ask for it, so Speecher asks here.",
             status.microphoneGranted,
+            whenDone = { MicrophoneTestControls() },
         ) {
             StepButton("Allow", onRequestMicrophone)
         }
@@ -249,6 +250,7 @@ private fun Step(
     title: String,
     description: String,
     done: Boolean,
+    whenDone: (@Composable () -> Unit)? = null,
     action: @Composable () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
@@ -260,9 +262,10 @@ private fun Step(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (!done) {
+            val content = if (done) whenDone else action
+            if (content != null) {
                 Spacer(Modifier.height(10.dp))
-                action()
+                content()
             }
         }
     }
