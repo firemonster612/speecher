@@ -60,6 +60,18 @@ private data class Endpoints(
     val transcribe: String? = null,
 )
 
+/**
+ * A commit that went through: the text, how long the microphone listened, the provider that
+ * transcribed it and the cleanup providers this dictation called, in order, including any that
+ * failed before the transcript went in as heard.
+ */
+data class Inserted(
+    val text: String,
+    val audioMillis: Long,
+    val speech: SpeechProvider,
+    val cleanups: List<CleanupProvider>,
+)
+
 /** [cleanup] is the LLM that tidies the transcript, or null for a plain Insert. */
 private data class PendingInsert(val cleanup: CleanupProvider?)
 
@@ -69,9 +81,10 @@ class DictationEngine(
     private val connect: (SpeechProvider, (SpeechEvent) -> Unit) -> SpeechClient,
     /**
      * Refines the raw transcript, reporting the refined text so far as it streams in, until the
-     * [Cancellation] aborts it.
+     * [Cancellation] aborts it. Null when the profile does no cleanup, so the transcript goes in as
+     * heard.
      */
-    private val refine: (CleanupProvider, String, Cancellation, (String) -> Unit) -> String,
+    private val refine: (CleanupProvider, String, Cancellation, (String) -> Unit) -> String?,
     /**
      * ChatGPT's batch re-transcription of the session's PCM16 audio, until the [Cancellation]
      * aborts it; null skips that pass.
@@ -91,6 +104,7 @@ class DictationEngine(
     private val resumeMedia: () -> Unit = {},
     /** The replacements an Insert applies to the words as heard, read once per dictation. */
     private val replacements: () -> List<Replacement> = { emptyList() },
+    private val onCommitted: (Inserted) -> Unit = {},
 ) : AutoCloseable {
     @Volatile
     var state: DictationState = DictationState.Listening()
@@ -141,12 +155,18 @@ class DictationEngine(
     private val recorded = ByteArrayOutputStream()
     /** The dictation outgrew what the batch pass transcribes, so [recorded] is dropped. */
     private var recordedTooLong = false
+    /** All the audio this dictation heard, retries included, pauses not. */
+    private var heardBytes = 0L
+    /** The cleanup providers this dictation called, retries included, each once. */
+    private val cleanupsCalled = linkedSetOf<CleanupProvider>()
     @Volatile private var session = 0
 
     @Synchronized
     fun start(provider: SpeechProvider) {
         recorded.reset()
         recordedTooLong = false
+        heardBytes = 0
+        cleanupsCalled.clear()
         startSession(provider, "")
     }
 
@@ -332,6 +352,7 @@ class DictationEngine(
                     if (current == session && recording) {
                         if (finishingPause) heardAfterResume.add(audio)
                         else client?.sendAudio(audio) ?: unsent.add(audio)
+                        heardBytes += audio.size
                         if (
                             transcribe != null &&
                                 sourceProvider.hasBatchTranscription &&
@@ -380,9 +401,12 @@ class DictationEngine(
                     }
                 synchronized(this) {
                     if (current != session || inserted) return@execute
-                    commitTranscript(replaced.restore(text) ?: replaced.text)
+                    // Null when the profile does no cleanup, so no provider was called.
+                    if (text != null) cleanupsCalled += provider
+                    commitTranscript(text?.let(replaced::restore) ?: replaced.text)
                 }
             } catch (e: Exception) {
+                cleanupCalled(current, provider)
                 fail(
                     current,
                     FailureReason.Cleanup(provider, failureKind(e)),
@@ -391,6 +415,12 @@ class DictationEngine(
                 )
             }
         }
+    }
+
+    /** [provider] was called and failed; it still counts as one this dictation used. */
+    @Synchronized
+    private fun cleanupCalled(current: Int, provider: CleanupProvider) {
+        if (current == session) cleanupsCalled += provider
     }
 
     @Synchronized
@@ -558,6 +588,14 @@ class DictationEngine(
         if (commit(text)) {
             inserted = true
             failedCommit = null
+            onCommitted(
+                Inserted(
+                    text,
+                    heardBytes / PCM_BYTES_PER_MILLI,
+                    sourceProvider,
+                    cleanupsCalled.toList(),
+                )
+            )
         } else {
             failedCommit = text
             fail(session, FailureReason.Commit, "Could not insert text", text)
@@ -611,12 +649,15 @@ class DictationEngine(
  */
 private val RECONNECT_BACKOFF_MS = longArrayOf(1_000, 3_000)
 
+// 16 kHz mono PCM16, as the microphone captures it.
+private const val PCM_BYTES_PER_MILLI = 16 * 2
+
 /**
- * 80 s of 16 kHz mono PCM16. The batch endpoint transcribes only the first ~86 s of a recording and
- * returns that prefix as a success (docs/research/0004), so a longer dictation keeps its streamed
- * transcript rather than lose its tail; 80 s keeps a margin under the observed cutoff.
+ * 80 s of it. The batch endpoint transcribes only the first ~86 s of a recording and returns that
+ * prefix as a success (docs/research/0004), so a longer dictation keeps its streamed transcript
+ * rather than lose its tail; 80 s keeps a margin under the observed cutoff.
  */
-private const val MAX_RETRANSCRIBE_BYTES = 80 * 16000 * 2
+private const val MAX_RETRANSCRIBE_BYTES = 80_000 * PCM_BYTES_PER_MILLI
 
 /** The provider can't listen for the saved spoken language; [message] says so for the panel. */
 class SpokenLanguageUnsupported(message: String) : Exception(message)
@@ -767,7 +808,7 @@ fun createDictationEngine(
                     }
                     .copy(bindingAliases = replacementAliases(replacements()))
             // A profile set to no cleanup inserts the transcript as heard, as the desktop does.
-            if (context.style == CleanupStrength.None) raw
+            if (context.style == CleanupStrength.None) null
             // Each cleanup provider's client; a new provider adds its branch here.
             else
                 when (selected) {
@@ -801,5 +842,15 @@ fun createDictationEngine(
         pauseMedia = { if (settings.pauseMedia) audio.requestAudioFocus(mediaPause) },
         resumeMedia = { audio.abandonAudioFocusRequest(mediaPause) },
         replacements = ::replacements,
+        onCommitted = { inserted ->
+            // The live setting, not the session's: turning insights off mid-dictation stops this
+            // one being recorded, as on the desktop.
+            if (SettingsStore(context).insightsEnabled()) {
+                recordInsight(
+                    insightsFile(context),
+                    dictationRecord(inserted, settings, ActiveDictation.target),
+                )
+            }
+        },
     )
 }

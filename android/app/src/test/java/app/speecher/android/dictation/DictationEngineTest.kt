@@ -640,6 +640,71 @@ class DictationEngineTest {
         )
     }
 
+    /**
+     * Dictates "hello there" over 150 ms of audio with Claude, asks for Insert refined with
+     * [cleanup] (plain Insert when null) while the cleanup does [refine], inserts again if that
+     * failed, and returns what the engine reported inserting.
+     */
+    private fun dictateAndInsert(cleanup: CleanupProvider?, refine: () -> String?): List<Inserted> {
+        val capture = Capture()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val inserted = mutableListOf<Inserted>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, _, _, _ -> refine() },
+                null,
+                { true },
+                Executor { it.run() },
+                {},
+                onCommitted = { inserted.add(it) },
+            )
+        engine.start(SpeechProvider.Claude)
+        capture.audio?.invoke(ByteArray(3200), 0.4f) // 100 ms of 16 kHz PCM16.
+        capture.audio?.invoke(ByteArray(1600), 0.4f)
+        speech(SpeechEvent.Final("hello there"))
+        if (cleanup == null) engine.insert() else engine.insertRefined(cleanup)
+        speech(SpeechEvent.Completed)
+        if (engine.state is DictationState.Failed) engine.insert()
+        return inserted
+    }
+
+    @Test
+    fun `a commit reports the text, the listening time and the providers the dictation called`() {
+        assertEquals(
+            listOf(Inserted("hello there", 150, SpeechProvider.Claude, emptyList())),
+            dictateAndInsert(null) { "unused" },
+        )
+        assertEquals(
+            listOf(
+                Inserted(
+                    "Hello there.",
+                    150,
+                    SpeechProvider.Claude,
+                    listOf(CleanupProvider.ChatGpt),
+                )
+            ),
+            dictateAndInsert(CleanupProvider.ChatGpt) { "Hello there." },
+        )
+        // A cleanup that failed was still called, though the transcript went in as heard.
+        assertEquals(
+            listOf(
+                Inserted("hello there", 150, SpeechProvider.Claude, listOf(CleanupProvider.Claude))
+            ),
+            dictateAndInsert(CleanupProvider.Claude) { throw IOException("offline") },
+        )
+        // A profile that does no cleanup calls no provider.
+        assertEquals(
+            listOf(Inserted("hello there", 150, SpeechProvider.Claude, emptyList())),
+            dictateAndInsert(CleanupProvider.ChatGpt) { null },
+        )
+    }
+
     @Test
     fun `pause finishes the stream and keeps its words, and resume carries on in a new one`() {
         val capture = Capture()

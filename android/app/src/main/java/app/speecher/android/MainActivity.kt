@@ -28,14 +28,19 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import app.speecher.android.auth.SignInViewModel
 import app.speecher.android.auth.TokenStore
+import app.speecher.android.dictation.DictationRecord
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.clearInsights
+import app.speecher.android.dictation.insightsFile
+import app.speecher.android.dictation.loadInsights
 import app.speecher.android.dictation.oauth
 import app.speecher.android.dictation.sharedHttp
 import app.speecher.android.ui.ChipPosition
 import app.speecher.android.ui.Home
+import app.speecher.android.ui.Insights
 import app.speecher.android.ui.Onboarding
 import app.speecher.android.ui.SettingsPage
 import app.speecher.android.ui.SettingsPageContent
@@ -58,6 +63,7 @@ private enum class Page {
     Setup,
     Settings,
     ChipPosition,
+    Insights,
 }
 
 class MainActivity : ComponentActivity() {
@@ -67,6 +73,9 @@ class MainActivity : ComponentActivity() {
 
     private var status by mutableStateOf(emptyStatus())
     private var settings by mutableStateOf(SpeecherSettings())
+    private var insights by mutableStateOf(emptyList<DictationRecord>())
+    // Kept here, not on the page, so a clear that fails after the page closed still says so.
+    private var clearInsightsFailed by mutableStateOf(false)
     private var update by mutableStateOf<ApkUpdate?>(null)
     private var updating by mutableStateOf(false)
     private var updateFailed by mutableStateOf(false)
@@ -140,6 +149,7 @@ class MainActivity : ComponentActivity() {
                                 { page = Page.Settings },
                                 ::signInFromSettings,
                                 ::openAccessibilitySettings,
+                                { page = Page.Insights },
                                 update = update,
                                 updating = updating,
                                 updateFailed = updateFailed,
@@ -202,6 +212,20 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    Page.Insights -> {
+                        // A dictation into Home's practice field leaves the app resumed, so the
+                        // history is read again whenever the page opens.
+                        LaunchedEffect(Unit) { reloadInsights() }
+                        SpeecherScreen("Insights", onBack = ::back) {
+                            Insights(
+                                insights,
+                                settings,
+                                ::changeSettings,
+                                ::deleteInsights,
+                                clearInsightsFailed,
+                            )
+                        }
+                    }
                     Page.ChipPosition ->
                         SpeecherScreen("Button position", onBack = ::back) {
                             ChipPosition(
@@ -225,6 +249,8 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 // The chip's save offer writes settings too, so never edit a stale copy.
                 settings = settingsStore.load()
+                // Dictations inserted while the app was away are in the file by now.
+                reloadInsights()
                 while (true) {
                     refresh()
                     delay(1_000)
@@ -381,6 +407,20 @@ class MainActivity : ComponentActivity() {
             }
                 .onFailure { updateFailed = true }
             updating = false
+        }
+    }
+
+    private suspend fun reloadInsights() {
+        insights = loadInsights(insightsFile(this))
+    }
+
+    private fun deleteInsights() {
+        clearInsightsFailed = false
+        clearInsights(insightsFile(this)) { cleared ->
+            runOnUiThread {
+                if (cleared) insights = emptyList()
+                clearInsightsFailed = !cleared
+            }
         }
     }
 
