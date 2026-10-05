@@ -281,12 +281,14 @@ private slots:
             qunsetenv("SPEECHER_TEST_CLAUDE_INSTALLED");
             qunsetenv("SPEECHER_TEST_CODEX_INSTALLED");
         });
-        // Nothing on this machine can transcribe: say how to get something.
+        // Nothing on this machine can transcribe: say how to get something,
+        // and that a server of one's own is a choice on the step.
         QCOMPARE(setupTranscriptionDeadEnd(false, false, false, true),
                  QString("This computer can't run a local speech model, and no ChatGPT, Claude, "
                          "or CLI Proxy API sign-in was found. Please get a free ChatGPT or Claude "
-                         "account and install Claude Code or Claude Desktop, or Codex."));
-        // Any way out silences it.
+                         "account and install Claude Code or Claude Desktop, or Codex. To use your "
+                         "own speech server, choose Custom Endpoint."));
+        // Any way out silences it, Custom Endpoint chosen included.
         QVERIFY(setupTranscriptionDeadEnd(true, false, false, true).isEmpty());
         QVERIFY(setupTranscriptionDeadEnd(false, true, false, true).isEmpty());
         QVERIFY(setupTranscriptionDeadEnd(false, false, true, true).isEmpty());
@@ -294,7 +296,28 @@ private slots:
         // An installed CLI makes signing in the missing step.
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
         QCOMPARE(setupTranscriptionDeadEnd(false, false, false, true),
-                 QString("No ChatGPT, Claude, or CLI Proxy API sign-in was found."));
+                 QString("No ChatGPT, Claude, or CLI Proxy API sign-in was found. To use your own "
+                         "speech server, choose Custom Endpoint."));
+    }
+
+    void theTranscriptionStepOffersCustomEndpointAlways()
+    {
+        // Custom Endpoint is set up on the step, so it is a choice whatever
+        // was saved; Local only where the assistant can set it up.
+        QVERIFY(offersSetupSpeechProvider("endpoint", false));
+        QVERIFY(offersSetupSpeechProvider("endpoint", true));
+        QVERIFY(offersSetupSpeechProvider("claude", false));
+        QVERIFY(offersSetupSpeechProvider("local", true));
+        QVERIFY(!offersSetupSpeechProvider("local", false));
+    }
+
+    void theTranscriptionGateSaysWhatTheChosenServiceNeeds()
+    {
+        QCOMPARE(setupTranscriptionBlocked("local", "Local Model"), QString("Download a speech model to continue."));
+        QCOMPARE(setupTranscriptionBlocked("endpoint", "Custom Endpoint"),
+                 QString("Enter your server's URL to continue."));
+        QCOMPARE(setupTranscriptionBlocked("codex", "ChatGPT Codex"), QString("ChatGPT Codex is not signed in."));
+        QCOMPARE(setupTranscriptionBlocked(QString(), QString()), QString("No transcription service is available."));
     }
 
     void tooSmallAMachineCannotRunAnyModel()

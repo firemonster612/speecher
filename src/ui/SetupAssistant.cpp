@@ -127,14 +127,10 @@ SetupAssistant::SetupAssistant(ApplicationController *controller,
     AccessibilitySetupPage *accessibility = nullptr;
     RefinementSetupPage *refinement = nullptr;
     if (!m_singlePage) {
-        // Speech on this computer is only a path where the build can run it.
-        LocalSetup *localSpeech = controller->providerRegistry()->speechProvider(QStringLiteral("local"))
-            ? controller->localSetup()
-            : nullptr;
         m_welcomePage = new WelcomeSetupPage(this);
         m_speechProviderPage = new SpeechProviderSetupPage(*controller->settings(),
                                                            *controller->providerRegistry(),
-                                                           localSpeech,
+                                                           controller->localSetup(),
                                                            this);
         m_microphonePage = new MicrophoneSetupPage(*controller->settings(),
                                                    *controller->platform(),

@@ -72,7 +72,8 @@ ggml and cannot share a process.
 
 - Speech: OpenAI `POST /v1/audio/transcriptions`, multipart 16 kHz WAV, with
   an editable path so whisper.cpp's `/inference` works, and `stream=true` when
-  the server accepts it. Set in Settings only.
+  the server accepts it. Set in Settings or on the setup assistant's
+  Transcription step.
 - Refinement: an OpenAI-compatible (Chat Completions) or Anthropic-compatible
   (Messages) switch, base URL, optional key, and a model picked from
   `GET /v1/models` with free text as fallback. The OpenAI flavour sends

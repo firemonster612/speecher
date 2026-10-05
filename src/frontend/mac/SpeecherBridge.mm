@@ -1187,6 +1187,7 @@ SpeecherFallbackList *bridgedFallbackList(speecher::ProviderRole role, const spe
 @property (nonatomic, strong) CleanupPullInfo *pull;
 @property (nonatomic, copy) NSString *endpointStatus;
 @property (nonatomic, copy) NSArray<NSString *> *endpointModels;
+@property (nonatomic, copy) NSString *speechEndpointStatus;
 @end
 
 @implementation LocalSetupState
@@ -3112,7 +3113,7 @@ static void probeSpeechProvider(BridgeState *state,
     speecher::ProviderRegistry *registry = state->controller->providerRegistry();
     speecher::SpeechTranscriber *provider = registry->speechProvider(descriptor.id);
     if (!provider) {
-        answer(false, speecher::setupTranscriptionBlocked(false, QString()));
+        answer(false, speecher::setupTranscriptionBlocked(QString(), QString()));
         return;
     }
     std::optional<speecher::SpeechPrepareJob> job = provider->createPrepareJob(speech);
@@ -3224,9 +3225,9 @@ static void probeSpeechProvider(BridgeState *state,
                                            _state->controller->settings()->refinementProviderChosen()).toNSString();
 }
 
-- (BOOL)offersSetupSpeechProvider:(NSString *)providerId saved:(NSString *)saved localAvailable:(BOOL)localAvailable
+- (BOOL)offersSetupSpeechProvider:(NSString *)providerId localAvailable:(BOOL)localAvailable
 {
-    return speecher::offersSetupSpeechProvider(QString::fromNSString(providerId), QString::fromNSString(saved), localAvailable);
+    return speecher::offersSetupSpeechProvider(QString::fromNSString(providerId), localAvailable);
 }
 
 - (BOOL)isSetupSignInProvider:(NSString *)providerId
@@ -3261,17 +3262,19 @@ static void probeSpeechProvider(BridgeState *state,
 
 - (NSString *)setupTranscriptionDeadEnd:(BOOL)signInFound
                             localUsable:(BOOL)localUsable
-                          endpointSaved:(BOOL)endpointSaved
+                         endpointChosen:(BOOL)endpointChosen
               signInProvidersRegistered:(BOOL)signInProvidersRegistered
 {
-    return speecher::setupTranscriptionDeadEnd(signInFound, localUsable, endpointSaved,
+    return speecher::setupTranscriptionDeadEnd(signInFound, localUsable, endpointChosen,
                                                signInProvidersRegistered)
         .toNSString();
 }
 
-- (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
+- (NSString *)setupTranscriptionBlocked:(NSString *)providerId provider:(NSString *)providerLabel
 {
-    return speecher::setupTranscriptionBlocked(localSelected, QString::fromNSString(providerLabel)).toNSString();
+    return speecher::setupTranscriptionBlocked(QString::fromNSString(providerId),
+                                               QString::fromNSString(providerLabel))
+        .toNSString();
 }
 
 - (NSString *)setupMicrophoneBlocked:(BOOL)accessGranted
@@ -3337,6 +3340,7 @@ static void probeSpeechProvider(BridgeState *state,
     static_assert(int(SpeecherSetupTextGetOllama) == int(speecher::SetupText::GetOllama));
     static_assert(int(SpeecherSetupTextDownloadWithOllama) == int(speecher::SetupText::DownloadWithOllama));
     static_assert(int(SpeecherSetupTextEndpointModelHint) == int(speecher::SetupText::EndpointModelHint));
+    static_assert(int(SpeecherSetupTextEndpointConnect) == int(speecher::SetupText::EndpointConnect));
     static_assert(int(SpeecherSetupTextSessionShortcuts) == int(speecher::SetupText::SessionShortcuts));
     static_assert(int(SpeecherSetupTextSessionShortcutsLead) == int(speecher::SetupText::SessionShortcutsLead));
     return speecher::setupText(static_cast<speecher::SetupText>(text)).toNSString();
@@ -3812,6 +3816,7 @@ static LocalRunnerChoice *bridgedRunnerChoice(const speecher::RunnerChoice &reso
     const LiveFacts facts = setup.liveFacts();
     state.endpointStatus = facts.refinementEndpointStatus.toNSString();
     state.endpointModels = bridgedStrings(facts.refinementEndpointModels);
+    state.speechEndpointStatus = facts.speechEndpointStatus.toNSString();
     return state;
 }
 

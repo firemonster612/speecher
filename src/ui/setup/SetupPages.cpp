@@ -358,6 +358,59 @@ QWidget *makeGlyphLine(QWidget *parent, const QString &iconName, QLabel **textOu
     return line;
 }
 
+// A Custom Endpoint card's Model row: a model the server lists once
+// connected, or one typed, with Connect beside it. Both pages' endpoint
+// forms use it.
+struct EndpointModelControls {
+    QWidget *widget;
+    QComboBox *model;
+    QPushButton *connect;
+};
+
+EndpointModelControls makeEndpointModelControls(QWidget *host, const QString &objectNamePrefix,
+                                                const QString &saved)
+{
+    auto *controls = new QWidget(host);
+    auto *layout = new QHBoxLayout(controls);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(settings::relatedSpacing());
+    auto *model = new QComboBox(controls);
+    model->setObjectName(objectNamePrefix + QStringLiteral("Model"));
+    model->setEditable(true);
+    model->setInsertPolicy(QComboBox::NoInsert);
+    model->setMinimumContentsLength(18);
+    model->lineEdit()->setClearButtonEnabled(true);
+    model->setEditText(saved);
+    layout->addWidget(model);
+    auto *connect = new QPushButton(setupText(SetupText::EndpointConnect), controls);
+    connect->setObjectName(objectNamePrefix + QStringLiteral("Connect"));
+    layout->addWidget(connect);
+    return {controls, model, connect};
+}
+
+// Lists the models the last connection check found, keeping what is typed
+// and where the cursor is. A check that finds no model saved picks the
+// server's first, which `saved` then holds.
+void showEndpointModels(QComboBox *combo, const QStringList &models, const QString &saved)
+{
+    QStringList shown;
+    for (int i = 0; i < combo->count(); ++i) shown.append(combo->itemText(i));
+    if (shown != models) {
+        const QString typed = combo->currentText();
+        const int cursor = combo->lineEdit()->cursorPosition();
+        const QSignalBlocker blocker(combo);
+        combo->clear();
+        combo->addItems(models);
+        combo->setEditText(typed);
+        combo->lineEdit()->setCursorPosition(cursor);
+    }
+    if (combo->currentText().isEmpty() && !saved.isEmpty()) {
+        const QSignalBlocker blocker(combo);
+        combo->setCurrentIndex(combo->findText(saved));
+        combo->setEditText(saved);
+    }
+}
+
 } // namespace
 
 // The optional section under a step's provider details: what Speecher tries
@@ -497,9 +550,8 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     auto *group = new QButtonGroup(this);
     const QString savedProvider = m_settings.speechProvider();
     for (const ProviderDescriptor &provider : m_providers.speechProviders()) {
-        // The Local card is only a choice where the assistant can set it up,
-        // and a speech server is set up in Settings alone.
-        if (!offersSetupSpeechProvider(provider.id, savedProvider, m_local != nullptr)) {
+        // The Local card is only a choice where the assistant can set it up.
+        if (!offersSetupSpeechProvider(provider.id, localOffered())) {
             continue;
         }
         m_options.append(addOptionRow(choices, group, provider.id, provider.label,
@@ -555,8 +607,11 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     m_checkAgain->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     m_accuracyPass->setObjectName(QStringLiteral("codexFinalRetranscribe"));
     m_accuracyPass->setChecked(m_settings.codexFinalRetranscribe());
-    if (m_local) {
+    if (localOffered()) {
         layout->addWidget(makeLocalSection());
+    }
+    if (m_local) {
+        layout->addWidget(makeEndpointSection());
     }
     layout->addWidget(m_stats);
     // Under the facts about the chosen service, where the refinement page puts
@@ -739,10 +794,103 @@ QWidget *SpeechProviderSetupPage::makeLocalSection()
     return m_localSection;
 }
 
+// The speech Custom Endpoint's server, path, key and model, laid out as the
+// refinement step lays out its own, with the connection check under them.
+QWidget *SpeechProviderSetupPage::makeEndpointSection()
+{
+    m_endpointSection = new QWidget(this);
+    auto *layout = new QVBoxLayout(m_endpointSection);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(settings::relatedSpacing());
+    QFormLayout *card = addCard(layout, m_endpointSection, QString());
+    QWidget *host = card->parentWidget();
+    const SpeechEndpointSettings saved = m_settings.snapshot().speech.endpoint;
+
+    // Each field is its settings row, labelled and described as Settings does,
+    // and saves through it once it differs from what it last showed, never
+    // against a newly read secret.
+    const auto addField = [this, card, host](const QString &rowId, const QString &text) {
+        const SettingsRow &row = setupSchemaRow(rowId);
+        auto *field = new QLineEdit(text, host);
+        field->setObjectName(rowId);
+        field->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        settings::addCardRow(card, settings::makeRow(row.label, row.help, field, host), host);
+        connect(field, &QLineEdit::editingFinished, this, [this, field, rowId, shown = text]() mutable {
+            if (field->text() == shown) return;
+            shown = field->text();
+            saveEndpointField(rowId, shown);
+        });
+        return field;
+    };
+    m_endpointUrl = addField(QStringLiteral("speechEndpointUrl"), saved.baseUrl);
+    m_endpointPath = addField(QStringLiteral("speechEndpointPath"), saved.path);
+    m_endpointKey = addField(QStringLiteral("speechEndpointApiKey"), saved.apiKey);
+    m_endpointKey->setEchoMode(QLineEdit::Password);
+
+    const EndpointModelControls model =
+        makeEndpointModelControls(host, QStringLiteral("speechEndpoint"), saved.model);
+    m_endpointModel = model.model;
+    settings::addCardRow(card, settings::makeRow(setupSchemaRow(QStringLiteral("speechEndpointModel")).label,
+                                                 setupText(SetupText::EndpointModelHint), model.widget, host),
+                         host);
+    m_endpointStatus = new WrappingLabel(m_endpointSection);
+    m_endpointStatus->setObjectName(QStringLiteral("speechEndpointStatus"));
+    m_endpointStatus->setWordWrap(true);
+    layout->addWidget(m_endpointStatus);
+
+    connect(m_endpointModel, &QComboBox::currentTextChanged, this, [this](const QString &name) {
+        saveEndpointField(QStringLiteral("speechEndpointModel"), name);
+    });
+    connect(model.connect, &QPushButton::clicked, this, [this] {
+        for (QLineEdit *field : {m_endpointUrl, m_endpointPath, m_endpointKey}) {
+            emit field->editingFinished();
+        }
+        m_local->checkSpeechEndpoint(m_settings.snapshot().speech.endpoint);
+    });
+    connect(m_local, &LocalSetup::changed, this, &SpeechProviderSetupPage::showEndpointCheck);
+    return m_endpointSection;
+}
+
+void SpeechProviderSetupPage::saveEndpointField(const QString &rowId, const QString &value)
+{
+    AppSettings settings = m_settings.snapshot();
+    setupSchemaRow(rowId).apply(settings, value);
+    m_settings.applySnapshot(settings);
+    // Readiness is whether the endpoint has a server, which only the URL
+    // changes; the model saves on every keystroke.
+    if (rowId == QStringLiteral("speechEndpointUrl")) {
+        reprobeSelectedProvider();
+    }
+    showEndpointCheck();
+}
+
+void SpeechProviderSetupPage::showEndpointCheck()
+{
+    if (!m_endpointSection) {
+        return;
+    }
+    m_endpointSection->setVisible(endpointSelected());
+    const LiveFacts facts = m_local->liveFacts();
+    m_endpointStatus->setText(facts.speechEndpointStatus);
+    m_endpointStatus->setVisible(!facts.speechEndpointStatus.isEmpty());
+    showEndpointModels(m_endpointModel, facts.speechEndpointModels, m_settings.speechEndpointSettings().model);
+}
+
+bool SpeechProviderSetupPage::localOffered() const
+{
+    return m_local && m_providers.speechProvider(QStringLiteral("local"));
+}
+
 bool SpeechProviderSetupPage::localSelected() const
 {
     const int index = selectedIndex();
-    return m_local && index >= 0 && m_options.at(index).id == QStringLiteral("local");
+    return localOffered() && index >= 0 && m_options.at(index).id == QStringLiteral("local");
+}
+
+bool SpeechProviderSetupPage::endpointSelected() const
+{
+    const int index = selectedIndex();
+    return index >= 0 && m_options.at(index).id == QStringLiteral("endpoint");
 }
 
 const LocalModel &SpeechProviderSetupPage::localChoice() const
@@ -875,7 +1023,8 @@ QString SpeechProviderSetupPage::blockedReason() const
         return note;
     }
     const int index = selectedIndex();
-    return setupTranscriptionBlocked(localSelected(), index < 0 ? QString() : m_options.at(index).label);
+    return index < 0 ? setupTranscriptionBlocked(QString(), QString())
+                     : setupTranscriptionBlocked(m_options.at(index).id, m_options.at(index).label);
 }
 
 QString SpeechProviderSetupPage::readySummary() const
@@ -917,6 +1066,7 @@ void SpeechProviderSetupPage::selectProvider(const QString &providerId)
     m_accuracyRow->setVisible(providerId == QStringLiteral("codex"));
     updateSignInControls();
     showLocalChoice();
+    showEndpointCheck();
     showSelectedProvider();
     if (m_fallbacks) {
         m_fallbacks->refresh();
@@ -1005,7 +1155,7 @@ void SpeechProviderSetupPage::probeProvider(int index, quint64 generation)
     SpeechTranscriber *provider = m_providers.speechProvider(option.id);
     if (!provider) {
         finishProbe(index, generation,
-                    {false, setupTranscriptionBlocked(false, QString())});
+                    {false, setupTranscriptionBlocked(QString(), QString())});
         return;
     }
 
@@ -1045,7 +1195,7 @@ void SpeechProviderSetupPage::finishProbe(int index,
     option.ok = result.ok;
     option.message = result.message;
     // The Local row's status is its download, which showLocalRowStatus keeps.
-    if (option.id != QStringLiteral("local") || !m_local) {
+    if (option.id != QStringLiteral("local")) {
         setStatusColor(option.status, result.ok);
         option.status->setText(setupProviderVerdict(option.id, result.ok));
     }
@@ -1061,10 +1211,7 @@ QString SpeechProviderSetupPage::deadEnd() const
 {
     QStringList signIns;
     bool signInFound = false;
-    bool endpointSaved = false;
     for (const ProviderOptionRow &option : m_options) {
-        // Endpoint is only on the page when the person saved one.
-        endpointSaved = endpointSaved || option.id == QStringLiteral("endpoint");
         if (!isSetupSignInProvider(option.id)) {
             continue;
         }
@@ -1074,7 +1221,7 @@ QString SpeechProviderSetupPage::deadEnd() const
     }
     // canRunAnyModel stays optimistic until the hardware probe answers.
     return setupTranscriptionDeadEnd(signInFound || m_signIn.anyUsableAccount(signIns),
-                                     m_local && m_local->canRunAnyModel(), endpointSaved,
+                                     localOffered() && m_local->canRunAnyModel(), endpointSelected(),
                                      !signIns.isEmpty());
 }
 
@@ -1100,7 +1247,7 @@ void SpeechProviderSetupPage::showProviderStatus()
     if (index < 0) {
         m_status->show();
         setStatusColor(m_status, false);
-        m_status->setText(setupTranscriptionBlocked(false, QString()));
+        m_status->setText(setupTranscriptionBlocked(QString(), QString()));
         m_status->setToolTip(QString());
         m_statusGlyph->show();
         m_hint->hide();
@@ -1143,16 +1290,22 @@ void SpeechProviderSetupPage::showProviderStatus()
     }
     setStatusColor(m_status, option.ok);
     // A sign-in's own message names files and commands; the hint below
-    // already says what to do, so that message is there on hover only. Any
-    // other failure, such as a Custom Endpoint without a URL, is the reason.
-    const bool showsReason = !isSetupSignInProvider(option.id) && !option.message.isEmpty();
-    m_status->setText(option.ok      ? setupProviderReady(option.label)
+    // already says what to do, so that message is there on hover only. The
+    // endpoint's sends people to Settings while its fields are on this page,
+    // so core's reason replaces it. Any other failure is the reason.
+    const bool endpoint = option.id == QStringLiteral("endpoint");
+    const bool showsReason = !isSetupSignInProvider(option.id) && !endpoint && !option.message.isEmpty();
+    // Like the Local card, the endpoint's form says how its server answered,
+    // so a ready one needs no line of its own.
+    m_status->setText(option.ok      ? (endpoint ? QString() : setupProviderReady(option.label))
                       : showsReason ? option.message
-                                    : setupTranscriptionBlocked(false, option.label));
-    m_status->setToolTip(option.ok || showsReason ? QString() : option.message);
+                                    : setupTranscriptionBlocked(option.id, option.label));
+    m_status->setVisible(!m_status->text().isEmpty());
+    m_status->setToolTip(option.ok || showsReason || endpoint ? QString() : option.message);
     m_statusGlyph->setVisible(!option.ok);
-    m_hint->setVisible(!option.ok);
-    m_checkAgain->setVisible(!option.ok);
+    // The endpoint's fields say what server it takes, and Connect checks it.
+    m_hint->setVisible(!option.ok && !endpoint);
+    m_checkAgain->setVisible(!option.ok && !endpoint);
     setReady(option.ok);
 }
 
@@ -1169,7 +1322,7 @@ void SpeechProviderSetupPage::autoSelectReadyProvider()
         if (isSetupSignInProvider(option.id)) signIns.append(option.id);
     }
     const auto chosen = setupSpeechChoice(m_options.at(index).id, ready,
-                                          m_local && m_local->canRunAnyModel(),
+                                          localOffered() && m_local->canRunAnyModel(),
                                           m_signIn.anyUsableAccount(signIns), m_userSelected);
     for (const auto &option : m_options) {
         if (option.id == chosen) option.button->setChecked(true);
@@ -1892,24 +2045,13 @@ QWidget *RefinementSetupPage::makeEndpointDetail()
                                                  m_endpointKey, host),
                          host);
 
-    auto *modelControls = new QWidget(host);
-    auto *modelLayout = new QHBoxLayout(modelControls);
-    modelLayout->setContentsMargins(0, 0, 0, 0);
-    modelLayout->setSpacing(settings::relatedSpacing());
-    m_endpointModel = new QComboBox(modelControls);
-    m_endpointModel->setObjectName(QStringLiteral("refinementEndpointModel"));
-    m_endpointModel->setEditable(true);
-    m_endpointModel->setInsertPolicy(QComboBox::NoInsert);
-    m_endpointModel->setMinimumContentsLength(18);
-    m_endpointModel->lineEdit()->setClearButtonEnabled(true);
-    m_endpointModel->setEditText(saved.model);
-    modelLayout->addWidget(m_endpointModel);
-    auto *connectButton = new QPushButton(QStringLiteral("Connect"), modelControls);
-    connectButton->setObjectName(QStringLiteral("refinementEndpointConnect"));
-    modelLayout->addWidget(connectButton);
+    const EndpointModelControls model =
+        makeEndpointModelControls(host, QStringLiteral("refinementEndpoint"), saved.model);
+    m_endpointModel = model.model;
+    QPushButton *connectButton = model.connect;
     settings::addCardRow(card, settings::makeRow(setupSchemaRow(QStringLiteral("refinementEndpointModel")).label,
                                                  setupText(SetupText::EndpointModelHint),
-                                                 modelControls, host),
+                                                 model.widget, host),
                          host);
     m_endpointStatus = new WrappingLabel(m_endpointDetail);
     m_endpointStatus->setObjectName(QStringLiteral("refinementEndpointStatus"));
@@ -1957,24 +2099,8 @@ void RefinementSetupPage::showEndpointCheck()
     const LiveFacts facts = m_local->liveFacts();
     m_endpointStatus->setText(facts.refinementEndpointStatus);
     m_endpointStatus->setVisible(!facts.refinementEndpointStatus.isEmpty());
-    QStringList shown;
-    for (int i = 0; i < m_endpointModel->count(); ++i) shown.append(m_endpointModel->itemText(i));
-    if (shown != facts.refinementEndpointModels) {
-        const QString typed = m_endpointModel->currentText();
-        const int cursor = m_endpointModel->lineEdit()->cursorPosition();
-        const QSignalBlocker blocker(m_endpointModel);
-        m_endpointModel->clear();
-        m_endpointModel->addItems(facts.refinementEndpointModels);
-        m_endpointModel->setEditText(typed);
-        m_endpointModel->lineEdit()->setCursorPosition(cursor);
-    }
-    // A check that finds no model saved picks the server's first.
-    const QString saved = m_settings.refinementEndpointSettings().model;
-    if (m_endpointModel->currentText().isEmpty() && !saved.isEmpty()) {
-        const QSignalBlocker blocker(m_endpointModel);
-        m_endpointModel->setCurrentIndex(m_endpointModel->findText(saved));
-        m_endpointModel->setEditText(saved);
-    }
+    showEndpointModels(m_endpointModel, facts.refinementEndpointModels,
+                       m_settings.refinementEndpointSettings().model);
 }
 
 void RefinementSetupPage::showLocalRunner()
