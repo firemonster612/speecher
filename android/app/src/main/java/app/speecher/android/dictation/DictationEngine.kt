@@ -105,11 +105,14 @@ class DictationEngine(
 
     /** The session's audio, kept for the batch pass. A retried session appends to it. */
     private val recorded = ByteArrayOutputStream()
+    /** The dictation outgrew what the batch pass transcribes, so [recorded] is dropped. */
+    private var recordedTooLong = false
     @Volatile private var session = 0
 
     @Synchronized
     fun start(provider: Provider) {
         recorded.reset()
+        recordedTooLong = false
         startSession(provider, "")
     }
 
@@ -276,9 +279,14 @@ class DictationEngine(
                         if (
                             transcribe != null &&
                                 sourceProvider.hasBatchTranscription &&
-                                recorded.size() + audio.size <= MAX_RECORDED_BYTES
-                        )
+                                !recordedTooLong
+                        ) {
                             recorded.write(audio)
+                            if (recorded.size() > MAX_RETRANSCRIBE_BYTES) {
+                                recorded.reset()
+                                recordedTooLong = true
+                            }
+                        }
                         publish(listening(level))
                     }
                 }
@@ -420,7 +428,7 @@ class DictationEngine(
     /**
      * Both Insert buttons: ChatGPT re-transcribes the whole recording for accuracy when the extra
      * pass is on, then [cleanup], if any, tidies the text. A failed or truncated batch pass falls
-     * back to the streamed transcript.
+     * back to the streamed transcript, and a recording too long for it skips the pass.
      */
     private fun insertBest(cleanup: Provider?) {
         val streamed = transcript()
@@ -526,8 +534,12 @@ class DictationEngine(
  */
 private val RECONNECT_BACKOFF_MS = longArrayOf(1_000, 3_000)
 
-// 90 s of 16 kHz mono PCM16: the batch endpoint transcribes no more than that.
-private const val MAX_RECORDED_BYTES = 90 * 16000 * 2
+/**
+ * 80 s of 16 kHz mono PCM16. The batch endpoint transcribes only the first ~86 s of a recording and
+ * returns that prefix as a success (docs/research/0004), so a longer dictation keeps its streamed
+ * transcript rather than lose its tail; 80 s keeps a margin under the observed cutoff.
+ */
+private const val MAX_RETRANSCRIBE_BYTES = 80 * 16000 * 2
 
 class SignInRequired : Exception()
 

@@ -942,6 +942,44 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `ChatGPT batch pass runs up to 80 s of audio and is skipped past it`() {
+        val capture = Capture()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val uploadSizes = mutableListOf<Int>()
+        val commits = mutableListOf<String>()
+        fun engine() =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, _, _ -> error("plain Insert never cleans up") },
+                { pcm ->
+                    uploadSizes.add(pcm.size)
+                    "Batch text."
+                },
+                { commits.add(it) },
+                Executor { it.run() },
+                {},
+            )
+        // One second of 16 kHz mono PCM16.
+        val second = ByteArray(32_000)
+        for (seconds in listOf(80, 81)) {
+            val engine = engine()
+            engine.start(Provider.ChatGpt)
+            speech(SpeechEvent.Connected)
+            repeat(seconds) { capture.audio?.invoke(second, 0f) }
+            speech(SpeechEvent.Final("streamed text"))
+            engine.insert()
+            speech(SpeechEvent.Completed)
+        }
+        assertEquals(listOf(2_560_000), uploadSizes)
+        assertEquals(listOf("Batch text.", "streamed text"), commits)
+    }
+
+    @Test
     fun `ChatGPT plain insert commits the batch text with the extra pass on, the stream with it off`() {
         val capture = Capture()
         lateinit var speech: (SpeechEvent) -> Unit
