@@ -109,14 +109,16 @@ jobs:
             --notes-file "$notes"
 
       # One prerelease under a moving tag, as the desktop's Nightly Build. The app reads the
-      # version from the notes' first line, so the APK goes up before the notes name it.
+      # version from the notes' first line and downloads the APK named for it, so each build
+      # attaches its own APK, never replaced, and the notes change only once it is up.
       - name: Publish the Nightly Build
         if: github.ref_type == 'branch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag=android-nightly
-          apk=Speecher-nightly.apk
+          # GitHub renames + in asset names; the app looks for _ in its place.
+          apk="Speecher-${VERSION//+/_}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
           cat > nightly-notes.md <<EOF
           Version: $VERSION
@@ -124,19 +126,34 @@ jobs:
 
           This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
           EOF
-          # Through the API: the checkout keeps no credentials to push a tag with.
-          if gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" > /dev/null 2>&1; then
+          title="Speecher for Android Nightly Build $VERSION"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            published="$(gh release view "$tag" --json body --jq .body \
+              | sed -n 's/^Version: .*-nightly\.\([0-9]*\)+.*$/\1/p')"
+            # As the desktop's publisher: re-running an older build must not move the nightly back.
+            if [ -n "$published" ] && [ "$published" -gt "$GITHUB_RUN_NUMBER" ]; then
+              echo "::error::Refusing to move the Nightly Build back from build $published to $GITHUB_RUN_NUMBER"
+              exit 1
+            fi
+            # A re-run of this same build finds its APK already up.
+            if ! gh release view "$tag" --json assets --jq '.assets[].name' | grep -qxF "$apk"; then
+              gh release upload "$tag" "$apk"
+            fi
+            # Through the API: the checkout keeps no credentials to push a tag with.
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" \
               -f sha="$GITHUB_SHA" -F force=true > /dev/null
+            gh release edit "$tag" --prerelease --title "$title" --notes-file nightly-notes.md
           else
             gh api "repos/$GITHUB_REPOSITORY/git/refs" \
               -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" > /dev/null
-          fi
-          title="Speecher for Android Nightly Build $VERSION"
-          if gh release view "$tag" > /dev/null 2>&1; then
-            gh release upload "$tag" "$apk" --clobber
-            gh release edit "$tag" --prerelease --title "$title" --notes-file nightly-notes.md
-          else
             gh release create "$tag" "$apk" --prerelease --latest=false \
               --title "$title" --notes-file nightly-notes.md
           fi
+          # Keep the five newest builds' APKs, so an offer made just before a newer build still
+          # downloads what it named.
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.assets[] | "\(.id) \(.name)"' \
+            | sed -n 's/^\([0-9]*\) Speecher-.*-nightly\.\([0-9]*\)_g.*\.apk$/\2 \1/p' \
+            | sort -rn | tail -n +6 \
+            | while read -r _ id; do
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id" --silent
+              done

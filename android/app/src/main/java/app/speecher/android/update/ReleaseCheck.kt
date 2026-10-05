@@ -14,7 +14,13 @@ enum class UpdateChannel(val label: String, val description: String, val feed: S
     Nightly("Nightly", "Untested builds from every push to master.", "Nightly Build"),
 }
 
-data class ApkUpdate(val version: String, val downloadUrl: String, val pageUrl: String)
+/** [replacesNightly] when a check on Stable offers it in place of the installed Nightly Build. */
+data class ApkUpdate(
+    val version: String,
+    val downloadUrl: String,
+    val pageUrl: String,
+    val replacesNightly: Boolean = false,
+)
 
 /** One Android release: its version, its GitHub notes and page, and its APK once attached. */
 data class AndroidRelease(
@@ -38,6 +44,16 @@ private const val TAG_PREFIX = "android-v"
 private const val NIGHTLY_TAG = "android-nightly"
 
 private const val NIGHTLY_VERSION_LINE = "Version: "
+
+const val RELEASES_PAGE = "https://github.com/firemonster612/speecher/releases"
+
+/**
+ * The APK a release attaches for [version]. Every nightly attaches its own, so an offer always
+ * downloads the build it names; `+` becomes `_` because GitHub renames it in asset names.
+ */
+private fun apkName(version: String) = "Speecher-${version.replace('+', '_')}.apk"
+
+private fun isNightly(version: String) = "-nightly." in version
 
 /** Every Android release in the repository's release list. Call on a worker thread. */
 fun androidReleases(
@@ -73,7 +89,7 @@ private fun androidRelease(release: JsonObject): AndroidRelease? {
     val apk =
         (release["assets"] as? JsonArray)
             ?.mapNotNull { it as? JsonObject }
-            ?.firstOrNull { it.text("name")?.endsWith(".apk", ignoreCase = true) == true }
+            ?.firstOrNull { it.text("name") == apkName(version) }
     return AndroidRelease(
         version,
         notes,
@@ -86,26 +102,33 @@ private fun androidRelease(release: JsonObject): AndroidRelease? {
 private fun JsonObject.text(key: String): String? = this[key]?.jsonPrimitive?.content
 
 /**
- * The highest release on [channel], if it is newer than [installedVersion] and has an APK attached.
- * Picked by version, since GitHub orders the list by tagged commit date. The Nightly channel offers
- * Stable Releases too, so a nightly moves on to the release it led up to.
+ * The highest release on [channel], if it is newer than [installedVersion] and has its APK
+ * attached. Picked by version, since GitHub orders the list by tagged commit date. The Nightly
+ * channel offers Stable Releases too, so a nightly moves on to the release it led up to. As on the
+ * desktop, a [manual] check on Stable from a Nightly Build offers the Stable Release even when it
+ * is older: choosing Stable is the user asking to go back.
  */
 fun newerApk(
     releases: List<AndroidRelease>,
     channel: UpdateChannel,
     installedVersion: String,
+    manual: Boolean = false,
 ): ApkUpdate? {
+    val replacesNightly = channel == UpdateChannel.Stable && isNightly(installedVersion)
     val newest =
         releases
             .filter { channel == UpdateChannel.Nightly || !it.nightly }
             .maxWithOrNull { left, right -> compareVersions(left.version, right.version) }
-            ?.takeIf { compareVersions(it.version, installedVersion) > 0 } ?: return null
-    return newest.apkUrl?.let { ApkUpdate(newest.version, it, newest.pageUrl) }
+            ?.takeIf {
+                compareVersions(it.version, installedVersion) > 0 || (manual && replacesNightly)
+            } ?: return null
+    return newest.apkUrl?.let { ApkUpdate(newest.version, it, newest.pageUrl, replacesNightly) }
 }
 
 /**
- * What's New: every release after [since] up to [installedVersion], newest first. With no [since],
- * or none in between, the newest release up to [installedVersion] stands in.
+ * What's New: every Stable Release after [since] up to [installedVersion], newest first. With no
+ * [since], or none in between, the newest one up to [installedVersion] stands in, which is all a
+ * Nightly Build gets: the nightly's own notes say only that it is untested.
  */
 fun releaseNotes(
     releases: List<AndroidRelease>,
@@ -114,7 +137,7 @@ fun releaseNotes(
 ): List<AndroidRelease> {
     val installed =
         releases
-            .filter { compareVersions(it.version, installedVersion) <= 0 }
+            .filter { !it.nightly && compareVersions(it.version, installedVersion) <= 0 }
             .sortedWith { left, right -> compareVersions(right.version, left.version) }
     return installed
         .filter { since != null && compareVersions(it.version, since) > 0 }

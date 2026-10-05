@@ -33,7 +33,6 @@ import app.speecher.android.auth.SignInViewModel
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationRecord
-import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SetupStatus
@@ -56,19 +55,23 @@ import app.speecher.android.ui.WhatsNew
 import app.speecher.android.update.AndroidRelease
 import app.speecher.android.update.ApkUpdate
 import app.speecher.android.update.INSTALL_STATUS
+import app.speecher.android.update.INSTALL_VERSION
+import app.speecher.android.update.RELEASES_PAGE
 import app.speecher.android.update.RETRY_MILLIS
 import app.speecher.android.update.UpdateChannel
 import app.speecher.android.update.UpdateState
 import app.speecher.android.update.androidReleases
+import app.speecher.android.update.commitApk
 import app.speecher.android.update.downloadApk
-import app.speecher.android.update.installApk
 import app.speecher.android.update.installFailure
 import app.speecher.android.update.installing
 import app.speecher.android.update.newerApk
 import app.speecher.android.update.releaseNotes
+import app.speecher.android.update.stageApk
 import app.speecher.android.update.untilCheck
 import app.speecher.android.update.whatsNewSince
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -103,6 +106,8 @@ class MainActivity : ComponentActivity() {
     private var notesSince: String? = null
     private var whatsNewNotes by mutableStateOf<Result<List<AndroidRelease>>?>(null)
     private var whatsNewFrom = Page.Home
+    // Counts checks begun and channel changes, so only the latest check reports what it found.
+    private var checkCount = 0
     private var page by mutableStateOf(Page.Home)
     // Where leaving setup goes: Settings when its Setup assistant row opened it, otherwise Home.
     private var setupFrom = Page.Home
@@ -276,7 +281,15 @@ class MainActivity : ComponentActivity() {
                         }
                     Page.WhatsNew ->
                         SpeecherScreen("What's New", onBack = ::back) {
-                            WhatsNew(whatsNewNotes, ::loadWhatsNew)
+                            WhatsNew(
+                                whatsNewNotes,
+                                ::loadWhatsNew,
+                                // A Nightly Build has no notes of its own, as on the desktop.
+                                onViewReleases =
+                                    ::openReleases.takeIf {
+                                        "-nightly." in BuildConfig.VERSION_NAME
+                                    },
+                            )
                         }
                 }
             }
@@ -339,8 +352,15 @@ class MainActivity : ComponentActivity() {
      */
     private fun handleIntent(intent: Intent) {
         if (intent.hasExtra(INSTALL_STATUS)) {
-            updateState.update?.let {
-                updateState = installFailure(it, intent.getIntExtra(INSTALL_STATUS, 0))
+            // The install waiting on this answer, or its offer once the activity was recreated.
+            val state = updateState
+            val update =
+                state.update?.takeIf {
+                    it.version == intent.getStringExtra(INSTALL_VERSION) &&
+                        (state is UpdateState.Installing || state is UpdateState.Available)
+                }
+            if (update != null) {
+                updateState = installFailure(update, intent.getIntExtra(INSTALL_STATUS, 0))
             }
             return
         }
@@ -408,7 +428,8 @@ class MainActivity : ComponentActivity() {
         val version = updatePreferences.getString("version", null) ?: return
         val url = updatePreferences.getString("url", null) ?: return
         val page = updatePreferences.getString("page", null) ?: return
-        updateState = UpdateState.Available(ApkUpdate(version, url, page))
+        val replacesNightly = updatePreferences.getBoolean("replaces-nightly", false)
+        updateState = UpdateState.Available(ApkUpdate(version, url, page, replacesNightly))
     }
 
     /** What Home's card shows: anything about an update but an offer dismissed for its version. */
@@ -433,20 +454,36 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Whether the check reached the releases list; only one that did counts as the last check. An
-     * offer already showing stays through the check, and through a check that fails.
+     * offer already showing stays through the check, and through a check that fails. A check the
+     * user asked for can offer going back to Stable from a Nightly Build.
      */
-    private suspend fun checkForUpdate(): Boolean {
+    private suspend fun checkForUpdate(manual: Boolean = false): Boolean {
         if (updateState.installing) return false
-        val offer = updateState as? UpdateState.Available
+        val check = ++checkCount
+        val before = updateState
+        val offer = before as? UpdateState.Available
         if (offer == null) updateState = UpdateState.Checking
         val now = System.currentTimeMillis()
         val channel = settings.updateChannel
         val result =
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    newerApk(androidReleases(sharedHttp), channel, BuildConfig.VERSION_NAME)
+            try {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        newerApk(
+                            androidReleases(sharedHttp),
+                            channel,
+                            BuildConfig.VERSION_NAME,
+                            manual,
+                        )
+                    }
                 }
+            } catch (cancelled: CancellationException) {
+                // As when automatic checks are turned off mid-check: Check now works again.
+                if (check == checkCount && updateState == UpdateState.Checking) updateState = before
+                throw cancelled
             }
+        // A newer check, or a channel change, asked a different question.
+        if (check != checkCount) return false
         // The offer an earlier version or channel found is stale either way; the new version is
         // recorded only with a check that counts, so a failure after an upgrade retries instead of
         // waiting out what was left of the old version's interval.
@@ -466,6 +503,7 @@ class MainActivity : ComponentActivity() {
                         putString("version", release.version)
                         putString("url", release.downloadUrl)
                         putString("page", release.pageUrl)
+                        putBoolean("replaces-nightly", release.replacesNightly)
                     }
                 }
             }
@@ -477,6 +515,7 @@ class MainActivity : ComponentActivity() {
         remove("version")
         remove("url")
         remove("page")
+        remove("replaces-nightly")
     }
 
     /**
@@ -490,7 +529,7 @@ class MainActivity : ComponentActivity() {
                 if (state.manualInstall)
                     startActivity(Intent(Intent.ACTION_VIEW, state.update.pageUrl.toUri()))
                 else installUpdate(state.update)
-            else -> lifecycleScope.launch { checkForUpdate() }
+            else -> lifecycleScope.launch { checkForUpdate(manual = true) }
         }
     }
 
@@ -498,37 +537,58 @@ class MainActivity : ComponentActivity() {
         updateState = UpdateState.Downloading(release, null)
         lifecycleScope.launch {
             val apk = File(cacheDir, "update.apk")
-            try {
-                val downloaded = runCatching {
-                    withContext(Dispatchers.IO) {
-                        downloadApk(sharedHttp, release, apk) {
-                            updateState = UpdateState.Downloading(release, it)
-                        }
+            val downloaded = runCatching {
+                withContext(Dispatchers.IO) {
+                    downloadApk(sharedHttp, release, apk) {
+                        updateState = UpdateState.Downloading(release, it)
                     }
                 }
-                if (downloaded.isFailure) {
-                    updateState =
-                        UpdateState.InstallFailed(
-                            release,
-                            "Couldn't download the update. Check your connection and try again.",
-                        )
-                    return@launch
-                }
-                // Replacing the app ends its process, and with it a dictation in progress.
-                if (ActiveDictation.engine != null) {
-                    updateState = UpdateState.WaitingForDictation(release)
-                    while (ActiveDictation.engine != null) delay(500)
-                }
-                updateState =
-                    runCatching {
-                            withContext(Dispatchers.IO) { installApk(this@MainActivity, apk) }
-                        }
-                        .fold(
-                            { UpdateState.Available(release) },
-                            { installFailure(release, PackageInstaller.STATUS_FAILURE) },
-                        )
-            } finally {
+            }
+            if (downloaded.isFailure) {
                 apk.delete()
+                updateState =
+                    UpdateState.InstallFailed(
+                        release,
+                        "Couldn't download the update. Check your connection and try again.",
+                    )
+                return@launch
+            }
+            val staged = runCatching {
+                withContext(Dispatchers.IO) {
+                    try {
+                        stageApk(this@MainActivity, apk)
+                    } finally {
+                        apk.delete()
+                    }
+                }
+            }
+            val session = staged.getOrElse {
+                updateState = installFailure(release, PackageInstaller.STATUS_FAILURE)
+                return@launch
+            }
+            var committed = false
+            try {
+                // Replacing the app ends its process, and a dictation with it; and Android only
+                // shows its prompt, or the failure, over an app on screen. Nothing suspends between
+                // this check and the commit, and the chip starts dictations on this same thread.
+                while (
+                    ActiveDictation.engine != null ||
+                        !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                ) {
+                    if (ActiveDictation.engine != null) {
+                        updateState = UpdateState.WaitingForDictation(release)
+                    }
+                    delay(500)
+                }
+                updateState = UpdateState.Installing(release)
+                committed = true
+                runCatching { commitApk(this@MainActivity, session, release) }
+                    .onFailure {
+                        updateState = installFailure(release, PackageInstaller.STATUS_FAILURE)
+                    }
+            } finally {
+                // Left before the commit, as when the activity goes: nothing will commit it.
+                if (!committed) packageManager.packageInstaller.abandonSession(session)
             }
         }
     }
@@ -601,6 +661,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openReleases() {
+        startActivity(Intent(Intent.ACTION_VIEW, RELEASES_PAGE.toUri()))
+    }
+
     private fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
@@ -617,9 +681,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun changeSettings(changed: SpeecherSettings) {
-        // What the other channel offered, or found, no longer applies.
-        if (changed.updateChannel != settings.updateChannel && !updateState.installing) {
-            updateState = UpdateState.Idle
+        // What the other channel offered, or is still looking for, no longer applies.
+        if (changed.updateChannel != settings.updateChannel) {
+            checkCount++
+            if (!updateState.installing) updateState = UpdateState.Idle
         }
         settingsStore.save(changed)
         settings = changed

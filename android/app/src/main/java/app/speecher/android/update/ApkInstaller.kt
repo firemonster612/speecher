@@ -8,12 +8,14 @@ import android.content.pm.PackageInstaller
 import androidx.core.content.IntentCompat
 import app.speecher.android.BuildConfig
 import app.speecher.android.MainActivity
+import app.speecher.android.dictation.ActiveDictation
 import java.io.File
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-/** The MainActivity extra carrying the status Android refused an update with. */
+/** The MainActivity extras carrying the status Android refused an update with, and its version. */
 const val INSTALL_STATUS = "install_status"
+const val INSTALL_VERSION = "install_version"
 
 /**
  * Downloads [update]'s APK to [file] once the user chooses it, reporting each whole percent when
@@ -44,8 +46,10 @@ fun downloadApk(http: OkHttpClient, update: ApkUpdate, file: File, onProgress: (
     }
 }
 
-/** Hands a downloaded APK to Android's installer, which answers [InstallResultReceiver]. */
-fun installApk(context: Context, apk: File) {
+/**
+ * Copies a downloaded APK into a new installer session, ready to commit. Call on a worker thread.
+ */
+fun stageApk(context: Context, apk: File): Int {
     val installer = context.packageManager.packageInstaller
     val params =
         PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
@@ -61,18 +65,36 @@ fun installApk(context: Context, apk: File) {
                 apk.inputStream().use { it.copyTo(output) }
                 session.fsync(output)
             }
-            val callback =
-                PendingIntent.getBroadcast(
-                    context,
-                    id,
-                    Intent(context, InstallResultReceiver::class.java)
-                        .setAction("app.speecher.android.INSTALL_RESULT"),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-                )
-            session.commit(callback.intentSender)
         }
     } catch (error: Exception) {
         installer.abandonSession(id)
+        throw error
+    }
+    return id
+}
+
+/**
+ * Commits a staged session for [update]: Android replaces the app, or answers
+ * [InstallResultReceiver]. Call on the main thread, where the chip starts dictations, right after
+ * seeing none running; from here until Android answers, the chip starts none.
+ */
+fun commitApk(context: Context, sessionId: Int, update: ApkUpdate) {
+    val installer = context.packageManager.packageInstaller
+    ActiveDictation.installingUpdate = true
+    try {
+        val callback =
+            PendingIntent.getBroadcast(
+                context,
+                sessionId,
+                Intent(context, InstallResultReceiver::class.java)
+                    .setAction("app.speecher.android.INSTALL_RESULT")
+                    .putExtra(INSTALL_VERSION, update.version),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            )
+        installer.openSession(sessionId).use { it.commit(callback.intentSender) }
+    } catch (error: Exception) {
+        ActiveDictation.installingUpdate = false
+        installer.abandonSession(sessionId)
         throw error
     }
 }
@@ -100,17 +122,23 @@ class InstallResultReceiver : BroadcastReceiver() {
         when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)) {
             // Android replaces the app, ending this process.
             PackageInstaller.STATUS_SUCCESS -> Unit
+            // Android replaces the app only once the user confirms in its prompt, which a
+            // dictation cannot be running behind; the chip may start them again.
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                ActiveDictation.installingUpdate = false
                 val confirmation =
                     IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
                 confirmation?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let(context::startActivity)
             }
-            else ->
+            else -> {
+                ActiveDictation.installingUpdate = false
                 context.startActivity(
                     Intent(context, MainActivity::class.java)
                         .putExtra(INSTALL_STATUS, status)
+                        .putExtra(INSTALL_VERSION, intent.getStringExtra(INSTALL_VERSION))
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
+            }
         }
     }
 }

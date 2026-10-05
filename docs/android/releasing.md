@@ -28,7 +28,7 @@ Android releases are tagged `android-v<versionName>` and published with `--lates
 
 ## Nightly Builds
 
-Every master push that touches `android/` also runs the workflow. It builds and signs the APK as above with the version `<last android-v tag, patch + 1>-nightly.<run number>+g<commit>`, so a nightly sorts above the release before it and below the next one, and publishes it as a prerelease under the moving `android-nightly` tag, replacing the previous nightly. The release body starts with a `Version:` line, which the app reads because the tag carries no version.
+Every master push that touches `android/` also runs the workflow. It builds and signs the APK as above with the version `<last android-v tag, patch + 1>-nightly.<run number>+g<commit>`, so a nightly sorts above the release before it and below the next one, and publishes it as a prerelease under the moving `android-nightly` tag, replacing the previous nightly. The release body starts with a `Version:` line, which the app reads because the tag carries no version. Each build attaches its own `Speecher-<version>.apk` (with `_` for `+`), which is never replaced, and the body changes only once it is up, so an offer always downloads the build it names; the five newest builds' APKs are kept. Re-running an older run fails rather than moving the nightly back.
 
 The workflow reads the key from two repository secrets. Set them once:
 

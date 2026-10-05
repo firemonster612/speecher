@@ -83,11 +83,17 @@ internal fun checkRow(state: UpdateState, channel: UpdateChannel): CheckRow =
         is UpdateState.Downloading -> CheckRow("Downloading…", downloadingText(state), false)
         is UpdateState.WaitingForDictation ->
             CheckRow("Installing…", INSTALLING_AFTER_DICTATION, false)
+        is UpdateState.Installing -> CheckRow("Installing…", installingText(state), false)
         is UpdateState.InstallFailed -> CheckRow(retryCaption(state), state.message)
     }
 
 internal fun availableText(update: ApkUpdate) =
-    "Speecher ${versionDisplay(update.version)} is available"
+    if (update.replacesNightly)
+        "Switch to Stable Release ${update.version} (replaces this Nightly Build)"
+    else "Speecher ${versionDisplay(update.version)} is available"
+
+internal fun installingText(state: UpdateState.Installing) =
+    "Installing Speecher ${versionDisplay(state.update.version)}…"
 
 internal fun downloadingText(state: UpdateState.Downloading): String =
     "Downloading Speecher ${versionDisplay(state.update.version)}" +

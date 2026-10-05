@@ -23,6 +23,9 @@ sealed interface UpdateState {
     /** Downloaded and held, because replacing the app would end the running dictation. */
     data class WaitingForDictation(override val update: ApkUpdate) : UpdateState
 
+    /** Handed to Android's installer, until it answers with a prompt, a failure or the new app. */
+    data class Installing(override val update: ApkUpdate) : UpdateState
+
     /** [manualInstall] when only installing from the release page can work. */
     data class InstallFailed(
         override val update: ApkUpdate,
@@ -33,4 +36,7 @@ sealed interface UpdateState {
 
 /** Whether an update is on its way in, which a check must not replace. */
 val UpdateState.installing: Boolean
-    get() = this is UpdateState.Downloading || this is UpdateState.WaitingForDictation
+    get() =
+        this is UpdateState.Downloading ||
+            this is UpdateState.WaitingForDictation ||
+            this is UpdateState.Installing

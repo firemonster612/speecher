@@ -7,6 +7,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -49,9 +50,14 @@ internal fun noteLines(markdown: String): List<NoteLine> {
 
 /**
  * Release notes for the installed version and those since the last one seen; null while they load.
+ * [onViewReleases] adds a link to every release, for a build without notes of its own.
  */
 @Composable
-fun WhatsNew(notes: Result<List<AndroidRelease>>?, onRetry: () -> Unit) {
+fun WhatsNew(
+    notes: Result<List<AndroidRelease>>?,
+    onRetry: () -> Unit,
+    onViewReleases: (() -> Unit)? = null,
+) {
     val padding = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
     when {
         notes == null ->
@@ -73,6 +79,9 @@ fun WhatsNew(notes: Result<List<AndroidRelease>>?, onRetry: () -> Unit) {
                 Section("Speecher ${versionDisplay(release.version)}")
                 noteLines(release.notes).forEach { NoteRow(it, padding) }
             }
+    }
+    if (notes?.isSuccess == true && onViewReleases != null) {
+        TextButton(onViewReleases, Modifier.padding(horizontal = 4.dp)) { Text("View releases") }
     }
 }
 
@@ -97,7 +106,15 @@ private fun NoteRow(line: NoteLine, modifier: Modifier) {
 
 @PreviewLightDark
 @Composable
-internal fun WhatsNewPreview() = SpeecherTheme {
+internal fun WhatsNewPreview() = WhatsNewPreview(onViewReleases = null)
+
+/** On a Nightly Build: the newest Stable Release's notes, and a link to every release. */
+@PreviewLightDark
+@Composable
+internal fun WhatsNewNightlyPreview() = WhatsNewPreview(onViewReleases = {})
+
+@Composable
+private fun WhatsNewPreview(onViewReleases: (() -> Unit)?) = SpeecherTheme {
     SpeecherScreen("What's New", onBack = {}) {
         WhatsNew(
             Result.success(
@@ -122,6 +139,7 @@ internal fun WhatsNewPreview() = SpeecherTheme {
                 )
             ),
             {},
+            onViewReleases,
         )
     }
 }

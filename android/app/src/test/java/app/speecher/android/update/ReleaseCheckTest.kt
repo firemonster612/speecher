@@ -21,7 +21,7 @@ class ReleaseCheckTest {
             """[
               {"tag_name":"v0.3.0","prerelease":false,"body":"desktop","html_url":"https://example.com/v0.3.0","assets":[{"name":"Speecher-x86_64.AppImage","browser_download_url":"https://example.com/appimage"}]},
               {"tag_name":"android-v0.3.0","prerelease":true,"body":"","html_url":"https://example.com/pre","assets":[{"name":"Speecher-0.3.0.apk","browser_download_url":"https://example.com/0.3.0.apk"}]},
-              {"tag_name":"android-nightly","prerelease":true,"body":"Version: 0.2.1-nightly.57+g1a2b3c4\nCommit: 1a2b3c4\n\nThis Nightly Build is untested.","html_url":"https://example.com/nightly","assets":[{"name":"Speecher-nightly.apk","browser_download_url":"https://example.com/nightly.apk"}]},
+              {"tag_name":"android-nightly","prerelease":true,"body":"Version: 0.2.1-nightly.57+g1a2b3c4\nCommit: 1a2b3c4\n\nThis Nightly Build is untested.","html_url":"https://example.com/nightly","assets":[{"name":"Speecher-0.2.1-nightly.56_g0f0f0f0.apk","browser_download_url":"https://example.com/56.apk"},{"name":"Speecher-0.2.1-nightly.57_g1a2b3c4.apk","browser_download_url":"https://example.com/57.apk"}]},
               {"tag_name":"android-v0.1.18","prerelease":false,"body":"## Fixed\n\n- Old","html_url":"https://example.com/0.1.18","assets":[{"name":"Speecher-0.1.18.apk","browser_download_url":"https://example.com/0.1.18.apk"}]},
               {"tag_name":"android-v0.2.0","prerelease":false,"body":"## Added\n\n- Updates","html_url":"https://github.com/firemonster612/speecher/releases/tag/android-v0.2.0","assets":[{"name":"Speecher-0.2.0.apk","browser_download_url":"https://github.com/firemonster612/speecher/releases/download/android-v0.2.0/Speecher-0.2.0.apk"}]}
             ]"""
@@ -41,11 +41,11 @@ class ReleaseCheckTest {
     }
 
     @Test
-    fun `Nightly offers the nightly by the version its notes give, until a release passes it`() {
+    fun `Nightly offers the nightly its notes name, with that build's APK, until a release passes`() {
         assertEquals(
             ApkUpdate(
                 "0.2.1-nightly.57+g1a2b3c4",
-                "https://example.com/nightly.apk",
+                "https://example.com/57.apk",
                 "https://example.com/nightly",
             ),
             newerApk(list, UpdateChannel.Nightly, "0.2.0"),
@@ -60,6 +60,22 @@ class ReleaseCheckTest {
                 )
                 ?.version,
         )
+    }
+
+    @Test
+    fun `a check asked for on Stable goes back from a nightly to the older Stable Release`() {
+        val nightly = "0.2.1-nightly.57+g1a2b3c4"
+        assertNull(newerApk(list, UpdateChannel.Stable, nightly))
+        assertEquals(
+            ApkUpdate(
+                "0.2.0",
+                "https://github.com/firemonster612/speecher/releases/download/android-v0.2.0/Speecher-0.2.0.apk",
+                "https://github.com/firemonster612/speecher/releases/tag/android-v0.2.0",
+                replacesNightly = true,
+            ),
+            newerApk(list, UpdateChannel.Stable, nightly, manual = true),
+        )
+        assertNull(newerApk(list, UpdateChannel.Nightly, nightly, manual = true))
     }
 
     @Test
@@ -87,6 +103,19 @@ class ReleaseCheckTest {
         assertEquals(listOf("0.2.0"), releaseNotes(list, null, "0.2.0").map { it.version })
         assertEquals(listOf("0.2.0"), releaseNotes(list, "0.2.0", "0.2.0").map { it.version })
         assertEquals("## Added\n\n- Updates", releaseNotes(list, null, "0.2.0").single().notes)
+    }
+
+    @Test
+    fun `What's New never shows a nightly's notes, and a nightly gets the newest Stable Release's`() {
+        val withRelease = list + AndroidRelease("0.3.0", "## Added\n\n- More", "", null)
+        assertEquals(
+            listOf("0.3.0"),
+            releaseNotes(withRelease, "0.2.0", "0.3.0").map { it.version },
+        )
+        assertEquals(
+            listOf("0.2.0"),
+            releaseNotes(list, "0.2.0", "0.2.1-nightly.57+g1a2b3c4").map { it.version },
+        )
     }
 
     @Test

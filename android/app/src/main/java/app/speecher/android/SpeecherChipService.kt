@@ -317,6 +317,8 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun onChipTap() {
+        // Android is replacing the app, which would end the dictation within seconds.
+        if (ActiveDictation.installingUpdate) return
         ImeSwap(this).rememberPrevious()
         val engine = startDictation()
         // Only now, before the swap, does the focused field still belong to the app being dictated

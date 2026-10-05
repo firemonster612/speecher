@@ -30,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -43,10 +42,9 @@ import app.speecher.android.dictation.countWords
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.resolveSignedIn
-import app.speecher.android.update.ApkUpdate
-import java.text.NumberFormat
 import app.speecher.android.update.UpdateState
 import app.speecher.android.update.installFailure
+import java.text.NumberFormat
 
 /**
  * A full-screen page with a scrolling body. Pages you navigate to get a top bar with [title] and a
@@ -264,6 +262,7 @@ private fun UpdateCard(state: UpdateState, onUpdate: () -> Unit, onDismiss: () -
         when (state) {
             is UpdateState.Downloading -> downloadingText(state)
             is UpdateState.WaitingForDictation -> INSTALLING_AFTER_DICTATION
+            is UpdateState.Installing -> installingText(state)
             else -> availableText(update)
         }
     ) {
@@ -364,6 +363,7 @@ private fun HomeUpdatePreview(update: UpdateState?) = SpeecherTheme {
             {},
             {},
             {},
+            {},
             update = update,
             whatsNewVersion = "0.3.0",
         )
@@ -383,6 +383,18 @@ internal fun HomeUpdateDownloadingPreview() =
 @Composable
 internal fun HomeUpdateWaitingPreview() =
     HomeUpdatePreview(UpdateState.WaitingForDictation(previewUpdate))
+
+@PreviewLightDark
+@Composable
+internal fun HomeUpdateInstallingPreview() =
+    HomeUpdatePreview(UpdateState.Installing(previewUpdate))
+
+@PreviewLightDark
+@Composable
+internal fun HomeUpdateStableReplacementPreview() =
+    HomeUpdatePreview(
+        UpdateState.Available(previewUpdate.copy(version = "0.2.0", replacesNightly = true))
+    )
 
 @PreviewLightDark
 @Composable

@@ -37,6 +37,20 @@ class UpdateStatusTest {
             CheckRow("Installing…", "Installing after this dictation…", false),
             checkRow(UpdateState.WaitingForDictation(update), UpdateChannel.Stable),
         )
+        assertEquals(
+            CheckRow("Installing…", "Installing Speecher 0.3.0…", false),
+            checkRow(UpdateState.Installing(update), UpdateChannel.Stable),
+        )
+        assertEquals(
+            CheckRow(
+                "Update now",
+                "Switch to Stable Release 0.2.0 (replaces this Nightly Build).",
+            ),
+            checkRow(
+                UpdateState.Available(update.copy(version = "0.2.0", replacesNightly = true)),
+                UpdateChannel.Stable,
+            ),
+        )
     }
 
     @Test
