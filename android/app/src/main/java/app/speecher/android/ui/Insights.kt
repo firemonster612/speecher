@@ -18,7 +18,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -32,18 +31,18 @@ import app.speecher.android.dictation.insightTiles
 import app.speecher.android.dictation.summarize
 import java.time.LocalDate
 import java.time.LocalDateTime
-import kotlinx.coroutines.launch
 
 /**
  * The stats kept of inserted dictations, for a chosen period, and the controls over keeping them.
- * [onClear] deletes the history and says whether it could.
+ * [onClear] deletes the history; [clearFailed] says the last attempt could not.
  */
 @Composable
 fun Insights(
     records: List<DictationRecord>,
     settings: SpeecherSettings,
     onChange: (SpeecherSettings) -> Unit,
-    onClear: suspend () -> Boolean,
+    onClear: () -> Unit,
+    clearFailed: Boolean,
     today: LocalDate = LocalDate.now(),
 ) {
     when {
@@ -72,7 +71,7 @@ fun Insights(
         },
         colors = rowColors(),
     )
-    ClearHistory(onClear)
+    ClearHistory(onClear, clearFailed)
 }
 
 @Composable
@@ -139,18 +138,24 @@ private fun Tile(tile: InsightTile, modifier: Modifier) {
     }
 }
 
-/** Asks before deleting, and keeps asking with the reason when the delete fails. */
+/** Asks before deleting, and says so under the row when the delete failed. */
 @Composable
-private fun ClearHistory(onClear: suspend () -> Boolean) {
+private fun ClearHistory(onClear: () -> Unit, failed: Boolean) {
     var confirming by rememberSaveable { mutableStateOf(false) }
-    var failed by rememberSaveable { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
     ListItem(
         headlineContent = { Text("Clear insights history") },
         supportingContent = { Text("Delete every recorded dictation from this phone.") },
         modifier = Modifier.clickable { confirming = true },
         colors = rowColors(),
     )
+    if (failed && !confirming) {
+        Text(
+            "Speecher couldn't delete the insights history. Try again.",
+            Modifier.padding(horizontal = 16.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
     if (!confirming) return
     Column(Modifier.padding(horizontal = 16.dp)) {
         Text("Delete all insights history?", style = MaterialTheme.typography.bodyLarge)
@@ -159,26 +164,12 @@ private fun ClearHistory(onClear: suspend () -> Boolean) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (failed) {
-            Text(
-                "Speecher couldn't delete the insights history. Try again.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
     }
     Row(Modifier.padding(horizontal = 4.dp)) {
+        TextButton({ confirming = false }) { Text("Cancel") }
         TextButton({
             confirming = false
-            failed = false
-        }) {
-            Text("Cancel")
-        }
-        TextButton({
-            scope.launch {
-                failed = !onClear()
-                confirming = failed
-            }
+            onClear()
         }) {
             Text("Delete history")
         }
@@ -199,10 +190,17 @@ private val previewRecords =
 private fun InsightsPreview(
     records: List<DictationRecord>,
     enabled: Boolean = true,
-    onClear: suspend () -> Boolean = { true },
+    clearFailed: Boolean = false,
 ) = SpeecherTheme {
     SpeecherScreen("Insights", onBack = {}) {
-        Insights(records, SpeecherSettings(insightsEnabled = enabled), {}, onClear, previewToday)
+        Insights(
+            records,
+            SpeecherSettings(insightsEnabled = enabled),
+            {},
+            {},
+            clearFailed,
+            previewToday,
+        )
     }
 }
 
@@ -214,7 +212,7 @@ private fun InsightsPreview(
 @Composable
 internal fun InsightsOffPreview() = InsightsPreview(previewRecords, enabled = false)
 
-/** Clearing fails, to show the failure under the confirmation. */
+/** The last clear failed. */
 @PreviewLightDark
 @Composable
-internal fun InsightsClearFailsPreview() = InsightsPreview(previewRecords, onClear = { false })
+internal fun InsightsClearFailsPreview() = InsightsPreview(previewRecords, clearFailed = true)

@@ -30,8 +30,7 @@ import kotlinx.serialization.json.put
  * What one inserted dictation leaves behind for Insights, never the text or the audio. [profile] is
  * the Writing Profile's id; [profileName] a custom profile's name when the record was made, so it
  * still reads after the profile is deleted, and empty for a built-in. The providers are the ones
- * whose words went in, by [Provider] name: no refinement provider when the transcript went in as
- * heard.
+ * the dictation called, by [Provider] name, in order, failed ones included.
  */
 data class DictationRecord(
     val finishedAt: LocalDateTime,
@@ -137,9 +136,12 @@ suspend fun loadInsights(file: File): List<DictationRecord> =
             .getOrDefault(emptyList())
     }
 
-/** Deletes the history. False, with the history kept, when the file could not be deleted. */
-suspend fun clearInsights(file: File): Boolean =
-    withContext(insightsDispatcher) { !file.exists() || file.delete() }
+/**
+ * Queues the deletion of the history. Once asked it happens, whoever asked going away, and
+ * [onCleared] hears on the insights thread whether it did; false keeps the history.
+ */
+fun clearInsights(file: File, onCleared: (Boolean) -> Unit) =
+    insightsDispatcher.executor.execute { onCleared(!file.exists() || file.delete()) }
 
 /** The record of [inserted], made now. */
 fun dictationRecord(
@@ -156,7 +158,7 @@ fun dictationRecord(
         profile.id,
         if (profile.isBuiltIn) "" else settings.writingProfiles[profile]?.name.orEmpty(),
         listOf(inserted.speech.name),
-        listOfNotNull(inserted.cleanup?.name),
+        inserted.cleanups.map { it.name },
     )
 }
 

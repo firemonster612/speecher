@@ -6,10 +6,10 @@ import java.io.File
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.Locale
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempDirectory
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -63,13 +63,12 @@ class InsightsTest {
         val gate = CountDownLatch(1)
         insightsDispatcher.executor.execute { gate.await() }
         recordInsight(file, record("2026-10-05", 9, 60_000, 150))
-        runBlocking {
-            // Asked while the record is still waiting its turn.
-            val clearing = async(start = CoroutineStart.UNDISPATCHED) { clearInsights(file) }
-            gate.countDown()
-            assertTrue(clearing.await())
-            assertEquals(emptyList<DictationRecord>(), loadInsights(file))
-        }
+        // Asked while the record is still waiting its turn.
+        val cleared = CompletableFuture<Boolean>()
+        clearInsights(file, cleared::complete)
+        gate.countDown()
+        assertTrue(cleared.get(5, TimeUnit.SECONDS))
+        assertEquals(emptyList<DictationRecord>(), runBlocking { loadInsights(file) })
         assertFalse(file.exists())
     }
 
@@ -87,7 +86,12 @@ class InsightsTest {
         val at = LocalDateTime.of(2026, 10, 5, 9, 0)
         fun recorded(settings: SpeecherSettings, target: TargetApp?) =
             dictationRecord(
-                    Inserted("Two words", 1_000, SpeechProvider.Claude, CleanupProvider.ChatGpt),
+                    Inserted(
+                        "Two words",
+                        1_000,
+                        SpeechProvider.Claude,
+                        listOf(CleanupProvider.ChatGpt),
+                    ),
                     settings,
                     target,
                 )

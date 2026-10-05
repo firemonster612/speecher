@@ -74,6 +74,8 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf(emptyStatus())
     private var settings by mutableStateOf(SpeecherSettings())
     private var insights by mutableStateOf(emptyList<DictationRecord>())
+    // Kept here, not on the page, so a clear that fails after the page closed still says so.
+    private var clearInsightsFailed by mutableStateOf(false)
     private var update by mutableStateOf<ApkUpdate?>(null)
     private var updating by mutableStateOf(false)
     private var updateFailed by mutableStateOf(false)
@@ -215,7 +217,13 @@ class MainActivity : ComponentActivity() {
                         // history is read again whenever the page opens.
                         LaunchedEffect(Unit) { reloadInsights() }
                         SpeecherScreen("Insights", onBack = ::back) {
-                            Insights(insights, settings, ::changeSettings, ::deleteInsights)
+                            Insights(
+                                insights,
+                                settings,
+                                ::changeSettings,
+                                ::deleteInsights,
+                                clearInsightsFailed,
+                            )
                         }
                     }
                     Page.ChipPosition ->
@@ -406,8 +414,15 @@ class MainActivity : ComponentActivity() {
         insights = loadInsights(insightsFile(this))
     }
 
-    private suspend fun deleteInsights(): Boolean =
-        clearInsights(insightsFile(this)).also { if (it) insights = emptyList() }
+    private fun deleteInsights() {
+        clearInsightsFailed = false
+        clearInsights(insightsFile(this)) { cleared ->
+            runOnUiThread {
+                if (cleared) insights = emptyList()
+                clearInsightsFailed = !cleared
+            }
+        }
+    }
 
     private fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
