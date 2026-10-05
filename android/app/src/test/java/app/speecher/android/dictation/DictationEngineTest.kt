@@ -979,8 +979,8 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, _, _ -> error("plain Insert never cleans up") },
-                { pcm ->
+                { _, _, _, _ -> error("plain Insert never cleans up") },
+                { pcm, _ ->
                     uploadSizes.add(pcm.size)
                     "Batch text."
                 },
@@ -992,7 +992,7 @@ class DictationEngineTest {
         val second = ByteArray(32_000)
         for (seconds in listOf(80, 81)) {
             val engine = engine()
-            engine.start(Provider.ChatGpt)
+            engine.start(SpeechProvider.ChatGpt)
             speech(SpeechEvent.Connected)
             repeat(seconds) { capture.audio?.invoke(second, 0f) }
             speech(SpeechEvent.Final("streamed text"))
