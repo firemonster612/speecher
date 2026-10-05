@@ -114,7 +114,10 @@ fun DictationPanel(
     modifier: Modifier = Modifier,
     onPause: () -> Unit = {},
     onResume: () -> Unit = {},
+    transcriptionPreview: Boolean = true,
+    refinementPreview: Boolean = true,
 ) {
+    val shown = state.withPreviews(transcriptionPreview, refinementPreview)
     // Sized from the display, not from incoming constraints: inside the IME those are the IME
     // window's own height, so a fraction of them shrinks the panel below the window it sized,
     // leaving an unpainted band at the bottom edge.
@@ -144,7 +147,7 @@ fun DictationPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MinimizedBar(state, layout, onCancel, onInsert, onInsertRefined)
+                MinimizedBar(state, shown, layout, onCancel, onInsert, onInsertRefined)
             }
             return@Surface
         }
@@ -232,8 +235,12 @@ fun DictationPanel(
                 }
             }
             Transcript(
-                state,
+                shown,
                 Modifier.weight(1f).fillMaxWidth().padding(vertical = if (compact) 4.dp else 12.dp),
+                // Until the first words; with the live text off, no words replace it.
+                if (state is DictationState.Listening && !state.stopping && state.text.isEmpty())
+                    "Speak now"
+                else "",
             )
             buttons()
         }
@@ -254,12 +261,34 @@ internal fun panelHeight(size: PanelSize, displayHeight: Dp): Dp {
 }
 
 /**
- * The collapsed panel: Cancel, a recording dot and a small waveform, the newest words on one line
- * (cut at the start so the latest stay visible), and the primary Insert.
+ * [state] as the panel previews its words: a preview turned off in Settings shows none. The
+ * transcription preview covers the words heard, also as the dimmed text a refinement starts from,
+ * and the refinement preview the cleaned text streaming in. A failure keeps its transcript, which
+ * its Insert takes.
+ */
+internal fun DictationState.withPreviews(
+    transcription: Boolean,
+    refinement: Boolean,
+): DictationState =
+    when (this) {
+        is DictationState.Listening ->
+            if (transcription) this else copy(committed = "", interim = "")
+        is DictationState.Refining ->
+            copy(
+                transcript = if (transcription) transcript else "",
+                refined = if (refinement) refined else "",
+            )
+        is DictationState.Failed -> this
+    }
+
+/**
+ * The collapsed panel: Cancel, a recording dot and a small waveform, the newest words of [shown] on
+ * one line (cut at the start so the latest stay visible), and the primary Insert.
  */
 @Composable
 private fun RowScope.MinimizedBar(
     state: DictationState,
+    shown: DictationState,
     layout: ButtonLayout,
     onCancel: () -> Unit,
     onInsert: () -> Unit,
@@ -277,8 +306,8 @@ private fun RowScope.MinimizedBar(
         RefiningBars(SMALL_BAR_WIDTH, SMALL_BARS_HEIGHT)
     }
     val words =
-        if (state is DictationState.Refining && state.refined.isNotEmpty()) state.refined
-        else state.transcript
+        if (shown is DictationState.Refining && shown.refined.isNotEmpty()) shown.refined
+        else shown.transcript
     Text(
         words.ifEmpty { wait ?: if (state is DictationState.Listening) "Listening" else "" },
         Modifier.weight(1f),
@@ -299,7 +328,7 @@ private val DictationState.transcript: String
         }
 
 @Composable
-private fun Transcript(state: DictationState, modifier: Modifier) {
+private fun Transcript(state: DictationState, modifier: Modifier, placeholder: String = "") {
     // Refining shows the raw transcript dimmed until the cleanup's first token, then the cleaned
     // text as it streams in, through the same append-only preview as live dictation.
     val refined = (state as? DictationState.Refining)?.refined.orEmpty()
@@ -311,7 +340,6 @@ private fun Transcript(state: DictationState, modifier: Modifier) {
     // newest words in view without an animation chasing a one-frame-stale target, and shrinking
     // interim text no longer lurches the preview up then back down.
     LaunchedEffect(scroll) { snapshotFlow { scroll.maxValue }.collect { scroll.scrollTo(it) } }
-    val placeholder = if (state is DictationState.Listening && !state.stopping) "Speak now" else ""
     val colors = MaterialTheme.colorScheme
     Box(modifier.verticalScroll(scroll)) {
         if (committed.isEmpty() && interim.isEmpty()) {
@@ -566,8 +594,23 @@ private fun PanelPreview(
     state: DictationState,
     layout: ButtonLayout = ButtonLayout.RefinedPrimary,
     size: PanelSize = PanelSize.Full,
+    transcriptionPreview: Boolean = true,
+    refinementPreview: Boolean = true,
 ) {
-    SpeecherTheme { DictationPanel(state, layout, size, {}, {}, {}, {}, {}) }
+    SpeecherTheme {
+        DictationPanel(
+            state,
+            layout,
+            size,
+            {},
+            {},
+            {},
+            {},
+            {},
+            transcriptionPreview = transcriptionPreview,
+            refinementPreview = refinementPreview,
+        )
+    }
 }
 
 private const val SAMPLE_TEXT =
@@ -601,6 +644,20 @@ internal fun PanelCompactPreview() =
 @Composable
 internal fun PanelMinimizedPreview() =
     PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), size = PanelSize.Minimized)
+
+@PreviewLightDark
+@Composable
+internal fun PanelLiveTextOffPreview() =
+    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0.7f), transcriptionPreview = false)
+
+@PreviewLightDark
+@Composable
+internal fun PanelMinimizedLiveTextOffPreview() =
+    PanelPreview(
+        DictationState.Listening(SAMPLE_TEXT, "", 0.7f),
+        size = PanelSize.Minimized,
+        transcriptionPreview = false,
+    )
 
 @PreviewLightDark
 @Composable
@@ -639,6 +696,17 @@ internal fun PanelFailedPreview(reason: FailureReason, heard: Boolean = false) =
             else "",
             if (heard) SAMPLE_TEXT else "",
         )
+    )
+
+@PreviewLightDark
+@Composable
+internal fun PanelRefiningLiveTextOffPreview() =
+    PanelPreview(
+        DictationState.Refining(
+            SAMPLE_TEXT,
+            "Can we move the design review to Thursday afternoon?",
+        ),
+        refinementPreview = false,
     )
 
 @PreviewLightDark

@@ -319,6 +319,14 @@ data class SpeecherSettings(
     val chipOffsetY: Int? = null,
     /** Keep the display awake while a dictation is running. */
     val keepScreenOn: Boolean = true,
+    /** Ask other apps to pause their media while the microphone is on, as on the desktop. */
+    val pauseMedia: Boolean = true,
+    /** Vibrate when dictation starts and stops, where the desktop plays sounds; off by default. */
+    val vibrationEnabled: Boolean = false,
+    /** Show the words in the panel as they are heard. */
+    val transcriptionPreviewEnabled: Boolean = true,
+    /** Show the cleaned-up text in the panel as it streams in. */
+    val refinementPreviewEnabled: Boolean = true,
     /**
      * Send the field's placeholder and the text around the caret to the refiner. The app's identity
      * and the field's kind go regardless, to pick the writing profile, as on the desktop.

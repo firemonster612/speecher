@@ -677,6 +677,37 @@ class DictationEngineTest {
         assertEquals(listOf("before pause after"), commits)
     }
 
+    @Test
+    fun `media stays paused from the tap through a pause until Insert or Cancel stops the dictation`() {
+        val media = mutableListOf<String>()
+        fun engine() =
+            DictationEngine(
+                { _, _ -> },
+                {},
+                { _, _ -> Client() },
+                { _, raw, _, _ -> raw },
+                null,
+                { true },
+                Executor { it.run() },
+                {},
+                pauseMedia = { media.add("pause") },
+                resumeMedia = { media.add("resume") },
+            )
+        val inserted = engine()
+        inserted.start(SpeechProvider.Claude)
+        inserted.pause()
+        inserted.resume()
+        assertEquals(listOf("pause"), media)
+        inserted.insert()
+        assertEquals(listOf("pause", "resume"), media)
+
+        media.clear()
+        val canceled = engine()
+        canceled.start(SpeechProvider.Claude)
+        canceled.cancel()
+        assertEquals(listOf("pause", "resume"), media)
+    }
+
     private class PausingEngine(executor: Executor = Executor { it.run() }) {
         val capture = Capture()
         val clients = mutableListOf<Client>()

@@ -1,6 +1,9 @@
 package app.speecher.android.dictation
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.view.inputmethod.InputConnection
@@ -72,6 +75,13 @@ class DictationEngine(
     private val onState: (DictationState) -> Unit,
     /** Waits out a reconnect's backoff on the executor thread. */
     private val pause: (Long) -> Unit = Thread::sleep,
+    /**
+     * Pauses other apps' media from the tap until Insert, Cancel or a failure stops the microphone,
+     * when [resumeMedia] lets it play again. A pause keeps it paused: the person is still
+     * mid-dictation.
+     */
+    private val pauseMedia: () -> Unit = {},
+    private val resumeMedia: () -> Unit = {},
 ) : AutoCloseable {
     @Volatile
     var state: DictationState = DictationState.Listening()
@@ -146,6 +156,7 @@ class DictationEngine(
         streamed = false
         reconnecting = false
         reconnectsLeft = RECONNECT_BACKOFF_MS.size
+        pauseMedia()
         // Listening from the tap: the microphone starts now and the clients hold audio until their
         // socket is up, so words spoken while it connects are sent, not lost.
         publish(listening(0f))
@@ -205,6 +216,7 @@ class DictationEngine(
     fun stop() {
         if (paused) {
             paused = false
+            resumeMedia()
             // An Insert while paused takes what was heard once the paused stream has ended.
             if (!finishingPause) finishPendingInsert() else publish(listening(0f))
             return
@@ -212,6 +224,7 @@ class DictationEngine(
         if (!recording) return
         recording = false
         stopCapture()
+        resumeMedia()
         // A stream finishing a pause was already told; its end opens the one for what came after.
         if (!finishingPause) client?.stop()
         publish(listening(0f))
@@ -250,6 +263,7 @@ class DictationEngine(
     fun cancel() {
         ++session
         cancelSession()
+        resumeMedia()
     }
 
     @Synchronized
@@ -484,6 +498,7 @@ class DictationEngine(
         // is the one shown. Only a failed commit replaces a failure, with its retry.
         if (state is DictationState.Failed && reason != FailureReason.Commit) return
         cancelSession()
+        resumeMedia()
         pendingInsert = null
         publish(DictationState.Failed(reason, detail, raw))
     }
@@ -594,6 +609,18 @@ fun createDictationEngine(
                     ),
             )
     val main = Handler(Looper.getMainLooper())
+    val audio = context.getSystemService(AudioManager::class.java)
+    // Exclusive transient focus is the one Android documents for speech recognition: other apps
+    // pause rather than duck. Each app decides how to answer it, so this asks, it can't force.
+    val mediaPause =
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .build()
     fun token(account: Provider) =
         store.validTokens(account.oauth, http)
             ?: throw ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in")
@@ -705,5 +732,7 @@ fun createDictationEngine(
         },
         sharedExecutor,
         { next -> main.post { onState(next) } },
+        pauseMedia = { if (settings.pauseMedia) audio.requestAudioFocus(mediaPause) },
+        resumeMedia = { audio.abandonAudioFocusRequest(mediaPause) },
     )
 }

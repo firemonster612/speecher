@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -75,8 +76,12 @@ class SpeecherImeService : InputMethodService() {
                         size,
                         onToggleSize = { sizeToggled.value = !sizeToggled.value },
                         onCancel = ::switchBack,
-                        onInsert = { ActiveDictation.engine?.insert() },
+                        onInsert = {
+                            vibrateForStop()
+                            ActiveDictation.engine?.insert()
+                        },
                         onInsertRefined = {
+                            vibrateForStop()
                             ActiveDictation.engine?.insertRefined(
                                 resolveSignedIn(
                                         ActiveDictation.settings.refinementProvider.account,
@@ -88,6 +93,8 @@ class SpeecherImeService : InputMethodService() {
                         onRecover = ::recover,
                         onPause = { ActiveDictation.engine?.pause() },
                         onResume = { ActiveDictation.engine?.resume() },
+                        transcriptionPreview = ActiveDictation.settings.transcriptionPreviewEnabled,
+                        refinementPreview = ActiveDictation.settings.refinementPreviewEnabled,
                     )
                 }
             }
@@ -177,6 +184,18 @@ class SpeecherImeService : InputMethodService() {
         )
             panel.addFlags(flag)
         else panel.clearFlags(flag)
+    }
+
+    /**
+     * The desktop's stop sound: an Insert that stops the microphone, running or paused, vibrates.
+     * The view's haptics follow the system's touch feedback setting.
+     */
+    private fun vibrateForStop() {
+        if (
+            ActiveDictation.settings.vibrationEnabled &&
+                panelState.value is DictationState.Listening
+        )
+            panel?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
     }
 
     /**
