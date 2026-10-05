@@ -1,5 +1,7 @@
 package app.speecher.android.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,12 +18,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +37,7 @@ import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.RadioButton
@@ -47,41 +55,69 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
+import app.speecher.android.dictation.CleanupProvider
 import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
+import app.speecher.android.dictation.RefinementChoice
+import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.cleanup
+import app.speecher.android.dictation.defaultRefinement
 import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
+import app.speecher.android.dictation.refinementModelCaution
 import app.speecher.android.dictation.refinementModels
 import app.speecher.android.dictation.resolveSignedIn
+import app.speecher.android.dictation.resolveSpeech
 import app.speecher.android.dictation.spokenLanguageLabel
 import app.speecher.android.dictation.spokenLanguageMismatch
 import app.speecher.android.dictation.spokenLanguageName
 import app.speecher.android.dictation.spokenLanguages
+import app.speecher.android.update.UpdateState
 import app.speecher.protocol.AUTOMATIC_LANGUAGE
+import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
+import app.speecher.protocol.MAX_SPEECH_TERMS
+import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
-import app.speecher.protocol.claudeVoiceKeytermIndices
 import app.speecher.protocol.claudeVoiceKeyterms
 import app.speecher.protocol.modelSupportsFastMode
 import app.speecher.protocol.modelSupportsUltrafast
+import app.speecher.protocol.normalizedVocabulary
+import app.speecher.protocol.parseVocabularyCsv
+import app.speecher.protocol.sameTerm
 import app.speecher.protocol.speechTerms
+import java.io.IOException
+import java.text.DateFormat
+import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The pages the Settings list opens, each under its own top bar with a back arrow. */
 enum class SettingsPage(val title: String) {
@@ -90,6 +126,7 @@ enum class SettingsPage(val title: String) {
     RefinementContext("What refinement can read"),
     DictationPanel("Dictation panel"),
     Vocabulary("Vocabulary"),
+    Replacements("Replacements & snippets"),
     Profiles("Profiles"),
     AppRules("Application rules"),
     Tones("Tones"),
@@ -114,9 +151,13 @@ fun Settings(
     signingIn: Provider? = null,
     signInError: String? = null,
     onPasteCode: (String) -> Unit = {},
+    onRunSetup: () -> Unit = {},
+    updateState: UpdateState = UpdateState.Idle,
+    onCheckForUpdates: () -> Unit = {},
+    onOpenWhatsNew: () -> Unit = {},
 ) {
     Column(modifier) {
-        if (signedIn.isEmpty()) {
+        if (signedIn.isEmpty() && !settings.transcribesWithServer) {
             Card(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
                 Text(
                     "Sign in to start dictating. Speecher uses your own ChatGPT or Claude account.",
@@ -176,6 +217,12 @@ fun Settings(
             else count(settings.vocabulary.size, "word", "words"),
             onOpen,
         )
+        PageRow(
+            SettingsPage.Replacements,
+            if (settings.replacements.isEmpty()) "No replacements or snippets"
+            else count(settings.replacements.size, "replacement", "replacements"),
+            onOpen,
+        )
 
         if (settings.refinementEnabled) {
             Section("Advanced")
@@ -209,8 +256,16 @@ fun Settings(
             )
         }
 
-        Section("Updates")
-        UpdateCheckRow(settings, onChange)
+        Section("App")
+        ListItem(
+            headlineContent = { Text("Setup assistant") },
+            supportingContent = { Text("Go through the first-run steps again.") },
+            trailingContent = { Chevron() },
+            modifier = Modifier.clickable(onClick = onRunSetup),
+            colors = rowColors(),
+        )
+
+        UpdatesSection(settings, onChange, updateState, onCheckForUpdates, onOpenWhatsNew)
     }
 }
 
@@ -233,6 +288,7 @@ fun SettingsPageContent(
         SettingsPage.RefinementContext -> RefinementContextSettings(settings, onChange)
         SettingsPage.DictationPanel -> DictationPanelSettings(settings, onChange, onSetChipPosition)
         SettingsPage.Vocabulary -> VocabularySettings(settings, onChange)
+        SettingsPage.Replacements -> ReplacementSettings(settings, onChange)
         SettingsPage.Profiles -> ProfileSettings(settings, onChange)
         SettingsPage.AppRules -> AppRuleSettings(settings, onChange)
         SettingsPage.Tones -> ToneSettings(settings, onChange)
@@ -255,9 +311,10 @@ private fun transcriptionSummary(
     settings: SpeecherSettings,
     signedIn: Set<Provider>,
     sessionEnded: Set<Provider>,
-): String =
-    shownProvider(settings.transcriptionProvider, signedIn)?.accountLabel(sessionEnded)
-        ?: "Not signed in"
+): String {
+    val account = settings.transcriptionProvider.account ?: return SpeechProvider.Endpoint.label
+    return shownProvider(account, signedIn)?.accountLabel(sessionEnded) ?: "Not signed in"
+}
 
 private fun refinementSummary(
     settings: SpeecherSettings,
@@ -265,7 +322,8 @@ private fun refinementSummary(
     sessionEnded: Set<Provider>,
 ): String {
     if (!settings.refinementEnabled) return "Off"
-    val provider = shownProvider(settings.refinementProvider, signedIn) ?: return "Not signed in"
+    val provider =
+        shownProvider(settings.refinementProvider.account, signedIn) ?: return "Not signed in"
     val model = settings.refinement(provider).model
     return "${provider.accountLabel(sessionEnded)}, ${provider.refinementModels[model] ?: model}"
 }
@@ -308,10 +366,18 @@ private fun TranscriptionSettings(
     onChange: (SpeecherSettings) -> Unit,
     onSignIn: (Provider) -> Unit,
 ) {
-    ProviderPicker("Provider", settings.transcriptionProvider, signedIn, onSignIn) {
+    // An account you aren't signed into isn't offered, since dictation would fall back to another.
+    val provider = resolveSpeech(settings.transcriptionProvider, signedIn)
+    val usable = SpeechProvider.entries.filter { it.account == null || it.account in signedIn }
+    DropdownRow(
+        "Provider",
+        usable.associateWith { it.label },
+        provider,
+        selectedLabel = if (provider in usable) provider.label else "Not signed in",
+    ) {
         onChange(settings.copy(transcriptionProvider = it))
     }
-    val provider = resolveSignedIn(settings.transcriptionProvider, signedIn)
+    SignInLinks(signedIn, onSignIn, Modifier.padding(horizontal = 16.dp))
     DropdownRow(
         "Spoken language",
         spokenLanguageChoices(provider),
@@ -349,6 +415,9 @@ private fun TranscriptionSettings(
             colors = rowColors(),
         )
     }
+    if (provider == SpeechProvider.Endpoint) SpeechEndpointSettings(settings, onChange)
+    Section("Microphone")
+    MicrophoneTestRow()
 }
 
 @Composable
@@ -367,18 +436,24 @@ private fun RefinementSettings(
         colors = rowColors(),
     )
     if (!settings.refinementEnabled) return
-    ProviderPicker("Provider", settings.refinementProvider, signedIn, onSignIn) {
-        onChange(settings.copy(refinementProvider = it))
+    ProviderPicker("Provider", settings.refinementProvider.account, signedIn, onSignIn) {
+        onChange(settings.copy(refinementProvider = it.cleanup))
     }
-    val provider = resolveSignedIn(settings.refinementProvider, signedIn)
+    val provider = resolveSignedIn(settings.refinementProvider.account, signedIn)
     val choice = settings.refinement(provider)
-    DropdownRow("Model", provider.refinementModels, choice.model) {
-        onChange(settings.withRefinement(provider, choice.copy(model = it)))
+    key(provider) {
+        ModelField(provider.refinementModels, choice.model, provider.defaultRefinement.model) {
+            onChange(settings.withRefinement(provider, choice.copy(model = it)))
+        }
+    }
+    refinementModelCaution(provider, choice.model)?.let {
+        Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
     }
     DropdownRow(
-        "Reasoning effort",
-        provider.refinementEfforts.associateWith { it.replaceFirstChar(Char::uppercase) },
+        "Thinking",
+        provider.refinementEfforts,
         choice.effort,
+        description = "More thinking follows instructions more closely but takes longer.",
     ) {
         onChange(settings.withRefinement(provider, choice.copy(effort = it)))
     }
@@ -499,20 +574,81 @@ private fun DictationPanelSettings(
             colors = rowColors(),
         )
     }
+
+    Section("While dictating")
+    SwitchRow(
+        "Pause media while dictating",
+        settings.pauseMedia,
+        "Asks apps playing audio to pause until you insert or cancel.",
+    ) {
+        onChange(settings.copy(pauseMedia = it))
+    }
+    SwitchRow(
+        "Vibrate when dictation starts and stops",
+        settings.vibrationEnabled,
+        "Follows your phone's touch feedback setting.",
+    ) {
+        onChange(settings.copy(vibrationEnabled = it))
+    }
+    SwitchRow("Show live text while you speak", settings.transcriptionPreviewEnabled) {
+        onChange(settings.copy(transcriptionPreviewEnabled = it))
+    }
+    if (settings.refinementEnabled) {
+        SwitchRow("Show live text during refinement", settings.refinementPreviewEnabled) {
+            onChange(settings.copy(refinementPreviewEnabled = it))
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(
+    title: String,
+    checked: Boolean,
+    description: String? = null,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = description?.let { { Text(it) } },
+        trailingContent = { Switch(checked, onCheckedChange) },
+        colors = rowColors(),
+    )
 }
 
 @Composable
 private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
+    val takesKeyTerms = settings.transcriptionProvider != SpeechProvider.ChatGpt
     Text(
-        vocabularySummary(settings),
+        "Refinement uses the terms for the dictation's Writing Profile. " +
+            when (settings.transcriptionProvider) {
+                SpeechProvider.Claude -> "Key terms also go to Claude Voice."
+                SpeechProvider.Endpoint ->
+                    "Key terms also go to the Custom Endpoint, as its prompt."
+                SpeechProvider.ChatGpt -> "This speech service takes no key terms."
+            },
         Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    // The settings as they are when an import finishes reading, which may be after a dictation
+    // has counted uses.
+    val latest by rememberUpdatedState(settings)
+    // Stored in the desktop's order, the one the speech hints are cut from.
+    fun change(words: List<VocabularyWord>) =
+        onChange(latest.copy(vocabulary = normalizedVocabulary(words)))
     val keyTerms = keyTerms(settings)
     val profiles = profileChoices(settings)
-    // The word open in the editor; one not in the list yet is being added.
-    var editing by remember { mutableStateOf<VocabularyWord?>(null) }
+    // The term open in the editor, empty for a new one. Held by term, as a dictation can update
+    // the word's use count while the sheet is open.
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    if (settings.vocabulary.isEmpty())
+        ListItem(
+            headlineContent = { Text("No vocabulary terms") },
+            supportingContent = {
+                Text("Add names and words the speech service should spell your way.")
+            },
+            colors = rowColors(),
+        )
     settings.vocabulary.forEach { word ->
         ListItem(
             headlineContent = { Text(word.term) },
@@ -526,6 +662,7 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                             profiles.filterKeys { it in word.profiles }.values.joinToString(", "),
                             color = MaterialTheme.colorScheme.onSurface,
                         )
+                    Text(usageLine(word))
                 }
             },
             // The desktop's Key term column: a microphone when the speech service gets the word,
@@ -533,15 +670,14 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
             // three-line row, so they fill its height.
             leadingContent = {
                 Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    // Without case, as the desktop matches: Claude keeps one
-                    // spelling of a word an earlier release let in twice.
-                    val sent = keyTerms.any { it.equals(word.term, ignoreCase = true) }
+                    // Without case, as the desktop matches.
+                    val sent = keyTerms.any { sameTerm(it, word.term) }
                     IconSlot(
-                        R.drawable.ic_mic,
+                        R.drawable.ic_mic.takeIf { word.keyTerm },
                         when {
-                            !word.keyTerm -> null
+                            !word.keyTerm -> "Not a key term: refinement only."
                             sent -> "Key term: sent to the speech service as a hint."
-                            settings.transcriptionProvider == Provider.Claude ->
+                            takesKeyTerms ->
                                 "Key term, but the speech service does not take it, so it is not sent."
                             else -> "Key term, but this speech service takes none."
                         },
@@ -551,9 +687,7 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
             },
             trailingContent = {
                 Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    IconButton({
-                        onChange(settings.copy(vocabulary = settings.vocabulary - word))
-                    }) {
+                    IconButton({ change(settings.vocabulary - word) }) {
                         Icon(
                             painterResource(R.drawable.ic_close),
                             contentDescription = "Remove ${word.term}",
@@ -561,40 +695,106 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                     }
                 }
             },
-            modifier = Modifier.height(IntrinsicSize.Min).clickable { editing = word },
+            modifier = Modifier.height(IntrinsicSize.Min).clickable { editing = word.term },
             colors = rowColors(),
         )
     }
-    FilledTonalButton({ editing = VocabularyWord("") }, Modifier.padding(16.dp)) {
-        Text("Add word")
+    var importError by rememberSaveable { mutableStateOf<String?>(null) }
+    val resolver = LocalContext.current.contentResolver
+    val scope = rememberCoroutineScope()
+    val import =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            scope.launch {
+                importError =
+                    try {
+                        // A cloud provider can take its time, so not on the main thread.
+                        val words =
+                            withContext(Dispatchers.IO) {
+                                val csv =
+                                    resolver.openInputStream(uri)?.use { it.readBytes() }
+                                        ?: throw IOException("no stream for $uri")
+                                parseVocabularyCsv(csv.decodeToString())
+                            }
+                        // After the list, so a term already in it keeps its own settings.
+                        change(latest.vocabulary + words)
+                        null
+                    } catch (_: IOException) {
+                        "Could not read the file."
+                    } catch (e: IllegalArgumentException) {
+                        e.message
+                    }
+            }
+        }
+    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilledTonalButton({ editing = "" }) { Text("Add") }
+        // Any type, as a CSV file often comes labelled as something else; the parser decides.
+        OutlinedButton({
+            importError = null
+            import.launch(arrayOf("*/*"))
+        }) {
+            Text("Import CSV…")
+        }
     }
-    editing?.let { word ->
+    importError?.let {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+            Text(
+                "Vocabulary not imported",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Text(it, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+    ListItem(
+        headlineContent = { Text("Limit") },
+        supportingContent = { Text(vocabularyLimit(settings)) },
+        colors = rowColors(),
+    )
+    editing?.let { term ->
         WordEditor(
-            word,
+            settings.vocabulary.firstOrNull { it.term == term } ?: VocabularyWord(""),
             profiles,
-            settings.vocabulary.filter { it != word }.map { it.term },
+            settings.vocabulary.map { it.term }.filter { it != term },
             onDismiss = { editing = null },
         ) { next ->
-            val vocabulary =
-                if (word in settings.vocabulary)
-                    settings.vocabulary.map { if (it == word) next else it }
-                else settings.vocabulary + next
-            onChange(settings.copy(vocabulary = vocabulary))
+            change(settings.vocabulary.filter { it.term != term } + next)
             editing = null
         }
     }
 }
 
+/** The desktop's Source, Uses and Last used columns, on one line. */
+private fun usageLine(word: VocabularyWord): String {
+    val source =
+        when (word.source) {
+            "csv" -> "Imported"
+            "learned" -> "Learned"
+            else -> "Added"
+        }
+    val lastUsed =
+        if (word.lastUsedMs > 0)
+            "Last used " +
+                DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                    .format(Date(word.lastUsedMs))
+        else "Never used"
+    // A narrow row wraps at a separator rather than inside the date.
+    return "$source · ${count(word.frequency, "use", "uses")} · ${lastUsed.replace(' ', '\u00A0')}"
+}
+
 /**
- * One of a vocabulary row's leading icon slots, a fixed width so the rows line up. Empty without a
- * [description]; with one, the icon in the text colour, or the disabled colour when [faint], and
- * the description as its tooltip.
+ * One of a vocabulary row's leading icon slots, a fixed width so the rows line up: the icon in the
+ * text colour, or the disabled colour when [faint], with [description] as its tooltip. Without an
+ * icon the slot is empty and a screen reader still reads the description.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IconSlot(icon: Int, description: String?, faint: Boolean = false) {
+private fun IconSlot(icon: Int?, description: String, faint: Boolean = false) {
     Box(Modifier.size(24.dp)) {
-        if (description == null) return@Box
+        if (icon == null) {
+            Box(Modifier.matchParentSize().semantics { contentDescription = description })
+            return@Box
+        }
         TooltipBox(
             TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
             tooltip = { PlainTooltip { Text(description) } },
@@ -630,15 +830,14 @@ private fun WordEditor(
     var keyTerm by rememberSaveable { mutableStateOf(word.keyTerm) }
     var limited by rememberSaveable { mutableStateOf(word.profiles.isNotEmpty()) }
     var chosen by remember { mutableStateOf(word.profiles) }
-    val duplicate =
-        term.trim() != word.term && taken.any { it.equals(term.trim(), ignoreCase = true) }
+    val duplicate = term.trim() != word.term && taken.any { sameTerm(it, term.trim()) }
     ModalBottomSheet(onDismiss, sheetState = rememberModalBottomSheetState(true)) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                word.term.ifEmpty { "Add word" },
+                word.term.ifEmpty { "New term" },
                 Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.headlineSmall,
             )
@@ -667,6 +866,12 @@ private fun WordEditor(
                 { context = it },
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 label = { Text("Context") },
+                placeholder = {
+                    Text(
+                        "What it means and when it applies, such as \"the container platform, " +
+                            "when I talk about clusters or deploys\"."
+                    )
+                },
                 supportingText = {
                     Text("Refinement reads this to decide when the words you said mean this term.")
                 },
@@ -692,7 +897,7 @@ private fun WordEditor(
                 }
             }
             Text(
-                "Under any other profile, neither refinement nor Claude Voice gets this term.",
+                "Under any other profile, neither refinement nor the speech service gets this term.",
                 Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -702,14 +907,13 @@ private fun WordEditor(
                 onDismiss,
                 "Save",
             ) {
+                // Priority, no longer edited, and the usage counts stay as they were.
                 onSave(
-                    VocabularyWord(
-                        term.trim(),
-                        context.trim(),
-                        if (limited) chosen else emptySet(),
-                        keyTerm,
-                        // Kept, though no longer edited: a word given priority before stays first.
-                        word.priority,
+                    word.copy(
+                        term = term.trim(),
+                        context = context.trim(),
+                        profiles = if (limited) chosen else emptySet(),
+                        keyTerm = keyTerm,
                     )
                 )
             }
@@ -787,6 +991,18 @@ private fun ProviderPicker(
                 }
             }
         }
+        SignInLinks(signedIn, onSignIn)
+    }
+}
+
+/** A link to sign in to each account that isn't, so a provider picker can offer it. */
+@Composable
+private fun SignInLinks(
+    signedIn: Set<Provider>,
+    onSignIn: (Provider) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
         providerOrder
             .filter { it !in signedIn }
             .forEach { provider ->
@@ -842,6 +1058,69 @@ internal fun <T> DropdownRow(
     )
 }
 
+/**
+ * The refinement model as free text whose menu suggests [models], as the desktop's editable combo
+ * does: a suggested model shows by name and saves as its id, any other id as typed. A cleared field
+ * saves [default], since every request needs a model, and shows it once the field is left.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelField(
+    models: Map<String, String>,
+    model: String,
+    default: String,
+    onChange: (String) -> Unit,
+) {
+    val saved = models[model] ?: model
+    var text by rememberSaveable { mutableStateOf(saved) }
+    var expanded by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
+    fun edit(value: String) {
+        text = value
+        val typed = value.trim()
+        onChange(
+            if (typed.isEmpty()) default
+            else models.entries.firstOrNull { it.value == typed }?.key ?: typed
+        )
+    }
+    ExposedDropdownMenuBox(
+        expanded,
+        { expanded = it },
+        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        OutlinedTextField(
+            text,
+            ::edit,
+            Modifier.fillMaxWidth()
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                .onFocusChanged { if (!it.isFocused) text = saved },
+            label = { Text("Model") },
+            supportingText = { Text("Select a model or type another model ID.") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions =
+                KeyboardActions(
+                    onDone = {
+                        expanded = false
+                        focus.clearFocus()
+                    }
+                ),
+            singleLine = true,
+        )
+        ExposedDropdownMenu(expanded, { expanded = false }) {
+            models.values.forEach { label ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        edit(label)
+                    },
+                )
+            }
+        }
+    }
+}
+
 /** Several lines of instructions for the refiner, under a title and what they are for. */
 @Composable
 private fun InstructionsField(
@@ -893,38 +1172,41 @@ internal fun PasteCode(
 }
 
 /** The provider's spoken languages as code to label: Automatic, then by English name. */
-private fun spokenLanguageChoices(provider: Provider): Map<String, String> =
+private fun spokenLanguageChoices(provider: SpeechProvider): Map<String, String> =
     provider.spokenLanguages
         .sortedWith(compareBy({ it != AUTOMATIC_LANGUAGE }, ::spokenLanguageName))
         .associateWith(::spokenLanguageLabel)
 
 /**
- * The words Claude Voice receives as key terms: those marked so, priority first, as many as fit its
- * header.
+ * The words the speech service receives as key terms: those that fit both speech limits, then, for
+ * Claude Voice, its header. A Custom Endpoint takes them all as its prompt; ChatGPT takes none.
  */
 internal fun keyTerms(settings: SpeecherSettings): Set<String> {
-    if (settings.transcriptionProvider != Provider.Claude) return emptySet()
     val terms = speechTerms(settings.vocabulary)
-    return claudeVoiceKeytermIndices(terms).map { terms[it] }.toSet()
+    return when (settings.transcriptionProvider) {
+        SpeechProvider.ChatGpt -> emptySet()
+        SpeechProvider.Claude -> claudeVoiceKeyterms(terms).toSet()
+        SpeechProvider.Endpoint -> terms.toSet()
+    }
 }
 
 /**
- * What the list amounts to: refinement uses every term up to its ceiling, and only Claude takes key
- * terms, as many as fit its header.
+ * What the list amounts to: how many terms, how many the speech service gets, and how many
+ * refinement gets. The desktop's VocabularyLimit::summary.
  */
-internal fun vocabularySummary(settings: SpeecherSettings): String {
-    val count = settings.vocabulary.size
+internal fun vocabularyLimit(settings: SpeecherSettings): String {
+    val terms = settings.vocabulary.size
     val refinement =
-        if (count > MAX_REFINEMENT_TERMS) "the first $MAX_REFINEMENT_TERMS are used for refinement"
-        else "refinement uses every word for the dictation's Writing Profile"
-    if (settings.transcriptionProvider != Provider.Claude) {
-        return "Names and terms Speecher should spell your way. ChatGPT dictation takes no " +
-            "key terms, and $refinement."
+        if (terms > MAX_REFINEMENT_TERMS) "the first $MAX_REFINEMENT_TERMS are used for refinement"
+        else "all are used for refinement"
+    if (settings.transcriptionProvider == SpeechProvider.ChatGpt)
+        return if (terms == 1) "1 term, used for refinement" else "$terms terms, $refinement"
+    val sent = keyTerms(settings).size
+    if (sent < terms) {
+        val keyTerms = if (sent == 1) "1 is a key term" else "$sent are key terms"
+        return "${count(terms, "term", "terms")}. $keyTerms, and $refinement."
     }
-    val hints = claudeVoiceKeyterms(speechTerms(settings.vocabulary)).size
-    val keyTerms = if (hints == 1) "1 key term" else "$hints key terms"
-    return "Names and terms Speecher should spell your way. Claude takes $keyTerms, and " +
-        "$refinement."
+    return "$terms of $MAX_SPEECH_TERMS key terms"
 }
 
 @Composable
@@ -942,9 +1224,45 @@ internal fun SettingsPreview() =
         Provider.entries.toSet(),
     )
 
+/** The list under its top bar and scrolling, as the app shows it, so its last rows can be seen. */
+@PreviewLightDark
+@Composable
+internal fun SettingsScreenPreview() = SpeecherTheme {
+    SpeecherScreen("Settings", onBack = {}) {
+        Settings(SpeecherSettings(), Provider.entries.toSet(), {}, {}, {}, {})
+    }
+}
+
 @PreviewLightDark
 @Composable
 internal fun SettingsSignedOutPreview() = SettingsPreview(SpeecherSettings(), emptySet())
+
+/** Transcribing with a server on the home network, no account. */
+internal val previewServerSettings =
+    SpeecherSettings(
+        transcriptionProvider = SpeechProvider.Endpoint,
+        speechEndpoint = SpeechEndpoint("http://192.168.1.20:8080", "/inference", "whisper-1"),
+    )
+
+@PreviewLightDark
+@Composable
+internal fun SettingsServerPreview() = SettingsPreview(previewServerSettings, emptySet())
+
+@PreviewLightDark
+@Composable
+internal fun SettingsTranscriptionServerPreview() = SpeecherTheme {
+    var settings by remember { mutableStateOf(previewServerSettings) }
+    SpeecherScreen(SettingsPage.Transcription.title, onBack = {}) {
+        SettingsPageContent(
+            SettingsPage.Transcription,
+            settings,
+            emptySet(),
+            { settings = it },
+            {},
+            {},
+        )
+    }
+}
 
 @PreviewLightDark
 @Composable
@@ -965,32 +1283,55 @@ internal fun SettingsRefinementPreview() = SpeecherTheme {
 
 @PreviewLightDark
 @Composable
-internal fun SettingsVocabularyPreview() = SpeecherTheme {
-    val standup = WritingProfile("custom_standup")
+internal fun SettingsRefinementHaikuPreview() = SpeecherTheme {
     var settings by remember {
         mutableStateOf(
             SpeecherSettings(
-                transcriptionProvider = Provider.Claude,
+                refinementProvider = CleanupProvider.Claude,
+                claudeRefinement = RefinementChoice("claude-haiku-4-5", "xhigh"),
+            )
+        )
+    }
+    Surface {
+        Column {
+            SettingsPageContent(
+                SettingsPage.Refinement,
+                settings,
+                setOf(Provider.Claude),
+                { settings = it },
+                {},
+                {},
+            )
+        }
+    }
+}
+
+@PreviewLightDark
+@Composable
+internal fun SettingsDictationPanelPreview() = SpeecherTheme {
+    var settings by remember { mutableStateOf(SpeecherSettings()) }
+    SpeecherScreen(SettingsPage.DictationPanel.title, onBack = {}) {
+        SettingsPageContent(
+            SettingsPage.DictationPanel,
+            settings,
+            Provider.entries.toSet(),
+            { settings = it },
+            {},
+            {},
+        )
+    }
+}
+
+@Composable
+private fun VocabularyPreview(vocabulary: List<VocabularyWord>) = SpeecherTheme {
+    var settings by remember {
+        mutableStateOf(
+            SpeecherSettings(
+                transcriptionProvider = SpeechProvider.Claude,
                 writingProfiles =
                     SpeecherSettings().writingProfiles +
-                        (standup to WritingProfileSettings(name = "Standup notes")),
-                vocabulary =
-                    listOf(
-                        VocabularyWord(
-                            "Kubernetes",
-                            "The container platform, when I talk about clusters, pods or deploys.",
-                            setOf(WritingProfile.Work, WritingProfile.AiCoding),
-                            priority = true,
-                        ),
-                        VocabularyWord("Speecher", priority = true),
-                        VocabularyWord("Lúcia", "My sister.", setOf(WritingProfile.Personal)),
-                        VocabularyWord(
-                            "Grafana",
-                            "",
-                            setOf(WritingProfile.Work, standup),
-                            keyTerm = false,
-                        ),
-                    ),
+                        (previewStandup to WritingProfileSettings(name = "Standup notes")),
+                vocabulary = normalizedVocabulary(vocabulary),
             )
         )
     }
@@ -1005,3 +1346,69 @@ internal fun SettingsVocabularyPreview() = SpeecherTheme {
         )
     }
 }
+
+@PreviewLightDark
+@Composable
+internal fun SettingsProfilesPreview() = SpeecherTheme {
+    var settings by remember {
+        mutableStateOf(
+            SpeecherSettings(
+                writingProfiles =
+                    SpeecherSettings().writingProfiles +
+                        (WritingProfile.Work to
+                            WritingProfileSettings(
+                                CleanupStrength.None,
+                                outputLanguage = "Spanish",
+                            ))
+            )
+        )
+    }
+    SpeecherScreen(SettingsPage.Profiles.title, onBack = {}) {
+        SettingsPageContent(
+            SettingsPage.Profiles,
+            settings,
+            Provider.entries.toSet(),
+            { settings = it },
+            {},
+            {},
+        )
+    }
+}
+
+private val previewStandup = WritingProfile("custom_standup")
+
+@PreviewLightDark
+@Composable
+internal fun SettingsVocabularyPreview() =
+    VocabularyPreview(
+        listOf(
+            VocabularyWord(
+                "Kubernetes",
+                "The container platform, when I talk about clusters, pods or deploys.",
+                setOf(WritingProfile.Work, WritingProfile.AiCoding),
+                priority = true,
+                frequency = 14,
+                lastUsedMs = 1_791_020_460_000,
+            ),
+            VocabularyWord("Speecher", priority = true),
+            VocabularyWord(
+                "Lúcia",
+                "My sister.",
+                setOf(WritingProfile.Personal),
+                source = "csv",
+                frequency = 3,
+                lastUsedMs = 1_790_500_000_000,
+            ),
+            VocabularyWord(
+                "Grafana",
+                "",
+                setOf(WritingProfile.Work, previewStandup),
+                keyTerm = false,
+                source = "csv",
+            ),
+        )
+    )
+
+@PreviewLightDark
+@Composable
+internal fun SettingsVocabularyEmptyPreview() = VocabularyPreview(emptyList())

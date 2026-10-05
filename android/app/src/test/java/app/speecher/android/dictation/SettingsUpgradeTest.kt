@@ -28,4 +28,20 @@ class SettingsUpgradeTest {
         assertEquals(-204, settings.chipOffsetX)
         assertEquals(-112, settings.chipOffsetY)
     }
+
+    @Test
+    fun `providers saved as accounts load as the same speech and cleanup choices`() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("speecher-settings", Context.MODE_PRIVATE).edit(
+            commit = true
+        ) {
+            putString("transcription", "Claude")
+            putString("refinementProvider", "Claude")
+        }
+        val settings = SettingsStore(context).load()
+        assertEquals(
+            SpeechProvider.Claude to CleanupProvider.Claude,
+            settings.transcriptionProvider to settings.refinementProvider,
+        )
+    }
 }

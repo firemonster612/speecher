@@ -4,6 +4,7 @@ import java.io.BufferedReader
 import java.net.SocketTimeoutException
 import java.util.Base64
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -40,9 +41,19 @@ fun refineTranscript(
     ultrafast: Boolean = false,
     /** Receives the refined text so far each time the stream adds to it. */
     onText: (String) -> Unit = {},
+    /** Aborts the request in flight and every retry after it. */
+    cancellation: Cancellation = Cancellation(),
+    /**
+     * The longest the stream may go without a byte, and the longest the whole refinement may take,
+     * its fast-mode and screenshot retries included: the desktop's 20 s and 120 s.
+     */
+    inactivityMillis: Int = 20_000,
+    deadlineMillis: Long = 120_000,
 ): String {
     var streamed = false
     val ultrafastTier = ultrafast && modelSupportsUltrafast(model)
+    val timing =
+        Timing(cancellation, inactivityMillis, System.nanoTime() + deadlineMillis * 1_000_000)
     fun refine(sent: RefinementContext, fast: Boolean) =
         refineOnce(
             http,
@@ -56,6 +67,7 @@ fun refineTranscript(
             fast,
             ultrafastTier,
             endpointBase,
+            timing,
         ) {
             streamed = true
             onText(it)
@@ -88,32 +100,60 @@ fun refineTranscript(
     // arrive before any text, so the retry never replays streamed output.
     return try {
         refineFastFirst()
-    } catch (failure: RefinementHttpError) {
-        if (failure.status !in IMAGE_REJECTED_STATUSES) throw failure
+    } catch (failure: ProviderFailure) {
+        if (failure.httpStatus !in IMAGE_REJECTED_STATUSES) throw failure
         refine(context.copy(screenshotJpeg = null), fast = false)
     }
 }
 
 /**
- * Anthropic's fast mode is a research preview limited to Opus 5 and Opus 4.8; other models fail
- * every request that asks for it.
+ * Anthropic's fast mode is a research preview limited to Opus 5.5, Opus 5 and Opus 4.8 ("opus-5"
+ * also matches "opus-5-5"); other models fail every request that asks for it.
  */
 fun modelSupportsFastMode(model: String): Boolean =
     model.lowercase().let { it.contains("opus-5") || it.contains("opus-4-8") }
+
+/** Anthropic models that take adaptive thinking and an effort; the rest are sent neither. */
+private fun modelSupportsAdaptiveEffort(model: String): Boolean =
+    model.lowercase().let { id ->
+        listOf("opus-5", "sonnet-5", "sonnet-4-6", "opus-4-8", "opus-4-7", "opus-4-6", "opus-4-5")
+            .any { it in id }
+    }
+
+private fun modelSupportsExtraHighEffort(model: String): Boolean =
+    model.lowercase().let { id ->
+        listOf("opus-5", "sonnet-5", "opus-4-8", "opus-4-7").any { it in id }
+    }
+
+/** The effort Anthropic is sent: max for xhigh on a model without it, high for an unknown one. */
+private fun anthropicEffort(model: String, effort: String): String =
+    when {
+        effort == "xhigh" && !modelSupportsExtraHighEffort(model) -> "max"
+        effort in setOf("low", "medium", "high", "xhigh", "max") -> effort
+        else -> "high"
+    }
 
 /** Ultrafast serves only GPT-6 Astra so far. GPT-6.1 Sol is due to join it. */
 fun modelSupportsUltrafast(model: String): Boolean =
     model.trim().lowercase().startsWith("gpt-6-astra")
 
 /** A refinement request the provider answered with a non-2xx [status]. */
-class RefinementHttpError(val status: Int) :
-    IllegalStateException("Refinement failed with HTTP $status")
+private fun refinementHttpFailure(status: Int) =
+    ProviderFailure(failureKindForHttpStatus(status), "Refinement failed with HTTP $status", status)
 
 /**
  * The provider ended the response itself (failed, incomplete, or an unexpected stop reason). The
  * desktop retries those at neither speed, so neither does the fast-mode fallback.
  */
-private class RefinementStopped(message: String) : IllegalStateException(message)
+private class RefinementStopped(kind: ProviderFailureKind, message: String) :
+    ProviderFailure(kind, message)
+
+/** What every request of one refinement shares: its cancellation, read timeout and deadline. */
+private class Timing(
+    val cancellation: Cancellation,
+    val inactivityMillis: Int,
+    val deadlineNanos: Long,
+)
 
 /** Bad request and payload too large: what a provider answers when it will not take the image. */
 private val IMAGE_REJECTED_STATUSES = setOf(400, 413)
@@ -130,28 +170,34 @@ private fun refineOnce(
     fast: Boolean,
     ultrafast: Boolean,
     endpointBase: String,
+    timing: Timing,
     onText: (String) -> Unit,
 ): String {
     val base = endpointBase.trimEnd('/')
     if (provider == OAuthProvider.Claude) {
-        http
-            .newCall(
-                claudeRequest(
-                    tokens.accessToken,
-                    rawTranscript,
-                    vocabulary,
-                    model,
-                    effort,
-                    context,
-                    fast,
-                    base,
+        val call =
+            http
+                .newBuilder()
+                .readTimeout(timing.inactivityMillis.toLong(), TimeUnit.MILLISECONDS)
+                .build()
+                .newCall(
+                    claudeRequest(
+                        tokens.accessToken,
+                        rawTranscript,
+                        vocabulary,
+                        model,
+                        effort,
+                        context,
+                        fast,
+                        base,
+                    )
                 )
-            )
-            .execute()
-            .use { response ->
-                if (!response.isSuccessful) throw RefinementHttpError(response.code)
-                return readRefinement(provider, response.body.charStream().buffered(), onText)
+        return timing.cancellation.request(call::cancel, timing.deadlineNanos) {
+            call.execute().use { response ->
+                if (!response.isSuccessful) throw refinementHttpFailure(response.code)
+                readRefinement(provider, response.body.charStream().buffered(), onText)
             }
+        }
     }
     // chatgpt.com sits behind Cloudflare, which rejects OkHttp's Conscrypt handshake with a 403.
     return httpPostStreaming(
@@ -174,8 +220,11 @@ private fun refineOnce(
                 .toString()
                 .toByteArray(Charsets.UTF_8),
         ),
+        readTimeoutMillis = timing.inactivityMillis,
+        cancellation = timing.cancellation,
+        deadlineNanos = timing.deadlineNanos,
     ) { status, body ->
-        if (status !in 200..299) throw RefinementHttpError(status)
+        if (status !in 200..299) throw refinementHttpFailure(status)
         readRefinement(provider, body.bufferedReader(), onText)
     }
 }
@@ -205,8 +254,13 @@ private fun readRefinement(
     }
     if (!complete && data.isNotEmpty())
         complete = appendEvent(provider, event, data.toString(), output)
-    if (!complete) error("Refinement stream ended before completion")
-    if (output.isEmpty()) error("Refinement returned no text")
+    if (!complete)
+        throw ProviderFailure(
+            ProviderFailureKind.InvalidResult,
+            "Refinement ended before completion",
+        )
+    if (output.isEmpty())
+        throw ProviderFailure(ProviderFailureKind.InvalidResult, "Refinement returned no text")
     return output.toString()
 }
 
@@ -233,7 +287,7 @@ private fun claudeRequest(
         add(
             buildJsonObject {
                 put("type", JsonPrimitive("text"))
-                put("text", JsonPrimitive(dictationSystemPrompt(context)))
+                put("text", JsonPrimitive(refinementSystemPrompt(context)))
             }
         )
     }
@@ -242,14 +296,19 @@ private fun claudeRequest(
         put("max_tokens", JsonPrimitive(4096))
         put("stream", JsonPrimitive(true))
         if (fast) put("speed", JsonPrimitive("fast"))
-        put(
-            "thinking",
-            buildJsonObject {
-                put("type", JsonPrimitive("adaptive"))
-                put("display", JsonPrimitive("omitted"))
-            },
-        )
-        put("output_config", buildJsonObject { put("effort", JsonPrimitive(effort)) })
+        if (modelSupportsAdaptiveEffort(model)) {
+            put(
+                "thinking",
+                buildJsonObject {
+                    put("type", JsonPrimitive("adaptive"))
+                    put("display", JsonPrimitive("omitted"))
+                },
+            )
+            put(
+                "output_config",
+                buildJsonObject { put("effort", JsonPrimitive(anthropicEffort(model, effort))) },
+            )
+        }
         put("system", system)
         put(
             "messages",
@@ -259,7 +318,15 @@ private fun claudeRequest(
                         put("role", JsonPrimitive("user"))
                         put(
                             "content",
-                            claudeContent(refinementUserMessage(raw, vocabulary), context),
+                            claudeContent(
+                                refinementUserMessage(
+                                    raw,
+                                    vocabulary,
+                                    context.bindingAliases,
+                                    context.selectedText,
+                                ),
+                                context,
+                            ),
                         )
                     }
                 )
@@ -298,7 +365,7 @@ private fun chatGptBody(
         if (effort == "none" && model.trim().lowercase().startsWith("gpt-6.1-sol")) "low"
         else effort
     put("reasoning", buildJsonObject { put("effort", JsonPrimitive(sentEffort)) })
-    put("instructions", JsonPrimitive(dictationSystemPrompt(context)))
+    put("instructions", JsonPrimitive(refinementSystemPrompt(context)))
     put("stream", JsonPrimitive(true))
     put("store", JsonPrimitive(false))
     // chatgpt.com rejects "fast" ("Unsupported service_tier: fast"); "priority" is its fast tier.
@@ -309,7 +376,18 @@ private fun chatGptBody(
             add(
                 buildJsonObject {
                     put("role", JsonPrimitive("user"))
-                    put("content", chatGptContent(refinementUserMessage(raw, vocabulary), context))
+                    put(
+                        "content",
+                        chatGptContent(
+                            refinementUserMessage(
+                                raw,
+                                vocabulary,
+                                context.bindingAliases,
+                                context.selectedText,
+                            ),
+                            context,
+                        ),
+                    )
                 }
             )
         },
@@ -382,14 +460,28 @@ private fun appendEvent(
 ): Boolean {
     val json =
         runCatching { Json.parseToJsonElement(data) as JsonObject }.getOrNull() ?: return false
-    if (name == "error") error("Refinement provider rejected the request")
-    if (name == "response.failed" || name == "response.incomplete") {
-        throw RefinementStopped("Refinement provider ended the response: $name")
+    if (name == "error")
+        throw ProviderFailure(
+            streamedErrorKind(json["error"] as? JsonObject ?: json),
+            "Refinement provider rejected the request",
+        )
+    // An incomplete response hit a token limit or a filter: the text is cut short.
+    if (name == "response.incomplete")
+        throw RefinementStopped(ProviderFailureKind.InvalidResult, "Refinement was cut short")
+    if (name == "response.failed") {
+        val response = json["response"] as? JsonObject ?: json
+        throw RefinementStopped(
+            streamedErrorKind(response["error"] as? JsonObject ?: response),
+            "Refinement provider failed the response",
+        )
     }
     if (provider == OAuthProvider.Claude && name == "message_delta") {
         val reason = (json["delta"] as? JsonObject)?.get("stop_reason")?.jsonPrimitive?.content
         if (reason != null && reason != "end_turn" && reason != "stop_sequence") {
-            throw RefinementStopped("Refinement stopped before completion")
+            throw RefinementStopped(
+                ProviderFailureKind.InvalidResult,
+                "Refinement stopped before completion",
+            )
         }
     }
     val delta =

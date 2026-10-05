@@ -26,7 +26,7 @@ import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.createDictationEngine
 import app.speecher.android.dictation.oauth
-import app.speecher.android.dictation.resolveSignedIn
+import app.speecher.android.dictation.resolveSpeech
 import app.speecher.android.dictation.screenCapture
 import app.speecher.android.dictation.screenshotJpeg
 import app.speecher.android.dictation.sharedExecutor
@@ -37,6 +37,7 @@ import app.speecher.android.ui.ChipSize
 import app.speecher.android.ui.DictationChip
 import app.speecher.android.ui.SavePositionPill
 import app.speecher.android.ui.SpeecherTheme
+import app.speecher.protocol.ProviderFailureKind
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -315,6 +316,8 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     private fun onChipTap() {
+        // Android is replacing the app, which would end the dictation within seconds.
+        if (ActiveDictation.installingUpdate) return
         ImeSwap(this).rememberPrevious()
         val engine = startDictation()
         // Only now, before the swap, does the focused field still belong to the app being dictated
@@ -325,6 +328,7 @@ class SpeecherChipService : AccessibilityService() {
         }
             .getOrDefault(false)
         if (switched) {
+            chip?.vibrateForStartOrStop()
             removeChip()
         } else {
             // Our keyboard isn't enabled; setup isn't finished, so send them there.
@@ -355,17 +359,19 @@ class SpeecherChipService : AccessibilityService() {
                 settings,
                 { ActiveDictation.connection },
                 { state ->
-                    if (state is DictationState.Failed && state.reason == FailureReason.SignedOut) {
-                        state.provider?.let { tokens.endSession(it.oauth) }
-                    }
+                    val reason = (state as? DictationState.Failed)?.reason
+                    if (
+                        reason is FailureReason.ProviderFailed &&
+                            reason.kind == ProviderFailureKind.Authentication
+                    )
+                        reason.account?.let { tokens.endSession(it.oauth) }
                     ActiveDictation.state = state
                     ActiveDictation.observe?.invoke(state)
                 },
                 { ActiveDictation.onInserted?.invoke() },
             )
         ActiveDictation.engine = engine
-        val signedIn = tokens.signedIn()
-        engine.start(resolveSignedIn(settings.transcriptionProvider, signedIn))
+        engine.start(resolveSpeech(settings.transcriptionProvider, tokens.signedIn()))
         return engine
     }
 

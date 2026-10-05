@@ -160,7 +160,6 @@ final class SetupFlowModel: ObservableObject {
         launchAtLogin = RowView.flag(model.row("launchAtLogin")?.value)
         let savedRefinement = RowView.text(model.row("refinementProvider")?.value)
         lastRefinementProvider = savedRefinement == "none" ? "" : savedRefinement
-        savedSpeechProvider = RowView.text(model.row("speechProvider")?.value)
         cliproxyDirectory = model.bridge.setupCliproxyDirectory
         modelChanges = model.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         // The shortcut step's gate is a working registration, so the one the
@@ -223,7 +222,7 @@ final class SetupFlowModel: ObservableObject {
         switch stepId {
         case "transcription":
             return transcriptionDeadEnd
-                ?? bridge.setupTranscriptionBlocked(localSelected: localSelected,
+                ?? bridge.setupTranscriptionBlocked(providerId: selectedSpeechProvider?.id ?? "",
                                                     provider: selectedSpeechProvider?.label ?? "")
         case "microphone":
             return bridge.setupMicrophoneBlocked(accessGranted: microphonePermission == .authorized)
@@ -360,15 +359,13 @@ final class SetupFlowModel: ObservableObject {
         refinementProviders.first { $0.id == refinementProviderId }
     }
 
-    /// The services the transcription step lists. A speech server is set up
-    /// in Settings alone, so it is listed only when it was the saved choice;
-    /// Local only where this build can run it.
+    /// The services the transcription step lists: every one, Local only where
+    /// this build can run it.
     var transcriptionChoices: [ProviderRow] {
         speechProviders.filter {
-            model.bridge.offersSetupSpeechProvider($0.id, saved: savedSpeechProvider, localAvailable: offersLocal)
+            model.bridge.offersSetupSpeechProvider($0.id, localAvailable: offersLocal)
         }
     }
-    private let savedSpeechProvider: String
 
     var providerHint: String { selectedSpeechProvider?.setupHint ?? "" }
     var providerReady: Bool { selectedSpeechProvider?.ready ?? false }
@@ -378,13 +375,22 @@ final class SetupFlowModel: ObservableObject {
 
     /// The line under the transcription rows, which describes the selected
     /// service: the probe's own words when it refused, ours when it did not.
+    /// The endpoint's refusal sends people to Settings while its fields are on
+    /// this step, so core's reason replaces it, and its form says how the
+    /// server answered, so a ready one needs no line.
     var providerStatus: String {
         guard let provider = selectedSpeechProvider else {
-            return model.bridge.setupTranscriptionBlocked(localSelected: false, provider: "")
+            return model.bridge.setupTranscriptionBlocked(providerId: "", provider: "")
         }
         guard provider.probed else { return "Checking…" }
+        if endpointSelected {
+            return provider.ready ? "" : model.bridge.setupTranscriptionBlocked(providerId: provider.id,
+                                                                                 provider: provider.label)
+        }
         return provider.ready ? model.bridge.setupProviderReady(provider.label) : provider.message
     }
+
+    var endpointSelected: Bool { providerId == "endpoint" }
 
     /// Refinement stays optional, so an unready provider is a warning rather
     /// than a gate: dictation still delivers, just without the cleanup.
@@ -427,7 +433,7 @@ final class SetupFlowModel: ObservableObject {
         let note = model.bridge.setupTranscriptionDeadEnd(
             signInFound: signIns.contains { $0.ready || !$0.probed } || cliproxyAvailable,
             localUsable: offersLocal && localRunnable,
-            endpointSaved: savedSpeechProvider == "endpoint",
+            endpointChosen: endpointSelected,
             signInProvidersRegistered: !signIns.isEmpty)
         return note.isEmpty ? nil : note
     }
@@ -575,8 +581,9 @@ final class SetupFlowModel: ObservableObject {
 
     /// A sign-in change invalidates only the selected service's verdict, and
     /// a probe can be a network OAuth refresh, so only that one re-probes;
-    /// showing "Checking…" holds the gate until the new probe answers.
-    private func reprobeSelectedSpeechProvider() {
+    /// showing "Checking…" holds the gate until the new probe answers. A new
+    /// endpoint server does the same, since readiness is having one.
+    func reprobeSelectedSpeechProvider() {
         guard let index = speechProviders.firstIndex(where: { $0.id == providerId }) else {
             return
         }
@@ -1412,18 +1419,23 @@ private struct TranscriptionStep: View {
                             StatusLabel(text: flow.providerStatus, tone: statusTone)
                         }
                         Spacer(minLength: 12)
-                        if !flow.providerReady {
+                        // The endpoint's fields and Connect are what it needs.
+                        if !flow.providerReady, !flow.endpointSelected {
                             Button(flow.model.bridge.setupText(.checkAgain)) { flow.checkSpeechProviders() }
                         }
                     }
                 }
             } footer: {
-                if !flow.localSelected, !flow.providerReady, !flow.providerHint.isEmpty {
+                // The endpoint's fields say what server it takes.
+                if !flow.localSelected, !flow.endpointSelected, !flow.providerReady, !flow.providerHint.isEmpty {
                     Text(flow.providerHint)
                 }
             }
             if flow.localSelected, let choice = flow.localChoice {
                 LocalChoiceSections(flow: flow, choice: choice)
+            }
+            if flow.endpointSelected {
+                SpeechEndpointSections(model: model)
             }
             // The service's own sign-in stays the silent default; CLI Proxy API
             // is the exception this toggle opts into, matching the Qt and
@@ -1460,6 +1472,9 @@ private struct TranscriptionStep: View {
         .onAppear {
             flow.model.refreshLocalSetup()
             flow.checkSpeechProviders()
+        }
+        .onChange(of: RowView.text(model.row("speechEndpointUrl")?.value)) {
+            if flow.endpointSelected { flow.reprobeSelectedSpeechProvider() }
         }
     }
 
@@ -1930,7 +1945,7 @@ private struct EndpointSections: View {
                         modelName = edited
                         edit(model: edited)
                     }
-                    Button("Connect") {
+                    Button(model.bridge.setupText(.endpointConnect)) {
                         commitTypedFields()
                         model.bridge.checkRefinementEndpoint()
                     }
@@ -1974,6 +1989,38 @@ private struct EndpointSections: View {
     private func edit(format: String? = nil, serverUrl: String? = nil, apiKey: String? = nil, model name: String? = nil) {
         model.bridge.editRefinementEndpoint(format: format, serverUrl: serverUrl, apiKey: apiKey, model: name)
         model.reloadSettingsDraft()
+    }
+}
+
+/// Custom Endpoint on the transcription step: the server, path, key and model
+/// laid out as the refinement step lays out its own, each one its settings
+/// row, and the connection check that lists the server's models.
+private struct SpeechEndpointSections: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Section {
+            ForEach(model.rows(matching: ["speechEndpointUrl", "speechEndpointPath", "speechEndpointApiKey"]),
+                    id: \.rowId) { row in
+                RowView(row: row, model: model)
+            }
+            if let row = model.row("speechEndpointModel") {
+                LabeledContent {
+                    HStack {
+                        TextRowField(row: row, model: model)
+                        // The test action ends the field being typed in first,
+                        // so the server on screen is the one checked.
+                        Button(model.bridge.setupText(.endpointConnect)) { model.trigger("speechEndpointTest") }
+                    }
+                } label: {
+                    RowView.label(row.label, help: model.bridge.setupText(.endpointModelHint))
+                }
+            }
+        } footer: {
+            if !model.local.speechEndpointStatus.isEmpty {
+                Text(model.local.speechEndpointStatus)
+            }
+        }
     }
 }
 

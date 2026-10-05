@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -16,8 +17,11 @@ import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
+import app.speecher.android.dictation.cleanup
+import app.speecher.android.dictation.needsServerSettings
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.shownPanelSize
+import app.speecher.android.dictation.signInAccount
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SettingsPage
@@ -73,18 +77,26 @@ class SpeecherImeService : InputMethodService() {
                         size,
                         onToggleSize = { sizeToggled.value = !sizeToggled.value },
                         onCancel = ::switchBack,
-                        onInsert = { ActiveDictation.engine?.insert() },
+                        onInsert = {
+                            if (ActiveDictation.engine?.insert() == true)
+                                view.vibrateForStartOrStop()
+                        },
                         onInsertRefined = {
-                            ActiveDictation.engine?.insertRefined(
-                                resolveSignedIn(
-                                    ActiveDictation.settings.refinementProvider,
-                                    TokenStore(this).signedIn(),
-                                )
-                            )
+                            val stopped =
+                                ActiveDictation.engine?.insertRefined(
+                                    resolveSignedIn(
+                                            ActiveDictation.settings.refinementProvider.account,
+                                            TokenStore(this).signedIn(),
+                                        )
+                                        .cleanup
+                                ) == true
+                            if (stopped) view.vibrateForStartOrStop()
                         },
                         onRecover = ::recover,
                         onPause = { ActiveDictation.engine?.pause() },
                         onResume = { ActiveDictation.engine?.resume() },
+                        transcriptionPreview = ActiveDictation.settings.transcriptionPreviewEnabled,
+                        refinementPreview = ActiveDictation.settings.refinementPreviewEnabled,
                     )
                 }
             }
@@ -177,25 +189,29 @@ class SpeecherImeService : InputMethodService() {
     }
 
     /**
-     * A denied microphone, an ended sign-in and an unsupported spoken language need the app; the
-     * other failures retry in place.
+     * A denied microphone, an ended sign-in, a server's settings, an unsupported spoken language
+     * and an edit with no cleanup need the app; the other failures retry in place.
      */
     private fun recover() {
-        val failed = panelState.value as? DictationState.Failed ?: return
+        val reason = (panelState.value as? DictationState.Failed)?.reason ?: return
+        val signIn = reason.signInAccount
+        val transcriptionSettings =
+            reason == FailureReason.SpokenLanguage || reason.needsServerSettings
         if (
-            failed.reason != FailureReason.MicrophoneDenied &&
-                failed.reason != FailureReason.SignedOut &&
-                failed.reason != FailureReason.SpokenLanguage
+            signIn == null &&
+                reason != FailureReason.MicrophoneDenied &&
+                reason != FailureReason.SelectionNeedsCleanup &&
+                !transcriptionSettings
         ) {
-            ActiveDictation.engine?.retry()
+            if (ActiveDictation.engine?.retry() == true) panel?.vibrateForStartOrStop()
             return
         }
         switchBack()
         val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (failed.reason == FailureReason.SignedOut)
-            intent.putExtra("sign_in_provider", failed.provider?.name)
-        if (failed.reason == FailureReason.SpokenLanguage)
-            intent.putExtra("settings_page", SettingsPage.Transcription.name)
+        if (signIn != null) intent.putExtra("sign_in_provider", signIn.name)
+        if (transcriptionSettings) intent.putExtra("settings_page", SettingsPage.Transcription.name)
+        if (reason == FailureReason.SelectionNeedsCleanup)
+            intent.putExtra("settings_page", SettingsPage.Profiles.name)
         startActivity(intent)
     }
 
@@ -217,3 +233,12 @@ class SpeecherImeService : InputMethodService() {
 }
 
 private const val DISMISS_GRACE_MILLIS = 750L
+
+/**
+ * The desktop's start and stop sounds, as a vibration when the person turned it on. The view's
+ * haptics follow the phone's touch feedback setting.
+ */
+fun View.vibrateForStartOrStop() {
+    if (ActiveDictation.settings.vibrationEnabled)
+        performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+}

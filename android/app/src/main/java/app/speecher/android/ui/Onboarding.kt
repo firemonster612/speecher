@@ -60,6 +60,7 @@ fun Onboarding(
     onOpenAppInfo: () -> Unit,
     onFinish: () -> Unit,
     modifier: Modifier = Modifier,
+    onUseServer: () -> Unit = {},
     signingIn: Provider? = null,
     signInError: String? = null,
     onPasteCode: (String) -> Unit = {},
@@ -70,7 +71,7 @@ fun Onboarding(
             "A few one-time steps so you can dictate into any text field.",
         )
         var step = 1
-        SignInStep(step++, status.signedIn, signingIn, onSignIn, onPasteCode)
+        SignInStep(step++, status, signingIn, onSignIn, onUseServer, onPasteCode)
         signInError?.let {
             Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
         }
@@ -79,6 +80,7 @@ fun Onboarding(
             "Allow the microphone",
             "The keyboard can't ask for it, so Speecher asks here.",
             status.microphoneGranted,
+            whenDone = { MicrophoneTestControls() },
         ) {
             StepButton("Allow", onRequestMicrophone)
         }
@@ -127,25 +129,30 @@ fun Onboarding(
 
 /**
  * Sign-in is one step, not one per provider: either account is enough to finish setup, so the step
- * is done the moment one connects and the other is offered as an optional extra.
+ * is done the moment one connects and the other is offered as an optional extra. A speech server of
+ * the person's own does without an account, so it is done by that too.
  */
 @Composable
 private fun SignInStep(
     number: Int,
-    signedIn: Set<Provider>,
+    status: SetupStatus,
     signingIn: Provider?,
     onSignIn: (Provider) -> Unit,
+    onUseServer: () -> Unit,
     onPasteCode: (String) -> Unit,
 ) {
-    val title = "Sign in to one account"
-    val done = signedIn.isNotEmpty()
+    val signedIn = status.signedIn
+    val serverOnly = status.ownServer && signedIn.isEmpty()
+    val title = if (serverOnly) "Use your own speech server" else "Sign in to one account"
+    val done = signedIn.isNotEmpty() || status.ownServer
     val remaining = providerOrder.filter { it !in signedIn }
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
         StepMarker(number, title, done)
         Column(Modifier.padding(start = 16.dp).weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Text(
-                "Speecher transcribes with your own ChatGPT or Claude account. One is enough.",
+                if (serverOnly) "Speecher transcribes with your Custom Endpoint, no account needed."
+                else "Speecher transcribes with your own ChatGPT or Claude account. One is enough.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -155,6 +162,9 @@ private fun SignInStep(
                     remaining.forEach { provider ->
                         StepButton("Sign in to ${provider.label}") { onSignIn(provider) }
                     }
+                }
+                TextButton(onUseServer, Modifier.offset(x = (-12).dp)) {
+                    Text("Or use your own speech server")
                 }
             } else {
                 remaining.forEach { provider ->
@@ -249,6 +259,7 @@ private fun Step(
     title: String,
     description: String,
     done: Boolean,
+    whenDone: (@Composable () -> Unit)? = null,
     action: @Composable () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
@@ -260,9 +271,10 @@ private fun Step(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (!done) {
+            val content = if (done) whenDone else action
+            if (content != null) {
                 Spacer(Modifier.height(10.dp))
-                action()
+                content()
             }
         }
     }
@@ -368,3 +380,8 @@ internal fun OnboardingPartwayPreview() =
 @Composable
 internal fun OnboardingDonePreview() =
     OnboardingPreview(SetupStatus(Provider.entries.toSet(), true, true, true))
+
+@PreviewLightDark
+@Composable
+internal fun OnboardingServerPreview() =
+    OnboardingPreview(SetupStatus(emptySet(), true, true, true, ownServer = true))

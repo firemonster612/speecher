@@ -1,19 +1,29 @@
 package app.speecher.android.dictation
 
 import android.content.Context
+import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import androidx.core.content.edit
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.update.IntervalUnit
+import app.speecher.android.update.UpdateChannel
 import app.speecher.android.update.checkIntervalMinutes
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
+import app.speecher.protocol.DEFAULT_SPEECH_ENDPOINT_PATH
 import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.Replacement
+import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.normalizedVocabulary
+import app.speecher.protocol.withUsage
 import kotlin.enums.enumEntries
 import kotlin.math.roundToInt
 import org.json.JSONArray
@@ -35,11 +45,17 @@ class SettingsStore(private val context: Context) {
                 .coerceIn(checkIntervalMinutes)
         return SpeecherSettings(
                 transcriptionProvider =
-                    enumOf(preferences.getString("transcription", null), default),
+                    enumOf(preferences.getString("transcription", null), default.speech),
                 refinementEnabled = preferences.getBoolean("refinement", true),
                 refinementProvider =
-                    enumOf(preferences.getString("refinementProvider", null), default),
+                    enumOf(preferences.getString("refinementProvider", null), default.cleanup),
                 transcribePassEnabled = preferences.getBoolean("transcribePass", true),
+                speechEndpoint =
+                    SpeechEndpoint(
+                        preferences.getString("speechEndpointUrl", "")!!,
+                        preferences.getString("speechEndpointPath", DEFAULT_SPEECH_ENDPOINT_PATH)!!,
+                        preferences.getString("speechEndpointModel", "")!!,
+                    ),
                 spokenLanguage = preferences.getString("spokenLanguage", ENGLISH_LANGUAGE)!!,
                 chatGptRefinement = loadRefinement(Provider.ChatGpt),
                 claudeRefinement = loadRefinement(Provider.Claude),
@@ -51,25 +67,10 @@ class SettingsStore(private val context: Context) {
                         else OpenAiSpeed.Standard,
                     ),
                 claudeFastMode = preferences.getBoolean("anthropicFastMode", true),
-                vocabulary =
-                    JSONArray(preferences.getString("vocabulary", "[]")).let { items ->
-                        // Earlier releases stored each word as its bare term.
-                        List(items.length()) { index ->
-                            val word = items.optJSONObject(index)
-                            if (word == null) VocabularyWord(items.getString(index))
-                            else
-                                VocabularyWord(
-                                    word.getString("term"),
-                                    word.optString("context"),
-                                    (word.optJSONArray("profiles") ?: JSONArray()).let { ids ->
-                                        List(ids.length()) { WritingProfile(ids.getString(it)) }
-                                            .toSet()
-                                    },
-                                    // Stored only when off, so every earlier word is a key term.
-                                    word.optBoolean("keyTerm", true),
-                                    word.optBoolean("priority"),
-                                )
-                        }
+                vocabulary = loadVocabulary(),
+                replacements =
+                    objects("replacements").map {
+                        Replacement(it.getString("phrase"), it.getString("text"))
                     },
                 chipDockOnMic = preferences.getBoolean("chipDockOnMic", true),
                 chipOffsetX =
@@ -77,6 +78,11 @@ class SettingsStore(private val context: Context) {
                 chipOffsetY =
                     preferences.getInt("chipOffsetY", NO_OFFSET).takeIf { it != NO_OFFSET },
                 keepScreenOn = preferences.getBoolean("keepScreenOn", true),
+                pauseMedia = preferences.getBoolean("pauseMedia", true),
+                vibrationEnabled = preferences.getBoolean("vibrationEnabled", false),
+                transcriptionPreviewEnabled =
+                    preferences.getBoolean("transcriptionPreviewEnabled", true),
+                refinementPreviewEnabled = preferences.getBoolean("refinementPreviewEnabled", true),
                 useTargetContext = preferences.getBoolean("useTargetContext", true),
                 includeScreenText = preferences.getBoolean("includeScreenText", false),
                 includeScreenshot = preferences.getBoolean("includeScreenshot", false),
@@ -96,6 +102,7 @@ class SettingsStore(private val context: Context) {
                             preferences.getString("${key}CustomCleanup", null),
                             preferences.getString("${key}CustomTone", null),
                             preferences.getString("${key}Name", "")!!,
+                            preferences.getString("${key}OutputLanguage", "")!!,
                         )
                     },
                 appRules =
@@ -137,6 +144,9 @@ class SettingsStore(private val context: Context) {
                         ButtonLayout.RefinedPrimary,
                     ),
                 panelSize = enumOf(preferences.getString("panelSize", null), PanelSize.Full),
+                autoCheckUpdates = preferences.getBoolean("autoCheckUpdates", true),
+                updateChannel =
+                    enumOf(preferences.getString("updateChannel", null), UpdateChannel.Stable),
                 updateCheckMinutes = updateCheckMinutes,
                 // Only a unit the interval is a whole number of, or 5 minutes would read "0 days".
                 updateCheckUnit =
@@ -144,11 +154,15 @@ class SettingsStore(private val context: Context) {
                         .getString("updateCheckUnit", null)
                         ?.let { name -> IntervalUnit.entries.firstOrNull { it.name == name } }
                         ?.takeIf { updateCheckMinutes % it.minutes == 0 },
+                insightsEnabled = insightsEnabled(),
             )
             // So no profile names a tone or level that is gone, and no rule a profile.
             .withCustomChoices()
             .withWritingProfiles()
     }
+
+    /** Just [SpeecherSettings.insightsEnabled], read without loading the rest. */
+    fun insightsEnabled(): Boolean = preferences.getBoolean("insightsEnabled", true)
 
     fun save(settings: SpeecherSettings) {
         preferences.edit(commit = true) {
@@ -156,6 +170,9 @@ class SettingsStore(private val context: Context) {
             putBoolean("refinement", settings.refinementEnabled)
             putString("refinementProvider", settings.refinementProvider.name)
             putBoolean("transcribePass", settings.transcribePassEnabled)
+            putString("speechEndpointUrl", settings.speechEndpoint.baseUrl)
+            putString("speechEndpointPath", settings.speechEndpoint.path)
+            putString("speechEndpointModel", settings.speechEndpoint.model)
             putString("spokenLanguage", settings.spokenLanguage)
             Provider.entries.forEach { provider ->
                 val choice = settings.refinement(provider)
@@ -164,21 +181,12 @@ class SettingsStore(private val context: Context) {
             }
             putString("openAiSpeed", settings.chatGptSpeed.name)
             putBoolean("anthropicFastMode", settings.claudeFastMode)
+            putString("vocabulary", vocabularyJson(settings.vocabulary))
             putString(
-                "vocabulary",
+                "replacements",
                 JSONArray(
-                        settings.vocabulary.map { word ->
-                            JSONObject(
-                                    mapOf(
-                                        "term" to word.term,
-                                        "context" to word.context,
-                                        "profiles" to JSONArray(word.profiles.map { it.id }),
-                                    )
-                                )
-                                .apply {
-                                    if (!word.keyTerm) put("keyTerm", false)
-                                    if (word.priority) put("priority", true)
-                                }
+                        settings.replacements.map {
+                            JSONObject(mapOf("phrase" to it.phrase, "text" to it.text))
                         }
                     )
                     .toString(),
@@ -187,6 +195,10 @@ class SettingsStore(private val context: Context) {
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")
             putBoolean("keepScreenOn", settings.keepScreenOn)
+            putBoolean("pauseMedia", settings.pauseMedia)
+            putBoolean("vibrationEnabled", settings.vibrationEnabled)
+            putBoolean("transcriptionPreviewEnabled", settings.transcriptionPreviewEnabled)
+            putBoolean("refinementPreviewEnabled", settings.refinementPreviewEnabled)
             putBoolean("useTargetContext", settings.useTargetContext)
             putBoolean("includeScreenText", settings.includeScreenText)
             putBoolean("includeScreenshot", settings.includeScreenshot)
@@ -198,6 +210,7 @@ class SettingsStore(private val context: Context) {
                 putString("${key}Instructions", choice.instructions)
                 putString("${key}CustomCleanup", choice.customCleanupLevel)
                 putString("${key}CustomTone", choice.customTone)
+                putString("${key}OutputLanguage", choice.outputLanguage)
                 if (!profile.isBuiltIn) putString("${key}Name", choice.name)
             }
             putString(
@@ -256,11 +269,43 @@ class SettingsStore(private val context: Context) {
             )
             putString("buttonLayout", settings.buttonLayout.name)
             putString("panelSize", settings.panelSize.name)
+            putBoolean("autoCheckUpdates", settings.autoCheckUpdates)
+            putString("updateChannel", settings.updateChannel.name)
             putInt("updateCheckMinutes", settings.updateCheckMinutes)
             settings.updateCheckUnit?.let { putString("updateCheckUnit", it.name) }
                 ?: remove("updateCheckUnit")
+            putBoolean("insightsEnabled", settings.insightsEnabled)
             putInt("version", VERSION)
         }
+    }
+
+    /**
+     * Calls [onChange] on the main thread whenever a setting is stored, by this store or another,
+     * until [lifecycle] is destroyed. The dictation engine stores use counts while a screen of the
+     * app may be open beside the target, and that screen saving the copy it loaded earlier would
+     * wipe them.
+     */
+    fun observe(lifecycle: Lifecycle, onChange: () -> Unit) {
+        val listener = OnSharedPreferenceChangeListener { _, _ -> onChange() }
+        // Preferences hold a listener weakly; the lifecycle observer keeps this one.
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        lifecycle.addObserver(
+            object : DefaultLifecycleObserver {
+                override fun onDestroy(owner: LifecycleOwner) =
+                    preferences.unregisterOnSharedPreferenceChangeListener(listener)
+            }
+        )
+    }
+
+    /**
+     * Counts a use of each word [text] contains, as the desktop does for every dictation it
+     * delivers. Writes only the vocabulary, leaving every other setting as stored.
+     */
+    fun recordVocabularyUsage(text: String, nowMs: Long = System.currentTimeMillis()) {
+        val words = loadVocabulary()
+        val used = withUsage(words, text, nowMs)
+        if (used != words)
+            preferences.edit { putString("vocabulary", vocabularyJson(normalizedVocabulary(used))) }
     }
 
     /**
@@ -285,6 +330,52 @@ class SettingsStore(private val context: Context) {
             putInt("version", VERSION)
         }
     }
+
+    private fun loadVocabulary(): List<VocabularyWord> =
+        JSONArray(preferences.getString("vocabulary", "[]"))
+            .let { items ->
+                // Earlier releases stored each word as its bare term.
+                List(items.length()) { index ->
+                    val word = items.optJSONObject(index)
+                    if (word == null) VocabularyWord(items.getString(index))
+                    else
+                        VocabularyWord(
+                            word.getString("term"),
+                            word.optString("context"),
+                            (word.optJSONArray("profiles") ?: JSONArray()).let { ids ->
+                                List(ids.length()) { WritingProfile(ids.getString(it)) }.toSet()
+                            },
+                            // Stored only when off, so every earlier word is a key term.
+                            word.optBoolean("keyTerm", true),
+                            word.optBoolean("priority"),
+                            word.optString("source", "manual"),
+                            word.optInt("frequency"),
+                            word.optLong("lastUsedMs"),
+                        )
+                }
+            }
+            .let(::normalizedVocabulary)
+
+    private fun vocabularyJson(words: List<VocabularyWord>): String =
+        JSONArray(
+                words.map { word ->
+                    JSONObject(
+                            mapOf(
+                                "term" to word.term,
+                                "context" to word.context,
+                                "profiles" to JSONArray(word.profiles.map { it.id }),
+                                "source" to word.source,
+                                "frequency" to word.frequency,
+                                "lastUsedMs" to word.lastUsedMs,
+                            )
+                        )
+                        .apply {
+                            if (!word.keyTerm) put("keyTerm", false)
+                            if (word.priority) put("priority", true)
+                        }
+                }
+            )
+            .toString()
 
     private fun customProfileIds(): List<WritingProfile> =
         JSONArray(preferences.getString("customProfiles", "[]")).let { items ->

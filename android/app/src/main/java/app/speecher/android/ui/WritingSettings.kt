@@ -110,7 +110,10 @@ internal fun toneChoices(settings: SpeecherSettings): Map<String, String> =
 
 @Composable
 internal fun ProfileSettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
-    PageIntro("Choose a cleanup level, a tone and optional instructions for each profile.")
+    PageIntro(
+        "Choose a cleanup level, a tone and optional instructions for each profile. An output " +
+            "language translates what you say, with at least Light cleanup."
+    )
     val profiles = profileChoices(settings)
     profiles.forEach { (profile, label) ->
         val behavior = settings.writingProfiles.getValue(profile)
@@ -139,6 +142,14 @@ internal fun ProfileSettings(settings: SpeecherSettings, onChange: (SpeecherSett
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             label = { Text("Instructions") },
             minLines = 2,
+        )
+        OutlinedTextField(
+            behavior.outputLanguage,
+            { update(behavior.copy(outputLanguage = it)) },
+            Modifier.fillMaxWidth().padding(start = 16.dp, top = 8.dp, end = 16.dp),
+            label = { Text("Output language") },
+            placeholder = { Text("Same as spoken") },
+            singleLine = true,
         )
         if (!profile.isBuiltIn) {
             DeleteProfile(settings.profileDeletionNotice(profile)) {

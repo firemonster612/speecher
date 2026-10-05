@@ -717,6 +717,7 @@ typedef NS_ENUM(NSInteger, SpeecherSetupText) {
     SpeecherSetupTextGetOllama,
     SpeecherSetupTextDownloadWithOllama,
     SpeecherSetupTextEndpointModelHint,
+    SpeecherSetupTextEndpointConnect,
     SpeecherSetupTextSessionShortcuts,
     SpeecherSetupTextSessionShortcutsLead,
 };
@@ -997,6 +998,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // while one runs, empty before the first; and the models it listed.
 @property (nonatomic, readonly, copy) NSString *endpointStatus;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *endpointModels;
+// The same verdict for the speech endpoint, whose models come with its
+// settings row.
+@property (nonatomic, readonly, copy) NSString *speechEndpointStatus;
 @end
 
 // The refinement Custom Endpoint as the setup assistant's form shows it: with
@@ -1269,11 +1273,13 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // dictation remains; core decides when it shows and words it.
 - (NSString *)setupTranscriptionDeadEnd:(BOOL)signInFound
                             localUsable:(BOOL)localUsable
-                          endpointSaved:(BOOL)endpointSaved
+                         endpointChosen:(BOOL)endpointChosen
               signInProvidersRegistered:(BOOL)signInProvidersRegistered
-    NS_SWIFT_NAME(setupTranscriptionDeadEnd(signInFound:localUsable:endpointSaved:signInProvidersRegistered:));
-- (NSString *)setupTranscriptionBlocked:(BOOL)localSelected provider:(NSString *)providerLabel
-    NS_SWIFT_NAME(setupTranscriptionBlocked(localSelected:provider:));
+    NS_SWIFT_NAME(setupTranscriptionDeadEnd(signInFound:localUsable:endpointChosen:signInProvidersRegistered:));
+// Why the step holds Continue for the chosen provider; an empty label means
+// no transcription service is available.
+- (NSString *)setupTranscriptionBlocked:(NSString *)providerId provider:(NSString *)providerLabel
+    NS_SWIFT_NAME(setupTranscriptionBlocked(providerId:provider:));
 - (NSString *)setupMicrophoneBlocked:(BOOL)accessGranted NS_SWIFT_NAME(setupMicrophoneBlocked(accessGranted:));
 - (NSString *)setupReadyIntro:(BOOL)blocked downloading:(BOOL)downloading
     NS_SWIFT_NAME(setupReadyIntro(blocked:downloading:));
@@ -1357,8 +1363,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (nullable NSString *)setupRefinementChoiceForSaved:(NSString *)saved
                                       readyProviders:(NSArray<NSString *> *)readyProviders
     NS_SWIFT_NAME(setupRefinementChoice(saved:readyProviders:));
-- (BOOL)offersSetupSpeechProvider:(NSString *)providerId saved:(NSString *)saved localAvailable:(BOOL)localAvailable
-    NS_SWIFT_NAME(offersSetupSpeechProvider(_:saved:localAvailable:));
+- (BOOL)offersSetupSpeechProvider:(NSString *)providerId localAvailable:(BOOL)localAvailable
+    NS_SWIFT_NAME(offersSetupSpeechProvider(_:localAvailable:));
 - (BOOL)isSetupSignInProvider:(NSString *)providerId NS_SWIFT_NAME(isSetupSignInProvider(_:));
 // "Ollama with gemma4:e4b" or "qwen3 on your server"; empty for other providers.
 @property (nonatomic, readonly, copy) NSString *ownModelRefinementSummary;

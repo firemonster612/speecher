@@ -125,8 +125,9 @@ class SpeechProviderSetupPage final : public QWidget, public SetupStep {
     Q_OBJECT
 
 public:
-    // With local set, Local model is one of the choices, with a suggested
-    // model to download.
+    // local checks a Custom Endpoint's connection, and where the registry
+    // has a Local Model provider, Local model is one of the choices, with a
+    // suggested model to download.
     SpeechProviderSetupPage(SettingsStore &settings,
                             ProviderRegistry &providers,
                             LocalSetup *local = nullptr,
@@ -166,8 +167,13 @@ private:
     void reprobeSelectedProvider();
     int selectedIndex() const;
     void setReady(bool ready);
+    bool localOffered() const;
     bool localSelected() const;
+    bool endpointSelected() const;
     QWidget *makeLocalSection();
+    QWidget *makeEndpointSection();
+    void saveEndpointField(const QString &rowId, const QString &value);
+    void showEndpointCheck();
     // The model the Local card shows, which is the one dictation will use.
     const LocalModel &localChoice() const;
     void setLocalChoice(const QString &modelId);
@@ -220,6 +226,12 @@ private:
     settings::RatedModelList *m_models = nullptr;
     QWidget *m_compareBlock = nullptr;
     QTableWidget *m_compare = nullptr;
+    QWidget *m_endpointSection = nullptr;
+    QLineEdit *m_endpointUrl = nullptr;
+    QLineEdit *m_endpointPath = nullptr;
+    QLineEdit *m_endpointKey = nullptr;
+    QComboBox *m_endpointModel = nullptr;
+    QLabel *m_endpointStatus = nullptr;
     SetupFallbackSection *m_fallbacks = nullptr;
 
     // The suggestion stands until the person picks a model themselves.

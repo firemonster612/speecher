@@ -281,6 +281,45 @@ else
   fi
 fi
 
+# S4: with Custom Endpoint chosen, the transcription step holds Continue until
+# the endpoint has a server, and lets it through once one is saved. Seeded,
+# since synthetic input cannot select a non-first radio row.
+fresh_reset
+defaults write "$DOMAIN" stt.provider endpoint
+case_begin S4
+if ! launch_setup || ! wait_for_assistant; then
+  fail_case "The setup assistant did not appear with Custom Endpoint seeded."
+else
+  errors=()
+  wait_for_page_capture 1 welcome || errors+=("the welcome step was never captured")
+  click_button Continue >/dev/null 2>&1 || true
+  wait_for_page_capture 2 transcription || errors+=("Continue did not leave the welcome step")
+  click_button Continue >/dev/null 2>&1 || true
+  sleep 2
+  if wait_for_page_capture 3 microphone; then
+    errors+=("Continue advanced past the transcription step with no server")
+  fi
+  stop_app
+  defaults write "$DOMAIN" endpoint.speech.baseUrl "http://127.0.0.1:8080"
+  rm -rf "$CASE_DIR/pages"
+  if ! launch_setup || ! wait_for_assistant; then
+    errors+=("the assistant did not relaunch with a server seeded")
+  else
+    wait_for_page_capture 1 welcome || errors+=("the welcome step was never captured with a server")
+    click_button Continue >/dev/null 2>&1 || true
+    wait_for_page_capture 2 transcription || errors+=("Continue did not leave the welcome step with a server")
+    sleep 2
+    click_button Continue >/dev/null 2>&1 || true
+    wait_for_page_capture 3 microphone \
+      || errors+=("Continue did not leave the transcription step once the endpoint had a server")
+  fi
+  if (( ${#errors[@]} )); then
+    fail_case "$(IFS='; '; echo "${errors[*]}")"
+  else
+    pass_case "Custom Endpoint holds the transcription step until it has a server."
+  fi
+fi
+
 stop_app
 log "Setup E2E finished"
 cat "$VERDICTS"

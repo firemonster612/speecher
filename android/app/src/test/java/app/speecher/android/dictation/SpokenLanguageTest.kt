@@ -21,16 +21,17 @@ class SpokenLanguageTest {
 
     @Test
     fun `each service offers its own languages`() {
-        assertTrue("yue" in Provider.Claude.spokenLanguages)
-        assertFalse("cy" in Provider.Claude.spokenLanguages)
-        assertTrue("cy" in Provider.ChatGpt.spokenLanguages)
+        assertTrue("yue" in SpeechProvider.Claude.spokenLanguages)
+        assertFalse("cy" in SpeechProvider.Claude.spokenLanguages)
+        assertTrue("cy" in SpeechProvider.ChatGpt.spokenLanguages)
+        assertTrue("haw" in SpeechProvider.Endpoint.spokenLanguages)
     }
 
     @Test
     fun `languages show their English name, then the native one when it differs`() {
         assertEquals(
-            listOf("Automatic", "English", "German (Deutsch)", "Japanese (日本語)"),
-            listOf("auto", "en", "de", "ja").map(::spokenLanguageLabel),
+            listOf("Automatic", "English", "German (Deutsch)", "Japanese (日本語)", "Javanese (Jawa)"),
+            listOf("auto", "en", "de", "ja", "jw").map(::spokenLanguageLabel),
         )
     }
 
@@ -38,8 +39,8 @@ class SpokenLanguageTest {
     fun `a language the service can't listen for is named, not replaced`() {
         assertEquals(
             "Claude can't listen for Welsh. Choose another spoken language.",
-            spokenLanguageMismatch(Provider.Claude, "cy"),
+            spokenLanguageMismatch(SpeechProvider.Claude, "cy"),
         )
-        assertNull(spokenLanguageMismatch(Provider.ChatGpt, "cy"))
+        assertNull(spokenLanguageMismatch(SpeechProvider.ChatGpt, "cy"))
     }
 }

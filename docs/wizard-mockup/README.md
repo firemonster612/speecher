@@ -75,8 +75,9 @@ Example: `transcription.html?state=notready`
 
 Refinement groups its providers into "Uses your sign-in" and "Your own
 models" (This computer, A server I run); None is the Skip cleanup check box.
-A speech Custom Endpoint is set up in Settings only, so the Transcription step
-does not offer it.
+The Transcription step also offers a speech Custom Endpoint. Choosing it shows
+the server URL, path, API key and model with Connect, laid out as Refinement's
+`custom` state lays out its own; the mockups do not draw it.
 
 Refinement (6) and Writing profiles (7) are never gated — Next is always
 enabled. The Global Shortcut step (8) is gated. Every other gated page states, on screen, why Next is unavailable;

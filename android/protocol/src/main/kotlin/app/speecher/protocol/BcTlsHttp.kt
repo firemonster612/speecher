@@ -41,8 +41,10 @@ fun httpPost(
     headers: Map<String, String>,
     body: HttpBody,
     fingerprint: TlsFingerprint = TlsFingerprints.active,
+    cancellation: Cancellation = Cancellation(),
 ): HttpResponse =
-    httpPostStreaming(url, headers, body, fingerprint) { status, input ->
+    httpPostStreaming(url, headers, body, fingerprint, cancellation = cancellation) { status, input
+        ->
         HttpResponse(status, readAtMost(input))
     }
 
@@ -50,13 +52,17 @@ fun httpPost(
  * POSTs [body] over HTTP/1.1 and hands the status and decoded body stream to [read] as the bytes
  * arrive. https URLs use the same browser-shaped BC TLS as the speech WebSocket, because Cloudflare
  * rejects Conscrypt's handshake on chatgpt.com; http URLs use a plain socket, for fake-server
- * builds and tests. One request per connection.
+ * builds and tests. One request per connection. A read that waits [readTimeoutMillis] for a byte
+ * fails with a SocketTimeoutException; [cancellation] and [deadlineNanos] close the socket.
  */
 fun <T> httpPostStreaming(
     url: String,
     headers: Map<String, String>,
     body: HttpBody,
     fingerprint: TlsFingerprint = TlsFingerprints.active,
+    readTimeoutMillis: Int = 10000,
+    cancellation: Cancellation = Cancellation(),
+    deadlineNanos: Long? = null,
     read: (status: Int, body: InputStream) -> T,
 ): T {
     val uri = URI(url)
@@ -75,33 +81,38 @@ fun <T> httpPostStreaming(
                 "Accept-Encoding" to "gzip",
                 "Connection" to "close",
             )
-    Socket().use { socket ->
-        socket.connect(
-            InetSocketAddress(uri.host, if (uri.port < 0) (if (secure) 443 else 80) else uri.port),
-            10000,
-        )
-        socket.soTimeout = 10000
-        val tls =
-            if (secure)
-                connectTls(
-                    socket.getInputStream(),
-                    socket.getOutputStream(),
+    return Socket().use { socket ->
+        cancellation.request(socket::close, deadlineNanos) {
+            socket.connect(
+                InetSocketAddress(
                     uri.host,
-                    fingerprint,
-                    null,
-                )
-            else null
-        val output = tls?.outputStream ?: socket.getOutputStream()
-        val path = uri.rawPath.ifEmpty { "/" } + (uri.rawQuery?.let { "?$it" } ?: "")
-        output.write(
-            ("POST $path HTTP/1.1\r\n" +
-                    fields.entries.joinToString("") { "${it.key}: ${it.value}\r\n" } +
-                    "\r\n")
-                .toByteArray(Charsets.UTF_8)
-        )
-        output.write(body.bytes)
-        output.flush()
-        return readResponse(BufferedInputStream(tls?.inputStream ?: socket.getInputStream()), read)
+                    if (uri.port < 0) (if (secure) 443 else 80) else uri.port,
+                ),
+                10000,
+            )
+            socket.soTimeout = readTimeoutMillis
+            val tls =
+                if (secure)
+                    connectTls(
+                        socket.getInputStream(),
+                        socket.getOutputStream(),
+                        uri.host,
+                        fingerprint,
+                        null,
+                    )
+                else null
+            val output = tls?.outputStream ?: socket.getOutputStream()
+            val path = uri.rawPath.ifEmpty { "/" } + (uri.rawQuery?.let { "?$it" } ?: "")
+            output.write(
+                ("POST $path HTTP/1.1\r\n" +
+                        fields.entries.joinToString("") { "${it.key}: ${it.value}\r\n" } +
+                        "\r\n")
+                    .toByteArray(Charsets.UTF_8)
+            )
+            output.write(body.bytes)
+            output.flush()
+            readResponse(BufferedInputStream(tls?.inputStream ?: socket.getInputStream()), read)
+        }
     }
 }
 

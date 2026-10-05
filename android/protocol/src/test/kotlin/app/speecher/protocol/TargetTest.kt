@@ -2,6 +2,7 @@ package app.speecher.protocol
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /** Expected prompts are dictationRefinementSystemPrompt output from the desktop build. */
@@ -123,6 +124,47 @@ class TargetTest {
         }
     }
 
+    @Test
+    fun `an output language adds its rule after the spoken language rule, with a custom prompt too`() {
+        val spanish =
+            RefinementContext(
+                spokenLanguage = "de",
+                outputLanguage = " Spanish ",
+                additionalInstructions = "Spell it Speecher.",
+            )
+        val rule =
+            "conventions.\n\nRule: output_language.\nWrite the refined text in Spanish. When the dictation was spoken in another language, translate it and apply the other rules to the translation. This rule overrides the rules that preserve the original wording. Keep literal technical text, names, and binding placeholders unchanged.\n\nUser instructions."
+        assertTrue(rule in dictationSystemPrompt(spanish))
+        assertTrue(
+            rule in
+                dictationSystemPrompt(spanish.copy(customSystemPrompt = "Clean up my dictation."))
+        )
+    }
+
+    @Test
+    fun `a profile set to None that has an output language refines at Light`() {
+        val styles =
+            listOf("Spanish", " ").map {
+                resolve(
+                        "",
+                        "",
+                        profiles =
+                            mapOf(
+                                WritingProfile.Other to
+                                    WritingProfileSettings(
+                                        CleanupStrength.None,
+                                        outputLanguage = it,
+                                    )
+                            ),
+                    )
+                    .let { context -> context.style to context.outputLanguage }
+            }
+        assertEquals(
+            listOf(CleanupStrength.LightCleanup to "Spanish", CleanupStrength.None to " "),
+            styles,
+        )
+    }
+
     private val terse =
         CustomTone(
             "custom_terse",
@@ -215,6 +257,39 @@ class TargetTest {
                 )
                 .copy(customSystemPrompt = "Clean up my dictation.")
         assertEquals(desktopPrompt("custom-prompt-tone-level"), dictationSystemPrompt(context))
+    }
+
+    @Test
+    fun `a selection edit gets the desktop's editing prompt, without the output language`() {
+        val prompt =
+            CustomCleanupLevel(
+                "custom_terse_prompt",
+                "Terse prompt",
+                CleanupStrength.CustomOnly,
+                "Keep the prompt under three sentences.",
+            )
+        val context =
+            resolve(
+                    "com.openai.chatgpt",
+                    "ChatGPT",
+                    NearbyText("Dinner at ", " works for me", 10, 15),
+                    mapOf(
+                        WritingProfile.AiCoding to
+                            WritingProfileSettings(
+                                customCleanupLevel = prompt.id,
+                                customTone = terse.id,
+                                outputLanguage = "French",
+                            )
+                    ),
+                    listOf(terse),
+                    listOf(prompt),
+                )
+                .copy(
+                    additionalInstructions = "Spell it Speecher.",
+                    spokenLanguage = "es",
+                    selectedText = "seven",
+                )
+        assertEquals(desktopPrompt("edit-chatgpt"), refinementSystemPrompt(context))
     }
 
     @Test

@@ -35,6 +35,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.speecher.android.R
+import app.speecher.android.dictation.CleanupProvider
+import app.speecher.android.dictation.FailureReason
+import app.speecher.android.dictation.SpeechProvider
+import app.speecher.protocol.ProviderFailureKind
 
 private val bottom: (@Composable () -> Unit) -> @Composable () -> Unit = { content ->
     { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { content() } }
@@ -99,32 +103,128 @@ private val states: Map<String, @Composable () -> Unit> =
         "panel-listening-refined-only" to bottom { PanelListeningRefinedOnlyPreview() },
         "panel-compact" to bottom { PanelCompactPreview() },
         "panel-minimized" to bottom { PanelMinimizedPreview() },
+        "panel-live-text-off" to bottom { PanelLiveTextOffPreview() },
+        "panel-minimized-live-text-off" to bottom { PanelMinimizedLiveTextOffPreview() },
         "panel-reconnecting" to bottom { PanelReconnectingPreview() },
+        "panel-stopping" to bottom { PanelStoppingPreview() },
+        "panel-transcribing-again" to bottom { PanelTranscribingAgainPreview() },
         "panel-refining" to bottom { PanelRefiningPreview() },
+        "panel-refining-refined-only" to bottom { PanelRefiningRefinedOnlyPreview() },
+        "panel-refining-edit" to bottom { PanelRefiningEditPreview() },
         "panel-refining-stream" to bottom { PanelRefiningStreamPreview() },
+        "panel-refining-live-text-off" to bottom { PanelRefiningLiveTextOffPreview() },
         "panel-failed-microphone" to bottom { PanelFailedMicrophonePreview() },
-        "panel-failed-signed-out" to bottom { PanelFailedSignedOutPreview() },
-        "panel-failed-network" to bottom { PanelFailedNetworkPreview() },
-        "panel-failed-provider" to bottom { PanelFailedProviderPreview() },
+        "panel-failed-microphone-unavailable" to
+            bottom { PanelFailedPreview(FailureReason.MicrophoneUnavailable) },
+        "panel-failed-network-live-text-off" to bottom { PanelFailedNetworkLiveTextOffPreview() },
         "panel-failed-spoken-language" to bottom { PanelFailedSpokenLanguagePreview() },
-        "chip" to { ChipOverKeyboard() },
-        "save-position-pill" to { SavePositionPillPreview() },
-        "launcher-icon" to { LauncherIcons() },
-        "home-ready" to { HomeReadyPreview() },
-        "home-pending" to { HomeSetupPendingPreview() },
-        "sign-in-steps" to { SignInStepsPreview() },
-        "onboarding-fresh" to { OnboardingFreshPreview() },
-        "onboarding-partway" to { OnboardingPartwayPreview() },
-        "onboarding-done" to { OnboardingDonePreview() },
-        "settings" to { SettingsPreview() },
-        "settings-signed-out" to { SettingsSignedOutPreview() },
-        "settings-refinement" to { SettingsRefinementPreview() },
-        "settings-vocabulary" to { SettingsVocabularyPreview() },
-        "custom-update-interval" to { CustomIntervalDialogPreview() },
-        "button-layouts" to { ButtonLayoutPickerPreview() },
-        "panel-sizes" to { PanelSizePickerPreview() },
-        "restricted-settings-illustrations" to { RestrictedSettingsIllustrationsPreview() },
-    )
+        "panel-failed-commit" to bottom { PanelFailedPreview(FailureReason.Commit, heard = true) },
+        "panel-failed-edit-cleanup" to
+            bottom {
+                PanelFailedPreview(
+                    FailureReason.Cleanup(CleanupProvider.Claude, ProviderFailureKind.Server),
+                    heard = true,
+                    editsSelection = true,
+                )
+            },
+        "panel-failed-edit-no-cleanup" to
+            bottom {
+                PanelFailedPreview(
+                    FailureReason.SelectionNeedsCleanup,
+                    heard = true,
+                    editsSelection = true,
+                )
+            },
+        "panel-failed-edit-selection-changed" to
+            bottom {
+                PanelFailedPreview(
+                    FailureReason.SelectionChanged,
+                    heard = true,
+                    editsSelection = true,
+                )
+            },
+    ) +
+        // Every way a provider can fail as the panel words it, for speech with nothing heard
+        // yet and for cleanup with the words kept.
+        ProviderFailureKind.entries
+            .filter { it != ProviderFailureKind.Cancelled }
+            .flatMap { kind ->
+                val name = kind.name.lowercase()
+                listOf(
+                    "panel-failed-speech-$name" to
+                        bottom {
+                            PanelFailedPreview(FailureReason.Speech(SpeechProvider.ChatGpt, kind))
+                        },
+                    "panel-failed-cleanup-$name" to
+                        bottom {
+                            PanelFailedPreview(
+                                FailureReason.Cleanup(CleanupProvider.Claude, kind),
+                                heard = true,
+                            )
+                        },
+                )
+            } +
+        // A server of the person's own: the two failures its settings fix, and one it doesn't.
+        listOf(
+                ProviderFailureKind.Authentication,
+                ProviderFailureKind.Unavailable,
+                ProviderFailureKind.Network,
+            )
+            .associate { kind ->
+                "panel-failed-server-${kind.name.lowercase()}" to
+                    bottom {
+                        PanelFailedPreview(FailureReason.Speech(SpeechProvider.Endpoint, kind))
+                    }
+            } +
+        mapOf(
+            "chip" to { ChipOverKeyboard() },
+            "save-position-pill" to { SavePositionPillPreview() },
+            "launcher-icon" to { LauncherIcons() },
+            "home-ready" to { HomeReadyPreview() },
+            "home-pending" to { HomeSetupPendingPreview() },
+            "home-latest-transcript" to { HomeLatestTranscriptPreview() },
+            "home-update-available" to { HomeUpdateAvailablePreview() },
+            "home-update-downloading" to { HomeUpdateDownloadingPreview() },
+            "home-update-waiting" to { HomeUpdateWaitingPreview() },
+            "home-update-failed" to { HomeUpdateFailedPreview() },
+            "home-whats-new" to { HomeWhatsNewPreview() },
+            "settings-updates" to { UpdatesSectionPreview() },
+            "whats-new" to { WhatsNewPreview() },
+            "whats-new-failed" to { WhatsNewFailedPreview() },
+            "whats-new-nightly" to { WhatsNewNightlyPreview() },
+            "home-update-stable-replacement" to { HomeUpdateStableReplacementPreview() },
+            "home-update-installing" to { HomeUpdateInstallingPreview() },
+            "sign-in-steps" to { SignInStepsPreview() },
+            "onboarding-fresh" to { OnboardingFreshPreview() },
+            "onboarding-partway" to { OnboardingPartwayPreview() },
+            "onboarding-done" to { OnboardingDonePreview() },
+            "onboarding-server" to { OnboardingServerPreview() },
+            "home-server" to { HomeServerPreview() },
+            "settings" to { SettingsPreview() },
+            "settings-signed-out" to { SettingsSignedOutPreview() },
+            "settings-server" to { SettingsServerPreview() },
+            "settings-transcription-server" to { SettingsTranscriptionServerPreview() },
+            "settings-refinement" to { SettingsRefinementPreview() },
+            "settings-vocabulary" to { SettingsVocabularyPreview() },
+            "settings-replacements" to { SettingsReplacementsPreview() },
+            "settings-replacements-empty" to { SettingsReplacementsEmptyPreview() },
+            "settings-dictation-panel" to { SettingsDictationPanelPreview() },
+            "settings-vocabulary-empty" to { SettingsVocabularyEmptyPreview() },
+            "settings-profiles" to { SettingsProfilesPreview() },
+            "microphone-test-detected" to { MicrophoneTestDetectedPreview() },
+            "microphone-test-silent" to { MicrophoneTestSilentPreview() },
+            "microphone-test-no-access" to { MicrophoneTestNoAccessPreview() },
+            "insights" to { InsightsStatsPreview() },
+            "insights-empty" to { InsightsEmptyPreview() },
+            "insights-off" to { InsightsOffPreview() },
+            "insights-clear-fails" to { InsightsClearFailsPreview() },
+            "custom-update-interval" to { CustomIntervalDialogPreview() },
+            "button-layouts" to { ButtonLayoutPickerPreview() },
+            "panel-sizes" to { PanelSizePickerPreview() },
+            "restricted-settings-illustrations" to { RestrictedSettingsIllustrationsPreview() },
+            "settings-screen" to { SettingsScreenPreview() },
+            "settings-refinement-haiku" to { SettingsRefinementHaikuPreview() },
+        )
 
 /**
  * Debug builds only. Shows one preview state full screen so it can be screenshotted on a device:

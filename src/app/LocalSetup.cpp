@@ -64,10 +64,9 @@ constexpr int kEndpointCheckDelayMs = 800;
 
 } // namespace
 
-bool offersSetupSpeechProvider(const QString &id, const QString &saved, bool localAvailable)
+bool offersSetupSpeechProvider(const QString &id, bool localAvailable)
 {
-    return (id != QStringLiteral("endpoint") || id == saved)
-        && (id != QStringLiteral("local") || localAvailable);
+    return id != QStringLiteral("local") || localAvailable;
 }
 
 bool isSetupSignInProvider(const QString &id)

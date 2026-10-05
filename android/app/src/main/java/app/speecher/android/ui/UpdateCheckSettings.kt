@@ -1,14 +1,20 @@
 package app.speecher.android.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -20,9 +26,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import app.speecher.android.BuildConfig
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.update.ApkUpdate
 import app.speecher.android.update.IntervalUnit
+import app.speecher.android.update.UpdateChannel
+import app.speecher.android.update.UpdateState
 import app.speecher.android.update.fittingUnit
+import app.speecher.android.update.versionDisplay
 
 /** The menu's intervals, in minutes. */
 private val updateCheckPresets =
@@ -57,14 +68,103 @@ internal fun updateCheckLabel(minutes: Int, customUnit: IntervalUnit?): String {
     return if (count == 1) "Every $noun" else "Every $count ${noun}s"
 }
 
-/** The Updates section's row: a preset from the menu, or Custom… to enter any interval. */
+/** What the Check for updates row offers and says. */
+internal data class CheckRow(val caption: String, val help: String, val enabled: Boolean = true)
+
+/** The Check for updates row in [state], worded as on the desktop. */
+internal fun checkRow(state: UpdateState, channel: UpdateChannel): CheckRow =
+    when (state) {
+        UpdateState.Idle ->
+            CheckRow("Check now", "Check the ${channel.feed} feed for a newer build.")
+        UpdateState.Checking -> CheckRow("Checking…", "Checking the ${channel.feed} feed.", false)
+        UpdateState.UpToDate -> CheckRow("Check again", "Speecher is up to date.")
+        UpdateState.CheckFailed -> CheckRow("Try again", "Update check failed.")
+        is UpdateState.Available -> CheckRow("Update now", "${availableText(state.update)}.")
+        is UpdateState.Downloading -> CheckRow("Downloading…", downloadingText(state), false)
+        is UpdateState.WaitingForDictation ->
+            CheckRow("Installing…", INSTALLING_AFTER_DICTATION, false)
+        is UpdateState.Installing -> CheckRow("Installing…", installingText(state), false)
+        is UpdateState.InstallFailed -> CheckRow(retryCaption(state), state.message)
+    }
+
+internal fun availableText(update: ApkUpdate) =
+    if (update.replacesNightly)
+        "Switch to Stable Release ${update.version} (replaces this Nightly Build)"
+    else "Speecher ${versionDisplay(update.version)} is available"
+
+internal fun installingText(state: UpdateState.Installing) =
+    "Installing Speecher ${versionDisplay(state.update.version)}…"
+
+internal fun downloadingText(state: UpdateState.Downloading): String =
+    "Downloading Speecher ${versionDisplay(state.update.version)}" +
+        (state.percent?.let { " ($it%)" } ?: "…")
+
+internal const val INSTALLING_AFTER_DICTATION = "Installing after this dictation…"
+
+/** Trying again, or opening the release page when only installing from there can work. */
+internal fun retryCaption(state: UpdateState.InstallFailed) =
+    if (state.manualInstall) "Open release page" else "Try again"
+
+/**
+ * The Settings list's Updates section, as on the desktop: the channel, automatic checks and how
+ * often, Check now with where things stand, the installed version, and What's New.
+ */
 @Composable
-internal fun UpdateCheckRow(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
+internal fun UpdatesSection(
+    settings: SpeecherSettings,
+    onChange: (SpeecherSettings) -> Unit,
+    updateState: UpdateState,
+    onCheckRow: () -> Unit,
+    onOpenWhatsNew: () -> Unit,
+) {
+    Section("Updates")
+    DropdownRow(
+        "Update channel",
+        UpdateChannel.entries.associateWith { it.label },
+        settings.updateChannel,
+        description = settings.updateChannel.description,
+    ) {
+        onChange(settings.copy(updateChannel = it))
+    }
+    ListItem(
+        headlineContent = { Text("Check for updates automatically") },
+        trailingContent = {
+            Switch(settings.autoCheckUpdates, { onChange(settings.copy(autoCheckUpdates = it)) })
+        },
+        colors = rowColors(),
+    )
+    if (settings.autoCheckUpdates) UpdateCheckRow(settings, onChange)
+    val row = checkRow(updateState, settings.updateChannel)
+    ListItem(
+        headlineContent = { Text("Check for updates") },
+        supportingContent = { Text(row.help) },
+        trailingContent = { TextButton(onCheckRow, enabled = row.enabled) { Text(row.caption) } },
+        colors = rowColors(),
+    )
+    ListItem(
+        headlineContent = { Text("Current version") },
+        trailingContent = {
+            Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.bodyLarge)
+        },
+        colors = rowColors(),
+    )
+    ListItem(
+        headlineContent = { Text("What's New") },
+        supportingContent = { Text("Release notes for this version.") },
+        trailingContent = { Chevron() },
+        modifier = Modifier.clickable(onClick = onOpenWhatsNew),
+        colors = rowColors(),
+    )
+}
+
+/** How often automatic checks run: a preset from the menu, or Custom… to enter any interval. */
+@Composable
+private fun UpdateCheckRow(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
     var editing by rememberSaveable { mutableStateOf(false) }
     val minutes = settings.updateCheckMinutes
     val customUnit = settings.updateCheckUnit
     DropdownRow<Int?>(
-        "Check for updates",
+        "Check frequency",
         updateCheckPresets + (null to "Custom…"),
         minutes,
         selectedLabel = updateCheckLabel(minutes, customUnit),
@@ -143,3 +243,32 @@ private fun CustomIntervalDialog(
 internal fun CustomIntervalDialogPreview() = SpeecherTheme {
     CustomIntervalDialog(480, IntervalUnit.Hours, {}) { _, _ -> }
 }
+
+@PreviewLightDark
+@Composable
+internal fun UpdatesSectionPreview() = SpeecherTheme {
+    Surface {
+        Column(Modifier.statusBarsPadding()) {
+            UpdatesSection(
+                SpeecherSettings(updateChannel = UpdateChannel.Nightly),
+                {},
+                UpdateState.Downloading(
+                    previewUpdate.copy(version = "0.2.1-nightly.57+g1a2b3c4"),
+                    42,
+                ),
+                {},
+                {},
+            )
+            UpdatesSection(
+                SpeecherSettings(autoCheckUpdates = false),
+                {},
+                UpdateState.CheckFailed,
+                {},
+                {},
+            )
+        }
+    }
+}
+
+internal val previewUpdate =
+    ApkUpdate("0.3.0", "https://example.com/speecher.apk", "https://example.com/release")

@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import app.speecher.android.dictation.Provider
+import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.SpeecherSettings
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -41,7 +42,7 @@ class AccountsTest {
         compose.setContent {
             Column {
                 Settings(
-                    SpeecherSettings(transcriptionProvider = Provider.Claude),
+                    SpeecherSettings(transcriptionProvider = SpeechProvider.Claude),
                     setOf(Provider.Claude),
                     {},
                     {},

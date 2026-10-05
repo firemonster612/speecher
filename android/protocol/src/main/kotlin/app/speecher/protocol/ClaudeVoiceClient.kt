@@ -52,7 +52,10 @@ class ClaudeVoiceClient(
         }
         transport.open(url.toString(), headers, null, this)
         keepAlive.schedule(
-            { if (!connected) fail(false, "no connect in 10s", retryable = true) },
+            {
+                if (!connected)
+                    fail(ProviderFailureKind.Timeout, "no connect in 10s", retryable = true)
+            },
             10,
             TimeUnit.SECONDS,
         )
@@ -98,10 +101,15 @@ class ClaudeVoiceClient(
             }
             is ClaudeVoiceEvent.ServerError -> {
                 val authentication = isAuthenticationError(event.summary)
-                fail(authentication, event.summary.take(120), retryable = !authentication)
+                fail(
+                    if (authentication) ProviderFailureKind.Authentication
+                    else ProviderFailureKind.Server,
+                    event.summary.take(120),
+                    retryable = !authentication,
+                )
             }
             is ClaudeVoiceEvent.TranscriptError ->
-                fail(false, event.summary.take(120), retryable = true)
+                fail(ProviderFailureKind.Server, event.summary.take(120), retryable = true)
             ClaudeVoiceEvent.Unknown -> Unit
         }
     }
@@ -112,13 +120,18 @@ class ClaudeVoiceClient(
             listOfNotNull(code?.let { "HTTP $it" }, error.message?.takeIf { it.isNotBlank() })
                 .joinToString(": ")
                 .ifEmpty { "connect failed" }
-        val authentication = code == 401 || code == 403
-        fail(authentication, detail, retryable = !authentication)
+        val kind = transportFailureKind(error, code)
+        fail(kind, detail, retryable = kind != ProviderFailureKind.Authentication)
     }
 
     override fun onClosed(code: Int, reason: String) {
         if (connected && !stopped && endsSession(code)) complete()
-        else fail(false, "closed $code ${reason.take(80)}".trim(), retryable = true)
+        else
+            fail(
+                ProviderFailureKind.Network,
+                "closed $code ${reason.take(80)}".trim(),
+                retryable = true,
+            )
     }
 
     override fun sendAudio(pcm: ByteArray) {
@@ -134,7 +147,7 @@ class ClaudeVoiceClient(
                 return
             }
         }
-        fail(false, "audio buffer overflow")
+        fail(ProviderFailureKind.Network, "audio buffer overflow")
     }
 
     override fun stop() {
@@ -143,7 +156,7 @@ class ClaudeVoiceClient(
         if (connected) closeStream()
         else
             keepAlive.schedule(
-                { if (!connected) fail(false, "no connect in 5s") },
+                { if (!connected) fail(ProviderFailureKind.Timeout, "no connect in 5s") },
                 5,
                 TimeUnit.SECONDS,
             )
@@ -151,7 +164,11 @@ class ClaudeVoiceClient(
 
     private fun closeStream() {
         transport.sendText("{\"type\":\"CloseStream\"}")
-        keepAlive.schedule({ if (!completed) fail(false, "no close in 5s") }, 5, TimeUnit.SECONDS)
+        keepAlive.schedule(
+            { if (!completed) fail(ProviderFailureKind.Timeout, "no close in 5s") },
+            5,
+            TimeUnit.SECONDS,
+        )
     }
 
     override fun cancel() {
@@ -178,7 +195,7 @@ class ClaudeVoiceClient(
         events(SpeechEvent.Completed)
     }
 
-    private fun fail(authentication: Boolean, detail: String = "", retryable: Boolean = false) {
+    private fun fail(kind: ProviderFailureKind, detail: String, retryable: Boolean = false) {
         val first =
             synchronized(lock) {
                 if (cancelled || completed || failed) false
@@ -189,7 +206,7 @@ class ClaudeVoiceClient(
             }
         if (!first) return
         keepAlive.shutdownNow()
-        events(SpeechEvent.Failed(authentication, detail, retryable))
+        events(SpeechEvent.Failed(kind, detail, retryable))
         transport.cancel()
     }
 }

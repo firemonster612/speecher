@@ -31,13 +31,20 @@ sealed interface SpeechEvent {
      */
     data object Completed : SpeechEvent
 
-    /** [retryable] marks a dropped connection or transient provider error a new stream may fix. */
+    /**
+     * [retryable] marks a dropped connection or transient provider error a new stream may fix.
+     * [detail] is diagnostic and never shown.
+     */
     data class Failed(
-        val authentication: Boolean,
+        val kind: ProviderFailureKind,
         val detail: String = "",
         val retryable: Boolean = false,
     ) : SpeechEvent
 }
+
+/** A refused WebSocket upgrade by its HTTP [statusCode], any other transport error by [error]. */
+internal fun transportFailureKind(error: Throwable, statusCode: Int?): ProviderFailureKind =
+    statusCode?.let(::failureKindForHttpStatus) ?: failureKind(error)
 
 interface SpeechClient {
     fun sendAudio(pcm: ByteArray)

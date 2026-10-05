@@ -1,6 +1,9 @@
 package app.speecher.android.dictation
 
 import android.view.inputmethod.InputConnection
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /** Both Android services share one process and one active dictation session. */
 object ActiveDictation {
@@ -15,6 +18,16 @@ object ActiveDictation {
     @Volatile var screen: ScreenCapture? = null
     /** A base64 JPEG screenshot from the tap, if the user opted in and it arrived. */
     @Volatile var screenshotJpeg: String? = null
+    /**
+     * Outlives the session, in memory only, so Home can copy the words again after they went into
+     * the wrong field. A password field's text is never kept.
+     */
+    var latest by mutableStateOf<LatestTranscript?>(null)
+    /**
+     * While Android may be replacing the app, which would end a dictation. Set and read on the main
+     * thread, so no dictation starts between the installer's check for one and its commit.
+     */
+    @Volatile var installingUpdate = false
 
     /**
      * Ends the running session: the engine closes and what the chip captured of the screen goes

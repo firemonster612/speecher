@@ -2044,20 +2044,70 @@ private slots:
         qputenv("SPEECHER_TEST_CODEX_INSTALLED", "1");
         setup.recheck();
         QCOMPARE(deadEnd->label()->text(),
-                 QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found."));
+                 QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found. To use your own "
+                                "speech server, choose Custom Endpoint."));
         QVERIFY(!setup.ready());
+
+        // Choosing Custom Endpoint, which the note names, is a way out.
+        setup.chooseProvider(QStringLiteral("endpoint"));
+        QVERIFY(!deadEnd->isVisibleTo(&setup));
 
         // A machine known to be too small never defaults to this computer.
         settings.setSpeechProvider(QStringLiteral("claude"));
         SpeechProviderSetupPage reopened(settings, providers, &local);
         reopened.show();
         QVERIFY(reopened.findChild<QRadioButton *>(QStringLiteral("speechProviderOption_claude"))->isChecked());
+    }
 
-        // A speech server the person already configured is a way out.
-        settings.setSpeechProvider(QStringLiteral("endpoint"));
-        SpeechProviderSetupPage withServer(settings, providers, &local);
-        withServer.show();
-        QVERIFY(!withServer.findChild<InlineMessage *>(QStringLiteral("speechDeadEnd"))->isVisibleTo(&withServer));
+    void theTranscriptionPageSetsUpACustomEndpoint()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        ProviderRegistry providers;
+        providers.registerSpeechProvider({"claude", "Claude Voice", {}},
+            [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        providers.registerSpeechProvider({"endpoint", "Custom Endpoint", {}},
+            [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
+        QTemporaryDir models;
+        LocalModelStore store(models.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, store);
+
+        // Offered though nothing was saved, its fields hidden until chosen.
+        SpeechProviderSetupPage setup(settings, providers, &local);
+        setup.show();
+        auto *url = setup.findChild<QLineEdit *>(QStringLiteral("speechEndpointUrl"));
+        QVERIFY(setup.findChild<QRadioButton *>(QStringLiteral("speechProviderOption_endpoint")) && url);
+        QVERIFY(!url->isVisibleTo(&setup));
+
+        // Without a server the step holds Continue and says what it needs.
+        setup.chooseProvider(QStringLiteral("endpoint"));
+        QCOMPARE(settings.speechProvider(), QStringLiteral("endpoint"));
+        QVERIFY(url->isVisibleTo(&setup));
+        QVERIFY(!setup.ready());
+        QCOMPARE(setup.findChild<QLabel *>(QStringLiteral("speechProviderStatus"))->text(),
+                 QStringLiteral("Enter your server's URL to continue."));
+        QCOMPARE(setup.blockedReason(), QStringLiteral("Enter your server's URL to continue."));
+
+        // A server opens it; the path, key and model save as typed.
+        url->setText(QStringLiteral("http://localhost:8080"));
+        emit url->editingFinished();
+        auto *path = setup.findChild<QLineEdit *>(QStringLiteral("speechEndpointPath"));
+        path->setText(QStringLiteral("/inference"));
+        emit path->editingFinished();
+        auto *key = setup.findChild<QLineEdit *>(QStringLiteral("speechEndpointApiKey"));
+        key->setText(QStringLiteral("secret"));
+        emit key->editingFinished();
+        setup.findChild<QComboBox *>(QStringLiteral("speechEndpointModel"))->setEditText(QStringLiteral("whisper-1"));
+        QVERIFY(setup.ready());
+        const SpeechEndpointSettings saved = settings.snapshot().speech.endpoint;
+        QCOMPARE(saved.baseUrl, QStringLiteral("http://localhost:8080"));
+        QCOMPARE(saved.path, QStringLiteral("/inference"));
+        QCOMPARE(saved.apiKey, QStringLiteral("secret"));
+        QCOMPARE(saved.model, QStringLiteral("whisper-1"));
+
+        // Another choice puts the fields away.
+        setup.chooseProvider(QStringLiteral("claude"));
+        QVERIFY(!url->isVisibleTo(&setup));
     }
 
     void theLocalModelCardHoldsNextUntilADownloadStarts()
@@ -2488,7 +2538,9 @@ private slots:
         QCOMPARE(settings.speechProvider(), QStringLiteral("claude"));
     }
 
-    void speechProviderSetupShowsAnEndpointProblemAsTheStatus()
+    // The probe's own words send people to Settings, while the endpoint's
+    // fields are on the step; core's reason says what to do there instead.
+    void speechProviderSetupSaysWhatAnEndpointWithoutAServerNeeds()
     {
         SettingsStore settings;
         settings.raw().clear();
@@ -2507,8 +2559,7 @@ private slots:
         setup.show();
         auto *status = setup.findChild<QLabel *>(QStringLiteral("speechProviderStatus"));
         QVERIFY(status);
-        QTRY_COMPARE(status->text(),
-                     QStringLiteral("Set the speech endpoint's server URL in Settings."));
+        QTRY_COMPARE(status->text(), QStringLiteral("Enter your server's URL to continue."));
         QCOMPARE(status->toolTip(), QString());
     }
 

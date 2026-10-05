@@ -348,6 +348,33 @@ else
   fi
 fi
 
+# P5: Custom Endpoint chosen shows its fields on the transcription step, and
+# says what it needs without a server. Seeded, since synthetic input cannot
+# select a non-first radio row (see P3). This run skips the gates; S4 in
+# setup_run.sh checks that the step holds Continue.
+fresh_reset
+case_begin P5
+defaults write "$DOMAIN" stt.provider endpoint
+if ! launch_setup || ! wait_for_assistant; then
+  fail_case "The setup assistant did not appear with Custom Endpoint seeded."
+else
+  errors=()
+  walk_to_step 2 || errors+=("could not reach the transcription step")
+  if (( ${#errors[@]} == 0 )); then
+    sleep 1
+    cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-endpoint.png"
+    expect_text "$CASE_DIR/transcription-endpoint.png" "Server URL" \
+      || errors+=("the transcription step does not show the endpoint's fields")
+    expect_text "$CASE_DIR/transcription-endpoint.png" "Enter your server's URL to continue." \
+      || errors+=("the transcription step does not say what the endpoint needs")
+  fi
+  if (( ${#errors[@]} )); then
+    fail_case "$(IFS='; '; echo "${errors[*]}")"
+  else
+    pass_case "Custom Endpoint shows its fields and says it needs a server."
+  fi
+fi
+
 stop_app
 log "Provider steps E2E finished"
 cat "$VERDICTS"
