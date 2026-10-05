@@ -385,6 +385,55 @@ StackPanel rowList(const StackPanel &body)
     return list;
 }
 
+// A Custom Endpoint form's Model control. An editable ComboBox drops Text set
+// before it loads, and a save would then clear the model, so the saved one
+// goes in as an item.
+ComboBox endpointModelCombo(const QString &saved)
+{
+    ComboBox model;
+    model.IsEditable(true);
+    model.MinWidth(200);
+    if (!saved.isEmpty()) {
+        model.Items().Append(box_value(win::hs(saved)));
+        model.SelectedIndex(0);
+    }
+    AutomationProperties::SetName(model, L"Endpoint model");
+    return model;
+}
+
+// The model a Custom Endpoint form holds: picked from the server's list, or
+// typed.
+QString endpointModelText(const ComboBox &model)
+{
+    const auto picked = model.SelectedItem();
+    return (picked ? win::qs(unbox_value<hstring>(picked)) : win::qs(model.Text())).trimmed();
+}
+
+// Refills a Custom Endpoint form's model list once per list a connection check
+// returns. A typed model the server does not list stays on offer, first; with
+// none typed, `saved` is the server's first model, which LocalSetup saved.
+// `refilling` is up while the list changes, which is not the person picking.
+void refillEndpointModels(const ComboBox &model, QStringList &shownModels, bool &refilling,
+                          const QStringList &models, const QString &saved)
+{
+    if (models.isEmpty() || shownModels == models) {
+        return;
+    }
+    shownModels = models;
+    const QString typed = endpointModelText(model).isEmpty() ? saved : endpointModelText(model);
+    QStringList listed = models;
+    if (!typed.isEmpty() && !listed.contains(typed)) {
+        listed.prepend(typed);
+    }
+    refilling = true;
+    model.Items().Clear();
+    for (const QString &name : listed) {
+        model.Items().Append(box_value(win::hs(name)));
+    }
+    model.SelectedIndex(int(listed.indexOf(typed)));
+    refilling = false;
+}
+
 ComboBox combo(const QList<QPair<QString, QString>> &options, const QString &selected)
 {
     ComboBox control;
@@ -748,6 +797,13 @@ struct SetupWindow::Native {
             }
         }
         speechReady.insert(id, result.ok);
+        // The endpoint's refusal sends people to Settings while its fields are
+        // on the Transcription page, so core's reason replaces it, and its form
+        // says how the server answered, so a ready one needs no line.
+        if (id == kEndpoint) {
+            speechMessage.insert(id, result.ok ? QString() : setupTranscriptionBlocked(id, label));
+            return;
+        }
         speechMessage.insert(id, result.ok ? setupProviderReady(label)
                                            : result.message);
     }
@@ -774,7 +830,7 @@ struct SetupWindow::Native {
         };
         SpeechTranscriber *transcriber = controller->providerRegistry()->speechProvider(id);
         if (!transcriber) {
-            land({false, setupTranscriptionBlocked(false, QString())});
+            land({false, setupTranscriptionBlocked(QString(), QString())});
             return;
         }
         const SpeechSettings settings = controller->settings()->snapshot().speech;
@@ -851,6 +907,7 @@ struct SetupWindow::Native {
         localRowStatus = {};
         runner = {};
         endpointForm = {};
+        speechEndpointForm = {};
         refinementRefresh = nullptr;
         transcriptionRefresh = nullptr;
         fallbacks = nullptr;
@@ -1290,9 +1347,8 @@ struct SetupWindow::Native {
         panel.Children().Append(deadEnd);
         QList<QPair<QString, QString>> options;
         for (const ProviderDescriptor &provider : controller->providerRegistry()->speechProviders()) {
-            // The Local card is only a choice where the assistant can set it
-            // up, and a speech server is set up in Settings alone.
-            if (!offersSetupSpeechProvider(provider.id, controller->settings()->speechProvider(), localSpeech != nullptr)) {
+            // The Local card is only a choice where the assistant can set it up.
+            if (!offersSetupSpeechProvider(provider.id, localSpeech != nullptr)) {
                 continue;
             }
             options.append({provider.id, provider.label});
@@ -1430,7 +1486,7 @@ struct SetupWindow::Native {
                                        accuracy, updateSignInVisibility] {
             const int index = choices.SelectedIndex();
             if (index < 0 || index >= options.size()) {
-                status.set(setupTranscriptionBlocked(false, QString()), SetupTone::Caution);
+                status.set(setupTranscriptionBlocked(QString(), QString()), SetupTone::Caution);
                 return;
             }
             const QString id = options.at(index).first;
@@ -1441,6 +1497,7 @@ struct SetupWindow::Native {
             accuracy.Visibility(id == QStringLiteral("codex")
                                     ? Visibility::Visible : Visibility::Collapsed);
             showLocalChoice();
+            showSpeechEndpointCheck();
             if (id == kLocal) {
                 // Next opens as soon as a download has started: it keeps going
                 // while setup continues, and the Ready page shows where it got to.
@@ -1468,8 +1525,10 @@ struct SetupWindow::Native {
                 }
             }
             hint.Text(hstring(credential.toStdWString()));
-            const Visibility unready = checked && !ready ? Visibility::Visible
-                                                         : Visibility::Collapsed;
+            // The endpoint's fields say what server it takes, and Connect
+            // checks it.
+            const Visibility unready = checked && !ready && id != kEndpoint ? Visibility::Visible
+                                                                            : Visibility::Collapsed;
             hint.Visibility(unready);
             check.Visibility(unready);
         };
@@ -1608,6 +1667,7 @@ struct SetupWindow::Native {
                              [this] { showLocalDownload(); });
             localSpeech->probeHardware();
         }
+        panel.Children().Append(makeSpeechEndpointForm(reprobeSelected));
         panel.Children().Append(stats);
         // Under the facts about the chosen service, matching the Qt page and
         // where the refinement step puts Fast mode.
@@ -1621,10 +1681,13 @@ struct SetupWindow::Native {
         panel.Children().Append(fallbacks);
         content.Children().Append(panel);
         showFallbacks(ProviderRole::Speech);
-        // Reachability and sign-ins change the fallbacks' statuses, with or
-        // without Local Model support.
-        QObject::connect(controller->localSetup(), &LocalSetup::changed, pageScope.get(),
-                         [this] { showFallbacks(ProviderRole::Speech); });
+        // Reachability and sign-ins change the fallbacks' statuses, and an
+        // endpoint check its form, with or without Local Model support.
+        QObject::connect(controller->localSetup(), &LocalSetup::changed, pageScope.get(), [this] {
+            showFallbacks(ProviderRole::Speech);
+            showSpeechEndpointCheck();
+        });
+        showSpeechEndpointCheck();
         runChecks();
     }
 
@@ -2200,16 +2263,7 @@ struct SetupWindow::Native {
         StackPanel modelControls;
         modelControls.Orientation(Orientation::Horizontal);
         modelControls.Spacing(8);
-        endpointForm.model = ComboBox();
-        endpointForm.model.IsEditable(true);
-        endpointForm.model.MinWidth(200);
-        // An editable ComboBox drops Text set before it loads, and a save
-        // would then clear the model; the saved one goes in as an item.
-        if (!saved.model.isEmpty()) {
-            endpointForm.model.Items().Append(box_value(win::hs(saved.model)));
-            endpointForm.model.SelectedIndex(0);
-        }
-        AutomationProperties::SetName(endpointForm.model, L"Endpoint model");
+        endpointForm.model = endpointModelCombo(saved.model);
         modelControls.Children().Append(endpointForm.model);
         Button connect;
         connect.Content(box_value(L"Connect"));
@@ -2273,17 +2327,10 @@ struct SetupWindow::Native {
         if (endpointForm.refilling) {
             return;
         }
-        const QString model = endpointModel();
+        const QString model = endpointModelText(endpointForm.model);
         if (model != controller->settings()->snapshot().refinement.endpoint.model) {
             saveEndpointEdit({.model = model});
         }
-    }
-
-    // The model picked from the server's list, or typed.
-    QString endpointModel() const
-    {
-        const auto picked = endpointForm.model.SelectedItem();
-        return (picked ? win::qs(unbox_value<hstring>(picked)) : win::qs(endpointForm.model.Text())).trimmed();
     }
 
     void showEndpointCheck()
@@ -2294,25 +2341,127 @@ struct SetupWindow::Native {
         const LiveFacts facts = controller->localSetup()->liveFacts();
         endpointForm.status.Text(win::hs(facts.refinementEndpointStatus));
         setShown(endpointForm.status, !facts.refinementEndpointStatus.isEmpty());
-        if (facts.refinementEndpointModels.isEmpty() || endpointForm.shownModels == facts.refinementEndpointModels) {
+        refillEndpointModels(endpointForm.model, endpointForm.shownModels, endpointForm.refilling,
+                             facts.refinementEndpointModels,
+                             controller->settings()->refinementEndpointSettings().model);
+    }
+
+    // The speech Custom Endpoint on the Transcription page: server, path, key,
+    // and a model the server lists once connected, or one typed, laid out as
+    // the refinement form is. Each field is its settings row, labelled and
+    // described as Settings does. `saved` runs after a field saves.
+    StackPanel makeSpeechEndpointForm(std::function<void()> saved)
+    {
+        SpeechEndpointForm &form = speechEndpointForm;
+        form.root = StackPanel();
+        form.root.Spacing(8);
+        form.saved = std::move(saved);
+        const SpeechEndpointSettings endpoint = controller->settings()->snapshot().speech.endpoint;
+        StackPanel rows = rowList(card(form.root, QString()));
+        const auto addRow = [&rows](const QString &rowId, const QString &help, const FrameworkElement &control) {
+            const SettingsRow &row = setupSchemaRow(rowId);
+            StackPanel text = rowText(textBlock(row.label, false));
+            text.Children().Append(secondaryTextBlock(help));
+            AutomationProperties::SetName(control, win::hs(row.label));
+            appendRow(rows, cardRow(FrameworkElement{nullptr}, text, control));
+        };
+        const auto addTextRow = [&addRow](const QString &rowId, const FrameworkElement &control) {
+            addRow(rowId, setupSchemaRow(rowId).help, control);
+        };
+        form.url = TextBox();
+        form.url.MinWidth(280);
+        form.url.Text(win::hs(endpoint.baseUrl));
+        addTextRow(QStringLiteral("speechEndpointUrl"), form.url);
+        form.path = TextBox();
+        form.path.MinWidth(280);
+        form.path.Text(win::hs(endpoint.path));
+        addTextRow(QStringLiteral("speechEndpointPath"), form.path);
+        form.key = PasswordBox();
+        form.key.MinWidth(280);
+        form.key.Password(win::hs(endpoint.apiKey));
+        addTextRow(QStringLiteral("speechEndpointApiKey"), form.key);
+        StackPanel modelControls;
+        modelControls.Orientation(Orientation::Horizontal);
+        modelControls.Spacing(8);
+        form.model = endpointModelCombo(endpoint.model);
+        modelControls.Children().Append(form.model);
+        Button connect;
+        connect.Content(box_value(L"Connect"));
+        modelControls.Children().Append(connect);
+        addRow(QStringLiteral("speechEndpointModel"), setupText(SetupText::EndpointModelHint), modelControls);
+        form.status = textBlock(QString());
+        form.root.Children().Append(form.status);
+
+        form.shownUrl = endpoint.baseUrl;
+        form.shownPath = endpoint.path;
+        form.shownKey = endpoint.apiKey;
+        const auto saveFields = [this](const auto &, const auto &) { saveSpeechEndpointFields(); };
+        form.url.LostFocus(saveFields);
+        form.path.LostFocus(saveFields);
+        form.key.LostFocus(saveFields);
+        form.model.LostFocus([this](const auto &, const auto &) { saveSpeechEndpointModel(); });
+        form.model.SelectionChanged([this](const auto &, const auto &) { saveSpeechEndpointModel(); });
+        connect.Click([this](const auto &, const auto &) {
+            saveSpeechEndpointFields();
+            saveSpeechEndpointModel();
+            controller->localSetup()->checkSpeechEndpoint(controller->settings()->snapshot().speech.endpoint);
+        });
+        return form.root;
+    }
+
+    void saveSpeechEndpointRow(const QString &rowId, const QString &value)
+    {
+        AppSettings settings = controller->settings()->snapshot();
+        setupSchemaRow(rowId).apply(settings, value);
+        controller->settings()->applySnapshot(settings);
+    }
+
+    // Each text field saves only once it differs from what it last showed,
+    // never against a newly read key.
+    void saveSpeechEndpointFields()
+    {
+        SpeechEndpointForm &form = speechEndpointForm;
+        bool changed = false;
+        const auto save = [this, &changed](const QString &rowId, const QString &text, QString &shown) {
+            if (text == shown) {
+                return;
+            }
+            shown = text;
+            saveSpeechEndpointRow(rowId, text);
+            changed = true;
+        };
+        save(QStringLiteral("speechEndpointUrl"), win::qs(form.url.Text()), form.shownUrl);
+        save(QStringLiteral("speechEndpointPath"), win::qs(form.path.Text()), form.shownPath);
+        save(QStringLiteral("speechEndpointApiKey"), win::qs(form.key.Password()), form.shownKey);
+        if (changed && form.saved) {
+            form.saved();
+        }
+    }
+
+    void saveSpeechEndpointModel()
+    {
+        SpeechEndpointForm &form = speechEndpointForm;
+        if (form.refilling) {
             return;
         }
-        endpointForm.shownModels = facts.refinementEndpointModels;
-        // With none typed, LocalSetup has saved the server's first model.
-        const QString typed = endpointModel().isEmpty()
-            ? controller->settings()->refinementEndpointSettings().model : endpointModel();
-        // A typed model the server does not list stays on offer, first.
-        QStringList models = facts.refinementEndpointModels;
-        if (!typed.isEmpty() && !models.contains(typed)) {
-            models.prepend(typed);
+        const QString model = endpointModelText(form.model);
+        if (model != controller->settings()->speechEndpointSettings().model) {
+            saveSpeechEndpointRow(QStringLiteral("speechEndpointModel"), model);
         }
-        endpointForm.refilling = true;
-        endpointForm.model.Items().Clear();
-        for (const QString &model : models) {
-            endpointForm.model.Items().Append(box_value(win::hs(model)));
+    }
+
+    void showSpeechEndpointCheck()
+    {
+        SpeechEndpointForm &form = speechEndpointForm;
+        if (!form.root) {
+            return;
         }
-        endpointForm.model.SelectedIndex(int(models.indexOf(typed)));
-        endpointForm.refilling = false;
+        setShown(form.root, controller->settings()->speechProvider() == kEndpoint);
+        const LiveFacts facts = controller->localSetup()->liveFacts();
+        form.status.Text(win::hs(facts.speechEndpointStatus));
+        setShown(form.status, !facts.speechEndpointStatus.isEmpty());
+        refillEndpointModels(form.model, form.shownModels, form.refilling, facts.speechEndpointModels,
+                             controller->settings()->speechEndpointSettings().model);
     }
 
     void showShortcut()
@@ -2392,10 +2541,9 @@ struct SetupWindow::Native {
             if (const QString note = speechDeadEnd(); !note.isEmpty()) {
                 return note;
             }
+            const QString provider = controller->settings()->speechProvider();
             return setupTranscriptionBlocked(
-                localSelected(),
-                providerLabel(controller->providerRegistry()->speechProviders(),
-                              controller->settings()->speechProvider()));
+                provider, providerLabel(controller->providerRegistry()->speechProviders(), provider));
         }
         if (step.id == QStringLiteral("microphone")) {
             return setupMicrophoneBlocked(SetupMicrophoneProblem::Silent);
@@ -2772,6 +2920,22 @@ struct SetupWindow::Native {
         bool refilling = false;
         TextBlock status{nullptr};
     } endpointForm;
+    struct SpeechEndpointForm {
+        StackPanel root{nullptr};
+        TextBox url{nullptr};
+        TextBox path{nullptr};
+        PasswordBox key{nullptr};
+        ComboBox model{nullptr};
+        QStringList shownModels;
+        // What each text field last showed or saved.
+        QString shownUrl;
+        QString shownPath;
+        QString shownKey;
+        bool refilling = false;
+        TextBlock status{nullptr};
+        // Re-probes the endpoint, whose readiness is having a server.
+        std::function<void()> saved;
+    } speechEndpointForm;
     std::function<void()> refinementRefresh;
     // The Transcription or Refinement page's fallback section, null while
     // another page is up, and the text it last drew.

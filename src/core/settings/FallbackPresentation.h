@@ -50,8 +50,9 @@ bool providerSignsIn(const QString &providerId);
 // ChatGPT Codex. label is the provider's registry label.
 QString signInName(const QString &providerId, const QString &label);
 
-// Where a fallback list is edited. Setup offers no speech Custom Endpoint,
-// which is set up in Settings only.
+// Where a fallback list is edited. Setup offers no speech Custom Endpoint
+// fallback: the Transcription step shows the endpoint's fields only while it
+// is the chosen service, so a fallback added there could not be filled in.
 enum class FallbackSurface { Settings, Setup };
 
 // One fallback as its row shows it.

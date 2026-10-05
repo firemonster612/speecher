@@ -36,17 +36,19 @@ QString setupWindowTitle();
 QString setupStepCounter(int step, int total);
 
 // The Transcription step's dead-end note, or empty while any way into
-// dictation remains: a found sign-in, a machine that can run a model, a
-// configured speech server, or no sign-in providers to wait for. While it
+// dictation remains: a found sign-in, a machine that can run a model, Custom
+// Endpoint chosen on the step, or no sign-in providers to wait for. While it
 // shows, it is the step's only verdict and the step holds Continue. Core also
 // decides the wording from whether Claude Code or Codex is installed:
 // installed means signing in is the missing step, otherwise the note says to
-// get an account and install one.
-QString setupTranscriptionDeadEnd(bool signInFound, bool localUsable, bool endpointSaved,
+// get an account and install one. Either way it names Custom Endpoint as the
+// way to use a server of one's own.
+QString setupTranscriptionDeadEnd(bool signInFound, bool localUsable, bool endpointChosen,
                                   bool signInProvidersRegistered);
-// Why a state-dependent gate is shut. An empty label means no transcription
-// service is available.
-QString setupTranscriptionBlocked(bool localSelected, const QString &providerLabel);
+// Why a state-dependent gate is shut for the chosen provider: a Local Model to
+// download, a Custom Endpoint without a server, or a sign-in. An empty label
+// means no transcription service is available.
+QString setupTranscriptionBlocked(const QString &providerId, const QString &providerLabel);
 enum class SetupMicrophoneProblem { NoDevice, NoAccess, Silent };
 QString setupMicrophoneBlocked(SetupMicrophoneProblem problem);
 

@@ -21,8 +21,8 @@ class ProviderRegistry;
 class SettingsStore;
 
 // Readiness never overrides a saved own-model choice.
-// Speech endpoints are configured in Settings but remain visible when saved.
-bool offersSetupSpeechProvider(const QString &id, const QString &saved, bool localAvailable);
+// Every speech provider is a choice, Local only where the assistant can set it up.
+bool offersSetupSpeechProvider(const QString &id, bool localAvailable);
 bool isSetupSignInProvider(const QString &id);
 QString setupProviderChoice(const QString &saved, const QStringList &ready, bool explicitlyChosen);
 // Refinement is optional: an unready default sign-in with no ready one to

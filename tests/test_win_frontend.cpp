@@ -1172,6 +1172,14 @@ private slots:
                 QVERIFY(assistant.captureForTest(grabDir + QStringLiteral("/win-setup-%1-fallbacks-%2.png")
                                                                .arg(step, theme)));
             }
+            // Custom Endpoint chosen: its fields under the choices, waiting
+            // for a server.
+            store->setSpeechProvider(QStringLiteral("endpoint"));
+            assistant.showPageForTest(QStringLiteral("transcription"));
+            QTest::qWait(1500);
+            QVERIFY(assistant.captureForTest(
+                grabDir + QStringLiteral("/win-setup-transcription-endpoint-%1.png").arg(theme)));
+            store->setSpeechProvider(QStringLiteral("codex"));
         }
 
         DictationPanel *panel = frontEnd->dictationPanelForTest();

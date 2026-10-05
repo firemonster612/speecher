@@ -93,24 +93,29 @@ QString setupStepCounter(int step, int total)
     return QStringLiteral("Step %1 of %2").arg(step).arg(total);
 }
 
-QString setupTranscriptionDeadEnd(bool signInFound, bool localUsable, bool endpointSaved,
+QString setupTranscriptionDeadEnd(bool signInFound, bool localUsable, bool endpointChosen,
                                   bool signInProvidersRegistered)
 {
-    if (signInFound || localUsable || endpointSaved || !signInProvidersRegistered) {
+    if (signInFound || localUsable || endpointChosen || !signInProvidersRegistered) {
         return {};
     }
+    const QString ownServer = QStringLiteral("To use your own speech server, choose Custom Endpoint.");
     if (CliToolDiscovery::isClaudeCodeInstalled() || CliToolDiscovery::isCodexInstalled()) {
-        return QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found.");
+        return QStringLiteral("No ChatGPT, Claude, or CLI Proxy API sign-in was found. %1").arg(ownServer);
     }
     return QStringLiteral("This computer can't run a local speech model, and no ChatGPT, Claude, "
                           "or CLI Proxy API sign-in was found. Please get a free ChatGPT or Claude "
-                          "account and install Claude Code or Claude Desktop, or Codex.");
+                          "account and install Claude Code or Claude Desktop, or Codex. %1")
+        .arg(ownServer);
 }
 
-QString setupTranscriptionBlocked(bool localSelected, const QString &providerLabel)
+QString setupTranscriptionBlocked(const QString &providerId, const QString &providerLabel)
 {
-    if (localSelected) {
+    if (providerId == QStringLiteral("local")) {
         return QStringLiteral("Download a speech model to continue.");
+    }
+    if (providerId == QStringLiteral("endpoint")) {
+        return QStringLiteral("Enter your server's URL to continue.");
     }
     if (providerLabel.isEmpty()) {
         return QStringLiteral("No transcription service is available.");
