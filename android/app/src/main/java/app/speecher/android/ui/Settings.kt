@@ -68,13 +68,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
+import app.speecher.android.dictation.CleanupProvider
 import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.RefinementChoice
 import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.SpeecherSettings
-import app.speecher.android.dictation.defaultRefinement
 import app.speecher.android.dictation.cleanup
+import app.speecher.android.dictation.defaultRefinement
 import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
@@ -1076,7 +1077,7 @@ internal fun SettingsRefinementHaikuPreview() = SpeecherTheme {
     var settings by remember {
         mutableStateOf(
             SpeecherSettings(
-                refinementProvider = Provider.Claude,
+                refinementProvider = CleanupProvider.Claude,
                 claudeRefinement = RefinementChoice("claude-haiku-4-5", "xhigh"),
             )
         )
