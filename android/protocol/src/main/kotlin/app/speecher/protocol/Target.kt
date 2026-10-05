@@ -97,7 +97,7 @@ fun customChoiceId(name: String, taken: Collection<String>): String {
  * [instructions] follow the global ones in the prompt. [customCleanupLevel] and [customTone] name a
  * custom level or tone chosen instead of [cleanupStrength] or [tone], which then hold what a
  * deletion falls back to: Medium and no tone override. [name] is a custom profile's; a built-in is
- * called by its label.
+ * called by its label. A non-blank [outputLanguage] has refinement write in that language.
  */
 data class WritingProfileSettings(
     val cleanupStrength: CleanupStrength = CleanupStrength.Balanced,
@@ -106,6 +106,7 @@ data class WritingProfileSettings(
     val customCleanupLevel: String? = null,
     val customTone: String? = null,
     val name: String = "",
+    val outputLanguage: String = "",
 )
 
 /** The chosen level's id: a built-in's or a custom level's. */
@@ -184,6 +185,8 @@ data class RefinementContext(
     val cleanupLevel: CustomCleanupLevel? = null,
     /** The language code the user dictates in, or Automatic's; anything but English adds a rule. */
     val spokenLanguage: String = ENGLISH_LANGUAGE,
+    /** The profile's language to write in; blank keeps the spoken one. */
+    val outputLanguage: String = "",
 )
 
 /** An app a rule recognises by [match], and the app type and profile it gets. */
@@ -322,8 +325,13 @@ fun resolveRefinementContext(
             }
     val settings = profiles[profile] ?: WritingProfileSettings()
     val level = levels.firstOrNull { it.id == settings.customCleanupLevel }
+    // Translating is refining, so a profile set to None that has an output language refines at
+    // Light, as the desktop's refinedCleanupLevel.
+    val translatesUnrefined =
+        settings.cleanupStrength == CleanupStrength.None && settings.outputLanguage.isNotBlank()
     return RefinementContext(
-        level?.base ?: settings.cleanupStrength,
+        level?.base
+            ?: if (translatesUnrefined) CleanupStrength.LightCleanup else settings.cleanupStrength,
         settings.tone,
         profile,
         category,
@@ -333,5 +341,6 @@ fun resolveRefinementContext(
         profileInstructions = settings.instructions,
         customTone = tones.firstOrNull { it.id == settings.customTone },
         cleanupLevel = level,
+        outputLanguage = settings.outputLanguage,
     )
 }

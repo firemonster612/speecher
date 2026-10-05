@@ -96,6 +96,7 @@ class SettingsStore(private val context: Context) {
                             preferences.getString("${key}CustomCleanup", null),
                             preferences.getString("${key}CustomTone", null),
                             preferences.getString("${key}Name", "")!!,
+                            preferences.getString("${key}OutputLanguage", "")!!,
                         )
                     },
                 appRules =
@@ -198,6 +199,7 @@ class SettingsStore(private val context: Context) {
                 putString("${key}Instructions", choice.instructions)
                 putString("${key}CustomCleanup", choice.customCleanupLevel)
                 putString("${key}CustomTone", choice.customTone)
+                putString("${key}OutputLanguage", choice.outputLanguage)
                 if (!profile.isBuiltIn) putString("${key}Name", choice.name)
             }
             putString(
