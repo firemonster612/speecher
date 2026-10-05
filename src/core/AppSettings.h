@@ -11,6 +11,7 @@
 #include <QMap>
 
 #include <array>
+#include <optional>
 
 namespace speecher {
 
@@ -172,6 +173,14 @@ struct LocalSpeechSettings {
 
     bool operator==(const LocalSpeechSettings &other) const = default;
 };
+
+// The Speed Test's seconds for a model where Runs on places models now, if it
+// has run there.
+inline std::optional<double> measuredSpeedTestSeconds(const LocalSpeechSettings &local, const QString &modelId)
+{
+    const auto it = local.speedTestSeconds.constFind(localSpeedTestKey(modelId, local.runsOn));
+    return it == local.speedTestSeconds.cend() ? std::nullopt : std::optional<double>(*it);
+}
 
 // The speech Custom Endpoint: an OpenAI-style audio transcriptions server.
 struct SpeechEndpointSettings {

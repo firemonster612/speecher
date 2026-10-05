@@ -32,6 +32,9 @@ struct LocalModel {
     qint64 sizeBytes = 0;
     double librispeechCleanWer = 0;
     double fleursEnglishWer = 0;
+    // Artificial Analysis's AA-WER v2 for the model, or for the nearest model
+    // it lists; 0 where it lists none. The Accuracy rating reads it.
+    double artificialAnalysisWer = 0;
     bool streams = false;
     // transcribe.cpp's catalog/<variant>.json: the language codes the model
     // takes as a hint, and whether it detects the language when given none.

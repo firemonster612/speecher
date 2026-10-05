@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/LocalModelCatalog.h"
+#include "core/CleanupModelCatalog.h"
 #include "dictation/DictationPorts.h"
 
 #include <QNetworkAccessManager>
@@ -44,33 +44,6 @@ std::optional<DetectedRunner> probeLmStudio(const QString &origin, int timeoutMs
 std::optional<DetectedRunner> probeLlamaServer(const QString &origin, int timeoutMs);
 // Every runner on its default port, Ollama first.
 QList<DetectedRunner> detectLocalRunners(int timeoutMs = 1500);
-
-// A cleanup model Speecher suggests pulling through Ollama.
-struct CleanupModel {
-    QString ollamaTag;
-    QString name;
-    qint64 sizeBytes = 0;
-};
-
-// The machine classes notes-llm.md's latency table has rows for.
-enum class CleanupHardware {
-    Cpu,
-    IntegratedGpu,
-    DedicatedGpu,
-    AppleBase,
-    ApplePro,
-    AppleMax,
-};
-
-// The latency table's row for this machine. Apple chips are told apart by
-// name, and a graphics card too small for the larger model counts as the
-// processor, which is where that model would end up running.
-CleanupHardware cleanupHardwareFor(const HardwareProfile &hardware);
-
-// The larger model when it cleans a dictation in 2 s or less, the smaller
-// when it takes 3 s or less, else nothing: cloud refinement or none will
-// feel faster.
-std::optional<CleanupModel> suggestedCleanupModel(CleanupHardware hardware);
 
 // Refinement through a Local Runner's Chat Completions API.
 class LocalRunnerRefiner final : public TranscriptRefiner {

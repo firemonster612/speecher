@@ -2,6 +2,7 @@
 
 #include "core/AppSettings.h"
 #include "core/ShortcutBinding.h"
+#include "core/settings/ProviderRatings.h"
 
 #include <QHash>
 #include <QList>
@@ -22,6 +23,13 @@ enum class RowKind {
     Info,
     Collection,
     Custom,
+    // The chosen provider's rating bars (SettingsRow::ratings), each the
+    // toolkit's own progress bar with ratingValueText beside it. Help says
+    // what was rated.
+    Rating,
+    // A disclosure titled with the row's label that expands in place to the
+    // models in SettingsRow::ratedModels.
+    ModelList,
 };
 
 struct RowOption {
@@ -266,6 +274,10 @@ struct SettingsRow {
     // Text rows only: values worth offering, though the row still takes any
     // text a person types.
     std::function<QList<RowOption>(const AppSettings &)> suggestions;
+    // Rating rows only: Accuracy or Quality, then Speed.
+    std::function<QList<Rating>(const AppSettings &)> ratings;
+    // ModelList rows only: the models, in order, with any bars of their own.
+    std::function<QList<RatedModel>(const AppSettings &)> ratedModels;
     // Text rows only: a key or password, shown masked.
     bool secret = false;
     // Text rows, and Custom rows that take text: shown in the empty field.
@@ -484,6 +496,9 @@ struct LiveFacts {
     // Where the loaded Local Model runs, e.g. "NVIDIA GeForce RTX 3060
     // (CUDA)"; empty while none is loaded.
     QString localModelRunsOn;
+    // This computer, as the Local Model and Local Runner ratings see it:
+    // LocalSetup's hardware profile, a plain processor until the probe answers.
+    HardwareProfile hardware;
 };
 
 // What the descriptors need to be built. A value type, so a test can make one

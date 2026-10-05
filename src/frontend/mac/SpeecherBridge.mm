@@ -94,7 +94,12 @@ SpeecherRowKind bridgedKind(RowKind kind)
         return SpeecherRowKindCollection;
     case RowKind::Custom:
         return SpeecherRowKindCustom;
+    case RowKind::Rating:
+    case RowKind::ModelList:
+        // -pages leaves these out until macOS draws them.
+        break;
     }
+    return SpeecherRowKindInfo;
 }
 
 SpeecherColumnKind bridgedColumnKind(ColumnKind kind)
@@ -1680,6 +1685,10 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
             NSMutableArray<SettingsRowModel *> *rows = [NSMutableArray array];
             for (const SettingsRow &row : section.rows) {
                 if (row.visible && !row.visible(_state->draft, _state->capabilities)) {
+                    continue;
+                }
+                // Not drawn on macOS yet, so they show nothing.
+                if (row.kind == RowKind::Rating || row.kind == RowKind::ModelList) {
                     continue;
                 }
                 [rows addObject:[self rowModel:row]];

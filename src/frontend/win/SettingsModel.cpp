@@ -333,7 +333,11 @@ SectionSnapshot SettingsModel::section(const SettingsPaneGroup &group) const
     SectionSnapshot snapshot{group.title, group.help, {}};
     for (const QString &rowId : group.rows) {
         const SettingsRow *row = rowWithId(rowId);
-        if (row && (!row->visible || row->visible(m_draft, m_capabilities))) {
+        // Rating and ModelList rows are not drawn on Windows yet, so they show nothing.
+        if (!row || row->kind == RowKind::Rating || row->kind == RowKind::ModelList) {
+            continue;
+        }
+        if (!row->visible || row->visible(m_draft, m_capabilities)) {
             snapshot.rows.append(rowSnapshot(*row));
         }
     }

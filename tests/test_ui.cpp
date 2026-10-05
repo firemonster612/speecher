@@ -1135,10 +1135,14 @@ private slots:
                 QCOMPARE(sectionLabels(*pages.page(pane.id), recorder), titles);
             }
             // Every row has a control named for it, except the custom blocks
-            // whose widgets carry names of their own.
+            // whose widgets carry names of their own and the rating rows Linux
+            // does not draw yet.
+            const SettingsSchema &schema = pages.schema();
             for (const SettingsPaneGroup &group : pane.groups) {
                 for (const QString &row : group.rows) {
+                    const RowKind kind = schema.row(row)->kind;
                     QVERIFY2(pages.page(pane.id)->findChild<QWidget *>(row)
+                                 || kind == RowKind::Rating || kind == RowKind::ModelList
                                  || row == QStringLiteral("writingProfileBehavior")
                                  || row == QStringLiteral("whatsNewNotes")
                                  || row == QStringLiteral("globalShortcut")

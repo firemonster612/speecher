@@ -429,6 +429,10 @@ UIElement rowControl(const RowSnapshot &row, PaneHost &host)
         return nullptr;
     case RowKind::Custom:
         return customRowIsFullWidth(row.id) ? nullptr : customRowElement(row, host);
+    case RowKind::Rating:
+    case RowKind::ModelList:
+        // SettingsModel::section leaves these out until Windows draws them.
+        return nullptr;
     }
     return nullptr;
 }

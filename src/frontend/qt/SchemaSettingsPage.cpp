@@ -210,6 +210,10 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
     QString previousDialog;
     QWidget *dialogForm = nullptr;
     for (const SettingsRow &descriptor : section.rows) {
+        // Not drawn on Linux yet, so they show nothing.
+        if (descriptor.kind == RowKind::Rating || descriptor.kind == RowKind::ModelList) {
+            continue;
+        }
         // Rows of a group share one gate, so the first of them says why.
         const bool repeatsGroup = !descriptor.groupId.isEmpty() && descriptor.groupId == previousGroup;
         previousGroup = descriptor.groupId;
@@ -668,6 +672,8 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
     case RowKind::Action:
     case RowKind::Collection:
     case RowKind::Custom:
+    case RowKind::Rating:
+    case RowKind::ModelList:
         break;
     }
     qFatal("settings row %s has no control kind", qPrintable(descriptor.id));

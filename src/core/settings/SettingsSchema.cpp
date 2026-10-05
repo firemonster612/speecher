@@ -552,6 +552,63 @@ void showPrimaryStatus(SettingsRow &row, ProviderRole role, QList<RowOption> pro
     };
 }
 
+QString primaryProviderId(ProviderRole role, const AppSettings &settings)
+{
+    return role == ProviderRole::Speech ? settings.speech.providerId : settings.refinement.providerId;
+}
+
+// The primary's bars, under its picker. Help names what was rated when the
+// provider runs on this computer. Hidden for a provider without a rating.
+SettingsRow ratingRow(ProviderRole role, std::function<LiveFacts(const AppSettings &)> facts)
+{
+    SettingsRow row;
+    row.id = role == ProviderRole::Speech ? QStringLiteral("speechRating") : QStringLiteral("refinementRating");
+    row.label = QStringLiteral("Rating");
+    row.help = QStringLiteral("Out of 10.");
+    row.kind = RowKind::Rating;
+    const auto rating = [role, facts = std::move(facts)](const AppSettings &settings) {
+        return providerRating(role, primaryProviderId(role, settings), facts(settings).hardware, settings);
+    };
+    row.helpValue = [rating, help = row.help](const AppSettings &settings) {
+        const QString subject = rating(settings).value_or(ProviderRating{}).subject;
+        return subject.isEmpty() ? help : subject;
+    };
+    row.ratings = [rating](const AppSettings &settings) {
+        return rating(settings).value_or(ProviderRating{}).bars;
+    };
+    row.visible = [rating](const AppSettings &settings, const Capabilities &) {
+        return rating(settings).has_value();
+    };
+    return row;
+}
+
+// The models behind the chosen speech service, listed in place. Refinement
+// has none: each provider's card already has a Model row.
+SettingsRow speechModelsRow(QList<RowOption> providers, std::function<LiveFacts(const AppSettings &)> facts)
+{
+    SettingsRow row;
+    row.id = QStringLiteral("speechModels");
+    row.label = providerModelsCaption();
+    row.kind = RowKind::ModelList;
+    const auto models = [facts = std::move(facts)](const AppSettings &settings) {
+        return providerModels(ProviderRole::Speech, settings.speech.providerId, facts(settings).hardware, settings);
+    };
+    row.helpValue = [providers = std::move(providers)](const AppSettings &settings) {
+        const QString &id = settings.speech.providerId;
+        if (id == QStringLiteral("local")) {
+            return QStringLiteral("The models you can run on this computer");
+        }
+        const auto provider = std::find_if(providers.cbegin(), providers.cend(),
+                                           [&id](const RowOption &option) { return option.id == id; });
+        return QStringLiteral("The models %1 uses").arg(provider == providers.cend() ? id : provider->label);
+    };
+    row.ratedModels = models;
+    row.visible = [models](const AppSettings &settings, const Capabilities &) {
+        return !models(settings).isEmpty();
+    };
+    return row;
+}
+
 // The ordered fallbacks the subpage edits, as a QStringList of provider ids.
 // Each front end draws it from fallbackListPresentation() and edits it with
 // withFallbackMoved() and its siblings.
@@ -1492,7 +1549,9 @@ SettingsPage audioPage(const SchemaContext &context)
         {
             {QStringLiteral("Transcription"),
              QString(),
-             {std::move(speechProvider), fallbacksRow(ProviderRole::Speech, speechChoices, statusFacts),
+             {std::move(speechProvider), ratingRow(ProviderRole::Speech, statusFacts),
+              speechModelsRow(speechChoices, statusFacts),
+              fallbacksRow(ProviderRole::Speech, speechChoices, statusFacts),
               std::move(spokenLanguage), std::move(spokenLanguageCaution), std::move(finalRetranscribe)}},
             // On the Fallbacks subpage rather than a pane.
             {QStringLiteral("Fallbacks"), QString(), {fallbackListRow(ProviderRole::Speech)}},
@@ -1813,6 +1872,7 @@ SettingsPage refinementPage(const SchemaContext &context)
              QString(),
              QList<SettingsRow>{
                  std::move(refinementProvider),
+                 ratingRow(ProviderRole::Refinement, statusFacts),
                  std::move(fallbacks),
              }},
             // On the Fallbacks subpage rather than a pane.
