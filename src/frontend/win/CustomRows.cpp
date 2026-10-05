@@ -17,6 +17,8 @@
 #include <QRegularExpression>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <optional>
 
 #pragma push_macro("GetCurrentTime")
@@ -610,10 +612,24 @@ UIElement fallbackListElement(ProviderRole role,
 
 namespace {
 
-// A bar's length and the room for its value, the widest being "8.5/10":
-// fixed, so the bars of one list, and of the options down a step, line up.
+// A bar's length, fixed like the value column after it, so the bars of one
+// list, and of the options down a step, line up.
 constexpr double kRatingBarWidth = 96;
-constexpr double kRatingValueWidth = 44;
+
+// The widest value text at the current text size, so a shorter one leaves the
+// next cell where it was. Qt measures it the same way.
+double ratingValueWidth()
+{
+    TextBlock probe = styledTextBlock({}, L"CaptionTextBlockStyle");
+    constexpr float unbounded = std::numeric_limits<float>::infinity();
+    float widest = 0;
+    for (int halves = 0; halves <= 20; ++halves) {
+        probe.Text(hs(ratingValueText({RatingMeasure::Speed, halves / 2.0})));
+        probe.Measure({unbounded, unbounded});
+        widest = std::max(widest, probe.DesiredSize().Width);
+    }
+    return std::ceil(widest);
+}
 
 void addColumn(const Grid &grid, GridLength width)
 {
@@ -647,10 +663,10 @@ void placeBar(const Grid &grid, const Rating &rating, int row, int column)
     place(grid, value, row, column + 1);
 }
 
-void addBarColumns(const Grid &grid)
+void addBarColumns(const Grid &grid, double valueWidth)
 {
     addColumn(grid, {kRatingBarWidth, GridUnitType::Pixel});
-    addColumn(grid, {kRatingValueWidth, GridUnitType::Pixel});
+    addColumn(grid, {valueWidth, GridUnitType::Pixel});
 }
 
 } // namespace
@@ -658,6 +674,7 @@ void addBarColumns(const Grid &grid)
 Grid ratingBarsElement(const QList<Rating> &bars, Orientation orientation, const PaneHost &host)
 {
     const bool stacked = orientation == Orientation::Vertical;
+    const double valueWidth = ratingValueWidth();
     Grid grid;
     grid.ColumnSpacing(8);
     grid.RowSpacing(4);
@@ -671,7 +688,7 @@ Grid ratingBarsElement(const QList<Rating> &bars, Orientation orientation, const
         }
         if (!stacked || index == 0) {
             addColumn(grid, {0, GridUnitType::Auto});
-            addBarColumns(grid);
+            addBarColumns(grid, valueWidth);
         }
         TextBlock label = secondaryTextBlock(ratingMeasureLabel(bars.at(index).measure), L"CaptionTextBlockStyle", host);
         label.VerticalAlignment(VerticalAlignment::Center);
@@ -689,14 +706,15 @@ StackPanel ratedModelsElement(const QList<RatedModel> &models, const PaneHost &h
     const auto firstRated = std::find_if(models.cbegin(), models.cend(),
                                          [](const RatedModel &model) { return !model.bars.isEmpty(); });
     const bool rated = firstRated != models.cend();
+    const double valueWidth = rated ? ratingValueWidth() : 0;
     // The heading and every model share one set of columns, so the bars line up.
-    const auto modelGrid = [rated](bool separated) {
+    const auto modelGrid = [rated, valueWidth](bool separated) {
         Grid grid = separated ? separatedGrid() : Grid();
         grid.ColumnSpacing(8);
         addColumn(grid, {1, GridUnitType::Star});
         if (rated) {
-            addBarColumns(grid);
-            addBarColumns(grid);
+            addBarColumns(grid, valueWidth);
+            addBarColumns(grid, valueWidth);
         }
         return grid;
     };

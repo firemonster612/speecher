@@ -85,6 +85,7 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
         [&localSetup] { return localSetup.liveFacts(); },
         [&localSetup](const AppSettings &draft) { return localSetup.liveFacts(draft); },
         builtInDictationSystemPrompt(),
+        [&localSetup] { return localSetup.hardware().profile; },
     };
 }
 
@@ -335,10 +336,7 @@ SectionSnapshot SettingsModel::section(const SettingsPaneGroup &group) const
     SectionSnapshot snapshot{group.title, group.help, {}};
     for (const QString &rowId : group.rows) {
         const SettingsRow *row = rowWithId(rowId);
-        if (!row) {
-            continue;
-        }
-        if (!row->visible || row->visible(m_draft, m_capabilities)) {
+        if (row && (!row->visible || row->visible(m_draft, m_capabilities))) {
             snapshot.rows.append(rowSnapshot(*row));
         }
     }
