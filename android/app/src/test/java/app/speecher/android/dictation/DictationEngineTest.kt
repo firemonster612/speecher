@@ -1,9 +1,12 @@
 package app.speecher.android.dictation
 
+import app.speecher.protocol.Cancellation
 import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.CodexDictationClient
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
+import app.speecher.protocol.ProviderFailure
+import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RefinementContext
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
@@ -68,13 +71,13 @@ class DictationEngineTest {
                             server.url("/voice").toString().replaceFirst("http", "ws"),
                         )
                     },
-                    { _, raw, _ -> raw },
-                    { error("no batch pass") },
+                    { _, raw, _, _ -> raw },
+                    { _, _ -> error("no batch pass") },
                     { commits.add(it) },
                     Executor { it.run() },
                     { if (it is DictationState.Listening) listening.countDown() },
                 )
-            engine.start(Provider.Claude)
+            engine.start(SpeechProvider.Claude)
             assertTrue(listening.await(3, TimeUnit.SECONDS))
             engine.insert()
             assertEquals("{\"type\":\"CloseStream\"}", closes.poll(3, TimeUnit.SECONDS))
@@ -128,13 +131,13 @@ class DictationEngineTest {
                     speech = events
                     client
                 },
-                { _, raw, _ -> raw },
+                { _, raw, _, _ -> raw },
                 null,
                 { true },
                 Executor { tasks.add(it) },
                 {},
             )
-        engine.start(Provider.Claude)
+        engine.start(SpeechProvider.Claude)
         assertEquals(DictationState.Listening(), engine.state)
         tasks.removeFirst().run() // The microphone, started by the tap.
         capture.audio?.invoke(byteArrayOf(1, 2), 0.5f)
@@ -160,20 +163,20 @@ class DictationEngineTest {
                     speech.add(events)
                     Client().also(clients::add)
                 },
-                { _, raw, _ -> raw },
+                { _, raw, _, _ -> raw },
                 null,
                 { true },
                 Executor { tasks.add(it) },
                 { states.add(it) },
                 pause = {},
             )
-        engine.start(Provider.Claude)
+        engine.start(SpeechProvider.Claude)
         tasks.removeFirst().run() // The microphone.
         tasks.removeFirst().run() // The first connection.
         speech[0](SpeechEvent.Connected)
         speech[0](SpeechEvent.Final("first part"))
         speech[0](SpeechEvent.Partial("still talking"))
-        speech[0](SpeechEvent.Failed(false, "closed 1012", retryable = true))
+        speech[0](SpeechEvent.Failed(ProviderFailureKind.Network, "closed 1012", retryable = true))
         capture.audio?.invoke(byteArrayOf(7), 0.5f) // Spoken while the new stream opens.
         assertEquals(
             DictationState.Listening("first part still talking", "", 0.5f, reconnecting = true),
@@ -212,7 +215,7 @@ class DictationEngineTest {
                     speech.add(events)
                     Client().also(clients::add)
                 },
-                { _, raw, _ -> raw },
+                { _, raw, _, _ -> raw },
                 null,
                 { commits.add(it) },
                 Executor { tasks.add(it) },
@@ -222,12 +225,14 @@ class DictationEngineTest {
 
         /** Starts dictating, then loses the first stream after it heard [heard]. */
         fun dropAfter(heard: String) {
-            engine.start(Provider.Claude)
+            engine.start(SpeechProvider.Claude)
             tasks.removeFirst().run() // The microphone.
             tasks.removeFirst().run() // The first connection.
             speech[0](SpeechEvent.Connected)
             speech[0](SpeechEvent.Final(heard))
-            speech[0](SpeechEvent.Failed(false, "closed 1006", retryable = true))
+            speech[0](
+                SpeechEvent.Failed(ProviderFailureKind.Network, "closed 1006", retryable = true)
+            )
         }
     }
 
@@ -239,15 +244,16 @@ class DictationEngineTest {
             run.tasks.removeFirst().run() // The reconnect, after its backoff.
             run.speech[stream + 1](SpeechEvent.Connected)
             run.speech[stream + 1](SpeechEvent.Final("part ${stream + 1}"))
-            run.speech[stream + 1](SpeechEvent.Failed(false, "closed 1006", retryable = true))
+            run.speech[stream + 1](
+                SpeechEvent.Failed(ProviderFailureKind.Network, "closed 1006", retryable = true)
+            )
         }
         assertEquals(listOf(1_000L, 3_000L), run.pauses)
         assertEquals(
             DictationState.Failed(
-                FailureReason.Network,
+                FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Network),
                 "closed 1006",
                 "part 0 part 1 part 2",
-                Provider.Claude,
             ),
             run.engine.state,
         )
@@ -270,14 +276,18 @@ class DictationEngineTest {
     @Test
     fun `an authentication failure mid-dictation fails instead of reconnecting`() {
         val run = Reconnects()
-        run.engine.start(Provider.Claude)
+        run.engine.start(SpeechProvider.Claude)
         run.tasks.removeFirst().run() // The microphone.
         run.tasks.removeFirst().run() // The connection.
         run.speech[0](SpeechEvent.Connected)
         run.speech[0](SpeechEvent.Final("kept"))
-        run.speech[0](SpeechEvent.Failed(true, "HTTP 401"))
+        run.speech[0](SpeechEvent.Failed(ProviderFailureKind.Authentication, "HTTP 401"))
         assertEquals(
-            DictationState.Failed(FailureReason.SignedOut, "HTTP 401", "kept", Provider.Claude),
+            DictationState.Failed(
+                FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Authentication),
+                "HTTP 401",
+                "kept",
+            ),
             run.engine.state,
         )
         assertTrue(run.tasks.isEmpty())
@@ -287,11 +297,11 @@ class DictationEngineTest {
     fun `a spoken language the provider can't listen for fails in the panel`() {
         val message = "Claude can't listen for Welsh. Choose another spoken language."
         val run = Reconnects { throw SpokenLanguageUnsupported(message) }
-        run.engine.start(Provider.Claude)
+        run.engine.start(SpeechProvider.Claude)
         run.tasks.removeFirst().run() // The microphone.
         run.tasks.removeFirst().run() // The connection.
         assertEquals(
-            DictationState.Failed(FailureReason.SpokenLanguage, message, "", Provider.Claude),
+            DictationState.Failed(FailureReason.SpokenLanguage, message, ""),
             run.engine.state,
         )
     }
@@ -333,7 +343,7 @@ class DictationEngineTest {
      * transport. More rollovers than the reconnect budget, and none of them may fail.
      */
     private fun rollOver(
-        provider: Provider,
+        provider: SpeechProvider,
         client: (WebSocketTransport, (SpeechEvent) -> Unit) -> SpeechClient,
         session: (WebSocketTransport.Listener, String) -> Unit,
     ): List<FakeTransport> {
@@ -346,7 +356,7 @@ class DictationEngineTest {
                 capture::capture,
                 capture::stop,
                 { _, events -> client(FakeTransport().also(transports::add), events) },
-                { _, raw, _ -> raw },
+                { _, raw, _, _ -> raw },
                 null,
                 { true },
                 Executor { tasks.add(it) },
@@ -372,7 +382,7 @@ class DictationEngineTest {
     fun `ChatGPT closing its session mid-dictation rolls over to a new one every time`() {
         val transports =
             rollOver(
-                Provider.ChatGpt,
+                SpeechProvider.ChatGpt,
                 { transport, events -> CodexDictationClient(transport, "token", "en", events) },
             ) { server, words ->
                 server.onOpen()
@@ -396,7 +406,7 @@ class DictationEngineTest {
     fun `Claude closing the stream mid-dictation rolls over to a new one every time`() {
         val transports =
             rollOver(
-                Provider.Claude,
+                SpeechProvider.Claude,
                 { transport, events ->
                     ClaudeVoiceClient(transport, "token", emptyList(), "en", events)
                 },
@@ -456,7 +466,7 @@ class DictationEngineTest {
                         speech = events
                         Client()
                     },
-                    { _, raw, onText ->
+                    { _, raw, cancellation, onText ->
                         refineTranscript(
                             OkHttpClient(),
                             OAuthProvider.ChatGpt,
@@ -468,6 +478,7 @@ class DictationEngineTest {
                             RefinementContext(),
                             server.url("/codex").toString(),
                             onText = onText,
+                            cancellation = cancellation,
                         )
                     },
                     null,
@@ -480,9 +491,9 @@ class DictationEngineTest {
                         }
                     },
                 )
-            engine.start(Provider.ChatGpt)
+            engine.start(SpeechProvider.ChatGpt)
             speech(SpeechEvent.Final("hello there"))
-            engine.insertRefined(Provider.ChatGpt)
+            engine.insertRefined(CleanupProvider.ChatGpt)
             speech(SpeechEvent.Completed)
             assertTrue(streamedBeforeEnd)
             assertEquals(listOf("Hello", "Hello there."), refined)
@@ -504,13 +515,13 @@ class DictationEngineTest {
                     speech = events
                     client
                 },
-                { _, raw, _ -> raw },
-                { error("no batch pass") },
+                { _, raw, _, _ -> raw },
+                { _, _ -> error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.Claude)
+        engine.start(SpeechProvider.Claude)
         speech(SpeechEvent.Connected)
         speech(SpeechEvent.Partial("hello"))
         assertEquals(DictationState.Listening("", "hello", 0f), engine.state)
@@ -538,13 +549,13 @@ class DictationEngineTest {
                     speech = events
                     client
                 },
-                { _, raw, _ -> raw },
-                { error("no batch pass") },
+                { _, raw, _, _ -> raw },
+                { _, _ -> error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.Claude)
+        engine.start(SpeechProvider.Claude)
         speech(SpeechEvent.Connected)
         capture.audio?.invoke(byteArrayOf(1, 2), 0.5f)
         assertEquals(DictationState.Listening("", "", 0.5f), engine.state)
@@ -561,19 +572,18 @@ class DictationEngineTest {
                 { _, _ -> error("Microphone unavailable") },
                 {},
                 { _, _ -> Client() },
-                { _, raw, _ -> raw },
+                { _, raw, _, _ -> raw },
                 null,
                 { true },
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.Claude)
+        engine.start(SpeechProvider.Claude)
         assertEquals(
             DictationState.Failed(
                 FailureReason.MicrophoneUnavailable,
                 "Microphone unavailable",
                 "",
-                Provider.Claude,
             ),
             engine.state,
         )
@@ -592,15 +602,15 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, _, _ -> "Hello." },
-                { error("no batch pass") },
+                { _, _, _, _ -> "Hello." },
+                { _, _ -> error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.ChatGpt)
+        engine.start(SpeechProvider.ChatGpt)
         speech(SpeechEvent.Final("hello"))
-        engine.insertRefined(Provider.Claude)
+        engine.insertRefined(CleanupProvider.Claude)
         speech(SpeechEvent.Completed)
         engine.insert()
         assertEquals(listOf("Hello."), commits)
@@ -613,15 +623,18 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw, _ -> raw },
-                { error("no batch pass") },
+                { _, raw, _, _ -> raw },
+                { _, _ -> error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
             )
-        failed.start(Provider.Claude)
-        speech(SpeechEvent.Failed(true))
-        assertEquals(FailureReason.SignedOut, (failed.state as DictationState.Failed).reason)
+        failed.start(SpeechProvider.Claude)
+        speech(SpeechEvent.Failed(ProviderFailureKind.Authentication))
+        assertEquals(
+            FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Authentication),
+            (failed.state as DictationState.Failed).reason,
+        )
     }
 
     @Test
@@ -638,13 +651,13 @@ class DictationEngineTest {
                     events.add(onEvent)
                     Client().also(clients::add)
                 },
-                { _, raw, _ -> raw },
+                { _, raw, _, _ -> raw },
                 null,
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.Claude)
+        engine.start(SpeechProvider.Claude)
         events[0](SpeechEvent.Final("before"))
         engine.pause()
         assertTrue(clients[0].stopped)
@@ -679,7 +692,7 @@ class DictationEngineTest {
                     events.add(onEvent)
                     Client().also(clients::add)
                 },
-                { _, raw, _ -> raw },
+                { _, raw, _, _ -> raw },
                 null,
                 { commits.add(it) },
                 executor,
@@ -692,7 +705,7 @@ class DictationEngineTest {
     @Test
     fun `Insert after a resume sends what was heard since to a stream before inserting`() {
         val t = PausingEngine()
-        t.engine.start(Provider.Claude)
+        t.engine.start(SpeechProvider.Claude)
         t.events[0](SpeechEvent.Final("before"))
         t.engine.pause()
         t.engine.resume()
@@ -713,7 +726,7 @@ class DictationEngineTest {
     @Test
     fun `a brief resume between two pauses reaches a stream before Insert`() {
         val t = PausingEngine()
-        t.engine.start(Provider.Claude)
+        t.engine.start(SpeechProvider.Claude)
         t.events[0](SpeechEvent.Final("before"))
         t.engine.pause()
         t.engine.resume()
@@ -735,7 +748,7 @@ class DictationEngineTest {
     @Test
     fun `a stream that cannot open while paused keeps the words and waits for the resume`() {
         val t = PausingEngine()
-        t.engine.start(Provider.Claude)
+        t.engine.start(SpeechProvider.Claude)
         t.events[0](SpeechEvent.Connected)
         t.events[0](SpeechEvent.Final("before"))
         t.engine.pause()
@@ -761,7 +774,7 @@ class DictationEngineTest {
     fun `pause and resume while the stream connects still end the paused stream`() {
         val tasks = ArrayDeque<Runnable>()
         val t = PausingEngine(Executor { tasks.add(it) })
-        t.engine.start(Provider.Claude)
+        t.engine.start(SpeechProvider.Claude)
         tasks.removeFirst().run() // The microphone, started by the tap.
         t.hear(1)
         t.engine.pause()
@@ -791,7 +804,7 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw, _ ->
+                { _, raw, _, _ ->
                     engine.cancel()
                     raw
                 },
@@ -800,9 +813,9 @@ class DictationEngineTest {
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.Claude)
+        engine.start(SpeechProvider.Claude)
         speech(SpeechEvent.Final("never inserted"))
-        engine.insertRefined(Provider.Claude)
+        engine.insertRefined(CleanupProvider.Claude)
         speech(SpeechEvent.Completed)
         assertTrue(commits.isEmpty())
     }
@@ -821,13 +834,13 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw, _ -> raw },
-                { error("no batch pass") },
+                { _, raw, _, _ -> raw },
+                { _, _ -> error("no batch pass") },
                 { text -> if (commitSucceeds) commits.add(text) else false },
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.Claude)
+        engine.start(SpeechProvider.Claude)
         speech(SpeechEvent.Final("keep this"))
         engine.insert()
         speech(SpeechEvent.Completed)
@@ -849,13 +862,13 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw, _ -> raw },
-                { error("no batch pass") },
+                { _, raw, _, _ -> raw },
+                { _, _ -> error("no batch pass") },
                 { true },
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.ChatGpt)
+        engine.start(SpeechProvider.ChatGpt)
         speech(SpeechEvent.Connected)
         speech(SpeechEvent.Partial("hello"))
         assertEquals(DictationState.Listening("", "hello", 0f), engine.state)
@@ -866,7 +879,7 @@ class DictationEngineTest {
     }
 
     @Test
-    fun `retry repeats refinement on saved transcript`() {
+    fun `a cleanup failure is reported as the cleanup's, and retry repeats it on the transcript`() {
         val capture = Capture()
         lateinit var speech: (SpeechEvent) -> Unit
         var attempts = 0
@@ -879,17 +892,28 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw, _ -> if (++attempts == 1) error("temporary") else "$raw refined" },
-                { error("no batch pass") },
+                { _, raw, _, _ ->
+                    if (++attempts == 1)
+                        throw ProviderFailure(ProviderFailureKind.RateLimited, "HTTP 429", 429)
+                    else "$raw refined"
+                },
+                { _, _ -> error("no batch pass") },
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.Claude)
+        engine.start(SpeechProvider.Claude)
         speech(SpeechEvent.Final("save me"))
-        engine.insertRefined(Provider.Claude)
+        engine.insertRefined(CleanupProvider.Claude)
         speech(SpeechEvent.Completed)
-        assertEquals("save me", (engine.state as DictationState.Failed).transcript)
+        assertEquals(
+            DictationState.Failed(
+                FailureReason.Cleanup(CleanupProvider.Claude, ProviderFailureKind.RateLimited),
+                "Could not refine the transcript",
+                "save me",
+            ),
+            engine.state,
+        )
         engine.retry()
         assertEquals(listOf("save me refined"), commits)
     }
@@ -909,8 +933,8 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw, _ -> "clean: $raw" },
-                { pcm ->
+                { _, raw, _, _ -> "clean: $raw" },
+                { pcm, _ ->
                     uploads.add(pcm.toList())
                     if (batchFails) error("HTTP 500") else "Hello there, friend."
                 },
@@ -919,7 +943,7 @@ class DictationEngineTest {
                 {},
             )
         val batch = engine()
-        batch.start(Provider.ChatGpt)
+        batch.start(SpeechProvider.ChatGpt)
         speech(SpeechEvent.Connected)
         capture.audio?.invoke(byteArrayOf(1, 2), 0f)
         capture.audio?.invoke(byteArrayOf(3, 4), 0f)
@@ -931,11 +955,11 @@ class DictationEngineTest {
 
         batchFails = true
         val fallback = engine()
-        fallback.start(Provider.ChatGpt)
+        fallback.start(SpeechProvider.ChatGpt)
         speech(SpeechEvent.Connected)
         capture.audio?.invoke(byteArrayOf(5), 0f)
         speech(SpeechEvent.Final("streamed words"))
-        fallback.insertRefined(Provider.Claude)
+        fallback.insertRefined(CleanupProvider.Claude)
         speech(SpeechEvent.Completed)
         assertEquals(listOf<Byte>(5), uploads.last())
         assertEquals("clean: streamed words", commits.last())
@@ -984,7 +1008,7 @@ class DictationEngineTest {
         val capture = Capture()
         lateinit var speech: (SpeechEvent) -> Unit
         val commits = mutableListOf<String>()
-        fun engine(transcribe: ((ByteArray) -> String)?) =
+        fun engine(transcribe: ((ByteArray, Cancellation) -> String)?) =
             DictationEngine(
                 capture::capture,
                 capture::stop,
@@ -992,15 +1016,15 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, _, _ -> error("plain Insert never cleans up") },
+                { _, _, _, _ -> error("plain Insert never cleans up") },
                 transcribe,
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
             )
-        for (pass in listOf({ _: ByteArray -> "Hello there, friend." }, null)) {
+        for (pass in listOf({ _: ByteArray, _: Cancellation -> "Hello there, friend." }, null)) {
             val engine = engine(pass)
-            engine.start(Provider.ChatGpt)
+            engine.start(SpeechProvider.ChatGpt)
             speech(SpeechEvent.Connected)
             capture.audio?.invoke(byteArrayOf(1, 2), 0f)
             speech(SpeechEvent.Final("hello there friend"))
@@ -1023,18 +1047,127 @@ class DictationEngineTest {
                     speech = events
                     Client()
                 },
-                { _, raw, _ -> "clean: $raw" },
+                { _, raw, _, _ -> "clean: $raw" },
                 null,
                 { commits.add(it) },
                 Executor { it.run() },
                 {},
             )
-        engine.start(Provider.ChatGpt)
+        engine.start(SpeechProvider.ChatGpt)
         speech(SpeechEvent.Connected)
         capture.audio?.invoke(byteArrayOf(1, 2), 0f)
         speech(SpeechEvent.Final("streamed words"))
-        engine.insertRefined(Provider.ChatGpt)
+        engine.insertRefined(CleanupProvider.ChatGpt)
         speech(SpeechEvent.Completed)
         assertEquals(listOf("clean: streamed words"), commits)
+    }
+
+    @Test
+    fun `Insert shows each wait in turn - the last words, the second pass, then the cleanup`() {
+        val capture = Capture()
+        val tasks = ArrayDeque<Runnable>()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, raw, _, _ -> "clean: $raw" },
+                { _, _ -> "batch words" },
+                { true },
+                Executor { tasks.add(it) },
+                {},
+            )
+        engine.start(SpeechProvider.ChatGpt)
+        tasks.removeFirst().run() // The microphone.
+        tasks.removeFirst().run() // The connection.
+        speech(SpeechEvent.Connected)
+        capture.audio?.invoke(byteArrayOf(1), 0.5f)
+        speech(SpeechEvent.Final("streamed words"))
+        engine.insertRefined(CleanupProvider.Claude)
+        val waits = mutableListOf(engine.state)
+        speech(SpeechEvent.Completed)
+        waits.add(engine.state)
+        tasks.removeFirst().run() // The second pass.
+        waits.add(engine.state)
+        assertEquals(
+            listOf(
+                DictationState.Listening("streamed words", "", 0f, stopping = true),
+                DictationState.Refining("streamed words", transcribingAgain = true),
+                DictationState.Refining("batch words"),
+            ),
+            waits,
+        )
+    }
+
+    @Test
+    fun `no sign-in fails as missing setup without reconnecting`() {
+        val run = Reconnects {
+            throw ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in")
+        }
+        run.engine.start(SpeechProvider.Claude)
+        run.tasks.removeFirst().run() // The microphone.
+        run.tasks.removeFirst().run() // The connection.
+        assertEquals(
+            DictationState.Failed(
+                FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Unavailable),
+                "Could not connect to the speech provider",
+                "",
+            ),
+            run.engine.state,
+        )
+        assertTrue(run.tasks.isEmpty())
+    }
+
+    @Test
+    fun `cancel aborts a cleanup request in flight`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().headersDelay(5, TimeUnit.SECONDS).build())
+            server.start()
+            lateinit var speech: (SpeechEvent) -> Unit
+            val workers = mutableListOf<Thread>()
+            val commits = mutableListOf<String>()
+            val engine =
+                DictationEngine(
+                    { _, _ -> },
+                    {},
+                    { _, events ->
+                        speech = events
+                        Client()
+                    },
+                    { _, raw, cancellation, _ ->
+                        refineTranscript(
+                            OkHttpClient(),
+                            OAuthProvider.Claude,
+                            OAuthTokens("access", "", "", 0, ""),
+                            raw,
+                            emptyList(),
+                            "claude-sonnet-5-5",
+                            "low",
+                            RefinementContext(),
+                            server.url("/v1").toString(),
+                            cancellation = cancellation,
+                        )
+                    },
+                    null,
+                    { commits.add(it) },
+                    Executor { task -> Thread(task).also(workers::add).start() },
+                    {},
+                )
+            engine.start(SpeechProvider.Claude)
+            workers.forEach(Thread::join) // The microphone and the connection.
+            speech(SpeechEvent.Final("never inserted"))
+            engine.insertRefined(CleanupProvider.Claude)
+            speech(SpeechEvent.Completed)
+            server.takeRequest()
+            engine.cancel()
+            // The request would otherwise hold its worker for the server's five seconds.
+            workers.last().join(2_000)
+            assertFalse(workers.last().isAlive)
+            assertTrue(commits.isEmpty())
+        }
     }
 }

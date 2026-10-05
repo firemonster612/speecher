@@ -35,10 +35,10 @@ class SettingsStore(private val context: Context) {
                 .coerceIn(checkIntervalMinutes)
         return SpeecherSettings(
                 transcriptionProvider =
-                    enumOf(preferences.getString("transcription", null), default),
+                    enumOf(preferences.getString("transcription", null), default.speech),
                 refinementEnabled = preferences.getBoolean("refinement", true),
                 refinementProvider =
-                    enumOf(preferences.getString("refinementProvider", null), default),
+                    enumOf(preferences.getString("refinementProvider", null), default.cleanup),
                 transcribePassEnabled = preferences.getBoolean("transcribePass", true),
                 spokenLanguage = preferences.getString("spokenLanguage", ENGLISH_LANGUAGE)!!,
                 chatGptRefinement = loadRefinement(Provider.ChatGpt),

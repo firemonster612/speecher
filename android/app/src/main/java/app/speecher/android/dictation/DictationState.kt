@@ -5,6 +5,7 @@ import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.OAuthProvider
+import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
@@ -28,9 +29,32 @@ val Provider.label: String
             Provider.ChatGpt -> "ChatGPT"
         }
 
+/**
+ * Who turns speech into the transcript. Each one is an account's speech service for now; the values
+ * are saved by name, the names the accounts were saved by before.
+ */
+enum class SpeechProvider(val account: Provider) {
+    ChatGpt(Provider.ChatGpt),
+    Claude(Provider.Claude),
+}
+
+/** Who cleans up the transcript. As with [SpeechProvider], each one is an account for now. */
+enum class CleanupProvider(val account: Provider) {
+    ChatGpt(Provider.ChatGpt),
+    Claude(Provider.Claude),
+}
+
+/** The account's speech service. */
+val Provider.speech: SpeechProvider
+    get() = SpeechProvider.entries.first { it.account == this }
+
+/** The account's cleanup service. */
+val Provider.cleanup: CleanupProvider
+    get() = CleanupProvider.entries.first { it.account == this }
+
 /** Only ChatGPT has a batch speech-to-text pass; both Insert buttons can run it. */
-val Provider.hasBatchTranscription: Boolean
-    get() = this == Provider.ChatGpt
+val SpeechProvider.hasBatchTranscription: Boolean
+    get() = this == SpeechProvider.ChatGpt
 
 /** What the dictation panel shows. The engine produces it; the UI only renders it. */
 sealed interface DictationState {
@@ -40,7 +64,8 @@ sealed interface DictationState {
      * keeping them apart lets the preview grow append-only instead of reflowing whenever an interim
      * shrinks. [level] is the input loudness from 0 to 1. [reconnecting] is set while a dropped
      * speech stream is being reopened; the microphone keeps recording meanwhile. [paused] is set
-     * while the person paused: the microphone is off and the words so far are kept.
+     * while the person paused: the microphone is off and the words so far are kept. [stopping] is
+     * set once Insert is tapped: the microphone is off and the last words are on their way.
      */
     data class Listening(
         val committed: String = "",
@@ -48,6 +73,7 @@ sealed interface DictationState {
         val level: Float = 0f,
         val reconnecting: Boolean = false,
         val paused: Boolean = false,
+        val stopping: Boolean = false,
     ) : DictationState {
         /** The whole live preview: committed text with the interim word appended. */
         val text: String
@@ -57,45 +83,73 @@ sealed interface DictationState {
     }
 
     /**
-     * The user pressed Insert and the batch or cleanup pass is running. [refined] is the cleanup
-     * text streamed so far, empty until its first token arrives.
+     * The user pressed Insert and the batch or cleanup pass is running: ChatGPT's second
+     * transcription pass while [transcribingAgain], then the cleanup. [refined] is the cleanup text
+     * streamed so far, empty until its first token arrives.
      */
-    data class Refining(val transcript: String, val refined: String = "") : DictationState
+    data class Refining(
+        val transcript: String,
+        val refined: String = "",
+        val transcribingAgain: Boolean = false,
+    ) : DictationState
 
     /**
-     * Dictation stopped. [transcript] holds whatever was heard before the failure. [commitFailed]
-     * marks the one case where the transcript exists but insertion into the field failed, so the
-     * panel offers a single retry instead of two buttons that do the same commit.
+     * Dictation stopped. [transcript] holds whatever was heard before the failure. [detail] is
+     * diagnostic and never shown, except a spoken language mismatch's, which is already its words.
      */
-    data class Failed(
-        val reason: FailureReason,
-        val detail: String,
-        val transcript: String,
-        val provider: Provider? = null,
-        val commitFailed: Boolean = false,
-    ) : DictationState
+    data class Failed(val reason: FailureReason, val detail: String, val transcript: String) :
+        DictationState
 }
 
 /** Why dictation failed. Each reason maps to one recovery action in the panel. */
-enum class FailureReason {
+sealed interface FailureReason {
     /** Recovery: open the app to grant the microphone. */
-    MicrophoneDenied,
+    data object MicrophoneDenied : FailureReason
 
     /** Another app may hold the microphone. Recovery: retry. */
-    MicrophoneUnavailable,
-
-    /** Recovery: open the app to sign in again. */
-    SignedOut,
-
-    /** Recovery: retry. */
-    Network,
-
-    /** The provider refused or failed. Recovery: retry. */
-    Provider,
+    data object MicrophoneUnavailable : FailureReason
 
     /** The provider can't listen for the saved spoken language. Recovery: open the app. */
-    SpokenLanguage,
+    data object SpokenLanguage : FailureReason
+
+    /**
+     * The transcript exists but insertion into the field failed, so the panel offers a single retry
+     * instead of two buttons that do the same commit.
+     */
+    data object Commit : FailureReason
+
+    /**
+     * A speech or cleanup provider could not do its part, as [kind]. Recovery: sign in to [account]
+     * again when the sign-in is the problem, otherwise retry.
+     */
+    sealed interface ProviderFailed : FailureReason {
+        val account: Provider
+        val kind: ProviderFailureKind
+    }
+
+    data class Speech(val provider: SpeechProvider, override val kind: ProviderFailureKind) :
+        ProviderFailed {
+        override val account: Provider
+            get() = provider.account
+    }
+
+    data class Cleanup(val provider: CleanupProvider, override val kind: ProviderFailureKind) :
+        ProviderFailed {
+        override val account: Provider
+            get() = provider.account
+    }
 }
+
+/**
+ * Whether signing in fixes a failure of this kind: the sign-in was turned down, or there is none.
+ * Retrying would only fail again.
+ */
+val ProviderFailureKind.needsSignIn: Boolean
+    get() = this == ProviderFailureKind.Authentication || this == ProviderFailureKind.Unavailable
+
+/** The account to sign in to, when signing in is what fixes this failure. */
+val FailureReason.signInAccount: Provider?
+    get() = (this as? FailureReason.ProviderFailed)?.takeIf { it.kind.needsSignIn }?.account
 
 /**
  * The order providers are listed in everywhere in the UI: alphabetical, chosen deliberately so it
@@ -237,9 +291,9 @@ fun shownPanelSize(chosen: PanelSize, toggled: Boolean, state: DictationState): 
 
 /** Everything the user can change in Settings. */
 data class SpeecherSettings(
-    val transcriptionProvider: Provider = providerOrder.first(),
+    val transcriptionProvider: SpeechProvider = providerOrder.first().speech,
     val refinementEnabled: Boolean = true,
-    val refinementProvider: Provider = providerOrder.first(),
+    val refinementProvider: CleanupProvider = providerOrder.first().cleanup,
     /**
      * Whether both Insert buttons re-transcribe ChatGPT dictation with GPT Transcribe first. On by
      * default, as on the desktop: it is more accurate, though slower and an extra request.

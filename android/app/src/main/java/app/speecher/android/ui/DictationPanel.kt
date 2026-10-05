@@ -61,13 +61,17 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
 import app.speecher.android.dictation.ButtonLayout
+import app.speecher.android.dictation.CleanupProvider
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.InsertAction
 import app.speecher.android.dictation.PanelSize
 import app.speecher.android.dictation.Provider
+import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.label
+import app.speecher.android.dictation.signInAccount
 import app.speecher.android.dictation.spokenLanguageMismatch
+import app.speecher.protocol.ProviderFailureKind
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -117,16 +121,13 @@ fun DictationPanel(
     val display = LocalWindowInfo.current.containerDpSize
     val height = panelHeight(size, display.height)
     val status =
-        when (state) {
-            is DictationState.Listening ->
-                when {
-                    state.paused -> "Paused"
-                    state.reconnecting -> "Reconnecting"
-                    else -> "Listening"
-                }
-            is DictationState.Refining -> "Refining transcript"
-            is DictationState.Failed -> state.title
-        }
+        state.wait
+            ?: when {
+                state is DictationState.Failed -> state.title
+                state is DictationState.Listening && state.paused -> "Paused"
+                state is DictationState.Listening && state.reconnecting -> "Reconnecting"
+                else -> "Listening"
+            }
     val announced = Modifier.semantics {
         liveRegion = LiveRegionMode.Polite
         stateDescription = status
@@ -180,7 +181,8 @@ fun DictationPanel(
                 Modifier.fillMaxWidth().heightIn(min = 56.dp).then(announced),
                 contentAlignment = Alignment.Center,
             ) {
-                if (state is DictationState.Listening) {
+                val wait = state.wait
+                if (state is DictationState.Listening && wait == null) {
                     // Pause, which resumes while paused, to the left of the waveform; the panel's
                     // Cancel button already throws the dictation away.
                     IconButton(
@@ -212,7 +214,18 @@ fun DictationPanel(
                         }
                     }
                 } else {
-                    RefiningBars()
+                    // The microphone is off: the bars say the panel is busy, and the label what
+                    // it is waiting on.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        RefiningBars()
+                        if (wait != null) {
+                            Text(
+                                wait,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
                 IconButton(onToggleSize, Modifier.align(Alignment.CenterEnd)) {
                     Icon(painterResource(R.drawable.ic_minimize), contentDescription = "Minimize")
@@ -256,7 +269,8 @@ private fun RowScope.MinimizedBar(
     IconButton(onCancel) {
         Icon(painterResource(R.drawable.ic_close), contentDescription = "Cancel dictation")
     }
-    if (state is DictationState.Listening) {
+    val wait = state.wait
+    if (state is DictationState.Listening && wait == null) {
         Canvas(Modifier.size(8.dp)) { drawCircle(colors.error) }
         LiveBars(state.level, SMALL_BAR_WIDTH, SMALL_BARS_HEIGHT)
     } else {
@@ -266,7 +280,7 @@ private fun RowScope.MinimizedBar(
         if (state is DictationState.Refining && state.refined.isNotEmpty()) state.refined
         else state.transcript
     Text(
-        words.ifEmpty { if (state is DictationState.Listening) "Listening" else "" },
+        words.ifEmpty { wait ?: if (state is DictationState.Listening) "Listening" else "" },
         Modifier.weight(1f),
         color = if (words.isEmpty()) colors.onSurfaceVariant else colors.onSurface,
         overflow = TextOverflow.StartEllipsis,
@@ -297,7 +311,7 @@ private fun Transcript(state: DictationState, modifier: Modifier) {
     // newest words in view without an animation chasing a one-frame-stale target, and shrinking
     // interim text no longer lurches the preview up then back down.
     LaunchedEffect(scroll) { snapshotFlow { scroll.maxValue }.collect { scroll.scrollTo(it) } }
-    val placeholder = if (state is DictationState.Listening) "Speak now" else ""
+    val placeholder = if (state is DictationState.Listening && !state.stopping) "Speak now" else ""
     val colors = MaterialTheme.colorScheme
     Box(modifier.verticalScroll(scroll)) {
         if (committed.isEmpty() && interim.isEmpty()) {
@@ -339,7 +353,7 @@ private fun RowScope.PanelButtons(
     if (state is DictationState.Failed) {
         // On a commit failure the recovery button already re-commits the same text, so a second
         // Insert would duplicate it; show only the recovery action there.
-        if (!state.commitFailed && state.transcript.isNotBlank()) {
+        if (state.reason != FailureReason.Commit && state.transcript.isNotBlank()) {
             FilledTonalButton(onInsert, button) { Text("Insert") }
         }
         Button(onRecover, button) { Text(state.reason.recovery) }
@@ -361,11 +375,25 @@ private fun InsertAction.pick(onInsert: () -> Unit, onInsertRefined: () -> Unit)
     if (this == InsertAction.Insert) onInsert else onInsertRefined
 
 private val DictationState.canInsert: Boolean
-    get() = this is DictationState.Listening && text.isNotBlank()
+    get() = this is DictationState.Listening && !stopping && text.isNotBlank()
 
 /**
- * The layout's filled button. Both buttons pass through Refining (the transcription pass runs on
- * each), so this one carries the progress whichever was tapped.
+ * What the panel waits on once Insert is tapped, in the desktop's words, or null while it is not
+ * waiting: the last words, ChatGPT's second transcription pass, then the cleanup.
+ */
+private val DictationState.wait: String?
+    get() =
+        when {
+            this is DictationState.Listening && stopping -> "Transcribing…"
+            this is DictationState.Refining && transcribingAgain ->
+                "Transcribing again for accuracy…"
+            this is DictationState.Refining -> "Refining…"
+            else -> null
+        }
+
+/**
+ * The layout's filled button. Both buttons wait the same way (the transcription pass runs on each),
+ * so this one carries the progress whichever was tapped.
  */
 @Composable
 private fun PrimaryInsertButton(
@@ -377,9 +405,10 @@ private fun PrimaryInsertButton(
 ) {
     val primary = layout.actions.last()
     Button(primary.pick(onInsert, onInsertRefined), modifier, enabled = state.canInsert) {
-        if (state is DictationState.Refining) {
+        val wait = state.wait
+        if (wait != null) {
             CircularProgressIndicator(
-                Modifier.size(18.dp).semantics { contentDescription = "Refining transcript" },
+                Modifier.size(18.dp).semantics { contentDescription = wait },
                 strokeWidth = 2.dp,
             )
         } else {
@@ -395,48 +424,57 @@ private val InsertAction.label: String
             InsertAction.InsertRefined -> "Insert refined"
         }
 
+/** Which part failed: the speech service, the cleanup after it, or the phone itself. */
 private val DictationState.Failed.title: String
     get() =
-        if (commitFailed) "Couldn't insert the text"
-        else
-            when (reason) {
-                FailureReason.MicrophoneDenied -> "Speecher can't use the microphone"
-                FailureReason.MicrophoneUnavailable -> "Microphone unavailable"
-                FailureReason.SignedOut -> "You're signed out"
-                FailureReason.Network -> "No connection"
-                FailureReason.Provider -> "Transcription failed"
-                FailureReason.SpokenLanguage -> "Spoken language not available"
-            }
+        when (reason) {
+            FailureReason.Commit -> "Couldn't insert the text"
+            FailureReason.MicrophoneDenied -> "Speecher can't use the microphone"
+            FailureReason.MicrophoneUnavailable -> "Microphone unavailable"
+            FailureReason.SpokenLanguage -> "Spoken language not available"
+            is FailureReason.Speech -> "Transcription failed"
+            is FailureReason.Cleanup -> "Cleanup failed"
+        }
 
 /**
- * What to do next, in fixed words. The raw detail is diagnostic and never shown, except a spoken
- * language mismatch's, which is already those words.
+ * What went wrong and what to do next, in fixed words; a provider's in the desktop's. The raw
+ * detail is diagnostic and never shown, except a spoken language mismatch's, which is already those
+ * words.
  */
 private val DictationState.Failed.advice: String
-    get() {
-        val name = provider?.label
-        return when {
-            commitFailed -> "Tap Retry to insert it again."
-            reason == FailureReason.MicrophoneDenied -> "Open Speecher and allow the microphone."
-            reason == FailureReason.MicrophoneUnavailable ->
+    get() =
+        when (val reason = reason) {
+            FailureReason.Commit -> "Tap Retry to insert it again."
+            FailureReason.MicrophoneDenied -> "Open Speecher and allow the microphone."
+            FailureReason.MicrophoneUnavailable ->
                 "Another app may be using it. Try again when it's free."
-            reason == FailureReason.SignedOut ->
-                "Sign in to ${name ?: "your account"} to keep dictating."
-            reason == FailureReason.Network -> "Check your network and try again."
-            reason == FailureReason.SpokenLanguage -> detail
-            else -> "${name ?: "The provider"} returned an error. Try again."
+            FailureReason.SpokenLanguage -> detail
+            is FailureReason.ProviderFailed -> providerAdvice(reason.account.label, reason.kind)
         }
+
+private fun providerAdvice(name: String, kind: ProviderFailureKind): String =
+    when (kind) {
+        ProviderFailureKind.Authentication ->
+            "Your $name sign-in has expired. Sign in again to keep dictating."
+        ProviderFailureKind.Unavailable ->
+            "You're not signed in to $name. Sign in to keep dictating."
+        ProviderFailureKind.Network ->
+            "$name couldn't be reached. Check your connection and try again."
+        ProviderFailureKind.Timeout -> "$name didn't answer. Try again."
+        ProviderFailureKind.Server -> "$name had a server error. Try again."
+        ProviderFailureKind.RateLimited -> "$name hit a usage limit. Try again later."
+        ProviderFailureKind.InvalidResult -> "$name's answer was empty or cut short. Try again."
+        ProviderFailureKind.Other,
+        ProviderFailureKind.Cancelled -> "$name returned an error. Try again."
     }
 
 private val FailureReason.recovery: String
     get() =
-        when (this) {
-            FailureReason.MicrophoneDenied,
-            FailureReason.SpokenLanguage -> "Open Speecher"
-            FailureReason.SignedOut -> "Sign in"
-            FailureReason.MicrophoneUnavailable,
-            FailureReason.Network,
-            FailureReason.Provider -> "Retry"
+        when {
+            signInAccount != null -> "Sign in"
+            this == FailureReason.MicrophoneDenied || this == FailureReason.SpokenLanguage ->
+                "Open Speecher"
+            else -> "Retry"
         }
 
 @Composable
@@ -571,6 +609,16 @@ internal fun PanelReconnectingPreview() =
 
 @PreviewLightDark
 @Composable
+internal fun PanelStoppingPreview() =
+    PanelPreview(DictationState.Listening(SAMPLE_TEXT, "", 0f, stopping = true))
+
+@PreviewLightDark
+@Composable
+internal fun PanelTranscribingAgainPreview() =
+    PanelPreview(DictationState.Refining(SAMPLE_TEXT, transcribingAgain = true))
+
+@PreviewLightDark
+@Composable
 internal fun PanelRefiningPreview() = PanelPreview(DictationState.Refining(SAMPLE_TEXT))
 
 @PreviewLightDark
@@ -580,36 +628,44 @@ internal fun PanelRefiningStreamPreview() =
         DictationState.Refining(SAMPLE_TEXT, "Can we move the design review to Thursday afternoon?")
     )
 
+/** A failure for [reason], with some words heard before it when [heard]. */
+@Composable
+internal fun PanelFailedPreview(reason: FailureReason, heard: Boolean = false) =
+    PanelPreview(
+        DictationState.Failed(
+            reason,
+            if (reason == FailureReason.SpokenLanguage)
+                spokenLanguageMismatch(Provider.Claude, "cy").orEmpty()
+            else "",
+            if (heard) SAMPLE_TEXT else "",
+        )
+    )
+
 @PreviewLightDark
 @Composable
-internal fun PanelFailedMicrophonePreview() =
-    PanelPreview(DictationState.Failed(FailureReason.MicrophoneDenied, "", ""))
+internal fun PanelFailedMicrophonePreview() = PanelFailedPreview(FailureReason.MicrophoneDenied)
 
 @PreviewLightDark
 @Composable
 internal fun PanelFailedSignedOutPreview() =
-    PanelPreview(DictationState.Failed(FailureReason.SignedOut, "Claude session expired", ""))
+    PanelFailedPreview(FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Unavailable))
 
 @PreviewLightDark
 @Composable
 internal fun PanelFailedNetworkPreview() =
-    PanelPreview(
-        DictationState.Failed(FailureReason.Network, "Lost the connection", "Can we move the")
+    PanelFailedPreview(
+        FailureReason.Speech(SpeechProvider.Claude, ProviderFailureKind.Network),
+        heard = true,
     )
 
 @PreviewLightDark
 @Composable
-internal fun PanelFailedProviderPreview() =
-    PanelPreview(DictationState.Failed(FailureReason.Provider, "HTTP 503 from Claude", ""))
+internal fun PanelFailedCleanupPreview() =
+    PanelFailedPreview(
+        FailureReason.Cleanup(CleanupProvider.Claude, ProviderFailureKind.RateLimited),
+        heard = true,
+    )
 
 @PreviewLightDark
 @Composable
-internal fun PanelFailedSpokenLanguagePreview() =
-    PanelPreview(
-        DictationState.Failed(
-            FailureReason.SpokenLanguage,
-            spokenLanguageMismatch(Provider.Claude, "cy").orEmpty(),
-            "",
-            Provider.Claude,
-        )
-    )
+internal fun PanelFailedSpokenLanguagePreview() = PanelFailedPreview(FailureReason.SpokenLanguage)

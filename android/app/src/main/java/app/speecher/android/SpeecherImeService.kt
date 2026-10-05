@@ -16,8 +16,10 @@ import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
+import app.speecher.android.dictation.cleanup
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.shownPanelSize
+import app.speecher.android.dictation.signInAccount
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.ui.DictationPanel
 import app.speecher.android.ui.SettingsPage
@@ -77,9 +79,10 @@ class SpeecherImeService : InputMethodService() {
                         onInsertRefined = {
                             ActiveDictation.engine?.insertRefined(
                                 resolveSignedIn(
-                                    ActiveDictation.settings.refinementProvider,
-                                    TokenStore(this).signedIn(),
-                                )
+                                        ActiveDictation.settings.refinementProvider.account,
+                                        TokenStore(this).signedIn(),
+                                    )
+                                    .cleanup
                             )
                         },
                         onRecover = ::recover,
@@ -181,20 +184,20 @@ class SpeecherImeService : InputMethodService() {
      * other failures retry in place.
      */
     private fun recover() {
-        val failed = panelState.value as? DictationState.Failed ?: return
+        val reason = (panelState.value as? DictationState.Failed)?.reason ?: return
+        val signIn = reason.signInAccount
         if (
-            failed.reason != FailureReason.MicrophoneDenied &&
-                failed.reason != FailureReason.SignedOut &&
-                failed.reason != FailureReason.SpokenLanguage
+            signIn == null &&
+                reason != FailureReason.MicrophoneDenied &&
+                reason != FailureReason.SpokenLanguage
         ) {
             ActiveDictation.engine?.retry()
             return
         }
         switchBack()
         val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (failed.reason == FailureReason.SignedOut)
-            intent.putExtra("sign_in_provider", failed.provider?.name)
-        if (failed.reason == FailureReason.SpokenLanguage)
+        if (signIn != null) intent.putExtra("sign_in_provider", signIn.name)
+        if (reason == FailureReason.SpokenLanguage)
             intent.putExtra("settings_page", SettingsPage.Transcription.name)
         startActivity(intent)
     }

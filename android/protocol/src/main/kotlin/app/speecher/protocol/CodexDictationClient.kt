@@ -49,7 +49,10 @@ class CodexDictationClient(
             this,
         )
         deadline.schedule(
-            { if (!started) fail(false, "no session.start in 10s", retryable = true) },
+            {
+                if (!started)
+                    fail(ProviderFailureKind.Timeout, "no session.start in 10s", retryable = true)
+            },
             10,
             TimeUnit.SECONDS,
         )
@@ -90,7 +93,7 @@ class CodexDictationClient(
             Json.parseToJsonElement(text) as JsonObject
         }
             .getOrElse {
-                fail(false, "bad event payload")
+                fail(ProviderFailureKind.Other, "bad event payload")
                 return
             }
         when (event.string("type")) {
@@ -132,20 +135,35 @@ class CodexDictationClient(
             listOfNotNull(code?.let { "HTTP $it" }, error.message?.takeIf { it.isNotBlank() })
                 .joinToString(": ")
                 .ifEmpty { "connect failed" }
-        val authentication = code == 401 || code == 403
-        fail(authentication, detail, retryable = !authentication)
+        val kind = transportFailureKind(error, code)
+        fail(kind, detail, retryable = kind != ProviderFailureKind.Authentication)
     }
 
     override fun onClosed(code: Int, reason: String) {
         if (started && !stopped && endsSession(code)) complete()
-        else fail(false, "closed $code ${reason.take(80)}".trim(), retryable = true)
+        else
+            fail(
+                ProviderFailureKind.Network,
+                "closed $code ${reason.take(80)}".trim(),
+                retryable = true,
+            )
     }
 
-    /** A provider error is retryable unless it is about sign-in or says `"retryable": false`. */
+    /**
+     * A provider error is retryable unless it is about sign-in or says `"retryable": false`. Its
+     * code and type say what kind of failure it is.
+     */
     private fun failWith(event: JsonObject) {
-        val authentication = event.authenticationError()
-        val retryable = (event["error"] as? JsonObject)?.get("retryable")?.jsonPrimitive?.content
-        fail(authentication, event.errorDetail(), !authentication && retryable != "false")
+        val error = event["error"] as? JsonObject ?: JsonObject(emptyMap())
+        val kind =
+            if (event.authenticationError()) ProviderFailureKind.Authentication
+            else streamedErrorKind(error)
+        val retryable = error["retryable"]?.jsonPrimitive?.content
+        fail(
+            kind,
+            event.errorDetail(),
+            kind != ProviderFailureKind.Authentication && retryable != "false",
+        )
     }
 
     private fun JsonObject.errorDetail(): String {
@@ -177,7 +195,11 @@ class CodexDictationClient(
     private fun closeSession() {
         transport.sendText("{\"type\":\"audio.flush\",\"reason\":\"client\"}")
         transport.sendText("{\"type\":\"session.close\"}")
-        deadline.schedule({ if (!completed) fail(false, "no close in 8s") }, 8, TimeUnit.SECONDS)
+        deadline.schedule(
+            { if (!completed) fail(ProviderFailureKind.Timeout, "no close in 8s") },
+            8,
+            TimeUnit.SECONDS,
+        )
     }
 
     override fun cancel() {
@@ -201,7 +223,7 @@ class CodexDictationClient(
         events(SpeechEvent.Completed)
     }
 
-    private fun fail(authentication: Boolean, detail: String = "", retryable: Boolean = false) {
+    private fun fail(kind: ProviderFailureKind, detail: String, retryable: Boolean = false) {
         val first =
             synchronized(lock) {
                 if (cancelled || completed || failed) false
@@ -212,7 +234,7 @@ class CodexDictationClient(
             }
         if (!first) return
         deadline.shutdownNow()
-        events(SpeechEvent.Failed(authentication, detail, retryable))
+        events(SpeechEvent.Failed(kind, detail, retryable))
         transport.cancel()
     }
 }
@@ -220,8 +242,7 @@ class CodexDictationClient(
 private fun JsonObject.string(key: String): String = this[key]?.jsonPrimitive?.content.orEmpty()
 
 private fun JsonObject.authenticationError(): Boolean {
-    val error = this["error"] as? JsonObject
-    val detail =
-        "${error?.string("code").orEmpty()} ${error?.string("message").orEmpty()}".lowercase()
-    return isAuthenticationError(detail)
+    val error = this["error"] as? JsonObject ?: return false
+    return streamedErrorKind(error) == ProviderFailureKind.Authentication ||
+        isAuthenticationError("${error.string("code")} ${error.string("message")}")
 }

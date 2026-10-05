@@ -1,6 +1,6 @@
 package app.speecher.android.ui
 
-import app.speecher.android.dictation.Provider
+import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.protocol.VocabularyWord
 import org.junit.Assert.assertEquals
@@ -16,7 +16,7 @@ class VocabularySummaryTest {
             "Names and terms Speecher should spell your way. Claude takes 2 key terms, and " +
                 "refinement uses every word for the dictation's Writing Profile.",
             vocabularySummary(
-                SpeecherSettings(transcriptionProvider = Provider.Claude, vocabulary = words)
+                SpeecherSettings(transcriptionProvider = SpeechProvider.Claude, vocabulary = words)
             ),
         )
         assertEquals(
@@ -24,7 +24,7 @@ class VocabularySummaryTest {
                 "terms, and the first 1000 are used for refinement.",
             vocabularySummary(
                 SpeecherSettings(
-                    transcriptionProvider = Provider.ChatGpt,
+                    transcriptionProvider = SpeechProvider.ChatGpt,
                     vocabulary = List(1001) { VocabularyWord("t$it") },
                 )
             ),
@@ -38,12 +38,14 @@ class VocabularySummaryTest {
             listOf("Speecher", "speecher", "a".repeat(1010), "Kotlin", "KWin").map(::VocabularyWord)
         assertEquals(
             setOf("Speecher", "a".repeat(1010), "KWin"),
-            keyTerms(SpeecherSettings(transcriptionProvider = Provider.Claude, vocabulary = words)),
+            keyTerms(
+                SpeecherSettings(transcriptionProvider = SpeechProvider.Claude, vocabulary = words)
+            ),
         )
         assertEquals(
             emptySet<String>(),
             keyTerms(
-                SpeecherSettings(transcriptionProvider = Provider.ChatGpt, vocabulary = words)
+                SpeecherSettings(transcriptionProvider = SpeechProvider.ChatGpt, vocabulary = words)
             ),
         )
     }

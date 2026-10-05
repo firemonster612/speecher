@@ -71,8 +71,10 @@ import app.speecher.android.R
 import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.RefinementChoice
+import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.defaultRefinement
+import app.speecher.android.dictation.cleanup
 import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
@@ -80,6 +82,7 @@ import app.speecher.android.dictation.refinementEfforts
 import app.speecher.android.dictation.refinementModelCaution
 import app.speecher.android.dictation.refinementModels
 import app.speecher.android.dictation.resolveSignedIn
+import app.speecher.android.dictation.speech
 import app.speecher.android.dictation.spokenLanguageLabel
 import app.speecher.android.dictation.spokenLanguageMismatch
 import app.speecher.android.dictation.spokenLanguageName
@@ -279,7 +282,7 @@ private fun transcriptionSummary(
     signedIn: Set<Provider>,
     sessionEnded: Set<Provider>,
 ): String =
-    shownProvider(settings.transcriptionProvider, signedIn)?.accountLabel(sessionEnded)
+    shownProvider(settings.transcriptionProvider.account, signedIn)?.accountLabel(sessionEnded)
         ?: "Not signed in"
 
 private fun refinementSummary(
@@ -288,7 +291,8 @@ private fun refinementSummary(
     sessionEnded: Set<Provider>,
 ): String {
     if (!settings.refinementEnabled) return "Off"
-    val provider = shownProvider(settings.refinementProvider, signedIn) ?: return "Not signed in"
+    val provider =
+        shownProvider(settings.refinementProvider.account, signedIn) ?: return "Not signed in"
     val model = settings.refinement(provider).model
     return "${provider.accountLabel(sessionEnded)}, ${provider.refinementModels[model] ?: model}"
 }
@@ -331,10 +335,10 @@ private fun TranscriptionSettings(
     onChange: (SpeecherSettings) -> Unit,
     onSignIn: (Provider) -> Unit,
 ) {
-    ProviderPicker("Provider", settings.transcriptionProvider, signedIn, onSignIn) {
-        onChange(settings.copy(transcriptionProvider = it))
+    ProviderPicker("Provider", settings.transcriptionProvider.account, signedIn, onSignIn) {
+        onChange(settings.copy(transcriptionProvider = it.speech))
     }
-    val provider = resolveSignedIn(settings.transcriptionProvider, signedIn)
+    val provider = resolveSignedIn(settings.transcriptionProvider.account, signedIn)
     DropdownRow(
         "Spoken language",
         spokenLanguageChoices(provider),
@@ -355,7 +359,7 @@ private fun TranscriptionSettings(
         },
         colors = rowColors(),
     )
-    if (provider.hasBatchTranscription) {
+    if (provider.speech.hasBatchTranscription) {
         ListItem(
             headlineContent = { Text("Extra transcription pass") },
             supportingContent = {
@@ -392,10 +396,10 @@ private fun RefinementSettings(
         colors = rowColors(),
     )
     if (!settings.refinementEnabled) return
-    ProviderPicker("Provider", settings.refinementProvider, signedIn, onSignIn) {
-        onChange(settings.copy(refinementProvider = it))
+    ProviderPicker("Provider", settings.refinementProvider.account, signedIn, onSignIn) {
+        onChange(settings.copy(refinementProvider = it.cleanup))
     }
-    val provider = resolveSignedIn(settings.refinementProvider, signedIn)
+    val provider = resolveSignedIn(settings.refinementProvider.account, signedIn)
     val choice = settings.refinement(provider)
     key(provider) {
         ModelField(provider.refinementModels, choice.model, provider.defaultRefinement.model) {
@@ -572,7 +576,7 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                         when {
                             !word.keyTerm -> null
                             sent -> "Key term: sent to the speech service as a hint."
-                            settings.transcriptionProvider == Provider.Claude ->
+                            settings.transcriptionProvider == SpeechProvider.Claude ->
                                 "Key term, but the speech service does not take it, so it is not sent."
                             else -> "Key term, but this speech service takes none."
                         },
@@ -997,7 +1001,7 @@ private fun spokenLanguageChoices(provider: Provider): Map<String, String> =
  * header.
  */
 internal fun keyTerms(settings: SpeecherSettings): Set<String> {
-    if (settings.transcriptionProvider != Provider.Claude) return emptySet()
+    if (settings.transcriptionProvider != SpeechProvider.Claude) return emptySet()
     val terms = speechTerms(settings.vocabulary)
     return claudeVoiceKeytermIndices(terms).map { terms[it] }.toSet()
 }
@@ -1011,7 +1015,7 @@ internal fun vocabularySummary(settings: SpeecherSettings): String {
     val refinement =
         if (count > MAX_REFINEMENT_TERMS) "the first $MAX_REFINEMENT_TERMS are used for refinement"
         else "refinement uses every word for the dictation's Writing Profile"
-    if (settings.transcriptionProvider != Provider.Claude) {
+    if (settings.transcriptionProvider != SpeechProvider.Claude) {
         return "Names and terms Speecher should spell your way. ChatGPT dictation takes no " +
             "key terms, and $refinement."
     }
@@ -1098,7 +1102,7 @@ internal fun SettingsVocabularyPreview() = SpeecherTheme {
     var settings by remember {
         mutableStateOf(
             SpeecherSettings(
-                transcriptionProvider = Provider.Claude,
+                transcriptionProvider = SpeechProvider.Claude,
                 writingProfiles =
                     SpeecherSettings().writingProfiles +
                         (standup to WritingProfileSettings(name = "Standup notes")),

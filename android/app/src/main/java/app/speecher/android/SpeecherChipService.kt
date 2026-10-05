@@ -30,6 +30,7 @@ import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.screenCapture
 import app.speecher.android.dictation.screenshotJpeg
 import app.speecher.android.dictation.sharedExecutor
+import app.speecher.android.dictation.speech
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.dictation.uncoveredRows
 import app.speecher.android.ui.ChipMargin
@@ -37,6 +38,7 @@ import app.speecher.android.ui.ChipSize
 import app.speecher.android.ui.DictationChip
 import app.speecher.android.ui.SavePositionPill
 import app.speecher.android.ui.SpeecherTheme
+import app.speecher.protocol.ProviderFailureKind
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -355,9 +357,12 @@ class SpeecherChipService : AccessibilityService() {
                 settings,
                 { ActiveDictation.connection },
                 { state ->
-                    if (state is DictationState.Failed && state.reason == FailureReason.SignedOut) {
-                        state.provider?.let { tokens.endSession(it.oauth) }
-                    }
+                    val reason = (state as? DictationState.Failed)?.reason
+                    if (
+                        reason is FailureReason.ProviderFailed &&
+                            reason.kind == ProviderFailureKind.Authentication
+                    )
+                        tokens.endSession(reason.account.oauth)
                     ActiveDictation.state = state
                     ActiveDictation.observe?.invoke(state)
                 },
@@ -365,7 +370,7 @@ class SpeecherChipService : AccessibilityService() {
             )
         ActiveDictation.engine = engine
         val signedIn = tokens.signedIn()
-        engine.start(resolveSignedIn(settings.transcriptionProvider, signedIn))
+        engine.start(resolveSignedIn(settings.transcriptionProvider.account, signedIn).speech)
         return engine
     }
 

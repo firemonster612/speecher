@@ -1,5 +1,7 @@
 package app.speecher.protocol
 
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -7,6 +9,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import mockwebserver3.MockResponse
+import mockwebserver3.MockResponseBody
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -353,7 +356,7 @@ class TranscriptRefinerTest {
             server.start()
             val fast = AtomicBoolean(true)
             val shown = mutableListOf<String>()
-            assertThrows(IllegalStateException::class.java) {
+            assertThrows(ProviderFailure::class.java) {
                 refineTranscript(
                     OkHttpClient(),
                     OAuthProvider.ChatGpt,
@@ -381,7 +384,7 @@ class TranscriptRefinerTest {
             server.enqueue(MockResponse.Builder().code(429).build())
             server.start()
             val failure =
-                assertThrows(RefinementHttpError::class.java) {
+                assertThrows(ProviderFailure::class.java) {
                     refineTranscript(
                         OkHttpClient(),
                         OAuthProvider.ChatGpt,
@@ -394,7 +397,10 @@ class TranscriptRefinerTest {
                         server.url("/codex").toString().trimEnd('/'),
                     )
                 }
-            assertEquals(429 to 1, failure.status to server.requestCount)
+            assertEquals(
+                Triple(ProviderFailureKind.RateLimited, 429, 1),
+                Triple(failure.kind, failure.httpStatus, server.requestCount),
+            )
         }
     }
 
@@ -407,19 +413,169 @@ class TranscriptRefinerTest {
                     .build()
             )
             server.start()
-            assertThrows(IllegalStateException::class.java) {
-                refineTranscript(
-                    OkHttpClient(),
+            val failure =
+                assertThrows(ProviderFailure::class.java) {
+                    refineTranscript(
+                        OkHttpClient(),
+                        OAuthProvider.ChatGpt,
+                        tokens,
+                        "raw",
+                        emptyList(),
+                        "gpt-6-luna",
+                        "none",
+                        RefinementContext(),
+                        server.url("/codex").toString().trimEnd('/'),
+                    )
+                }
+            assertEquals(ProviderFailureKind.InvalidResult, failure.kind)
+        }
+    }
+
+    private fun refine(
+        server: MockWebServer,
+        provider: OAuthProvider,
+        fast: AtomicBoolean? = null,
+        cancellation: Cancellation = Cancellation(),
+        inactivityMillis: Int = 20_000,
+        deadlineMillis: Long = 120_000,
+    ) =
+        refineTranscript(
+            OkHttpClient(),
+            provider,
+            tokens,
+            "helo",
+            emptyList(),
+            if (provider == OAuthProvider.Claude) "claude-opus-5" else "gpt-6-luna",
+            "low",
+            RefinementContext(),
+            server.url("/v1").toString(),
+            fast,
+            cancellation = cancellation,
+            inactivityMillis = inactivityMillis,
+            deadlineMillis = deadlineMillis,
+        )
+
+    @Test
+    fun `errors streamed after a 200 are classified from the event`() {
+        val claudeText =
+            "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n"
+        val chatGptText = "event: response.output_text.delta\ndata: {\"delta\":\"partial\"}\n\n"
+        val cases =
+            listOf(
+                Triple(
+                    OAuthProvider.Claude,
+                    "event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n",
+                    ProviderFailureKind.InvalidResult,
+                ),
+                Triple(
+                    OAuthProvider.Claude,
+                    "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n",
+                    ProviderFailureKind.Server,
+                ),
+                Triple(
+                    OAuthProvider.Claude,
+                    "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid token\"}}\n\n",
+                    ProviderFailureKind.Authentication,
+                ),
+                Triple(
                     OAuthProvider.ChatGpt,
-                    tokens,
-                    "raw",
-                    emptyList(),
-                    "gpt-6-luna",
-                    "none",
-                    RefinementContext(),
-                    server.url("/codex").toString().trimEnd('/'),
-                )
+                    "event: response.failed\ndata: {\"response\":{\"error\":{\"code\":\"server_error\",\"message\":\"provider unavailable\"}}}\n\n",
+                    ProviderFailureKind.Server,
+                ),
+                Triple(
+                    OAuthProvider.ChatGpt,
+                    "event: response.incomplete\ndata: {\"response\":{\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n",
+                    ProviderFailureKind.InvalidResult,
+                ),
+                Triple(
+                    OAuthProvider.ChatGpt,
+                    "event: error\ndata: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"slow down\"}}\n\n",
+                    ProviderFailureKind.RateLimited,
+                ),
+            )
+        MockWebServer().use { server ->
+            cases.forEach { (provider, terminal) ->
+                val text = if (provider == OAuthProvider.Claude) claudeText else chatGptText
+                server.enqueue(MockResponse.Builder().body(text + terminal).build())
             }
+            server.start()
+            assertEquals(
+                cases.map { it.third },
+                cases.map { (provider) ->
+                    assertThrows(ProviderFailure::class.java) { refine(server, provider) }.kind
+                },
+            )
+        }
+    }
+
+    @Test
+    fun `a fast request that goes quiet is retried at standard speed and keeps fast mode`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().bodyDelay(2, TimeUnit.SECONDS).body(OK).build())
+            server.enqueue(MockResponse.Builder().body(OK).build())
+            server.start()
+            val fast = AtomicBoolean(true)
+            val result = refine(server, OAuthProvider.ChatGpt, fast, inactivityMillis = 200)
+            assertEquals(Triple("Hello", 2, true), Triple(result, server.requestCount, fast.get()))
+        }
+    }
+
+    @Test
+    fun `a stream that never finishes times out at the deadline and is not retried after it`() {
+        MockWebServer().use { server ->
+            // Progress every 50 ms, so the stream is never quiet long enough to stall, until the
+            // client hangs up.
+            val progress = "event: response.in_progress\ndata: {}\n\n"
+            server.enqueue(
+                MockResponse.Builder()
+                    .addHeader("Transfer-Encoding", "chunked")
+                    .body(
+                        object : MockResponseBody {
+                            override val contentLength = -1L
+
+                            override fun writeTo(sink: okio.BufferedSink) {
+                                while (true) {
+                                    sink.writeUtf8(
+                                        "${progress.length.toString(16)}\r\n$progress\r\n"
+                                    )
+                                    sink.flush()
+                                    Thread.sleep(50)
+                                }
+                            }
+                        }
+                    )
+                    .build()
+            )
+            // What a standard-speed retry would get, had it been sent.
+            server.enqueue(MockResponse.Builder().body(OK).build())
+            server.start()
+            val failure =
+                assertThrows(ProviderFailure::class.java) {
+                    refine(server, OAuthProvider.ChatGpt, AtomicBoolean(true), deadlineMillis = 300)
+                }
+            assertEquals(ProviderFailureKind.Timeout, failure.kind)
+        }
+    }
+
+    @Test
+    fun `cancel aborts the request in flight and sends no retry`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().headersDelay(2, TimeUnit.SECONDS).build())
+            server.enqueue(MockResponse.Builder().body(OK).build())
+            server.start()
+            val cancellation = Cancellation()
+            val failure = CompletableFuture.supplyAsync {
+                runCatching {
+                    refine(server, OAuthProvider.Claude, AtomicBoolean(true), cancellation)
+                }
+                    .exceptionOrNull()
+            }
+            server.takeRequest()
+            cancellation.cancel()
+            assertEquals(
+                ProviderFailureKind.Cancelled,
+                failureKind(failure.get(1, TimeUnit.SECONDS)!!),
+            )
         }
     }
 
@@ -430,3 +586,6 @@ class TranscriptRefinerTest {
         assert(!message.contains("t1000")) { "t1000 was sent" }
     }
 }
+
+private const val OK =
+    "event: response.output_text.delta\ndata: {\"delta\":\"Hello\"}\n\nevent: response.completed\ndata: {}\n\n"
