@@ -71,6 +71,8 @@ class MainActivity : ComponentActivity() {
     private var updating by mutableStateOf(false)
     private var updateFailed by mutableStateOf(false)
     private var page by mutableStateOf(Page.Home)
+    // Where leaving setup goes: Settings when its Setup assistant row opened it, otherwise Home.
+    private var setupFrom = Page.Home
     // The page open from the Settings list, or null for the list itself.
     private var settingsPage by mutableStateOf<SettingsPage?>(null)
     // The provider whose "Before you sign in" steps are up. The browser only opens from there.
@@ -154,7 +156,7 @@ class MainActivity : ComponentActivity() {
                                         )
                                     )
                                 },
-                                onFinish = { page = Page.Home },
+                                onFinish = ::leaveSetup,
                                 signingIn = signIn.activeProvider,
                                 signInError = signIn.error,
                                 onPasteCode = signIn::paste,
@@ -175,7 +177,10 @@ class MainActivity : ComponentActivity() {
                                     signingIn = signIn.activeProvider,
                                     signInError = signIn.error,
                                     onPasteCode = signIn::paste,
-                                    onRunSetup = { page = Page.Setup },
+                                    onRunSetup = {
+                                        setupFrom = Page.Settings
+                                        page = Page.Setup
+                                    },
                                 )
                             }
                         } else {
@@ -288,8 +293,14 @@ class MainActivity : ComponentActivity() {
         when {
             page == Page.ChipPosition -> page = Page.Settings
             page == Page.Settings && settingsPage != null -> settingsPage = null
+            page == Page.Setup -> leaveSetup()
             else -> page = Page.Home
         }
+    }
+
+    private fun leaveSetup() {
+        page = setupFrom
+        setupFrom = Page.Home
     }
 
     private val updatePreferences by lazy { getSharedPreferences("updates", MODE_PRIVATE) }

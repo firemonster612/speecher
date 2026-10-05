@@ -168,8 +168,9 @@ fun refinementModelCaution(provider: Provider, model: String): String? =
 
 /**
  * The efforts Settings offers, as API id to label, as on the desktop. OpenAI's `reasoning.effort`
- * can turn reasoning off and goes as chosen, so a model may reject one; Anthropic's
- * `output_config.effort` starts at low, and a model without the chosen one gets the nearest it has.
+ * can turn reasoning off and goes as chosen, so a model may reject one, except that GPT-6.1 Sol,
+ * which refuses None, gets Low; Anthropic's `output_config.effort` starts at low, and a model
+ * without the chosen one gets the nearest it has.
  */
 val Provider.refinementEfforts: Map<String, String>
     get() =

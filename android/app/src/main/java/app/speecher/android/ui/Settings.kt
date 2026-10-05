@@ -16,6 +16,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -57,8 +59,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -67,6 +72,7 @@ import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.RefinementChoice
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.defaultRefinement
 import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
@@ -392,7 +398,7 @@ private fun RefinementSettings(
     val provider = resolveSignedIn(settings.refinementProvider, signedIn)
     val choice = settings.refinement(provider)
     key(provider) {
-        ModelField(provider.refinementModels, choice.model) {
+        ModelField(provider.refinementModels, choice.model, provider.defaultRefinement.model) {
             onChange(settings.withRefinement(provider, choice.copy(model = it)))
         }
     }
@@ -868,17 +874,29 @@ internal fun <T> DropdownRow(
 }
 
 /**
- * The refinement model as free text whose menu suggests [models], as on the desktop. A cleared
- * field keeps the saved model, since every request needs one.
+ * The refinement model as free text whose menu suggests [models], as the desktop's editable combo
+ * does: a suggested model shows by name and saves as its id, any other id as typed. A cleared field
+ * saves [default], since every request needs a model, and shows it once the field is left.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModelField(models: Map<String, String>, model: String, onChange: (String) -> Unit) {
-    var text by rememberSaveable { mutableStateOf(model) }
+private fun ModelField(
+    models: Map<String, String>,
+    model: String,
+    default: String,
+    onChange: (String) -> Unit,
+) {
+    val saved = models[model] ?: model
+    var text by rememberSaveable { mutableStateOf(saved) }
     var expanded by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
     fun edit(value: String) {
         text = value
-        if (value.isNotBlank()) onChange(value.trim())
+        val typed = value.trim()
+        onChange(
+            if (typed.isEmpty()) default
+            else models.entries.firstOrNull { it.value == typed }?.key ?: typed
+        )
     }
     ExposedDropdownMenuBox(
         expanded,
@@ -888,19 +906,29 @@ private fun ModelField(models: Map<String, String>, model: String, onChange: (St
         OutlinedTextField(
             text,
             ::edit,
-            Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+            Modifier.fillMaxWidth()
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                .onFocusChanged { if (!it.isFocused) text = saved },
             label = { Text("Model") },
             supportingText = { Text("Select a model or type another model ID.") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions =
+                KeyboardActions(
+                    onDone = {
+                        expanded = false
+                        focus.clearFocus()
+                    }
+                ),
             singleLine = true,
         )
         ExposedDropdownMenu(expanded, { expanded = false }) {
-            models.forEach { (id, label) ->
+            models.values.forEach { label ->
                 DropdownMenuItem(
                     text = { Text(label) },
                     onClick = {
                         expanded = false
-                        edit(id)
+                        edit(label)
                     },
                 )
             }
@@ -1008,6 +1036,15 @@ internal fun SettingsPreview() =
         Provider.entries.toSet(),
     )
 
+/** The list under its top bar and scrolling, as the app shows it, so its last rows can be seen. */
+@PreviewLightDark
+@Composable
+internal fun SettingsScreenPreview() = SpeecherTheme {
+    SpeecherScreen("Settings", onBack = {}) {
+        Settings(SpeecherSettings(), Provider.entries.toSet(), {}, {}, {}, {})
+    }
+}
+
 @PreviewLightDark
 @Composable
 internal fun SettingsSignedOutPreview() = SettingsPreview(SpeecherSettings(), emptySet())
@@ -1032,16 +1069,21 @@ internal fun SettingsRefinementPreview() = SpeecherTheme {
 @PreviewLightDark
 @Composable
 internal fun SettingsRefinementHaikuPreview() = SpeecherTheme {
+    var settings by remember {
+        mutableStateOf(
+            SpeecherSettings(
+                refinementProvider = Provider.Claude,
+                claudeRefinement = RefinementChoice("claude-haiku-4-5", "xhigh"),
+            )
+        )
+    }
     Surface {
         Column {
             SettingsPageContent(
                 SettingsPage.Refinement,
-                SpeecherSettings(
-                    refinementProvider = Provider.Claude,
-                    claudeRefinement = RefinementChoice("claude-haiku-4-5", "xhigh"),
-                ),
+                settings,
                 setOf(Provider.Claude),
-                {},
+                { settings = it },
                 {},
                 {},
             )
