@@ -1366,4 +1366,91 @@ class DictationEngineTest {
             commits,
         )
     }
+
+    @Test
+    fun `Insert during the cleanup stops its request and inserts the words as heard, still counting it`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().headersDelay(5, TimeUnit.SECONDS).build())
+            server.start()
+            lateinit var speech: (SpeechEvent) -> Unit
+            val workers = mutableListOf<Thread>()
+            val inserted = mutableListOf<Inserted>()
+            val engine =
+                DictationEngine(
+                    { _, _ -> },
+                    {},
+                    { _, events ->
+                        speech = events
+                        Client()
+                    },
+                    { _, raw, cancellation, _ ->
+                        refineTranscript(
+                            OkHttpClient(),
+                            OAuthProvider.Claude,
+                            OAuthTokens("access", "", "", 0, ""),
+                            raw,
+                            emptyList(),
+                            "claude-sonnet-5-5",
+                            "low",
+                            RefinementContext(),
+                            server.url("/v1").toString(),
+                            cancellation = cancellation,
+                        )
+                    },
+                    null,
+                    { true },
+                    Executor { task -> Thread(task).also(workers::add).start() },
+                    {},
+                    onCommitted = { inserted.add(it) },
+                )
+            engine.start(SpeechProvider.Claude)
+            workers.forEach(Thread::join) // The microphone and the connection.
+            speech(SpeechEvent.Final("as heard"))
+            engine.insertRefined(CleanupProvider.Claude)
+            speech(SpeechEvent.Completed)
+            server.takeRequest()
+            engine.insert()
+            workers.last().join(2_000)
+            assertFalse(workers.last().isAlive)
+            assertEquals(
+                listOf(
+                    Inserted("as heard", 0, SpeechProvider.Claude, listOf(CleanupProvider.Claude))
+                ),
+                inserted,
+            )
+        }
+    }
+
+    @Test
+    fun `a cleanup that finishes after Insert took the words as heard is never inserted`() {
+        lateinit var speech: (SpeechEvent) -> Unit
+        val tasks = ArrayDeque<Runnable>()
+        val attempts = mutableListOf<String>()
+        val engine =
+            DictationEngine(
+                { _, _ -> },
+                {},
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, _, _, _ -> "Refined." },
+                null,
+                { text -> attempts.add(text) && false },
+                Executor { tasks.add(it) },
+                {},
+            )
+        engine.start(SpeechProvider.Claude)
+        while (tasks.isNotEmpty()) tasks.removeFirst().run()
+        speech(SpeechEvent.Final("as heard"))
+        engine.insertRefined(CleanupProvider.Claude)
+        speech(SpeechEvent.Completed)
+        engine.insert()
+        tasks.removeFirst().run() // The cleanup, done before it saw the cancel.
+        assertEquals(listOf("as heard"), attempts)
+        assertEquals(
+            DictationState.Failed(FailureReason.Commit, "Could not insert text", "as heard"),
+            engine.state,
+        )
+    }
 }

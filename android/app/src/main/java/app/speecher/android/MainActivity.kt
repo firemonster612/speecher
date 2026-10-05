@@ -28,6 +28,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import app.speecher.android.auth.SignInViewModel
 import app.speecher.android.auth.TokenStore
+import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationRecord
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SettingsStore
@@ -154,6 +155,7 @@ class MainActivity : ComponentActivity() {
                                 updating = updating,
                                 updateFailed = updateFailed,
                                 onUpdate = ::installUpdate,
+                                latest = ActiveDictation.latest,
                             )
                         }
                     Page.Setup ->

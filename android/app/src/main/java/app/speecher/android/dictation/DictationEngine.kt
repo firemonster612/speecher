@@ -313,6 +313,16 @@ class DictationEngine(
             else commitHeard((state as DictationState.Failed).transcript)
             return false
         }
+        // During the cleanup, Insert stops it and takes the words as heard, as the desktop's
+        // Cancel refinement does.
+        val refining = state as? DictationState.Refining
+        if (refining != null && !refining.transcribingAgain) {
+            cancelSession()
+            // The stopped cleanup was still called, as the desktop's record counts it.
+            failedRefinement?.let { cleanupsCalled += it }
+            commitHeard(refining.transcript)
+            return false
+        }
         pendingInsert = PendingInsert(null)
         return stop()
     }
@@ -400,7 +410,8 @@ class DictationEngine(
                         }
                     }
                 synchronized(this) {
-                    if (current != session || inserted) return@execute
+                    // A cleanup cancelled as it finished, by Insert or a failure, never goes in.
+                    if (current != session || request !== cancellation) return@execute
                     // Null when the profile does no cleanup, so no provider was called.
                     if (text != null) cleanupsCalled += provider
                     commitTranscript(text?.let(replaced::restore) ?: replaced.text)
@@ -828,6 +839,10 @@ fun createDictationEngine(
             }
         else null,
         { text ->
+            // Kept before the commit, as the desktop does, so words that fail to go in stay too.
+            val target = ActiveDictation.target
+            if (target?.secure != true)
+                ActiveDictation.latest = LatestTranscript(text, target?.label)
             val committed = connection()?.commitText(text, 1) == true
             if (committed) {
                 SettingsStore(context).recordVocabularyUsage(text)
