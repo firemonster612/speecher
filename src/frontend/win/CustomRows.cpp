@@ -616,19 +616,29 @@ namespace {
 // list, and of the options down a step, line up.
 constexpr double kRatingBarWidth = 96;
 
-// The widest value text at the current text size, so a shorter one leaves the
-// next cell where it was. Qt measures it the same way.
-double ratingValueWidth()
+// The widest of these texts in the caption style at the current text size.
+double widestCaptionText(const QStringList &texts)
 {
     TextBlock probe = styledTextBlock({}, L"CaptionTextBlockStyle");
     constexpr float unbounded = std::numeric_limits<float>::infinity();
     float widest = 0;
-    for (int halves = 0; halves <= 20; ++halves) {
-        probe.Text(hs(ratingValueText({RatingMeasure::Speed, halves / 2.0})));
+    for (const QString &text : texts) {
+        probe.Text(hs(text));
         probe.Measure({unbounded, unbounded});
         widest = std::max(widest, probe.DesiredSize().Width);
     }
     return std::ceil(widest);
+}
+
+// Room for any value, so a shorter one leaves the next cell where it was. Qt
+// measures it the same way.
+double ratingValueWidth()
+{
+    QStringList values;
+    for (int halves = 0; halves <= 20; ++halves) {
+        values.append(ratingValueText({RatingMeasure::Speed, halves / 2.0}));
+    }
+    return widestCaptionText(values);
 }
 
 void addColumn(const Grid &grid, GridLength width)
@@ -671,34 +681,33 @@ void addBarColumns(const Grid &grid, double valueWidth)
 
 } // namespace
 
-Grid ratingBarsElement(const QList<Rating> &bars, Orientation orientation, const PaneHost &host)
+Panel ratingBarsElement(const QList<Rating> &bars, Orientation orientation, const PaneHost &host)
 {
-    const bool stacked = orientation == Orientation::Vertical;
-    const double valueWidth = ratingValueWidth();
-    Grid grid;
-    grid.ColumnSpacing(8);
-    grid.RowSpacing(4);
-    for (qsizetype index = 0; index < bars.size(); ++index) {
-        const int row = stacked ? int(index) : 0;
-        const int column = stacked ? 0 : int(index) * 3;
-        if (stacked) {
-            RowDefinition line;
-            line.Height({0, GridUnitType::Auto});
-            grid.RowDefinitions().Append(line);
-        }
-        if (!stacked || index == 0) {
-            addColumn(grid, {0, GridUnitType::Auto});
-            addBarColumns(grid, valueWidth);
-        }
-        TextBlock label = secondaryTextBlock(ratingMeasureLabel(bars.at(index).measure), L"CaptionTextBlockStyle", host);
-        label.VerticalAlignment(VerticalAlignment::Center);
-        if (!stacked && index > 0) {
-            label.Margin({12, 0, 0, 0});
-        }
-        place(grid, label, row, column);
-        placeBar(grid, bars.at(index), row, column + 1);
+    QStringList labels;
+    for (const Rating &bar : bars) {
+        labels.append(ratingMeasureLabel(bar.measure));
     }
-    return grid;
+    const double labelWidth = widestCaptionText(labels);
+    const double valueWidth = ratingValueWidth();
+    // Each measure as wide as the widest, so the bars line up whether the
+    // measures sit side by side or one under another. Side by side, one that
+    // no longer fits moves to the next line rather than being clipped.
+    VariableSizedWrapGrid measures;
+    measures.Orientation(orientation);
+    const Thickness gap = orientation == Orientation::Horizontal ? Thickness{0, 0, 12, 0} : Thickness{0, 0, 0, 4};
+    for (const Rating &bar : bars) {
+        Grid measure;
+        measure.ColumnSpacing(8);
+        measure.Margin(gap);
+        addColumn(measure, {labelWidth, GridUnitType::Pixel});
+        addBarColumns(measure, valueWidth);
+        TextBlock label = secondaryTextBlock(ratingMeasureLabel(bar.measure), L"CaptionTextBlockStyle", host);
+        label.VerticalAlignment(VerticalAlignment::Center);
+        place(measure, label, 0, 0);
+        placeBar(measure, bar, 0, 1);
+        measures.Children().Append(measure);
+    }
+    return measures;
 }
 
 StackPanel ratedModelsElement(const QList<RatedModel> &models, const PaneHost &host)

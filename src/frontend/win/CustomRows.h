@@ -61,8 +61,9 @@ winrt::Microsoft::UI::Xaml::UIElement fallbackListElement(
 // A provider's rating as the setup options and the Settings Rating row show
 // it: each bar WinUI's ProgressBar out of 10 between its measure and
 // ratingValueText, and only the "?" where a bar has no figure. Side by side
-// under a setup option, stacked on a Rating row's control side.
-winrt::Microsoft::UI::Xaml::Controls::Grid ratingBarsElement(
+// under a setup option, wrapping where the line runs out, and stacked on a
+// Rating row's control side.
+winrt::Microsoft::UI::Xaml::Controls::Panel ratingBarsElement(
     const QList<Rating> &bars,
     winrt::Microsoft::UI::Xaml::Controls::Orientation orientation,
     const PaneHost &host);
