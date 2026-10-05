@@ -1,7 +1,11 @@
 package app.speecher.android.dictation
 
 import android.content.Context
+import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import androidx.core.content.edit
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.update.IntervalUnit
 import app.speecher.android.update.checkIntervalMinutes
@@ -237,6 +241,24 @@ class SettingsStore(private val context: Context) {
                 ?: remove("updateCheckUnit")
             putInt("version", VERSION)
         }
+    }
+
+    /**
+     * Calls [onChange] on the main thread whenever a setting is stored, by this store or another,
+     * until [lifecycle] is destroyed. The dictation engine stores use counts while a screen of the
+     * app may be open beside the target, and that screen saving the copy it loaded earlier would
+     * wipe them.
+     */
+    fun observe(lifecycle: Lifecycle, onChange: () -> Unit) {
+        val listener = OnSharedPreferenceChangeListener { _, _ -> onChange() }
+        // Preferences hold a listener weakly; the lifecycle observer keeps this one.
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        lifecycle.addObserver(
+            object : DefaultLifecycleObserver {
+                override fun onDestroy(owner: LifecycleOwner) =
+                    preferences.unregisterOnSharedPreferenceChangeListener(listener)
+            }
+        )
     }
 
     /**

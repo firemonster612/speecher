@@ -45,7 +45,7 @@ fun normalizedVocabulary(words: List<VocabularyWord>): List<VocabularyWord> {
                 lastUsedMs = raw.lastUsedMs.coerceAtLeast(0),
             )
         if (word.term.isEmpty()) continue
-        val index = kept.indexOfFirst { it.term.equals(word.term, ignoreCase = true) }
+        val index = kept.indexOfFirst { sameTerm(it.term, word.term) }
         if (index < 0) {
             kept += word
             continue
@@ -64,7 +64,7 @@ fun normalizedVocabulary(words: List<VocabularyWord>): List<VocabularyWord> {
         compareBy<VocabularyWord> { !(it.priority && it.keyTerm) }
             .thenByDescending { it.frequency }
             .thenByDescending { it.lastUsedMs }
-            .thenBy { it.term.lowercase() }
+            .thenBy { foldCase(it.term) }
     )
 }
 
@@ -94,18 +94,23 @@ fun speechTerms(words: List<VocabularyWord>): List<String> {
  * [words] with one more use at [nowMs] for each whose term [text] contains as whole words, ignoring
  * case and how much whitespace separates them. The desktop's recordUsage.
  */
-fun withUsage(words: List<VocabularyWord>, text: String, nowMs: Long): List<VocabularyWord> =
-    words.map {
-        if (containsTerm(text, it.term)) it.copy(frequency = it.frequency + 1, lastUsedMs = nowMs)
+fun withUsage(words: List<VocabularyWord>, text: String, nowMs: Long): List<VocabularyWord> {
+    val boundaries = BreakIterator.getWordInstance().apply { setText(text) }
+    return words.map {
+        if (containsTerm(text, boundaries, it.term))
+            it.copy(frequency = it.frequency + 1, lastUsedMs = nowMs)
         else it
     }
+}
 
-private fun containsTerm(text: String, term: String): Boolean {
+/** Whether [a] and [b] are one term, compared ignoring case as the desktop does. */
+fun sameTerm(a: String, b: String): Boolean = foldCase(a) == foldCase(b)
+
+private fun containsTerm(text: String, boundaries: BreakIterator, term: String): Boolean {
     val words = term.simplified().split(' ').filter(String::isNotEmpty)
     if (words.isEmpty()) return false
     val expression =
         Regex(words.joinToString("\\s+", transform = Regex::escape), RegexOption.IGNORE_CASE)
-    val boundaries = BreakIterator.getWordInstance().apply { setText(text) }
     return expression.findAll(text).any {
         boundaries.isBoundary(it.range.first) && boundaries.isBoundary(it.range.last + 1)
     }
@@ -119,9 +124,9 @@ private fun containsTerm(text: String, term: String): Boolean {
  * @throws IllegalArgumentException for a quoted field that never ends, with the desktop's message.
  */
 fun parseVocabularyCsv(csv: String): List<VocabularyWord> {
-    val rows = csvRows(csv.removePrefix("﻿"))
+    val rows = csvRows(csv.removePrefix("\uFEFF"))
     if (rows.isEmpty()) return emptyList()
-    val header = rows.first().map { it.trim().lowercase().replace(' ', '_') }
+    val header = rows.first().map { foldCase(it.trim()).replace(' ', '_') }
     val hasHeader = "term" in header
     fun column(name: String, position: Int) = if (hasHeader) header.indexOf(name) else position
     val term = column("term", 0)
@@ -136,7 +141,7 @@ fun parseVocabularyCsv(csv: String): List<VocabularyWord> {
             VocabularyWord(
                 field(term),
                 context = field(context),
-                priority = field(starred).lowercase() in setOf("true", "yes", "1", "starred"),
+                priority = foldCase(field(starred)) in setOf("true", "yes", "1", "starred"),
                 source = field(source).ifEmpty { "csv" },
                 frequency = field(frequency).toIntOrNull() ?: 0,
                 lastUsedMs = field(lastUsed).toLongOrNull() ?: 0,

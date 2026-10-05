@@ -102,9 +102,15 @@ class MainActivity : ComponentActivity() {
             savedInstanceState?.getString(SIGN_IN_AFTER_PROMPT)?.let(Provider::valueOf)
         signInFrom = savedInstanceState?.getString(SIGN_IN_FROM)?.let(SettingsPage::valueOf)
         settings = settingsStore.load()
+        // A dictation into another app, beside this one, stores use counts meanwhile.
+        settingsStore.observe(lifecycle) { settings = settingsStore.load() }
         refresh()
         signIn.restore(status.working)
         page = if (status.complete && signIn.activeProvider == null) Page.Home else Page.Setup
+        savedInstanceState?.getString(SETTINGS_PAGE)?.let {
+            page = Page.Settings
+            settingsPage = SettingsPage.valueOf(it)
+        }
         if (savedInstanceState == null) handleIntent(intent)
         setContent {
             SpeecherTheme {
@@ -247,6 +253,8 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(SIGN_IN_AFTER_PROMPT, signInAfterPrompt?.name)
         outState.putString(SIGN_IN_FROM, signInFrom?.name)
+        // So a file picked from a page, such as a vocabulary import, reaches it.
+        outState.putString(SETTINGS_PAGE, settingsPage?.name?.takeIf { page == Page.Settings })
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -438,5 +446,6 @@ class MainActivity : ComponentActivity() {
 
 private const val SIGN_IN_AFTER_PROMPT = "sign-in-after-prompt"
 private const val SIGN_IN_FROM = "sign-in-from"
+private const val SETTINGS_PAGE = "settings-page"
 
 private fun emptyStatus() = SetupStatus(emptySet(), false, false, false)

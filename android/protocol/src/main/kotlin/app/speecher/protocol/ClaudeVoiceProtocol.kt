@@ -72,7 +72,7 @@ fun claudeVoiceKeyterms(vocabulary: Iterable<String>): List<String> =
     }
 
 /** Which of [vocabulary]'s words the header carries, by position. */
-fun claudeVoiceKeytermIndices(vocabulary: List<String>): List<Int> {
+private fun claudeVoiceKeytermIndices(vocabulary: List<String>): List<Int> {
     val kept = mutableListOf<Int>()
     var bytes = 0
     val seen = mutableSetOf<String>()

@@ -58,6 +58,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,6 +69,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -104,10 +108,14 @@ import app.speecher.protocol.modelSupportsFastMode
 import app.speecher.protocol.modelSupportsUltrafast
 import app.speecher.protocol.normalizedVocabulary
 import app.speecher.protocol.parseVocabularyCsv
+import app.speecher.protocol.sameTerm
 import app.speecher.protocol.speechTerms
 import java.io.IOException
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The pages the Settings list opens, each under its own top bar with a back arrow. */
 enum class SettingsPage(val title: String) {
@@ -596,13 +604,17 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    // The settings as they are when an import finishes reading, which may be after a dictation
+    // has counted uses.
+    val latest by rememberUpdatedState(settings)
     // Stored in the desktop's order, the one the speech hints are cut from.
     fun change(words: List<VocabularyWord>) =
-        onChange(settings.copy(vocabulary = normalizedVocabulary(words)))
+        onChange(latest.copy(vocabulary = normalizedVocabulary(words)))
     val keyTerms = keyTerms(settings)
     val profiles = profileChoices(settings)
-    // The word open in the editor; one not in the list yet is being added.
-    var editing by remember { mutableStateOf<VocabularyWord?>(null) }
+    // The term open in the editor, empty for a new one. Held by term, as a dictation can update
+    // the word's use count while the sheet is open.
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
     if (settings.vocabulary.isEmpty())
         ListItem(
             headlineContent = { Text("No vocabulary terms") },
@@ -633,11 +645,11 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
             leadingContent = {
                 Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
                     // Without case, as the desktop matches.
-                    val sent = keyTerms.any { it.equals(word.term, ignoreCase = true) }
+                    val sent = keyTerms.any { sameTerm(it, word.term) }
                     IconSlot(
-                        R.drawable.ic_mic,
+                        R.drawable.ic_mic.takeIf { word.keyTerm },
                         when {
-                            !word.keyTerm -> null
+                            !word.keyTerm -> "Not a key term: refinement only."
                             sent -> "Key term: sent to the speech service as a hint."
                             claude ->
                                 "Key term, but the speech service does not take it, so it is not sent."
@@ -657,33 +669,44 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                     }
                 }
             },
-            modifier = Modifier.height(IntrinsicSize.Min).clickable { editing = word },
+            modifier = Modifier.height(IntrinsicSize.Min).clickable { editing = word.term },
             colors = rowColors(),
         )
     }
     var importError by rememberSaveable { mutableStateOf<String?>(null) }
     val resolver = LocalContext.current.contentResolver
+    val scope = rememberCoroutineScope()
     val import =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
-            importError =
-                try {
-                    val csv =
-                        resolver.openInputStream(uri)?.use { it.readBytes() }
-                            ?: throw IOException("no stream for $uri")
-                    // After the list, so a term already in it keeps its own settings.
-                    change(settings.vocabulary + parseVocabularyCsv(csv.decodeToString()))
-                    null
-                } catch (_: IOException) {
-                    "Could not read the file."
-                } catch (e: IllegalArgumentException) {
-                    e.message
-                }
+            scope.launch {
+                importError =
+                    try {
+                        // A cloud provider can take its time, so not on the main thread.
+                        val words =
+                            withContext(Dispatchers.IO) {
+                                val csv =
+                                    resolver.openInputStream(uri)?.use { it.readBytes() }
+                                        ?: throw IOException("no stream for $uri")
+                                parseVocabularyCsv(csv.decodeToString())
+                            }
+                        // After the list, so a term already in it keeps its own settings.
+                        change(latest.vocabulary + words)
+                        null
+                    } catch (_: IOException) {
+                        "Could not read the file."
+                    } catch (e: IllegalArgumentException) {
+                        e.message
+                    }
+            }
         }
     Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilledTonalButton({ editing = VocabularyWord("") }) { Text("Add") }
-        // Spreadsheet apps often give a CSV file Excel's type.
-        OutlinedButton({ import.launch(arrayOf("text/*", "application/vnd.ms-excel")) }) {
+        FilledTonalButton({ editing = "" }) { Text("Add") }
+        // Any type, as a CSV file often comes labelled as something else; the parser decides.
+        OutlinedButton({
+            importError = null
+            import.launch(arrayOf("*/*"))
+        }) {
             Text("Import CSV…")
         }
     }
@@ -702,18 +725,14 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
         supportingContent = { Text(vocabularyLimit(settings)) },
         colors = rowColors(),
     )
-    editing?.let { word ->
+    editing?.let { term ->
         WordEditor(
-            word,
+            settings.vocabulary.firstOrNull { it.term == term } ?: VocabularyWord(""),
             profiles,
-            settings.vocabulary.filter { it != word }.map { it.term },
+            settings.vocabulary.map { it.term }.filter { it != term },
             onDismiss = { editing = null },
         ) { next ->
-            change(
-                if (word in settings.vocabulary)
-                    settings.vocabulary.map { if (it == word) next else it }
-                else settings.vocabulary + next
-            )
+            change(settings.vocabulary.filter { it.term != term } + next)
             editing = null
         }
     }
@@ -738,15 +757,18 @@ private fun usageLine(word: VocabularyWord): String {
 }
 
 /**
- * One of a vocabulary row's leading icon slots, a fixed width so the rows line up. Empty without a
- * [description]; with one, the icon in the text colour, or the disabled colour when [faint], and
- * the description as its tooltip.
+ * One of a vocabulary row's leading icon slots, a fixed width so the rows line up: the icon in the
+ * text colour, or the disabled colour when [faint], with [description] as its tooltip. Without an
+ * icon the slot is empty and a screen reader still reads the description.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IconSlot(icon: Int, description: String?, faint: Boolean = false) {
+private fun IconSlot(icon: Int?, description: String, faint: Boolean = false) {
     Box(Modifier.size(24.dp)) {
-        if (description == null) return@Box
+        if (icon == null) {
+            Box(Modifier.matchParentSize().semantics { contentDescription = description })
+            return@Box
+        }
         TooltipBox(
             TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
             tooltip = { PlainTooltip { Text(description) } },
@@ -782,8 +804,7 @@ private fun WordEditor(
     var keyTerm by rememberSaveable { mutableStateOf(word.keyTerm) }
     var limited by rememberSaveable { mutableStateOf(word.profiles.isNotEmpty()) }
     var chosen by remember { mutableStateOf(word.profiles) }
-    val duplicate =
-        term.trim() != word.term && taken.any { it.equals(term.trim(), ignoreCase = true) }
+    val duplicate = term.trim() != word.term && taken.any { sameTerm(it, term.trim()) }
     ModalBottomSheet(onDismiss, sheetState = rememberModalBottomSheetState(true)) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp),

@@ -18,7 +18,9 @@ class VocabularyTest {
                 ),
                 VocabularyWord("PR", priority = true),
                 VocabularyWord("Grafana Loki"),
+                VocabularyWord("Ilık"),
                 VocabularyWord("Zed", keyTerm = false, priority = true),
+                VocabularyWord("ılık"),
             ),
             normalizedVocabulary(
                 listOf(
@@ -35,6 +37,9 @@ class VocabularyTest {
                         lastUsedMs = 9,
                     ),
                     VocabularyWord("PR", priority = true),
+                    // Distinct on the desktop: Qt folds I to i but leaves the dotless ı alone.
+                    VocabularyWord("ılık"),
+                    VocabularyWord("Ilık"),
                     VocabularyWord("   "),
                 )
             ),
@@ -94,7 +99,7 @@ class VocabularyTest {
                 VocabularyWord("Grafana", source = "csv"),
             ),
             parseVocabularyCsv(
-                "﻿Context,Term,Starred,Frequency,Last Used\r\n" +
+                "\uFEFFContext,Term,Starred,Frequency,Last Used\r\n" +
                     "\"The container platform, \"\"k8s\"\".\nOr clusters.\",Kubernetes,yes,4,1700\r\n" +
                     " , \r\n" +
                     ",Grafana,no,x,\r\n"

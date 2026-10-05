@@ -1,7 +1,10 @@
 package app.speecher.android.dictation
 
 import android.content.Context
+import android.os.Looper
 import androidx.core.content.edit
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
@@ -11,6 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 
 @RunWith(RobolectricTestRunner::class)
 class VocabularyTest {
@@ -49,6 +53,26 @@ class VocabularyTest {
         assertEquals(
             listOf(kubernetes.copy(frequency = 1, lastUsedMs = 1700), VocabularyWord("PR")),
             store.load().vocabulary,
+        )
+    }
+
+    @Test
+    fun `a screen observing the store keeps the uses a dictation counts while it is open`() {
+        val app = RuntimeEnvironment.getApplication()
+        SettingsStore(app).save(SpeecherSettings(vocabulary = listOf(kubernetes)))
+        val screen = SettingsStore(app)
+        var settings = screen.load()
+        val owner =
+            object : LifecycleOwner {
+                override val lifecycle = LifecycleRegistry(this)
+            }
+        screen.observe(owner.lifecycle) { settings = screen.load() }
+        SettingsStore(app).recordVocabularyUsage("Scaled the Kubernetes cluster.", nowMs = 1700)
+        shadowOf(Looper.getMainLooper()).idle()
+        screen.save(settings.copy(keepScreenOn = false))
+        assertEquals(
+            listOf(kubernetes.copy(frequency = 1, lastUsedMs = 1700)),
+            screen.load().vocabulary,
         )
     }
 
