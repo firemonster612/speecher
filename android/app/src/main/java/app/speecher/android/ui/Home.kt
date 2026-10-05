@@ -42,6 +42,7 @@ import app.speecher.android.dictation.countWords
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.resolveSignedIn
+import app.speecher.android.dictation.resolveSpeech
 import app.speecher.android.update.UpdateState
 import app.speecher.android.update.installFailure
 import java.text.NumberFormat
@@ -114,7 +115,7 @@ fun Home(
 ) {
     // What dictation will actually use: if the chosen provider isn't signed in, it falls back to
     // the connected account, so name that rather than the raw setting.
-    val transcription = resolveSignedIn(settings.transcriptionProvider.account, status.signedIn)
+    val transcription = resolveSpeech(settings.transcriptionProvider, status.signedIn)
     val refinement = resolveSignedIn(settings.refinementProvider.account, status.signedIn)
     Column(modifier) {
         Row(
@@ -127,7 +128,8 @@ fun Home(
                 Text(
                     when {
                         !status.complete -> "Finish setup to start dictating."
-                        transcription in status.sessionEnded -> "Sign in again to start dictating."
+                        transcription.account in status.sessionEnded ->
+                            "Sign in again to start dictating."
                         else -> "Ready. Tap the dictation button on your keyboard to dictate."
                     },
                     style = MaterialTheme.typography.bodyMedium,
@@ -143,13 +145,18 @@ fun Home(
         ListItem(
             headlineContent = { Text("Settings") },
             supportingContent = {
+                val transcribing =
+                    "Transcribing with " +
+                        (transcription.account?.accountLabel(status.sessionEnded)
+                            ?: transcription.label)
                 Text(
-                    if (status.signedIn.isEmpty()) "Not signed in"
-                    else
-                        "Transcribing with ${transcription.accountLabel(status.sessionEnded)}" +
-                            if (settings.refinementEnabled)
-                                ", refining with ${refinement.accountLabel(status.sessionEnded)}"
-                            else ""
+                    when {
+                        status.signedIn.isEmpty() && !status.ownServer -> "Not signed in"
+                        status.signedIn.isEmpty() || !settings.refinementEnabled -> transcribing
+                        else ->
+                            "$transcribing, refining with " +
+                                refinement.accountLabel(status.sessionEnded)
+                    }
                 )
             },
             trailingContent = { Chevron() },
@@ -215,6 +222,8 @@ private fun AccountRow(
 ) {
     val ended = providerOrder.firstOrNull { it in status.signedIn && it in status.sessionEnded }
     when {
+        status.signedIn.isEmpty() && status.ownServer ->
+            StatusRow("Account", "None needed for your own speech server", true, null)
         status.signedIn.isEmpty() -> StatusRow("Account", "Not signed in", false, onOpenSetup)
         ended != null ->
             StatusRow("Account", "Your ${ended.label} session ended. Sign in again.", false) {
@@ -324,9 +333,13 @@ internal fun Chevron() {
 }
 
 @Composable
-private fun HomePreview(status: SetupStatus, latest: LatestTranscript? = null) = SpeecherTheme {
+private fun HomePreview(
+    status: SetupStatus,
+    latest: LatestTranscript? = null,
+    settings: SpeecherSettings = SpeecherSettings(),
+) = SpeecherTheme {
     SpeecherScreen("", onBack = null) {
-        Home(status, SpeecherSettings(), {}, {}, {}, {}, {}, latest = latest)
+        Home(status, settings, {}, {}, {}, {}, {}, latest = latest)
     }
 }
 
@@ -402,3 +415,11 @@ internal fun HomeUpdateFailedPreview() =
     HomeUpdatePreview(installFailure(previewUpdate, PackageInstaller.STATUS_FAILURE_CONFLICT))
 
 @PreviewLightDark @Composable internal fun HomeWhatsNewPreview() = HomeUpdatePreview(null)
+
+@PreviewLightDark
+@Composable
+internal fun HomeServerPreview() =
+    HomePreview(
+        SetupStatus(emptySet(), true, true, true, ownServer = true),
+        settings = previewServerSettings,
+    )

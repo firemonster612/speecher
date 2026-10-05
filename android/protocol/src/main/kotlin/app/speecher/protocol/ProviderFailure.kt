@@ -56,6 +56,13 @@ fun failureKindForHttpStatus(status: Int): ProviderFailureKind =
     }
 
 /**
+ * A failure status from a server the person chose. A 404 there means the model or the path is gone,
+ * so the provider is Unavailable; a cloud provider's 404 stays Other.
+ */
+fun selfHostedFailureKind(status: Int): ProviderFailureKind =
+    if (status == 404) ProviderFailureKind.Unavailable else failureKindForHttpStatus(status)
+
+/**
  * Any exception a provider request threw: its own kind when it is a [ProviderFailure], a timeout or
  * a network failure when the connection gave out, and Other otherwise.
  */

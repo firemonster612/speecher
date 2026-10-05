@@ -14,9 +14,11 @@ import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
+import app.speecher.protocol.DEFAULT_SPEECH_ENDPOINT_PATH
 import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.Replacement
+import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
@@ -48,6 +50,12 @@ class SettingsStore(private val context: Context) {
                 refinementProvider =
                     enumOf(preferences.getString("refinementProvider", null), default.cleanup),
                 transcribePassEnabled = preferences.getBoolean("transcribePass", true),
+                speechEndpoint =
+                    SpeechEndpoint(
+                        preferences.getString("speechEndpointUrl", "")!!,
+                        preferences.getString("speechEndpointPath", DEFAULT_SPEECH_ENDPOINT_PATH)!!,
+                        preferences.getString("speechEndpointModel", "")!!,
+                    ),
                 spokenLanguage = preferences.getString("spokenLanguage", ENGLISH_LANGUAGE)!!,
                 chatGptRefinement = loadRefinement(Provider.ChatGpt),
                 claudeRefinement = loadRefinement(Provider.Claude),
@@ -162,6 +170,9 @@ class SettingsStore(private val context: Context) {
             putBoolean("refinement", settings.refinementEnabled)
             putString("refinementProvider", settings.refinementProvider.name)
             putBoolean("transcribePass", settings.transcribePassEnabled)
+            putString("speechEndpointUrl", settings.speechEndpoint.baseUrl)
+            putString("speechEndpointPath", settings.speechEndpoint.path)
+            putString("speechEndpointModel", settings.speechEndpoint.model)
             putString("spokenLanguage", settings.spokenLanguage)
             Provider.entries.forEach { provider ->
                 val choice = settings.refinement(provider)

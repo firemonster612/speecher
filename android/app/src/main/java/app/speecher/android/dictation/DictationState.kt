@@ -9,6 +9,7 @@ import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.Replacement
+import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
@@ -32,13 +33,19 @@ val Provider.label: String
         }
 
 /**
- * Who turns speech into the transcript. Each one is an account's speech service for now; the values
- * are saved by name, the names the accounts were saved by before.
+ * Who turns speech into the transcript: an account's speech service, or a server the person chose,
+ * which has no [account]. The values are saved by name, the names the accounts were saved by
+ * before.
  */
-enum class SpeechProvider(val account: Provider) {
+enum class SpeechProvider(val account: Provider?) {
     ChatGpt(Provider.ChatGpt),
     Claude(Provider.Claude),
+    Endpoint(null),
 }
+
+/** The provider's name in the app and the panel. */
+val SpeechProvider.label: String
+    get() = account?.label ?: "Custom Endpoint"
 
 /** Who cleans up the transcript. As with [SpeechProvider], each one is an account for now. */
 enum class CleanupProvider(val account: Provider) {
@@ -58,6 +65,10 @@ val Provider.cleanup: CleanupProvider
 val SpeechProvider.hasBatchTranscription: Boolean
     get() = this == SpeechProvider.ChatGpt
 
+/** A Custom Endpoint transcribes the whole recording once it stops, so no words show before. */
+val SpeechProvider.transcribesAfterStop: Boolean
+    get() = this == SpeechProvider.Endpoint
+
 /** What the dictation panel shows. The engine produces it; the UI only renders it. */
 sealed interface DictationState {
     /**
@@ -68,6 +79,8 @@ sealed interface DictationState {
      * speech stream is being reopened; the microphone keeps recording meanwhile. [paused] is set
      * while the person paused: the microphone is off and the words so far are kept. [stopping] is
      * set once Insert is tapped: the microphone is off and the last words are on their way.
+     * [textAfterStop] is set when the speech service only transcribes once the recording stops, so
+     * Insert is there before any words are.
      */
     data class Listening(
         val committed: String = "",
@@ -76,6 +89,7 @@ sealed interface DictationState {
         val reconnecting: Boolean = false,
         val paused: Boolean = false,
         val stopping: Boolean = false,
+        val textAfterStop: Boolean = false,
     ) : DictationState {
         /** The whole live preview: committed text with the interim word appended. */
         val text: String
@@ -122,23 +136,31 @@ sealed interface FailureReason {
 
     /**
      * A speech or cleanup provider could not do its part, as [kind]. Recovery: sign in to [account]
-     * again when the sign-in is the problem, otherwise retry.
+     * again when the sign-in is the problem, or fix a server's settings, otherwise retry.
      */
     sealed interface ProviderFailed : FailureReason {
-        val account: Provider
+        /** The provider's account, or null for a server the person chose. */
+        val account: Provider?
+        val label: String
         val kind: ProviderFailureKind
     }
 
     data class Speech(val provider: SpeechProvider, override val kind: ProviderFailureKind) :
         ProviderFailed {
-        override val account: Provider
+        override val account: Provider?
             get() = provider.account
+
+        override val label: String
+            get() = provider.label
     }
 
     data class Cleanup(val provider: CleanupProvider, override val kind: ProviderFailureKind) :
         ProviderFailed {
         override val account: Provider
             get() = provider.account
+
+        override val label: String
+            get() = provider.account.label
     }
 }
 
@@ -152,6 +174,10 @@ val ProviderFailureKind.needsSignIn: Boolean
 /** The account to sign in to, when signing in is what fixes this failure. */
 val FailureReason.signInAccount: Provider?
     get() = (this as? FailureReason.ProviderFailed)?.takeIf { it.kind.needsSignIn }?.account
+
+/** Whether a server's settings fix this failure: it turned down its key, or it isn't set up. */
+val FailureReason.needsServerSettings: Boolean
+    get() = this is FailureReason.ProviderFailed && account == null && kind.needsSignIn
 
 /**
  * The order providers are listed in everywhere in the UI: alphabetical, chosen deliberately so it
@@ -167,6 +193,12 @@ val providerOrder = listOf(Provider.ChatGpt, Provider.Claude)
 fun resolveSignedIn(preferred: Provider, signedIn: Set<Provider>): Provider =
     if (preferred in signedIn) preferred
     else providerOrder.firstOrNull { it in signedIn } ?: preferred
+
+/**
+ * The speech provider a dictation uses: a server as chosen, an account as [resolveSignedIn] has it.
+ */
+fun resolveSpeech(preferred: SpeechProvider, signedIn: Set<Provider>): SpeechProvider =
+    preferred.account?.let { resolveSignedIn(it, signedIn).speech } ?: preferred
 
 /**
  * The provider a fresh install defaults to: whichever account the user is signed into, or the first
@@ -302,6 +334,10 @@ data class SpeecherSettings(
      */
     val transcribePassEnabled: Boolean = true,
     /**
+     * The server [SpeechProvider.Endpoint] sends recordings to. Its key is kept encrypted apart.
+     */
+    val speechEndpoint: SpeechEndpoint = SpeechEndpoint(),
+    /**
      * The language code the speech service listens for, or
      * [app.speecher.protocol.AUTOMATIC_LANGUAGE] to have it detect the language.
      */
@@ -371,6 +407,11 @@ data class SpeecherSettings(
      */
     val insightsEnabled: Boolean = true,
 ) {
+    /** Whether dictation transcribes with a server of the person's own, which needs no account. */
+    val transcribesWithServer: Boolean
+        get() =
+            transcriptionProvider == SpeechProvider.Endpoint && speechEndpoint.server.isNotEmpty()
+
     /**
      * The layout the panel shows. With refinement off there is nothing to refine, so only Insert.
      */
@@ -449,8 +490,9 @@ fun SpeecherSettings.profileDeletionNotice(profile: WritingProfile): String {
 }
 
 /**
- * What the setup checklist needs to know. Each flag is one step. [sessionEnded] holds the signed-in
- * providers whose sign-in was rejected during a dictation; they still count as signed in here.
+ * What the setup checklist needs to know. Each flag is one step; the first is done by an account or
+ * by [ownServer], a speech server of the person's own. [sessionEnded] holds the signed-in providers
+ * whose sign-in was rejected during a dictation; they still count as signed in here.
  */
 data class SetupStatus(
     val signedIn: Set<Provider>,
@@ -458,9 +500,14 @@ data class SetupStatus(
     val keyboardEnabled: Boolean,
     val chipEnabled: Boolean,
     val sessionEnded: Set<Provider> = emptySet(),
+    val ownServer: Boolean = false,
 ) {
     val complete: Boolean
-        get() = signedIn.isNotEmpty() && microphoneGranted && keyboardEnabled && chipEnabled
+        get() =
+            (signedIn.isNotEmpty() || ownServer) &&
+                microphoneGranted &&
+                keyboardEnabled &&
+                chipEnabled
 
     /** The signed-in providers whose sign-in still works. */
     val working: Set<Provider>

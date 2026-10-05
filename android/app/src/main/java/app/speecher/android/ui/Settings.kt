@@ -91,7 +91,7 @@ import app.speecher.android.dictation.refinementEfforts
 import app.speecher.android.dictation.refinementModelCaution
 import app.speecher.android.dictation.refinementModels
 import app.speecher.android.dictation.resolveSignedIn
-import app.speecher.android.dictation.speech
+import app.speecher.android.dictation.resolveSpeech
 import app.speecher.android.dictation.spokenLanguageLabel
 import app.speecher.android.dictation.spokenLanguageMismatch
 import app.speecher.android.dictation.spokenLanguageName
@@ -101,6 +101,7 @@ import app.speecher.protocol.AUTOMATIC_LANGUAGE
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
 import app.speecher.protocol.MAX_SPEECH_TERMS
+import app.speecher.protocol.SpeechEndpoint
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
@@ -156,7 +157,7 @@ fun Settings(
     onOpenWhatsNew: () -> Unit = {},
 ) {
     Column(modifier) {
-        if (signedIn.isEmpty()) {
+        if (signedIn.isEmpty() && !settings.transcribesWithServer) {
             Card(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
                 Text(
                     "Sign in to start dictating. Speecher uses your own ChatGPT or Claude account.",
@@ -310,9 +311,10 @@ private fun transcriptionSummary(
     settings: SpeecherSettings,
     signedIn: Set<Provider>,
     sessionEnded: Set<Provider>,
-): String =
-    shownProvider(settings.transcriptionProvider.account, signedIn)?.accountLabel(sessionEnded)
-        ?: "Not signed in"
+): String {
+    val account = settings.transcriptionProvider.account ?: return SpeechProvider.Endpoint.label
+    return shownProvider(account, signedIn)?.accountLabel(sessionEnded) ?: "Not signed in"
+}
 
 private fun refinementSummary(
     settings: SpeecherSettings,
@@ -364,10 +366,18 @@ private fun TranscriptionSettings(
     onChange: (SpeecherSettings) -> Unit,
     onSignIn: (Provider) -> Unit,
 ) {
-    ProviderPicker("Provider", settings.transcriptionProvider.account, signedIn, onSignIn) {
-        onChange(settings.copy(transcriptionProvider = it.speech))
+    // An account you aren't signed into isn't offered, since dictation would fall back to another.
+    val provider = resolveSpeech(settings.transcriptionProvider, signedIn)
+    val usable = SpeechProvider.entries.filter { it.account == null || it.account in signedIn }
+    DropdownRow(
+        "Provider",
+        usable.associateWith { it.label },
+        provider,
+        selectedLabel = if (provider in usable) provider.label else "Not signed in",
+    ) {
+        onChange(settings.copy(transcriptionProvider = it))
     }
-    val provider = resolveSignedIn(settings.transcriptionProvider.account, signedIn)
+    SignInLinks(signedIn, onSignIn, Modifier.padding(horizontal = 16.dp))
     DropdownRow(
         "Spoken language",
         spokenLanguageChoices(provider),
@@ -388,7 +398,7 @@ private fun TranscriptionSettings(
         },
         colors = rowColors(),
     )
-    if (provider.speech.hasBatchTranscription) {
+    if (provider.hasBatchTranscription) {
         ListItem(
             headlineContent = { Text("Extra transcription pass") },
             supportingContent = {
@@ -405,6 +415,7 @@ private fun TranscriptionSettings(
             colors = rowColors(),
         )
     }
+    if (provider == SpeechProvider.Endpoint) SpeechEndpointSettings(settings, onChange)
     Section("Microphone")
     MicrophoneTestRow()
 }
@@ -606,11 +617,15 @@ private fun SwitchRow(
 
 @Composable
 private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSettings) -> Unit) {
-    val claude = settings.transcriptionProvider == SpeechProvider.Claude
+    val takesKeyTerms = settings.transcriptionProvider != SpeechProvider.ChatGpt
     Text(
         "Refinement uses the terms for the dictation's Writing Profile. " +
-            if (claude) "Key terms also go to Claude Voice."
-            else "This speech service takes no key terms.",
+            when (settings.transcriptionProvider) {
+                SpeechProvider.Claude -> "Key terms also go to Claude Voice."
+                SpeechProvider.Endpoint ->
+                    "Key terms also go to the Custom Endpoint, as its prompt."
+                SpeechProvider.ChatGpt -> "This speech service takes no key terms."
+            },
         Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -662,7 +677,7 @@ private fun VocabularySettings(settings: SpeecherSettings, onChange: (SpeecherSe
                         when {
                             !word.keyTerm -> "Not a key term: refinement only."
                             sent -> "Key term: sent to the speech service as a hint."
-                            claude ->
+                            takesKeyTerms ->
                                 "Key term, but the speech service does not take it, so it is not sent."
                             else -> "Key term, but this speech service takes none."
                         },
@@ -976,6 +991,18 @@ private fun ProviderPicker(
                 }
             }
         }
+        SignInLinks(signedIn, onSignIn)
+    }
+}
+
+/** A link to sign in to each account that isn't, so a provider picker can offer it. */
+@Composable
+private fun SignInLinks(
+    signedIn: Set<Provider>,
+    onSignIn: (Provider) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
         providerOrder
             .filter { it !in signedIn }
             .forEach { provider ->
@@ -1145,17 +1172,23 @@ internal fun PasteCode(
 }
 
 /** The provider's spoken languages as code to label: Automatic, then by English name. */
-private fun spokenLanguageChoices(provider: Provider): Map<String, String> =
+private fun spokenLanguageChoices(provider: SpeechProvider): Map<String, String> =
     provider.spokenLanguages
         .sortedWith(compareBy({ it != AUTOMATIC_LANGUAGE }, ::spokenLanguageName))
         .associateWith(::spokenLanguageLabel)
 
 /**
- * The words Claude Voice receives as key terms: those that fit both speech limits, then its header.
+ * The words the speech service receives as key terms: those that fit both speech limits, then, for
+ * Claude Voice, its header. A Custom Endpoint takes them all as its prompt; ChatGPT takes none.
  */
-internal fun keyTerms(settings: SpeecherSettings): Set<String> =
-    if (settings.transcriptionProvider != SpeechProvider.Claude) emptySet()
-    else claudeVoiceKeyterms(speechTerms(settings.vocabulary)).toSet()
+internal fun keyTerms(settings: SpeecherSettings): Set<String> {
+    val terms = speechTerms(settings.vocabulary)
+    return when (settings.transcriptionProvider) {
+        SpeechProvider.ChatGpt -> emptySet()
+        SpeechProvider.Claude -> claudeVoiceKeyterms(terms).toSet()
+        SpeechProvider.Endpoint -> terms.toSet()
+    }
+}
 
 /**
  * What the list amounts to: how many terms, how many the speech service gets, and how many
@@ -1166,7 +1199,7 @@ internal fun vocabularyLimit(settings: SpeecherSettings): String {
     val refinement =
         if (terms > MAX_REFINEMENT_TERMS) "the first $MAX_REFINEMENT_TERMS are used for refinement"
         else "all are used for refinement"
-    if (settings.transcriptionProvider != SpeechProvider.Claude)
+    if (settings.transcriptionProvider == SpeechProvider.ChatGpt)
         return if (terms == 1) "1 term, used for refinement" else "$terms terms, $refinement"
     val sent = keyTerms(settings).size
     if (sent < terms) {
@@ -1203,6 +1236,33 @@ internal fun SettingsScreenPreview() = SpeecherTheme {
 @PreviewLightDark
 @Composable
 internal fun SettingsSignedOutPreview() = SettingsPreview(SpeecherSettings(), emptySet())
+
+/** Transcribing with a server on the home network, no account. */
+internal val previewServerSettings =
+    SpeecherSettings(
+        transcriptionProvider = SpeechProvider.Endpoint,
+        speechEndpoint = SpeechEndpoint("http://192.168.1.20:8080", "/inference", "whisper-1"),
+    )
+
+@PreviewLightDark
+@Composable
+internal fun SettingsServerPreview() = SettingsPreview(previewServerSettings, emptySet())
+
+@PreviewLightDark
+@Composable
+internal fun SettingsTranscriptionServerPreview() = SpeecherTheme {
+    var settings by remember { mutableStateOf(previewServerSettings) }
+    SpeecherScreen(SettingsPage.Transcription.title, onBack = {}) {
+        SettingsPageContent(
+            SettingsPage.Transcription,
+            settings,
+            emptySet(),
+            { settings = it },
+            {},
+            {},
+        )
+    }
+}
 
 @PreviewLightDark
 @Composable

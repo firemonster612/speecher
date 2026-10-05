@@ -53,4 +53,13 @@ class DictationPanelTest {
             .assertExists()
         compose.onNodeWithText("Sign in").assertExists()
     }
+
+    @Test
+    fun `a server that turns down its key sends you to its settings, not to sign in`() {
+        show(FailureReason.Speech(SpeechProvider.Endpoint, ProviderFailureKind.Authentication))
+        compose
+            .onNodeWithText("Custom Endpoint turned down its key. Check the key in Speecher.")
+            .assertExists()
+        compose.onNodeWithText("Open Speecher").assertExists()
+    }
 }
