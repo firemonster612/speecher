@@ -310,6 +310,19 @@ FontIcon glyphMark(wchar_t glyph)
     return icon;
 }
 
+// A provider's leading mark: a glyph for the models people run themselves on
+// this computer or their own server, the brand for every other.
+FrameworkElement providerMark(const QString &providerId)
+{
+    if (providerId == kLocal) {
+        return glyphMark(kComputerGlyph);
+    }
+    if (providerId == kEndpoint) {
+        return glyphMark(kServerGlyph);
+    }
+    return brandMark(providerId);
+}
+
 // One card row: the leading mark, the text column, and the trailing status or
 // button. The text column is the caller's, so a row can carry a note or a
 // hint under its label.
@@ -1436,8 +1449,7 @@ struct SetupWindow::Native {
             }
             addRatingSlot(text, provider.id);
             const ProviderOption option = providerOption(
-                provider.id, provider.label, L"speechProvider",
-                local ? FrameworkElement(glyphMark(kComputerGlyph)) : brandMark(provider.id), text, status);
+                provider.id, provider.label, L"speechProvider", providerMark(provider.id), text, status);
             // Checked before the handlers exist: restoring the saved choice
             // must not look like the user making one, nor re-persist it.
             option.button.IsChecked(provider.id == saved);
@@ -1883,11 +1895,8 @@ struct SetupWindow::Native {
                 StackPanel text = rowText(strongTextBlock(found->label));
                 text.Children().Append(secondaryTextBlock(found->setupHint));
                 addRatingSlot(text, id);
-                const FrameworkElement mark = id == kLocal      ? FrameworkElement(glyphMark(kComputerGlyph))
-                                              : id == kEndpoint ? FrameworkElement(glyphMark(kServerGlyph))
-                                                                : brandMark(id);
-                const ProviderOption option = providerOption(id, found->label, L"refinementProvider", mark, text,
-                                                             status);
+                const ProviderOption option = providerOption(id, found->label, L"refinementProvider",
+                                                             providerMark(id), text, status);
                 option.button.IsChecked(id == saved);
                 appendRow(list, option.button);
                 options->push_back(option);
@@ -2722,7 +2731,7 @@ struct SetupWindow::Native {
             }
         } else {
             const QString label = providerLabel(controller->providerRegistry()->speechProviders(), speechId);
-            appendRow(rows, readyRow(brandMark(speechId),
+            appendRow(rows, readyRow(providerMark(speechId),
                                      setupChecklistLine(QStringLiteral("transcription"),
                                                         signIn.usingCliproxy(speechId)
                                                             ? setupCliproxySpeechChoice(label)
@@ -2748,9 +2757,7 @@ struct SetupWindow::Native {
                 : refinementId == kEndpoint
                 ? QStringLiteral("%1 on your server").arg(resolvedRefinementEndpoint(saved.refinement).model)
                 : providerLabel(controller->providerRegistry()->refinementProviders(), refinementId);
-            refinementMark = refinementId == kLocal      ? FrameworkElement(glyphMark(kComputerGlyph))
-                             : refinementId == kEndpoint ? FrameworkElement(glyphMark(kServerGlyph))
-                                                         : brandMark(refinementId);
+            refinementMark = providerMark(refinementId);
             // Someone's own runner or server is ready once its form is filled,
             // which the refinement page's probe may have seen before it was.
             const bool ownModel = refinementId == kLocal || refinementId == kEndpoint;
