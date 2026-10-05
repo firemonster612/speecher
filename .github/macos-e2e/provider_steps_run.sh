@@ -202,7 +202,7 @@ if ! seed_setup_tcc; then
   exit 1
 fi
 
-# P1: the default Claude Voice shows its stats; refinement's default OpenAI,
+# P1: the default Claude Voice shows its ratings; refinement's default OpenAI,
 # not signed in with no runner here, gives way to None, which shows none.
 fresh_reset
 case_begin P1
@@ -213,8 +213,8 @@ else
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-claude.png"
-    expect_text "$CASE_DIR/transcription-claude.png" "Deepgram Nova 3" \
-      || errors+=("the transcription step does not show the Claude Voice stats")
+    expect_text "$CASE_DIR/transcription-claude.png" "5.5/10" \
+      || errors+=("the transcription step does not show the Claude Voice ratings")
     for (( step = 2; step < 5; step++ )); do
       click_button Continue || errors+=("Continue failed on step $step")
       sleep 0.5

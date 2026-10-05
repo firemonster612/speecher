@@ -309,23 +309,6 @@ final class SetupFlowModel: ObservableObject {
         jump(to: index)
     }
 
-    /// Screenshot automation: a step with a provider chosen as a person would
-    /// choose it, so no auto-selection moves it, and the step's Advanced open.
-    func showForCapture(step stepId: String, provider: String) -> Bool {
-        guard let index = steps.firstIndex(where: { $0.stepId == stepId }) else { return false }
-        jump(to: index)
-        if stepId == "refinement" {
-            refinementChosenByUser = true
-            chooseRefinementProvider(provider)
-            refinementAdvancedOpen = true
-        } else {
-            speechChosenByUser = true
-            chooseSpeechProvider(provider)
-            speechAdvancedOpen = true
-        }
-        return true
-    }
-
     /// Skipping is only offered once it would leave a working app, which means
     /// every gate in the flow, not only the ones walked so far.
     var canSkip: Bool { steps.allSatisfy { isSatisfied($0.id) } }
@@ -2196,13 +2179,6 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
         flow.abandon()
         onClosed()
         flow.onFinished()
-    }
-
-    /// Screenshot automation: a step as showForCapture sets it up, in a
-    /// window of the given content size.
-    func show(step stepId: String, provider: String, size: NSSize) -> Bool {
-        window.setContentSize(size)
-        return flow.showForCapture(step: stepId, provider: provider)
     }
 
     /// The E2E seam: with SPEECHER_E2E_SETUP_CAPTURE_DIR set, every step lands

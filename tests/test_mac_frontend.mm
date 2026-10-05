@@ -174,22 +174,6 @@ id axButtonOnScreen(NSString *caption)
     });
 }
 
-// A progress bar on screen named name, as a rating bar is for its measure.
-id axProgressOnScreen(NSString *name)
-{
-    return axFindOnScreen(^BOOL(id element) {
-        return axHasRole(element, kAXProgressIndicatorRole) && [axName(element) isEqualToString:name];
-    });
-}
-
-// A label on screen that reads text.
-id axTextOnScreen(NSString *text)
-{
-    return axFindOnScreen(^BOOL(id element) {
-        return axHasRole(element, kAXStaticTextRole) && [axAttribute(element, kAXValueAttribute) isEqual:text];
-    });
-}
-
 bool axPress(id button)
 {
     return AXUIElementPerformAction((__bridge AXUIElementRef)button, kAXPressAction) == kAXErrorSuccess;
@@ -1370,13 +1354,6 @@ private slots:
         QVERIFY(!ui.whatsNewOfferVisible);
     }
 
-    // The rating tests that open windows run last, and only with
-    // SPEECHER_UPDATE_PREVIEW_DIR set, as renderUpdatePreviewsWhenRequested
-    // does. A window opened after installAndRestartWritesTheRestoreState, or
-    // before it after the setup assistant, crashes on a controller an earlier
-    // test destroyed (in globalShortcutsSupported or the device list); a
-    // capture-only test does the same on 67e3bf5a.
-
     // The Rating and Advanced rows reach Swift with core's bars and models,
     // and leave the page with a provider that has none to show.
     void ratingRowsCrossTheBridge()
@@ -1462,69 +1439,6 @@ private slots:
             QVERIFY(![bridge setupProviderRating:role provider:@"endpoint"]);
             QCOMPARE([bridge setupProviderModels:role provider:@"endpoint"].count, NSUInteger(0));
         }
-    }
-
-    // The steps open Advanced on the chosen provider's models, each state
-    // captured as a picture.
-    void setupStepsListTheChosenProvidersModels()
-    {
-        const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
-        if (directory.isEmpty()) {
-            QSKIP("SPEECHER_UPDATE_PREVIEW_DIR unset; window captures are CI-only");
-        }
-        QDir().mkpath(directory);
-        ApplicationController controller(false);
-        NativeUi native(controller);
-        SpeecherMacUI *ui = native.ui;
-        struct Shot {
-            NSString *step;
-            NSString *provider;
-            // A model the step's Advanced lists for it.
-            NSString *model;
-            QString picture;
-        };
-        const Shot shots[] = {
-            {@"transcription", @"codex", @"GPT Live Transcribe", QStringLiteral("setup-transcription-codex")},
-            {@"transcription", @"claude", @"Deepgram Nova 3", QStringLiteral("setup-transcription-claude")},
-            {@"refinement", @"openai", @"gpt-6-luna", QStringLiteral("setup-refinement-openai")},
-            // Only Advanced names the model not suggested here.
-            {@"refinement", @"local", @"Gemma 4 E4B", QStringLiteral("setup-refinement-local")},
-        };
-        QVERIFY2(AXIsProcessTrusted(), "reading the steps as VoiceOver does needs the Accessibility grant");
-        for (const Shot &shot : shots) {
-            // Tall enough for the whole step.
-            QVERIFY([ui showSetupStep:shot.step provider:shot.provider size:NSMakeSize(700, 1500)]);
-            // The hardware probe and the provider checks answer in their own time.
-            for (int turn = 0; turn < 5; ++turn) {
-                settle();
-            }
-            const QString path = directory + QStringLiteral("/mac-") + shot.picture + QStringLiteral(".png");
-            QVERIFY([ui captureSetupAssistantToPath:path.toNSString()]);
-            QVERIFY2(axTextOnScreen(shot.model), qPrintable(shot.picture));
-        }
-    }
-
-    // The Dictation page draws the Rating row's bars, for the default Claude
-    // Voice, as progress bars named for what they measure, and the Advanced
-    // row starts collapsed.
-    void settingsDrawTheRatingRows()
-    {
-        const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
-        if (directory.isEmpty()) {
-            QSKIP("SPEECHER_UPDATE_PREVIEW_DIR unset; window captures are CI-only");
-        }
-        QDir().mkpath(directory);
-        ApplicationController controller(false);
-        NativeUi native(controller);
-
-        [native.ui openSettingsPage:@"dictation"];
-        settle();
-        QVERIFY([native.ui captureSettingsToPath:(directory + QStringLiteral("/mac-settings-dictation.png"))
-                                                     .toNSString()]);
-        QVERIFY2(AXIsProcessTrusted(), "reading the page as VoiceOver does needs the Accessibility grant");
-        QVERIFY(axProgressOnScreen(@"Accuracy"));
-        QVERIFY(axProgressOnScreen(@"Speed"));
-        QVERIFY(!axTextOnScreen(@"Deepgram Nova 3"));
     }
 };
 

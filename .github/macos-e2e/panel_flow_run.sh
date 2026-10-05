@@ -151,10 +151,8 @@ print((request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
 SWIFT
 )"
 printf '%s\n' "$pane_text" >"$CASE_DIR/ocr.txt"
-# "Nova 3" appears only in the provider's subtitle. Vision has dropped the
-# first letters of "Deepgram" from this two-line subtitle once the Shortcut
-# section grew a row, though the capture shows it whole.
-if [[ "$pane_text" == *"Nova 3"* ]]; then
+# "About 60 languages" appears only in Claude Voice's subtitle.
+if [[ "$pane_text" == *"About 60 languages"* ]]; then
   pass_case "The Dictation pane shows the selected provider's dynamic subtitle."
 else
   fail_case "The Dictation pane capture does not show the Claude Voice subtitle."
