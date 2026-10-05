@@ -1,5 +1,6 @@
 package app.speecher.android.dictation
 
+import app.speecher.protocol.SpeechEndpoint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -14,11 +15,28 @@ class SetupStatusTest {
     }
 
     @Test
+    fun `a speech server of your own completes setup without an account`() {
+        val server =
+            SpeecherSettings(
+                transcriptionProvider = SpeechProvider.Endpoint,
+                speechEndpoint = SpeechEndpoint("http://10.0.2.2:8080/"),
+            )
+        assertTrue(server.transcribesWithServer)
+        assertFalse(server.copy(speechEndpoint = SpeechEndpoint(" / ")).transcribesWithServer)
+        assertTrue(SetupStatus(emptySet(), true, true, true, ownServer = true).complete)
+    }
+
+    @Test
     fun `dictation falls back to the signed-in provider`() {
         // Prefer Claude, but only ChatGPT is signed in: use ChatGPT rather than fail signed-out.
         assertEquals(
             Provider.ChatGpt,
             resolveSignedIn(Provider.Claude, setOf(Provider.ChatGpt)),
+        )
+        // A server of your own needs no account, so it stays.
+        assertEquals(
+            SpeechProvider.Endpoint,
+            resolveSpeech(SpeechProvider.Endpoint, setOf(Provider.ChatGpt)),
         )
         // Preferred provider is signed in: keep it.
         assertEquals(

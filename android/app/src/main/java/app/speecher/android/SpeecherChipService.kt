@@ -26,11 +26,10 @@ import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.createDictationEngine
 import app.speecher.android.dictation.oauth
-import app.speecher.android.dictation.resolveSignedIn
+import app.speecher.android.dictation.resolveSpeech
 import app.speecher.android.dictation.screenCapture
 import app.speecher.android.dictation.screenshotJpeg
 import app.speecher.android.dictation.sharedExecutor
-import app.speecher.android.dictation.speech
 import app.speecher.android.dictation.targetApp
 import app.speecher.android.dictation.uncoveredRows
 import app.speecher.android.ui.ChipMargin
@@ -365,15 +364,14 @@ class SpeecherChipService : AccessibilityService() {
                         reason is FailureReason.ProviderFailed &&
                             reason.kind == ProviderFailureKind.Authentication
                     )
-                        tokens.endSession(reason.account.oauth)
+                        reason.account?.let { tokens.endSession(it.oauth) }
                     ActiveDictation.state = state
                     ActiveDictation.observe?.invoke(state)
                 },
                 { ActiveDictation.onInserted?.invoke() },
             )
         ActiveDictation.engine = engine
-        val signedIn = tokens.signedIn()
-        engine.start(resolveSignedIn(settings.transcriptionProvider.account, signedIn).speech)
+        engine.start(resolveSpeech(settings.transcriptionProvider, tokens.signedIn()))
         return engine
     }
 

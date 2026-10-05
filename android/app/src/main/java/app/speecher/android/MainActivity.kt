@@ -36,6 +36,7 @@ import app.speecher.android.dictation.DictationRecord
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SetupStatus
+import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.clearInsights
 import app.speecher.android.dictation.insightsFile
@@ -208,6 +209,15 @@ class MainActivity : ComponentActivity() {
                                     )
                                 },
                                 onFinish = ::leaveSetup,
+                                onUseServer = {
+                                    changeSettings(
+                                        settings.copy(
+                                            transcriptionProvider = SpeechProvider.Endpoint
+                                        )
+                                    )
+                                    page = Page.Settings
+                                    settingsPage = SettingsPage.Transcription
+                                },
                                 signingIn = signIn.activeProvider,
                                 signInError = signIn.error,
                                 onPasteCode = signIn::paste,
@@ -677,6 +687,7 @@ class MainActivity : ComponentActivity() {
                 microphoneGranted = granted(Manifest.permission.RECORD_AUDIO),
                 keyboardEnabled = keyboardEnabled(),
                 chipEnabled = chipEnabled(),
+                ownServer = settings.transcribesWithServer,
             )
     }
 

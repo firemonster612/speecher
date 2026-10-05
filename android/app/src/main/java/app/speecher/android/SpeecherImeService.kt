@@ -18,6 +18,7 @@ import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.cleanup
+import app.speecher.android.dictation.needsServerSettings
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.shownPanelSize
 import app.speecher.android.dictation.signInAccount
@@ -188,25 +189,22 @@ class SpeecherImeService : InputMethodService() {
     }
 
     /**
-     * A denied microphone, an ended sign-in and an unsupported spoken language need the app; the
-     * other failures retry in place.
+     * A denied microphone, an ended sign-in, a server's settings and an unsupported spoken language
+     * need the app; the other failures retry in place.
      */
     private fun recover() {
         val reason = (panelState.value as? DictationState.Failed)?.reason ?: return
         val signIn = reason.signInAccount
-        if (
-            signIn == null &&
-                reason != FailureReason.MicrophoneDenied &&
-                reason != FailureReason.SpokenLanguage
-        ) {
+        val transcriptionSettings =
+            reason == FailureReason.SpokenLanguage || reason.needsServerSettings
+        if (signIn == null && reason != FailureReason.MicrophoneDenied && !transcriptionSettings) {
             if (ActiveDictation.engine?.retry() == true) panel?.vibrateForStartOrStop()
             return
         }
         switchBack()
         val intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (signIn != null) intent.putExtra("sign_in_provider", signIn.name)
-        if (reason == FailureReason.SpokenLanguage)
-            intent.putExtra("settings_page", SettingsPage.Transcription.name)
+        if (transcriptionSettings) intent.putExtra("settings_page", SettingsPage.Transcription.name)
         startActivity(intent)
     }
 

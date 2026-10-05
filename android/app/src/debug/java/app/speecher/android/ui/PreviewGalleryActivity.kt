@@ -139,6 +139,18 @@ private val states: Map<String, @Composable () -> Unit> =
                         },
                 )
             } +
+        // A server of the person's own: the two failures its settings fix, and one it doesn't.
+        listOf(
+                ProviderFailureKind.Authentication,
+                ProviderFailureKind.Unavailable,
+                ProviderFailureKind.Network,
+            )
+            .associate { kind ->
+                "panel-failed-server-${kind.name.lowercase()}" to
+                    bottom {
+                        PanelFailedPreview(FailureReason.Speech(SpeechProvider.Endpoint, kind))
+                    }
+            } +
         mapOf(
             "chip" to { ChipOverKeyboard() },
             "save-position-pill" to { SavePositionPillPreview() },
@@ -161,8 +173,12 @@ private val states: Map<String, @Composable () -> Unit> =
             "onboarding-fresh" to { OnboardingFreshPreview() },
             "onboarding-partway" to { OnboardingPartwayPreview() },
             "onboarding-done" to { OnboardingDonePreview() },
+            "onboarding-server" to { OnboardingServerPreview() },
+            "home-server" to { HomeServerPreview() },
             "settings" to { SettingsPreview() },
             "settings-signed-out" to { SettingsSignedOutPreview() },
+            "settings-server" to { SettingsServerPreview() },
+            "settings-transcription-server" to { SettingsTranscriptionServerPreview() },
             "settings-refinement" to { SettingsRefinementPreview() },
             "settings-vocabulary" to { SettingsVocabularyPreview() },
             "settings-replacements" to { SettingsReplacementsPreview() },

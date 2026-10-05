@@ -70,9 +70,9 @@ import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
 import app.speecher.android.dictation.InsertAction
 import app.speecher.android.dictation.PanelSize
-import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SpeechProvider
 import app.speecher.android.dictation.label
+import app.speecher.android.dictation.needsServerSettings
 import app.speecher.android.dictation.signInAccount
 import app.speecher.android.dictation.spokenLanguageMismatch
 import app.speecher.protocol.ProviderFailureKind
@@ -414,7 +414,7 @@ private fun InsertAction.pick(onInsert: () -> Unit, onInsertRefined: () -> Unit)
     if (this == InsertAction.Insert) onInsert else onInsertRefined
 
 private val DictationState.canInsert: Boolean
-    get() = this is DictationState.Listening && !stopping && text.isNotBlank()
+    get() = this is DictationState.Listening && !stopping && (text.isNotBlank() || textAfterStop)
 
 /**
  * What the panel waits on once Insert is tapped, in the desktop's words, or null while it is not
@@ -488,15 +488,18 @@ private val DictationState.Failed.advice: String
             FailureReason.MicrophoneUnavailable ->
                 "Another app may be using it. Try again when it's free."
             FailureReason.SpokenLanguage -> detail
-            is FailureReason.ProviderFailed -> providerAdvice(reason.account.label, reason.kind)
+            is FailureReason.ProviderFailed ->
+                providerAdvice(reason.label, reason.kind, signsIn = reason.account != null)
         }
 
-private fun providerAdvice(name: String, kind: ProviderFailureKind): String =
+private fun providerAdvice(name: String, kind: ProviderFailureKind, signsIn: Boolean): String =
     when (kind) {
         ProviderFailureKind.Authentication ->
-            "Your $name sign-in has expired. Sign in again to keep dictating."
+            if (signsIn) "Your $name sign-in has expired. Sign in again to keep dictating."
+            else "$name turned down its key. Check the key in Speecher."
         ProviderFailureKind.Unavailable ->
-            "You're not signed in to $name. Sign in to keep dictating."
+            if (signsIn) "You're not signed in to $name. Sign in to keep dictating."
+            else "$name isn't set up. Set it up in Speecher."
         ProviderFailureKind.Network ->
             "$name couldn't be reached. Check your connection and try again."
         ProviderFailureKind.Timeout -> "$name didn't answer. Try again."
@@ -511,8 +514,9 @@ private val FailureReason.recovery: String
     get() =
         when {
             signInAccount != null -> "Sign in"
-            this == FailureReason.MicrophoneDenied || this == FailureReason.SpokenLanguage ->
-                "Open Speecher"
+            this == FailureReason.MicrophoneDenied ||
+                this == FailureReason.SpokenLanguage ||
+                needsServerSettings -> "Open Speecher"
             else -> "Retry"
         }
 
@@ -735,7 +739,7 @@ internal fun PanelFailedPreview(reason: FailureReason, heard: Boolean = false) =
         DictationState.Failed(
             reason,
             if (reason == FailureReason.SpokenLanguage)
-                spokenLanguageMismatch(Provider.Claude, "cy").orEmpty()
+                spokenLanguageMismatch(SpeechProvider.Claude, "cy").orEmpty()
             else "",
             if (heard) SAMPLE_TEXT else "",
         )

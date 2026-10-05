@@ -22,6 +22,14 @@ import javax.crypto.spec.GCMParameterSpec
 import okhttp3.OkHttpClient
 import org.json.JSONObject
 
+/** A key the person typed for a server or an API, by the slot it is saved under. */
+enum class ApiKey {
+    SpeechEndpoint
+}
+
+/**
+ * Sign-ins and [ApiKey]s, encrypted with an Android Keystore key that never leaves the keystore.
+ */
 class TokenStore(context: Context) {
     private val preferences = context.getSharedPreferences("accounts", Context.MODE_PRIVATE)
     private val key: SecretKey by lazy {
@@ -46,19 +54,16 @@ class TokenStore(context: Context) {
         Provider.entries.filterTo(mutableSetOf()) { load(it.oauth) != null }
 
     fun save(provider: OAuthProvider, tokens: OAuthTokens) {
-        val plain =
-            JSONObject()
-                .put("access", tokens.accessToken)
-                .put("refresh", tokens.refreshToken)
-                .put("id", tokens.idToken)
-                .put("expiry", tokens.expiresAtMillis)
-                .put("scope", tokens.scope)
-                .toString()
-                .toByteArray(Charsets.UTF_8)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key)
-        val encrypted = cipher.doFinal(plain)
-        val value = Base64.getEncoder().encodeToString(cipher.iv + encrypted)
+        val value =
+            encrypt(
+                JSONObject()
+                    .put("access", tokens.accessToken)
+                    .put("refresh", tokens.refreshToken)
+                    .put("id", tokens.idToken)
+                    .put("expiry", tokens.expiresAtMillis)
+                    .put("scope", tokens.scope)
+                    .toString()
+            )
         preferences.edit(commit = true) {
             putString(provider.name, value)
             remove(sessionEndedKey(provider))
@@ -68,13 +73,7 @@ class TokenStore(context: Context) {
     fun load(provider: OAuthProvider): OAuthTokens? {
         val stored = preferences.getString(provider.name, null) ?: return null
         return try {
-            val bytes = Base64.getDecoder().decode(stored)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
-            val data =
-                JSONObject(
-                    String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
-                )
+            val data = JSONObject(decrypt(stored))
             OAuthTokens(
                 data.getString("access"),
                 data.getString("refresh"),
@@ -85,6 +84,38 @@ class TokenStore(context: Context) {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** The key saved in [slot], or empty when there is none or it can no longer be read. */
+    fun apiKey(slot: ApiKey): String =
+        preferences.getString(slot.preference, null)?.let {
+            runCatching { decrypt(it) }.getOrNull()
+        } ?: ""
+
+    /**
+     * Saves [key] in [slot] encrypted, or clears the slot when it is empty. Throws when it can't.
+     */
+    fun saveApiKey(slot: ApiKey, key: String) {
+        preferences.edit(commit = true) {
+            if (key.isEmpty()) remove(slot.preference) else putString(slot.preference, encrypt(key))
+        }
+    }
+
+    private val ApiKey.preference: String
+        get() = "api-key-$name"
+
+    private fun encrypt(plain: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val encrypted = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+        return Base64.getEncoder().encodeToString(cipher.iv + encrypted)
+    }
+
+    private fun decrypt(stored: String): String {
+        val bytes = Base64.getDecoder().decode(stored)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+        return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
     }
 
     fun signOut(provider: OAuthProvider) {

@@ -539,6 +539,44 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `a server that transcribes after the stop takes Insert before any words, and nothing heard is not cleaned up`() {
+        val client = Client()
+        val commits = mutableListOf<String>()
+        val refined = mutableListOf<String>()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val engine =
+            DictationEngine(
+                Capture()::capture,
+                {},
+                { _, events ->
+                    speech = events
+                    client
+                },
+                { _, raw, _, _ ->
+                    refined.add(raw)
+                    raw.uppercase()
+                },
+                { _, _ -> error("no batch pass") },
+                { commits.add(it) },
+                Executor { it.run() },
+                {},
+            )
+        engine.start(SpeechProvider.Endpoint)
+        assertEquals(DictationState.Listening(textAfterStop = true), engine.state)
+        engine.insertRefined(CleanupProvider.Claude)
+        assertTrue(client.stopped)
+        speech(SpeechEvent.Final("hello there"))
+        speech(SpeechEvent.Completed)
+        assertEquals(listOf("HELLO THERE"), commits)
+
+        engine.start(SpeechProvider.Endpoint)
+        engine.insertRefined(CleanupProvider.Claude)
+        speech(SpeechEvent.Completed)
+        assertEquals(listOf("HELLO THERE", ""), commits)
+        assertEquals(listOf("hello there"), refined)
+    }
+
+    @Test
     fun `audio level reaches listening state and cancel leaves field untouched`() {
         val capture = Capture()
         val client = Client()

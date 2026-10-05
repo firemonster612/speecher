@@ -8,7 +8,9 @@
     <queries>
         <intent><action android:name="android.view.InputMethod" /></intent>
     </queries>
-    <application android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:label="Speecher" android:icon="@mipmap/ic_launcher" android:theme="@style/Theme.Speecher">
+    <!-- Cleartext for the speech and cleanup servers people run on their own network, which often
+         serve plain HTTP. Speecher's own providers are all HTTPS. -->
+    <application android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="true" android:label="Speecher" android:icon="@mipmap/ic_launcher" android:theme="@style/Theme.Speecher">
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

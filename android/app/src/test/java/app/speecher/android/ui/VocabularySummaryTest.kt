@@ -41,5 +41,14 @@ class VocabularySummaryTest {
             keyTerms(settings(SpeechProvider.Claude, words)),
         )
         assertEquals(emptySet<String>(), keyTerms(settings(SpeechProvider.ChatGpt, words)))
+        // A Custom Endpoint's prompt has no header to fit, as on the desktop.
+        assertEquals(
+            setOf("Speecher", "a".repeat(1010), "Kotlin", "KWin"),
+            keyTerms(settings(SpeechProvider.Endpoint, words)),
+        )
+        assertEquals(
+            "4 of 100 key terms",
+            vocabularyLimit(settings(SpeechProvider.Endpoint, words)),
+        )
     }
 }

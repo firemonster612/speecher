@@ -9,11 +9,13 @@ import android.os.Looper
 import android.text.format.DateFormat
 import android.view.inputmethod.InputConnection
 import app.speecher.android.BuildConfig
+import app.speecher.android.auth.ApiKey
 import app.speecher.android.auth.TokenStore
 import app.speecher.protocol.Cancellation
 import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CodexDictationClient
+import app.speecher.protocol.EndpointSpeechClient
 import app.speecher.protocol.ProviderFailure
 import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RefinementContext
@@ -543,8 +545,10 @@ class DictationEngine(
     private fun insertBest(cleanup: CleanupProvider?) {
         val streamed = transcript()
         val audio = recorded.toByteArray()
+        // Nothing heard, as a server that transcribes after the stop can answer, is not cleaned up.
         fun finish(text: String) =
-            if (cleanup != null) refineTranscript(cleanup, text) else commitHeard(text)
+            if (cleanup != null && text.isNotBlank()) refineTranscript(cleanup, text)
+            else commitHeard(text)
         if (transcribe == null || !sourceProvider.hasBatchTranscription || audio.isEmpty()) {
             finish(streamed)
             return
@@ -625,6 +629,7 @@ class DictationEngine(
             reconnecting,
             paused,
             stopping = pendingInsert != null,
+            textAfterStop = sourceProvider.transcribesAfterStop,
         )
 
     private fun transcript(): String =
@@ -770,37 +775,57 @@ fun createDictationEngine(
         microphone::capture,
         microphone::stop,
         { selected, onEvent ->
-            val account = selected.account
-            spokenLanguageMismatch(account, settings.spokenLanguage)?.let {
+            spokenLanguageMismatch(selected, settings.spokenLanguage)?.let {
                 throw SpokenLanguageUnsupported(it)
             }
+            val account = selected.account
             val events = { event: SpeechEvent ->
-                if (event == SpeechEvent.Connected || event is SpeechEvent.Final)
+                if (
+                    account != null &&
+                        (event == SpeechEvent.Connected || event is SpeechEvent.Final)
+                )
                     store.clearSessionEnded(account.oauth)
                 onEvent(event)
             }
-            val endpoint = endpoints.getValue(account).speech
+            val terms =
+                speechTerms(
+                    settings.vocabularyFor(writingProfile(settings, ActiveDictation.target))
+                )
             // Each speech provider's client; a new provider adds its branch here.
             when (selected) {
-                SpeechProvider.Claude ->
+                SpeechProvider.Claude -> {
+                    val endpoint = endpoints.getValue(Provider.Claude).speech
                     ClaudeVoiceClient(
                         webSocketTransport(endpoint),
-                        token(account).accessToken,
-                        speechTerms(
-                            settings.vocabularyFor(writingProfile(settings, ActiveDictation.target))
-                        ),
+                        token(Provider.Claude).accessToken,
+                        terms,
                         settings.spokenLanguage,
                         events,
                         endpoint,
                     )
-                SpeechProvider.ChatGpt ->
+                }
+                SpeechProvider.ChatGpt -> {
+                    val endpoint = endpoints.getValue(Provider.ChatGpt).speech
                     CodexDictationClient(
                         webSocketTransport(endpoint),
-                        token(account).accessToken,
+                        token(Provider.ChatGpt).accessToken,
                         settings.spokenLanguage,
                         events,
                         endpoint,
                     )
+                }
+                SpeechProvider.Endpoint -> {
+                    if (settings.speechEndpoint.server.isEmpty())
+                        throw ProviderFailure(ProviderFailureKind.Unavailable, "No server URL")
+                    EndpointSpeechClient(
+                        http,
+                        settings.speechEndpoint,
+                        store.apiKey(ApiKey.SpeechEndpoint),
+                        terms.joinToString(", "),
+                        settings.spokenLanguage,
+                        events,
+                    )
+                }
             }
         },
         { selected, raw, cancellation, onRefined ->
