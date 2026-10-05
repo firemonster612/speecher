@@ -388,8 +388,6 @@ QString localModelText(LocalModelText text)
         return QStringLiteral("Your choice");
     case LocalModelText::TooLarge:
         return QStringLiteral("Too large for this computer");
-    case LocalModelText::HideOtherModels:
-        return QStringLiteral("Hide other models");
     case LocalModelText::CompareNote:
         return QStringLiteral("Word errors: clear read speech / everyday speech. Times are estimates until a "
                               "model is downloaded and tested here.");
@@ -422,11 +420,6 @@ QString languagesValue(const LocalModel &model)
 QString downloadCaption(qint64 bytes)
 {
     return QStringLiteral("Download %1").arg(downloadSizeText(bytes));
-}
-
-QString compareModelsCaption(int otherModels)
-{
-    return QStringLiteral("Compare %1 other models").arg(otherModels);
 }
 
 QStringList compareTableHeaders()

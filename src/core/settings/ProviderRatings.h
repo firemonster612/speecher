@@ -60,14 +60,18 @@ struct RatedModel {
 // the chosen one, or the suggested one for the Spoken Language until one is
 // chosen, with its Speed Test result where it has one; a Local Runner is the
 // cleanup model suggested for this computer. Empty for Custom Endpoint, "none",
-// an unknown provider, and a Local Runner where no cleanup model is suggested.
+// an unknown provider, a Local Runner where no cleanup model is suggested, and
+// both local providers while the hardware is unknown (no memory reading, as
+// LocalSetup's profile has until its probe answers).
 std::optional<ProviderRating> providerRating(ProviderRole role, const QString &providerId,
                                              const HardwareProfile &hardware, const AppSettings &settings);
 
-// The models behind a provider, for its Advanced disclosure. A Local Model
-// lists the whole catalog, the suggested model first; a Local Runner lists
-// both cleanup models, the suggested one first. Empty for Custom Endpoint,
-// "none" and an unknown provider.
+// The models behind a provider, for its Advanced disclosure. A refinement
+// service lists the model the settings hold. A Local Model lists the whole
+// catalog, the suggested model first; a Local Runner lists both cleanup
+// models, the suggested one first. While the hardware is unknown, neither
+// suggests a model and a Speed without a Speed Test result is "?". Empty for
+// Custom Endpoint, "none" and an unknown provider.
 QList<RatedModel> providerModels(ProviderRole role, const QString &providerId,
                                  const HardwareProfile &hardware, const AppSettings &settings);
 

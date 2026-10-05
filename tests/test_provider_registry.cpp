@@ -190,6 +190,18 @@ private slots:
         QVERIFY(openAi.first().bars.isEmpty());
         QCOMPARE(modelNames(providerModels(ProviderRole::Refinement, QStringLiteral("anthropic"), {}, {})),
                  QStringList({QStringLiteral("Claude Opus 5.5")}));
+
+        // Another model is listed as the settings hold it: by the Model row's
+        // name for it, else by its id, and not as the default.
+        AppSettings chosen;
+        chosen.refinement.anthropicModel = QStringLiteral("claude-sonnet-5-5");
+        chosen.refinement.openAiModel = QStringLiteral("gpt-7-test");
+        const QList<RatedModel> anthropic =
+            providerModels(ProviderRole::Refinement, QStringLiteral("anthropic"), {}, chosen);
+        QCOMPARE(modelNames(anthropic), QStringList({QStringLiteral("Claude Sonnet 5.5")}));
+        QCOMPARE(anthropic.first().note, QStringLiteral("Change it in Settings, under Refinement."));
+        QCOMPARE(modelNames(providerModels(ProviderRole::Refinement, QStringLiteral("openai"), {}, chosen)),
+                 QStringList({QStringLiteral("gpt-7-test")}));
     }
 
     // The server and its model are the user's own, so there is nothing to rate.
@@ -266,6 +278,41 @@ private slots:
         for (auto it = expected.cbegin(); it != expected.cend(); ++it) {
             QCOMPARE(barTexts(modelNamed(models, it.key()).bars), it.value());
         }
+    }
+
+    // Until the hardware probe answers, the profile has no memory reading and
+    // nothing is rated or suggested for this computer: Advanced still lists
+    // the models with what does not depend on it. A probed profile brings the
+    // rating and the suggestion.
+    void localProvidersRateNothingOnUnknownHardware()
+    {
+        const HardwareProfile unprobed;
+        for (const ProviderRole role : {ProviderRole::Speech, ProviderRole::Refinement}) {
+            QVERIFY(!providerRating(role, QStringLiteral("local"), unprobed, {}));
+            QVERIFY(providerRating(role, QStringLiteral("local"), referencePc(), {}));
+        }
+
+        const QList<RatedModel> speech = providerModels(ProviderRole::Speech, QStringLiteral("local"), unprobed, {});
+        QCOMPARE(speech.size(), localModelCatalog().size());
+        for (qsizetype i = 0; i < speech.size(); ++i) {
+            QCOMPARE(speech.at(i).name, localModelCatalog().at(i).name);
+            QVERIFY2(speech.at(i).note.isEmpty(), qPrintable(speech.at(i).name));
+        }
+        QCOMPARE(barTexts(modelNamed(speech, QStringLiteral("Parakeet 0.6B")).bars),
+                 QStringList({QStringLiteral("Accuracy 5.5/10"), QStringLiteral("Speed ?")}));
+
+        const QList<RatedModel> cleanup =
+            providerModels(ProviderRole::Refinement, QStringLiteral("local"), unprobed, {});
+        QCOMPARE(modelNames(cleanup), QStringList({QStringLiteral("LFM2.5 1.2B"), QStringLiteral("Gemma 4 E4B")}));
+        for (const RatedModel &model : cleanup) {
+            QVERIFY2(model.note.isEmpty(), qPrintable(model.name));
+        }
+        QCOMPARE(barTexts(cleanup.at(1).bars), QStringList({QStringLiteral("Quality 6.5/10"), QStringLiteral("Speed ?")}));
+
+        QCOMPARE(providerModels(ProviderRole::Speech, QStringLiteral("local"), referencePc(), {}).first().note,
+                 QStringLiteral("Suggested for this computer"));
+        QCOMPARE(providerModels(ProviderRole::Refinement, QStringLiteral("local"), referencePc(), {}).first().note,
+                 QStringLiteral("Suggested for this computer"));
     }
 
     // Local Runner rates the cleanup model suggested here, at this

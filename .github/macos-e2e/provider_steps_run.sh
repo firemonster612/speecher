@@ -213,7 +213,8 @@ else
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-claude.png"
-    expect_text "$CASE_DIR/transcription-claude.png" "5.5/10" \
+    # Claude Voice's Speed; no other speech option on this step has it.
+    expect_text "$CASE_DIR/transcription-claude.png" "10/10" \
       || errors+=("the transcription step does not show the Claude Voice ratings")
     for (( step = 2; step < 5; step++ )); do
       click_button Continue || errors+=("Continue failed on step $step")

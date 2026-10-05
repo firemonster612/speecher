@@ -42,7 +42,7 @@ QList<Rating> speechServiceBars(double wordErrorRate, double waitSeconds)
             {RatingMeasure::Speed, speedRating(waitSeconds, false)}};
 }
 
-QList<Rating> refinementBars(int checksPassed, double waitSeconds)
+QList<Rating> refinementBars(int checksPassed, std::optional<double> waitSeconds)
 {
     // Refinement has no text to show while you speak, so the extra point
     // never comes off.
@@ -72,10 +72,18 @@ double ratedWordErrorRate(const LocalModel &model)
                                            : model.fleursEnglishWer * fleursToArtificialAnalysis();
 }
 
+// LocalSetup reports a plain processor with no memory until its hardware probe
+// answers, and for good in a build without local speech. Nothing is rated or
+// suggested for such a computer: the answer would be for some other machine.
+bool hardwareKnown(const HardwareProfile &hardware)
+{
+    return hardware.systemRamBytes > 0;
+}
+
 QList<Rating> localModelBars(const LocalModel &model, const HardwareProfile &hardware, const LocalSpeechSettings &local)
 {
     std::optional<double> wait = measuredSpeedTestSeconds(local, model.id);
-    if (!wait) {
+    if (!wait && hardwareKnown(hardware)) {
         if (const std::optional<SpeedEstimate> estimate = estimatedSpeed(model, hardware)) {
             wait = estimate->secondsFor10sSpeech;
         }
@@ -93,9 +101,21 @@ const LocalModel &ratedLocalModel(const HardwareProfile &hardware, const SpeechS
     return speech.local.modelChosen && chosen ? *chosen : suggestedLocalModel(hardware, speech.language);
 }
 
-QList<Rating> cleanupModelBars(const CleanupModel &model, CleanupHardware hardware)
+// The latency table's row for this computer; none while the hardware is unknown.
+std::optional<CleanupHardware> cleanupHardwareHere(const HardwareProfile &hardware)
 {
-    return refinementBars(model.benchmarkChecksPassed, cleanupSeconds(model, hardware));
+    return hardwareKnown(hardware) ? std::optional(cleanupHardwareFor(hardware)) : std::nullopt;
+}
+
+std::optional<CleanupModel> suggestedCleanupModelHere(std::optional<CleanupHardware> hardware)
+{
+    return hardware ? suggestedCleanupModel(*hardware) : std::nullopt;
+}
+
+QList<Rating> cleanupModelBars(const CleanupModel &model, std::optional<CleanupHardware> hardware)
+{
+    return refinementBars(model.benchmarkChecksPassed,
+                          hardware ? std::optional(cleanupSeconds(model, *hardware)) : std::nullopt);
 }
 
 std::optional<ProviderRating> speechRating(const QString &providerId, const HardwareProfile &hardware,
@@ -107,7 +127,7 @@ std::optional<ProviderRating> speechRating(const QString &providerId, const Hard
     if (providerId == QStringLiteral("claude")) {
         return ProviderRating{speechServiceBars(claudeWordErrorRate, claudeWaitSeconds), {}};
     }
-    if (providerId == QStringLiteral("local")) {
+    if (providerId == QStringLiteral("local") && hardwareKnown(hardware)) {
         const LocalModel &model = ratedLocalModel(hardware, speech);
         return ProviderRating{localModelBars(model, hardware, speech.local),
                               QStringLiteral("%1 on this computer").arg(model.name)};
@@ -124,8 +144,8 @@ std::optional<ProviderRating> refinementRating(const QString &providerId, const 
         return ProviderRating{refinementBars(cloudChecksPassed, anthropicWaitSeconds), {}};
     }
     if (providerId == QStringLiteral("local")) {
-        const CleanupHardware cleanupHardware = cleanupHardwareFor(hardware);
-        const std::optional<CleanupModel> suggested = suggestedCleanupModel(cleanupHardware);
+        const std::optional<CleanupHardware> cleanupHardware = cleanupHardwareHere(hardware);
+        const std::optional<CleanupModel> suggested = suggestedCleanupModelHere(cleanupHardware);
         if (!suggested) {
             return std::nullopt;
         }
@@ -135,9 +155,11 @@ std::optional<ProviderRating> refinementRating(const QString &providerId, const 
     return std::nullopt;
 }
 
-QString defaultModelNote()
+QString serviceModelNote(bool isDefault)
 {
-    return QStringLiteral("The default. Change it in Settings, under %1.").arg(paneTitle(QStringLiteral("refinement")));
+    const QString change =
+        QStringLiteral("Change it in Settings, under %1.").arg(paneTitle(QStringLiteral("refinement")));
+    return isDefault ? QStringLiteral("The default. ") + change : change;
 }
 
 QList<RatedModel> speechModels(const QString &providerId, const HardwareProfile &hardware,
@@ -161,32 +183,33 @@ QList<RatedModel> speechModels(const QString &providerId, const HardwareProfile 
     if (providerId != QStringLiteral("local")) {
         return {};
     }
-    const LocalModel &suggested = suggestedLocalModel(hardware, speech.language);
-    QList<RatedModel> models{{suggested.name, localModelText(LocalModelText::Suggested),
-                              localModelBars(suggested, hardware, speech.local)}};
+    const LocalModel *suggested = hardwareKnown(hardware) ? &suggestedLocalModel(hardware, speech.language) : nullptr;
+    QList<RatedModel> models;
     for (const LocalModel &model : localModelCatalog()) {
-        if (model.id != suggested.id) {
-            models.append({model.name, QString(), localModelBars(model, hardware, speech.local)});
+        const bool isSuggested = suggested && suggested->id == model.id;
+        const RatedModel rated{model.name, isSuggested ? localModelText(LocalModelText::Suggested) : QString(),
+                               localModelBars(model, hardware, speech.local)};
+        if (isSuggested) {
+            models.prepend(rated);
+        } else {
+            models.append(rated);
         }
     }
     return models;
 }
 
-QList<RatedModel> refinementModels(const QString &providerId, const HardwareProfile &hardware)
+QList<RatedModel> refinementModels(const QString &providerId, const HardwareProfile &hardware,
+                                   const RefinementSettings &refinement)
 {
-    if (providerId == QStringLiteral("openai")) {
-        // The default model id is also its name.
-        return {{RefinementSettings{}.openAiModel, defaultModelNote(), {}}};
-    }
-    if (providerId == QStringLiteral("anthropic")) {
-        // RefinementSettings' default, claude-opus-5-5, by name.
-        return {{QStringLiteral("Claude Opus 5.5"), defaultModelNote(), {}}};
+    if (const std::optional<RowOption> model = refinementServiceModel(providerId, refinement)) {
+        const bool isDefault = model->id == refinementServiceModel(providerId, RefinementSettings{})->id;
+        return {{model->label, serviceModelNote(isDefault), {}}};
     }
     if (providerId != QStringLiteral("local")) {
         return {};
     }
-    const CleanupHardware cleanupHardware = cleanupHardwareFor(hardware);
-    const std::optional<CleanupModel> suggested = suggestedCleanupModel(cleanupHardware);
+    const std::optional<CleanupHardware> cleanupHardware = cleanupHardwareHere(hardware);
+    const std::optional<CleanupModel> suggested = suggestedCleanupModelHere(cleanupHardware);
     QList<RatedModel> models;
     for (const CleanupModel &model : cleanupModelCatalog()) {
         const bool isSuggested = suggested && suggested->ollamaTag == model.ollamaTag;
@@ -233,7 +256,7 @@ QList<RatedModel> providerModels(ProviderRole role, const QString &providerId,
                                  const HardwareProfile &hardware, const AppSettings &settings)
 {
     return role == ProviderRole::Speech ? speechModels(providerId, hardware, settings.speech)
-                                        : refinementModels(providerId, hardware);
+                                        : refinementModels(providerId, hardware, settings.refinement);
 }
 
 QString ratingMeasureLabel(RatingMeasure measure)

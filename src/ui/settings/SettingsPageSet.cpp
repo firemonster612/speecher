@@ -75,6 +75,7 @@ SettingsSchema settingsSchema(ApplicationController *controller)
     context.liveFactsForDraft = [setup = controller->localSetup()](const AppSettings &draft) {
         return setup->liveFacts(draft);
     };
+    context.hardware = [setup = controller->localSetup()] { return setup->hardware().profile; };
     SettingsSchema schema = buildSettingsSchema(context);
     UpdateController *updates = controller->updates();
     SettingsPage &general = pageById(schema, QStringLiteral("general"));

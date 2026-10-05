@@ -1381,11 +1381,19 @@ private slots:
                                                              QStringLiteral("Speed"), QStringLiteral("7/10")}));
         QCOMPARE(bars(QStringLiteral("claude")), (QStringList{QStringLiteral("Accuracy"), QStringLiteral("5.5/10"),
                                                               QStringLiteral("Speed"), QStringLiteral("10/10")}));
-        // A service names nothing it rated; a model on this computer does.
+        // A service names nothing it rated. Local Model rates nothing until
+        // the hardware probe answers, then names the model it rated.
         QVERIFY(page.findChild<QLabel *>(QStringLiteral("speechProviderRatingSubject_codex"))->isHidden());
-        QVERIFY(page.findChild<QLabel *>(QStringLiteral("speechProviderRatingSubject_local"))
-                    ->text()
-                    .endsWith(QStringLiteral(" on this computer")));
+        auto *localSubject = page.findChild<QLabel *>(QStringLiteral("speechProviderRatingSubject_local"));
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("speechProviderRating_local"))->isHidden());
+        QVERIFY(localSubject->isHidden());
+        HardwareProfile laptop;
+        laptop.chipName = QStringLiteral("AMD Ryzen 7 PRO 4750U with Radeon Graphics");
+        laptop.systemRamBytes = quint64(16) << 30;
+        laptop.availableRamBytes = quint64(12) << 30;
+        LocalSetupTestAccess::setHardware(local, laptop);
+        QVERIFY(!page.findChild<QWidget *>(QStringLiteral("speechProviderRating_local"))->isHidden());
+        QCOMPARE(localSubject->text(), QStringLiteral("Parakeet 0.6B on this computer"));
 
         auto *advanced = page.findChild<QToolButton *>(QStringLiteral("speechProviderModels"));
         auto *list = page.findChild<QWidget *>(QStringLiteral("speechProviderModelList"));
@@ -1435,9 +1443,15 @@ private slots:
         QVERIFY(rating(QStringLiteral("endpoint"))->isHidden());
         QVERIFY(subject(QStringLiteral("endpoint"))->isHidden());
 
+        // Nothing is rated for this computer until the probe reads its memory.
         LocalSetupTestAccess::setHardware(local, HardwareProfile{});
+        QVERIFY(rating(QStringLiteral("local"))->isHidden());
+        QVERIFY(subject(QStringLiteral("local"))->isHidden());
+        HardwareProfile processor;
+        processor.systemRamBytes = quint64(16) << 30;
+        LocalSetupTestAccess::setHardware(local, processor);
         QCOMPARE(subject(QStringLiteral("local"))->text(), QStringLiteral("LFM2.5 1.2B, suggested for this computer"));
-        HardwareProfile graphicsCard;
+        HardwareProfile graphicsCard = processor;
         graphicsCard.accelerator = HardwareProfile::Accelerator::DedicatedGpu;
         graphicsCard.gpuMemoryBytes = quint64(16) << 30;
         LocalSetupTestAccess::setHardware(local, graphicsCard);

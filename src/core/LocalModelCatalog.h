@@ -141,7 +141,6 @@ enum class LocalModelText {
     Suggested,
     YourChoice,
     TooLarge,
-    HideOtherModels,
     CompareNote,
     // Deleting a downloaded model: the button and its confirmation's body.
     DeleteModel,
@@ -157,8 +156,6 @@ QString textShowsValue(bool streams);
 QString languagesValue(const LocalModel &model);
 // "Download 731 MB".
 QString downloadCaption(qint64 bytes);
-// "Compare 7 other models".
-QString compareModelsCaption(int otherModels);
 // The comparison table's columns: Model, Download, Word errors, 10 s of
 // speech, Text shows, Memory.
 QStringList compareTableHeaders();

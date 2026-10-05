@@ -770,7 +770,6 @@ LiveFacts LocalSetup::liveFacts(const AppSettings &draft) const
         facts.localGpus.append({gpu.kind, gpu.id, gpu.description});
     }
     facts.localModelRunsOn = m_modelRunsOn;
-    facts.hardware = m_hardware.profile;
     return facts;
 }
 

@@ -2534,12 +2534,13 @@ private slots:
     void ratingRowsFollowTheChosenProvider()
     {
         SchemaContext context = chainContext();
-        LiveFacts facts;
         // A Ryzen 4750U laptop's integrated graphics.
-        facts.hardware.accelerator = HardwareProfile::Accelerator::IntegratedGpu;
-        facts.hardware.chipName = QStringLiteral("AMD Ryzen 7 PRO 4750U with Radeon Graphics");
-        facts.hardware.availableRamBytes = quint64(12) << 30;
-        context.liveFacts = [facts] { return facts; };
+        HardwareProfile laptop;
+        laptop.accelerator = HardwareProfile::Accelerator::IntegratedGpu;
+        laptop.chipName = QStringLiteral("AMD Ryzen 7 PRO 4750U with Radeon Graphics");
+        laptop.systemRamBytes = quint64(16) << 30;
+        laptop.availableRamBytes = quint64(12) << 30;
+        context.hardware = [laptop] { return laptop; };
         const SettingsSchema schema = buildSettingsSchema(context);
         const SettingsRow &speechRating = rowById(schema.page(QStringLiteral("audio")), QStringLiteral("speechRating"));
         const SettingsRow &speechModels = rowById(schema.page(QStringLiteral("audio")), QStringLiteral("speechModels"));

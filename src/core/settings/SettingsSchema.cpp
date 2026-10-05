@@ -489,6 +489,11 @@ LiveFacts liveFacts(const SchemaContext &context, const AppSettings &settings)
     return context.liveFactsForDraft ? context.liveFactsForDraft(settings) : liveFacts(context);
 }
 
+HardwareProfile thisComputer(const SchemaContext &context)
+{
+    return context.hardware ? context.hardware() : HardwareProfile{};
+}
+
 QStringList speechChain(const AppSettings &settings)
 {
     return providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
@@ -559,15 +564,15 @@ QString primaryProviderId(ProviderRole role, const AppSettings &settings)
 
 // The primary's bars, under its picker. Help names what was rated when the
 // provider runs on this computer. Hidden for a provider without a rating.
-SettingsRow ratingRow(ProviderRole role, std::function<LiveFacts(const AppSettings &)> facts)
+SettingsRow ratingRow(ProviderRole role, std::function<HardwareProfile()> hardware)
 {
     SettingsRow row;
     row.id = role == ProviderRole::Speech ? QStringLiteral("speechRating") : QStringLiteral("refinementRating");
     row.label = QStringLiteral("Rating");
     row.help = QStringLiteral("Out of 10.");
     row.kind = RowKind::Rating;
-    const auto rating = [role, facts = std::move(facts)](const AppSettings &settings) {
-        return providerRating(role, primaryProviderId(role, settings), facts(settings).hardware, settings);
+    const auto rating = [role, hardware = std::move(hardware)](const AppSettings &settings) {
+        return providerRating(role, primaryProviderId(role, settings), hardware(), settings);
     };
     row.helpValue = [rating, help = row.help](const AppSettings &settings) {
         const QString subject = rating(settings).value_or(ProviderRating{}).subject;
@@ -584,14 +589,14 @@ SettingsRow ratingRow(ProviderRole role, std::function<LiveFacts(const AppSettin
 
 // The models behind the chosen speech service, listed in place. Refinement
 // has none: each provider's card already has a Model row.
-SettingsRow speechModelsRow(QList<RowOption> providers, std::function<LiveFacts(const AppSettings &)> facts)
+SettingsRow speechModelsRow(QList<RowOption> providers, std::function<HardwareProfile()> hardware)
 {
     SettingsRow row;
     row.id = QStringLiteral("speechModels");
     row.label = providerModelsCaption();
     row.kind = RowKind::ModelList;
-    const auto models = [facts = std::move(facts)](const AppSettings &settings) {
-        return providerModels(ProviderRole::Speech, settings.speech.providerId, facts(settings).hardware, settings);
+    const auto models = [hardware = std::move(hardware)](const AppSettings &settings) {
+        return providerModels(ProviderRole::Speech, settings.speech.providerId, hardware(), settings);
     };
     row.helpValue = [providers = std::move(providers)](const AppSettings &settings) {
         const QString &id = settings.speech.providerId;
@@ -1412,6 +1417,7 @@ SettingsPage audioPage(const SchemaContext &context)
     };
     const std::function<LiveFacts()> facts = [context] { return liveFacts(context); };
     const auto statusFacts = [context](const AppSettings &settings) { return liveFacts(context, settings); };
+    const auto hardware = [context] { return thisComputer(context); };
     showPrimaryStatus(speechProvider, ProviderRole::Speech, speechChoices, statusFacts);
 
     // Only what the chosen service or Local Model listens for, so a choice
@@ -1549,8 +1555,8 @@ SettingsPage audioPage(const SchemaContext &context)
         {
             {QStringLiteral("Transcription"),
              QString(),
-             {std::move(speechProvider), ratingRow(ProviderRole::Speech, statusFacts),
-              speechModelsRow(speechChoices, statusFacts),
+             {std::move(speechProvider), ratingRow(ProviderRole::Speech, hardware),
+              speechModelsRow(speechChoices, hardware),
               fallbacksRow(ProviderRole::Speech, speechChoices, statusFacts),
               std::move(spokenLanguage), std::move(spokenLanguageCaution), std::move(finalRetranscribe)}},
             // On the Fallbacks subpage rather than a pane.
@@ -1872,7 +1878,7 @@ SettingsPage refinementPage(const SchemaContext &context)
              QString(),
              QList<SettingsRow>{
                  std::move(refinementProvider),
-                 ratingRow(ProviderRole::Refinement, statusFacts),
+                 ratingRow(ProviderRole::Refinement, [context] { return thisComputer(context); }),
                  std::move(fallbacks),
              }},
             // On the Fallbacks subpage rather than a pane.
@@ -3145,6 +3151,20 @@ SettingsPage providersPage()
 }
 
 } // namespace
+
+std::optional<RowOption> refinementServiceModel(const QString &providerId, const RefinementSettings &refinement)
+{
+    for (const ProviderAccount &account : providerAccounts()) {
+        if (account.providerId != providerId) {
+            continue;
+        }
+        const QString &id = refinement.*account.model;
+        const auto listed = std::find_if(account.models.cbegin(), account.models.cend(),
+                                         [&id](const RowOption &model) { return model.id == id; });
+        return listed == account.models.cend() ? RowOption{id, id} : *listed;
+    }
+    return std::nullopt;
+}
 
 QString openAiSignInHelp()
 {
