@@ -175,6 +175,7 @@ class MainActivity : ComponentActivity() {
                                     signingIn = signIn.activeProvider,
                                     signInError = signIn.error,
                                     onPasteCode = signIn::paste,
+                                    onRunSetup = { page = Page.Setup },
                                 )
                             }
                         } else {

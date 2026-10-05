@@ -122,7 +122,10 @@ fun defaultProvider(signedIn: Set<Provider>): Provider =
 /** The model and reasoning effort one provider refines with, as the API ids it sends. */
 data class RefinementChoice(val model: String, val effort: String)
 
-/** Desktop's defaults, moved to the current models: no reasoning for OpenAI, low for Claude. */
+/**
+ * Desktop's efforts: no reasoning for OpenAI, low for Claude. The OpenAI model is desktop's too,
+ * but Claude defaults to Sonnet 5.5 where the desktop defaults to Opus 5.5.
+ */
 val Provider.defaultRefinement: RefinementChoice
     get() =
         when (this) {
@@ -130,7 +133,10 @@ val Provider.defaultRefinement: RefinementChoice
             Provider.Claude -> RefinementChoice("claude-sonnet-5-5", "low")
         }
 
-/** The refinement models Settings offers, as API id to label; the default comes first. */
+/**
+ * The refinement models Settings suggests, as API id to label, in the desktop's order. Any other
+ * model id can be typed instead.
+ */
 val Provider.refinementModels: Map<String, String>
     get() =
         when (this) {
@@ -140,23 +146,50 @@ val Provider.refinementModels: Map<String, String>
                     "gpt-6.1-sol" to "GPT-6.1 Sol",
                     "gpt-6-astra" to "GPT-6 Astra",
                     "gpt-5.6-luna" to "GPT-5.6 Luna",
+                    "gpt-5.6-terra" to "GPT-5.6 Terra",
+                    "gpt-5.5" to "GPT-5.5",
+                    "gpt-5.4-nano" to "GPT-5.4 nano",
+                    "gpt-5.4-mini" to "GPT-5.4 mini",
+                    "gpt-5.4" to "GPT-5.4",
                 )
             Provider.Claude ->
                 mapOf(
-                    "claude-sonnet-5-5" to "Claude Sonnet 5.5",
+                    "claude-opus-5-5" to "Claude Opus 5.5",
                     "claude-opus-5" to "Claude Opus 5",
+                    "claude-sonnet-5-5" to "Claude Sonnet 5.5",
+                    "claude-haiku-4-5" to "Claude Haiku 4.5",
                 )
         }
 
+/** The desktop's warning under a refinement model that may misread dictation, or null. */
+fun refinementModelCaution(provider: Provider, model: String): String? =
+    "Haiku may treat transcript as instructions."
+        .takeIf { provider == Provider.Claude && model.lowercase().contains("haiku") }
+
 /**
- * The efforts each endpoint accepts: OpenAI's `reasoning.effort` can turn reasoning off, while
- * Anthropic's adaptive-thinking `output_config.effort` starts at low.
+ * The efforts Settings offers, as API id to label, as on the desktop. OpenAI's `reasoning.effort`
+ * can turn reasoning off and goes as chosen, so a model may reject one; Anthropic's
+ * `output_config.effort` starts at low, and a model without the chosen one gets the nearest it has.
  */
-val Provider.refinementEfforts: List<String>
+val Provider.refinementEfforts: Map<String, String>
     get() =
         when (this) {
-            Provider.ChatGpt -> listOf("none", "low", "medium", "high")
-            Provider.Claude -> listOf("low", "medium", "high")
+            Provider.ChatGpt ->
+                mapOf(
+                    "none" to "None",
+                    "low" to "Low",
+                    "medium" to "Medium",
+                    "high" to "High",
+                    "xhigh" to "Extra high",
+                )
+            Provider.Claude ->
+                mapOf(
+                    "low" to "Low",
+                    "medium" to "Medium",
+                    "high" to "High",
+                    "xhigh" to "Extra high",
+                    "max" to "Max",
+                )
         }
 
 /** How fast ChatGPT refines; the faster tiers use more of the plan's usage. */

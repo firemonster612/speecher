@@ -35,6 +35,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.speecher.android.R
+import app.speecher.android.dictation.Provider
+import app.speecher.android.dictation.SpeecherSettings
 
 private val bottom: (@Composable () -> Unit) -> @Composable () -> Unit = { content ->
     { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { content() } }
@@ -117,8 +119,15 @@ private val states: Map<String, @Composable () -> Unit> =
         "onboarding-partway" to { OnboardingPartwayPreview() },
         "onboarding-done" to { OnboardingDonePreview() },
         "settings" to { SettingsPreview() },
+        "settings-screen" to
+            {
+                SpeecherScreen("Settings", onBack = {}) {
+                    Settings(SpeecherSettings(), Provider.entries.toSet(), {}, {}, {}, {})
+                }
+            },
         "settings-signed-out" to { SettingsSignedOutPreview() },
         "settings-refinement" to { SettingsRefinementPreview() },
+        "settings-refinement-haiku" to { SettingsRefinementHaikuPreview() },
         "settings-vocabulary" to { SettingsVocabularyPreview() },
         "settings-profiles" to { SettingsProfilesPreview() },
         "microphone-test-detected" to { MicrophoneTestDetectedPreview() },

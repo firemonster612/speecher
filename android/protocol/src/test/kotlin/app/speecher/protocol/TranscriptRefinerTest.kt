@@ -207,6 +207,36 @@ class TranscriptRefinerTest {
     }
 
     @Test
+    fun `Claude sends the nearest effort the model takes, and none to Haiku`() {
+        MockWebServer().use { server ->
+            val ok =
+                "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: message_stop\ndata: {}\n\n"
+            repeat(3) { server.enqueue(MockResponse.Builder().body(ok).build()) }
+            server.start()
+            for (model in listOf("claude-opus-5-5", "claude-opus-4-6", "claude-haiku-4-5")) {
+                refineTranscript(
+                    OkHttpClient(),
+                    OAuthProvider.Claude,
+                    tokens,
+                    "helo",
+                    emptyList(),
+                    model,
+                    "xhigh",
+                    RefinementContext(),
+                    server.url("/v1").toString(),
+                )
+            }
+            val bodies =
+                List(3) { Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject }
+            assertEquals(
+                listOf("{\"effort\":\"xhigh\"}", "{\"effort\":\"max\"}", null),
+                bodies.map { it["output_config"]?.toString() },
+            )
+            assertEquals(listOf(true, true, false), bodies.map { "thinking" in it })
+        }
+    }
+
+    @Test
     fun `Claude attaches a captured screenshot as a base64 image block after the text`() {
         MockWebServer().use { server ->
             server.enqueue(
