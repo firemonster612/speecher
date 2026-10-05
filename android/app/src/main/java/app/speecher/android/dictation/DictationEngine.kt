@@ -742,7 +742,10 @@ fun createDictationEngine(
         else null,
         { text ->
             val committed = connection()?.commitText(text, 1) == true
-            if (committed) main.post(onInserted)
+            if (committed) {
+                SettingsStore(context).recordVocabularyUsage(text)
+                main.post(onInserted)
+            }
             committed
         },
         sharedExecutor,

@@ -153,6 +153,7 @@ private val states: Map<String, @Composable () -> Unit> =
             "settings-refinement" to { SettingsRefinementPreview() },
             "settings-vocabulary" to { SettingsVocabularyPreview() },
             "settings-dictation-panel" to { SettingsDictationPanelPreview() },
+            "settings-vocabulary-empty" to { SettingsVocabularyEmptyPreview() },
             "settings-profiles" to { SettingsProfilesPreview() },
             "microphone-test-detected" to { MicrophoneTestDetectedPreview() },
             "microphone-test-silent" to { MicrophoneTestSilentPreview() },
