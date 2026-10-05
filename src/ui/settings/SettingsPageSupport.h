@@ -11,13 +11,16 @@
 class QColor;
 class QComboBox;
 class QFrame;
+class QGridLayout;
 class QPushButton;
 class QFormLayout;
 class QLabel;
 class QLayout;
 class QListWidget;
 class QPalette;
+class QProgressBar;
 class QScrollArea;
+class QToolButton;
 class QVBoxLayout;
 class QWidget;
 
@@ -38,6 +41,53 @@ public:
 protected:
     void resizeEvent(QResizeEvent *event) override;
 };
+
+// One rating: the style's progress bar with its value after it, "8.5/10", or
+// "?" with no bar. Bar and value keep their widths either way, so the cells of
+// neighbouring rows line up.
+class RatingCell final : public QWidget {
+public:
+    explicit RatingCell(QWidget *parent = nullptr);
+    void setRating(const Rating &rating);
+
+private:
+    QProgressBar *m_bar;
+    QLabel *m_value;
+};
+
+// A provider's bars, each after the name of what it measures: side by side
+// under a setup option, stacked on a Settings row.
+class RatingBars final : public QWidget {
+public:
+    explicit RatingBars(Qt::Orientation orientation, QWidget *parent = nullptr);
+    void setRatings(const QList<Rating> &ratings);
+
+private:
+    struct Bar {
+        QLabel *measure = nullptr;
+        RatingCell *cell = nullptr;
+    };
+    Qt::Orientation m_orientation;
+    QGridLayout *m_grid;
+    QList<Bar> m_bars;
+};
+
+// The models behind a provider, in a card: each name with its note under it,
+// and, where the models have bars, a column of them per measure under a header.
+class RatedModelList final : public QWidget {
+public:
+    explicit RatedModelList(QWidget *parent = nullptr);
+    void setModels(const QList<RatedModel> &models);
+
+private:
+    QFormLayout *m_rows;
+    QList<RatedModel> m_models;
+};
+
+// Qt Widgets has no disclosure, so a tool button with an arrow stands in, as
+// in the setup assistant: it shows and hides content, which starts hidden,
+// and points right while closed and down while open.
+QToolButton *makeDisclosure(const QString &caption, QWidget *content, QWidget *parent);
 
 QFrame *makeSeparator(QWidget *parent);
 QColor separatorColor(const QPalette &palette);

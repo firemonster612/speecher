@@ -5,6 +5,7 @@
 #include "frontend/win/SettingsModel.h"
 
 #include <QHash>
+#include <QSet>
 
 #include <windows.h>
 
@@ -116,6 +117,8 @@ struct PaneHost {
     bool shortcutRecording = false;
     // A row a search found, which the next pane build scrolls to.
     QString revealRow;
+    // The ModelList rows open now, by row id, so a rebuild keeps them open.
+    QSet<QString> expandedRows;
     // Home's pickers: the stats period, and the Activity measure as an index
     // into Dictations / Words / Minutes of audio.
     InsightsRange homeRange = InsightsRange::Last30Days;

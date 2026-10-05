@@ -478,9 +478,7 @@ bool LocalSetup::speedTestRunning(const QString &modelId) const
 
 std::optional<double> LocalSetup::measuredSeconds(const QString &modelId) const
 {
-    const LocalSpeechSettings local = m_settings.localSpeechSettings();
-    const auto it = local.speedTestSeconds.constFind(localSpeedTestKey(modelId, local.runsOn));
-    return it == local.speedTestSeconds.cend() ? std::nullopt : std::optional<double>(*it);
+    return measuredSpeedTestSeconds(m_settings.localSpeechSettings(), modelId);
 }
 
 QString LocalSetup::speedTestError(const QString &modelId) const

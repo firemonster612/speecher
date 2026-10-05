@@ -18,7 +18,9 @@ constexpr double maxSuggestedSecondsFor10s = 1.5;
 // LFS object checked on 2026-09-25 or later; WER, speed and languages are from transcribe.cpp
 // v0.2.4's catalog/<variant>.json (speed: xrt_compute on the 35 s dots
 // sample). Granite Speech 5.0 470M TurboCTC is left out: its output has no
-// punctuation or capitals.
+// punctuation or capitals. AA-WER is Artificial Analysis's speech-to-text
+// leaderboard, read 2026-10-05; Parakeet's is Parakeet TDT 0.6B V2's, the
+// nearest model it lists.
 const QList<LocalModel> catalog{
     {
         .id = QStringLiteral("moonshine-small"),
@@ -72,6 +74,7 @@ const QList<LocalModel> catalog{
         .sizeBytes = 731357568,
         .librispeechCleanWer = 1.60,
         .fleursEnglishWer = 3.99,
+        .artificialAnalysisWer = 6.43,
         .streams = true,
         .languages = languageCodes("en"),
         // transcribe.cpp's catalog says CC-BY-4.0; the upstream model card wins.
@@ -95,6 +98,7 @@ const QList<LocalModel> catalog{
         .sizeBytes = 886381760,
         .librispeechCleanWer = 2.01,
         .fleursEnglishWer = 4.38,
+        .artificialAnalysisWer = 4.62,
         .streams = false,
         .languages = languageCodes("af am ar as az ba be bg bn bo br bs ca cs cy da de el en es et eu fa fi fo "
                                    "fr gl gu haw ha he hi hr ht hu hy id is it ja jw ka kk km kn ko la lb ln lo "
@@ -148,6 +152,7 @@ const QList<LocalModel> catalog{
         .sizeBytes = 2410655232,
         .librispeechCleanWer = 1.27,
         .fleursEnglishWer = 5.08,
+        .artificialAnalysisWer = 4.57,
         .streams = false,
         .languages = languageCodes("en fr de es it pt nl pl el ar ja zh vi ko"),
         .licence = QStringLiteral("Apache 2.0"),
@@ -174,6 +179,7 @@ const QList<LocalModel> catalog{
         .sizeBytes = 17138659808,
         .librispeechCleanWer = 1.60,
         .fleursEnglishWer = 3.55,
+        .artificialAnalysisWer = 2.77,
         .streams = false,
         .languages = languageCodes("en fr de es it pt nl hi"),
         .detectsLanguage = true,
@@ -382,8 +388,6 @@ QString localModelText(LocalModelText text)
         return QStringLiteral("Your choice");
     case LocalModelText::TooLarge:
         return QStringLiteral("Too large for this computer");
-    case LocalModelText::HideOtherModels:
-        return QStringLiteral("Hide other models");
     case LocalModelText::CompareNote:
         return QStringLiteral("Word errors: clear read speech / everyday speech. Times are estimates until a "
                               "model is downloaded and tested here.");
@@ -416,11 +420,6 @@ QString languagesValue(const LocalModel &model)
 QString downloadCaption(qint64 bytes)
 {
     return QStringLiteral("Download %1").arg(downloadSizeText(bytes));
-}
-
-QString compareModelsCaption(int otherModels)
-{
-    return QStringLiteral("Compare %1 other models").arg(otherModels);
 }
 
 QStringList compareTableHeaders()

@@ -1,0 +1,87 @@
+<!doctype html>
+<!--
+  The Dictation and Refinement settings pages, before and after the ratings.
+  ?page=dictation|refinement, ?v=before|after, ?choice=<provider>, ?open=1
+  opens Advanced. Rebuilt from today/settings-*.png; only the provider cards
+  are drawn. New parts have a dashed outline.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher settings with ratings (mockup)</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+<div class="window">
+  <div class="search"><div>Search settings…</div></div>
+  <div class="title" id="title"></div>
+  <nav id="nav"></nav>
+  <main id="page"></main>
+</div>
+<script src="mockup.js"></script>
+<script>
+  const dictation = params.get('page') !== 'refinement';
+  const list = dictation ? SPEECH : REFINEMENT;
+  const choice = list.find((p) => p.id === params.get('choice')) || list[0];
+  const after = version === 'after';
+
+  document.getElementById('title').textContent = dictation ? 'Dictation' : 'Refinement';
+  document.getElementById('nav').innerHTML = `
+    <a>Home</a><a>Transcribe</a><a>General</a><a>Accounts</a>
+    <div class="group">Speech</div><a class="${dictation ? 'on' : ''}" href="?page=dictation&v=${version}">Dictation</a><a>Local models</a>
+    <div class="group">Text</div><a class="${dictation ? '' : 'on'}" href="?page=refinement&v=${version}">Refinement</a><a>Writing Profiles</a><a>Vocabulary</a><a>Output</a>`;
+
+  const row = (title, sub, control) =>
+    `<div class="row"><div class="text">${title}${sub ? `<small>${sub}</small>` : ''}</div>${control}</div>`;
+  const select = (value, width) => `<select${width ? ` style="min-width:${width}px"` : ''}><option>${value}</option></select>`;
+  const chevron = '<span class="chevron"></span>';
+
+  // New: the chosen provider's ratings, then its models behind Advanced.
+  const ratingRow = choice.ratings && row('Rating', choice.ratingsFor || 'Out of 10.',
+    `<div class="stacked">${(choice.ratings || []).map((r) => ratingsHtml([r])).join('')}</div>`);
+  const advancedRow = choice.models
+    ? `<details class="row-details advanced">
+         <summary>${row('Advanced', choice.id === 'local' ? 'The models you can run on this computer' : `The models ${choice.name} uses`, chevron)}</summary>
+         ${modelsHtml(choice.models)}</details>`
+    : '';
+  const extra = after ? `<div class="new">${ratingRow}${advancedRow}</div>` : '';
+
+  let html;
+  if (dictation) {
+    const service = row('Service', after ? choice.settingsAfter : choice.settingsBefore, select(choice.name));
+    html = `
+      <h2>Transcription</h2>
+      <div class="card">
+        ${service}${extra}
+        ${row('Fallbacks', `None. Dictation stops if ${choice.name} is unavailable.`, chevron)}
+        ${row('Spoken Language', 'The language you dictate in.', select('English', 246))}
+        ${choice.id === 'codex' ? row('<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" checked>Transcribe again for accuracy</label>', 'Adds one to five seconds after you stop.', '') : ''}
+      </div>
+      ${choice.id === 'local' ? `<h2>Local Model</h2><div class="card">${row('Model', 'No model is downloaded yet. Download one to dictate on this computer.', '<button>Open Local models</button>')}</div>` : ''}
+      <h2>Microphone</h2>
+      <div class="card">${row('<span style="color:var(--inactive)">Input device</span>', 'The microphone Speecher records from.', select('No microphones found', 250))}</div>`;
+  } else {
+    // A provider with a Model row of its own already shows its model there.
+    const card = {
+      openai: () => `<h2>OpenAI</h2><div class="card">${row('Model', '', select('gpt-6-luna', 166))}${row('Thinking', 'More thinking follows instructions more closely but takes longer.', select('None'))}${row('Speed', 'Fast answers sooner for slightly more usage.', select('Fast'))}</div>`,
+      anthropic: () => `<h2>Anthropic</h2><div class="card">${row('Model', '', select('Claude Opus 5.5', 230))}${row('Thinking', 'More thinking follows instructions more closely but takes longer.', select('Low'))}${row('Speed', 'Fast answers sooner and spends usage credits.', select('Fast'))}</div>`,
+      local: () => `<h2>Local Runner</h2><div class="card">${row('Runner', 'The app on this computer that runs the cleanup model.', select('Ollama 0.34.4'))}${row('Model', 'A cleanup model the runner has downloaded.', select('LiquidAI/lfm2.5-1.2b-instruct:latest', 240))}</div>`,
+      endpoint: () => `<h2>Custom Endpoint</h2><div class="card">${row('Format', '', select('OpenAI-compatible (Chat Completions)'))}${row('Server URL', '', select('http://localhost:8080/v1', 240))}</div>`,
+    }[choice.id];
+    html = `
+      <p style="margin:6px 18px 12px">Refinement turns what you said into clean text before it's pasted:
+        punctuation, filler words and the cleanup your Writing Profile asks for. Choose None to paste your words as spoken.</p>
+      <h2>Provider</h2>
+      <div class="card">
+        ${row('Provider', 'The service that cleans up your text.', select(choice.name))}
+        ${after && choice.ratings ? `<div class="new">${ratingRow}</div>` : ''}
+        ${row('Fallbacks', `None. Your words are pasted as spoken if ${choice.name} is unavailable.`, chevron)}
+      </div>
+      ${card()}`;
+  }
+  document.getElementById('page').innerHTML = html;
+  document.body.insertAdjacentHTML('beforeend', viewLinks(list.map((p) => p.id), choice.id));
+  boot();
+</script>
+</body>
+</html>

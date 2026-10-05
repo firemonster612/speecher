@@ -17,6 +17,8 @@
 #include <QRegularExpression>
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <optional>
 
 #pragma push_macro("GetCurrentTime")
@@ -606,6 +608,157 @@ UIElement fallbackListElement(ProviderRole role,
         element.Children().Append(secondaryTextBlock(list.footer, L"SettingsFootnoteStyle", host));
     }
     return element;
+}
+
+namespace {
+
+// A bar's length, fixed like the value column after it, so the bars of one
+// list, and of the options down a step, line up.
+constexpr double kRatingBarWidth = 96;
+
+// The widest of these texts in the caption style at the current text size.
+double widestCaptionText(const QStringList &texts)
+{
+    TextBlock probe = styledTextBlock({}, L"CaptionTextBlockStyle");
+    constexpr float unbounded = std::numeric_limits<float>::infinity();
+    float widest = 0;
+    for (const QString &text : texts) {
+        probe.Text(hs(text));
+        probe.Measure({unbounded, unbounded});
+        widest = std::max(widest, probe.DesiredSize().Width);
+    }
+    return std::ceil(widest);
+}
+
+// Room for any value, so a shorter one leaves the next cell where it was. Qt
+// measures it the same way.
+double ratingValueWidth()
+{
+    QStringList values;
+    for (int halves = 0; halves <= 20; ++halves) {
+        values.append(ratingValueText({RatingMeasure::Speed, halves / 2.0}));
+    }
+    return widestCaptionText(values);
+}
+
+void addColumn(const Grid &grid, GridLength width)
+{
+    ColumnDefinition column;
+    column.Width(width);
+    grid.ColumnDefinitions().Append(column);
+}
+
+void place(const Grid &grid, const FrameworkElement &element, int row, int column)
+{
+    Grid::SetRow(element, row);
+    Grid::SetColumn(element, column);
+    grid.Children().Append(element);
+}
+
+// A bar in the given column and its value in the next; a bar without a
+// figure leaves its column empty, and the value says "?".
+void placeBar(const Grid &grid, const Rating &rating, int row, int column)
+{
+    if (rating.value) {
+        ProgressBar bar;
+        bar.Minimum(0);
+        bar.Maximum(10);
+        bar.Value(*rating.value);
+        bar.VerticalAlignment(VerticalAlignment::Center);
+        Automation::AutomationProperties::SetName(bar, hs(ratingMeasureLabel(rating.measure)));
+        place(grid, bar, row, column);
+    }
+    TextBlock value = styledTextBlock(ratingValueText(rating), L"CaptionTextBlockStyle");
+    value.VerticalAlignment(VerticalAlignment::Center);
+    place(grid, value, row, column + 1);
+}
+
+void addBarColumns(const Grid &grid, double valueWidth)
+{
+    addColumn(grid, {kRatingBarWidth, GridUnitType::Pixel});
+    addColumn(grid, {valueWidth, GridUnitType::Pixel});
+}
+
+} // namespace
+
+Panel ratingBarsElement(const QList<Rating> &bars, Orientation orientation, const PaneHost &host)
+{
+    QStringList labels;
+    for (const Rating &bar : bars) {
+        labels.append(ratingMeasureLabel(bar.measure));
+    }
+    const double labelWidth = widestCaptionText(labels);
+    const double valueWidth = ratingValueWidth();
+    // Each measure as wide as the widest, so the bars line up whether the
+    // measures sit side by side or one under another. Side by side, one that
+    // no longer fits moves to the next line rather than being clipped.
+    VariableSizedWrapGrid measures;
+    measures.Orientation(orientation);
+    const Thickness gap = orientation == Orientation::Horizontal ? Thickness{0, 0, 12, 0} : Thickness{0, 0, 0, 4};
+    for (const Rating &bar : bars) {
+        Grid measure;
+        measure.ColumnSpacing(8);
+        measure.Margin(gap);
+        addColumn(measure, {labelWidth, GridUnitType::Pixel});
+        addBarColumns(measure, valueWidth);
+        TextBlock label = secondaryTextBlock(ratingMeasureLabel(bar.measure), L"CaptionTextBlockStyle", host);
+        label.VerticalAlignment(VerticalAlignment::Center);
+        place(measure, label, 0, 0);
+        placeBar(measure, bar, 0, 1);
+        measures.Children().Append(measure);
+    }
+    return measures;
+}
+
+StackPanel ratedModelsElement(const QList<RatedModel> &models, const PaneHost &host)
+{
+    const auto firstRated = std::find_if(models.cbegin(), models.cend(),
+                                         [](const RatedModel &model) { return !model.bars.isEmpty(); });
+    const bool rated = firstRated != models.cend();
+    const double valueWidth = rated ? ratingValueWidth() : 0;
+    // The heading and every model share one set of columns, so the bars line up.
+    const auto modelGrid = [rated, valueWidth](bool separated) {
+        Grid grid = separated ? separatedGrid() : Grid();
+        grid.ColumnSpacing(8);
+        addColumn(grid, {1, GridUnitType::Star});
+        if (rated) {
+            addBarColumns(grid, valueWidth);
+            addBarColumns(grid, valueWidth);
+        }
+        return grid;
+    };
+    StackPanel list;
+    if (rated) {
+        Grid heading = modelGrid(false);
+        heading.Padding({0, 0, 0, 8});
+        place(heading, secondaryTextBlock(modelColumnHeader(), L"CaptionTextBlockStyle", host), 0, 0);
+        for (qsizetype index = 0; index < firstRated->bars.size(); ++index) {
+            TextBlock measure = secondaryTextBlock(ratingMeasureLabel(firstRated->bars.at(index).measure),
+                                                   L"CaptionTextBlockStyle", host);
+            Grid::SetColumnSpan(measure, 2);
+            place(heading, measure, 0, 1 + int(index) * 2);
+        }
+        list.Children().Append(heading);
+    }
+    for (qsizetype index = 0; index < models.size(); ++index) {
+        const RatedModel &model = models.at(index);
+        // Under the heading every row is ruled off; without one, the first is not.
+        Grid row = modelGrid(rated || index > 0);
+        row.Padding({0, 8, 0, 8});
+        StackPanel text;
+        text.Spacing(2);
+        text.VerticalAlignment(VerticalAlignment::Center);
+        text.Children().Append(styledTextBlock(model.name, L"SettingsCardBodyStyle"));
+        if (!model.note.isEmpty()) {
+            text.Children().Append(secondaryText(model.note, host));
+        }
+        place(row, text, 0, 0);
+        for (qsizetype bar = 0; bar < model.bars.size(); ++bar) {
+            placeBar(row, model.bars.at(bar), 0, 1 + int(bar) * 2);
+        }
+        list.Children().Append(row);
+    }
+    return list;
 }
 
 void endMicrophoneTest(PaneHost &host)

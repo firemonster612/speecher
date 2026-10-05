@@ -102,9 +102,6 @@ int readyPage()
 {
     return stepIndex(QStringLiteral("ready"));
 }
-// The width a provider row states for itself inside RadioButtons, which lays
-// an item out to its content rather than to the list.
-constexpr double choiceRowWidth = 560;
 
 const QString kLocal = QStringLiteral("local");
 const QString kEndpoint = QStringLiteral("endpoint");
@@ -311,6 +308,19 @@ FontIcon glyphMark(wchar_t glyph)
     icon.FontSize(18);
     icon.VerticalAlignment(VerticalAlignment::Center);
     return icon;
+}
+
+// A provider's leading mark: a glyph for the models people run themselves on
+// this computer or their own server, the brand for every other.
+FrameworkElement providerMark(const QString &providerId)
+{
+    if (providerId == kLocal) {
+        return glyphMark(kComputerGlyph);
+    }
+    if (providerId == kEndpoint) {
+        return glyphMark(kServerGlyph);
+    }
+    return brandMark(providerId);
 }
 
 // One card row: the leading mark, the text column, and the trailing status or
@@ -540,15 +550,49 @@ void showProviderStats(const StackPanel &panel, const QList<ProviderDescriptor> 
     panel.Visibility(panel.Children().Size() ? Visibility::Visible : Visibility::Collapsed);
 }
 
+// The collapsed disclosure that lists a provider's models.
+Expander modelsDisclosure()
+{
+    Expander disclosure;
+    disclosure.Header(box_value(win::hs(providerModelsCaption())));
+    disclosure.HorizontalAlignment(HorizontalAlignment::Stretch);
+    disclosure.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+    return disclosure;
+}
 
-// One choice on the Refinement step. The groups are separate cards, so the
-// choice is RadioButtons sharing a GroupName rather than one RadioButtons.
-struct RefinementOption {
+// One provider a setup step offers. The Transcription and Refinement steps
+// list them as card rows of RadioButtons sharing a GroupName, rather than one
+// RadioButtons control, which would give every row the tallest row's height.
+struct ProviderOption {
     QString id;
     QString label;
     RadioButton button{nullptr};
     StatusCell status;
 };
+
+// An option's radio button in group, with the card row as its content: each
+// row as tall as its own text, and the radio level with the name.
+ProviderOption providerOption(const QString &id, const QString &label, const wchar_t *group,
+                              const FrameworkElement &mark, const StackPanel &text, const StatusCell &status)
+{
+    ProviderOption option{id, label, RadioButton(), status};
+    option.button.GroupName(group);
+    option.button.VerticalContentAlignment(VerticalAlignment::Center);
+    option.button.HorizontalAlignment(HorizontalAlignment::Stretch);
+    option.button.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+    option.button.Content(cardRow(mark, text, status.root));
+    AutomationProperties::SetName(option.button, win::hs(label));
+    return option;
+}
+
+// The option whose radio is checked, or null while none is.
+const ProviderOption *checkedOption(const std::vector<ProviderOption> &options)
+{
+    const auto checked = std::find_if(options.cbegin(), options.cend(), [](const ProviderOption &option) {
+        return option.button.IsChecked() && option.button.IsChecked().Value();
+    });
+    return checked == options.cend() ? nullptr : &*checked;
+}
 
 } // namespace
 
@@ -719,8 +763,12 @@ struct SetupWindow::Native {
         SetWindowPos(handle, nullptr, monitor.rcWork.left, monitor.rcWork.top, 0, 0,
                      SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
         const double scale = GetDpiForWindow(handle) / 96.0;
-        const int width = int(setupWidth * scale + 0.5);
-        const int height = int(setupHeight * scale + 0.5);
+        // Screenshot automation can ask for another size in DIPs with
+        // SPEECHER_GRAB_SIZE=WxH, as on Qt and macOS, so a step is captured whole.
+        const QStringList grabSize = qEnvironmentVariable("SPEECHER_GRAB_SIZE").split(QLatin1Char('x'));
+        const bool grabSized = grabSize.size() == 2;
+        const int width = int((grabSized ? grabSize.at(0).toInt() : setupWidth) * scale + 0.5);
+        const int height = int((grabSized ? grabSize.at(1).toInt() : setupHeight) * scale + 0.5);
         const int x = monitor.rcWork.left
             + (monitor.rcWork.right - monitor.rcWork.left - width) / 2;
         const int y = monitor.rcWork.top
@@ -926,6 +974,8 @@ struct SetupWindow::Native {
         transcriptionRefresh = nullptr;
         fallbacks = nullptr;
         fallbacksDrawn.reset();
+        ratingSlots.clear();
+        advanced = nullptr;
         pageScope = std::make_unique<QObject>();
         ++checkGeneration;
     }
@@ -1021,14 +1071,6 @@ struct SetupWindow::Native {
         content.Children().Append(page(QStringLiteral("welcome")));
     }
 
-    // Selects a row on the wizard's own behalf, remembering the index so the
-    // SelectionChanged that follows is not mistaken for the user's choice.
-    void selectProgrammatically(const RadioButtons &choices, int &pending, int index)
-    {
-        pending = index;
-        choices.SelectedIndex(index);
-    }
-
     // True when this event is the echo of our own write, which it then forgets.
     bool wasProgrammatic(int &pending, int index)
     {
@@ -1039,69 +1081,55 @@ struct SetupWindow::Native {
         return true;
     }
 
-    // Re-asserts the selection once the control is really loaded: a
-    // SelectedIndex written before the item repeater existed can render as no
-    // selection at all.
-    void reselectOnLoad(const RadioButtons &choices,
-                        const QList<QPair<QString, QString>> &options,
-                        int &pending,
-                        std::function<QString()> currentId)
+    // Room under an option's name for its rating, which showRatings fills.
+    void addRatingSlot(const StackPanel &text, const QString &id)
     {
-        choices.Loaded([this, choices, options, &pending, currentId](const auto &, const auto &) {
-            const QString wanted = currentId();
-            for (int index = 0; index < options.size(); ++index) {
-                if (options.at(index).first != wanted) {
-                    continue;
-                }
-                if (choices.SelectedIndex() != index) {
-                    selectProgrammatically(choices, pending, index);
-                }
-                return;
-            }
-        });
+        StackPanel rating;
+        rating.Spacing(2);
+        text.Children().Append(rating);
+        ratingSlots.append({id, rating});
     }
 
     // Once per wizard run, and never over a choice made here: a saved sign-in
     // whose probe failed gives way to one whose probe succeeded, by the rule
     // the other assistants share.
-    void autoSelectSpeechProvider(const RadioButtons &choices,
-                                  const QList<QPair<QString, QString>> &options)
+    void autoSelectSpeechProvider(const std::vector<ProviderOption> &options)
     {
         if (speechSelectionSettled) {
             return;
         }
         // Every sign-in answers first: moving to this computer on the first
         // verdict would leave a sign-in that answers later unused.
-        for (const auto &option : options) {
-            if (option.first != kLocal && !speechReady.contains(option.first)) {
+        for (const ProviderOption &option : options) {
+            if (option.id != kLocal && !speechReady.contains(option.id)) {
                 return;
             }
         }
         const QString saved = controller->settings()->speechProvider();
         QStringList ready;
-        for (const auto &option : options) {
-            if (speechReady.value(option.first, false)) {
-                ready.append(option.first);
+        for (const ProviderOption &option : options) {
+            if (speechReady.value(option.id, false)) {
+                ready.append(option.id);
             }
         }
         QStringList signIns;
-        for (const auto &option : options) {
-            if (isSetupSignInProvider(option.first)) {
-                signIns.append(option.first);
+        for (const ProviderOption &option : options) {
+            if (isSetupSignInProvider(option.id)) {
+                signIns.append(option.id);
             }
         }
         const QString chosen = setupSpeechChoice(saved, ready,
                                                  localSpeech && localSpeech->canRunAnyModel(),
                                                  signIn.anyUsableAccount(signIns), false);
-        for (int index = 0; index < options.size(); ++index) {
-            if (options.at(index).first != chosen || chosen == saved) {
+        for (const ProviderOption &option : options) {
+            if (option.id != chosen || chosen == saved) {
                 continue;
             }
-            // Persisted here rather than left to the selection handler, so the
-            // switch holds whether or not the control reports it.
+            // Persisted before the radio is checked, so its handler sees no
+            // change to save.
             speechSelectionSettled = true;
             setSpeechProvider(chosen);
-            selectProgrammatically(choices, programmaticSpeechIndex, index);
+            option.button.IsChecked(true);
             return;
         }
     }
@@ -1150,7 +1178,8 @@ struct SetupWindow::Native {
     }
 
     // The Local card: the hardware line, the suggested model with its facts
-    // and Download, and the comparison table behind an Expander.
+    // and Download, and behind Advanced every model's bars over the
+    // comparison table.
     StackPanel makeLocalSection()
     {
         LocalCard &card = localCard;
@@ -1252,12 +1281,14 @@ struct SetupWindow::Native {
         }
         table.Children().Append(card.compare);
         table.Children().Append(secondaryTextBlock(localModelText(LocalModelText::CompareNote)));
-        Expander compare;
-        compare.Header(box_value(win::hs(compareModelsCaption(int(localModelCatalog().size()) - 1))));
-        compare.HorizontalAlignment(HorizontalAlignment::Stretch);
-        compare.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-        compare.Content(table);
-        card.section.Children().Append(compare);
+        StackPanel advanced;
+        advanced.Spacing(16);
+        card.models = StackPanel();
+        advanced.Children().Append(card.models);
+        advanced.Children().Append(table);
+        Expander disclosure = modelsDisclosure();
+        disclosure.Content(advanced);
+        card.section.Children().Append(disclosure);
 
         card.download.Click([this](const auto &, const auto &) {
             const LocalModel &model = localChoice();
@@ -1275,6 +1306,38 @@ struct SetupWindow::Native {
             }
         });
         return card.section;
+    }
+
+    // The page's ratings as this computer and the settings have them now:
+    // each option's bars with what was rated, and the chosen service's models
+    // in the Advanced disclosure, hidden where it has none. A Local Model
+    // lists its models in its own card.
+    void showRatings(ProviderRole role)
+    {
+        const AppSettings settings = controller->settings()->snapshot();
+        const HardwareProfile &hardware = controller->localSetup()->hardware().profile;
+        for (const auto &[id, slot] : std::as_const(ratingSlots)) {
+            slot.Children().Clear();
+            const std::optional<ProviderRating> rating = providerRating(role, id, hardware, settings);
+            setShown(slot, rating.has_value());
+            if (!rating) {
+                continue;
+            }
+            slot.Children().Append(win::ratingBarsElement(rating->bars, Orientation::Horizontal, paneHost));
+            if (!rating->subject.isEmpty()) {
+                slot.Children().Append(secondaryTextBlock(rating->subject));
+            }
+        }
+        if (!advanced) {
+            return;
+        }
+        const bool speech = role == ProviderRole::Speech;
+        const QString chosen = speech ? settings.speech.providerId : settings.refinement.providerId;
+        const QList<RatedModel> models = speech && chosen == kLocal
+            ? QList<RatedModel>()
+            : providerModels(role, chosen, hardware, settings);
+        setShown(advanced, !models.isEmpty());
+        advanced.Content(win::ratedModelsElement(models, paneHost));
     }
 
     void showLocalChoice()
@@ -1312,6 +1375,11 @@ struct SetupWindow::Native {
         if (card.compare.SelectedIndex() != selected) {
             card.compare.SelectedIndex(selected);
         }
+        card.models.Children().Clear();
+        card.models.Children().Append(win::ratedModelsElement(
+            providerModels(ProviderRole::Speech, kLocal, localSpeech->hardware().profile,
+                           controller->settings()->snapshot()),
+            paneHost));
         showLocalDownload();
     }
 
@@ -1359,49 +1427,40 @@ struct SetupWindow::Native {
         deadEnd.IsClosable(false);
         deadEnd.IsOpen(false);
         panel.Children().Append(deadEnd);
-        QList<QPair<QString, QString>> options;
+        // Every service is on screen with its own readiness, rather than one
+        // hidden behind a dropdown.
+        const QString saved = controller->settings()->speechProvider();
+        auto options = std::make_shared<std::vector<ProviderOption>>();
+        StackPanel list = rowList(card(panel, QString()));
         for (const ProviderDescriptor &provider : controller->providerRegistry()->speechProviders()) {
             // The Local card is only a choice where the assistant can set it up.
             if (!offersSetupSpeechProvider(provider.id, localSpeech != nullptr)) {
                 continue;
             }
-            options.append({provider.id, provider.label});
-        }
-        // Every service is on screen with its own readiness, rather than one
-        // hidden behind a dropdown.
-        RadioButtons choices;
-        std::vector<StatusCell> statuses;
-        int selectedIndex = 0;
-        for (int index = 0; index < options.size(); ++index) {
-            const QString id = options.at(index).first;
-            const bool local = id == kLocal;
+            const bool local = provider.id == kLocal;
             // The Local row's status is its download, which showLocalChoice keeps.
             const StatusCell status = statusCell(local ? QString() : QStringLiteral("Checking…"),
                                                  SetupTone::Neutral);
-            StackPanel text = rowText(strongTextBlock(options.at(index).second));
+            StackPanel text = rowText(strongTextBlock(provider.label));
             if (local) {
                 text.Children().Append(secondaryTextBlock(
                     setupText(SetupText::LocalSpeechNote)));
                 localRowStatus = status;
             }
-            Grid item = cardRow(local ? FrameworkElement(glyphMark(kComputerGlyph)) : brandMark(id),
-                                text, status.root);
-            AutomationProperties::SetName(item, win::hs(options.at(index).second));
-            // A RadioButtons item is laid out to its content's width, so the
-            // row states the width the mockup's card has; without it the
-            // status would sit against the name rather than at the right edge.
-            item.MinWidth(choiceRowWidth);
-            choices.Items().Append(item);
-            statuses.push_back(status);
-            if (id == controller->settings()->speechProvider()) {
-                selectedIndex = index;
-            }
+            addRatingSlot(text, provider.id);
+            const ProviderOption option = providerOption(
+                provider.id, provider.label, L"speechProvider", providerMark(provider.id), text, status);
+            // Checked before the handlers exist: restoring the saved choice
+            // must not look like the user making one, nor re-persist it.
+            option.button.IsChecked(provider.id == saved);
+            appendRow(list, option.button);
+            options->push_back(option);
         }
-        // Selected before the handler exists: restoring the saved choice must
-        // not look like the user making one, nor re-persist it.
-        selectProgrammatically(choices, programmaticSpeechIndex, selectedIndex);
-        reselectOnLoad(choices, options, programmaticSpeechIndex,
-                       [this] { return controller->settings()->speechProvider(); });
+        // A saved provider this step does not offer gives way to the first one.
+        if (!options->empty() && !checkedOption(*options)) {
+            options->front().button.IsChecked(true);
+            setSpeechProvider(options->front().id);
+        }
 
         // Codex only; describeSelected() below decides when it is on screen.
         const SettingsRow &accuracyRow = setupSchemaRow(QStringLiteral("codexFinalRetranscribe"));
@@ -1436,8 +1495,8 @@ struct SetupWindow::Native {
         Border signInCard = win::cardContainer(signInBody);
 
         // Rebuilding the account list must not read as the user choosing. The
-        // guard latches the written index, exactly like programmaticSpeechIndex:
-        // WinUI can defer SelectionChanged past a bool that was already cleared.
+        // guard latches the written index: WinUI can defer SelectionChanged
+        // past a bool that was already cleared.
         auto accountOptions = std::make_shared<QList<RowOption>>();
         const auto populateAccounts = [this, cliproxyAccount, accountOptions](const QString &id) {
             const QString selected = signIn.cliproxyAccount(id);
@@ -1496,14 +1555,14 @@ struct SetupWindow::Native {
 
         // The credential hint and Check again belong to a service that is not
         // signed in; a ready one needs neither.
-        const auto describeProvider = [this, choices, options, stats, status, hint, check,
+        const auto describeProvider = [this, options, stats, status, hint, check,
                                        accuracy, updateSignInVisibility] {
-            const int index = choices.SelectedIndex();
-            if (index < 0 || index >= options.size()) {
+            const ProviderOption *selected = checkedOption(*options);
+            if (!selected) {
                 status.set(setupTranscriptionBlocked(QString(), QString()), SetupTone::Caution);
                 return;
             }
-            const QString id = options.at(index).first;
+            const QString id = selected->id;
             // The Local card explains itself; the generic facts would repeat it.
             showProviderStats(stats, controller->providerRegistry()->speechProviders(),
                               id == kLocal ? QString() : id);
@@ -1547,6 +1606,7 @@ struct SetupWindow::Native {
             check.Visibility(unready);
         };
         const auto describeSelected = [this, describeProvider, deadEnd, status] {
+            showRatings(ProviderRole::Speech);
             describeProvider();
             showFallbacks(ProviderRole::Speech);
             const QString note = speechDeadEnd();
@@ -1559,36 +1619,34 @@ struct SetupWindow::Native {
             }
         };
         transcriptionRefresh = describeSelected;
-        choices.SelectionChanged([this, choices, options, describeSelected,
-                                  refreshSignInCard](const auto &, const auto &) {
-            const int index = choices.SelectedIndex();
-            if (index < 0 || index >= options.size()) {
-                return;
-            }
-            if (!wasProgrammatic(programmaticSpeechIndex, index)) {
-                speechSelectionSettled = true;
-            }
-            setSpeechProvider(options.at(index).first);
-            describeSelected();
-            refreshSignInCard(options.at(index).first);
-            refreshGates();
-        });
+        for (const ProviderOption &option : *options) {
+            option.button.Checked([this, id = option.id, describeSelected,
+                                   refreshSignInCard](const auto &, const auto &) {
+                if (controller->settings()->speechProvider() != id) {
+                    setSpeechProvider(id);
+                }
+                describeSelected();
+                refreshSignInCard(id);
+                refreshGates();
+            });
+            option.button.Click([this](const auto &, const auto &) { speechSelectionSettled = true; });
+        }
 
-        const auto runChecks = [this, choices, options, statuses, describeSelected] {
+        const auto runChecks = [this, options, describeSelected] {
             const quint64 generation = ++checkGeneration;
-            for (int index = 0; index < options.size(); ++index) {
-                const QString id = options.at(index).first;
+            for (const ProviderOption &option : *options) {
+                const QString id = option.id;
                 if (id == kLocal) {
                     continue;
                 }
-                const StatusCell rowStatus = statuses.at(size_t(index));
+                const StatusCell rowStatus = option.status;
                 rowStatus.set(QStringLiteral("Checking…"), SetupTone::Neutral);
                 probeSpeechProvider(id, generation,
-                                    [this, id, rowStatus, choices, options,
+                                    [this, id, rowStatus, options,
                                      describeSelected](const SpeechPrepareResult &result) {
                     rowStatus.set(setupProviderVerdict(id, result.ok),
                                   result.ok ? SetupTone::Positive : SetupTone::Caution);
-                    autoSelectSpeechProvider(choices, options);
+                    autoSelectSpeechProvider(*options);
                     describeSelected();
                     refreshGates();
                 });
@@ -1601,13 +1659,13 @@ struct SetupWindow::Native {
 
         // A sign-in change invalidates only the selected service's verdict, and
         // a probe can be a network OAuth refresh, so only that one re-probes.
-        const auto reprobeSelected = [this, choices, options, statuses, describeSelected] {
-            const int index = choices.SelectedIndex();
-            if (index < 0 || index >= options.size()) {
+        const auto reprobeSelected = [this, options, describeSelected] {
+            const ProviderOption *selected = checkedOption(*options);
+            if (!selected) {
                 return;
             }
-            const QString id = options.at(index).first;
-            const StatusCell rowStatus = statuses.at(size_t(index));
+            const QString id = selected->id;
+            const StatusCell rowStatus = selected->status;
             speechReady.remove(id);
             speechMessage.remove(id);
             rowStatus.set(QStringLiteral("Checking…"), SetupTone::Neutral);
@@ -1623,40 +1681,37 @@ struct SetupWindow::Native {
                 refreshGates();
             });
         };
-        useCliproxy.Click([this, useCliproxy, choices, options, refreshSignInCard,
+        useCliproxy.Click([this, useCliproxy, options, refreshSignInCard,
                            reprobeSelected](const auto &, const auto &) {
-            const int index = choices.SelectedIndex();
-            if (index < 0 || index >= options.size()) {
+            const ProviderOption *selected = checkedOption(*options);
+            if (!selected) {
                 return;
             }
-            const QString id = options.at(index).first;
+            const QString id = selected->id;
             signIn.setUseCliproxy(id, useCliproxy.IsChecked().Value());
             refreshSignInCard(id);
             reprobeSelected();
         });
         cliproxyAccount.SelectionChanged([this, cliproxyAccount, accountOptions,
-                                          choices, options,
-                                          reprobeSelected](const auto &, const auto &) {
+                                          options, reprobeSelected](const auto &, const auto &) {
             const int selected = cliproxyAccount.SelectedIndex();
-            const int index = choices.SelectedIndex();
-            if (selected < 0 || selected >= accountOptions->size()
-                || index < 0 || index >= options.size()
+            const ProviderOption *provider = checkedOption(*options);
+            if (selected < 0 || selected >= accountOptions->size() || !provider
                 || wasProgrammatic(programmaticAccountIndex, selected)) {
                 return;
             }
-            signIn.setCliproxyAccount(options.at(index).first, accountOptions->at(selected).id);
+            signIn.setCliproxyAccount(provider->id, accountOptions->at(selected).id);
             reprobeSelected();
         });
-        const auto commitDir = [this, cliproxyDir, choices, options, refreshSignInCard,
+        const auto commitDir = [this, cliproxyDir, options, refreshSignInCard,
                                 reprobeSelected] {
             const QString directory = win::qs(cliproxyDir.Text()).trimmed();
             if (directory == signIn.configuredAccountDirectory()) {
                 return;
             }
             signIn.setAccountDirectory(directory);
-            const int index = choices.SelectedIndex();
-            if (index >= 0 && index < options.size()) {
-                refreshSignInCard(options.at(index).first);
+            if (const ProviderOption *selected = checkedOption(*options)) {
+                refreshSignInCard(selected->id);
             }
             reprobeSelected();
         };
@@ -1667,7 +1722,6 @@ struct SetupWindow::Native {
             }
         });
 
-        panel.Children().Append(choices);
         panel.Children().Append(signInCard);
         refreshSignInCard(controller->settings()->speechProvider());
         if (localSpeech) {
@@ -1683,6 +1737,9 @@ struct SetupWindow::Native {
         }
         panel.Children().Append(makeSpeechEndpointForm(reprobeSelected));
         panel.Children().Append(stats);
+        advanced = modelsDisclosure();
+        panel.Children().Append(advanced);
+        showRatings(ProviderRole::Speech);
         // Under the facts about the chosen service, matching the Qt page and
         // where the refinement step puts Fast mode.
         panel.Children().Append(accuracy);
@@ -1773,10 +1830,10 @@ struct SetupWindow::Native {
     // their own server are choices, never an unready sign-in to move away
     // from; setupRefinementChoice keeps them. Saved before the button is
     // checked, so its Checked handler finds nothing left to write.
-    void autoSelectRefinementProvider(const std::vector<RefinementOption> &options)
+    void autoSelectRefinementProvider(const std::vector<ProviderOption> &options)
     {
         LocalSetup *local = controller->localSetup();
-        const bool probing = std::any_of(options.cbegin(), options.cend(), [this](const RefinementOption &option) {
+        const bool probing = std::any_of(options.cbegin(), options.cend(), [this](const ProviderOption &option) {
             return !refinementReady.contains(option.id);
         });
         if (refinementSelectionSettled || probing || local->detectingRunners()) {
@@ -1785,7 +1842,7 @@ struct SetupWindow::Native {
         refinementSelectionSettled = true;
         const QString saved = controller->settings()->refinementProvider();
         QStringList ready;
-        for (const RefinementOption &option : options) {
+        for (const ProviderOption &option : options) {
             if (refinementReady.value(option.id, false)) {
                 ready.append(option.id);
             }
@@ -1796,7 +1853,7 @@ struct SetupWindow::Native {
             return;
         }
         selectRefinement(chosen);
-        for (const RefinementOption &option : options) {
+        for (const ProviderOption &option : options) {
             option.button.IsChecked(option.id == chosen);
         }
     }
@@ -1817,7 +1874,7 @@ struct SetupWindow::Native {
         StackPanel panel = page(QStringLiteral("refinement"));
         const QList<ProviderDescriptor> registered = controller->providerRegistry()->refinementProviders();
         const QString saved = controller->settings()->refinementProvider();
-        auto options = std::make_shared<std::vector<RefinementOption>>();
+        auto options = std::make_shared<std::vector<ProviderOption>>();
         // The cloud providers use a sign-in; a local runner and a custom
         // endpoint are models the person runs. Each group is its own card,
         // and one GroupName makes them one choice.
@@ -1833,21 +1890,13 @@ struct SetupWindow::Native {
                     list = rowList(card(panel, title));
                 }
                 const bool ownModel = id == kLocal || id == kEndpoint;
-                RefinementOption option{id, found->label};
-                option.status = statusCell(ownModel ? QString() : QStringLiteral("Checking…"),
-                                           SetupTone::Neutral);
-                StackPanel text = rowText(strongTextBlock(option.label));
+                const StatusCell status = statusCell(ownModel ? QString() : QStringLiteral("Checking…"),
+                                                     SetupTone::Neutral);
+                StackPanel text = rowText(strongTextBlock(found->label));
                 text.Children().Append(secondaryTextBlock(found->setupHint));
-                const FrameworkElement mark = id == kLocal      ? FrameworkElement(glyphMark(kComputerGlyph))
-                                              : id == kEndpoint ? FrameworkElement(glyphMark(kServerGlyph))
-                                                                : brandMark(id);
-                option.button = RadioButton();
-                option.button.GroupName(L"refinementProvider");
-                option.button.VerticalContentAlignment(VerticalAlignment::Center);
-                option.button.HorizontalAlignment(HorizontalAlignment::Stretch);
-                option.button.HorizontalContentAlignment(HorizontalAlignment::Stretch);
-                option.button.Content(cardRow(mark, text, option.status.root));
-                AutomationProperties::SetName(option.button, win::hs(option.label));
+                addRatingSlot(text, id);
+                const ProviderOption option = providerOption(id, found->label, L"refinementProvider",
+                                                             providerMark(id), text, status);
                 option.button.IsChecked(id == saved);
                 appendRow(list, option.button);
                 options->push_back(option);
@@ -1883,6 +1932,8 @@ struct SetupWindow::Native {
         panel.Children().Append(makeEndpointForm());
         StackPanel stats;
         panel.Children().Append(stats);
+        advanced = modelsDisclosure();
+        panel.Children().Append(advanced);
         // The provider's Speed settings row as a choice: OpenAI's Standard,
         // Fast or Ultrafast, Anthropic's Standard or Fast.
         ComboBox speed;
@@ -1900,6 +1951,7 @@ struct SetupWindow::Native {
             skip.IsChecked(id == kNone);
             showProviderStats(stats, controller->providerRegistry()->refinementProviders(),
                               ownModel ? QString() : id);
+            showRatings(ProviderRole::Refinement);
             const QString speedRowId = speedRowFor(id);
             speedRow.Visibility(speedRowId.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
             if (!speedRowId.isEmpty()) {
@@ -1932,7 +1984,7 @@ struct SetupWindow::Native {
             // own-model choices show their own state instead.
             const bool unready = !ownModel && refinementReady.contains(id) && !refinementReady.value(id);
             warning.IsOpen(unready);
-            for (const RefinementOption &option : *options) {
+            for (const ProviderOption &option : *options) {
                 if (unready && option.id == id) {
                     warning.Message(win::hs(
                         setupRefinementNotSignedIn(option.label)));
@@ -1942,7 +1994,7 @@ struct SetupWindow::Native {
             showEndpointCheck();
             showFallbacks(ProviderRole::Refinement);
         };
-        for (const RefinementOption &option : *options) {
+        for (const ProviderOption &option : *options) {
             option.button.Checked([this, id = option.id](const auto &, const auto &) {
                 if (controller->settings()->refinementProvider() != id) {
                     selectRefinement(id);
@@ -1953,13 +2005,13 @@ struct SetupWindow::Native {
         skip.Click([this, skip, options](const auto &, const auto &) {
             refinementSelectionSettled = true;
             if (skip.IsChecked().Value()) {
-                for (const RefinementOption &option : *options) {
+                for (const ProviderOption &option : *options) {
                     option.button.IsChecked(false);
                 }
                 selectRefinement(kNone);
                 return;
             }
-            for (const RefinementOption &option : *options) {
+            for (const ProviderOption &option : *options) {
                 if (option.id == lastRefinementProvider) {
                     selectRefinement(option.id);
                     option.button.IsChecked(true);
@@ -1988,6 +2040,7 @@ struct SetupWindow::Native {
         });
         LocalSetup *local = controller->localSetup();
         QObject::connect(local, &LocalSetup::changed, pageScope.get(), [this, options] {
+            showRatings(ProviderRole::Refinement);
             showRunner(*options);
             showEndpointCheck();
             showFallbacks(ProviderRole::Refinement);
@@ -2000,7 +2053,7 @@ struct SetupWindow::Native {
         local->detectRunners();
 
         const quint64 generation = ++checkGeneration;
-        for (const RefinementOption &option : *options) {
+        for (const ProviderOption &option : *options) {
             probeRefinementProvider(option.id, generation,
                                     [this, id = option.id, status = option.status, options](bool ok) {
                 // The own-model rows say what is on this computer, not a
@@ -2160,7 +2213,7 @@ struct SetupWindow::Native {
         return runner.root;
     }
 
-    void showRunner(const std::vector<RefinementOption> &options)
+    void showRunner(const std::vector<ProviderOption> &options)
     {
         if (!runner.root) {
             return;
@@ -2169,7 +2222,7 @@ struct SetupWindow::Native {
         const RunnerChoice choice = local->runnerChoice();
         const bool found = choice.available.has_value();
         const bool detecting = local->detectingRunners();
-        for (const RefinementOption &option : options) {
+        for (const ProviderOption &option : options) {
             if (option.id == kLocal) {
                 option.status.set(detecting ? QStringLiteral("Checking…")
                                   : found   ? QStringLiteral("%1 found").arg(choice.available->name)
@@ -2678,7 +2731,7 @@ struct SetupWindow::Native {
             }
         } else {
             const QString label = providerLabel(controller->providerRegistry()->speechProviders(), speechId);
-            appendRow(rows, readyRow(brandMark(speechId),
+            appendRow(rows, readyRow(providerMark(speechId),
                                      setupChecklistLine(QStringLiteral("transcription"),
                                                         signIn.usingCliproxy(speechId)
                                                             ? setupCliproxySpeechChoice(label)
@@ -2704,9 +2757,7 @@ struct SetupWindow::Native {
                 : refinementId == kEndpoint
                 ? QStringLiteral("%1 on your server").arg(resolvedRefinementEndpoint(saved.refinement).model)
                 : providerLabel(controller->providerRegistry()->refinementProviders(), refinementId);
-            refinementMark = refinementId == kLocal      ? FrameworkElement(glyphMark(kComputerGlyph))
-                             : refinementId == kEndpoint ? FrameworkElement(glyphMark(kServerGlyph))
-                                                         : brandMark(refinementId);
+            refinementMark = providerMark(refinementId);
             // Someone's own runner or server is ready once its form is filled,
             // which the refinement page's probe may have seen before it was.
             const bool ownModel = refinementId == kLocal || refinementId == kEndpoint;
@@ -2900,6 +2951,8 @@ struct SetupWindow::Native {
         ProgressBar progress{nullptr};
         TextBlock state{nullptr};
         Button cancel{nullptr};
+        // The catalog's models with their bars, above the comparison table.
+        StackPanel models{nullptr};
         ListView compare{nullptr};
     } localCard;
     StatusCell localRowStatus;
@@ -2953,6 +3006,11 @@ struct SetupWindow::Native {
     // another page is up, and the text it last drew.
     StackPanel fallbacks{nullptr};
     std::optional<QStringList> fallbacksDrawn;
+    // The Transcription or Refinement page's rating under each option, by
+    // provider id, and its Advanced disclosure for the chosen service; empty
+    // and null while another page is up.
+    QList<QPair<QString, StackPanel>> ratingSlots;
+    Expander advanced{nullptr};
     // The provider to go back to when Skip cleanup is cleared.
     QString lastRefinementProvider;
     // Owns the Qt connections of the page on screen.
@@ -2973,12 +3031,11 @@ struct SetupWindow::Native {
     // auto-selection each list is allowed per wizard run.
     bool speechSelectionSettled = false;
     bool refinementSelectionSettled = false;
-    // The index this code last wrote to each RadioButtons and has not yet seen
-    // reported back, or -1. WinUI holds the initial SelectedIndex until its
-    // item repeater loads and only then raises SelectionChanged, so a flag
-    // cleared straight after the write would already be false when the event
-    // lands — and the wizard would read its own write as the user's choice.
-    int programmaticSpeechIndex = -1;
+    // The index this code last wrote to the CLI Proxy API account list and
+    // has not yet seen reported back, or -1. WinUI can raise SelectionChanged
+    // after the write returns, so a flag cleared straight after it would
+    // already be false when the event lands, and the wizard would read its
+    // own write as the user's choice.
     int programmaticAccountIndex = -1;
     // Latched by the level meter: the microphone gate asks whether this
     // device has ever been heard, and starting a meter clears it again.
@@ -3045,6 +3102,12 @@ void SetupWindow::showPageForTest(const QString &stepId)
     m_native->showPage(stepIndex(stepId));
 }
 
+void SetupWindow::keepSavedProvidersForTest()
+{
+    m_native->speechSelectionSettled = true;
+    m_native->refinementSelectionSettled = true;
+}
+
 bool SetupWindow::finishEnabledForTest() const
 {
     return m_native->next && m_native->next.IsEnabled();
@@ -3093,6 +3156,50 @@ void SetupWindow::revealFallbacksForTest()
         options.VerticalAlignmentRatio(1);
         options.AnimationDesired(false);
         m_native->fallbacks.StartBringIntoView(options);
+    }
+}
+
+QStringList SetupWindow::ratedOptionsForTest() const
+{
+    QStringList rated;
+    for (const auto &[id, slot] : std::as_const(m_native->ratingSlots)) {
+        if (slot.Visibility() == Visibility::Visible && slot.Children().Size() > 0) {
+            rated.append(id);
+        }
+    }
+    return rated;
+}
+
+bool SetupWindow::modelsShownForTest() const
+{
+    return m_native->advanced && m_native->advanced.Visibility() == Visibility::Visible;
+}
+
+void SetupWindow::revealModelsForTest()
+{
+    std::vector<Expander> disclosures;
+    if (m_native->advanced) {
+        disclosures.push_back(m_native->advanced);
+    }
+    if (const StackPanel &section = m_native->localCard.section) {
+        for (const UIElement &child : section.Children()) {
+            if (const auto disclosure = child.try_as<Expander>()) {
+                disclosures.push_back(disclosure);
+            }
+        }
+    }
+    for (const Expander &disclosure : disclosures) {
+        disclosure.IsExpanded(true);
+    }
+    m_native->content.UpdateLayout();
+    for (const Expander &disclosure : disclosures) {
+        if (disclosure.ActualHeight() > 0) {
+            BringIntoViewOptions options;
+            options.VerticalAlignmentRatio(0);
+            options.AnimationDesired(false);
+            disclosure.StartBringIntoView(options);
+            return;
+        }
     }
 }
 

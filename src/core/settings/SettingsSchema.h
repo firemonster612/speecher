@@ -2,6 +2,7 @@
 
 #include "core/AppSettings.h"
 #include "core/ShortcutBinding.h"
+#include "core/settings/ProviderRatings.h"
 
 #include <QHash>
 #include <QList>
@@ -22,6 +23,13 @@ enum class RowKind {
     Info,
     Collection,
     Custom,
+    // The chosen provider's rating bars (SettingsRow::ratings), each the
+    // toolkit's own progress bar with ratingValueText beside it. Help says
+    // what was rated.
+    Rating,
+    // A disclosure titled with the row's label that expands in place to the
+    // models in SettingsRow::ratedModels.
+    ModelList,
 };
 
 struct RowOption {
@@ -266,6 +274,10 @@ struct SettingsRow {
     // Text rows only: values worth offering, though the row still takes any
     // text a person types.
     std::function<QList<RowOption>(const AppSettings &)> suggestions;
+    // Rating rows only: Accuracy or Quality, then Speed.
+    std::function<QList<Rating>(const AppSettings &)> ratings;
+    // ModelList rows only: the models, in order, with any bars of their own.
+    std::function<QList<RatedModel>(const AppSettings &)> ratedModels;
     // Text rows only: a key or password, shown masked.
     bool secret = false;
     // Text rows, and Custom rows that take text: shown in the empty field.
@@ -421,6 +433,11 @@ QList<SearchMatch> searchSettings(const SettingsSchema &schema, const QString &q
 QString paneTitle(const QString &paneId);
 QString paneTitleForRow(const QString &rowId);
 
+// The model a refinement service is set to use, labelled as its Model row
+// offers it ("Claude Opus 5.5"), or by its id when the row does not list it.
+// Empty for a provider without a Model row.
+std::optional<RowOption> refinementServiceModel(const QString &providerId, const RefinementSettings &refinement);
+
 // A refinement provider as the settings surface sees it: what to call it, and
 // what it can be asked to do.
 struct RefinementProvider {
@@ -504,6 +521,11 @@ struct SchemaContext {
     // builtInDictationSystemPrompt(), which the custom system prompt editor
     // shows while nothing is stored. The prompt lives with the providers.
     QString builtInSystemPrompt;
+    // This computer, as the Local Model and Local Runner ratings see it:
+    // LocalSetup's hardware profile, with no memory reading until the probe
+    // answers. Cheap, unlike the live facts, since the rating rows ask for it
+    // several times a refresh. Absent reads as unknown.
+    std::function<HardwareProfile()> hardware;
 };
 
 // What refinement does, in one sentence: the Refinement page's intro and the

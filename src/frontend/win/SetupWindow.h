@@ -30,6 +30,10 @@ private:
     void skipForTest();
     QString currentPageTitleForTest() const;
     void showPageForTest(const QString &stepId);
+    // Keeps the saved providers selected, as though the person had chosen
+    // them, so a picture shows the choice the test saved rather than the one
+    // the assistant would move to.
+    void keepSavedProvidersForTest();
     bool finishEnabledForTest() const;
     // Whether the page on screen shows its fallback section.
     bool fallbacksShownForTest() const;
@@ -37,6 +41,13 @@ private:
     bool pressFallbackSuggestionForTest();
     // Scrolls the page on screen to its fallback section, for a picture.
     void revealFallbacksForTest();
+    // The providers whose option on the page shows rating bars, in order.
+    QStringList ratedOptionsForTest() const;
+    // Whether the page shows an Advanced disclosure for the chosen service.
+    bool modelsShownForTest() const;
+    // Opens the page's Advanced disclosures, the Local card's included, and
+    // scrolls the one on screen to the top, for a picture.
+    void revealModelsForTest();
     bool captureForTest(const QString &path);
     // Scrolls the page to its end, for a capture of what lies below the fold.
     void scrollToEndForTest();

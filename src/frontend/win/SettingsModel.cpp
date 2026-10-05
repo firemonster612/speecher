@@ -85,6 +85,7 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
         [&localSetup] { return localSetup.liveFacts(); },
         [&localSetup](const AppSettings &draft) { return localSetup.liveFacts(draft); },
         builtInDictationSystemPrompt(),
+        [&localSetup] { return localSetup.hardware().profile; },
     };
 }
 
@@ -262,6 +263,8 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.disabledAction = row.disabledAction;
     snapshot.disabledActionLabel = row.disabledActionLabel;
     snapshot.groupId = row.groupId;
+    snapshot.ratings = row.ratings ? row.ratings(m_draft) : QList<Rating>();
+    snapshot.ratedModels = row.ratedModels ? row.ratedModels(m_draft) : QList<RatedModel>();
     if (const CollectionDescriptor *collection = collectionForRow(row)) {
         CollectionSnapshot table;
         for (const CollectionColumn &column : collection->columns) {

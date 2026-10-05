@@ -202,7 +202,7 @@ if ! seed_setup_tcc; then
   exit 1
 fi
 
-# P1: the default Claude Voice shows its stats; refinement's default OpenAI,
+# P1: the default Claude Voice shows its ratings; refinement's default OpenAI,
 # not signed in with no runner here, gives way to None, which shows none.
 fresh_reset
 case_begin P1
@@ -213,8 +213,13 @@ else
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-claude.png"
-    expect_text "$CASE_DIR/transcription-claude.png" "Deepgram Nova 3" \
+    # Its Formatting line shows only while Claude Voice is selected, and its
+    # 10/10 Speed shows on its row (this build offers no Local Model, which
+    # rates 10/10 too on a Mac).
+    expect_text "$CASE_DIR/transcription-claude.png" "Automatic punctuation, capitals, numerals" \
       || errors+=("the transcription step does not show the Claude Voice stats")
+    expect_text "$CASE_DIR/transcription-claude.png" "10/10" \
+      || errors+=("the transcription step does not show the Claude Voice ratings")
     for (( step = 2; step < 5; step++ )); do
       click_button Continue || errors+=("Continue failed on step $step")
       sleep 0.5
@@ -223,7 +228,7 @@ else
   fi
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-5-refinement.png" "$CASE_DIR/refinement-default.png"
-    expect_no_text "$CASE_DIR/refinement-default.png" "Default model" \
+    expect_no_text "$CASE_DIR/refinement-default.png" "Efficiency" \
       || errors+=("the refinement step kept an unready default sign-in instead of None")
   fi
   if (( ${#errors[@]} )); then
@@ -245,7 +250,7 @@ else
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-codex.png"
-    expect_text "$CASE_DIR/transcription-codex.png" "GPT Live Transcribe" \
+    expect_text "$CASE_DIR/transcription-codex.png" "Natural punctuation and phrasing" \
       || errors+=("the transcription step does not show the ChatGPT Codex stats")
     for (( step = 2; step < 5; step++ )); do
       click_button Continue || errors+=("Continue failed on step $step")
@@ -255,7 +260,7 @@ else
   fi
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-5-refinement.png" "$CASE_DIR/refinement-anthropic.png"
-    expect_text "$CASE_DIR/refinement-anthropic.png" "Claude Opus" \
+    expect_text "$CASE_DIR/refinement-anthropic.png" "Always reasons" \
       || errors+=("the refinement step does not show the Anthropic stats")
   fi
   if (( ${#errors[@]} )); then
@@ -282,7 +287,7 @@ else
   fi
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-picked-codex.png"
-    expect_text "$CASE_DIR/transcription-picked-codex.png" "GPT Live Transcribe" \
+    expect_text "$CASE_DIR/transcription-picked-codex.png" "Natural punctuation and phrasing" \
       || errors+=("driving the picker did not update the transcription stats")
   fi
   # None hides the stats: verified from a seeded profile. Synthetic input
@@ -303,7 +308,7 @@ else
   fi
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-5-refinement.png" "$CASE_DIR/refinement-picked-none.png"
-    expect_no_text "$CASE_DIR/refinement-picked-none.png" "Default model" \
+    expect_no_text "$CASE_DIR/refinement-picked-none.png" "Efficiency" \
       || errors+=("None still shows a stats block")
   fi
   if (( ${#errors[@]} )); then

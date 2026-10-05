@@ -1,0 +1,70 @@
+<!doctype html>
+<!--
+  The setup assistant's Refinement step, before and after the ratings.
+  ?v=before|after, ?choice=openai|anthropic|local|endpoint, ?open=1 opens Advanced.
+  Rebuilt from today/setup-refinement-*.png; new parts have a dashed outline.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup: Refinement with ratings (mockup)</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+<div class="dialog">
+  <header><h1>Refinement</h1><div>Step 6 of 8</div></header>
+  <main id="page"></main>
+  <footer><button>&lt; Back</button><button class="primary">Next &gt;</button><button>Cancel</button></footer>
+</div>
+<script src="mockup.js"></script>
+<script>
+  const choice = REFINEMENT.find((p) => p.id === params.get('choice')) || REFINEMENT[1];
+  const after = version === 'after';
+
+  const option = (p) => `
+    <div class="option">
+      <div class="top">${MARKS[p.mark]}
+        <label><input type="radio" name="refine" ${p === choice ? 'checked' : ''} onclick="location.search=new URLSearchParams({...Object.fromEntries(params), choice:'${p.id}'})">${p.name}</label>
+        <span>${p.status}</span></div>
+      <div class="indent small">${p.note}</div>
+      ${after && p.ratings ? `<div class="indent new">${ratingsHtml(p.ratings)}${p.ratingsFor ? `<div class="small">${p.ratingsFor}</div>` : ''}</div>` : ''}
+    </div>`;
+
+  const group = (g) => REFINEMENT.filter((p) => p.group === g).map(option).join('');
+
+  const signIn = () => `
+    <p style="margin-top:14px">${choice.name} is not signed in. Dictation will deliver the raw transcript.</p>
+    ${statsHtml(after ? choice.after : choice.before)}
+    ${after ? `<details class="disclosure advanced new"><summary>Advanced</summary>${modelsHtml(choice.models)}</details>` : ''}
+    <p style="margin-top:10px"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" checked>Speed</label></p>
+    <p class="small" style="color:var(--text)">Fast answers sooner and spends usage credits.</p>`;
+
+  const row = (title, sub, control) =>
+    `<div class="row"><div class="text">${title}${sub ? `<small>${sub}</small>` : ''}</div>${control}</div>`;
+  const own = choice.id === 'local'
+    ? `<p style="margin-top:14px">Ollama 0.34.4 is running on this computer.</p>
+       <div class="card">${row('Model', 'A cleanup model the runner has downloaded.', '<select><option>LiquidAI/lfm2.5-1.2b-instruct:latest</option></select>')}</div>
+       ${after ? `<details class="disclosure advanced new"><summary>Advanced</summary>${modelsHtml(choice.models)}</details>` : ''}`
+    : `<div class="card" style="margin-top:14px">
+       ${row('Format', '', '<select><option>OpenAI-compatible (Chat Completions)</option></select>')}
+       ${row('Server URL', '', '<select style="min-width:240px"><option>http://localhost:8080/v1</option></select>')}
+       ${row('Model', 'Connect to list the server’s models, or type one.', '<select><option></option></select><button>Connect</button>')}</div>`;
+
+  document.getElementById('page').innerHTML = `
+    <p>Refinement turns what you said into clean text before it's pasted: punctuation, filler words
+      and the cleanup your Writing Profile asks for. Choose a provider, or skip cleanup. Change
+      how each app is cleaned up later on the Writing Profiles page.</p>
+    <h2>Uses your sign-in</h2>
+    <div class="card">${group('sign-in')}</div>
+    <h2>Your own models</h2>
+    <div class="card">${group('own')}</div>
+    <p style="margin-top:14px"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox">Skip cleanup and deliver the raw transcript</label></p>
+    ${choice.group === 'sign-in' ? signIn() : own}
+    <h2>If ${choice.name} is unavailable</h2>
+    <div class="small" style="margin:-4px 18px 8px">Speecher tries these top to bottom when it's offline, signed out or the provider stops answering. If none of them answers, it pastes the raw transcript, as it does today. Optional.</div>
+    <div class="card"><div class="row"><div class="text">Add a fallback<small>Used when everything above is unavailable.</small></div><select><option>Choose…</option></select></div></div>`;
+  document.body.insertAdjacentHTML('beforeend', viewLinks(REFINEMENT.map((p) => p.id), choice.id));
+  boot();
+</script>
+</body>
+</html>

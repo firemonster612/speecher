@@ -141,7 +141,10 @@ final class SetupFlowModel: ObservableObject {
     // Start at login, applied when setup finishes so a skip leaves it alone.
     @Published var launchAtLogin: Bool
 
-    @Published var compareOpen = false
+    /// Each step's Advanced disclosure; on Transcription the Local Model's
+    /// one too.
+    @Published var speechAdvancedOpen = false
+    @Published var refinementAdvancedOpen = false
     /// What the steps read through this model from AppModel (rows, local
     /// models, runners) redraws them when AppModel changes.
     private var modelChanges: AnyCancellable?
@@ -1263,6 +1266,8 @@ private struct ProviderOptionLabel: View {
     let status: String
     let tone: StatusLabel.Tone
     var note = ""
+    /// nil draws no bars and no line (Custom Endpoint).
+    var rating: SpeecherProviderRating?
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -1275,6 +1280,25 @@ private struct ProviderOptionLabel: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if let rating {
+                    // Side by side, each bar labelled.
+                    HStack(spacing: 16) {
+                        ForEach(rating.bars, id: \.label) { bar in
+                            HStack {
+                                Text(bar.label).foregroundStyle(.secondary)
+                                bar.meter
+                            }
+                        }
+                    }
+                    .font(.callout)
+                    .controlSize(.small)
+                    // What was rated, for a provider on this computer.
+                    if !rating.subject.isEmpty {
+                        Text(rating.subject)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             Spacer(minLength: 12)
@@ -1308,6 +1332,21 @@ private struct ProviderStatsRows: View {
     }
 }
 
+/// The step's Advanced: the models behind the chosen provider, collapsed
+/// until opened. Nothing for a provider without any (Custom Endpoint).
+private struct ProviderModelsDisclosure: View {
+    let models: [SpeecherRatedModel]
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        if !models.isEmpty {
+            DisclosureGroup(SpeecherBridge.providerModelsCaption, isExpanded: $isExpanded) {
+                RatedModelList(models: models)
+            }
+        }
+    }
+}
+
 private struct TranscriptionStep: View {
     @ObservedObject var flow: SetupFlowModel
     @ObservedObject var model: AppModel
@@ -1333,13 +1372,15 @@ private struct TranscriptionStep: View {
                                                 title: provider.label,
                                                 status: localRowStatus.text,
                                                 tone: localRowStatus.tone,
-                                                note: flow.model.bridge.setupText(.localSpeechNote))
+                                                note: flow.model.bridge.setupText(.localSpeechNote),
+                                                rating: model.bridge.setupProviderRating(.speech, provider: provider.id))
                                 .tag(provider.id)
                         } else {
                             ProviderOptionLabel(providerId: provider.id,
                                                 title: provider.label,
                                                 status: provider.readinessStatus(model.bridge),
-                                                tone: StatusLabel.tone(for: provider))
+                                                tone: StatusLabel.tone(for: provider),
+                                                rating: model.bridge.setupProviderRating(.speech, provider: provider.id))
                                 .tag(provider.id)
                         }
                     }
@@ -1351,6 +1392,12 @@ private struct TranscriptionStep: View {
                 // repeat it.
                 if !flow.localSelected {
                     ProviderStatsRows(stats: model.bridge.stats(forSpeechProvider: flow.providerId))
+                    // Local Model's Advanced is on its card, which a build
+                    // without Local Model does not show.
+                    if flow.providerId != "local" {
+                        ProviderModelsDisclosure(models: model.bridge.setupProviderModels(.speech, provider: flow.providerId),
+                                                 isExpanded: $flow.speechAdvancedOpen)
+                    }
                 }
                 // Under the facts about the chosen service, matching the Qt and
                 // Windows steps. The bridge already drops rows whose schema
@@ -1486,14 +1533,14 @@ private struct LocalChoiceSections: View {
                 .fontWeight(.regular)
                 .foregroundStyle(.secondary)
         }
+        // Advanced: every model rated for this computer, then the comparison.
         Section {
-            DisclosureGroup(flow.compareOpen ? SpeecherBridge.localModelText(.hideOtherModels)
-                                             : SpeecherBridge.compareModelsCaption(local.models.count - 1),
-                            isExpanded: $flow.compareOpen) {
+            DisclosureGroup(SpeecherBridge.providerModelsCaption, isExpanded: $flow.speechAdvancedOpen) {
+                RatedModelList(models: flow.model.bridge.setupProviderModels(.speech, provider: "local"))
                 compareTable
             }
         } footer: {
-            if flow.compareOpen {
+            if flow.speechAdvancedOpen {
                 Text(SpeecherBridge.localModelText(.compareNote))
             }
         }
@@ -1696,6 +1743,8 @@ private struct RefinementStep: View {
                 if !SetupFlowModel.ownModelProviders.contains(provider) {
                     ProviderStatsRows(stats: model.bridge.stats(forRefinementProvider: provider))
                 }
+                ProviderModelsDisclosure(models: model.bridge.setupProviderModels(.refinement, provider: provider),
+                                         isExpanded: $flow.refinementAdvancedOpen)
                 ForEach(model.rows(matching: fastModeIds), id: \.rowId) { row in
                     RowView(row: row, model: model)
                 }
@@ -1733,18 +1782,19 @@ private struct RefinementStep: View {
     }
 
     @ViewBuilder private func option(_ row: ProviderRow) -> some View {
+        let rating = model.bridge.setupProviderRating(.refinement, provider: row.id)
         switch row.id {
         case "local":
             ProviderOptionLabel(providerId: row.id, title: row.label,
                                 status: flow.runnerRowStatus.text, tone: flow.runnerRowStatus.tone,
-                                note: row.setupHint)
+                                note: row.setupHint, rating: rating)
         case "endpoint":
             ProviderOptionLabel(providerId: row.id, title: row.label,
-                                status: "", tone: .pending, note: row.setupHint)
+                                status: "", tone: .pending, note: row.setupHint, rating: rating)
         default:
             ProviderOptionLabel(providerId: row.id, title: row.label,
                                 status: row.readinessStatus(model.bridge), tone: StatusLabel.tone(for: row),
-                                note: row.setupHint)
+                                note: row.setupHint, rating: rating)
         }
     }
 

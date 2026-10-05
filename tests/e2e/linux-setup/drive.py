@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """AT-SPI driver for the Linux first-run setup E2E flow.
 
-Walks the setup assistant page by page: checks the provider Score lines on the
-Transcription and Refinement pages, checks that the Global Shortcut page holds
+Walks the setup assistant page by page: checks the providers' rating bars on
+the Transcription and Refinement pages, checks that the Global Shortcut page holds
 Next until Install Speecher is clicked, clicks it, checks the AppImage moved
 into ~/Applications with the command link, app menu entry and icon in place,
 and finishes the assistant.
@@ -191,9 +191,9 @@ def main() -> None:
     ok("Skip setup is hidden until Speecher is installed")
 
     go_next("Transcription")
-    require("Score", 10)
-    require("8 / 10", 10)
-    ok("the transcription provider stats include a score out of 10")
+    require("Accuracy", 10)
+    require("8.5/10", 10)
+    ok("the transcription providers show their ratings out of 10")
     require("is ready", 15)
     ok("the transcription gate opens once the provider checks out")
 
@@ -215,9 +215,9 @@ def main() -> None:
         ok("choosing clipboard-only paste opens the text delivery gate")
 
     go_next("Refinement")
-    require("Score", 10)
-    require("8 / 10", 10)
-    ok("the refinement provider stats include a score out of 10")
+    require("Quality", 10)
+    require("10/10", 10)
+    ok("the refinement providers show their ratings out of 10")
 
     go_next("Global Shortcut")
 

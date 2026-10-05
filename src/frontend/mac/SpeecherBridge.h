@@ -23,6 +23,11 @@ typedef NS_ENUM(NSInteger, SpeecherRowKind) {
     SpeecherRowKindInfo,
     SpeecherRowKindCollection,
     SpeecherRowKindCustom,
+    // The chosen provider's bars (SettingsRowModel.ratings); help says what
+    // was rated.
+    SpeecherRowKindRating,
+    // A disclosure titled with the row's label over SettingsRowModel.ratedModels.
+    SpeecherRowKindModelList,
 };
 
 typedef NS_ENUM(NSInteger, SpeecherColumnKind) {
@@ -173,6 +178,34 @@ typedef NS_ENUM(NSInteger, SpeecherProviderRole) {
 @property (nonatomic, readonly, strong) SpeecherFallbackList *list;
 @end
 
+// One rating bar, out of 10 in halves, as core words it (speecher::Rating).
+@interface SpeecherRating : NSObject
+// "Accuracy", "Quality" or "Speed" (speecher::ratingMeasureLabel).
+@property (nonatomic, readonly, copy) NSString *label;
+// nil when there is no figure to rate from: no bar, only valueText's "?".
+@property (nonatomic, readonly, strong, nullable) NSNumber *value;
+// "8.5/10", or "?" (speecher::ratingValueText).
+@property (nonatomic, readonly, copy) NSString *valueText;
+@end
+
+// A provider's bars, Accuracy or Quality then Speed, and what was rated
+// (speecher::ProviderRating).
+@interface SpeecherProviderRating : NSObject
+@property (nonatomic, readonly, copy) NSArray<SpeecherRating *> *bars;
+// "Parakeet 0.6B on this computer"; empty for a service, which draws no line.
+@property (nonatomic, readonly, copy) NSString *subject;
+@end
+
+// One model behind a provider, as its Advanced disclosure lists it
+// (speecher::RatedModel).
+@interface SpeecherRatedModel : NSObject
+@property (nonatomic, readonly, copy) NSString *name;
+// May be empty.
+@property (nonatomic, readonly, copy) NSString *note;
+// Empty for a service's models; two for a model on this computer.
+@property (nonatomic, readonly, copy) NSArray<SpeecherRating *> *bars;
+@end
+
 @interface SettingsRowModel : NSObject
 @property (nonatomic, readonly, copy) NSString *rowId;
 // As the draft words it: a status row titled "API key" in key mode.
@@ -227,6 +260,10 @@ typedef NS_ENUM(NSInteger, SpeecherProviderRole) {
 @property (nonatomic, readonly, copy) NSString *targetPage;
 // The fallback list rows only, as the draft and the live facts present them.
 @property (nonatomic, readonly, strong, nullable) SpeecherFallbackList *fallbackList;
+// Rating rows only: Accuracy or Quality, then Speed.
+@property (nonatomic, readonly, copy) NSArray<SpeecherRating *> *ratings;
+// ModelList rows only: the models the row expands to, in order.
+@property (nonatomic, readonly, copy) NSArray<SpeecherRatedModel *> *ratedModels;
 @end
 
 @interface SettingsSectionModel : NSObject
@@ -649,7 +686,6 @@ typedef NS_ENUM(NSInteger, SpeecherLocalModelText) {
     SpeecherLocalModelTextSuggested,
     SpeecherLocalModelTextYourChoice,
     SpeecherLocalModelTextTooLarge,
-    SpeecherLocalModelTextHideOtherModels,
     SpeecherLocalModelTextCompareNote,
     SpeecherLocalModelTextDeleteModel,
     SpeecherLocalModelTextDeleteBody,
@@ -1257,9 +1293,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
     NS_SWIFT_NAME(setupChecklistLine(_:choice:));
 - (NSString *)setupText:(SpeecherSetupText)text NS_SWIFT_NAME(setupText(_:));
 // The Local models page's and the Local Model card's wording
-// (speecher::localModelText, compareModelsCaption, compareTableHeaders).
+// (speecher::localModelText, compareTableHeaders).
 + (NSString *)localModelText:(SpeecherLocalModelText)text NS_SWIFT_NAME(localModelText(_:));
-+ (NSString *)compareModelsCaption:(NSInteger)otherModels NS_SWIFT_NAME(compareModelsCaption(_:));
 + (NSString *)deleteModelQuestion:(NSString *)modelName NS_SWIFT_NAME(deleteModelQuestion(_:));
 @property (class, nonatomic, readonly, copy) NSArray<NSString *> *compareTableHeaders;
 // A settings row's label and choices as the Settings window words them
@@ -1278,6 +1313,21 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 - (SpeecherSetupFallbackSection *)setupFallbackSection:(SpeecherProviderRole)role
     NS_SWIFT_NAME(setupFallbackSection(_:));
 - (void)acceptSetupFallbackOffer:(SpeecherProviderRole)role NS_SWIFT_NAME(acceptSetupFallbackOffer(_:));
+// A provider's bars on the Transcription or Refinement step, for this computer
+// and the saved settings (speecher::providerRating). nil draws nothing: no
+// bars, no "?" and no line.
+- (nullable SpeecherProviderRating *)setupProviderRating:(SpeecherProviderRole)role
+                                                provider:(NSString *)providerId
+    NS_SWIFT_NAME(setupProviderRating(_:provider:));
+// The models behind it, for the step's Advanced disclosure
+// (speecher::providerModels). Empty means no disclosure.
+- (NSArray<SpeecherRatedModel *> *)setupProviderModels:(SpeecherProviderRole)role
+                                              provider:(NSString *)providerId
+    NS_SWIFT_NAME(setupProviderModels(_:provider:));
+// That disclosure's title, and the heading over a rated list's names
+// (speecher::providerModelsCaption, modelColumnHeader).
+@property (class, nonatomic, readonly, copy) NSString *providerModelsCaption;
+@property (class, nonatomic, readonly, copy) NSString *modelColumnHeader;
 
 // Every provider the registry offers, in the order it offers them.
 @property (nonatomic, readonly, copy) NSArray<SpeecherProviderModel *> *speechProviders;

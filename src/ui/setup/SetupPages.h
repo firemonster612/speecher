@@ -22,7 +22,6 @@ class QPushButton;
 class QRadioButton;
 class QTableWidget;
 class QTimer;
-class QToolButton;
 
 namespace speecher {
 
@@ -36,6 +35,10 @@ class PlatformComposition;
 class ProviderRegistry;
 class SettingsStore;
 class SetupFallbackSection;
+namespace settings {
+class RatedModelList;
+class RatingBars;
+} // namespace settings
 struct ProviderStat;
 struct RefinementPrepareResult;
 struct SpeechPrepareResult;
@@ -99,6 +102,10 @@ struct ProviderOptionRow {
     QString label;
     QRadioButton *button = nullptr;
     QLabel *status = nullptr;
+    // The provider's bars under its name and note, and what was rated under
+    // them; both hidden for a provider without a rating.
+    settings::RatingBars *rating = nullptr;
+    QLabel *ratingSubject = nullptr;
     bool probed = false;
     bool ok = false;
     QString message;
@@ -172,6 +179,8 @@ private:
     void setLocalChoice(const QString &modelId);
     bool localDownloadStarted() const;
     void showLocalChoice();
+    QWidget *makeAdvanced();
+    void showRatings();
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
@@ -211,7 +220,11 @@ private:
     QProgressBar *m_localProgress = nullptr;
     QLabel *m_localState = nullptr;
     QPushButton *m_localCancel = nullptr;
-    QToolButton *m_compareToggle = nullptr;
+    // The Advanced disclosure's models, and for Local Model the comparison
+    // table after them.
+    QWidget *m_advanced = nullptr;
+    settings::RatedModelList *m_models = nullptr;
+    QWidget *m_compareBlock = nullptr;
     QTableWidget *m_compare = nullptr;
     QWidget *m_endpointSection = nullptr;
     QLineEdit *m_endpointUrl = nullptr;
@@ -378,6 +391,7 @@ private:
     void showLocalRunner();
     void showEndpointCheck();
     void saveEndpointEdit(const RefinementEndpointEdit &edit);
+    void showRatings();
 
     SettingsStore &m_settings;
     ProviderRegistry &m_providers;
@@ -406,6 +420,8 @@ private:
     QComboBox *m_endpointModel = nullptr;
     QLabel *m_endpointStatus = nullptr;
     ProviderStatsBlock *m_stats;
+    QWidget *m_advanced = nullptr;
+    settings::RatedModelList *m_models = nullptr;
     QLabel *m_warning;
     QCheckBox *m_fastMode;
     // OpenAI's Standard, Fast or Ultrafast, in place of the Fast mode box.

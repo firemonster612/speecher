@@ -1,4 +1,5 @@
 #include "app/ProviderSetup.h"
+#include "core/LocalModelCatalog.h"
 #include "core/settings/SettingsSchema.h"
 
 #include "providers/AnthropicTranscriptRefiner.h"
@@ -19,29 +20,23 @@
 namespace speecher {
 namespace {
 
-// Model names follow the September 22, 2026 defaults. The speed and quality
-// lines were measured on the previous defaults (gpt-5.6-luna at effort none,
-// claude-sonnet-4-6 at effort low; see .scratch/provider-stats/FINDINGS.md)
-// and are estimated forward from vendor latency notes until the new defaults
-// are benchmarked. The score is the maintainers' overall ranking, folding
-// those lines into one number out of 10.
+// Speed, accuracy and quality are rating bars (core/settings/ProviderRatings),
+// and the models behind a provider are in its Advanced list, so the stats
+// keep only what those leave out.
 QVector<ProviderStat> refinementProviderStats(const QString &id)
 {
     if (id == QStringLiteral("openai")) {
-        return {{QStringLiteral("Score"), QStringLiteral("9 / 10")},
-                {QStringLiteral("Default model"), QStringLiteral("gpt-6-luna")},
-                {QStringLiteral("Speed"), QStringLiteral("About 3 seconds per dictation (estimated)")},
-                {QStringLiteral("Efficiency"), QStringLiteral("No reasoning pass; time varies run to run")},
-                {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; applies spoken corrections reliably")}};
+        return {{QStringLiteral("Efficiency"), QStringLiteral("No reasoning pass; time varies run to run")}};
     }
     if (id == QStringLiteral("anthropic")) {
-        return {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-                {QStringLiteral("Default model"), QStringLiteral("Claude Opus 5.5")},
-                {QStringLiteral("Speed"), QStringLiteral("About 3 seconds per dictation (estimated)")},
-                {QStringLiteral("Efficiency"), QStringLiteral("Always reasons, kept light at low effort")},
-                {QStringLiteral("Quality"), QStringLiteral("Excellent cleanup; can leave a spoken correction in")}};
+        return {{QStringLiteral("Efficiency"), QStringLiteral("Always reasons, kept light at low effort")}};
     }
     return {};
+}
+
+ProviderStat textShows(const QString &value)
+{
+    return {LocalModelFactLabels{}.textShows, value};
 }
 
 } // namespace
@@ -52,17 +47,15 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     // E2E-build-only hook: deterministic stub providers for the headless
     // dictation-panel flow runs. Never compiled into distributed builds.
     if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1) {
-        // The stub stats mirror the real providers' shape (a Score line first)
-        // so the setup-flow E2E can assert the rendering.
+        // The stubs have no rating; the setup-flow E2E asserts the real
+        // providers' bars beside them.
         registry.registerSpeechProvider(
             {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString(), false, QString(),
-             {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-              {QStringLiteral("Engine"), QStringLiteral("Deterministic test stub")}}},
+             {textShows(QStringLiteral("Deterministic test stub"))}},
             createE2ESpeechTranscriber);
         registry.registerRefinementProvider(
             {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString(), false, QString(),
-             {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-              {QStringLiteral("Engine"), QStringLiteral("Deterministic test stub")}}},
+             {{QStringLiteral("Model"), QStringLiteral("Deterministic test stub")}}},
             createE2ETranscriptRefiner);
     }
 #endif
@@ -72,12 +65,9 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
          QStringLiteral("Install Claude Code from claude.com/code and sign in, in the desktop app or "
                         "with /login in the claude CLI."),
          false,
-         QStringLiteral("Deepgram Nova 3. About 60 languages, automatic punctuation and numerals."),
-         {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-          {QStringLiteral("Engine"), QStringLiteral("Deepgram Nova 3")},
-          {QStringLiteral("Languages"), QStringLiteral("About 60")},
-          {QStringLiteral("Speed"), QStringLiteral("Live stream; words appear as you speak")},
-          {QStringLiteral("Accuracy"), QStringLiteral("Strong, holds up in noisy rooms")},
+         QStringLiteral("About 60 languages, automatic punctuation and numerals."),
+         {{QStringLiteral("Languages"), QStringLiteral("About 60")},
+          textShows(QStringLiteral("Live stream; words appear as you speak")),
           {QStringLiteral("Formatting"), QStringLiteral("Automatic punctuation, capitals, numerals")}}},
         [](QObject *parent) {
             return new ClaudeSpeechTranscriber(parent);
@@ -87,12 +77,9 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
          QStringLiteral("ChatGPT Codex"),
          QStringLiteral("Sign in with ChatGPT in the ChatGPT app, or install the Codex CLI and run codex login."),
          false,
-         QStringLiteral("GPT Live Transcribe. Very accurate, around 100 languages."),
-         {{QStringLiteral("Score"), QStringLiteral("9 / 10")},
-          {QStringLiteral("Engine"), QStringLiteral("GPT Live Transcribe")},
-          {QStringLiteral("Languages"), QStringLiteral("Around 100")},
-          {QStringLiteral("Speed"), QStringLiteral("A phrase at a time, after a short pause")},
-          {QStringLiteral("Accuracy"), QStringLiteral("Excellent, even with accents and noise")},
+         QStringLiteral("Very accurate, around 100 languages."),
+         {{QStringLiteral("Languages"), QStringLiteral("Around 100")},
+          textShows(QStringLiteral("A phrase at a time, after a short pause")),
           {QStringLiteral("Formatting"), QStringLiteral("Natural punctuation and phrasing")}}},
         [](QObject *parent) {
             return new CodexSpeechTranscriber(parent);
@@ -106,10 +93,7 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
          false,
          QStringLiteral("Runs on this computer: no account, works offline after a one-time "
                         "download. Languages depend on the model; speed on the model and this computer."),
-         {{QStringLiteral("Engine"), QStringLiteral("transcribe.cpp")},
-          {QStringLiteral("Languages"), QStringLiteral("Depend on the model")},
-          {QStringLiteral("Speed"), QStringLiteral("Depends on the model and this computer")},
-          {QStringLiteral("Accuracy"), QStringLiteral("See the %1 page").arg(paneTitle(QStringLiteral("localModels")))}}},
+         {{QStringLiteral("Languages"), QStringLiteral("Depend on the model")}}},
         [localModels](QObject *parent) {
             return new LocalSpeechTranscriber(*localModels, parent);
         });
@@ -135,23 +119,20 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
          false,
          QStringLiteral("A server you run. Speed, accuracy and languages depend on the server "
                         "and its model."),
-         {{QStringLiteral("Engine"), QStringLiteral("Your server's model")},
-          {QStringLiteral("Speed"), QStringLiteral("Text appears after you stop")},
+         {textShows(textShowsValue(false)),
           {QStringLiteral("Formatting"), QStringLiteral("Whatever the server returns")}}},
         [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
     registry.registerRefinementProvider(
         {QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint"),
          QStringLiteral("A server you run, or CLI Proxy API, with an OpenAI- or Anthropic-compatible API."),
          false, QString(),
-         {{QStringLiteral("Model"), QStringLiteral("Any model your server offers")},
-          {QStringLiteral("Speed"), QStringLiteral("Depends on the server and model")}}},
+         {{QStringLiteral("Model"), QStringLiteral("Any model your server offers")}}},
         [](QObject *parent) { return new EndpointTranscriptRefiner(parent); });
     registry.registerRefinementProvider(
         {QStringLiteral("local"), QStringLiteral("Local Runner"),
          QStringLiteral("Runs on this computer through Ollama, LM Studio or llama-server."),
          false, QString(),
          {{QStringLiteral("Model"), QStringLiteral("A cleanup model in your Local Runner")},
-          {QStringLiteral("Speed"), QStringLiteral("Depends on this computer")},
           {QStringLiteral("Privacy"), QStringLiteral("The transcript stays on this computer")}}},
         [](QObject *parent) { return new LocalRunnerRefiner(parent); });
 }

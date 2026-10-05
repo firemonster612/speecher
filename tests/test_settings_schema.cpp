@@ -1797,7 +1797,8 @@ private slots:
             return QStringList();
         };
         QCOMPARE(cardRows(QStringLiteral("dictation"), QStringLiteral("Transcription")),
-                 QStringList({QStringLiteral("speechProvider"), QStringLiteral("speechFallbacks"),
+                 QStringList({QStringLiteral("speechProvider"), QStringLiteral("speechRating"),
+                              QStringLiteral("speechModels"), QStringLiteral("speechFallbacks"),
                               QStringLiteral("spokenLanguage"), QStringLiteral("spokenLanguageCaution"),
                               QStringLiteral("codexFinalRetranscribe")}));
         QCOMPARE(cardRows(QStringLiteral("dictation"), QStringLiteral("Local Model")),
@@ -1807,7 +1808,8 @@ private slots:
                               QStringLiteral("speechEndpointApiKey"), QStringLiteral("speechEndpointModel"),
                               QStringLiteral("speechEndpointTest")}));
         QCOMPARE(cardRows(QStringLiteral("refinement"), QStringLiteral("Provider")),
-                 QStringList({QStringLiteral("refinementProvider"), QStringLiteral("refinementFallbacks")}));
+                 QStringList({QStringLiteral("refinementProvider"), QStringLiteral("refinementRating"),
+                              QStringLiteral("refinementFallbacks")}));
         QCOMPARE(cardRows(QStringLiteral("refinement"), QStringLiteral("Anthropic")),
                  QStringList({QStringLiteral("anthropicModel"), QStringLiteral("anthropicModelCaution"),
                               QStringLiteral("anthropicEffort"), QStringLiteral("anthropicFastMode")}));
@@ -2524,6 +2526,80 @@ private slots:
         const QList<RowOption> withPresent = audioDeviceOptions(present, QStringLiteral("mic-1"));
         QCOMPARE(withPresent.size(), 2);
         QCOMPARE(withPresent.first().id, QString());
+    }
+
+    // Under the primary picker, the chosen provider's Rating and, on
+    // Dictation, an Advanced list of its models. Custom Endpoint and "none"
+    // show neither.
+    void ratingRowsFollowTheChosenProvider()
+    {
+        SchemaContext context = chainContext();
+        // A Ryzen 4750U laptop's integrated graphics.
+        HardwareProfile laptop;
+        laptop.accelerator = HardwareProfile::Accelerator::IntegratedGpu;
+        laptop.chipName = QStringLiteral("AMD Ryzen 7 PRO 4750U with Radeon Graphics");
+        laptop.systemRamBytes = quint64(16) << 30;
+        laptop.availableRamBytes = quint64(12) << 30;
+        context.hardware = [laptop] { return laptop; };
+        const SettingsSchema schema = buildSettingsSchema(context);
+        const SettingsRow &speechRating = rowById(schema.page(QStringLiteral("audio")), QStringLiteral("speechRating"));
+        const SettingsRow &speechModels = rowById(schema.page(QStringLiteral("audio")), QStringLiteral("speechModels"));
+        const SettingsRow &refinementRating =
+            rowById(schema.page(QStringLiteral("refinement")), QStringLiteral("refinementRating"));
+        QCOMPARE(speechRating.kind, RowKind::Rating);
+        QCOMPARE(speechRating.label, QStringLiteral("Rating"));
+        QCOMPARE(speechModels.kind, RowKind::ModelList);
+        QCOMPARE(speechModels.label, QStringLiteral("Advanced"));
+        QCOMPARE(refinementRating.kind, RowKind::Rating);
+        const auto bars = [](const SettingsRow &row, const AppSettings &settings) {
+            QStringList texts;
+            for (const Rating &bar : row.ratings(settings)) {
+                texts.append(ratingMeasureLabel(bar.measure) + QLatin1Char(' ') + ratingValueText(bar));
+            }
+            return texts;
+        };
+        const auto names = [](const SettingsRow &row, const AppSettings &settings) {
+            QStringList models;
+            for (const RatedModel &model : row.ratedModels(settings)) {
+                models.append(model.name);
+            }
+            return models;
+        };
+        const Capabilities capabilities;
+        AppSettings settings;
+
+        settings.speech.providerId = QStringLiteral("codex");
+        QVERIFY(speechRating.visible(settings, capabilities));
+        QCOMPARE(speechRating.helpValue(settings), QStringLiteral("Out of 10."));
+        QCOMPARE(bars(speechRating, settings),
+                 QStringList({QStringLiteral("Accuracy 8.5/10"), QStringLiteral("Speed 7/10")}));
+        QVERIFY(speechModels.visible(settings, capabilities));
+        QCOMPARE(speechModels.helpValue(settings), QStringLiteral("The models ChatGPT Codex uses"));
+        QCOMPARE(names(speechModels, settings),
+                 QStringList({QStringLiteral("GPT Live Transcribe"), QStringLiteral("GPT Transcribe")}));
+
+        settings.speech.providerId = QStringLiteral("local");
+        QCOMPARE(speechRating.helpValue(settings), QStringLiteral("Parakeet 0.6B on this computer"));
+        QCOMPARE(speechModels.helpValue(settings), QStringLiteral("The models you can run on this computer"));
+        QCOMPARE(names(speechModels, settings).size(), localModelCatalog().size());
+
+        settings.speech.providerId = QStringLiteral("endpoint");
+        QVERIFY(!speechRating.visible(settings, capabilities));
+        QVERIFY(!speechModels.visible(settings, capabilities));
+
+        settings.refinement.providerId = QStringLiteral("openai");
+        QVERIFY(refinementRating.visible(settings, capabilities));
+        QCOMPARE(refinementRating.helpValue(settings), QStringLiteral("Out of 10."));
+        QCOMPARE(bars(refinementRating, settings),
+                 QStringList({QStringLiteral("Quality 10/10"), QStringLiteral("Speed 7/10")}));
+        settings.refinement.providerId = QStringLiteral("local");
+        QCOMPARE(refinementRating.helpValue(settings), QStringLiteral("LFM2.5 1.2B, suggested for this computer"));
+        QCOMPARE(bars(refinementRating, settings),
+                 QStringList({QStringLiteral("Quality 5.5/10"), QStringLiteral("Speed 7/10")}));
+        for (const QString &id : {QStringLiteral("endpoint"), QStringLiteral("none")}) {
+            settings.refinement.providerId = id;
+            QVERIFY2(!refinementRating.visible(settings, capabilities), qPrintable(id));
+        }
     }
 };
 

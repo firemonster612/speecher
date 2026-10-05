@@ -3,7 +3,7 @@
 #
 # Builds an AppImage, starts it with a fresh profile inside a virtual KDE
 # Wayland session, and drives the setup assistant through real AT-SPI clicks:
-#   * the Transcription and Refinement pages show the provider Score lines,
+#   * the Transcription and Refinement pages show the providers' rating bars,
 #   * the Global Shortcut page holds Next until Install Speecher is clicked,
 #   * installing moves the AppImage into ~/Applications and creates the
 #     speecher command, app menu entry and icon,

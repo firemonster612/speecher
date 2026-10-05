@@ -1,3 +1,4 @@
+#include "common/test_local_setup.h"
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
@@ -1335,6 +1336,99 @@ private slots:
         QVERIFY(ui.whatsNewOfferVisible);
         [bridge clearPendingWhatsNew];
         QVERIFY(!ui.whatsNewOfferVisible);
+    }
+
+    // The Rating and Advanced rows reach Swift with core's bars and models,
+    // and leave the page with a provider that has none to show.
+    void ratingRowsCrossTheBridge()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+        SettingsSchemaModel *schema = bridge.settingsSchema;
+        [schema setValue:@"codex" forRowId:@"speechProvider"];
+        [schema setValue:@"anthropic" forRowId:@"refinementProvider"];
+        [schema commit];
+
+        SettingsRowModel *speech = settingsRow(schema, @"speechRating");
+        QVERIFY(speech);
+        QVERIFY(speech.kind == SpeecherRowKindRating);
+        QCOMPARE(speech.ratings.count, NSUInteger(2));
+        QCOMPARE(QString::fromNSString(speech.ratings[0].label), QStringLiteral("Accuracy"));
+        QCOMPARE(speech.ratings[0].value.doubleValue, 8.5);
+        QCOMPARE(QString::fromNSString(speech.ratings[0].valueText), QStringLiteral("8.5/10"));
+        QCOMPARE(QString::fromNSString(speech.ratings[1].label), QStringLiteral("Speed"));
+        QCOMPARE(QString::fromNSString(speech.ratings[1].valueText), QStringLiteral("7/10"));
+
+        SettingsRowModel *models = settingsRow(schema, @"speechModels");
+        QVERIFY(models);
+        QVERIFY(models.kind == SpeecherRowKindModelList);
+        QCOMPARE(models.ratedModels.count, NSUInteger(2));
+        QCOMPARE(QString::fromNSString(models.ratedModels[0].name), QStringLiteral("GPT Live Transcribe"));
+        QCOMPARE(QString::fromNSString(models.ratedModels[0].note), QStringLiteral("Writes each phrase as you pause."));
+        QCOMPARE(QString::fromNSString(models.ratedModels[1].name), QStringLiteral("GPT Transcribe"));
+        // A service's models have no bars of their own.
+        QCOMPARE(models.ratedModels[0].bars.count, NSUInteger(0));
+
+        SettingsRowModel *refinement = settingsRow(schema, @"refinementRating");
+        QVERIFY(refinement);
+        QCOMPARE(QString::fromNSString(refinement.ratings[0].label), QStringLiteral("Quality"));
+        QCOMPARE(QString::fromNSString(refinement.ratings[0].valueText), QStringLiteral("10/10"));
+        QCOMPARE(QString::fromNSString(refinement.ratings[1].valueText), QStringLiteral("4.5/10"));
+
+        [schema setValue:@"endpoint" forRowId:@"speechProvider"];
+        [schema setValue:@"endpoint" forRowId:@"refinementProvider"];
+        [schema commit];
+        QVERIFY(!settingsRow(schema, @"speechRating"));
+        QVERIFY(!settingsRow(schema, @"speechModels"));
+        QVERIFY(!settingsRow(schema, @"refinementRating"));
+    }
+
+    // The setup steps' bars and Advanced lists: a service's, a Local Model's
+    // naming what was rated once the hardware is known, with every model
+    // rated, and none for Custom Endpoint.
+    void setupRatingsComeFromCore()
+    {
+        ApplicationController controller(false);
+        SpeecherBridge *bridge = [[SpeecherBridge alloc] initWithController:&controller];
+
+        SpeecherProviderRating *claude = [bridge setupProviderRating:SpeecherProviderRoleSpeech provider:@"claude"];
+        QVERIFY(claude);
+        QCOMPARE(QString::fromNSString(claude.bars[0].valueText), QStringLiteral("5.5/10"));
+        QCOMPARE(QString::fromNSString(claude.bars[1].valueText), QStringLiteral("10/10"));
+        QCOMPARE(claude.subject.length, NSUInteger(0));
+
+        // Nothing is rated for this computer until the probe reads its memory.
+        LocalSetupTestAccess::setHardware(*controller.localSetup(), HardwareProfile{});
+        QVERIFY(![bridge setupProviderRating:SpeecherProviderRoleSpeech provider:@"local"]);
+        HardwareProfile probed;
+        probed.systemRamBytes = quint64(16) << 30;
+        LocalSetupTestAccess::setHardware(*controller.localSetup(), probed);
+        SpeecherProviderRating *local = [bridge setupProviderRating:SpeecherProviderRoleSpeech provider:@"local"];
+        QVERIFY(local);
+        QCOMPARE(local.bars.count, NSUInteger(2));
+        QVERIFY([local.subject hasSuffix:@" on this computer"]);
+        NSArray<SpeecherRatedModel *> *localModels = [bridge setupProviderModels:SpeecherProviderRoleSpeech
+                                                                        provider:@"local"];
+        QVERIFY(localModels.count > 1);
+        for (SpeecherRatedModel *model in localModels) {
+            QCOMPARE(model.bars.count, NSUInteger(2));
+        }
+
+        SpeecherProviderRating *openAi = [bridge setupProviderRating:SpeecherProviderRoleRefinement
+                                                            provider:@"openai"];
+        QVERIFY(openAi);
+        QCOMPARE(QString::fromNSString(openAi.bars[0].valueText), QStringLiteral("10/10"));
+        QCOMPARE(QString::fromNSString(openAi.bars[1].valueText), QStringLiteral("7/10"));
+        NSArray<SpeecherRatedModel *> *openAiModels = [bridge setupProviderModels:SpeecherProviderRoleRefinement
+                                                                         provider:@"openai"];
+        QCOMPARE(openAiModels.count, NSUInteger(1));
+        QCOMPARE(QString::fromNSString(openAiModels[0].note),
+                 QStringLiteral("The default. Change it in Settings, under Refinement."));
+
+        for (SpeecherProviderRole role : {SpeecherProviderRoleSpeech, SpeecherProviderRoleRefinement}) {
+            QVERIFY(![bridge setupProviderRating:role provider:@"endpoint"]);
+            QCOMPARE([bridge setupProviderModels:role provider:@"endpoint"].count, NSUInteger(0));
+        }
     }
 };
 

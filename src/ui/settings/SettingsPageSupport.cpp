@@ -11,11 +11,13 @@
 #include <QFontMetrics>
 #include <QFormLayout>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QStyleOption>
 #include <QIcon>
@@ -30,7 +32,10 @@
 #include <QStandardItemModel>
 #include <QStandardPaths>
 #include <QStyle>
+#include <QToolButton>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 #ifdef SPEECHER_WITH_KCOLORSCHEME
 #include <KColorScheme>
@@ -169,6 +174,194 @@ void WrappingLabel::resizeEvent(QResizeEvent *event)
     QLabel::resizeEvent(event);
     setMinimumHeight(0);
     setMinimumHeight(heightForWidth(event->size().width()));
+}
+
+namespace {
+
+int ratingBarWidth()
+{
+    return gridUnit() * 5;
+}
+
+// The widest value text, so a shorter one leaves the next cell where it was.
+int ratingValueWidth()
+{
+    const QFontMetrics metrics(smallFont(QApplication::font()));
+    int widest = 0;
+    for (int halves = 0; halves <= 20; ++halves) {
+        widest = qMax(widest, metrics.horizontalAdvance(ratingValueText({RatingMeasure::Speed, halves / 2.0})));
+    }
+    return widest;
+}
+
+int ratingCellWidth()
+{
+    return ratingBarWidth() + relatedSpacing() + ratingValueWidth();
+}
+
+QLabel *makeRatingCaption(const QString &text, QWidget *parent)
+{
+    auto *label = new QLabel(text, parent);
+    label->setFont(smallFont(label->font()));
+    label->setForegroundRole(QPalette::PlaceholderText);
+    return label;
+}
+
+} // namespace
+
+RatingCell::RatingCell(QWidget *parent)
+    : QWidget(parent)
+    , m_bar(new QProgressBar(this))
+    , m_value(new QLabel(this))
+{
+    auto *layout = new QHBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(relatedSpacing());
+    // Out of 10 in halves.
+    m_bar->setRange(0, 20);
+    m_bar->setTextVisible(false);
+    m_bar->setFixedWidth(ratingBarWidth());
+    QSizePolicy keepRoom = m_bar->sizePolicy();
+    keepRoom.setRetainSizeWhenHidden(true);
+    m_bar->setSizePolicy(keepRoom);
+    layout->addWidget(m_bar, 0, Qt::AlignVCenter);
+    m_value->setFont(smallFont(m_value->font()));
+    m_value->setFixedWidth(ratingValueWidth());
+    layout->addWidget(m_value, 0, Qt::AlignVCenter);
+    setFixedWidth(ratingCellWidth());
+}
+
+void RatingCell::setRating(const Rating &rating)
+{
+    m_bar->setVisible(rating.value.has_value());
+    m_bar->setValue(qRound(rating.value.value_or(0) * 2));
+    m_bar->setAccessibleName(ratingMeasureLabel(rating.measure));
+    m_bar->setAccessibleDescription(ratingValueText(rating));
+    m_value->setText(ratingValueText(rating));
+}
+
+RatingBars::RatingBars(Qt::Orientation orientation, QWidget *parent)
+    : QWidget(parent)
+    , m_orientation(orientation)
+    , m_grid(new QGridLayout(this))
+{
+    m_grid->setContentsMargins(0, 0, 0, 0);
+    m_grid->setHorizontalSpacing(largeSpacing());
+    m_grid->setVerticalSpacing(smallSpacing());
+}
+
+void RatingBars::setRatings(const QList<Rating> &ratings)
+{
+    while (m_bars.size() < ratings.size()) {
+        const int index = int(m_bars.size());
+        const Bar bar{makeRatingCaption(QString(), this), new RatingCell(this)};
+        const bool sideBySide = m_orientation == Qt::Horizontal;
+        // Side by side, a wider gap tells one pair from the next.
+        bar.measure->setContentsMargins(sideBySide && index > 0 ? gridUnit() : 0, 0, 0, 0);
+        m_grid->addWidget(bar.measure, sideBySide ? 0 : index, sideBySide ? index * 2 : 0);
+        m_grid->addWidget(bar.cell, sideBySide ? 0 : index, sideBySide ? index * 2 + 1 : 1);
+        m_bars.append(bar);
+    }
+    for (int index = 0; index < m_bars.size(); ++index) {
+        const Bar &bar = m_bars.at(index);
+        const bool shown = index < ratings.size();
+        bar.measure->setVisible(shown);
+        bar.cell->setVisible(shown);
+        if (shown) {
+            bar.measure->setText(ratingMeasureLabel(ratings.at(index).measure));
+            bar.cell->setRating(ratings.at(index));
+        }
+    }
+}
+
+RatedModelList::RatedModelList(QWidget *parent)
+    : QWidget(parent)
+{
+    auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    QFrame *card = makeSettingsCard(this);
+    layout->addWidget(card);
+    m_rows = cardFormLayout(card);
+}
+
+void RatedModelList::setModels(const QList<RatedModel> &models)
+{
+    if (models == m_models) {
+        return;
+    }
+    m_models = models;
+    while (m_rows->rowCount() > 0) {
+        m_rows->removeRow(0);
+    }
+    QWidget *host = m_rows->parentWidget();
+    const auto rowLayout = [](QWidget *row) {
+        auto *layout = new QHBoxLayout(row);
+        layout->setContentsMargins(rowPadding());
+        layout->setSpacing(largeSpacing());
+        return layout;
+    };
+    const auto rated = std::find_if(models.cbegin(), models.cend(),
+                                    [](const RatedModel &model) { return !model.bars.isEmpty(); });
+    if (rated != models.cend()) {
+        auto *header = new QWidget(host);
+        header->setObjectName(QStringLiteral("ratedModelHeader"));
+        QHBoxLayout *layout = rowLayout(header);
+        layout->addWidget(makeRatingCaption(modelColumnHeader(), header), 1);
+        for (const Rating &rating : rated->bars) {
+            QLabel *measure = makeRatingCaption(ratingMeasureLabel(rating.measure), header);
+            measure->setFixedWidth(ratingCellWidth());
+            layout->addWidget(measure);
+        }
+        addCardRow(m_rows, header, host);
+    }
+    for (const RatedModel &model : models) {
+        auto *row = new QWidget(host);
+        row->setObjectName(QStringLiteral("ratedModel"));
+        QHBoxLayout *layout = rowLayout(row);
+        auto *text = new QVBoxLayout;
+        text->setSpacing(0);
+        auto *name = new WrappingLabel(model.name, row);
+        name->setWordWrap(true);
+        name->setMinimumWidth(1);
+        text->addWidget(name);
+        if (!model.note.isEmpty()) {
+            auto *note = new WrappingLabel(model.note, row);
+            note->setWordWrap(true);
+            note->setMinimumWidth(1);
+            note->setFont(smallFont(note->font()));
+            note->setForegroundRole(QPalette::PlaceholderText);
+            text->addWidget(note);
+        }
+        layout->addLayout(text, 1);
+        for (const Rating &rating : model.bars) {
+            auto *cell = new RatingCell(row);
+            cell->setRating(rating);
+            layout->addWidget(cell, 0, Qt::AlignVCenter);
+        }
+        addCardRow(m_rows, row, host);
+    }
+    // A widget added to a parent already on screen is not shown with it.
+    for (QWidget *child : host->findChildren<QWidget *>(QString(), Qt::FindDirectChildrenOnly)) {
+        child->show();
+    }
+}
+
+QToolButton *makeDisclosure(const QString &caption, QWidget *content, QWidget *parent)
+{
+    auto *toggle = new QToolButton(parent);
+    toggle->setAutoRaise(true);
+    toggle->setArrowType(Qt::RightArrow);
+    if (!caption.isEmpty()) {
+        toggle->setText(caption);
+        toggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    }
+    content->hide();
+    QObject::connect(toggle, &QToolButton::clicked, content, [toggle, content] {
+        const bool open = content->isHidden();
+        toggle->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+        content->setVisible(open);
+    });
+    return toggle;
 }
 
 QColor separatorColor(const QPalette &palette)

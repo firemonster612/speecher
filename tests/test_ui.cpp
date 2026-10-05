@@ -117,6 +117,28 @@ QStringList sectionLabels(const QWidget &page, const QWidget *except = nullptr)
     return labels;
 }
 
+// What a rating's bars read, measure then value: {"Accuracy", "8.5/10", ...}.
+QStringList ratingTexts(const QWidget &bars)
+{
+    QStringList texts;
+    for (QLabel *label : bars.findChildren<QLabel *>()) {
+        if (!label->isHidden()) {
+            texts.append(label->text());
+        }
+    }
+    return texts;
+}
+
+// The model names an Advanced list shows, in order.
+QStringList ratedModelNames(const QWidget &list)
+{
+    QStringList names;
+    for (QWidget *row : list.findChildren<QWidget *>(QStringLiteral("ratedModel"))) {
+        names.append(row->findChild<QLabel *>()->text());
+    }
+    return names;
+}
+
 class SizingPopupPositioner final : public PopupPositioner {
 public:
     void configurePopup(PopupSurface &surface) override
@@ -1335,6 +1357,157 @@ private slots:
         QVERIFY(page.findChild<QWidget *>(QStringLiteral("fallback_local")));
     }
 
+    // Every option shows its bars under its name, and Advanced lists the
+    // chosen service's models; for Local Model the comparison table follows.
+    void setupTranscriptionOptionsShowTheirRatings()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        ProviderRegistry providers;
+        for (const char *id : {"codex", "claude", "local"}) {
+            providers.registerSpeechProvider({id, id, {}},
+                                             [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        }
+        QTemporaryDir directory;
+        LocalModelStore models(directory.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, models);
+        SpeechProviderSetupPage page(settings, providers, &local);
+        page.show();
+        const auto bars = [&page](const QString &id) {
+            return ratingTexts(*page.findChild<QWidget *>(QStringLiteral("speechProviderRating_") + id));
+        };
+        QCOMPARE(bars(QStringLiteral("codex")), (QStringList{QStringLiteral("Accuracy"), QStringLiteral("8.5/10"),
+                                                             QStringLiteral("Speed"), QStringLiteral("7/10")}));
+        QCOMPARE(bars(QStringLiteral("claude")), (QStringList{QStringLiteral("Accuracy"), QStringLiteral("5.5/10"),
+                                                              QStringLiteral("Speed"), QStringLiteral("10/10")}));
+        // A service names nothing it rated. Local Model rates nothing until
+        // the hardware probe answers, then names the model it rated.
+        QVERIFY(page.findChild<QLabel *>(QStringLiteral("speechProviderRatingSubject_codex"))->isHidden());
+        auto *localSubject = page.findChild<QLabel *>(QStringLiteral("speechProviderRatingSubject_local"));
+        QVERIFY(page.findChild<QWidget *>(QStringLiteral("speechProviderRating_local"))->isHidden());
+        QVERIFY(localSubject->isHidden());
+        HardwareProfile laptop;
+        laptop.chipName = QStringLiteral("AMD Ryzen 7 PRO 4750U with Radeon Graphics");
+        laptop.systemRamBytes = quint64(16) << 30;
+        laptop.availableRamBytes = quint64(12) << 30;
+        LocalSetupTestAccess::setHardware(local, laptop);
+        QVERIFY(!page.findChild<QWidget *>(QStringLiteral("speechProviderRating_local"))->isHidden());
+        QCOMPARE(localSubject->text(), QStringLiteral("Parakeet 0.6B on this computer"));
+
+        auto *advanced = page.findChild<QToolButton *>(QStringLiteral("speechProviderModels"));
+        auto *list = page.findChild<QWidget *>(QStringLiteral("speechProviderModelList"));
+        QCOMPARE(advanced->text(), QStringLiteral("Advanced"));
+        QVERIFY(advanced->isVisible() && !list->isVisible());
+        advanced->click();
+        QVERIFY(list->isVisible());
+        QCOMPARE(ratedModelNames(*list),
+                 (QStringList{QStringLiteral("GPT Live Transcribe"), QStringLiteral("GPT Transcribe")}));
+        auto *table = page.findChild<QTableWidget *>(QStringLiteral("speechLocalCompareTable"));
+        QVERIFY(!table->isVisible());
+
+        page.chooseProvider(QStringLiteral("local"));
+        QCOMPARE(ratedModelNames(*list).size(), localModelCatalog().size());
+        QVERIFY(table->isVisible());
+    }
+
+    // OpenAI and Anthropic show their bars and Local Runner names the cleanup
+    // model it rated, which follows the hardware probe; Custom Endpoint shows
+    // no rating and no Advanced.
+    void setupRefinementOptionsShowTheirRatings()
+    {
+        QTemporaryDir directory;
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        ProviderRegistry providers;
+        for (const char *id : {"anthropic", "openai", "local", "endpoint"}) {
+            providers.registerRefinementProvider({id, id}, [](QObject *parent) { return new FakeRefiner(parent); });
+        }
+        LocalModelStore models(directory.path(), QUrl(QStringLiteral("http://127.0.0.1:1")));
+        LocalSetup local(settings, providers, models);
+        RefinementSetupPage page(settings, providers, &local);
+        page.show();
+        const auto rating = [&page](const QString &id) {
+            return page.findChild<QWidget *>(QStringLiteral("refinementProviderRating_") + id);
+        };
+        const auto subject = [&page](const QString &id) {
+            return page.findChild<QLabel *>(QStringLiteral("refinementProviderRatingSubject_") + id);
+        };
+        QCOMPARE(ratingTexts(*rating(QStringLiteral("openai"))),
+                 (QStringList{QStringLiteral("Quality"), QStringLiteral("10/10"), QStringLiteral("Speed"),
+                              QStringLiteral("7/10")}));
+        QCOMPARE(ratingTexts(*rating(QStringLiteral("anthropic"))),
+                 (QStringList{QStringLiteral("Quality"), QStringLiteral("10/10"), QStringLiteral("Speed"),
+                              QStringLiteral("4.5/10")}));
+        QVERIFY(rating(QStringLiteral("endpoint"))->isHidden());
+        QVERIFY(subject(QStringLiteral("endpoint"))->isHidden());
+
+        // Nothing is rated for this computer until the probe reads its memory.
+        LocalSetupTestAccess::setHardware(local, HardwareProfile{});
+        QVERIFY(rating(QStringLiteral("local"))->isHidden());
+        QVERIFY(subject(QStringLiteral("local"))->isHidden());
+        HardwareProfile processor;
+        processor.systemRamBytes = quint64(16) << 30;
+        LocalSetupTestAccess::setHardware(local, processor);
+        QCOMPARE(subject(QStringLiteral("local"))->text(), QStringLiteral("LFM2.5 1.2B, suggested for this computer"));
+        HardwareProfile graphicsCard = processor;
+        graphicsCard.accelerator = HardwareProfile::Accelerator::DedicatedGpu;
+        graphicsCard.gpuMemoryBytes = quint64(16) << 30;
+        LocalSetupTestAccess::setHardware(local, graphicsCard);
+        QCOMPARE(subject(QStringLiteral("local"))->text(), QStringLiteral("Gemma 4 E4B, suggested for this computer"));
+
+        auto *advanced = page.findChild<QToolButton *>(QStringLiteral("refinementProviderModels"));
+        advanced->click();
+        QCOMPARE(ratedModelNames(*page.findChild<QWidget *>(QStringLiteral("refinementProviderModelList"))),
+                 QStringList{QStringLiteral("gpt-6-luna")});
+        page.findChild<QRadioButton *>(QStringLiteral("refinementProviderOption_endpoint"))->click();
+        QVERIFY(!advanced->isVisible());
+    }
+
+    // Dictation's Rating and Advanced rows follow the chosen service, and
+    // Custom Endpoint shows neither; Refinement has a Rating row alone.
+    void settingsRatingRowsFollowTheProvider()
+    {
+        ApplicationController controller(true);
+        SettingsStore *settings = controller.settings();
+        settings->setSpeechProvider(QStringLiteral("codex"));
+        settings->setRefinementProvider(QStringLiteral("anthropic"));
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.loadBeforeShow();
+        SchemaSettingsPage *dictation = pages.page(QStringLiteral("dictation"));
+        auto *rating = dictation->findChild<QWidget *>(QStringLiteral("speechRating"));
+        QCOMPARE(ratingTexts(*rating), (QStringList{QStringLiteral("Accuracy"), QStringLiteral("8.5/10"),
+                                                    QStringLiteral("Speed"), QStringLiteral("7/10")}));
+        QWidget *ratingRow = rating->parentWidget();
+        QVERIFY(!ratingRow->isHidden());
+        QCOMPARE(ratingRow->findChild<QLabel *>(QStringLiteral("rowDescription"))->text(), QStringLiteral("Out of 10."));
+
+        auto *advanced = dictation->findChild<QToolButton *>(QStringLiteral("speechModels"));
+        QWidget *advancedRow = advanced->parentWidget()->parentWidget();
+        auto *list = advancedRow->findChild<QWidget *>(QStringLiteral("speechModelsList"));
+        QVERIFY(list->isHidden());
+        advanced->click();
+        QVERIFY(!list->isHidden());
+        QCOMPARE(ratedModelNames(*list),
+                 (QStringList{QStringLiteral("GPT Live Transcribe"), QStringLiteral("GPT Transcribe")}));
+
+        auto *service = dictation->findChild<QComboBox *>(QStringLiteral("speechProvider"));
+        service->setCurrentIndex(service->findData(QStringLiteral("claude")));
+        QCOMPARE(ratingTexts(*rating), (QStringList{QStringLiteral("Accuracy"), QStringLiteral("5.5/10"),
+                                                    QStringLiteral("Speed"), QStringLiteral("10/10")}));
+        QCOMPARE(ratedModelNames(*list), QStringList{QStringLiteral("Deepgram Nova 3")});
+        service->setCurrentIndex(service->findData(QStringLiteral("endpoint")));
+        QVERIFY(ratingRow->isHidden());
+        QVERIFY(advancedRow->isHidden());
+
+        SchemaSettingsPage *refinement = pages.page(QStringLiteral("refinement"));
+        QCOMPARE(ratingTexts(*refinement->findChild<QWidget *>(QStringLiteral("refinementRating"))),
+                 (QStringList{QStringLiteral("Quality"), QStringLiteral("10/10"), QStringLiteral("Speed"),
+                              QStringLiteral("4.5/10")}));
+    }
+
     // The setup steps' fallback section is optional: editing it never holds
     // Next, and Skip cleanup hides it.
     void setupFallbackSectionIsOptional()
@@ -2028,7 +2201,7 @@ private slots:
         LocalSetup local(settings, providers, models);
         SpeechProviderSetupPage page(settings, providers, &local);
         page.show();
-        page.findChild<QToolButton *>("speechLocalCompare")->click();
+        page.findChild<QToolButton *>("speechProviderModels")->click();
         auto *table = page.findChild<QTableWidget *>("speechLocalCompareTable");
         table->setFocus();
         QTest::keyClick(table, Qt::Key_End, Qt::ControlModifier);

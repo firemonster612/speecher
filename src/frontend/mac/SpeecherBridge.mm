@@ -15,6 +15,7 @@
 #include "core/ShortcutBinding.h"
 #include "core/SettingsStore.h"
 #include "core/settings/FallbackPresentation.h"
+#include "core/settings/ProviderRatings.h"
 #include "core/settings/SettingsSchema.h"
 #include "dictation/DictationSession.h"
 #include "dictation/DictationTypes.h"
@@ -94,6 +95,10 @@ SpeecherRowKind bridgedKind(RowKind kind)
         return SpeecherRowKindCollection;
     case RowKind::Custom:
         return SpeecherRowKindCustom;
+    case RowKind::Rating:
+        return SpeecherRowKindRating;
+    case RowKind::ModelList:
+        return SpeecherRowKindModelList;
     }
 }
 
@@ -738,9 +743,37 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic) BOOL helpNegative;
 @property (nonatomic, copy) NSString *targetPage;
 @property (nonatomic, strong, nullable) SpeecherFallbackList *fallbackList;
+@property (nonatomic, copy) NSArray<SpeecherRating *> *ratings;
+@property (nonatomic, copy) NSArray<SpeecherRatedModel *> *ratedModels;
 @end
 
 @implementation SettingsRowModel
+@end
+
+@interface SpeecherRating ()
+@property (nonatomic, copy) NSString *label;
+@property (nonatomic, strong, nullable) NSNumber *value;
+@property (nonatomic, copy) NSString *valueText;
+@end
+
+@implementation SpeecherRating
+@end
+
+@interface SpeecherProviderRating ()
+@property (nonatomic, copy) NSArray<SpeecherRating *> *bars;
+@property (nonatomic, copy) NSString *subject;
+@end
+
+@implementation SpeecherProviderRating
+@end
+
+@interface SpeecherRatedModel ()
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, copy) NSString *note;
+@property (nonatomic, copy) NSArray<SpeecherRating *> *bars;
+@end
+
+@implementation SpeecherRatedModel
 @end
 
 @interface SpeecherFallbackItem ()
@@ -818,6 +851,32 @@ NSArray<RowOptionModel *> *bridgedRowOptions(const QList<RowOption> &options)
         model.label = option.label.toNSString();
         model.help = option.help.toNSString();
         model.enabled = option.enabled;
+        [bridged addObject:model];
+    }
+    return bridged;
+}
+
+NSArray<SpeecherRating *> *bridgedRatings(const QList<speecher::Rating> &ratings)
+{
+    NSMutableArray<SpeecherRating *> *bridged = [NSMutableArray array];
+    for (const speecher::Rating &rating : ratings) {
+        SpeecherRating *model = [[SpeecherRating alloc] init];
+        model.label = speecher::ratingMeasureLabel(rating.measure).toNSString();
+        model.value = rating.value ? @(*rating.value) : nil;
+        model.valueText = speecher::ratingValueText(rating).toNSString();
+        [bridged addObject:model];
+    }
+    return bridged;
+}
+
+NSArray<SpeecherRatedModel *> *bridgedRatedModels(const QList<speecher::RatedModel> &models)
+{
+    NSMutableArray<SpeecherRatedModel *> *bridged = [NSMutableArray array];
+    for (const speecher::RatedModel &ratedModel : models) {
+        SpeecherRatedModel *model = [[SpeecherRatedModel alloc] init];
+        model.name = ratedModel.name.toNSString();
+        model.note = ratedModel.note.toNSString();
+        model.bars = bridgedRatings(ratedModel.bars);
         [bridged addObject:model];
     }
     return bridged;
@@ -1663,6 +1722,8 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
             *role, speecher::fallbackListPresentation(*role, _state->draft, facts, [self chainProviders:*role],
                                                       speecher::FallbackSurface::Settings));
     }
+    model.ratings = row.ratings ? bridgedRatings(row.ratings(_state->draft)) : @[];
+    model.ratedModels = row.ratedModels ? bridgedRatedModels(row.ratedModels(_state->draft)) : @[];
     if (const CollectionDescriptor *collection = [self collectionForRow:row]) {
         model.collection = [self collectionModel:*collection];
         model.value = bridgedRecords(collection->records(_state->draft));
@@ -2041,6 +2102,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     context.liveFactsForDraft = [setup = controller->localSetup()](const AppSettings &draft) {
         return setup->liveFacts(draft);
     };
+    context.hardware = [setup = controller->localSetup()] { return setup->hardware().profile; };
     // The device row offers the list the schema model last enumerated.
     const auto listAudioInputs = context.audioInputDevices;
     const auto audioInputs = std::make_shared<QList<RowOption>>();
@@ -3355,16 +3417,10 @@ static void probeSpeechProvider(BridgeState *state,
     static_assert(int(SpeecherLocalModelTextSuggested) == int(speecher::LocalModelText::Suggested));
     static_assert(int(SpeecherLocalModelTextYourChoice) == int(speecher::LocalModelText::YourChoice));
     static_assert(int(SpeecherLocalModelTextTooLarge) == int(speecher::LocalModelText::TooLarge));
-    static_assert(int(SpeecherLocalModelTextHideOtherModels) == int(speecher::LocalModelText::HideOtherModels));
     static_assert(int(SpeecherLocalModelTextCompareNote) == int(speecher::LocalModelText::CompareNote));
     static_assert(int(SpeecherLocalModelTextDeleteModel) == int(speecher::LocalModelText::DeleteModel));
     static_assert(int(SpeecherLocalModelTextDeleteBody) == int(speecher::LocalModelText::DeleteBody));
     return speecher::localModelText(static_cast<speecher::LocalModelText>(text)).toNSString();
-}
-
-+ (NSString *)compareModelsCaption:(NSInteger)otherModels
-{
-    return speecher::compareModelsCaption(int(otherModels)).toNSString();
 }
 
 + (NSString *)deleteModelQuestion:(NSString *)modelName
@@ -3421,6 +3477,37 @@ static void probeSpeechProvider(BridgeState *state,
 - (NSString *)setupPasteVerdict:(BOOL)pastes
 {
     return speecher::setupPasteVerdict(pastes).toNSString();
+}
+
+- (nullable SpeecherProviderRating *)setupProviderRating:(SpeecherProviderRole)role provider:(NSString *)providerId
+{
+    const std::optional<speecher::ProviderRating> rating = speecher::providerRating(
+        coreRole(role), QString::fromNSString(providerId), _state->controller->localSetup()->hardware().profile,
+        _state->controller->settings()->snapshot());
+    if (!rating) {
+        return nil;
+    }
+    SpeecherProviderRating *model = [[SpeecherProviderRating alloc] init];
+    model.bars = bridgedRatings(rating->bars);
+    model.subject = rating->subject.toNSString();
+    return model;
+}
+
+- (NSArray<SpeecherRatedModel *> *)setupProviderModels:(SpeecherProviderRole)role provider:(NSString *)providerId
+{
+    return bridgedRatedModels(speecher::providerModels(coreRole(role), QString::fromNSString(providerId),
+                                                       _state->controller->localSetup()->hardware().profile,
+                                                       _state->controller->settings()->snapshot()));
+}
+
++ (NSString *)providerModelsCaption
+{
+    return speecher::providerModelsCaption().toNSString();
+}
+
++ (NSString *)modelColumnHeader
+{
+    return speecher::modelColumnHeader().toNSString();
 }
 
 - (SpeecherSetupFallbackSection *)setupFallbackSection:(SpeecherProviderRole)role

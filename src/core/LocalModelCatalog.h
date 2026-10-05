@@ -32,6 +32,9 @@ struct LocalModel {
     qint64 sizeBytes = 0;
     double librispeechCleanWer = 0;
     double fleursEnglishWer = 0;
+    // Artificial Analysis's AA-WER v2 for the model, or for the nearest model
+    // it lists; 0 where it lists none. The Accuracy rating reads it.
+    double artificialAnalysisWer = 0;
     bool streams = false;
     // transcribe.cpp's catalog/<variant>.json: the language codes the model
     // takes as a hint, and whether it detects the language when given none.
@@ -138,7 +141,6 @@ enum class LocalModelText {
     Suggested,
     YourChoice,
     TooLarge,
-    HideOtherModels,
     CompareNote,
     // Deleting a downloaded model: the button and its confirmation's body.
     DeleteModel,
@@ -154,8 +156,6 @@ QString textShowsValue(bool streams);
 QString languagesValue(const LocalModel &model);
 // "Download 731 MB".
 QString downloadCaption(qint64 bytes);
-// "Compare 7 other models".
-QString compareModelsCaption(int otherModels);
 // The comparison table's columns: Model, Download, Word errors, 10 s of
 // speech, Text shows, Memory.
 QStringList compareTableHeaders();

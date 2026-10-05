@@ -1,0 +1,42 @@
+<!doctype html>
+<!--
+  Before and after side by side. ?p= names the page (setup-transcription,
+  setup-refinement, settings); every other parameter is passed to both frames.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher provider ratings: before and after</title>
+<style>
+  body { margin: 0; background: #b9bcc0; font: 13px/1.4 "Noto Sans", "Segoe UI", system-ui, sans-serif; color: #232629; }
+  .pair { display: flex; gap: 16px; justify-content: center; padding: 12px 16px 24px; }
+  .pair section { width: 760px; }
+  .pair h1 { font-size: 14px; margin: 0 0 6px; display: flex; justify-content: space-between; }
+  .pair h1 a { font-weight: 400; color: #1d5fa8; }
+  iframe { width: 760px; height: 1180px; border: 0; background: #eff0f1; box-shadow: 0 4px 18px rgba(0,0,0,.2); }
+</style>
+</head>
+<body>
+<div class="pair">
+  <section><h1>Before <a id="today" href="#">Today's app</a></h1><iframe id="before"></iframe></section>
+  <section><h1>After <a href="index.html">All views</a></h1><iframe id="after"></iframe></section>
+</div>
+<script>
+  const params = new URLSearchParams(location.search);
+  const page = params.get('p') || 'setup-transcription';
+  params.delete('p');
+  const src = (v) => {
+    const q = new URLSearchParams(params);
+    q.set('v', v);
+    q.set('framed', '1');
+    return `${page}.html?${q}`;
+  };
+  document.getElementById('before').src = src('before');
+  document.getElementById('after').src = src('after');
+  // The real Linux grab this page was rebuilt from.
+  const shot = page === 'settings' ? `settings-${params.get('page') || 'dictation'}` : page;
+  const fallback = { 'setup-transcription': 'codex', 'setup-refinement': 'openai', 'settings-dictation': 'codex', 'settings-refinement': 'anthropic' }[shot];
+  document.getElementById('today').href = `today/${shot}-${params.get('choice') || fallback}.png`;
+</script>
+</body>
+</html>
