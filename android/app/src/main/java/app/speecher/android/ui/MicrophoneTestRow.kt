@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import app.speecher.android.dictation.Microphone
-import app.speecher.android.dictation.MicrophoneTest
 
 /** A microphone test that stops when its screen goes away or the app leaves the foreground. */
 @Composable
@@ -38,7 +37,10 @@ private fun rememberMicrophoneTest(
 @Composable
 private fun rememberMicrophoneTest(): MicrophoneTest {
     val context = LocalContext.current.applicationContext
-    return rememberMicrophoneTest(remember { Microphone(context) }::capture)
+    // A microphone per run: a stopped run's capture may still be closing its recorder.
+    return rememberMicrophoneTest { shouldContinue, onAudio ->
+        Microphone(context).capture(shouldContinue, onAudio)
+    }
 }
 
 /** The Test microphone row of Settings. */
@@ -96,20 +98,23 @@ private fun MicrophoneTestPreview(capture: (() -> Boolean, (ByteArray, Float) ->
         }
     }
 
-/** Hears [bytes] of audio at [level], then keeps the test running until it stops. */
-private fun heard(bytes: Int, level: Float): (() -> Boolean, (ByteArray, Float) -> Unit) -> Unit =
-    { shouldContinue, onAudio ->
-        onAudio(ByteArray(bytes), level)
-        while (shouldContinue()) Thread.sleep(100)
-    }
+/** Hears [audio] at [level], then keeps the test running until it stops. */
+private fun heard(
+    audio: ByteArray,
+    level: Float,
+): (() -> Boolean, (ByteArray, Float) -> Unit) -> Unit = { shouldContinue, onAudio ->
+    onAudio(audio, level)
+    while (shouldContinue()) Thread.sleep(100)
+}
 
 @PreviewLightDark
 @Composable
-internal fun MicrophoneTestDetectedPreview() = MicrophoneTestPreview(heard(3200, 0.6f))
+internal fun MicrophoneTestDetectedPreview() =
+    MicrophoneTestPreview(heard(ByteArray(3200) { 0x10 }, 0.6f))
 
 @PreviewLightDark
 @Composable
-internal fun MicrophoneTestSilentPreview() = MicrophoneTestPreview(heard(160_000, 0f))
+internal fun MicrophoneTestSilentPreview() = MicrophoneTestPreview(heard(ByteArray(160_000), 0f))
 
 @PreviewLightDark
 @Composable

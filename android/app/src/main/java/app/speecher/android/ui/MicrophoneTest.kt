@@ -1,10 +1,14 @@
-package app.speecher.android.dictation
+package app.speecher.android.ui
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import app.speecher.android.dictation.ActiveDictation
+import app.speecher.android.dictation.DictationState
+import app.speecher.android.dictation.sharedExecutor
 import java.util.concurrent.Executor
+import kotlin.math.sqrt
 
 /**
  * The Test microphone row's test: a live level from the microphone, captured here and sent nowhere,
@@ -73,8 +77,7 @@ class MicrophoneTest(
         if (current != run) return
         this.level = level
         if (status == DETECTED) return
-        // The desktop counts input from about -58 dBFS; this level starts at -50, so any counts.
-        if (level > 0f) {
+        if (heardInput(audio)) {
             status = DETECTED
             return
         }
@@ -87,6 +90,23 @@ class MicrophoneTest(
         if (current != run) return
         stop()
         status = message
+    }
+
+    /**
+     * Whether [audio], 16-bit little-endian PCM, counts as input: the desktop's RMS × 8 above 0.01,
+     * about -58 dBFS. The meter's level starts at -50 dBFS, so quiet working input would not show
+     * on it.
+     */
+    private fun heardInput(audio: ByteArray): Boolean {
+        val samples = audio.size / 2
+        if (samples == 0) return false
+        var sum = 0.0
+        for (index in 0 until samples) {
+            val sample = (audio[index * 2 + 1].toInt() shl 8) or (audio[index * 2].toInt() and 0xFF)
+            val normalized = sample / 32768.0
+            sum += normalized * normalized
+        }
+        return sqrt(sum / samples) * 8 > 0.01
     }
 
     private companion object {

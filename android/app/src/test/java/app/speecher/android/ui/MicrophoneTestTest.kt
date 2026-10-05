@@ -1,4 +1,4 @@
-package app.speecher.android.dictation
+package app.speecher.android.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -6,8 +6,12 @@ import org.junit.Test
 
 class MicrophoneTestTest {
     @Test
-    fun `heard input is reported and stays reported once the test stops`() {
-        val test = MicrophoneTest({ _, onAudio -> onAudio(ByteArray(3200), 0.4f) }, Runnable::run)
+    fun `quiet input below the meter is reported and stays reported once the test stops`() {
+        // Samples alternating +58 and -58, about -55 dBFS: under the meter's -50 dBFS floor, so
+        // its level is 0, but above the desktop's -58 dBFS.
+        val samples = byteArrayOf(0x3A, 0x00, -0x3A, -0x01)
+        val quiet = ByteArray(3200) { samples[it % 4] }
+        val test = MicrophoneTest({ _, onAudio -> onAudio(quiet, 0f) }, Runnable::run)
         test.start()
         assertFalse(test.running)
         assertEquals("Microphone input detected.", test.status)
