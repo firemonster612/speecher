@@ -325,9 +325,74 @@ ProviderOptionRow addOptionRow(QFormLayout *card,
         noteLabel->setContentsMargins(indent, 0, 0, 0);
         layout->addWidget(noteLabel);
     }
+    auto *rating = new settings::RatingBars(Qt::Horizontal, row);
+    rating->setObjectName(objectNamePrefix + QStringLiteral("Rating_") + id);
+    rating->setContentsMargins(indent, 0, 0, 0);
+    rating->hide();
+    layout->addWidget(rating, 0, Qt::AlignLeft);
+    auto *subject = new WrappingLabel(row);
+    subject->setObjectName(objectNamePrefix + QStringLiteral("RatingSubject_") + id);
+    subject->setWordWrap(true);
+    subject->setFont(settings::smallFont(subject->font()));
+    subject->setForegroundRole(QPalette::PlaceholderText);
+    subject->setContentsMargins(indent, 0, 0, 0);
+    subject->hide();
+    layout->addWidget(subject);
     settings::addCardRow(card, row, host);
     group->addButton(button);
-    return {id, label, button, status};
+    return {id, label, button, status, rating, subject};
+}
+
+// The Advanced disclosure under a step's facts, closed at first. Its content
+// lists the models behind the chosen provider; a step may add more after them.
+struct ProviderModels {
+    QWidget *section = nullptr;
+    QVBoxLayout *content = nullptr;
+    settings::RatedModelList *list = nullptr;
+};
+
+ProviderModels makeProviderModels(QWidget *parent, const QString &objectNamePrefix)
+{
+    ProviderModels models;
+    models.section = new QWidget(parent);
+    auto *layout = new QVBoxLayout(models.section);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(settings::relatedSpacing());
+    auto *content = new QWidget(models.section);
+    models.content = new QVBoxLayout(content);
+    models.content->setContentsMargins(0, 0, 0, 0);
+    models.content->setSpacing(settings::relatedSpacing());
+    models.list = new settings::RatedModelList(content);
+    models.list->setObjectName(objectNamePrefix + QStringLiteral("ModelList"));
+    models.content->addWidget(models.list);
+    QToolButton *toggle = settings::makeDisclosure(providerModelsCaption(), content, models.section);
+    toggle->setObjectName(objectNamePrefix + QStringLiteral("Models"));
+    layout->addWidget(toggle, 0, Qt::AlignLeft);
+    layout->addWidget(content);
+    return models;
+}
+
+// Every option's bars and what was rated, and the chosen provider's models in
+// its Advanced disclosure, which a provider with none leaves out.
+void showProviderRatings(ProviderRole role,
+                         const QList<ProviderOptionRow> &options,
+                         const QString &chosenId,
+                         LocalSetup *local,
+                         const AppSettings &settings,
+                         QWidget *advanced,
+                         settings::RatedModelList *models)
+{
+    const HardwareProfile hardware = local ? local->hardware().profile : HardwareProfile{};
+    for (const ProviderOptionRow &option : options) {
+        const std::optional<ProviderRating> rating = providerRating(role, option.id, hardware, settings);
+        option.rating->setVisible(rating.has_value());
+        option.rating->setRatings(rating ? rating->bars : QList<Rating>{});
+        option.ratingSubject->setText(rating ? rating->subject : QString());
+        option.ratingSubject->setVisible(!option.ratingSubject->text().isEmpty());
+    }
+    const QList<RatedModel> chosen = providerModels(role, chosenId, hardware, settings);
+    models->setModels(chosen);
+    advanced->setVisible(!chosen.isEmpty());
 }
 
 // A small grey line under something, indented to start where its text does.
@@ -559,6 +624,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
         layout->addWidget(makeLocalSection());
     }
     layout->addWidget(m_stats);
+    layout->addWidget(makeAdvanced());
     // Under the facts about the chosen service, where the refinement page puts
     // Fast mode: it is a setting for that service, not part of the sign-in
     // verdict below it. Codex only; see selectProvider().
@@ -688,15 +754,36 @@ QWidget *SpeechProviderSetupPage::makeLocalSection()
     cardLayout->addLayout(action);
     settings::addCardRow(card, m_localCard, host);
 
-    m_compareToggle = new QToolButton(m_localSection);
-    m_compareToggle->setObjectName(QStringLiteral("speechLocalCompare"));
-    m_compareToggle->setAutoRaise(true);
-    m_compareToggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    m_compareToggle->setArrowType(Qt::RightArrow);
-    layout->addWidget(m_compareToggle, 0, Qt::AlignLeft);
+    connect(m_localDownload, &QPushButton::clicked, this, [this] {
+        m_local->download(localChoice());
+        setLocalChoice(localChoice().id);
+    });
+    connect(m_localCancel, &QPushButton::clicked, this, [this] { m_local->cancelDownload(localChoice().id); });
+    connect(m_local, &LocalSetup::changed, this, [this] {
+        showLocalChoice();
+        showSelectedProvider();
+        showRatings();
+    });
+    connect(&m_local->models(), &LocalModelStore::downloadProgress, this, [this] { showLocalChoice(); });
+    return m_localSection;
+}
 
+QWidget *SpeechProviderSetupPage::makeAdvanced()
+{
+    const ProviderModels models = makeProviderModels(this, QStringLiteral("speechProvider"));
+    m_advanced = models.section;
+    m_models = models.list;
+    if (!m_local) {
+        return m_advanced;
+    }
+    // For Local Model, the comparison table follows the rated list.
+    m_compareBlock = new QWidget(models.content->parentWidget());
+    auto *layout = new QVBoxLayout(m_compareBlock);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(settings::relatedSpacing());
+    models.content->addWidget(m_compareBlock);
     const QStringList headers = compareTableHeaders();
-    m_compare = new QTableWidget(int(localModelCatalog().size()), int(headers.size()), m_localSection);
+    m_compare = new QTableWidget(int(localModelCatalog().size()), int(headers.size()), m_compareBlock);
     m_compare->setObjectName(QStringLiteral("speechLocalCompareTable"));
     m_compare->setHorizontalHeaderLabels(headers);
     m_compare->verticalHeader()->hide();
@@ -709,34 +796,14 @@ QWidget *SpeechProviderSetupPage::makeLocalSection()
     m_compare->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_compare->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_compare->setItemDelegateForColumn(0, new BadgeDelegate(m_compare));
-    m_compare->hide();
     layout->addWidget(m_compare);
-    auto *compareNote = makeNote(localModelText(LocalModelText::CompareNote), m_localSection);
+    auto *compareNote = makeNote(localModelText(LocalModelText::CompareNote), m_compareBlock);
     compareNote->setObjectName(QStringLiteral("speechLocalCompareNote"));
-    compareNote->hide();
     layout->addWidget(compareNote);
-
-    connect(m_compareToggle, &QToolButton::clicked, this, [this, compareNote] {
-        const bool open = !m_compare->isVisible();
-        m_compareToggle->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
-        m_compare->setVisible(open);
-        compareNote->setVisible(open);
-        showLocalChoice();
-    });
     connect(m_compare, &QTableWidget::currentCellChanged, this, [this](int row, int, int, int) {
         if (row >= 0) setLocalChoice(localModelCatalog().at(row).id);
     });
-    connect(m_localDownload, &QPushButton::clicked, this, [this] {
-        m_local->download(localChoice());
-        setLocalChoice(localChoice().id);
-    });
-    connect(m_localCancel, &QPushButton::clicked, this, [this] { m_local->cancelDownload(localChoice().id); });
-    connect(m_local, &LocalSetup::changed, this, [this] {
-        showLocalChoice();
-        showSelectedProvider();
-    });
-    connect(&m_local->models(), &LocalModelStore::downloadProgress, this, [this] { showLocalChoice(); });
-    return m_localSection;
+    return m_advanced;
 }
 
 bool SpeechProviderSetupPage::localSelected() const
@@ -803,9 +870,7 @@ void SpeechProviderSetupPage::showLocalChoice()
     }
     m_localState->setVisible(!m_localState->text().isEmpty());
 
-    m_compareToggle->setText(m_compare->isVisible()
-                                 ? localModelText(LocalModelText::HideOtherModels)
-                                 : compareModelsCaption(int(localModelCatalog().size()) - 1));
+    m_compareBlock->setVisible(localSelected());
     for (int row = 0; row < localModelCatalog().size(); ++row) {
         const LocalModel &entry = localModelCatalog().at(row);
         const QStringList cells = m_local->modelState(entry).tableCells;
@@ -918,9 +983,17 @@ void SpeechProviderSetupPage::selectProvider(const QString &providerId)
     updateSignInControls();
     showLocalChoice();
     showSelectedProvider();
+    showRatings();
     if (m_fallbacks) {
         m_fallbacks->refresh();
     }
+}
+
+void SpeechProviderSetupPage::showRatings()
+{
+    const int index = selectedIndex();
+    showProviderRatings(ProviderRole::Speech, m_options, index < 0 ? QString() : m_options.at(index).id, m_local,
+                        m_settings.snapshot(), m_advanced, m_models);
 }
 
 void SpeechProviderSetupPage::updateSignInControls()
@@ -1706,6 +1779,10 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
         layout->addWidget(makeEndpointDetail());
     }
     layout->addWidget(m_stats);
+    const ProviderModels models = makeProviderModels(this, QStringLiteral("refinementProvider"));
+    m_advanced = models.section;
+    m_models = models.list;
+    layout->addWidget(m_advanced);
     m_fastMode->setObjectName(QStringLiteral("refinementFastMode"));
     m_openAiSpeed->setObjectName(QStringLiteral("refinementOpenAiSpeed"));
     auto *speedLayout = new QHBoxLayout(m_openAiSpeedRow);
@@ -1850,6 +1927,7 @@ QWidget *RefinementSetupPage::makeLocalRunnerDetail()
     });
     connect(m_local, &LocalSetup::changed, this, [this] {
         showLocalRunner();
+        showRatings();
         autoSelectReadyProvider();
     });
     connect(m_local, &LocalSetup::pullProgress, this, [this] { showLocalRunner(); });
@@ -2117,6 +2195,7 @@ void RefinementSetupPage::selectProvider(const QString &providerId)
         showEndpointCheck();
     }
     updateProviderStats();
+    showRatings();
     updateFastModeControl();
     showSelectedProvider();
     if (m_fallbacks) {
@@ -2258,6 +2337,12 @@ void RefinementSetupPage::updateProviderStats()
                                      return provider.id == providerId;
                                  });
     m_stats->setStats(it == providers.cend() ? QVector<ProviderStat>{} : it->stats);
+}
+
+void RefinementSetupPage::showRatings()
+{
+    showProviderRatings(ProviderRole::Refinement, m_options, selectedProviderId(), m_local, m_settings.snapshot(),
+                        m_advanced, m_models);
 }
 
 void RefinementSetupPage::updateFastModeControl()

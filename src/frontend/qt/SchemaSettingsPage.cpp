@@ -26,6 +26,7 @@
 #include <QSizePolicy>
 #include <QSpinBox>
 #include <QTimer>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 #include <memory>
@@ -210,10 +211,6 @@ void SchemaSettingsPage::addSection(const SettingsSection &section, QVBoxLayout 
     QString previousDialog;
     QWidget *dialogForm = nullptr;
     for (const SettingsRow &descriptor : section.rows) {
-        // Not drawn on Linux yet, so they show nothing.
-        if (descriptor.kind == RowKind::Rating || descriptor.kind == RowKind::ModelList) {
-            continue;
-        }
         // Rows of a group share one gate, so the first of them says why.
         const bool repeatsGroup = !descriptor.groupId.isEmpty() && descriptor.groupId == previousGroup;
         previousGroup = descriptor.groupId;
@@ -430,6 +427,36 @@ void SchemaSettingsPage::addRow(const SettingsRow &descriptor, QWidget *host, bo
         containerLayout->addWidget(custom.widget);
         settings::addCardRow(form, container, host);
         row.frame = container;
+        m_rows.append(row);
+        applyRow(m_rows.last(), AppSettings{});
+        return;
+    }
+
+    if (descriptor.kind == RowKind::ModelList) {
+        // The disclosure is the row's control and the list opens under the
+        // whole row, the width of the card.
+        auto *container = new QWidget(host);
+        auto *containerLayout = new QVBoxLayout(container);
+        containerLayout->setContentsMargins(0, 0, 0, 0);
+        containerLayout->setSpacing(0);
+        auto *list = new settings::RatedModelList(container);
+        list->setObjectName(descriptor.id + QStringLiteral("List"));
+        const QMargins padding = settings::rowPadding();
+        list->setContentsMargins(padding.left(), 0, padding.right(), padding.bottom());
+        QToolButton *toggle = settings::makeDisclosure(QString(), list, container);
+        toggle->setObjectName(descriptor.id);
+        QFrame *frame = settings::makeRow(descriptor.label, descriptor.help, toggle, container, nullptr,
+                                          dynamicDescription);
+        containerLayout->addWidget(frame);
+        containerLayout->addWidget(list);
+        settings::addCardRow(form, container, host);
+        row.frame = container;
+        row.control = toggle;
+        row.title = frame->findChild<QLabel *>(QStringLiteral("rowTitle"));
+        row.description = frame->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        row.refresh = [list, models = descriptor.ratedModels](const AppSettings &settings) {
+            list->setModels(models(settings));
+        };
         m_rows.append(row);
         applyRow(m_rows.last(), AppSettings{});
         return;
@@ -669,10 +696,16 @@ QWidget *SchemaSettingsPage::makeControl(const SettingsRow &descriptor, QWidget 
         row.setValue = [label](const QVariant &value) { label->setText(value.toString()); };
         return label;
     }
+    case RowKind::Rating: {
+        auto *bars = new settings::RatingBars(Qt::Vertical, card);
+        row.refresh = [bars, ratings = descriptor.ratings](const AppSettings &settings) {
+            bars->setRatings(ratings(settings));
+        };
+        return bars;
+    }
     case RowKind::Action:
     case RowKind::Collection:
     case RowKind::Custom:
-    case RowKind::Rating:
     case RowKind::ModelList:
         break;
     }

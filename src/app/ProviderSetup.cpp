@@ -47,17 +47,15 @@ void registerProviders(ProviderRegistry &registry, SecretStore *secrets, const L
     // E2E-build-only hook: deterministic stub providers for the headless
     // dictation-panel flow runs. Never compiled into distributed builds.
     if (qEnvironmentVariableIntValue("SPEECHER_E2E_STUB") == 1) {
-        // The stub stats mirror the real providers' shape (a Score line first)
-        // so the setup-flow E2E can assert the rendering.
+        // The stubs have no rating; the setup-flow E2E asserts the real
+        // providers' bars beside them.
         registry.registerSpeechProvider(
             {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString(), false, QString(),
-             {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-              {QStringLiteral("Engine"), QStringLiteral("Deterministic test stub")}}},
+             {textShows(QStringLiteral("Deterministic test stub"))}},
             createE2ESpeechTranscriber);
         registry.registerRefinementProvider(
             {QStringLiteral("e2e-stub"), QStringLiteral("E2E stub"), QString(), false, QString(),
-             {{QStringLiteral("Score"), QStringLiteral("8 / 10")},
-              {QStringLiteral("Engine"), QStringLiteral("Deterministic test stub")}}},
+             {{QStringLiteral("Model"), QStringLiteral("Deterministic test stub")}}},
             createE2ETranscriptRefiner);
     }
 #endif
