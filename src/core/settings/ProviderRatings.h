@@ -54,6 +54,7 @@ struct RatedModel {
     QString note;
     // A model on this computer has its own bars; a service's models have none.
     QList<Rating> bars;
+    bool operator==(const RatedModel &) const = default;
 };
 
 // A provider's rating, given this computer and the settings: a Local Model is

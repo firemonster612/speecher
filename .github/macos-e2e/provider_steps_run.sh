@@ -213,7 +213,11 @@ else
   walk_to_step 2 || errors+=("could not reach the transcription step")
   if (( ${#errors[@]} == 0 )); then
     cp "$CASE_DIR/pages/step-2-transcription.png" "$CASE_DIR/transcription-claude.png"
-    # Claude Voice's Speed; no other speech option on this step has it.
+    # Its Formatting line shows only while Claude Voice is selected, and its
+    # 10/10 Speed shows on its row (this build offers no Local Model, which
+    # rates 10/10 too on a Mac).
+    expect_text "$CASE_DIR/transcription-claude.png" "Automatic punctuation, capitals, numerals" \
+      || errors+=("the transcription step does not show the Claude Voice stats")
     expect_text "$CASE_DIR/transcription-claude.png" "10/10" \
       || errors+=("the transcription step does not show the Claude Voice ratings")
     for (( step = 2; step < 5; step++ )); do

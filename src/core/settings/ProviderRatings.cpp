@@ -162,6 +162,24 @@ QString serviceModelNote(bool isDefault)
     return isDefault ? QStringLiteral("The default. ") + change : change;
 }
 
+// A catalog as its Advanced list shows it: rate is a model's row and whether
+// it is the one suggested here, which goes first and says so.
+template <typename Catalog, typename Rate>
+QList<RatedModel> suggestedFirst(const Catalog &catalog, Rate rate)
+{
+    QList<RatedModel> models;
+    for (const auto &model : catalog) {
+        auto [rated, isSuggested] = rate(model);
+        if (isSuggested) {
+            rated.note = localModelText(LocalModelText::Suggested);
+            models.prepend(rated);
+        } else {
+            models.append(rated);
+        }
+    }
+    return models;
+}
+
 QList<RatedModel> speechModels(const QString &providerId, const HardwareProfile &hardware,
                                const SpeechSettings &speech)
 {
@@ -184,18 +202,10 @@ QList<RatedModel> speechModels(const QString &providerId, const HardwareProfile 
         return {};
     }
     const LocalModel *suggested = hardwareKnown(hardware) ? &suggestedLocalModel(hardware, speech.language) : nullptr;
-    QList<RatedModel> models;
-    for (const LocalModel &model : localModelCatalog()) {
+    return suggestedFirst(localModelCatalog(), [&](const LocalModel &model) {
         const bool isSuggested = suggested && suggested->id == model.id;
-        const RatedModel rated{model.name, isSuggested ? localModelText(LocalModelText::Suggested) : QString(),
-                               localModelBars(model, hardware, speech.local)};
-        if (isSuggested) {
-            models.prepend(rated);
-        } else {
-            models.append(rated);
-        }
-    }
-    return models;
+        return std::pair{RatedModel{model.name, {}, localModelBars(model, hardware, speech.local)}, isSuggested};
+    });
 }
 
 QList<RatedModel> refinementModels(const QString &providerId, const HardwareProfile &hardware,
@@ -210,18 +220,10 @@ QList<RatedModel> refinementModels(const QString &providerId, const HardwareProf
     }
     const std::optional<CleanupHardware> cleanupHardware = cleanupHardwareHere(hardware);
     const std::optional<CleanupModel> suggested = suggestedCleanupModelHere(cleanupHardware);
-    QList<RatedModel> models;
-    for (const CleanupModel &model : cleanupModelCatalog()) {
+    return suggestedFirst(cleanupModelCatalog(), [&](const CleanupModel &model) {
         const bool isSuggested = suggested && suggested->ollamaTag == model.ollamaTag;
-        const RatedModel rated{model.name, isSuggested ? localModelText(LocalModelText::Suggested) : QString(),
-                               cleanupModelBars(model, cleanupHardware)};
-        if (isSuggested) {
-            models.prepend(rated);
-        } else {
-            models.append(rated);
-        }
-    }
-    return models;
+        return std::pair{RatedModel{model.name, {}, cleanupModelBars(model, cleanupHardware)}, isSuggested};
+    });
 }
 
 } // namespace

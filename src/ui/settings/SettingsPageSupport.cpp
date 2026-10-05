@@ -207,14 +207,6 @@ QLabel *makeRatingCaption(const QString &text, QWidget *parent)
     return label;
 }
 
-bool sameModels(const QList<RatedModel> &left, const QList<RatedModel> &right)
-{
-    return std::equal(left.cbegin(), left.cend(), right.cbegin(), right.cend(),
-                      [](const RatedModel &a, const RatedModel &b) {
-                          return a.name == b.name && a.note == b.note && a.bars == b.bars;
-                      });
-}
-
 } // namespace
 
 RatingCell::RatingCell(QWidget *parent)
@@ -294,7 +286,7 @@ RatedModelList::RatedModelList(QWidget *parent)
 
 void RatedModelList::setModels(const QList<RatedModel> &models)
 {
-    if (sameModels(models, m_models)) {
+    if (models == m_models) {
         return;
     }
     m_models = models;
