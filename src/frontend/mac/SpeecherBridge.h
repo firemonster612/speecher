@@ -686,7 +686,6 @@ typedef NS_ENUM(NSInteger, SpeecherLocalModelText) {
     SpeecherLocalModelTextSuggested,
     SpeecherLocalModelTextYourChoice,
     SpeecherLocalModelTextTooLarge,
-    SpeecherLocalModelTextHideOtherModels,
     SpeecherLocalModelTextCompareNote,
     SpeecherLocalModelTextDeleteModel,
     SpeecherLocalModelTextDeleteBody,

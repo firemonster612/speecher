@@ -2199,6 +2199,8 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
             let id = flow.steps[step].stepId
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 guard self.flow.step == step else { return }
+                self.window.contentView?.layoutSubtreeIfNeeded()
+                self.window.displayIfNeeded()
                 self.capture(toPath: "\(dir)/step-\(step + 1)-\(id).png")
             }
         }
@@ -2207,14 +2209,11 @@ final class SpeecherSetupAssistant: NSObject, NSWindowDelegate {
         flow.stepRendered?(flow.step)
     }
 
-    @discardableResult
-    func capture(toPath path: String) -> Bool {
-        window.contentView?.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
+    private func capture(toPath path: String) {
         guard let view = window.contentView?.superview ?? window.contentView,
-              let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
+              let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
         view.cacheDisplay(in: view.bounds, to: bitmap)
-        guard let png = bitmap.representation(using: .png, properties: [:]) else { return false }
-        return (try? png.write(to: URL(fileURLWithPath: path), options: .atomic)) != nil
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }

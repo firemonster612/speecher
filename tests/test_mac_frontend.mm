@@ -1,3 +1,4 @@
+#include "common/test_local_setup.h"
 #include "common/test_suites.h"
 
 #include "app/ApplicationController.h"
@@ -115,26 +116,18 @@ id axAttribute(id element, CFStringRef attribute)
     return CFBridgingRelease(value);
 }
 
-// What VoiceOver names element: its description, else its title.
-NSString *axName(id element)
+// The first button under element, depth first, whose name as VoiceOver reads
+// it starts with caption: a row button's name runs on into its description.
+id axButton(id element, NSString *caption)
 {
     NSString *description = axAttribute(element, kAXDescriptionAttribute);
-    return description.length > 0 ? description : axAttribute(element, kAXTitleAttribute);
-}
-
-bool axHasRole(id element, CFStringRef role)
-{
-    return [axAttribute(element, kAXRoleAttribute) isEqual:(__bridge NSString *)role];
-}
-
-// The first element under element, depth first, that matches.
-id axFind(id element, BOOL (^matches)(id element))
-{
-    if (matches(element)) {
+    NSString *name = description.length > 0 ? description : axAttribute(element, kAXTitleAttribute);
+    if ([axAttribute(element, kAXRoleAttribute) isEqual:(__bridge NSString *)kAXButtonRole]
+        && [name hasPrefix:caption]) {
         return element;
     }
     for (id child in axAttribute(element, kAXChildrenAttribute)) {
-        if (id found = axFind(child, matches)) {
+        if (id found = axButton(child, caption)) {
             return found;
         }
     }
@@ -145,7 +138,7 @@ id axFind(id element, BOOL (^matches)(id element))
 // an accessibility client, so a test reaches its controls as one, which
 // needs the Accessibility grant; the views' own NSAccessibility tree stays
 // empty until a client has asked.
-id axFindOnScreen(BOOL (^matches)(id element))
+id axButtonOnScreen(NSString *caption)
 {
     // A client lists no windows until the app has finished launching, which
     // the offscreen platform the suites run on, unlike Cocoa's, never does.
@@ -158,20 +151,11 @@ id axFindOnScreen(BOOL (^matches)(id element))
     Q_UNUSED(launched);
     id application = CFBridgingRelease(AXUIElementCreateApplication(getpid()));
     for (id window in axAttribute(application, kAXWindowsAttribute)) {
-        if (id found = axFind(window, matches)) {
+        if (id found = axButton(window, caption)) {
             return found;
         }
     }
     return nil;
-}
-
-// A button on screen whose name starts with caption: a row button's name runs
-// on into its description.
-id axButtonOnScreen(NSString *caption)
-{
-    return axFindOnScreen(^BOOL(id element) {
-        return axHasRole(element, kAXButtonRole) && [axName(element) hasPrefix:caption];
-    });
 }
 
 bool axPress(id button)
@@ -1400,8 +1384,8 @@ private slots:
     }
 
     // The setup steps' bars and Advanced lists: a service's, a Local Model's
-    // naming what was rated with every model rated, and none for Custom
-    // Endpoint.
+    // naming what was rated once the hardware is known, with every model
+    // rated, and none for Custom Endpoint.
     void setupRatingsComeFromCore()
     {
         ApplicationController controller(false);
@@ -1413,6 +1397,12 @@ private slots:
         QCOMPARE(QString::fromNSString(claude.bars[1].valueText), QStringLiteral("10/10"));
         QCOMPARE(claude.subject.length, NSUInteger(0));
 
+        // Nothing is rated for this computer until the probe reads its memory.
+        LocalSetupTestAccess::setHardware(*controller.localSetup(), HardwareProfile{});
+        QVERIFY(![bridge setupProviderRating:SpeecherProviderRoleSpeech provider:@"local"]);
+        HardwareProfile probed;
+        probed.systemRamBytes = quint64(16) << 30;
+        LocalSetupTestAccess::setHardware(*controller.localSetup(), probed);
         SpeecherProviderRating *local = [bridge setupProviderRating:SpeecherProviderRoleSpeech provider:@"local"];
         QVERIFY(local);
         QCOMPARE(local.bars.count, NSUInteger(2));

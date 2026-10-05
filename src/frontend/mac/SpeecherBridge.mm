@@ -2101,6 +2101,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     context.liveFactsForDraft = [setup = controller->localSetup()](const AppSettings &draft) {
         return setup->liveFacts(draft);
     };
+    context.hardware = [setup = controller->localSetup()] { return setup->hardware().profile; };
     // The device row offers the list the schema model last enumerated.
     const auto listAudioInputs = context.audioInputDevices;
     const auto audioInputs = std::make_shared<QList<RowOption>>();
@@ -3412,7 +3413,6 @@ static void probeSpeechProvider(BridgeState *state,
     static_assert(int(SpeecherLocalModelTextSuggested) == int(speecher::LocalModelText::Suggested));
     static_assert(int(SpeecherLocalModelTextYourChoice) == int(speecher::LocalModelText::YourChoice));
     static_assert(int(SpeecherLocalModelTextTooLarge) == int(speecher::LocalModelText::TooLarge));
-    static_assert(int(SpeecherLocalModelTextHideOtherModels) == int(speecher::LocalModelText::HideOtherModels));
     static_assert(int(SpeecherLocalModelTextCompareNote) == int(speecher::LocalModelText::CompareNote));
     static_assert(int(SpeecherLocalModelTextDeleteModel) == int(speecher::LocalModelText::DeleteModel));
     static_assert(int(SpeecherLocalModelTextDeleteBody) == int(speecher::LocalModelText::DeleteBody));
