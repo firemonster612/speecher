@@ -361,6 +361,11 @@ data class SpeecherSettings(
     val updateCheckMinutes: Int = IntervalUnit.Days.minutes,
     /** The unit a custom interval was entered in, or null for one of the presets. */
     val updateCheckUnit: IntervalUnit? = null,
+    /**
+     * Keep word counts, times and app names of each inserted dictation for Insights. Turning it off
+     * stops recording; it does not delete what is kept.
+     */
+    val insightsEnabled: Boolean = true,
 ) {
     /**
      * The layout the panel shows. With refinement off there is nothing to refine, so only Insert.

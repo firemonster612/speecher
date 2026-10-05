@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateFormat
+import android.util.Log
 import android.view.inputmethod.InputConnection
 import app.speecher.android.BuildConfig
 import app.speecher.android.auth.TokenStore
@@ -91,6 +92,8 @@ class DictationEngine(
     private val resumeMedia: () -> Unit = {},
     /** The replacements an Insert applies to the words as heard, read once per dictation. */
     private val replacements: () -> List<Replacement> = { emptyList() },
+    /** After a commit succeeds: the text inserted and how long the microphone listened. */
+    private val onCommitted: (text: String, audioMillis: Long) -> Unit = { _, _ -> },
 ) : AutoCloseable {
     @Volatile
     var state: DictationState = DictationState.Listening()
@@ -141,12 +144,15 @@ class DictationEngine(
     private val recorded = ByteArrayOutputStream()
     /** The dictation outgrew what the batch pass transcribes, so [recorded] is dropped. */
     private var recordedTooLong = false
+    /** All the audio this dictation heard, retries included, pauses not. */
+    private var heardBytes = 0L
     @Volatile private var session = 0
 
     @Synchronized
     fun start(provider: SpeechProvider) {
         recorded.reset()
         recordedTooLong = false
+        heardBytes = 0
         startSession(provider, "")
     }
 
@@ -332,6 +338,7 @@ class DictationEngine(
                     if (current == session && recording) {
                         if (finishingPause) heardAfterResume.add(audio)
                         else client?.sendAudio(audio) ?: unsent.add(audio)
+                        heardBytes += audio.size
                         if (
                             transcribe != null &&
                                 sourceProvider.hasBatchTranscription &&
@@ -558,6 +565,7 @@ class DictationEngine(
         if (commit(text)) {
             inserted = true
             failedCommit = null
+            onCommitted(text, heardBytes / PCM_BYTES_PER_MILLI)
         } else {
             failedCommit = text
             fail(session, FailureReason.Commit, "Could not insert text", text)
@@ -611,12 +619,15 @@ class DictationEngine(
  */
 private val RECONNECT_BACKOFF_MS = longArrayOf(1_000, 3_000)
 
+// 16 kHz mono PCM16, as the microphone captures it.
+private const val PCM_BYTES_PER_MILLI = 16 * 2
+
 /**
- * 80 s of 16 kHz mono PCM16. The batch endpoint transcribes only the first ~86 s of a recording and
- * returns that prefix as a success (docs/research/0004), so a longer dictation keeps its streamed
- * transcript rather than lose its tail; 80 s keeps a margin under the observed cutoff.
+ * 80 s of it. The batch endpoint transcribes only the first ~86 s of a recording and returns that
+ * prefix as a success (docs/research/0004), so a longer dictation keeps its streamed transcript
+ * rather than lose its tail; 80 s keeps a margin under the observed cutoff.
  */
-private const val MAX_RETRANSCRIBE_BYTES = 80 * 16000 * 2
+private const val MAX_RETRANSCRIBE_BYTES = 80_000 * PCM_BYTES_PER_MILLI
 
 /** The provider can't listen for the saved spoken language; [message] says so for the panel. */
 class SpokenLanguageUnsupported(message: String) : Exception(message)
@@ -801,5 +812,15 @@ fun createDictationEngine(
         pauseMedia = { if (settings.pauseMedia) audio.requestAudioFocus(mediaPause) },
         resumeMedia = { audio.abandonAudioFocusRequest(mediaPause) },
         replacements = ::replacements,
+        onCommitted = { text, audioMillis ->
+            if (settings.insightsEnabled) {
+                val record = dictationRecord(text, audioMillis, settings, ActiveDictation.target)
+                // Insights are a side record: failing to keep one never fails the insert.
+                sharedExecutor.execute {
+                    runCatching { appendInsight(insightsFile(context), record) }
+                        .onFailure { Log.w("Speecher", "insights log append failed", it) }
+                }
+            }
+        },
     )
 }

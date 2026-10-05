@@ -641,6 +641,35 @@ class DictationEngineTest {
     }
 
     @Test
+    fun `a commit reports the text and how long the microphone listened`() {
+        val capture = Capture()
+        lateinit var speech: (SpeechEvent) -> Unit
+        val committed = mutableListOf<Pair<String, Long>>()
+        val engine =
+            DictationEngine(
+                capture::capture,
+                capture::stop,
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { _, raw, _, _ -> raw },
+                null,
+                { true },
+                Executor { it.run() },
+                {},
+                onCommitted = { text, audioMillis -> committed.add(text to audioMillis) },
+            )
+        engine.start(SpeechProvider.Claude)
+        capture.audio?.invoke(ByteArray(3200), 0.4f) // 100 ms of 16 kHz PCM16.
+        capture.audio?.invoke(ByteArray(1600), 0.4f)
+        speech(SpeechEvent.Final("hello there"))
+        engine.insert()
+        speech(SpeechEvent.Completed)
+        assertEquals(listOf("hello there" to 150L), committed)
+    }
+
+    @Test
     fun `pause finishes the stream and keeps its words, and resume carries on in a new one`() {
         val capture = Capture()
         val clients = mutableListOf<Client>()

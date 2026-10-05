@@ -95,6 +95,7 @@ fun Home(
     onOpenSettings: () -> Unit,
     onSignIn: (Provider) -> Unit,
     onOpenChipSettings: () -> Unit,
+    onOpenInsights: () -> Unit,
     modifier: Modifier = Modifier,
     update: ApkUpdate? = null,
     updating: Boolean = false,
@@ -139,6 +140,14 @@ fun Home(
             },
             trailingContent = { Chevron() },
             modifier = Modifier.clickable(onClick = onOpenSettings),
+        )
+        ListItem(
+            headlineContent = { Text("Insights") },
+            supportingContent = {
+                Text(if (settings.insightsEnabled) "Words, dictations and speaking pace" else "Off")
+            },
+            trailingContent = { Chevron() },
+            modifier = Modifier.clickable(onClick = onOpenInsights),
         )
         Section("Status")
         AccountRow(status, onOpenSetup, onSignIn)
@@ -250,7 +259,7 @@ internal fun Chevron() {
 
 @Composable
 private fun HomePreview(status: SetupStatus) = SpeecherTheme {
-    SpeecherScreen("", onBack = null) { Home(status, SpeecherSettings(), {}, {}, {}, {}) }
+    SpeecherScreen("", onBack = null) { Home(status, SpeecherSettings(), {}, {}, {}, {}, {}) }
 }
 
 @PreviewLightDark

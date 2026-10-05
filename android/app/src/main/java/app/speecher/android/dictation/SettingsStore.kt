@@ -142,6 +142,7 @@ class SettingsStore(private val context: Context) {
                         .getString("updateCheckUnit", null)
                         ?.let { name -> IntervalUnit.entries.firstOrNull { it.name == name } }
                         ?.takeIf { updateCheckMinutes % it.minutes == 0 },
+                insightsEnabled = preferences.getBoolean("insightsEnabled", true),
             )
             // So no profile names a tone or level that is gone, and no rule a profile.
             .withCustomChoices()
@@ -253,6 +254,7 @@ class SettingsStore(private val context: Context) {
             putInt("updateCheckMinutes", settings.updateCheckMinutes)
             settings.updateCheckUnit?.let { putString("updateCheckUnit", it.name) }
                 ?: remove("updateCheckUnit")
+            putBoolean("insightsEnabled", settings.insightsEnabled)
             putInt("version", VERSION)
         }
     }
