@@ -343,9 +343,10 @@ else
   fi
 fi
 
-# P5: Custom Endpoint chosen shows its fields on the transcription step and
-# holds Continue until it has a server. Seeded, since synthetic input cannot
-# select a non-first radio row (see P3).
+# P5: Custom Endpoint chosen shows its fields on the transcription step, and
+# says what it needs without a server. Seeded, since synthetic input cannot
+# select a non-first radio row (see P3). This run skips the gates; S4 in
+# setup_run.sh checks that the step holds Continue.
 fresh_reset
 case_begin P5
 defaults write "$DOMAIN" stt.provider endpoint
@@ -361,15 +362,11 @@ else
       || errors+=("the transcription step does not show the endpoint's fields")
     expect_text "$CASE_DIR/transcription-endpoint.png" "Enter your server's URL to continue." \
       || errors+=("the transcription step does not say what the endpoint needs")
-    click_button Continue || true
-    sleep 1
-    [[ -s "$CASE_DIR/pages/step-3-microphone.png" ]] \
-      && errors+=("Continue left the transcription step with no server")
   fi
   if (( ${#errors[@]} )); then
     fail_case "$(IFS='; '; echo "${errors[*]}")"
   else
-    pass_case "Custom Endpoint shows its fields and holds Continue until it has a server."
+    pass_case "Custom Endpoint shows its fields and says it needs a server."
   fi
 fi
 
