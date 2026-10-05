@@ -14,6 +14,8 @@ import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.normalizedVocabulary
+import app.speecher.protocol.withUsage
 import kotlin.enums.enumEntries
 import kotlin.math.roundToInt
 import org.json.JSONArray
@@ -51,26 +53,7 @@ class SettingsStore(private val context: Context) {
                         else OpenAiSpeed.Standard,
                     ),
                 claudeFastMode = preferences.getBoolean("anthropicFastMode", true),
-                vocabulary =
-                    JSONArray(preferences.getString("vocabulary", "[]")).let { items ->
-                        // Earlier releases stored each word as its bare term.
-                        List(items.length()) { index ->
-                            val word = items.optJSONObject(index)
-                            if (word == null) VocabularyWord(items.getString(index))
-                            else
-                                VocabularyWord(
-                                    word.getString("term"),
-                                    word.optString("context"),
-                                    (word.optJSONArray("profiles") ?: JSONArray()).let { ids ->
-                                        List(ids.length()) { WritingProfile(ids.getString(it)) }
-                                            .toSet()
-                                    },
-                                    // Stored only when off, so every earlier word is a key term.
-                                    word.optBoolean("keyTerm", true),
-                                    word.optBoolean("priority"),
-                                )
-                        }
-                    },
+                vocabulary = loadVocabulary(),
                 chipDockOnMic = preferences.getBoolean("chipDockOnMic", true),
                 chipOffsetX =
                     preferences.getInt("chipOffsetX", NO_OFFSET).takeIf { it != NO_OFFSET },
@@ -170,25 +153,7 @@ class SettingsStore(private val context: Context) {
             }
             putString("openAiSpeed", settings.chatGptSpeed.name)
             putBoolean("anthropicFastMode", settings.claudeFastMode)
-            putString(
-                "vocabulary",
-                JSONArray(
-                        settings.vocabulary.map { word ->
-                            JSONObject(
-                                    mapOf(
-                                        "term" to word.term,
-                                        "context" to word.context,
-                                        "profiles" to JSONArray(word.profiles.map { it.id }),
-                                    )
-                                )
-                                .apply {
-                                    if (!word.keyTerm) put("keyTerm", false)
-                                    if (word.priority) put("priority", true)
-                                }
-                        }
-                    )
-                    .toString(),
-            )
+            putString("vocabulary", vocabularyJson(settings.vocabulary))
             putBoolean("chipDockOnMic", settings.chipDockOnMic)
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")
@@ -275,6 +240,17 @@ class SettingsStore(private val context: Context) {
     }
 
     /**
+     * Counts a use of each word [text] contains, as the desktop does for every dictation it
+     * delivers. Writes only the vocabulary, leaving every other setting as stored.
+     */
+    fun recordVocabularyUsage(text: String, nowMs: Long = System.currentTimeMillis()) {
+        val words = loadVocabulary()
+        val used = withUsage(words, text, nowMs)
+        if (used != words)
+            preferences.edit { putString("vocabulary", vocabularyJson(normalizedVocabulary(used))) }
+    }
+
+    /**
      * Keeps what settings from an earlier release meant, once. That release placed the chip by the
      * corner of a 52 x 36 dp window, now 56 x 48 dp with the same pill centred, so a saved offset
      * moves up and left by half the difference to keep the pill put.
@@ -296,6 +272,52 @@ class SettingsStore(private val context: Context) {
             putInt("version", VERSION)
         }
     }
+
+    private fun loadVocabulary(): List<VocabularyWord> =
+        JSONArray(preferences.getString("vocabulary", "[]"))
+            .let { items ->
+                // Earlier releases stored each word as its bare term.
+                List(items.length()) { index ->
+                    val word = items.optJSONObject(index)
+                    if (word == null) VocabularyWord(items.getString(index))
+                    else
+                        VocabularyWord(
+                            word.getString("term"),
+                            word.optString("context"),
+                            (word.optJSONArray("profiles") ?: JSONArray()).let { ids ->
+                                List(ids.length()) { WritingProfile(ids.getString(it)) }.toSet()
+                            },
+                            // Stored only when off, so every earlier word is a key term.
+                            word.optBoolean("keyTerm", true),
+                            word.optBoolean("priority"),
+                            word.optString("source", "manual"),
+                            word.optInt("frequency"),
+                            word.optLong("lastUsedMs"),
+                        )
+                }
+            }
+            .let(::normalizedVocabulary)
+
+    private fun vocabularyJson(words: List<VocabularyWord>): String =
+        JSONArray(
+                words.map { word ->
+                    JSONObject(
+                            mapOf(
+                                "term" to word.term,
+                                "context" to word.context,
+                                "profiles" to JSONArray(word.profiles.map { it.id }),
+                                "source" to word.source,
+                                "frequency" to word.frequency,
+                                "lastUsedMs" to word.lastUsedMs,
+                            )
+                        )
+                        .apply {
+                            if (!word.keyTerm) put("keyTerm", false)
+                            if (word.priority) put("priority", true)
+                        }
+                }
+            )
+            .toString()
 
     private fun customProfileIds(): List<WritingProfile> =
         JSONArray(preferences.getString("customProfiles", "[]")).let { items ->

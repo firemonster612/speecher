@@ -28,17 +28,28 @@ class VocabularyTest {
         }
         val store = SettingsStore(context)
         assertEquals(
-            listOf(VocabularyWord("Speecher"), VocabularyWord("Priya Raman")),
+            listOf(VocabularyWord("Priya Raman"), VocabularyWord("Speecher")),
             store.load().vocabulary,
         )
         val words =
             listOf(
                 VocabularyWord("Speecher", priority = true),
-                kubernetes,
+                kubernetes.copy(source = "csv", frequency = 2, lastUsedMs = 1_791_020_460_000),
                 VocabularyWord("Grafana", keyTerm = false),
             )
         store.save(SpeecherSettings(vocabulary = words))
         assertEquals(words, store.load().vocabulary)
+    }
+
+    @Test
+    fun `an inserted dictation counts a use of each word it contains`() {
+        val store = SettingsStore(RuntimeEnvironment.getApplication())
+        store.save(SpeecherSettings(vocabulary = listOf(VocabularyWord("PR"), kubernetes)))
+        store.recordVocabularyUsage("Scaled the Kubernetes cluster.", nowMs = 1700)
+        assertEquals(
+            listOf(kubernetes.copy(frequency = 1, lastUsedMs = 1700), VocabularyWord("PR")),
+            store.load().vocabulary,
+        )
     }
 
     @Test

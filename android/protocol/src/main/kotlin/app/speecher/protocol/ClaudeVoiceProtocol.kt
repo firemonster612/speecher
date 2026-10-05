@@ -157,7 +157,7 @@ private fun envFlag(value: String?, default: Boolean): Boolean =
     }
 
 /** Trims, then replaces each internal whitespace run with one space. */
-private fun String.simplified(): String = buildString {
+internal fun String.simplified(): String = buildString {
     for (c in this@simplified.trim(Char::isQtWhitespace)) {
         when {
             !c.isQtWhitespace() -> append(c)
