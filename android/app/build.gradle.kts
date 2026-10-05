@@ -92,6 +92,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.brotli)
     implementation(libs.lifecycle)
+    implementation(libs.lifecycle.compose)
     implementation(libs.savedstate)
     implementation(libs.serialization.json)
     testImplementation(libs.junit4)

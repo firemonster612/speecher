@@ -350,6 +350,8 @@ private fun TranscriptionSettings(
             colors = rowColors(),
         )
     }
+    Section("Microphone")
+    MicrophoneTestRow()
 }
 
 @Composable
