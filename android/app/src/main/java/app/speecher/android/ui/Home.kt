@@ -28,16 +28,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
+import app.speecher.android.dictation.LatestTranscript
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SetupStatus
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.countWords
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.update.ApkUpdate
+import java.text.NumberFormat
 
 /**
  * A full-screen page with a scrolling body. Pages you navigate to get a top bar with [title] and a
@@ -101,6 +105,7 @@ fun Home(
     updating: Boolean = false,
     updateFailed: Boolean = false,
     onUpdate: () -> Unit = {},
+    latest: LatestTranscript? = null,
 ) {
     // What dictation will actually use: if the chosen provider isn't signed in, it falls back to
     // the connected account, so name that rather than the raw setting.
@@ -149,6 +154,16 @@ fun Home(
             trailingContent = { Chevron() },
             modifier = Modifier.clickable(onClick = onOpenInsights),
         )
+        if (latest != null) {
+            Section("Latest transcript")
+            ListItem(
+                headlineContent = {
+                    Text(latest.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                },
+                supportingContent = { Text(latestTranscriptSummary(latest)) },
+                trailingContent = { CopyTranscriptButton(latest.text) },
+            )
+        }
         Section("Status")
         AccountRow(status, onOpenSetup, onSignIn)
         StatusRow(
@@ -172,6 +187,14 @@ fun Home(
         Section("Try it")
         PracticeField(Modifier.padding(horizontal = 16.dp).fillMaxWidth())
     }
+}
+
+/** "12 words, Slack": the latest transcript's length and its app, as the desktop's Home puts it. */
+internal fun latestTranscriptSummary(latest: LatestTranscript): String {
+    val words = countWords(latest.text)
+    val count =
+        "${NumberFormat.getIntegerInstance().format(words)} ${if (words == 1) "word" else "words"}"
+    return if (latest.app == null) count else "$count, ${latest.app}"
 }
 
 /** Signed in, signed out, or a session that ended, with the way to fix the last two. */
@@ -258,8 +281,10 @@ internal fun Chevron() {
 }
 
 @Composable
-private fun HomePreview(status: SetupStatus) = SpeecherTheme {
-    SpeecherScreen("", onBack = null) { Home(status, SpeecherSettings(), {}, {}, {}, {}, {}) }
+private fun HomePreview(status: SetupStatus, latest: LatestTranscript? = null) = SpeecherTheme {
+    SpeecherScreen("", onBack = null) {
+        Home(status, SpeecherSettings(), {}, {}, {}, {}, {}, latest = latest)
+    }
 }
 
 @PreviewLightDark
@@ -271,3 +296,15 @@ internal fun HomeReadyPreview() =
 @Composable
 internal fun HomeSetupPendingPreview() =
     HomePreview(SetupStatus(setOf(Provider.Claude), true, false, false))
+
+@PreviewLightDark
+@Composable
+internal fun HomeLatestTranscriptPreview() =
+    HomePreview(
+        SetupStatus(Provider.entries.toSet(), true, true, true),
+        LatestTranscript(
+            "Can we move the design review to Thursday afternoon? I'd like Priya to walk us " +
+                "through the new onboarding flow before we lock it",
+            "Slack",
+        ),
+    )

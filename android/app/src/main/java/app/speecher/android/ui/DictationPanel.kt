@@ -1,5 +1,6 @@
 package app.speecher.android.ui
 
+import android.content.ClipData
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -35,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -44,6 +46,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -76,6 +80,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private const val BAR_COUNT = 29
 private const val SAMPLE_MILLIS = 70L
@@ -173,7 +178,10 @@ fun DictationPanel(
             ) {
                 FailureMessage(state, Modifier.fillMaxWidth().then(announced))
                 if (shown.transcript.isNotBlank()) {
-                    Transcript(shown, Modifier.fillMaxWidth().heightIn(max = 96.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Transcript(shown, Modifier.weight(1f).heightIn(max = 96.dp))
+                        CopyTranscriptButton(state.transcript)
+                    }
                 }
                 buttons()
             }
@@ -387,11 +395,14 @@ private fun RowScope.PanelButtons(
         Button(onRecover, button) { Text(state.reason.recovery) }
         return
     }
-    layout.actions.dropLast(1).forEach { action ->
+    // While the cleanup runs, Insert stops it and inserts the words as heard, whatever the layout.
+    val cleaningUp = state is DictationState.Refining && !state.transcribingAgain
+    val secondary = if (cleaningUp) listOf(InsertAction.Insert) else layout.actions.dropLast(1)
+    secondary.forEach { action ->
         FilledTonalButton(
             action.pick(onInsert, onInsertRefined),
             Modifier.heightIn(min = 52.dp),
-            enabled = state.canInsert,
+            enabled = cleaningUp || state.canInsert,
         ) {
             Text(action.label, maxLines = 1)
         }
@@ -525,6 +536,33 @@ private fun FailureMessage(state: DictationState.Failed, modifier: Modifier) {
             style = MaterialTheme.typography.bodyMedium,
             color = colors.onSurfaceVariant,
             textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** How long Copy shows its check, the desktop's. */
+private const val COPIED_FEEDBACK_MILLIS = 1_500L
+
+/** Puts [text] on the clipboard when tapped, then shows a check for a moment, as on the desktop. */
+@Composable
+internal fun CopyTranscriptButton(text: String) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (!copied) return@LaunchedEffect
+        delay(COPIED_FEEDBACK_MILLIS)
+        copied = false
+    }
+    IconButton({
+        scope.launch {
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Transcript", text)))
+        }
+        copied = true
+    }) {
+        Icon(
+            painterResource(if (copied) R.drawable.ic_check else R.drawable.ic_copy),
+            contentDescription = if (copied) "Copied" else "Copy transcript",
         )
     }
 }
@@ -677,6 +715,11 @@ internal fun PanelTranscribingAgainPreview() =
 @PreviewLightDark
 @Composable
 internal fun PanelRefiningPreview() = PanelPreview(DictationState.Refining(SAMPLE_TEXT))
+
+@PreviewLightDark
+@Composable
+internal fun PanelRefiningRefinedOnlyPreview() =
+    PanelPreview(DictationState.Refining(SAMPLE_TEXT), ButtonLayout.RefinedOnly)
 
 @PreviewLightDark
 @Composable
