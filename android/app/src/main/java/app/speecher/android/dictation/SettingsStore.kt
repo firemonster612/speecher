@@ -8,6 +8,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.update.IntervalUnit
+import app.speecher.android.update.UpdateChannel
 import app.speecher.android.update.checkIntervalMinutes
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
@@ -135,6 +136,9 @@ class SettingsStore(private val context: Context) {
                         ButtonLayout.RefinedPrimary,
                     ),
                 panelSize = enumOf(preferences.getString("panelSize", null), PanelSize.Full),
+                autoCheckUpdates = preferences.getBoolean("autoCheckUpdates", true),
+                updateChannel =
+                    enumOf(preferences.getString("updateChannel", null), UpdateChannel.Stable),
                 updateCheckMinutes = updateCheckMinutes,
                 // Only a unit the interval is a whole number of, or 5 minutes would read "0 days".
                 updateCheckUnit =
@@ -254,6 +258,8 @@ class SettingsStore(private val context: Context) {
             )
             putString("buttonLayout", settings.buttonLayout.name)
             putString("panelSize", settings.panelSize.name)
+            putBoolean("autoCheckUpdates", settings.autoCheckUpdates)
+            putString("updateChannel", settings.updateChannel.name)
             putInt("updateCheckMinutes", settings.updateCheckMinutes)
             settings.updateCheckUnit?.let { putString("updateCheckUnit", it.name) }
                 ?: remove("updateCheckUnit")

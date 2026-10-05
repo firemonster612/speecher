@@ -96,6 +96,7 @@ import app.speecher.android.dictation.spokenLanguageLabel
 import app.speecher.android.dictation.spokenLanguageMismatch
 import app.speecher.android.dictation.spokenLanguageName
 import app.speecher.android.dictation.spokenLanguages
+import app.speecher.android.update.UpdateState
 import app.speecher.protocol.AUTOMATIC_LANGUAGE
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.MAX_REFINEMENT_TERMS
@@ -150,6 +151,9 @@ fun Settings(
     signInError: String? = null,
     onPasteCode: (String) -> Unit = {},
     onRunSetup: () -> Unit = {},
+    updateState: UpdateState = UpdateState.Idle,
+    onCheckForUpdates: () -> Unit = {},
+    onOpenWhatsNew: () -> Unit = {},
 ) {
     Column(modifier) {
         if (signedIn.isEmpty()) {
@@ -260,8 +264,7 @@ fun Settings(
             colors = rowColors(),
         )
 
-        Section("Updates")
-        UpdateCheckRow(settings, onChange)
+        UpdatesSection(settings, onChange, updateState, onCheckForUpdates, onOpenWhatsNew)
     }
 }
 

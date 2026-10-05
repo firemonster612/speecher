@@ -1,33 +1,35 @@
 package app.speecher.android.ui
 
+import android.content.pm.PackageInstaller
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -40,7 +42,8 @@ import app.speecher.android.dictation.countWords
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.resolveSignedIn
-import app.speecher.android.update.ApkUpdate
+import app.speecher.android.update.UpdateState
+import app.speecher.android.update.installFailure
 import java.text.NumberFormat
 
 /**
@@ -101,11 +104,13 @@ fun Home(
     onOpenChipSettings: () -> Unit,
     onOpenInsights: () -> Unit,
     modifier: Modifier = Modifier,
-    update: ApkUpdate? = null,
-    updating: Boolean = false,
-    updateFailed: Boolean = false,
+    update: UpdateState? = null,
     onUpdate: () -> Unit = {},
     latest: LatestTranscript? = null,
+    onDismissUpdate: () -> Unit = {},
+    whatsNewVersion: String? = null,
+    onOpenWhatsNew: () -> Unit = {},
+    onDismissWhatsNew: () -> Unit = {},
 ) {
     // What dictation will actually use: if the chosen provider isn't signed in, it falls back to
     // the connected account, so name that rather than the raw setting.
@@ -130,7 +135,11 @@ fun Home(
                 )
             }
         }
-        if (update != null) UpdateCard(update, updating, updateFailed, onUpdate)
+        // The update comes first, as on the desktop: What's New waits for it to go.
+        if (update != null) UpdateCard(update, onUpdate, onDismissUpdate)
+        else if (whatsNewVersion != null) {
+            WhatsNewCard(whatsNewVersion, onOpenWhatsNew, onDismissWhatsNew)
+        }
         ListItem(
             headlineContent = { Text("Settings") },
             supportingContent = {
@@ -245,33 +254,67 @@ private fun StatusRow(title: String, value: String, done: Boolean, onClick: (() 
     )
 }
 
+/** An update on offer, on its way in, or refused, with what can be done about it. */
 @Composable
-private fun UpdateCard(
-    update: ApkUpdate,
-    updating: Boolean,
-    failed: Boolean,
-    onUpdate: () -> Unit,
-) {
-    Card(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).padding(end = 16.dp)) {
-                Text("Version ${update.version} is available")
-                if (failed) {
-                    Text(
-                        "Couldn't download the update. Check your connection and try again.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-            if (updating) {
-                CircularProgressIndicator(
-                    Modifier.size(24.dp).semantics { contentDescription = "Downloading update" }
-                )
-            } else {
-                Button(onUpdate) { Text(if (failed) "Retry" else "Update") }
-            }
+private fun UpdateCard(state: UpdateState, onUpdate: () -> Unit, onDismiss: () -> Unit) {
+    val update = state.update ?: return
+    HomeCard(
+        when (state) {
+            is UpdateState.Downloading -> downloadingText(state)
+            is UpdateState.WaitingForDictation -> INSTALLING_AFTER_DICTATION
+            is UpdateState.Installing -> installingText(state)
+            else -> availableText(update)
         }
+    ) {
+        if (state is UpdateState.InstallFailed) {
+            Text(
+                state.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (state is UpdateState.Downloading) {
+            val progress = Modifier.fillMaxWidth().padding(top = 12.dp)
+            state.percent?.let { LinearProgressIndicator({ it / 100f }, progress) }
+                ?: LinearProgressIndicator(progress)
+        }
+        if (state is UpdateState.Available || state is UpdateState.InstallFailed) {
+            CardActions(
+                if (state is UpdateState.InstallFailed) retryCaption(state) else "Update",
+                onUpdate,
+                onDismiss,
+            )
+        }
+    }
+}
+
+/** After an upgrade, until seen or dismissed, as the desktop's What's New banner. */
+@Composable
+private fun WhatsNewCard(installedVersion: String, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    // The bare number: a nightly's suffix says nothing to someone reading what changed.
+    HomeCard("Speecher ${installedVersion.substringBefore('-')} is installed") {
+        CardActions("See what's new", onOpen, onDismiss)
+    }
+}
+
+@Composable
+private fun HomeCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(title)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.CardActions(action: String, onAction: () -> Unit, onDismiss: () -> Unit) {
+    Row(
+        Modifier.align(Alignment.End).padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TextButton(onDismiss) { Text("Dismiss") }
+        Button(onAction) { Text(action) }
     }
 }
 
@@ -308,3 +351,54 @@ internal fun HomeLatestTranscriptPreview() =
             "Slack",
         ),
     )
+
+/** Home's top with [update] showing, or the What's New card for none. */
+@Composable
+private fun HomeUpdatePreview(update: UpdateState?) = SpeecherTheme {
+    SpeecherScreen("", onBack = null) {
+        Home(
+            SetupStatus(Provider.entries.toSet(), true, true, true),
+            SpeecherSettings(),
+            {},
+            {},
+            {},
+            {},
+            {},
+            update = update,
+            whatsNewVersion = "0.3.0",
+        )
+    }
+}
+
+@PreviewLightDark
+@Composable
+internal fun HomeUpdateAvailablePreview() = HomeUpdatePreview(UpdateState.Available(previewUpdate))
+
+@PreviewLightDark
+@Composable
+internal fun HomeUpdateDownloadingPreview() =
+    HomeUpdatePreview(UpdateState.Downloading(previewUpdate, 42))
+
+@PreviewLightDark
+@Composable
+internal fun HomeUpdateWaitingPreview() =
+    HomeUpdatePreview(UpdateState.WaitingForDictation(previewUpdate))
+
+@PreviewLightDark
+@Composable
+internal fun HomeUpdateInstallingPreview() =
+    HomeUpdatePreview(UpdateState.Installing(previewUpdate))
+
+@PreviewLightDark
+@Composable
+internal fun HomeUpdateStableReplacementPreview() =
+    HomeUpdatePreview(
+        UpdateState.Available(previewUpdate.copy(version = "0.2.0", replacesNightly = true))
+    )
+
+@PreviewLightDark
+@Composable
+internal fun HomeUpdateFailedPreview() =
+    HomeUpdatePreview(installFailure(previewUpdate, PackageInstaller.STATUS_FAILURE_CONFLICT))
+
+@PreviewLightDark @Composable internal fun HomeWhatsNewPreview() = HomeUpdatePreview(null)

@@ -1,6 +1,7 @@
 package app.speecher.android.dictation
 
 import app.speecher.android.update.IntervalUnit
+import app.speecher.android.update.UpdateChannel
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.ENGLISH_LANGUAGE
@@ -357,6 +358,9 @@ data class SpeecherSettings(
     val buttonLayout: ButtonLayout = ButtonLayout.RefinedPrimary,
     /** The size the panel opens at. */
     val panelSize: PanelSize = PanelSize.Full,
+    /** Whether the app checks for updates by itself while it is open. */
+    val autoCheckUpdates: Boolean = true,
+    val updateChannel: UpdateChannel = UpdateChannel.Stable,
     /** How often the app checks for an update while it is open. */
     val updateCheckMinutes: Int = IntervalUnit.Days.minutes,
     /** The unit a custom interval was entered in, or null for one of the presets. */
