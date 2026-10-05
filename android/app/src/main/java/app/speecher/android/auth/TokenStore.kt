@@ -5,11 +5,13 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.core.content.edit
 import app.speecher.android.dictation.Provider
-import app.speecher.android.dictation.SignInRequired
 import app.speecher.android.dictation.oauth
 import app.speecher.protocol.OAuthHttpException
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.OAuthTokens
+import app.speecher.protocol.ProviderFailure
+import app.speecher.protocol.ProviderFailureKind
+import app.speecher.protocol.failureKindForHttpStatus
 import app.speecher.protocol.refreshTokens
 import java.security.KeyStore
 import java.util.Base64
@@ -112,7 +114,11 @@ class TokenStore(context: Context) {
 
     private fun sessionEndedKey(provider: OAuthProvider) = "${provider.name}-session-ended"
 
-    /** Call on a worker thread before a provider request. */
+    /**
+     * Call on a worker thread before a provider request. A refresh the token endpoint turns down
+     * fails as a rejected sign-in; one that fails for no reason of its own still leaves no usable
+     * sign-in, as on the desktop.
+     */
     @Synchronized
     fun validTokens(provider: OAuthProvider, http: OkHttpClient): OAuthTokens? {
         val stored = load(provider) ?: return null
@@ -121,8 +127,14 @@ class TokenStore(context: Context) {
             try {
                 refreshTokens(http, provider, stored)
             } catch (error: OAuthHttpException) {
-                if (error.status == 400 || error.status == 401) throw SignInRequired()
-                throw error
+                val kind =
+                    if (error.status == 400 || error.status == 401)
+                        ProviderFailureKind.Authentication
+                    else
+                        failureKindForHttpStatus(error.status).takeUnless {
+                            it == ProviderFailureKind.Other
+                        } ?: ProviderFailureKind.Unavailable
+                throw ProviderFailure(kind, "Sign-in refresh failed", error.status, error)
             }
         save(provider, refreshed)
         return refreshed

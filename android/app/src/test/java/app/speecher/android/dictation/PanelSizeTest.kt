@@ -37,7 +37,7 @@ class PanelSizeTest {
 
     @Test
     fun `a failure expands the bar so its recovery shows`() {
-        val failed = DictationState.Failed(FailureReason.Network, "", "")
+        val failed = DictationState.Failed(FailureReason.MicrophoneUnavailable, "", "")
         assertEquals(PanelSize.Full, shownPanelSize(PanelSize.Minimized, false, failed))
         assertEquals(PanelSize.Compact, shownPanelSize(PanelSize.Compact, true, failed))
     }

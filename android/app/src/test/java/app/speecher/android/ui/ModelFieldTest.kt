@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.requestFocus
+import app.speecher.android.dictation.CleanupProvider
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.RefinementChoice
 import app.speecher.android.dictation.SpeecherSettings
@@ -28,7 +29,7 @@ class ModelFieldTest {
     private var settings by
         mutableStateOf(
             SpeecherSettings(
-                refinementProvider = Provider.Claude,
+                refinementProvider = CleanupProvider.Claude,
                 claudeRefinement = RefinementChoice("claude-haiku-4-5", "low"),
             )
         )

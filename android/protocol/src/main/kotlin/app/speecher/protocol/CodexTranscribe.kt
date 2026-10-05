@@ -8,18 +8,20 @@ import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * ChatGPT's batch speech-to-text pass: re-transcribes a whole dictation's 16 kHz mono PCM16 audio
- * in one request, which is more accurate than the streamed segments.
+ * in one request, which is more accurate than the streamed segments. [cancellation] aborts it.
  */
 fun transcribeSpeech(
     token: String,
     pcm: ByteArray,
     endpoint: String = "https://chatgpt.com/backend-api/transcribe",
+    cancellation: Cancellation = Cancellation(),
 ): String {
     val response =
         httpPost(
             endpoint,
             mapOf("Authorization" to "Bearer $token", "User-Agent" to codexBrowserUserAgent),
             multipartFile("file", "dictation.wav", "audio/wav", wavFromPcm16Mono(pcm, 16000)),
+            cancellation = cancellation,
         )
     if (response.status !in 200..299) error("Transcription failed with HTTP ${response.status}")
     val json = Json.parseToJsonElement(response.body.toString(Charsets.UTF_8)) as? JsonObject

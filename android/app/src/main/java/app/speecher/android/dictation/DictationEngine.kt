@@ -6,11 +6,16 @@ import android.os.Looper
 import android.view.inputmethod.InputConnection
 import app.speecher.android.BuildConfig
 import app.speecher.android.auth.TokenStore
+import app.speecher.protocol.Cancellation
 import app.speecher.protocol.ClaudeVoiceClient
 import app.speecher.protocol.CleanupStrength
 import app.speecher.protocol.CodexDictationClient
+import app.speecher.protocol.ProviderFailure
+import app.speecher.protocol.ProviderFailureKind
+import app.speecher.protocol.RefinementContext
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
+import app.speecher.protocol.failureKind
 import app.speecher.protocol.modelSupportsUltrafast
 import app.speecher.protocol.preferredTranscript
 import app.speecher.protocol.refineTranscript
@@ -46,16 +51,22 @@ private data class Endpoints(
 )
 
 /** [cleanup] is the LLM that tidies the transcript, or null for a plain Insert. */
-private data class PendingInsert(val cleanup: Provider?)
+private data class PendingInsert(val cleanup: CleanupProvider?)
 
 class DictationEngine(
     private val capture: (() -> Boolean, (ByteArray, Float) -> Unit) -> Unit,
     private val stopCapture: () -> Unit,
-    private val connect: (Provider, (SpeechEvent) -> Unit) -> SpeechClient,
-    /** Refines the raw transcript, reporting the refined text so far as it streams in. */
-    private val refine: (Provider, String, (String) -> Unit) -> String,
-    /** ChatGPT's batch re-transcription of the session's PCM16 audio; null skips that pass. */
-    private val transcribe: ((ByteArray) -> String)?,
+    private val connect: (SpeechProvider, (SpeechEvent) -> Unit) -> SpeechClient,
+    /**
+     * Refines the raw transcript, reporting the refined text so far as it streams in, until the
+     * [Cancellation] aborts it.
+     */
+    private val refine: (CleanupProvider, String, Cancellation, (String) -> Unit) -> String,
+    /**
+     * ChatGPT's batch re-transcription of the session's PCM16 audio, until the [Cancellation]
+     * aborts it; null skips that pass.
+     */
+    private val transcribe: ((ByteArray, Cancellation) -> String)?,
     private val commit: (String) -> Boolean,
     private val executor: Executor,
     private val onState: (DictationState) -> Unit,
@@ -97,10 +108,12 @@ class DictationEngine(
     private val heardAfterResume = mutableListOf<ByteArray>()
     private var inserted = false
     private var pendingInsert: PendingInsert? = null
-    private var failedRefinement: Provider? = null
+    private var failedRefinement: CleanupProvider? = null
     private var failedCommit: String? = null
+    /** The batch or refinement request in flight, which Cancel aborts. */
+    private var request: Cancellation? = null
     /** The provider streaming this dictation. */
-    var sourceProvider = providerOrder.first()
+    var sourceProvider = providerOrder.first().speech
         private set
 
     /** The session's audio, kept for the batch pass. A retried session appends to it. */
@@ -110,13 +123,13 @@ class DictationEngine(
     @Volatile private var session = 0
 
     @Synchronized
-    fun start(provider: Provider) {
+    fun start(provider: SpeechProvider) {
         recorded.reset()
         recordedTooLong = false
         startSession(provider, "")
     }
 
-    private fun startSession(provider: Provider, priorTranscript: String) {
+    private fun startSession(provider: SpeechProvider, priorTranscript: String) {
         cancelSession()
         val current = ++session
         finalText.clear()
@@ -158,21 +171,21 @@ class DictationEngine(
                         if (!recording || finishingPause) opened.stop()
                     } else opened.cancel()
                 }
-            } catch (_: SignInRequired) {
-                fail(current, FailureReason.SignedOut, "Sign in to continue")
             } catch (e: SpokenLanguageUnsupported) {
                 fail(current, FailureReason.SpokenLanguage, e.message.orEmpty())
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 synchronized(this) {
                     if (!isCurrent(current, opening)) return@synchronized
+                    val kind = failureKind(e)
                     // A stream opened while a pause finishes, after this dictation has streamed:
                     // a blip ends it like a paused stream that failed, and the words stay.
-                    if (finishingPause && streamed) pausedStreamEnded(current, opened = false)
+                    if (finishingPause && streamed && !kind.needsSignIn)
+                        pausedStreamEnded(current, opened = false)
                     else
                         streamFailed(
                             current,
-                            retryable = true,
-                            FailureReason.Network,
+                            retryable = !kind.needsSignIn,
+                            kind,
                             "Could not connect to the speech provider",
                         )
                 }
@@ -251,7 +264,7 @@ class DictationEngine(
     }
 
     @Synchronized
-    fun insertRefined(cleanup: Provider?) {
+    fun insertRefined(cleanup: CleanupProvider?) {
         if (inserted || pendingInsert != null) return
         pendingInsert = PendingInsert(cleanup)
         stop()
@@ -298,14 +311,15 @@ class DictationEngine(
         }
     }
 
-    private fun refineTranscript(provider: Provider, raw: String) {
+    private fun refineTranscript(provider: CleanupProvider, raw: String) {
         val current = session
         failedRefinement = provider
+        val cancellation = Cancellation().also { request = it }
         publish(DictationState.Refining(raw))
         executor.execute {
             try {
                 val text =
-                    refine(provider, raw) { refined ->
+                    refine(provider, raw, cancellation) { refined ->
                         synchronized(this) {
                             if (current == session && state is DictationState.Refining)
                                 publish(DictationState.Refining(raw, refined))
@@ -315,10 +329,13 @@ class DictationEngine(
                     if (current != session || inserted) return@execute
                     commitTranscript(text)
                 }
-            } catch (_: SignInRequired) {
-                fail(current, FailureReason.SignedOut, "Sign in to continue")
-            } catch (_: Exception) {
-                fail(current, FailureReason.Provider, "Could not refine the transcript", raw)
+            } catch (e: Exception) {
+                fail(
+                    current,
+                    FailureReason.Cleanup(provider, failureKind(e)),
+                    "Could not refine the transcript",
+                    raw,
+                )
             }
         }
     }
@@ -357,8 +374,7 @@ class DictationEngine(
                     streamFailed(
                         current,
                         event.retryable,
-                        if (event.authentication) FailureReason.SignedOut
-                        else FailureReason.Network,
+                        event.kind,
                         event.detail.ifEmpty { "Speech connection failed" },
                     )
         }
@@ -371,17 +387,17 @@ class DictationEngine(
     private fun streamFailed(
         current: Int,
         retryable: Boolean,
-        reason: FailureReason,
+        kind: ProviderFailureKind,
         detail: String,
     ) {
-        if (pendingInsert != null && reason != FailureReason.SignedOut && transcript().isNotBlank())
+        if (pendingInsert != null && !kind.needsSignIn && transcript().isNotBlank())
             finishPendingInsert()
         else if (retryable && streamed && recording && reconnectsLeft > 0) {
             val backoff = RECONNECT_BACKOFF_MS[RECONNECT_BACKOFF_MS.size - reconnectsLeft]
             reconnectsLeft--
             reconnecting = true
             reopen(current, backoff)
-        } else fail(current, reason, detail)
+        } else fail(current, FailureReason.Speech(sourceProvider, kind), detail)
     }
 
     /**
@@ -430,7 +446,7 @@ class DictationEngine(
      * pass is on, then [cleanup], if any, tidies the text. A failed or truncated batch pass falls
      * back to the streamed transcript, and a recording too long for it skips the pass.
      */
-    private fun insertBest(cleanup: Provider?) {
+    private fun insertBest(cleanup: CleanupProvider?) {
         val streamed = transcript()
         val audio = recorded.toByteArray()
         fun finish(text: String) =
@@ -440,11 +456,12 @@ class DictationEngine(
             return
         }
         val current = session
-        publish(DictationState.Refining(streamed))
+        val cancellation = Cancellation().also { request = it }
+        publish(DictationState.Refining(streamed, transcribingAgain = true))
         executor.execute {
             val batch =
                 try {
-                    transcribe(audio)
+                    transcribe(audio, cancellation)
                 } catch (_: Exception) {
                     null
                 }
@@ -461,23 +478,14 @@ class DictationEngine(
         reason: FailureReason,
         detail: String,
         raw: String = transcript(),
-        commitFailed: Boolean = false,
     ) {
         if (current != session || inserted) return
         // The microphone and the connection start together and can both fail; the first failure
         // is the one shown. Only a failed commit replaces a failure, with its retry.
-        if (state is DictationState.Failed && !commitFailed) return
+        if (state is DictationState.Failed && reason != FailureReason.Commit) return
         cancelSession()
         pendingInsert = null
-        publish(
-            DictationState.Failed(
-                reason,
-                detail,
-                raw,
-                failedRefinement ?: sourceProvider,
-                commitFailed,
-            )
-        )
+        publish(DictationState.Failed(reason, detail, raw))
     }
 
     private fun commitTranscript(text: String) {
@@ -486,13 +494,7 @@ class DictationEngine(
             failedCommit = null
         } else {
             failedCommit = text
-            fail(
-                session,
-                FailureReason.Provider,
-                "Could not insert text",
-                text,
-                commitFailed = true,
-            )
+            fail(session, FailureReason.Commit, "Could not insert text", text)
         }
     }
 
@@ -501,7 +503,14 @@ class DictationEngine(
 
     /** The current preview split into its committed and interim parts for the panel to render. */
     private fun listening(level: Float) =
-        DictationState.Listening(finalText.toString(), interim, level, reconnecting, paused)
+        DictationState.Listening(
+            finalText.toString(),
+            interim,
+            level,
+            reconnecting,
+            paused,
+            stopping = pendingInsert != null,
+        )
 
     private fun transcript(): String =
         if (finalText.isEmpty()) interim
@@ -519,6 +528,8 @@ class DictationEngine(
         stopCapture()
         client?.cancel()
         client = null
+        request?.cancel()
+        request = null
         unsent.clear()
         heardAfterResume.clear()
     }
@@ -540,8 +551,6 @@ private val RECONNECT_BACKOFF_MS = longArrayOf(1_000, 3_000)
  * transcript rather than lose its tail; 80 s keeps a margin under the observed cutoff.
  */
 private const val MAX_RETRANSCRIBE_BYTES = 80 * 16000 * 2
-
-class SignInRequired : Exception()
 
 /** The provider can't listen for the saved spoken language; [message] says so for the panel. */
 class SpokenLanguageUnsupported(message: String) : Exception(message)
@@ -585,41 +594,77 @@ fun createDictationEngine(
                     ),
             )
     val main = Handler(Looper.getMainLooper())
-    fun token(value: Provider) = store.validTokens(value.oauth, http) ?: throw SignInRequired()
+    fun token(account: Provider) =
+        store.validTokens(account.oauth, http)
+            ?: throw ProviderFailure(ProviderFailureKind.Unavailable, "Not signed in")
+    fun refineWithAccount(
+        account: Provider,
+        raw: String,
+        context: RefinementContext,
+        cancellation: Cancellation,
+        onRefined: (String) -> Unit,
+    ): String {
+        val choice = settings.refinement(account)
+        val ultrafast =
+            account == Provider.ChatGpt &&
+                settings.chatGptSpeed == OpenAiSpeed.Ultrafast &&
+                modelSupportsUltrafast(choice.model)
+        return refineTranscript(
+                http,
+                account.oauth,
+                token(account),
+                raw,
+                settings.vocabularyFor(context.profile),
+                choice.model,
+                choice.effort,
+                context,
+                endpoints.getValue(account).refinement,
+                (if (ultrafast) ultrafastAvailable else fastModeAvailable.getValue(account))
+                    .takeIf { settings.fastMode(account) },
+                ultrafast,
+                onRefined,
+                cancellation,
+            )
+            .also { store.clearSessionEnded(account.oauth) }
+    }
     return DictationEngine(
         microphone::capture,
         microphone::stop,
         { selected, onEvent ->
-            spokenLanguageMismatch(selected, settings.spokenLanguage)?.let {
+            val account = selected.account
+            spokenLanguageMismatch(account, settings.spokenLanguage)?.let {
                 throw SpokenLanguageUnsupported(it)
             }
-            val access = token(selected).accessToken
             val events = { event: SpeechEvent ->
                 if (event == SpeechEvent.Connected || event is SpeechEvent.Final)
-                    store.clearSessionEnded(selected.oauth)
+                    store.clearSessionEnded(account.oauth)
                 onEvent(event)
             }
-            if (selected == Provider.Claude)
-                ClaudeVoiceClient(
-                    webSocketTransport(endpoints.getValue(selected).speech),
-                    access,
-                    speechTerms(
-                        settings.vocabularyFor(writingProfile(settings, ActiveDictation.target))
-                    ),
-                    settings.spokenLanguage,
-                    events,
-                    endpoints.getValue(selected).speech,
-                )
-            else
-                CodexDictationClient(
-                    webSocketTransport(endpoints.getValue(selected).speech),
-                    access,
-                    settings.spokenLanguage,
-                    events,
-                    endpoints.getValue(selected).speech,
-                )
+            val endpoint = endpoints.getValue(account).speech
+            // Each speech provider's client; a new provider adds its branch here.
+            when (selected) {
+                SpeechProvider.Claude ->
+                    ClaudeVoiceClient(
+                        webSocketTransport(endpoint),
+                        token(account).accessToken,
+                        speechTerms(
+                            settings.vocabularyFor(writingProfile(settings, ActiveDictation.target))
+                        ),
+                        settings.spokenLanguage,
+                        events,
+                        endpoint,
+                    )
+                SpeechProvider.ChatGpt ->
+                    CodexDictationClient(
+                        webSocketTransport(endpoint),
+                        token(account).accessToken,
+                        settings.spokenLanguage,
+                        events,
+                        endpoint,
+                    )
+            }
         },
-        { selected, raw, onRefined ->
+        { selected, raw, cancellation, onRefined ->
             val context =
                 refinementContext(
                     settings,
@@ -633,38 +678,23 @@ fun createDictationEngine(
                         nearbyText(it.text, start, end, it.offset)
                     }
                 }
-            val choice = settings.refinement(selected)
-            val ultrafast =
-                selected == Provider.ChatGpt &&
-                    settings.chatGptSpeed == OpenAiSpeed.Ultrafast &&
-                    modelSupportsUltrafast(choice.model)
             // A profile set to no cleanup inserts the transcript as heard, as the desktop does.
             if (context.style == CleanupStrength.None) raw
+            // Each cleanup provider's client; a new provider adds its branch here.
             else
-                refineTranscript(
-                        http,
-                        selected.oauth,
-                        token(selected),
-                        raw,
-                        settings.vocabularyFor(context.profile),
-                        choice.model,
-                        choice.effort,
-                        context,
-                        endpoints.getValue(selected).refinement,
-                        (if (ultrafast) ultrafastAvailable
-                            else fastModeAvailable.getValue(selected))
-                            .takeIf { settings.fastMode(selected) },
-                        ultrafast,
-                        onRefined,
-                    )
-                    .also { store.clearSessionEnded(selected.oauth) }
+                when (selected) {
+                    CleanupProvider.ChatGpt,
+                    CleanupProvider.Claude ->
+                        refineWithAccount(selected.account, raw, context, cancellation, onRefined)
+                }
         },
         if (settings.transcribePassEnabled)
-            { pcm ->
+            { pcm, cancellation ->
                 transcribeSpeech(
                     token(Provider.ChatGpt).accessToken,
                     pcm,
                     endpoints.getValue(Provider.ChatGpt).transcribe!!,
+                    cancellation,
                 )
             }
         else null,

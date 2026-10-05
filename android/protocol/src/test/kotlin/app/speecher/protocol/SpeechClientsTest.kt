@@ -52,24 +52,27 @@ class SpeechClientsTest {
             listOf(
                 SpeechEvent.Completed,
                 SpeechEvent.Completed,
-                SpeechEvent.Failed(false, "closed 1001", retryable = true),
-                SpeechEvent.Failed(false, "closed 1008", retryable = true),
-                SpeechEvent.Failed(false, "closed 4001", retryable = true),
+                SpeechEvent.Failed(ProviderFailureKind.Network, "closed 1001", retryable = true),
+                SpeechEvent.Failed(ProviderFailureKind.Network, "closed 1008", retryable = true),
+                SpeechEvent.Failed(ProviderFailureKind.Network, "closed 4001", retryable = true),
             ),
             listOf(1000, 1005, 1001, 1008, 4001).map(::codexClosed),
         )
     }
 
     @Test
-    fun `a Codex error that says it is not retryable is not retried`() {
+    fun `a Codex quota error is a rate limit, and not retried when it says so`() {
         val transport = FakeTransport()
         val events = mutableListOf<SpeechEvent>()
         val client = CodexDictationClient(transport, "token", "en", events::add)
         transport.server.onText("""{"type":"session.started"}""")
         transport.server.onText(
-            """{"type":"session.error","fatal":true,"error":{"code":"quota","message":"exceeded","retryable":false}}"""
+            """{"type":"session.error","fatal":true,"error":{"code":"insufficient_quota","message":"exceeded","retryable":false}}"""
         )
-        assertEquals(SpeechEvent.Failed(false, "quota exceeded", retryable = false), events.last())
+        assertEquals(
+            SpeechEvent.Failed(ProviderFailureKind.RateLimited, "insufficient_quota exceeded"),
+            events.last(),
+        )
         client.cancel()
     }
 
@@ -100,7 +103,7 @@ class SpeechClientsTest {
                     server.url("/voice").toString().replaceFirst("http", "ws"),
                 )
             assertEquals(
-                SpeechEvent.Failed(true, "type=error code=401"),
+                SpeechEvent.Failed(ProviderFailureKind.Authentication, "type=error code=401"),
                 failures.poll(3, TimeUnit.SECONDS),
             )
             client.cancel()
@@ -136,7 +139,7 @@ class SpeechClientsTest {
                     server.url("/dictation").toString().replaceFirst("http", "ws"),
                 )
             assertEquals(
-                SpeechEvent.Failed(true, "403 forbidden"),
+                SpeechEvent.Failed(ProviderFailureKind.Authentication, "403 forbidden"),
                 failures.poll(3, TimeUnit.SECONDS),
             )
             client.cancel()

@@ -103,8 +103,8 @@ fun Home(
 ) {
     // What dictation will actually use: if the chosen provider isn't signed in, it falls back to
     // the connected account, so name that rather than the raw setting.
-    val transcription = resolveSignedIn(settings.transcriptionProvider, status.signedIn)
-    val refinement = resolveSignedIn(settings.refinementProvider, status.signedIn)
+    val transcription = resolveSignedIn(settings.transcriptionProvider.account, status.signedIn)
+    val refinement = resolveSignedIn(settings.refinementProvider.account, status.signedIn)
     Column(modifier) {
         Row(
             Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
