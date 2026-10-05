@@ -242,12 +242,15 @@ const val MAX_REFINEMENT_TERMS = 1000
 
 /**
  * The dictation task as the desktop's transcriptRefinementUserMessage builds it, keys in the order
- * QJsonObject serialises them. A word with a context goes as an object, one without as its term;
- * Android has no binding aliases.
+ * QJsonObject serialises them. A word with a context goes as an object, one without as its term.
  */
-internal fun refinementUserMessage(raw: String, vocabulary: List<VocabularyWord>): String {
+internal fun refinementUserMessage(
+    raw: String,
+    vocabulary: List<VocabularyWord>,
+    bindingAliases: List<String>,
+): String {
     val task = buildJsonObject {
-        put("binding_aliases", JsonArray(emptyList()))
+        put("binding_aliases", JsonArray(bindingAliases.map(::JsonPrimitive)))
         put("mode", JsonPrimitive("refine_dictation"))
         put(
             "preferred_vocabulary",

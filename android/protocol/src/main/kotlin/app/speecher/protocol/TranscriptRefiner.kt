@@ -318,7 +318,10 @@ private fun claudeRequest(
                         put("role", JsonPrimitive("user"))
                         put(
                             "content",
-                            claudeContent(refinementUserMessage(raw, vocabulary), context),
+                            claudeContent(
+                                refinementUserMessage(raw, vocabulary, context.bindingAliases),
+                                context,
+                            ),
                         )
                     }
                 )
@@ -368,7 +371,13 @@ private fun chatGptBody(
             add(
                 buildJsonObject {
                     put("role", JsonPrimitive("user"))
-                    put("content", chatGptContent(refinementUserMessage(raw, vocabulary), context))
+                    put(
+                        "content",
+                        chatGptContent(
+                            refinementUserMessage(raw, vocabulary, context.bindingAliases),
+                            context,
+                        ),
+                    )
                 }
             )
         },

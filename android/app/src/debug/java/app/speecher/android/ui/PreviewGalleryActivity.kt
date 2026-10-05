@@ -152,6 +152,8 @@ private val states: Map<String, @Composable () -> Unit> =
             "settings-signed-out" to { SettingsSignedOutPreview() },
             "settings-refinement" to { SettingsRefinementPreview() },
             "settings-vocabulary" to { SettingsVocabularyPreview() },
+            "settings-replacements" to { SettingsReplacementsPreview() },
+            "settings-replacements-empty" to { SettingsReplacementsEmptyPreview() },
             "settings-dictation-panel" to { SettingsDictationPanelPreview() },
             "settings-vocabulary-empty" to { SettingsVocabularyEmptyPreview() },
             "settings-profiles" to { SettingsProfilesPreview() },

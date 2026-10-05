@@ -15,6 +15,7 @@ import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.ENGLISH_LANGUAGE
 import app.speecher.protocol.RecognitionRule
+import app.speecher.protocol.Replacement
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
@@ -58,6 +59,10 @@ class SettingsStore(private val context: Context) {
                     ),
                 claudeFastMode = preferences.getBoolean("anthropicFastMode", true),
                 vocabulary = loadVocabulary(),
+                replacements =
+                    objects("replacements").map {
+                        Replacement(it.getString("phrase"), it.getString("text"))
+                    },
                 chipDockOnMic = preferences.getBoolean("chipDockOnMic", true),
                 chipOffsetX =
                     preferences.getInt("chipOffsetX", NO_OFFSET).takeIf { it != NO_OFFSET },
@@ -158,6 +163,15 @@ class SettingsStore(private val context: Context) {
             putString("openAiSpeed", settings.chatGptSpeed.name)
             putBoolean("anthropicFastMode", settings.claudeFastMode)
             putString("vocabulary", vocabularyJson(settings.vocabulary))
+            putString(
+                "replacements",
+                JSONArray(
+                        settings.replacements.map {
+                            JSONObject(mapOf("phrase" to it.phrase, "text" to it.text))
+                        }
+                    )
+                    .toString(),
+            )
             putBoolean("chipDockOnMic", settings.chipDockOnMic)
             settings.chipOffsetX?.let { putInt("chipOffsetX", it) } ?: remove("chipOffsetX")
             settings.chipOffsetY?.let { putInt("chipOffsetY", it) } ?: remove("chipOffsetY")

@@ -8,6 +8,7 @@ import app.speecher.protocol.OAuthTokens
 import app.speecher.protocol.ProviderFailure
 import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RefinementContext
+import app.speecher.protocol.Replacement
 import app.speecher.protocol.SpeechClient
 import app.speecher.protocol.SpeechEvent
 import app.speecher.protocol.WebSocketTransport
@@ -1212,5 +1213,92 @@ class DictationEngineTest {
             assertFalse(workers.last().isAlive)
             assertTrue(commits.isEmpty())
         }
+    }
+
+    /**
+     * A dictation of [heard] with the [rules] an Insert reads, ended by the Insert [end] taps, each
+     * commit added to [commits].
+     */
+    private fun dictate(
+        heard: String,
+        commits: MutableList<String>,
+        refine: (CleanupProvider, String, (String) -> Unit) -> String,
+        rules: () -> List<Replacement> = { listOf(Replacement("sign off", "Regards,\nEfox")) },
+        onState: (DictationState) -> Unit = {},
+        end: DictationEngine.() -> Unit,
+    ): DictationEngine {
+        lateinit var speech: (SpeechEvent) -> Unit
+        val engine =
+            DictationEngine(
+                { _, _ -> },
+                {},
+                { _, events ->
+                    speech = events
+                    Client()
+                },
+                { provider, input, _, onText -> refine(provider, input, onText) },
+                null,
+                { commits.add(it) },
+                Executor { it.run() },
+                onState,
+                replacements = rules,
+            )
+        engine.start(SpeechProvider.Claude)
+        speech(SpeechEvent.Final(heard))
+        engine.end()
+        speech(SpeechEvent.Completed)
+        return engine
+    }
+
+    @Test
+    fun `both Inserts replace spoken phrases, and refinement keeps snippets in placeholders`() {
+        val commits = mutableListOf<String>()
+        dictate("thanks sign off", commits, { _, _, _ -> error("plain Insert never cleans up") }) {
+            insert()
+        }
+        val sent = mutableListOf<String>()
+        val states = mutableListOf<DictationState>()
+        dictate(
+            "thanks sign off",
+            commits,
+            { _, input, onText ->
+                sent.add(input)
+                onText("Thanks, SPEECHER_BINDING_0.")
+                "Thanks, SPEECHER_BINDING_0."
+            },
+            onState = { states.add(it) },
+        ) {
+            insertRefined(CleanupProvider.Claude)
+        }
+        assertEquals(listOf("thanks SPEECHER_BINDING_0"), sent)
+        assertTrue(DictationState.Refining("thanks sign off", "Thanks, Regards,\nEfox.") in states)
+        assertEquals(listOf("thanks Regards,\nEfox", "Thanks, Regards,\nEfox."), commits)
+    }
+
+    @Test
+    fun `a snippet alone skips cleanup, and a garbled or failed cleanup inserts the replacements`() {
+        val commits = mutableListOf<String>()
+        dictate("sign off", commits, { _, _, _ -> error("nothing to clean up") }) {
+            insertRefined(CleanupProvider.Claude)
+        }
+        dictate("thanks sign off", commits, { _, _, _ -> "Thanks, speecher binding zero." }) {
+            insertRefined(CleanupProvider.Claude)
+        }
+        // Each read of the rules stamps a later time; the Insert after the failure keeps the first.
+        var reads = 0
+        val failed =
+            dictate(
+                "noted at stamp",
+                commits,
+                { _, _, _ -> throw IOException() },
+                rules = { listOf(Replacement("stamp", "${++reads}:00")) },
+            ) {
+                insertRefined(CleanupProvider.Claude)
+            }
+        failed.insert()
+        assertEquals(
+            listOf("Regards,\nEfox", "thanks Regards,\nEfox", "noted at 1:00"),
+            commits,
+        )
     }
 }
