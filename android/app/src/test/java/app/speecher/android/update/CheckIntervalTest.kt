@@ -64,6 +64,18 @@ class CheckIntervalTest {
     }
 
     @Test
+    fun `automatic checks start on, on the Stable channel, and persist`() {
+        val store = SettingsStore(RuntimeEnvironment.getApplication())
+        assertTrue(store.load().autoCheckUpdates)
+        assertEquals(UpdateChannel.Stable, store.load().updateChannel)
+        store.save(
+            SpeecherSettings(autoCheckUpdates = false, updateChannel = UpdateChannel.Nightly)
+        )
+        assertFalse(store.load().autoCheckUpdates)
+        assertEquals(UpdateChannel.Nightly, store.load().updateChannel)
+    }
+
+    @Test
     fun `a hand-edited interval outside 5 minutes to 30 days loads clamped`() {
         val context = RuntimeEnvironment.getApplication()
         val store = SettingsStore(context)

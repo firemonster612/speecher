@@ -4,6 +4,8 @@ import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.ComponentName
 import android.content.Intent
+import android.content.SharedPreferences
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -23,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -30,6 +33,7 @@ import app.speecher.android.auth.SignInViewModel
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.DictationRecord
+import app.speecher.android.dictation.ActiveDictation
 import app.speecher.android.dictation.Provider
 import app.speecher.android.dictation.SettingsStore
 import app.speecher.android.dictation.SetupStatus
@@ -48,11 +52,23 @@ import app.speecher.android.ui.SettingsPageContent
 import app.speecher.android.ui.SignInStepsSheet
 import app.speecher.android.ui.SpeecherScreen
 import app.speecher.android.ui.SpeecherTheme
+import app.speecher.android.ui.WhatsNew
+import app.speecher.android.update.AndroidRelease
 import app.speecher.android.update.ApkUpdate
+import app.speecher.android.update.INSTALL_STATUS
 import app.speecher.android.update.RETRY_MILLIS
+import app.speecher.android.update.UpdateChannel
+import app.speecher.android.update.UpdateState
+import app.speecher.android.update.androidReleases
+import app.speecher.android.update.downloadApk
 import app.speecher.android.update.installApk
+import app.speecher.android.update.installFailure
+import app.speecher.android.update.installing
 import app.speecher.android.update.newerApk
+import app.speecher.android.update.releaseNotes
 import app.speecher.android.update.untilCheck
+import app.speecher.android.update.whatsNewSince
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -65,6 +81,7 @@ private enum class Page {
     Settings,
     ChipPosition,
     Insights,
+    WhatsNew,
 }
 
 class MainActivity : ComponentActivity() {
@@ -77,9 +94,15 @@ class MainActivity : ComponentActivity() {
     private var insights by mutableStateOf(emptyList<DictationRecord>())
     // Kept here, not on the page, so a clear that fails after the page closed still says so.
     private var clearInsightsFailed by mutableStateOf(false)
-    private var update by mutableStateOf<ApkUpdate?>(null)
-    private var updating by mutableStateOf(false)
-    private var updateFailed by mutableStateOf(false)
+    private var updateState by mutableStateOf<UpdateState>(UpdateState.Idle)
+    // The offer Home no longer shows, until a newer version comes along.
+    private var dismissedVersion by mutableStateOf<String?>(null)
+    // The version an upgrade came from, until Home's What's New card is opened or dismissed.
+    private var whatsNewPending by mutableStateOf<String?>(null)
+    // What the open What's New page covers changes since, and its notes, null while they load.
+    private var notesSince: String? = null
+    private var whatsNewNotes by mutableStateOf<Result<List<AndroidRelease>>?>(null)
+    private var whatsNewFrom = Page.Home
     private var page by mutableStateOf(Page.Home)
     // Where leaving setup goes: Settings when its Setup assistant row opened it, otherwise Home.
     private var setupFrom = Page.Home
@@ -117,6 +140,8 @@ class MainActivity : ComponentActivity() {
         refresh()
         signIn.restore(status.working)
         page = if (status.complete && signIn.activeProvider == null) Page.Home else Page.Setup
+        recordRun()
+        showSavedUpdate()
         savedInstanceState?.getString(SETTINGS_PAGE)?.let {
             page = Page.Settings
             settingsPage = SettingsPage.valueOf(it)
@@ -151,10 +176,13 @@ class MainActivity : ComponentActivity() {
                                 ::signInFromSettings,
                                 ::openAccessibilitySettings,
                                 { page = Page.Insights },
-                                update = update,
-                                updating = updating,
-                                updateFailed = updateFailed,
-                                onUpdate = ::installUpdate,
+                                update = homeUpdate,
+                                onUpdate = ::runUpdateAction,
+                                onDismissUpdate = ::dismissUpdate,
+                                whatsNewVersion =
+                                    BuildConfig.VERSION_NAME.takeIf { whatsNewPending != null },
+                                onOpenWhatsNew = ::openWhatsNew,
+                                onDismissWhatsNew = ::dismissWhatsNew,
                                 latest = ActiveDictation.latest,
                             )
                         }
@@ -195,6 +223,9 @@ class MainActivity : ComponentActivity() {
                                     signingIn = signIn.activeProvider,
                                     signInError = signIn.error,
                                     onPasteCode = signIn::paste,
+                                    updateState = updateState,
+                                    onCheckForUpdates = ::runUpdateAction,
+                                    onOpenWhatsNew = ::openWhatsNew,
                                     onRunSetup = {
                                         setupFrom = Page.Settings
                                         page = Page.Setup
@@ -243,6 +274,10 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         }
+                    Page.WhatsNew ->
+                        SpeecherScreen("What's New", onBack = ::back) {
+                            WhatsNew(whatsNewNotes, ::loadWhatsNew)
+                        }
                 }
             }
         }
@@ -259,13 +294,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        showSavedUpdate()
-        // Only while the app is in the foreground: on opening or returning to it once the interval
-        // has passed, then each time it passes again. A new interval applies at once.
+        // Only while the app is in the foreground and checks are on: on opening or returning to it
+        // once the interval has passed, then each time it passes again. A new interval applies at
+        // once, and a new channel checks at once.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                snapshotFlow { settings.updateCheckMinutes }
-                    .collectLatest { minutes ->
+                snapshotFlow {
+                    Triple(
+                        settings.autoCheckUpdates,
+                        settings.updateCheckMinutes,
+                        settings.updateChannel,
+                    )
+                }
+                    .collectLatest { (automatic, minutes) ->
+                        if (!automatic) return@collectLatest
                         val interval = minutes * 60_000L
                         while (true) {
                             delay(untilUpdateCheck(interval))
@@ -291,8 +333,17 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
-    /** Opens what a panel failure's recovery asks for: a provider's sign-in or a settings page. */
+    /**
+     * Opens what a panel failure's recovery asks for: a provider's sign-in or a settings page. Or
+     * shows why Android refused an update.
+     */
     private fun handleIntent(intent: Intent) {
+        if (intent.hasExtra(INSTALL_STATUS)) {
+            updateState.update?.let {
+                updateState = installFailure(it, intent.getIntExtra(INSTALL_STATUS, 0))
+            }
+            return
+        }
         intent
             .getStringExtra("settings_page")
             ?.let { name -> SettingsPage.entries.firstOrNull { it.name == name } }
@@ -328,6 +379,7 @@ class MainActivity : ComponentActivity() {
     private fun back() {
         when {
             page == Page.ChipPosition -> page = Page.Settings
+            page == Page.WhatsNew -> page = whatsNewFrom
             page == Page.Settings && settingsPage != null -> settingsPage = null
             page == Page.Setup -> leaveSetup()
             else -> page = Page.Home
@@ -341,23 +393,37 @@ class MainActivity : ComponentActivity() {
 
     private val updatePreferences by lazy { getSharedPreferences("updates", MODE_PRIVATE) }
 
-    private val sameVersion: Boolean
-        get() = updatePreferences.getString("installed-version", null) == BuildConfig.VERSION_NAME
+    /** Whether this version made the last check, on the channel now chosen. */
+    private val lastCheckCurrent: Boolean
+        get() =
+            updatePreferences.getString("installed-version", null) == BuildConfig.VERSION_NAME &&
+                // Releases before the channel setting only checked Stable.
+                updatePreferences.getString("channel", UpdateChannel.Stable.name) ==
+                    settings.updateChannel.name
 
-    /** The update the last check found, if this version made that check. */
+    /** The update the last check found, if this version made that check on this channel. */
     private fun showSavedUpdate() {
-        if (!sameVersion) return
+        dismissedVersion = updatePreferences.getString("dismissed-version", null)
+        if (!lastCheckCurrent) return
         val version = updatePreferences.getString("version", null) ?: return
         val url = updatePreferences.getString("url", null) ?: return
-        update = ApkUpdate(version, url)
+        val page = updatePreferences.getString("page", null) ?: return
+        updateState = UpdateState.Available(ApkUpdate(version, url, page))
     }
 
+    /** What Home's card shows: anything about an update but an offer dismissed for its version. */
+    private val homeUpdate: UpdateState?
+        get() = updateState.takeIf {
+            it.update != null &&
+                !(it is UpdateState.Available && it.update.version == dismissedVersion)
+        }
+
     /**
-     * Milliseconds until the next check: none once the app itself has updated, else what is left of
-     * [interval] since the last.
+     * Milliseconds until the next check: none once the app itself has updated or the channel
+     * changed, else what is left of [interval] since the last.
      */
     private fun untilUpdateCheck(interval: Long): Long =
-        if (!sameVersion) 0
+        if (!lastCheckCurrent) 0
         else
             untilCheck(
                 updatePreferences.getLong("last-check", 0),
@@ -365,50 +431,159 @@ class MainActivity : ComponentActivity() {
                 interval,
             )
 
-    /** Whether the check reached the releases list; only one that did counts as the last check. */
+    /**
+     * Whether the check reached the releases list; only one that did counts as the last check. An
+     * offer already showing stays through the check, and through a check that fails.
+     */
     private suspend fun checkForUpdate(): Boolean {
+        if (updateState.installing) return false
+        val offer = updateState as? UpdateState.Available
+        if (offer == null) updateState = UpdateState.Checking
         val now = System.currentTimeMillis()
+        val channel = settings.updateChannel
         val result =
             withContext(Dispatchers.IO) {
-                runCatching { newerApk(sharedHttp, BuildConfig.VERSION_NAME) }
+                runCatching {
+                    newerApk(androidReleases(sharedHttp), channel, BuildConfig.VERSION_NAME)
+                }
             }
-        // The offer an earlier version found is stale either way; the new version is recorded only
-        // with a check that counts, so a failure after an upgrade retries instead of waiting out
-        // what was left of the old version's interval.
-        if (!sameVersion) {
-            updatePreferences.edit {
-                remove("version")
-                remove("url")
-            }
-        }
+        // The offer an earlier version or channel found is stale either way; the new version is
+        // recorded only with a check that counts, so a failure after an upgrade retries instead of
+        // waiting out what was left of the old version's interval.
+        if (!lastCheckCurrent) updatePreferences.edit { removeOffer() }
+        // An update the user started meanwhile keeps the card.
+        val applies = !updateState.installing
         return result
             .onSuccess { release ->
-                update = release
+                if (applies)
+                    updateState = release?.let(UpdateState::Available) ?: UpdateState.UpToDate
                 updatePreferences.edit {
                     putLong("last-check", now)
                     putString("installed-version", BuildConfig.VERSION_NAME)
-                    if (release == null) {
-                        remove("version")
-                        remove("url")
-                    } else {
+                    putString("channel", channel.name)
+                    if (release == null) removeOffer()
+                    else {
                         putString("version", release.version)
                         putString("url", release.downloadUrl)
+                        putString("page", release.pageUrl)
                     }
                 }
             }
+            .onFailure { if (applies && offer == null) updateState = UpdateState.CheckFailed }
             .isSuccess
     }
 
-    private fun installUpdate() {
-        val release = update ?: return
-        updateFailed = false
-        updating = true
+    private fun SharedPreferences.Editor.removeOffer() {
+        remove("version")
+        remove("url")
+        remove("page")
+    }
+
+    /**
+     * What Home's card and the Check for updates row do: install an offer, retry a failed install
+     * or open its release page, and otherwise check.
+     */
+    private fun runUpdateAction() {
+        when (val state = updateState) {
+            is UpdateState.Available -> installUpdate(state.update)
+            is UpdateState.InstallFailed ->
+                if (state.manualInstall)
+                    startActivity(Intent(Intent.ACTION_VIEW, state.update.pageUrl.toUri()))
+                else installUpdate(state.update)
+            else -> lifecycleScope.launch { checkForUpdate() }
+        }
+    }
+
+    private fun installUpdate(release: ApkUpdate) {
+        updateState = UpdateState.Downloading(release, null)
         lifecycleScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) { installApk(this@MainActivity, sharedHttp, release) }
+            val apk = File(cacheDir, "update.apk")
+            try {
+                val downloaded = runCatching {
+                    withContext(Dispatchers.IO) {
+                        downloadApk(sharedHttp, release, apk) {
+                            updateState = UpdateState.Downloading(release, it)
+                        }
+                    }
+                }
+                if (downloaded.isFailure) {
+                    updateState =
+                        UpdateState.InstallFailed(
+                            release,
+                            "Couldn't download the update. Check your connection and try again.",
+                        )
+                    return@launch
+                }
+                // Replacing the app ends its process, and with it a dictation in progress.
+                if (ActiveDictation.engine != null) {
+                    updateState = UpdateState.WaitingForDictation(release)
+                    while (ActiveDictation.engine != null) delay(500)
+                }
+                updateState =
+                    runCatching {
+                            withContext(Dispatchers.IO) { installApk(this@MainActivity, apk) }
+                        }
+                        .fold(
+                            { UpdateState.Available(release) },
+                            { installFailure(release, PackageInstaller.STATUS_FAILURE) },
+                        )
+            } finally {
+                apk.delete()
             }
-                .onFailure { updateFailed = true }
-            updating = false
+        }
+    }
+
+    private fun dismissUpdate() {
+        val update = updateState.update ?: return
+        dismissedVersion = update.version
+        updatePreferences.edit { putString("dismissed-version", update.version) }
+        updateState = UpdateState.Available(update)
+    }
+
+    /** Notes an upgrade since the last run for Home's What's New card, and this run as the last. */
+    private fun recordRun() {
+        // Releases before What's New recorded only the version that made the last check.
+        val previous =
+            updatePreferences.getString("last-run-version", null)
+                ?: updatePreferences.getString("installed-version", null)
+        whatsNewPending =
+            whatsNewSince(
+                previous,
+                BuildConfig.VERSION_NAME,
+                updatePreferences.getString("whats-new-since", null),
+            )
+        updatePreferences.edit {
+            putString("last-run-version", BuildConfig.VERSION_NAME)
+            putString("whats-new-since", whatsNewPending)
+        }
+    }
+
+    private fun openWhatsNew() {
+        notesSince = whatsNewPending
+        dismissWhatsNew()
+        whatsNewFrom = page
+        page = Page.WhatsNew
+        loadWhatsNew()
+    }
+
+    private fun dismissWhatsNew() {
+        whatsNewPending = null
+        updatePreferences.edit { remove("whats-new-since") }
+    }
+
+    private fun loadWhatsNew() {
+        whatsNewNotes = null
+        lifecycleScope.launch {
+            whatsNewNotes =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        releaseNotes(
+                            androidReleases(sharedHttp),
+                            notesSince,
+                            BuildConfig.VERSION_NAME,
+                        )
+                    }
+                }
         }
     }
 
@@ -442,6 +617,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun changeSettings(changed: SpeecherSettings) {
+        // What the other channel offered, or found, no longer applies.
+        if (changed.updateChannel != settings.updateChannel && !updateState.installing) {
+            updateState = UpdateState.Idle
+        }
         settingsStore.save(changed)
         settings = changed
     }

@@ -21,10 +21,14 @@ The APK is written to `app/build/outputs/apk/release/app-release.apk`. If the ke
 
 Android releases are tagged `android-v<versionName>` and published with `--latest=false`. The desktop updater reads the repository's latest release, and the desktop release workflow builds on `v*` tags, so an Android release must not take either.
 
-1. Bump `versionCode` and `versionName` in `app/build.gradle.kts` and merge it to master.
+1. Bump `versionCode` and `versionName` in `app/build.gradle.kts`, write the release notes in `docs/android/releases/<versionName>.md`, and merge both to master.
 2. Tag the merge and push the tag: `git tag android-v0.2.0 && git push origin android-v0.2.0`.
 
-`.github/workflows/android-release.yml` checks that the tag matches `versionName`, builds and signs the APK, checks its certificate against the SHA-256 above, and creates the GitHub release with `Speecher-<version>.apk` attached.
+`.github/workflows/android-release.yml` checks that the tag matches `versionName`, builds and signs the APK, checks its certificate against the SHA-256 above, and creates the GitHub release with `Speecher-<version>.apk` attached. The notes file becomes the release body, which the app's What's New page shows after the update; start it at `##`, since the page supplies the title. Without the file, the body is a link to the install instructions.
+
+## Nightly Builds
+
+Every master push that touches `android/` also runs the workflow. It builds and signs the APK as above with the version `<last android-v tag, patch + 1>-nightly.<run number>+g<commit>`, so a nightly sorts above the release before it and below the next one, and publishes it as a prerelease under the moving `android-nightly` tag, replacing the previous nightly. The release body starts with a `Version:` line, which the app reads because the tag carries no version.
 
 The workflow reads the key from two repository secrets. Set them once:
 
@@ -33,7 +37,7 @@ base64 -w0 ~/.config/speecher-android/release.jks | gh secret set ANDROID_RELEAS
 gh secret set ANDROID_RELEASE_PASSWORD < ~/.config/speecher-android/release.password
 ```
 
-The app checks GitHub's release list when it opens, at most once a day, and takes the highest non-prerelease `android-v*` version. If that release has an APK attached and is newer than the installed version, Home shows an update row. Tapping Update downloads the APK and installs it in place. The first time, Android asks the user to let Speecher install apps, and they tap Update again after allowing it. After that, Android installs Speecher's own updates without a confirmation prompt.
+While it is open, the app checks GitHub's release list as often as Settings > Updates says (once a day unless changed, and never with automatic checks off; Check now works either way). On the Stable channel it takes the highest non-prerelease `android-v*` version; on Nightly the `android-nightly` build counts too. If that release has an APK attached and is newer than the installed version, Home shows an update card. Tapping Update downloads the APK, showing its progress, and installs it in place, waiting for a dictation in progress to end first. The first time, Android asks the user to let Speecher install apps, and they tap Update again after allowing it. After that, Android installs Speecher's own updates without a confirmation prompt.
 
 ## Installing on a phone
 
