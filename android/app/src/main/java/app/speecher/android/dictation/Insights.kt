@@ -153,7 +153,7 @@ fun dictationRecord(
     return DictationRecord(
         LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS),
         inserted.audioMillis,
-        countWords(inserted.text),
+        countWords(inserted.dictated),
         target?.label.orEmpty().ifEmpty { target?.packageName.orEmpty() }.ifEmpty { "Unknown app" },
         profile.id,
         if (profile.isBuiltIn) "" else settings.writingProfiles[profile]?.name.orEmpty(),

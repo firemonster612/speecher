@@ -65,13 +65,15 @@ private data class Endpoints(
 /**
  * A commit that went through: the text, how long the microphone listened, the provider that
  * transcribed it and the cleanup providers this dictation called, in order, including any that
- * failed before the transcript went in as heard.
+ * failed before the transcript went in as heard. [dictated] is what was said: the text, except for
+ * a selection edit, whose words were the instructions the desktop counts.
  */
 data class Inserted(
     val text: String,
     val audioMillis: Long,
     val speech: SpeechProvider,
     val cleanups: List<CleanupProvider>,
+    val dictated: String = text,
 )
 
 /** [cleanup] is the LLM that tidies the transcript, or null for a plain Insert. */
@@ -107,6 +109,19 @@ class DictationEngine(
     /** The replacements an Insert applies to the words as heard, read once per dictation. */
     private val replacements: () -> List<Replacement> = { emptyList() },
     private val onCommitted: (Inserted) -> Unit = {},
+    /**
+     * The field's selected text, null when nothing is selected or the field is a password field.
+     * Read when Insert refined is tapped, and again before the edit replaces it.
+     */
+    private val selection: () -> String? = { null },
+    /**
+     * Revises the selected text (the second argument) as the spoken instructions (the third) say,
+     * until the [Cancellation] aborts it. Null when the profile does no cleanup.
+     */
+    private val editSelection: (CleanupProvider, String, String, Cancellation) -> String? =
+        { _, _, _, _ ->
+            null
+        },
 ) : AutoCloseable {
     @Volatile
     var state: DictationState = DictationState.Listening()
@@ -147,6 +162,11 @@ class DictationEngine(
     private var failedCommit: String? = null
     /** This dictation's replacement step, once an Insert ran it; see [replaced]. */
     private var prepared: ReplacedTranscript? = null
+    /**
+     * The selection Insert refined found, which this dictation edits instead of inserting its
+     * words, as the desktop does with a selection. Nothing goes in unless the edit succeeds.
+     */
+    private var selected: String? = null
     /** The batch or refinement request in flight, which Cancel aborts. */
     private var request: Cancellation? = null
     /** The provider streaming this dictation. */
@@ -183,6 +203,7 @@ class DictationEngine(
         failedRefinement = null
         failedCommit = null
         prepared = null
+        selected = null
         sourceProvider = provider
         recording = true
         paused = false
@@ -310,14 +331,16 @@ class DictationEngine(
     fun insert(): Boolean {
         if (inserted || pendingInsert != null) return false
         if (state is DictationState.Failed) {
+            if (selected != null) return false
             val text = failedCommit
             if (text != null) commitTranscript(text)
             else commitHeard((state as DictationState.Failed).transcript)
             return false
         }
         // During the cleanup, Insert stops it and takes the words as heard, as the desktop's
-        // Cancel refinement does.
+        // Cancel refinement does. An edit's words are instructions, so it takes nothing there.
         val refining = state as? DictationState.Refining
+        if (refining != null && refining.editsSelection) return false
         if (refining != null && !refining.transcribingAgain) {
             cancelSession()
             // The stopped cleanup was still called, as the desktop's record counts it.
@@ -333,6 +356,7 @@ class DictationEngine(
     @Synchronized
     fun insertRefined(cleanup: CleanupProvider?): Boolean {
         if (inserted || pendingInsert != null) return false
+        if (cleanup != null) selected = selection()
         pendingInsert = PendingInsert(cleanup)
         return stop()
     }
@@ -394,29 +418,45 @@ class DictationEngine(
      */
     private fun refineTranscript(provider: CleanupProvider, raw: String) {
         val replaced = replaced(raw)
-        if (replaced.skipsRefinement) {
+        val edited = selected
+        if (edited == null && replaced.skipsRefinement) {
             commitTranscript(replaced.text)
             return
         }
         val current = session
         failedRefinement = provider
         val cancellation = Cancellation().also { request = it }
-        publish(DictationState.Refining(raw))
+        publish(DictationState.Refining(raw, editsSelection = edited != null))
         executor.execute {
             try {
+                // An edit streams the whole revised selection, so like the desktop it shows none.
                 val text =
-                    refine(provider, replaced.refinementInput, cancellation) { refined ->
-                        synchronized(this) {
-                            if (current == session && state is DictationState.Refining)
-                                publish(DictationState.Refining(raw, replaced.preview(refined)))
+                    if (edited != null)
+                        editSelection(provider, edited, replaced.refinementInput, cancellation)
+                    else
+                        refine(provider, replaced.refinementInput, cancellation) { refined ->
+                            synchronized(this) {
+                                if (current == session && state is DictationState.Refining)
+                                    publish(DictationState.Refining(raw, replaced.preview(refined)))
+                            }
                         }
-                    }
                 synchronized(this) {
                     // A cleanup cancelled as it finished, by Insert or a failure, never goes in.
                     if (current != session || request !== cancellation) return@execute
                     // Null when the profile does no cleanup, so no provider was called.
                     if (text != null) cleanupsCalled += provider
-                    commitTranscript(text?.let(replaced::restore) ?: replaced.text)
+                    if (edited == null)
+                        commitTranscript(text?.let(replaced::restore) ?: replaced.text)
+                    else if (text == null)
+                        fail(current, FailureReason.SelectionNeedsCleanup, "No cleanup", raw)
+                    else
+                        replaced.restoreEdit(text)?.let(::commitTranscript)
+                            ?: fail(
+                                current,
+                                FailureReason.Cleanup(provider, ProviderFailureKind.InvalidResult),
+                                "The refinement model returned an unusable selection edit",
+                                raw,
+                            )
                 }
             } catch (e: Exception) {
                 cleanupCalled(current, provider)
@@ -580,11 +620,16 @@ class DictationEngine(
         if (current != session || inserted) return
         // The microphone and the connection start together and can both fail; the first failure
         // is the one shown. Only a failed commit replaces a failure, with its retry.
-        if (state is DictationState.Failed && reason != FailureReason.Commit) return
+        if (
+            state is DictationState.Failed &&
+                reason != FailureReason.Commit &&
+                reason != FailureReason.SelectionChanged
+        )
+            return
         cancelSession()
         resumeMedia()
         pendingInsert = null
-        publish(DictationState.Failed(reason, detail, raw))
+        publish(DictationState.Failed(reason, detail, raw, editsSelection = selected != null))
     }
 
     /** Commits words as heard, each spoken phrase replaced by its text. */
@@ -600,6 +645,14 @@ class DictationEngine(
         prepared ?: replaceSpoken(raw, replacements()).also { prepared = it }
 
     private fun commitTranscript(text: String) {
+        // commitText replaces whatever is selected now, so an edit goes in only over the text it
+        // revised.
+        val edited = selected
+        if (edited != null && selection() != edited) {
+            failedCommit = text
+            fail(session, FailureReason.SelectionChanged, "The selection changed", text)
+            return
+        }
         if (commit(text)) {
             inserted = true
             failedCommit = null
@@ -609,6 +662,7 @@ class DictationEngine(
                     heardBytes / PCM_BYTES_PER_MILLI,
                     sourceProvider,
                     cleanupsCalled.toList(),
+                    if (edited != null) prepared?.text ?: text else text,
                 )
             )
         } else {
@@ -771,6 +825,37 @@ fun createDictationEngine(
             )
             .also { store.clearSessionEnded(account.oauth) }
     }
+    fun targetContext() =
+        refinementContext(
+                settings,
+                ActiveDictation.target,
+                ActiveDictation.screen,
+                ActiveDictation.screenshotJpeg,
+            ) { length ->
+                connection()?.getSurroundingText(length, length, 0)?.let {
+                    // A selection made backwards reports its start after its end.
+                    val (start, end) = listOf(it.selectionStart, it.selectionEnd).sorted()
+                    nearbyText(it.text, start, end, it.offset)
+                }
+            }
+            .copy(bindingAliases = replacementAliases(replacements()))
+    fun cleanUp(
+        selected: CleanupProvider,
+        raw: String,
+        context: RefinementContext,
+        cancellation: Cancellation,
+        onRefined: (String) -> Unit,
+    ): String? =
+        // A profile set to no cleanup calls no provider: a dictation goes in as heard, as the
+        // desktop does, and an edit fails.
+        if (context.style == CleanupStrength.None) null
+        // Each cleanup provider's client; a new provider adds its branch here.
+        else
+            when (selected) {
+                CleanupProvider.ChatGpt,
+                CleanupProvider.Claude ->
+                    refineWithAccount(selected.account, raw, context, cancellation, onRefined)
+            }
     return DictationEngine(
         microphone::capture,
         microphone::stop,
@@ -829,29 +914,7 @@ fun createDictationEngine(
             }
         },
         { selected, raw, cancellation, onRefined ->
-            val context =
-                refinementContext(
-                        settings,
-                        ActiveDictation.target,
-                        ActiveDictation.screen,
-                        ActiveDictation.screenshotJpeg,
-                    ) { length ->
-                        connection()?.getSurroundingText(length, length, 0)?.let {
-                            // A selection made backwards reports its start after its end.
-                            val (start, end) = listOf(it.selectionStart, it.selectionEnd).sorted()
-                            nearbyText(it.text, start, end, it.offset)
-                        }
-                    }
-                    .copy(bindingAliases = replacementAliases(replacements()))
-            // A profile set to no cleanup inserts the transcript as heard, as the desktop does.
-            if (context.style == CleanupStrength.None) null
-            // Each cleanup provider's client; a new provider adds its branch here.
-            else
-                when (selected) {
-                    CleanupProvider.ChatGpt,
-                    CleanupProvider.Claude ->
-                        refineWithAccount(selected.account, raw, context, cancellation, onRefined)
-                }
+            cleanUp(selected, raw, targetContext(), cancellation, onRefined)
         },
         if (settings.transcribePassEnabled)
             { pcm, cancellation ->
@@ -891,6 +954,17 @@ fun createDictationEngine(
                     dictationRecord(inserted, settings, ActiveDictation.target),
                 )
             }
+        },
+        selection = {
+            // A password field's text never leaves the device, selected or not.
+            if (ActiveDictation.target?.secure == false)
+                connection()?.getSelectedText(0)?.toString()?.takeIf(String::isNotEmpty)
+            else null
+        },
+        // The screenshot stays behind, as on the desktop: the edit is of the text, not the screen.
+        editSelection = { selected, text, instructions, cancellation ->
+            val context = targetContext().copy(selectedText = text, screenshotJpeg = null)
+            cleanUp(selected, instructions, context, cancellation) {}
         },
     )
 }

@@ -110,6 +110,7 @@ private val states: Map<String, @Composable () -> Unit> =
         "panel-transcribing-again" to bottom { PanelTranscribingAgainPreview() },
         "panel-refining" to bottom { PanelRefiningPreview() },
         "panel-refining-refined-only" to bottom { PanelRefiningRefinedOnlyPreview() },
+        "panel-refining-edit" to bottom { PanelRefiningEditPreview() },
         "panel-refining-stream" to bottom { PanelRefiningStreamPreview() },
         "panel-refining-live-text-off" to bottom { PanelRefiningLiveTextOffPreview() },
         "panel-failed-microphone" to bottom { PanelFailedMicrophonePreview() },
@@ -118,6 +119,30 @@ private val states: Map<String, @Composable () -> Unit> =
         "panel-failed-network-live-text-off" to bottom { PanelFailedNetworkLiveTextOffPreview() },
         "panel-failed-spoken-language" to bottom { PanelFailedSpokenLanguagePreview() },
         "panel-failed-commit" to bottom { PanelFailedPreview(FailureReason.Commit, heard = true) },
+        "panel-failed-edit-cleanup" to
+            bottom {
+                PanelFailedPreview(
+                    FailureReason.Cleanup(CleanupProvider.Claude, ProviderFailureKind.Server),
+                    heard = true,
+                    editsSelection = true,
+                )
+            },
+        "panel-failed-edit-no-cleanup" to
+            bottom {
+                PanelFailedPreview(
+                    FailureReason.SelectionNeedsCleanup,
+                    heard = true,
+                    editsSelection = true,
+                )
+            },
+        "panel-failed-edit-selection-changed" to
+            bottom {
+                PanelFailedPreview(
+                    FailureReason.SelectionChanged,
+                    heard = true,
+                    editsSelection = true,
+                )
+            },
     ) +
         // Every way a provider can fail as the panel words it, for speech with nothing heard
         // yet and for cleanup with the words kept.

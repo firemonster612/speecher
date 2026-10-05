@@ -388,15 +388,22 @@ private fun RowScope.PanelButtons(
     TextButton(onCancel, Modifier.heightIn(min = 52.dp)) { Text("Cancel") }
     if (state is DictationState.Failed) {
         // On a commit failure the recovery button already re-commits the same text, so a second
-        // Insert would duplicate it; show only the recovery action there.
-        if (state.reason != FailureReason.Commit && state.transcript.isNotBlank()) {
+        // Insert would duplicate it; show only the recovery action there. A failed edit's words
+        // are instructions, never text to insert.
+        if (
+            state.reason != FailureReason.Commit &&
+                !state.editsSelection &&
+                state.transcript.isNotBlank()
+        ) {
             FilledTonalButton(onInsert, button) { Text("Insert") }
         }
         Button(onRecover, button) { Text(state.reason.recovery) }
         return
     }
-    // While the cleanup runs, Insert stops it and inserts the words as heard, whatever the layout.
-    val cleaningUp = state is DictationState.Refining && !state.transcribingAgain
+    // While the cleanup runs, Insert stops it and inserts the words as heard, whatever the layout;
+    // not while it edits a selection, whose words are instructions.
+    val cleaningUp =
+        state is DictationState.Refining && !state.transcribingAgain && !state.editsSelection
     val secondary = if (cleaningUp) listOf(InsertAction.Insert) else layout.actions.dropLast(1)
     secondary.forEach { action ->
         FilledTonalButton(
@@ -471,6 +478,8 @@ private val DictationState.Failed.title: String
             FailureReason.MicrophoneDenied -> "Speecher can't use the microphone"
             FailureReason.MicrophoneUnavailable -> "Microphone unavailable"
             FailureReason.SpokenLanguage -> "Spoken language not available"
+            FailureReason.SelectionNeedsCleanup -> "Couldn't edit the selection"
+            FailureReason.SelectionChanged -> "The selection changed"
             is FailureReason.Speech -> "Transcription failed"
             is FailureReason.Cleanup -> "Cleanup failed"
         }
@@ -488,6 +497,9 @@ private val DictationState.Failed.advice: String
             FailureReason.MicrophoneUnavailable ->
                 "Another app may be using it. Try again when it's free."
             FailureReason.SpokenLanguage -> detail
+            FailureReason.SelectionNeedsCleanup ->
+                "Editing a selection needs cleanup. Choose a cleanup level for this app's Writing Profile."
+            FailureReason.SelectionChanged -> "Select the same text again, then tap Retry."
             is FailureReason.ProviderFailed ->
                 providerAdvice(reason.label, reason.kind, signsIn = reason.account != null)
         }
@@ -516,6 +528,7 @@ private val FailureReason.recovery: String
             signInAccount != null -> "Sign in"
             this == FailureReason.MicrophoneDenied ||
                 this == FailureReason.SpokenLanguage ||
+                this == FailureReason.SelectionNeedsCleanup ||
                 needsServerSettings -> "Open Speecher"
             else -> "Retry"
         }
@@ -725,6 +738,12 @@ internal fun PanelRefiningPreview() = PanelPreview(DictationState.Refining(SAMPL
 internal fun PanelRefiningRefinedOnlyPreview() =
     PanelPreview(DictationState.Refining(SAMPLE_TEXT), ButtonLayout.RefinedOnly)
 
+/** Editing a selection: no Insert takes the instructions as heard. */
+@PreviewLightDark
+@Composable
+internal fun PanelRefiningEditPreview() =
+    PanelPreview(DictationState.Refining(SAMPLE_TEXT, editsSelection = true))
+
 @PreviewLightDark
 @Composable
 internal fun PanelRefiningStreamPreview() =
@@ -732,9 +751,16 @@ internal fun PanelRefiningStreamPreview() =
         DictationState.Refining(SAMPLE_TEXT, "Can we move the design review to Thursday afternoon?")
     )
 
-/** A failure for [reason], with some words heard before it when [heard]. */
+/**
+ * A failure for [reason], with some words heard before it when [heard], of a selection edit when
+ * [editsSelection].
+ */
 @Composable
-internal fun PanelFailedPreview(reason: FailureReason, heard: Boolean = false) =
+internal fun PanelFailedPreview(
+    reason: FailureReason,
+    heard: Boolean = false,
+    editsSelection: Boolean = false,
+) =
     PanelPreview(
         DictationState.Failed(
             reason,
@@ -742,6 +768,7 @@ internal fun PanelFailedPreview(reason: FailureReason, heard: Boolean = false) =
                 spokenLanguageMismatch(SpeechProvider.Claude, "cy").orEmpty()
             else "",
             if (heard) SAMPLE_TEXT else "",
+            editsSelection,
         )
     )
 

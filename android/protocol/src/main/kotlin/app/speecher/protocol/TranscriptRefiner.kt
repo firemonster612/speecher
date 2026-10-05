@@ -287,7 +287,7 @@ private fun claudeRequest(
         add(
             buildJsonObject {
                 put("type", JsonPrimitive("text"))
-                put("text", JsonPrimitive(dictationSystemPrompt(context)))
+                put("text", JsonPrimitive(refinementSystemPrompt(context)))
             }
         )
     }
@@ -319,7 +319,12 @@ private fun claudeRequest(
                         put(
                             "content",
                             claudeContent(
-                                refinementUserMessage(raw, vocabulary, context.bindingAliases),
+                                refinementUserMessage(
+                                    raw,
+                                    vocabulary,
+                                    context.bindingAliases,
+                                    context.selectedText,
+                                ),
                                 context,
                             ),
                         )
@@ -360,7 +365,7 @@ private fun chatGptBody(
         if (effort == "none" && model.trim().lowercase().startsWith("gpt-6.1-sol")) "low"
         else effort
     put("reasoning", buildJsonObject { put("effort", JsonPrimitive(sentEffort)) })
-    put("instructions", JsonPrimitive(dictationSystemPrompt(context)))
+    put("instructions", JsonPrimitive(refinementSystemPrompt(context)))
     put("stream", JsonPrimitive(true))
     put("store", JsonPrimitive(false))
     // chatgpt.com rejects "fast" ("Unsupported service_tier: fast"); "priority" is its fast tier.
@@ -374,7 +379,12 @@ private fun chatGptBody(
                     put(
                         "content",
                         chatGptContent(
-                            refinementUserMessage(raw, vocabulary, context.bindingAliases),
+                            refinementUserMessage(
+                                raw,
+                                vocabulary,
+                                context.bindingAliases,
+                                context.selectedText,
+                            ),
                             context,
                         ),
                     )
