@@ -16,12 +16,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,25 +52,32 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import app.speecher.android.R
 import app.speecher.android.dictation.OpenAiSpeed
 import app.speecher.android.dictation.Provider
+import app.speecher.android.dictation.RefinementChoice
 import app.speecher.android.dictation.SpeecherSettings
+import app.speecher.android.dictation.defaultRefinement
 import app.speecher.android.dictation.hasBatchTranscription
 import app.speecher.android.dictation.label
 import app.speecher.android.dictation.providerOrder
 import app.speecher.android.dictation.refinementEfforts
+import app.speecher.android.dictation.refinementModelCaution
 import app.speecher.android.dictation.refinementModels
 import app.speecher.android.dictation.resolveSignedIn
 import app.speecher.android.dictation.spokenLanguageLabel
@@ -115,6 +127,7 @@ fun Settings(
     signingIn: Provider? = null,
     signInError: String? = null,
     onPasteCode: (String) -> Unit = {},
+    onRunSetup: () -> Unit = {},
 ) {
     Column(modifier) {
         if (signedIn.isEmpty()) {
@@ -209,6 +222,15 @@ fun Settings(
                 onOpen,
             )
         }
+
+        Section("App")
+        ListItem(
+            headlineContent = { Text("Setup assistant") },
+            supportingContent = { Text("Go through the first-run steps again.") },
+            trailingContent = { Chevron() },
+            modifier = Modifier.clickable(onClick = onRunSetup),
+            colors = rowColors(),
+        )
 
         Section("Updates")
         UpdateCheckRow(settings, onChange)
@@ -375,13 +397,19 @@ private fun RefinementSettings(
     }
     val provider = resolveSignedIn(settings.refinementProvider, signedIn)
     val choice = settings.refinement(provider)
-    DropdownRow("Model", provider.refinementModels, choice.model) {
-        onChange(settings.withRefinement(provider, choice.copy(model = it)))
+    key(provider) {
+        ModelField(provider.refinementModels, choice.model, provider.defaultRefinement.model) {
+            onChange(settings.withRefinement(provider, choice.copy(model = it)))
+        }
+    }
+    refinementModelCaution(provider, choice.model)?.let {
+        Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error)
     }
     DropdownRow(
-        "Reasoning effort",
-        provider.refinementEfforts.associateWith { it.replaceFirstChar(Char::uppercase) },
+        "Thinking",
+        provider.refinementEfforts,
         choice.effort,
+        description = "More thinking follows instructions more closely but takes longer.",
     ) {
         onChange(settings.withRefinement(provider, choice.copy(effort = it)))
     }
@@ -845,6 +873,69 @@ internal fun <T> DropdownRow(
     )
 }
 
+/**
+ * The refinement model as free text whose menu suggests [models], as the desktop's editable combo
+ * does: a suggested model shows by name and saves as its id, any other id as typed. A cleared field
+ * saves [default], since every request needs a model, and shows it once the field is left.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelField(
+    models: Map<String, String>,
+    model: String,
+    default: String,
+    onChange: (String) -> Unit,
+) {
+    val saved = models[model] ?: model
+    var text by rememberSaveable { mutableStateOf(saved) }
+    var expanded by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
+    fun edit(value: String) {
+        text = value
+        val typed = value.trim()
+        onChange(
+            if (typed.isEmpty()) default
+            else models.entries.firstOrNull { it.value == typed }?.key ?: typed
+        )
+    }
+    ExposedDropdownMenuBox(
+        expanded,
+        { expanded = it },
+        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        OutlinedTextField(
+            text,
+            ::edit,
+            Modifier.fillMaxWidth()
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable)
+                .onFocusChanged { if (!it.isFocused) text = saved },
+            label = { Text("Model") },
+            supportingText = { Text("Select a model or type another model ID.") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions =
+                KeyboardActions(
+                    onDone = {
+                        expanded = false
+                        focus.clearFocus()
+                    }
+                ),
+            singleLine = true,
+        )
+        ExposedDropdownMenu(expanded, { expanded = false }) {
+            models.values.forEach { label ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        edit(label)
+                    },
+                )
+            }
+        }
+    }
+}
+
 /** Several lines of instructions for the refiner, under a title and what they are for. */
 @Composable
 private fun InstructionsField(
@@ -945,6 +1036,15 @@ internal fun SettingsPreview() =
         Provider.entries.toSet(),
     )
 
+/** The list under its top bar and scrolling, as the app shows it, so its last rows can be seen. */
+@PreviewLightDark
+@Composable
+internal fun SettingsScreenPreview() = SpeecherTheme {
+    SpeecherScreen("Settings", onBack = {}) {
+        Settings(SpeecherSettings(), Provider.entries.toSet(), {}, {}, {}, {})
+    }
+}
+
 @PreviewLightDark
 @Composable
 internal fun SettingsSignedOutPreview() = SettingsPreview(SpeecherSettings(), emptySet())
@@ -959,6 +1059,31 @@ internal fun SettingsRefinementPreview() = SpeecherTheme {
                 SpeecherSettings(),
                 setOf(Provider.ChatGpt),
                 {},
+                {},
+                {},
+            )
+        }
+    }
+}
+
+@PreviewLightDark
+@Composable
+internal fun SettingsRefinementHaikuPreview() = SpeecherTheme {
+    var settings by remember {
+        mutableStateOf(
+            SpeecherSettings(
+                refinementProvider = Provider.Claude,
+                claudeRefinement = RefinementChoice("claude-haiku-4-5", "xhigh"),
+            )
+        )
+    }
+    Surface {
+        Column {
+            SettingsPageContent(
+                SettingsPage.Refinement,
+                settings,
+                setOf(Provider.Claude),
+                { settings = it },
                 {},
                 {},
             )

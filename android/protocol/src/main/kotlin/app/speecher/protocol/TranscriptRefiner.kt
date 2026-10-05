@@ -95,11 +95,31 @@ fun refineTranscript(
 }
 
 /**
- * Anthropic's fast mode is a research preview limited to Opus 5 and Opus 4.8; other models fail
- * every request that asks for it.
+ * Anthropic's fast mode is a research preview limited to Opus 5.5, Opus 5 and Opus 4.8 ("opus-5"
+ * also matches "opus-5-5"); other models fail every request that asks for it.
  */
 fun modelSupportsFastMode(model: String): Boolean =
     model.lowercase().let { it.contains("opus-5") || it.contains("opus-4-8") }
+
+/** Anthropic models that take adaptive thinking and an effort; the rest are sent neither. */
+private fun modelSupportsAdaptiveEffort(model: String): Boolean =
+    model.lowercase().let { id ->
+        listOf("opus-5", "sonnet-5", "sonnet-4-6", "opus-4-8", "opus-4-7", "opus-4-6", "opus-4-5")
+            .any { it in id }
+    }
+
+private fun modelSupportsExtraHighEffort(model: String): Boolean =
+    model.lowercase().let { id ->
+        listOf("opus-5", "sonnet-5", "opus-4-8", "opus-4-7").any { it in id }
+    }
+
+/** The effort Anthropic is sent: max for xhigh on a model without it, high for an unknown one. */
+private fun anthropicEffort(model: String, effort: String): String =
+    when {
+        effort == "xhigh" && !modelSupportsExtraHighEffort(model) -> "max"
+        effort in setOf("low", "medium", "high", "xhigh", "max") -> effort
+        else -> "high"
+    }
 
 /** Ultrafast serves only GPT-6 Astra so far. GPT-6.1 Sol is due to join it. */
 fun modelSupportsUltrafast(model: String): Boolean =
@@ -242,14 +262,19 @@ private fun claudeRequest(
         put("max_tokens", JsonPrimitive(4096))
         put("stream", JsonPrimitive(true))
         if (fast) put("speed", JsonPrimitive("fast"))
-        put(
-            "thinking",
-            buildJsonObject {
-                put("type", JsonPrimitive("adaptive"))
-                put("display", JsonPrimitive("omitted"))
-            },
-        )
-        put("output_config", buildJsonObject { put("effort", JsonPrimitive(effort)) })
+        if (modelSupportsAdaptiveEffort(model)) {
+            put(
+                "thinking",
+                buildJsonObject {
+                    put("type", JsonPrimitive("adaptive"))
+                    put("display", JsonPrimitive("omitted"))
+                },
+            )
+            put(
+                "output_config",
+                buildJsonObject { put("effort", JsonPrimitive(anthropicEffort(model, effort))) },
+            )
+        }
         put("system", system)
         put(
             "messages",
