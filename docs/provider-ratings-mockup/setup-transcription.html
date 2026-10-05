@@ -1,0 +1,77 @@
+<!doctype html>
+<!--
+  The setup assistant's Transcription step, before and after the ratings.
+  ?v=before|after, ?choice=codex|claude|local, ?open=1 opens Advanced.
+  Rebuilt from today/setup-transcription-*.png; new parts have a dashed outline.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher setup: Transcription with ratings (mockup)</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+<div class="dialog">
+  <header><h1>Transcription</h1><div>Step 2 of 8</div></header>
+  <main id="page"></main>
+  <footer><button>&lt; Back</button><button disabled>Next &gt;</button><button>Cancel</button></footer>
+</div>
+<script src="mockup.js"></script>
+<script>
+  const choice = SPEECH.find((p) => p.id === params.get('choice')) || SPEECH[0];
+  const after = version === 'after';
+
+  const option = (p) => `
+    <div class="option">
+      <div class="top">${MARKS[p.mark]}
+        <label><input type="radio" name="speech" ${p === choice ? 'checked' : ''} onclick="location.search=new URLSearchParams({...Object.fromEntries(params), choice:'${p.id}'})">${p.name}</label>
+        <span>${p.status}</span></div>
+      ${p.note ? `<div class="indent small">${p.note}</div>` : ''}
+      ${after ? `<div class="indent new">${ratingsHtml(p.ratings)}${p.ratingsFor ? `<div class="small">${p.ratingsFor}</div>` : ''}</div>` : ''}
+    </div>`;
+
+  const advanced = (inner) => after
+    ? `<details class="disclosure advanced new"><summary>Advanced</summary>${inner}</details>` : '';
+
+  const fallbacks = `
+    <h2>If ${choice.name} is unavailable</h2>
+    <div class="small" style="margin:-4px 18px 8px">${choice.id === 'local'
+      ? 'For example while its model is still downloading. Leave this empty to keep every dictation on this computer.'
+      : 'Speecher tries these top to bottom when it’s offline, signed out or the service stops answering, and tells you when it used one. Optional.'}</div>
+    <div class="card"><div class="row"><div class="text">Add a fallback<small>Used when everything above is unavailable.</small></div><select><option>Choose…</option></select></div></div>`;
+
+  const compareTable = `
+    <img src="today/compare-table.png" alt="Today's comparison table" style="width:100%;border:1px solid var(--frame);border-radius:4px;margin-top:8px">`;
+
+  const cloudDetail = `
+    <h2>Sign-in</h2>
+    <div class="card"><div class="option"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox">Use a CLI Proxy API account instead of the service's own sign-in</label></div></div>
+    ${statsHtml(after ? choice.after : choice.before)}
+    ${advanced(modelsHtml(choice.models))}
+    ${choice.id === 'codex' ? `<p style="margin:14px 0 4px 18px"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" checked>Transcribe again for accuracy</label><span class="small" style="margin-left:23px">Adds one to five seconds after you stop.</span></p>` : ''}
+    <p style="margin-top:14px">${choice.name} is ${choice.status === 'Ready' ? 'ready' : 'not signed in'}.</p>`;
+
+  const localDetail = `
+    <p style="margin-top:14px">${MARKS.computer.replace('class="mark"', 'class="mark" style="width:14px;height:14px;vertical-align:-2px"')} AMD Ryzen 9 7945HX with Radeon Graphics, 32 threads · no graphics acceleration · 65 GB memory</p>
+    <div class="suggest"><div>
+      <span class="small">Suggested for this computer</span><br>
+      <b>${SUGGESTED.name}</b><span class="badge">Recommended</span><br>
+      Words appear as you speak<br>About 0.4 s per 10 s (estimated)<br>
+      1.6% of words wrong on clear speech, 3.99% on everyday speech</div>
+      <button>Download 731 MB</button></div>
+    ${after
+      ? `<details class="disclosure advanced new"><summary>Advanced</summary>${modelsHtml(choice.models)}${compareTable}</details>`
+      : `<details class="disclosure advanced"><summary>Compare 6 other models</summary>${compareTable}</details>`}
+    <p style="margin-top:12px">Download a model to continue. It keeps going while you finish setup.</p>`;
+
+  document.getElementById('page').innerHTML = `
+    <p>Choose the service that turns your speech into text.</p>
+    <h2>Transcription service</h2>
+    <div class="card">${SPEECH.map(option).join('')}</div>
+    ${choice.id === 'local' ? localDetail : cloudDetail}
+    ${fallbacks}`;
+  document.body.insertAdjacentHTML('beforeend', viewLinks(SPEECH.map((p) => p.id), choice.id));
+  boot();
+</script>
+</body>
+</html>

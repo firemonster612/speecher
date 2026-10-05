@@ -1,0 +1,2306 @@
+[
+ {
+  "provider": "openai",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 1.126297952607274,
+  "total_s": 1.5388118345290422,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 1.5660256147384644,
+  "total_s": 2.589232890866697,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 0.3237701654434204,
+  "total_s": 0.6982184164226055,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could shift the meeting to Thursday. No wait, Friday works better because I have a dentist appointment."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 1.0706486580893397,
+  "total_s": 2.8039943240582943,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Thursday. No, wait, Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 0.8608301701024175,
+  "total_s": 1.1199372354894876,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 p.m."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 2.5205799182876945,
+  "total_s": 3.415433016605675,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 0.3062388747930527,
+  "total_s": 0.5409027971327305,
+  "passed": [
+   true,
+   false,
+   false,
+   false
+  ],
+  "text": "Send the report to John Scratch that send it to Maria by five pm."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 1.0544002838432789,
+  "total_s": 1.8750695995986462,
+  "passed": [
+   true,
+   false,
+   true,
+   false
+  ],
+  "text": "Send the report to John. Send it to Maria by five pm."
+ },
+ {
+  "provider": "openai",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 1.1002344340085983,
+  "total_s": 1.4221322229132056,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 4.538838140666485,
+  "total_s": 4.763443887233734,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 0.3258436731994152,
+  "total_s": 0.7210510019212961,
+  "passed": [
+   false,
+   false,
+   true
+  ],
+  "text": "Okay, so run the deploy script with dash dash force and then check the logs at slash var slash log slash speaker dot log."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 1.078028168529272,
+  "total_s": 2.7041962649673223,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with --force and then check the logs at /var/log/speecher.log."
+ },
+ {
+  "provider": "openai",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.9723645569756627,
+  "total_s": 2.522440348751843,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.9176363851875067,
+  "total_s": 3.222734674811363,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "list",
+  "run": 0,
+  "first_s": 0.31072109192609787,
+  "total_s": 0.7261911910027266,
+  "passed": [
+   false,
+   false
+  ],
+  "text": "For the release we need three things: update the change log, bump the version number in CMake lists, and tag the commit. Push it."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.224292492493987,
+  "total_s": 3.554658909328282,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "For the release, we need three things: first, update the changelog; second, bump the version number in CMakeLists.txt; and third, tag the commit and push it."
+ },
+ {
+  "provider": "openai",
+  "sample": "question",
+  "run": 0,
+  "first_s": 1.2105714110657573,
+  "total_s": 1.7402443066239357,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "question",
+  "run": 0,
+  "first_s": 2.5327700218185782,
+  "total_s": 2.701287335716188,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "question",
+  "run": 0,
+  "first_s": 0.31447722762823105,
+  "total_s": 0.574026633054018,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "question",
+  "run": 0,
+  "first_s": 1.125329532660544,
+  "total_s": 2.2746724523603916,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 0.7972170514985919,
+  "total_s": 1.207793639972806,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it\u2019s due on March 3rd."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 1.6321239527314901,
+  "total_s": 2.5365712624043226,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 0.319093176163733,
+  "total_s": 0.5659619281068444,
+  "passed": [
+   false,
+   false
+  ],
+  "text": "The total was two thousand three hundred forty-five dollars and it's due on March third."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 1.235301830805838,
+  "total_s": 2.603025189600885,
+  "passed": [
+   false,
+   false
+  ],
+  "text": "The total was two thousand three hundred and forty-five dollars, and it's due on March third."
+ },
+ {
+  "provider": "openai",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 1.694725537672639,
+  "total_s": 1.8643861776217818,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 4.054488448426127,
+  "total_s": 4.897939037531614,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 0.31899491511285305,
+  "total_s": 0.4816734567284584,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 1.2092475406825542,
+  "total_s": 1.9851150531321764,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 1.6806568270549178,
+  "total_s": 2.0534576969221234,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 1.6594127342104912,
+  "total_s": 2.624488095752895,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 0.3174512283876538,
+  "total_s": 0.6826855419203639,
+  "passed": [
+   false,
+   false,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at three. Actually, it's four thirty, and we'll bring the slides."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 1.0602325852960348,
+  "total_s": 2.496429793536663,
+  "passed": [
+   false,
+   false,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at three. Actually, make it four thirty and bring the slides."
+ },
+ {
+  "provider": "openai",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 0.9351216545328498,
+  "total_s": 1.2304442785680294,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 0.9313397398218513,
+  "total_s": 1.7658707378432155,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 0.30849466659128666,
+  "total_s": 0.5260118152946234,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "The budget is due on the week we need to submit the budget by Friday."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 1.0278511326760054,
+  "total_s": 2.009213891811669,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The budget is due on Friday. We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai",
+  "sample": "count",
+  "run": 0,
+  "first_s": 0.9598013078793883,
+  "total_s": 1.4722866993397474,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "count",
+  "run": 0,
+  "first_s": 1.9202035758644342,
+  "total_s": 2.7686893604695797,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "count",
+  "run": 0,
+  "first_s": 0.2947281850501895,
+  "total_s": 0.5011858362704515,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Order three, no problem. Four boxes of printer paper for the office."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "count",
+  "run": 0,
+  "first_s": 1.142028009518981,
+  "total_s": 2.112936407327652,
+  "passed": [
+   true,
+   false,
+   false
+  ],
+  "text": "Order three, no, sorry, four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 1.684171762317419,
+  "total_s": 2.0350031284615397,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 1.8524546194821596,
+  "total_s": 2.7513510454446077,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 0.2583453906700015,
+  "total_s": 0.4311470575630665,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 1.0283636404201388,
+  "total_s": 1.8480318021029234,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 1.793262611143291,
+  "total_s": 3.020591161213815,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 2.2348957089707255,
+  "total_s": 3.1629375144839287,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 0.3465254297479987,
+  "total_s": 0.8321779444813728,
+  "passed": [
+   false,
+   false,
+   false
+  ],
+  "text": "Dear team, this is a new paragraph. The server will be down tonight from ten to midnight. Please save your work."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 1.280317503027618,
+  "total_s": 2.8799360655248165,
+  "passed": [
+   false,
+   false,
+   false
+  ],
+  "text": "Dear team, new paragraph. The server will be down tonight from ten to midnight. New paragraph. Please save your work."
+ },
+ {
+  "provider": "openai",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 1.346123095601797,
+  "total_s": 1.7389649944379926,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 1.7133660418912768,
+  "total_s": 2.634081520140171,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 0.3122548880055547,
+  "total_s": 0.6150510655716062,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file read me dot md in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 1.1005507102236152,
+  "total_s": 2.2568944664672017,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file readme.md in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.1160124717280269,
+  "total_s": 1.3289404530078173,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 12.92700338922441,
+  "total_s": 12.997921099886298,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 0.2628960330039263,
+  "total_s": 0.46220338717103004,
+  "passed": [
+   false,
+   false,
+   true
+  ],
+  "text": "Hmm let me think, okay, the contract looks fine to me."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.0282691540196538,
+  "total_s": 1.921108410693705,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Let me think. Okay, tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai",
+  "sample": "email",
+  "run": 0,
+  "first_s": 1.0358769483864307,
+  "total_s": 1.543975436128676,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting to see when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "email",
+  "run": 0,
+  "first_s": 2.4915408892557025,
+  "total_s": 2.812549091875553,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "email",
+  "run": 0,
+  "first_s": 0.3181871697306633,
+  "total_s": 0.8081315914168954,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting and let me know when it might go out?"
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "email",
+  "run": 0,
+  "first_s": 1.0854900684207678,
+  "total_s": 3.0931584406644106,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "openai",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 1.1150659257546067,
+  "total_s": 1.5545877013355494,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 3.4557664254680276,
+  "total_s": 4.473127486184239,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 0.31479110568761826,
+  "total_s": 0.6853718096390367,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could shift the meeting to Thursday. No wait, Friday works better because I have a dentist appointment."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 1.0975388120859861,
+  "total_s": 2.7990794088691473,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Thursday. No, wait, Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 1.0622646464034915,
+  "total_s": 1.3213148089125752,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 p.m."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 7.567666144110262,
+  "total_s": 8.439484171569347,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 p.m."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 0.31254823692142963,
+  "total_s": 0.5448323227465153,
+  "passed": [
+   true,
+   false,
+   false,
+   false
+  ],
+  "text": "Send the report to John Scratch that send it to Maria by five pm."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 1.0463606743142009,
+  "total_s": 1.8806985104456544,
+  "passed": [
+   true,
+   false,
+   true,
+   false
+  ],
+  "text": "Send the report to John. Send it to Maria by five pm."
+ },
+ {
+  "provider": "openai",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 1.068566189147532,
+  "total_s": 1.6722266487777233,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 4.947620569728315,
+  "total_s": 5.175319234840572,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 0.31539229676127434,
+  "total_s": 0.7171697644516826,
+  "passed": [
+   false,
+   false,
+   true
+  ],
+  "text": "Okay, so run the deploy script with dash dash force and then check the logs at slash var slash log slash speaker dot log."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 1.0628575198352337,
+  "total_s": 2.65782175026834,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with --force and then check the logs at /var/log/speecher.log."
+ },
+ {
+  "provider": "openai",
+  "sample": "list",
+  "run": 1,
+  "first_s": 0.9089445089921355,
+  "total_s": 1.4382022516801953,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "list",
+  "run": 1,
+  "first_s": 2.3144762851297855,
+  "total_s": 3.5803433591499925,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "list",
+  "run": 1,
+  "first_s": 0.31482430920004845,
+  "total_s": 0.7356761042028666,
+  "passed": [
+   false,
+   false
+  ],
+  "text": "For the release we need three things: update the change log, bump the version number in CMake lists, and tag the commit. Push it."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "list",
+  "run": 1,
+  "first_s": 1.2823741706088185,
+  "total_s": 3.5250861356034875,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "For the release, we need three things: first, update the changelog; second, bump the version number in CMakeLists.txt; and third, tag the commit and push it."
+ },
+ {
+  "provider": "openai",
+  "sample": "question",
+  "run": 1,
+  "first_s": 1.1820961628109217,
+  "total_s": 1.5734629975631833,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "question",
+  "run": 1,
+  "first_s": 2.553053273819387,
+  "total_s": 2.7047060132026672,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "question",
+  "run": 1,
+  "first_s": 0.3120809169486165,
+  "total_s": 0.5713364575058222,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "question",
+  "run": 1,
+  "first_s": 1.0444856593385339,
+  "total_s": 2.167807168327272,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 0.892026711255312,
+  "total_s": 1.2360844621434808,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it\u2019s due on March 3rd."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 1.3366045309230685,
+  "total_s": 2.270457237958908,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 0.3054509339854121,
+  "total_s": 0.5537937628105283,
+  "passed": [
+   false,
+   false
+  ],
+  "text": "The total was two thousand three hundred forty-five dollars and it's due on March third."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 1.038687126711011,
+  "total_s": 2.3352552680298686,
+  "passed": [
+   false,
+   false
+  ],
+  "text": "The total was two thousand three hundred and forty-five dollars, and it's due on March third."
+ },
+ {
+  "provider": "openai",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 0.962480396963656,
+  "total_s": 1.2612594459205866,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 1.4898602375760674,
+  "total_s": 2.3358176006004214,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 0.2992477063089609,
+  "total_s": 0.461094256490469,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 1.0206722058355808,
+  "total_s": 1.7342244368046522,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 4.849650665186346,
+  "total_s": 5.617129437625408,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let\u2019s meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 2.237576190382242,
+  "total_s": 3.188509122468531,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 0.3027329873293638,
+  "total_s": 0.6643924294039607,
+  "passed": [
+   false,
+   false,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at three. Actually, it's four thirty, and we'll bring the slides."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 1.0526429815217853,
+  "total_s": 2.4649233035743237,
+  "passed": [
+   false,
+   false,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at three. Actually, make it four thirty and bring the slides."
+ },
+ {
+  "provider": "openai",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 2.65555511880666,
+  "total_s": 4.043164882808924,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 1.230161901563406,
+  "total_s": 2.162133814767003,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 0.3002008758485317,
+  "total_s": 0.5183720560744405,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "The budget is due on the week we need to submit the budget by Friday."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 1.0915610706433654,
+  "total_s": 2.0373932728543878,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The budget is due on Friday. We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai",
+  "sample": "count",
+  "run": 1,
+  "first_s": 0.8665002677589655,
+  "total_s": 1.3990817507728934,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "count",
+  "run": 1,
+  "first_s": 1.3617649227380753,
+  "total_s": 2.26575243845582,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "count",
+  "run": 1,
+  "first_s": 0.2952180923894048,
+  "total_s": 0.5011120131239295,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Order three, no problem. Four boxes of printer paper for the office."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "count",
+  "run": 1,
+  "first_s": 1.0279289614409208,
+  "total_s": 1.969473373144865,
+  "passed": [
+   true,
+   false,
+   false
+  ],
+  "text": "Order three, no, sorry, four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 1.1742056580260396,
+  "total_s": 1.5277509046718478,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 3.497991608455777,
+  "total_s": 4.383379206061363,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 0.2934136763215065,
+  "total_s": 0.47039149701595306,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 1.0386914862319827,
+  "total_s": 1.8612127527594566,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 1.179928606376052,
+  "total_s": 1.6169232223182917,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 1.374154900200665,
+  "total_s": 2.3169497614726424,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 0.3032306358218193,
+  "total_s": 0.664342156611383,
+  "passed": [
+   false,
+   false,
+   false
+  ],
+  "text": "Dear team, this is a new paragraph. The server will be down tonight from ten to midnight. Please save your work."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 1.0463899448513985,
+  "total_s": 2.5319383945316076,
+  "passed": [
+   false,
+   false,
+   false
+  ],
+  "text": "Dear team, new paragraph. The server will be down tonight from ten to midnight. New paragraph. Please save your work."
+ },
+ {
+  "provider": "openai",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 1.0806380212306976,
+  "total_s": 1.5338652459904552,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 3.9059416903182864,
+  "total_s": 4.881039699539542,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 0.31105384789407253,
+  "total_s": 0.6119425827637315,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file read me dot md in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 1.0476526534184813,
+  "total_s": 2.1804330833256245,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file readme.md in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.0161499287933111,
+  "total_s": 1.2572744768112898,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 3.2970505710691214,
+  "total_s": 3.37029136903584,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 0.300505343824625,
+  "total_s": 0.5046109678223729,
+  "passed": [
+   false,
+   false,
+   true
+  ],
+  "text": "Hmm let me think, okay, the contract looks fine to me."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.0794930383563042,
+  "total_s": 1.970401680096984,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Let me think. Okay, tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.1676339302212,
+  "total_s": 1.7218891009688377,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "email",
+  "run": 1,
+  "first_s": 2.8982388973236084,
+  "total_s": 3.238905506208539,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "email",
+  "run": 1,
+  "first_s": 0.33434566855430603,
+  "total_s": 0.8234216114506125,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting and let me know when it might go out?"
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "email",
+  "run": 1,
+  "first_s": 1.055943843908608,
+  "total_s": 3.082757147960365,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "openai",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 1.391807067207992,
+  "total_s": 1.8283300744369626,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 1.642063488252461,
+  "total_s": 2.6569215646013618,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 0.314487406052649,
+  "total_s": 0.6866362933069468,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Hey, I was thinking maybe we could shift the meeting to Thursday. No wait, Friday works better because I have a dentist appointment."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 1.1802356503903866,
+  "total_s": 2.905664613470435,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Thursday. No, wait, Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 1.1109366361051798,
+  "total_s": 1.4700394356623292,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 p.m."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 1.3181598810479045,
+  "total_s": 2.2058238461613655,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send it to Maria by 5 PM."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 0.2709458991885185,
+  "total_s": 0.4983614692464471,
+  "passed": [
+   true,
+   false,
+   false,
+   false
+  ],
+  "text": "Send the report to John Scratch that send it to Maria by five pm."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 1.0398821691051126,
+  "total_s": 1.8745823903009295,
+  "passed": [
+   true,
+   false,
+   true,
+   false
+  ],
+  "text": "Send the report to John. Send it to Maria by five pm."
+ },
+ {
+  "provider": "openai",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 1.222978899255395,
+  "total_s": 1.7673541344702244,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 3.4588359212502837,
+  "total_s": 3.6749252611771226,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 0.31429923977702856,
+  "total_s": 0.7099764999002218,
+  "passed": [
+   false,
+   false,
+   true
+  ],
+  "text": "Okay, so run the deploy script with dash dash force and then check the logs at slash var slash log slash speaker dot log."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 1.0587101997807622,
+  "total_s": 2.649213927797973,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Okay, so run the deploy script with --force and then check the logs at /var/log/speecher.log."
+ },
+ {
+  "provider": "openai",
+  "sample": "list",
+  "run": 2,
+  "first_s": 0.9424215173348784,
+  "total_s": 1.5276451837271452,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the change log.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.3613964198157191,
+  "total_s": 2.5811730958521366,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "list",
+  "run": 2,
+  "first_s": 0.34962851367890835,
+  "total_s": 0.7596339266747236,
+  "passed": [
+   false,
+   false
+  ],
+  "text": "For the release we need three things: update the change log, bump the version number in CMake lists, and tag the commit. Push it."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.0770872412249446,
+  "total_s": 3.429850075393915,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "For the release, we need three things: first, update the changelog; second, bump the version number in CMakeLists.txt; and third, tag the commit and push it."
+ },
+ {
+  "provider": "openai",
+  "sample": "question",
+  "run": 2,
+  "first_s": 0.8639505496248603,
+  "total_s": 1.2358746100217104,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "question",
+  "run": 2,
+  "first_s": 2.5232587810605764,
+  "total_s": 2.7010421054437757,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "question",
+  "run": 2,
+  "first_s": 0.30238127429038286,
+  "total_s": 0.5630978867411613,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "question",
+  "run": 2,
+  "first_s": 1.0241657383739948,
+  "total_s": 2.141139288432896,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 1.3138015922158957,
+  "total_s": 2.2087824791669846,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it\u2019s due on March 3rd."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 4.431151972152293,
+  "total_s": 5.353764647617936,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 0.3101429073140025,
+  "total_s": 0.5587947443127632,
+  "passed": [
+   false,
+   false
+  ],
+  "text": "The total was two thousand three hundred forty-five dollars and it's due on March third."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 1.0689931260421872,
+  "total_s": 2.3724918104708195,
+  "passed": [
+   false,
+   false
+  ],
+  "text": "The total was two thousand three hundred and forty-five dollars, and it's due on March third."
+ },
+ {
+  "provider": "openai",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 1.5022357795387506,
+  "total_s": 1.8307541320100427,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 1.499223112128675,
+  "total_s": 2.408835497684777,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 0.2986607337370515,
+  "total_s": 0.46248100604861975,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 1.0124739678576589,
+  "total_s": 1.7256414061412215,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 1.186011478304863,
+  "total_s": 1.5643918616697192,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 1.5168532906100154,
+  "total_s": 2.520010103471577,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 0.3320033708587289,
+  "total_s": 0.7053917096927762,
+  "passed": [
+   false,
+   false,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at three. Actually, it's four thirty, and we'll bring the slides."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 1.1591804772615433,
+  "total_s": 2.5937992967665195,
+  "passed": [
+   false,
+   false,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at three. Actually, make it four thirty and bring the slides."
+ },
+ {
+  "provider": "openai",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 5.009910992346704,
+  "total_s": 5.202697838656604,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need submit the budget by Friday."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 2.4484275840222836,
+  "total_s": 3.2863538144156337,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 0.2963182544335723,
+  "total_s": 0.5166285913437605,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "The budget is due on the week we need to submit the budget by Friday."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 1.0392196495085955,
+  "total_s": 1.9750036783516407,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The budget is due on Friday. We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.129003381356597,
+  "total_s": 1.4188286382704973,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.4487777445465326,
+  "total_s": 2.2873662542551756,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "count",
+  "run": 2,
+  "first_s": 0.32368652429431677,
+  "total_s": 0.5335480673238635,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Order three, no problem. Four boxes of printer paper for the office."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.137952788732946,
+  "total_s": 2.0926044415682554,
+  "passed": [
+   true,
+   false,
+   false
+  ],
+  "text": "Order three, no, sorry, four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 1.112295676022768,
+  "total_s": 1.3492336804047227,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 3.755337885580957,
+  "total_s": 4.63697752263397,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 0.2980788992717862,
+  "total_s": 0.4722957070916891,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 1.0372822657227516,
+  "total_s": 1.8591920090839267,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card."
+ },
+ {
+  "provider": "openai",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 2.192309913225472,
+  "total_s": 2.5508066192269325,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 2.4054301157593727,
+  "total_s": 3.3398825582116842,
+  "passed": [
+   true,
+   true,
+   false
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from ten to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 0.3207561708986759,
+  "total_s": 0.6845394186675549,
+  "passed": [
+   false,
+   false,
+   false
+  ],
+  "text": "Dear team, this is a new paragraph. The server will be down tonight from ten to midnight. Please save your work."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 1.0787800215184689,
+  "total_s": 2.550113101489842,
+  "passed": [
+   false,
+   false,
+   false
+  ],
+  "text": "Dear team, new paragraph. The server will be down tonight from ten to midnight. New paragraph. Please save your work."
+ },
+ {
+  "provider": "openai",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.062236025929451,
+  "total_s": 1.747033634223044,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.45959482062608,
+  "total_s": 2.3922709273174405,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `README.md` in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 0.3069738792255521,
+  "total_s": 0.6109000667929649,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file read me dot md in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.0605334183201194,
+  "total_s": 2.177618191577494,
+  "passed": [
+   false,
+   true
+  ],
+  "text": "Open the file readme.md in the docs folder and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 0.998288500122726,
+  "total_s": 1.1660076770931482,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 2.3080788906663656,
+  "total_s": 2.3842187486588955,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 0.29694632440805435,
+  "total_s": 0.5016173664480448,
+  "passed": [
+   false,
+   false,
+   true
+  ],
+  "text": "Hmm let me think, okay, the contract looks fine to me."
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 1.0726494640111923,
+  "total_s": 1.9723166162148118,
+  "passed": [
+   true,
+   false,
+   true
+  ],
+  "text": "Let me think. Okay, tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai",
+  "sample": "email",
+  "run": 2,
+  "first_s": 0.8759383074939251,
+  "total_s": 1.3247172525152564,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "anthropic",
+  "sample": "email",
+  "run": 2,
+  "first_s": 2.619764623232186,
+  "total_s": 2.9753702776506543,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks!"
+ },
+ {
+  "provider": "LiquidAI/lfm2.5-1.2b-instruct:latest",
+  "sample": "email",
+  "run": 2,
+  "first_s": 0.3140143509954214,
+  "total_s": 0.8067000089213252,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting and let me know when it might go out?"
+ },
+ {
+  "provider": "gemma4:e4b",
+  "sample": "email",
+  "run": 2,
+  "first_s": 1.0895929662510753,
+  "total_s": 3.084973530843854,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ }
+]

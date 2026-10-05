@@ -1,0 +1,139 @@
+<!doctype html>
+<!-- Index of the provider ratings mockups. Open from disk; no build step. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher: provider ratings (mockups)</title>
+<style>
+  body { margin: 0 auto; max-width: 820px; padding: 32px 24px 60px; font: 14px/1.5 "Noto Sans", "Segoe UI", system-ui, sans-serif; color: #232629; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 26px 0 6px; }
+  p, li { color: #3b3f44; }
+  a { color: #2f6ed0; }
+  ul { padding-left: 20px; }
+  li + li { margin-top: 4px; }
+  table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+  th, td { border-bottom: 1px solid #e3e5e7; padding: 4px 10px 4px 0; text-align: left; vertical-align: top; }
+  th { font-weight: 600; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<h1>Provider ratings</h1>
+<p>Every speech and refinement option gets two bars out of 10, rated from benchmarks, so the
+setup assistant shows at a glance how the options compare. An Advanced disclosure under the stats lists the models
+behind each option. Settings shows the same bars for the chosen provider.</p>
+
+<h2>Before and after</h2>
+<p>Each link opens the page as it is today and with the change, side by side. Both sides are
+HTML rebuilt from real Linux grabs; "Today's app" above the left side opens the grab itself.
+New parts have a dashed orange outline. Add <code>&amp;open=1</code> to open Advanced.</p>
+<ul>
+  <li>Setup, Transcription:
+    <a href="compare.html?p=setup-transcription&amp;choice=codex&amp;open=1">ChatGPT Codex</a>,
+    <a href="compare.html?p=setup-transcription&amp;choice=claude&amp;open=1">Claude Voice</a>,
+    <a href="compare.html?p=setup-transcription&amp;choice=local&amp;open=1">Local Model</a></li>
+  <li>Setup, Refinement:
+    <a href="compare.html?p=setup-refinement&amp;choice=openai&amp;open=1">OpenAI</a>,
+    <a href="compare.html?p=setup-refinement&amp;choice=anthropic&amp;open=1">Anthropic</a>,
+    <a href="compare.html?p=setup-refinement&amp;choice=local">Local Runner</a>,
+    <a href="compare.html?p=setup-refinement&amp;choice=endpoint">Custom Endpoint</a></li>
+  <li>Settings, Dictation:
+    <a href="compare.html?p=settings&amp;page=dictation&amp;choice=codex&amp;open=1">ChatGPT Codex</a>,
+    <a href="compare.html?p=settings&amp;page=dictation&amp;choice=claude&amp;open=1">Claude Voice</a>,
+    <a href="compare.html?p=settings&amp;page=dictation&amp;choice=local&amp;open=1">Local Model</a></li>
+  <li>Settings, Refinement:
+    <a href="compare.html?p=settings&amp;page=refinement&amp;choice=openai">OpenAI</a>,
+    <a href="compare.html?p=settings&amp;page=refinement&amp;choice=anthropic">Anthropic</a>,
+    <a href="compare.html?p=settings&amp;page=refinement&amp;choice=local">Local Runner</a>,
+    <a href="compare.html?p=settings&amp;page=refinement&amp;choice=endpoint">Custom Endpoint</a></li>
+</ul>
+
+<h2>The ratings</h2>
+<p>Every option is rated by the same two rules, from published benchmarks and our own timings.
+Each rounds to the nearest half.</p>
+<ul>
+  <li><b>Accuracy</b> (speech) is 10 minus a point for each percentage point of words wrong above
+    2%, about the best any service scores. Word error rates are AA-WER v2 from
+    <a href="https://artificialanalysis.ai/speech-to-text">Artificial Analysis</a>.</li>
+  <li><b>Quality</b> (refinement) is the share of checks passed on 15 messy transcripts, 3 runs
+    each, through the app's real prompt and default settings: corrections applied, fillers and
+    false starts gone, a dictated question or request left unanswered, numbers, paths and lists
+    formatted.</li>
+  <li>Custom Endpoint gets no ratings at all: the server and model are the user's own.</li>
+  <li><b>Speed</b> is 10 minus two points for each second you wait after you stop, for about 10 s
+    of speech, and one more point off when no text shows while you speak.</li>
+</ul>
+<table id="ratings"><tr><th></th><th>Accuracy or quality</th><th>Speed</th><th>Evidence</th></tr></table>
+
+<h3 style="font-size:14px;margin:18px 0 4px">Local models</h3>
+<p>Local Model shows the model suggested for this computer. Its wait is the catalog's estimate for
+10 s of speech on this kind of PC, counted in full even for streaming models, which overstates it.</p>
+<table id="local"><tr><th>Model</th><th>AA-WER used</th><th>Accuracy</th><th>Speed</th></tr></table>
+
+<h2>What moves</h2>
+<ul>
+  <li>The bars replace the Score line and the text Speed, Accuracy and Quality lines. Speech's
+    remaining Speed line is renamed Text shows, the name the Local models page already uses.</li>
+  <li>Engine and Default model move into Advanced. Settings' Service line drops the engine name for
+    the same reason.</li>
+  <li>Local Model's "Compare 6 other models" becomes its Advanced: the model list with bars, then
+    today's table. Two disclosures listing the same models would be one too many.</li>
+  <li>Settings Refinement gets the bars but no Advanced: the provider's own card already has a Model
+    row right below.</li>
+</ul>
+
+<h2>What the numbers say</h2>
+<ul>
+  <li><b>Speech.</b> ChatGPT Codex makes about half as many mistakes as Claude Voice (3.3% of words
+    against 6.6%), so it rates 8.5 to 5.5. Claude Voice is faster, 10 to 7: its text is final 0.07 s
+    after you stop, where Codex waits for its last phrase (0.81 s) and then checks the whole
+    recording again (0.77 s).</li>
+  <li><b>Refinement.</b> OpenAI and Anthropic both passed all 123 checks, so quality ties at 10.
+    OpenAI is faster: 1.5 s against 2.8 s at the median, and 2.6 s against 4.9 s at the slow end.
+    Anthropic's fast mode needs usage credits, which a subscription doesn't have; the app falls back
+    to standard speed, so that is what was timed.</li>
+  <li><b>Local cleanup models</b> miss about half the checks: they leave "no wait" corrections in,
+    keep spoken numbers as words and skip lists.</li>
+</ul>
+
+<h2>Open questions</h2>
+<ul>
+  <li><b>Refinement quality ties.</b> Both cloud providers aced the checks. A harder set would be
+    needed to separate them; until then the bars say they clean up equally well.</li>
+  <li><b>Missing benchmark numbers.</b> Artificial Analysis lists three of the seven local models.
+    Parakeet uses Parakeet TDT 0.6B V2's figure. Moonshine and Qwen3-ASR are estimated from FLEURS
+    English, scaled by how the three listed models compare on both benchmarks. Qwen3-ASR's 9, above
+    Codex, rests on that estimate.</li>
+  <li><b>Where the timings came from.</b> Refinement ran through the CLI Proxy API from this PC, so
+    every cloud figure carries the same extra hop. The Local Runner rows ran on this CPU-only PC;
+    Gemma 4 E4B is only suggested with a fast graphics card, where it is quicker than shown.</li>
+  <li><b>Refinement order.</b> Anthropic is listed above OpenAI today. Swap them so OpenAI comes first?</li>
+</ul>
+
+<h2>After this is approved</h2>
+<ul>
+  <li>Core: the ratings, the local formula and the model lists live in core, worded once.</li>
+  <li>Then one change per platform (Linux, macOS, Windows), each with real before-and-after grabs.
+    The bar is each toolkit's own progress bar and Advanced its own disclosure, so nothing is painted by hand.</li>
+</ul>
+<script src="mockup.js"></script>
+<script>
+  const fmt = (n) => (n == null ? '?' : n);
+  const rated = [
+    ['ChatGPT Codex (speech)', SPEECH[0].ratings, `GPT Transcribe ${CODEX_SPEECH.wer}% AA-WER; ${CODEX_SPEECH.wait.toFixed(2)} s wait`],
+    ['Claude Voice (speech)', SPEECH[1].ratings, `Deepgram Nova 3 Realtime ${CLAUDE_SPEECH.wer}%; ${CLAUDE_SPEECH.wait} s wait`],
+    ['Local Model (speech)', SPEECH[2].ratings, `${SUGGESTED.name}, below`],
+    ['OpenAI (refinement)', REFINEMENT[1].ratings, `123 of 123 checks; ${REFINE_BENCH.openai.wait} s median`],
+    ['Anthropic (refinement)', REFINEMENT[0].ratings, `123 of 123 checks; ${REFINE_BENCH.anthropic.wait} s median`],
+    ['Local Runner (refinement)', REFINEMENT[2].ratings, `${REFINE_BENCH.lfm.name}: 66 of 123 checks; ${REFINE_BENCH.lfm.wait} s median`],
+  ];
+  document.getElementById('ratings').insertAdjacentHTML('beforeend', rated.map(([name, [a, b], why]) =>
+    `<tr><td>${name}</td><td class="n">${fmt(a[1])}</td><td class="n">${fmt(b[1])}</td><td>${why}</td></tr>`).join(''));
+  document.getElementById('local').insertAdjacentHTML('beforeend', LOCAL_MODELS.map((m) =>
+    `<tr><td>${m.name}${m.suggested ? ' (suggested)' : ''}</td>` +
+    `<td>${m.aaWer != null ? `${m.aaWer}%, ${m.aaSource}` : `${localWer(m).toFixed(2)}%, estimated from FLEURS ${m.fleurs}%`}</td>` +
+    `<td class="n">${localAccuracy(m)}</td><td class="n">${fmt(localSpeed(m))}</td></tr>`).join(''));
+</script>
+</body>
+</html>
