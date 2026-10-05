@@ -6,6 +6,7 @@
 #include "core/OutputMethod.h"
 #include "core/SettingsStore.h"
 #include "core/settings/FallbackPresentation.h"
+#include "core/settings/ProviderRatings.h"
 #include "dictation/DictationSession.h"
 #include "dictation/PopupGeometry.h"
 #include "dictation/PopupPresentation.h"
@@ -29,6 +30,7 @@
 #include <QDebug>
 #include <QTest>
 #include <QFile>
+#include <QHash>
 #include <QScopeGuard>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -36,6 +38,7 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace speecher {
 namespace {
@@ -92,6 +95,18 @@ void chooseRefinementProvider(SettingsStore &store, const QString &id)
     store.setRefinementProvider(id == QStringLiteral("openai") ? QStringLiteral("anthropic")
                                                                : QStringLiteral("openai"));
     store.setRefinementProvider(id);
+}
+
+// A pane's rows as the model shows them now, by id.
+QHash<QString, win::RowSnapshot> rowsOnPane(const win::SettingsModel &model, const QString &pane)
+{
+    QHash<QString, win::RowSnapshot> rows;
+    for (const SettingsPaneGroup &group : model.schema().pane(pane)->groups) {
+        for (const win::RowSnapshot &row : model.section(group).rows) {
+            rows.insert(row.id, row);
+        }
+    }
+    return rows;
 }
 
 template<typename Widget>
@@ -1188,6 +1203,179 @@ private slots:
         QTest::qWait(300);
         QVERIFY(panel->saveGrabForTest(grabDir + QStringLiteral("/win-receipt-fallback.png")));
         panel->dismissForTest();
+    }
+
+    // The Rating and Advanced rows carry what Windows draws: the chosen
+    // service's bars and models, and neither row for Custom Endpoint.
+    void settingsModelCarriesProviderRatings()
+    {
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        store->setSpeechProvider(QStringLiteral("codex"));
+        chooseRefinementProvider(*store, QStringLiteral("openai"));
+        {
+            const win::SettingsModel model(controller.get());
+            const QHash<QString, win::RowSnapshot> dictation = rowsOnPane(model, QStringLiteral("dictation"));
+            const win::RowSnapshot rating = dictation.value(QStringLiteral("speechRating"));
+            QCOMPARE(rating.kind, RowKind::Rating);
+            QCOMPARE(rating.ratings,
+                     (QList<Rating>{{RatingMeasure::Accuracy, 8.5}, {RatingMeasure::Speed, 7.0}}));
+            const win::RowSnapshot models = dictation.value(QStringLiteral("speechModels"));
+            QCOMPARE(models.kind, RowKind::ModelList);
+            QCOMPARE(models.ratedModels.size(), 2);
+            QCOMPARE(models.ratedModels.first().name, QStringLiteral("GPT Live Transcribe"));
+            const QHash<QString, win::RowSnapshot> refinement = rowsOnPane(model, QStringLiteral("refinement"));
+            QCOMPARE(refinement.value(QStringLiteral("refinementRating")).ratings,
+                     (QList<Rating>{{RatingMeasure::Quality, 10.0}, {RatingMeasure::Speed, 7.0}}));
+        }
+        store->setSpeechProvider(QStringLiteral("endpoint"));
+        chooseRefinementProvider(*store, QStringLiteral("endpoint"));
+        const win::SettingsModel model(controller.get());
+        const QHash<QString, win::RowSnapshot> dictation = rowsOnPane(model, QStringLiteral("dictation"));
+        QVERIFY(!dictation.contains(QStringLiteral("speechRating")));
+        QVERIFY(!dictation.contains(QStringLiteral("speechModels")));
+        QVERIFY(!rowsOnPane(model, QStringLiteral("refinement")).contains(QStringLiteral("refinementRating")));
+    }
+
+    // The Rating row draws the chosen service's bars and Advanced stays open
+    // across the rebuild a new choice causes; Custom Endpoint shows neither.
+    void settingsDrawsRatingsAndKeepsAdvancedOpen()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        store->setSpeechProvider(QStringLiteral("codex"));
+        const QString service =
+            win::SettingsModel(controller.get()).schema().row(QStringLiteral("speechProvider"))->label;
+        const QString advanced = providerModelsCaption();
+        const ProviderRegistry &registry = *controller->providerRegistry();
+
+        win::TranscribePane transcribe(controller.get());
+        win::SettingsWindow window(controller.get(), &transcribe);
+        window.showPage(QStringLiteral("dictation"));
+        QTest::qWait(200);
+        QCOMPARE(window.ratingBarsForTest().join(QStringLiteral(", ")), QStringLiteral("Accuracy 8.5, Speed 7"));
+        QVERIFY(!window.expandedForTest(advanced));
+        QVERIFY(window.expandForTest(advanced));
+
+        QVERIFY(window.chooseForTest(service, chainLabel(ProviderRole::Speech, registry, QStringLiteral("claude"))));
+        QTRY_COMPARE_WITH_TIMEOUT(window.ratingBarsForTest().join(QStringLiteral(", ")),
+                                  QStringLiteral("Accuracy 5.5, Speed 10"), 2000);
+        QVERIFY(window.expandedForTest(advanced));
+
+        QVERIFY(window.chooseForTest(service, chainLabel(ProviderRole::Speech, registry, QStringLiteral("endpoint"))));
+        QTRY_VERIFY_WITH_TIMEOUT(window.ratingBarsForTest().isEmpty(), 2000);
+        QVERIFY(!window.expandForTest(advanced));
+        window.close();
+    }
+
+    // Each rated option in the setup steps shows its bars and Custom Endpoint
+    // none; the chosen service lists its models under Advanced.
+    void setupOptionsShowTheirRatings()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] { store->applySnapshot(original); });
+        store->setSpeechProvider(QStringLiteral("codex"));
+        chooseRefinementProvider(*store, QStringLiteral("openai"));
+        SetupWindow assistant(controller.get(), [] {});
+        assistant.show(SetupAssistantPage::All);
+
+        assistant.showPageForTest(QStringLiteral("transcription"));
+        const QStringList speech = assistant.ratedOptionsForTest();
+        QVERIFY2(speech.contains(QStringLiteral("codex")) && speech.contains(QStringLiteral("claude")),
+                 qPrintable(speech.join(QLatin1Char(','))));
+        QVERIFY(assistant.modelsShownForTest());
+
+        assistant.showPageForTest(QStringLiteral("refinement"));
+        const QStringList refinement = assistant.ratedOptionsForTest();
+        QVERIFY2(refinement.contains(QStringLiteral("openai")) && refinement.contains(QStringLiteral("anthropic"))
+                     && !refinement.contains(QStringLiteral("endpoint")),
+                 qPrintable(refinement.join(QLatin1Char(','))));
+        QVERIFY(assistant.modelsShownForTest());
+
+        chooseRefinementProvider(*store, QStringLiteral("endpoint"));
+        assistant.showPageForTest(QStringLiteral("refinement"));
+        QVERIFY(!assistant.modelsShownForTest());
+    }
+
+    // Pictures of the ratings for UI evidence, in Light: the setup
+    // Transcription step with ChatGPT Codex and with Local Model chosen and
+    // the Refinement step with OpenAI, each as it opens and with Advanced
+    // open, and the Settings Dictation page (Advanced open) and Refinement
+    // page. The screen is shorter than the pages, so each view scrolls to
+    // what it shows.
+    void ratingEvidenceGrabs()
+    {
+        const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR");
+        if (grabDir.isEmpty()) {
+            QSKIP("SPEECHER_TEST_GRAB_DIR is not set");
+        }
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        SettingsStore *store = controller->settings();
+        const AppSettings original = store->snapshot();
+        const auto restore = qScopeGuard([&] {
+            store->applySnapshot(original);
+            qunsetenv("SPEECHER_GRAB_PAGE");
+            qunsetenv("SPEECHER_GRAB_SIZE");
+            qunsetenv("SPEECHER_GRAB_SCROLL");
+        });
+        store->setTheme(QStringLiteral("light"));
+        store->setSpeechFallbackProviders({});
+        store->setRefinementFallbackProviders({});
+        store->setSpeechProvider(QStringLiteral("codex"));
+        chooseRefinementProvider(*store, QStringLiteral("openai"));
+
+        qputenv("SPEECHER_GRAB_SIZE", "1000x800");
+        // Dictation from its Transcription card down.
+        for (const auto &[page, scroll] : {std::pair{QStringLiteral("dictation"), QByteArray("400")},
+                                           std::pair{QStringLiteral("refinement"), QByteArray()}}) {
+            win::TranscribePane transcribe(controller.get());
+            win::SettingsWindow window(controller.get(), &transcribe);
+            window.show();
+            window.showPage(page);
+            QTest::qWait(800);
+            window.expandForTest(providerModelsCaption());
+            qputenv("SPEECHER_GRAB_PAGE", page.toUtf8());
+            qputenv("SPEECHER_GRAB_SCROLL", scroll);
+            QVERIFY(window.capture(grabDir + QStringLiteral("/settings-%1.png").arg(page)));
+            window.close();
+        }
+
+        qputenv("SPEECHER_GRAB_SIZE", "760x800");
+        const auto grabStep = [&](const QString &step, const QString &name) {
+            SetupWindow assistant(controller.get(), [] {});
+            assistant.keepSavedProvidersForTest();
+            assistant.show(SetupAssistantPage::All);
+            assistant.showPageForTest(step);
+            QTest::qWait(1500);
+            QVERIFY(assistant.captureForTest(grabDir + QStringLiteral("/setup-%1.png").arg(name)));
+            assistant.revealModelsForTest();
+            QTest::qWait(500);
+            QVERIFY(assistant.captureForTest(grabDir + QStringLiteral("/setup-%1-advanced.png").arg(name)));
+            assistant.scrollToEndForTest();
+            QTest::qWait(500);
+            QVERIFY(assistant.captureForTest(grabDir + QStringLiteral("/setup-%1-end.png").arg(name)));
+        };
+        grabStep(QStringLiteral("transcription"), QStringLiteral("transcription-codex"));
+        grabStep(QStringLiteral("refinement"), QStringLiteral("refinement-openai"));
+        // Local Model is only a choice where this build runs speech models.
+        if (!controller->providerRegistry()->speechProvider(QStringLiteral("local"))) {
+            return;
+        }
+        store->setSpeechProvider(QStringLiteral("local"));
+        controller->localSetup()->probeHardware();
+        QTRY_VERIFY_WITH_TIMEOUT(controller->localSetup()->hardwareKnown(), 60000);
+        grabStep(QStringLiteral("transcription"), QStringLiteral("transcription-local"));
     }
 
     void panelVisualState()

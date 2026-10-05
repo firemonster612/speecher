@@ -430,11 +430,34 @@ UIElement rowControl(const RowSnapshot &row, PaneHost &host)
     case RowKind::Custom:
         return customRowIsFullWidth(row.id) ? nullptr : customRowElement(row, host);
     case RowKind::Rating:
+        return ratingBarsElement(row.ratings, Orientation::Vertical, host);
     case RowKind::ModelList:
-        // SettingsModel::section leaves these out until Windows draws them.
         return nullptr;
     }
     return nullptr;
+}
+
+// A ModelList row as the Settings app's SettingsExpander draws one: the row's
+// title and description as the Expander's header, the models inside,
+// collapsed at first and still open after the rebuild a change causes.
+Expander modelListExpander(const RowSnapshot &row, PaneHost &host)
+{
+    StackPanel header;
+    header.Spacing(2);
+    header.Padding({0, 12, 0, 12});
+    header.Children().Append(styledText(row.label, L"SettingsCardBodyStyle"));
+    header.Children().Append(secondaryTextBlock(row.help, L"SettingsCardDescriptionStyle", host));
+    Expander expander;
+    expander.HorizontalAlignment(HorizontalAlignment::Stretch);
+    expander.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+    expander.Header(header);
+    expander.Content(ratedModelsElement(row.ratedModels, host));
+    expander.IsExpanded(host.expandedRows.contains(row.id));
+    AutomationProperties::SetName(expander, hs(row.label));
+    AutomationProperties::SetHelpText(expander, hs(row.help));
+    expander.Expanding([&host, rowId = row.id](const auto &, const auto &) { host.expandedRows.insert(rowId); });
+    expander.Collapsed([&host, rowId = row.id](const auto &, const auto &) { host.expandedRows.remove(rowId); });
+    return expander;
 }
 
 // The one editor per collection row, created once and kept on the host so a
@@ -566,11 +589,12 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
         cards.Margin({0, 12, 0, 0});
     }
     // Consecutive rows naming the same group share one card; a collection, a
-    // row that opens a subpage, or a full-width custom row is always a card
-    // of its own, and a fallback list lays out its own cards.
+    // model list, a row that opens a subpage, or a full-width custom row is
+    // always a card of its own, and a fallback list lays out its own cards.
     QList<QList<RowSnapshot>> units;
     for (const RowSnapshot &row : section.rows) {
-        const bool standsAlone = row.kind == RowKind::Collection || !row.targetPage.isEmpty()
+        const bool standsAlone = row.kind == RowKind::Collection || row.kind == RowKind::ModelList
+            || !row.targetPage.isEmpty()
             || (row.kind == RowKind::Custom && (customRowIsFullWidth(row.id) || customRowIsSection(row.id)));
         if (!standsAlone && !units.isEmpty() && !row.groupId.isEmpty()
             && units.last().last().groupId == row.groupId
@@ -588,6 +612,10 @@ void appendSection(const StackPanel &column, const SectionSnapshot &section, Pan
         }
         if (!first.targetPage.isEmpty()) {
             cards.Children().Append(revealIfSought(unit, navigationRow(first, host), host));
+            continue;
+        }
+        if (first.kind == RowKind::ModelList) {
+            cards.Children().Append(revealIfSought(unit, modelListExpander(first, host), host));
             continue;
         }
         if (first.kind == RowKind::Collection) {

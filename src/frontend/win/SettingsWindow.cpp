@@ -901,15 +901,20 @@ struct SettingsWindow::Native {
         }
         QTimer::singleShot(250, &settle, &QEventLoop::quit);
         settle.exec();
-        // SPEECHER_GRAB_SCROLL=bottom shows the end of the page, as on the
-        // other platforms; "middle" shows what lies between, which a window
-        // this short would otherwise never capture.
+        // SPEECHER_GRAB_SCROLL=bottom shows the end of the page, and
+        // =<pixels> the page that far down, as on the other platforms;
+        // "middle" shows what lies between, which a window this short would
+        // otherwise never capture.
         const QString scrollTo = qEnvironmentVariable("SPEECHER_GRAB_SCROLL");
-        if (scrollTo == QStringLiteral("bottom") || scrollTo == QStringLiteral("middle")) {
+        bool scrollIsPixels = false;
+        const int scrollPixels = scrollTo.toInt(&scrollIsPixels);
+        if (scrollTo == QStringLiteral("bottom") || scrollTo == QStringLiteral("middle") || scrollIsPixels) {
             if (const auto scroll = pageScroller(pageHost.Child())) {
                 const double end = scroll.ScrollableHeight();
-                scroll.ChangeView(nullptr, scrollTo == QStringLiteral("middle") ? end * 0.6 : end,
-                                  nullptr, true);
+                const double offset = scrollIsPixels                         ? std::min<double>(scrollPixels, end)
+                                      : scrollTo == QStringLiteral("middle") ? end * 0.6
+                                                                             : end;
+                scroll.ChangeView(nullptr, offset, nullptr, true);
                 QTimer::singleShot(250, &settle, &QEventLoop::quit);
                 settle.exec();
             }
@@ -1145,6 +1150,56 @@ bool SettingsWindow::chooseForTest(const QString &name, const QString &choice)
         }
     }
     return false;
+}
+
+QStringList SettingsWindow::ratingBarsForTest() const
+{
+    std::vector<Control> controls;
+    collectControls(m_native->pageHost ? m_native->pageHost.Child() : nullptr, controls);
+    // Told from the other bars on a page, such as the microphone's level, by name.
+    const QStringList measures{ratingMeasureLabel(RatingMeasure::Accuracy), ratingMeasureLabel(RatingMeasure::Quality),
+                               ratingMeasureLabel(RatingMeasure::Speed)};
+    QStringList bars;
+    for (const Control &control : controls) {
+        const auto bar = control.try_as<ProgressBar>();
+        const QString name = bar ? qs(AutomationProperties::GetName(bar)) : QString();
+        if (measures.contains(name)) {
+            bars.append(QStringLiteral("%1 %2").arg(name).arg(bar.Value()));
+        }
+    }
+    return bars;
+}
+
+namespace {
+
+Expander namedExpander(const UIElement &page, const QString &name)
+{
+    std::vector<Control> controls;
+    collectControls(page, controls);
+    for (const Control &control : controls) {
+        const auto expander = control.try_as<Expander>();
+        if (expander && qs(AutomationProperties::GetName(expander)) == name) {
+            return expander;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+bool SettingsWindow::expandForTest(const QString &name)
+{
+    const Expander expander = namedExpander(m_native->pageHost ? m_native->pageHost.Child() : nullptr, name);
+    if (expander) {
+        expander.IsExpanded(true);
+    }
+    return bool(expander);
+}
+
+bool SettingsWindow::expandedForTest(const QString &name) const
+{
+    const Expander expander = namedExpander(m_native->pageHost ? m_native->pageHost.Child() : nullptr, name);
+    return expander && expander.IsExpanded();
 }
 
 QStringList SettingsWindow::searchSuggestionsForTest(const QString &query)
