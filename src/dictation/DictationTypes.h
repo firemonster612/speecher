@@ -126,8 +126,9 @@ struct ProviderAttemptIssue {
     ProviderFailureKind kind = ProviderFailureKind::Unavailable;
     // The provider's own reason.
     QString message;
-    // It could not connect while the system reported no internet and it
-    // needs the internet; only then may an outcome say "No internet".
+    // It needs the internet and could not connect, or was passed over,
+    // while the system reported none; only then may an outcome say "No
+    // internet".
     bool offline = false;
     // A speech provider that never connected still took audio the
     // microphone heard, which is never sent again (rule A7): a few words may

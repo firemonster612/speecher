@@ -405,6 +405,76 @@ private slots:
         QCOMPARE(rig.delivery.lastText, QStringLiteral("first words more words"));
     }
 
+    // Offline, speech providers that need the internet are passed over
+    // untried at start, and the outcome says why.
+    void offlineSkipsSpeechProvidersThatNeedTheInternet()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("claude"), QStringLiteral("local")});
+        rig.session->setReachability(Reachability::Offline);
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("codex")]->prepareCalls, 0);
+        QCOMPARE(rig.speech[QStringLiteral("claude")]->prepareCalls, 0);
+        QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
+        QCOMPARE(rig.microphoneStarts, 1);
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(outcome.first().at(0).toString(), QStringLiteral("Input sent • No internet, so Local Model did this one."));
+    }
+
+    // With no fallback, the start fails at once, and offers no settings page:
+    // none would bring the internet back.
+    void anOnlyProviderOfflineFailsWithoutASettingsFix()
+    {
+        ChainRig rig({QStringLiteral("codex")});
+        rig.session->setReachability(Reachability::Offline);
+        QSignalSpy errors(rig.session.get(), &DictationSession::popupErrorRequested);
+        rig.session->startListening();
+        QTRY_COMPARE(rig.session->state(), DictationState::Error);
+        QCOMPARE(errors.last().at(0).toString(), QStringLiteral("No internet connection"));
+        QCOMPARE(errors.last().at(1).value<PopupErrorAction>().fix, ErrorFix::None);
+        QCOMPARE(rig.speech[QStringLiteral("codex")]->prepareCalls, 0);
+        QCOMPARE(rig.microphoneStarts, 0);
+    }
+
+    // A stream that closed while paused reopens on the same provider, but
+    // not offline: the next provider takes the words heard since resuming.
+    void aStreamClosingWhilePausedOfflineHandsOver()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        codex->autoCompleteOnFinish = false;
+        rig.listen();
+        rig.session->pause();
+        rig.session->resume();
+        rig.audio.pushAudio("x");
+        rig.session->setReachability(Reachability::Offline);
+        codex->emitFailure(QStringLiteral("closed"), true, QStringLiteral("streaming"), Network);
+        QCOMPARE(codex->startCalls, 1);
+        QCOMPARE(local->audioChunks, QList<QByteArray>{"x"});
+    }
+
+    // Offline, a dropped stream is not reconnected: the next provider takes
+    // over at once.
+    void aProviderDroppingOfflineHandsOverWithoutReconnecting()
+    {
+        ChainRig rig({QStringLiteral("codex"), QStringLiteral("local")});
+        FakeSpeechTranscriber *codex = rig.speech[QStringLiteral("codex")];
+        FakeSpeechTranscriber *local = rig.speech[QStringLiteral("local")];
+        rig.listen();
+        codex->emitFinalText(QStringLiteral("first words"));
+        rig.session->setReachability(Reachability::Offline);
+        codex->emitFailure(QStringLiteral("dropped"), true, QStringLiteral("streaming"), Network);
+        QCOMPARE(codex->startCalls, 1);
+        QCOMPARE(local->startCalls, 1);
+        local->emitFinalText(QStringLiteral("more words"));
+        rig.session->stopListening();
+        QTRY_COMPARE(rig.delivery.calls, 1);
+        QCOMPARE(rig.delivery.lastText, QStringLiteral("first words more words"));
+    }
+
     // A stream that keeps ending within seconds spends its reconnects and
     // hands over; one that ends after streaming a while rolls over on the
     // same provider.
@@ -721,6 +791,30 @@ private slots:
         local->emitCompletedText(QStringLiteral("Spoken words."));
         QCOMPARE(rig.delivery.calls, 1);
         QCOMPARE(rig.delivery.lastText, QStringLiteral("Spoken words."));
+    }
+
+    // Offline, refiners that need the internet are passed over untried
+    // rather than left to time out, and the outcome says why.
+    void offlineSkipsRefinersThatNeedTheInternet()
+    {
+        ChainRig rig({QStringLiteral("codex")},
+                     {QStringLiteral("openai"), QStringLiteral("anthropic"), QStringLiteral("local")});
+        FakeRefiner *openai = rig.refiners[QStringLiteral("openai")];
+        FakeRefiner *anthropic = rig.refiners[QStringLiteral("anthropic")];
+        FakeRefiner *local = rig.refiners[QStringLiteral("local")];
+        local->autoComplete = true;
+        local->autoCompleteText = QStringLiteral("Spoken words.");
+        QSignalSpy outcome(rig.session.get(), &DictationSession::popupMessageRequested);
+        rig.listen();
+        rig.speech[QStringLiteral("codex")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->setReachability(Reachability::Offline);
+        rig.session->stopListening();
+        QTRY_COMPARE(rig.delivery.calls, 1);
+        QCOMPARE(rig.delivery.lastText, QStringLiteral("Spoken words."));
+        QCOMPARE(openai->prepareCalls + openai->refineCalls, 0);
+        QCOMPARE(anthropic->prepareCalls + anthropic->refineCalls, 0);
+        QTRY_COMPARE(outcome.size(), 1);
+        QCOMPARE(outcome.first().at(0).toString(), QStringLiteral("Input sent • No internet, so Local Runner did this one."));
     }
 
     // An unusable answer is not a missing service: no other refiner is
