@@ -150,6 +150,9 @@ private slots:
         if (!QNetworkInformation::loadBackendByFeatures(QNetworkInformation::Feature::Reachability)) {
             QSKIP("no network information backend");
         }
+        // A backend can report its first state once the event loop runs, as
+        // GLib's does; that report must not reach the refiner as a change.
+        QTest::qWait(200);
         QTcpServer server;
         QVERIFY(server.listen(QHostAddress::LocalHost));
         OpenAiRefiner refiner(nullptr, 5000, 5000);
