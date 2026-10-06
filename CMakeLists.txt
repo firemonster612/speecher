@@ -125,7 +125,14 @@ function(speecher_assert_single_qt_prefix context)
   endif()
 endfunction()
 
+# Qt 6 runs libraries built for its own or an older minor version, never a
+# newer one. A package that imports Qt's private API (EXACT) needs its own
+# minor; Debian ties those packages to one qt6-base-private-abi.
 function(speecher_assert_package_qt_version package_name target_name)
+  cmake_parse_arguments(PARSE_ARGV 2 arg "EXACT" "" "")
+  if(arg_UNPARSED_ARGUMENTS)
+    message(FATAL_ERROR "Unknown arguments: ${arg_UNPARSED_ARGUMENTS}")
+  endif()
   get_target_property(imported_configs "${target_name}" IMPORTED_CONFIGURATIONS)
   foreach(config IN LISTS imported_configs)
     get_target_property(package_library "${target_name}" "IMPORTED_LOCATION_${config}")
@@ -161,8 +168,9 @@ function(speecher_assert_package_qt_version package_name target_name)
   set(package_qt_major_hex "${CMAKE_MATCH_3}")
   math(EXPR package_qt_minor "0x${package_qt_minor_hex}")
   math(EXPR package_qt_major "0x${package_qt_major_hex}")
-  if(NOT package_qt_major EQUAL Qt6_VERSION_MAJOR OR
-     NOT package_qt_minor EQUAL Qt6_VERSION_MINOR)
+  if(NOT package_qt_major EQUAL Qt6_VERSION_MAJOR
+     OR package_qt_minor GREATER Qt6_VERSION_MINOR
+     OR (arg_EXACT AND NOT package_qt_minor EQUAL Qt6_VERSION_MINOR))
     message(FATAL_ERROR
       "${package_name} was built for Qt ${package_qt_major}.${package_qt_minor}, "
       "but CMake found Qt ${Qt6_VERSION_MAJOR}.${Qt6_VERSION_MINOR}. Pass "
@@ -215,16 +223,16 @@ if(UNIX AND NOT APPLE)
 
   speecher_assert_single_qt_prefix("KDE package discovery")
   if(KF6GlobalAccel_FOUND)
-    speecher_assert_package_qt_version("KF6GlobalAccel" "KF6::GlobalAccel")
+    speecher_assert_package_qt_version("KF6GlobalAccel" "KF6::GlobalAccel" EXACT)
   endif()
   if(KF6WidgetsAddons_FOUND)
     speecher_assert_package_qt_version("KF6WidgetsAddons" "KF6::WidgetsAddons")
   endif()
   if(KF6ColorScheme_FOUND)
-    speecher_assert_package_qt_version("KF6ColorScheme" "KF6::ColorScheme")
+    speecher_assert_package_qt_version("KF6ColorScheme" "KF6::ColorScheme" EXACT)
   endif()
   if(LayerShellQt_FOUND)
-    speecher_assert_package_qt_version("LayerShellQt" "LayerShellQt::Interface")
+    speecher_assert_package_qt_version("LayerShellQt" "LayerShellQt::Interface" EXACT)
   endif()
 elseif(SPEECHER_WITH_LAYER_SHELL)
   find_package(LayerShellQt QUIET)
