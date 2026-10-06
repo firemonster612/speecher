@@ -4,6 +4,7 @@
 #include "providers/ServerSentEvents.h"
 
 #include <QDebug>
+#include <QNetworkInformation>
 #include <QNetworkReply>
 #include <QPointer>
 #include <QScopedValueRollback>
@@ -35,6 +36,11 @@ StreamingRefinement::StreamingRefinement(QString provider, DecodeEvent decodeEve
     const QString waiting = QStringLiteral(" refinement timed out waiting for a response");
     connect(&m_inactivityTimer, &QTimer::timeout, this, [timeout, waiting] { timeout(waiting, Retry::AfterStall); });
     connect(&m_deadlineTimer, &QTimer::timeout, this, [timeout, waiting] { timeout(waiting, Retry::Never); });
+    if (const QNetworkInformation *system = QNetworkInformation::instance()) {
+        const auto changed = [this] { m_networkChanged = true; };
+        connect(system, &QNetworkInformation::reachabilityChanged, this, changed);
+        connect(system, &QNetworkInformation::transportMediumChanged, this, changed);
+    }
 }
 
 void StreamingRefinement::start(BuildRequest buildRequest, const QString &fastTier)
@@ -54,6 +60,11 @@ void StreamingRefinement::post(const Request &request)
 {
     m_buffer.clear();
     m_accumulated.clear();
+    // A connection kept open from before the network's reachability or
+    // medium changed, such as Wi-Fi turning off, may be dead. A request sent
+    // on it counts as connected and would wait out the inactivity timeout,
+    // where a new connection fails at once.
+    if (std::exchange(m_networkChanged, false)) m_network.clearConnectionCache();
     QNetworkReply *reply = m_network.post(request.headers, request.body);
     m_reply = reply;
     m_connectTimer.start(m_connectMs);

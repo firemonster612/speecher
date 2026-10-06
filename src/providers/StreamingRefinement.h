@@ -81,6 +81,7 @@ private:
     quint64 m_generation = 0;
     bool m_parsing = false;
     bool m_latchOnSuccess = false;
+    bool m_networkChanged = false;
     QString m_fastTier;
     QSet<QString> m_unavailableFastTiers;
 };

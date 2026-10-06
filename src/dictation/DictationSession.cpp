@@ -17,6 +17,8 @@
 
 namespace speecher {
 namespace {
+// Why a provider that needs the internet is passed over while offline.
+const ProviderFailure kNoInternet{ProviderFailureKind::Network, QStringLiteral("No internet connection")};
 // Dropped speech streams the session reopens before giving up and delivering.
 constexpr int kSpeechReconnectsPerSession = 2;
 // How long a speech attempt must stream before its end counts as healthy.
@@ -406,6 +408,10 @@ void DictationSession::prepareSpeechProvider()
                                spokenLanguageProblem(speech, m_providers->speechProviderLabel(providerId))});
             continue;
         }
+        if (offlineFor(ProviderRole::Speech, providerId)) {
+            noteProviderIssue(ProviderRole::Speech, providerId, Stage::Prepare, kNoInternet);
+            continue;
+        }
         QString providerError;
         if (!selectSpeechTranscriber(providerId, &providerError)) {
             noteProviderIssue(ProviderRole::Speech, providerId, Stage::Prepare,
@@ -422,12 +428,12 @@ void DictationSession::prepareSpeechProvider()
         const bool speechRefreshRequired = speechPrepareJob ? speechPrepareJob->showRefreshIndicator
                                                             : m_transcriber->requiresRefresh(speech);
         // While starting, the refiner's sign-in renews alongside, so refinement
-        // need not wait for it later.
+        // need not wait for it later; offline, refinement passes it over.
         std::optional<RefinementRefreshJob> refinerRefreshJob;
         bool refinerRefreshRequired = false;
         const RefinementSettings refinement = m_sessionSettings->refinement;
         if (m_state == DictationState::Starting && m_refiner && refinement.providerId != QStringLiteral("none")
-            && !m_refinerRefreshed) {
+            && !m_refinerRefreshed && !offlineFor(ProviderRole::Refinement, refinement.providerId)) {
             refinerRefreshJob = m_refiner->createRefreshJob(refinement);
             refinerRefreshRequired = refinerRefreshJob ? refinerRefreshJob->showRefreshIndicator
                                                        : m_refiner->requiresRefresh(refinement);
@@ -544,7 +550,8 @@ void DictationSession::speechChainExhausted()
     }
     const ProviderAttemptIssue only = m_providerHistory.issues.value(0);
     if (m_speechChain.size() == 1) {
-        failStartup(only.message, speechSetupAction(only.providerId));
+        // Without internet, no setting would help.
+        failStartup(only.message, only.offline ? PopupErrorAction{} : speechSetupAction(only.providerId));
         return;
     }
     failStartup(noSpeechServiceText(m_providerHistory.issues, providerLabels()),
@@ -625,11 +632,12 @@ void DictationSession::noteProviderIssue(ProviderRole role,
 {
     qWarning().noquote() << "provider unavailable role=" << int(role) << "provider=" + providerId
                          << "stage=" << int(stage) << "message=" + failure.message;
-    // Only a failure to connect while the system says it is offline, for a
-    // provider that needs the internet, lets the outcome say "No internet".
+    // Only a failure to connect, or a pass over, while the system says it is
+    // offline, for a provider that needs the internet, lets the outcome say
+    // "No internet".
     const bool offline =
         (failure.kind == ProviderFailureKind::Network || failure.kind == ProviderFailureKind::Timeout)
-        && m_reachability == Reachability::Offline && needsInternet(role, providerId, *m_sessionSettings);
+        && offlineFor(role, providerId);
     // Once the microphone is open, a speech provider has been sent audio.
     const bool wordsLost = role == ProviderRole::Speech && stage == Stage::Connect
         && m_state != DictationState::Starting;
@@ -639,6 +647,14 @@ void DictationSession::noteProviderIssue(ProviderRole role,
     if (failure.kind == ProviderFailureKind::Authentication) {
         noteSignIn(providerId, false);
     }
+}
+
+// The system says there is no network, and the provider needs the internet:
+// trying it could only wait out its timeouts.
+bool DictationSession::offlineFor(ProviderRole role, const QString &providerId) const
+{
+    return m_sessionSettings && m_reachability == Reachability::Offline
+        && needsInternet(role, providerId, *m_sessionSettings);
 }
 
 void DictationSession::noteSignIn(const QString &providerId, bool signedIn)
@@ -1122,6 +1138,10 @@ void DictationSession::prepareRefiner()
         return;
     }
     const QString providerId = m_refinementChain.at(m_refinementIndex);
+    if (offlineFor(ProviderRole::Refinement, providerId)) {
+        handleRefinementFailure(kNoInternet, Stage::Prepare);
+        return;
+    }
     QString providerError;
     if (!selectTranscriptRefiner(providerId, &providerError)) {
         handleRefinementFailure({ProviderFailureKind::Unavailable, providerError}, Stage::Prepare);
@@ -1380,9 +1400,10 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         m_speechWarning = partMissingWarning(failure);
         // A provider that turned the attempt away, rather than a stream that
         // closed, makes way for the next before the next attempt: at resume,
-        // or now for words heard since one.
+        // or now for words heard since one. Offline, so does a closed stream.
         const bool attemptNeeded = m_state != DictationState::Stopping || !m_pendingAudio.isEmpty();
-        if (!droppedStream && attemptNeeded && speechFallbackRemains(failure)) {
+        const bool offline = offlineFor(ProviderRole::Speech, m_speechChain.at(m_speechIndex));
+        if ((!droppedStream || offline) && attemptNeeded && speechFallbackRemains(failure)) {
             noteSpeechFailure(failure);
             switchSpeechProvider(failure);
             return;
@@ -1390,7 +1411,8 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         if (m_state == DictationState::Paused) {
             return;
         }
-        if (m_state == DictationState::Listening) {
+        // Offline with no provider left, the speech ends below.
+        if (m_state == DictationState::Listening && !offline) {
             resumeAttempt();
             return;
         }
@@ -1408,7 +1430,9 @@ void DictationSession::handleSpeechFailure(const SpeechFailure &failure)
         && m_state != DictationState::Stopping) {
         return;
     }
-    const bool reconnectable = m_state == DictationState::Listening && droppedStream && m_sessionSettings;
+    // Offline, a reconnect could only fail again.
+    const bool reconnectable = m_state == DictationState::Listening && droppedStream && m_sessionSettings
+        && !offlineFor(ProviderRole::Speech, m_speechChain.at(m_speechIndex));
     if (reconnectable) {
         refillReconnectsIfAttemptWasStable();
     }

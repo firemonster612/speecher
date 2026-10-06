@@ -4,6 +4,7 @@
 #include "providers/OpenAiTranscriptRefiner.h"
 #include "providers/StreamingRefinement.h"
 
+#include <QNetworkInformation>
 #include <QSslSocket>
 
 using namespace speecher::test;
@@ -139,6 +140,45 @@ private slots:
         activity.stop();
         QTRY_COMPARE_WITH_TIMEOUT(failed.size(), 1, 1500);
         QVERIFY(failed.first().first().value<ProviderFailure>().message.contains(QStringLiteral("timed out")));
+    }
+
+    // After the network changes, the next request opens a new connection:
+    // one kept from before, over Wi-Fi that has since turned off, may be
+    // dead and would only time out.
+    void aNetworkChangeDropsKeptConnections()
+    {
+        if (!QNetworkInformation::loadBackendByFeatures(QNetworkInformation::Feature::Reachability)) {
+            QSKIP("no network information backend");
+        }
+        // A backend can report its first state once the event loop runs, as
+        // GLib's does; that report must not reach the refiner as a change.
+        QTest::qWait(200);
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        OpenAiRefiner refiner(nullptr, 5000, 5000);
+        QSignalSpy completed(&refiner, &OpenAiRefiner::completed);
+        const QString endpoint = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
+        const QByteArray body = "event: response.output_text.delta\ndata: {\"delta\":\"Hi.\"}\n\n"
+                                "event: response.completed\ndata: {}\n\n";
+        QTcpSocket *socket = nullptr;
+        const auto refine = [&] {
+            refiner.refine("hi", {}, {}, "token", {}, {}, endpoint, {}, "gpt-test", "low", "standard", "balanced", {});
+            QTRY_VERIFY(server.hasPendingConnections() || (socket && socket->bytesAvailable()));
+            if (server.hasPendingConnections()) socket = server.nextPendingConnection();
+            QVERIFY(!readHttpRequest(socket, 1000).isEmpty());
+            socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: "
+                          + QByteArray::number(body.size()) + "\r\n\r\n" + body);
+        };
+        refine();
+        QTcpSocket *const first = socket;
+        QTRY_COMPARE(completed.size(), 1);
+        refine();
+        QTRY_COMPARE(completed.size(), 2);
+        QCOMPARE(socket, first);
+        emit QNetworkInformation::instance()->reachabilityChanged(QNetworkInformation::Reachability::Disconnected);
+        refine();
+        QTRY_COMPARE(completed.size(), 3);
+        QVERIFY(socket != first);
     }
 
     void stallFallbackDoesNotDisableFastMode_data()
