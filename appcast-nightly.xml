@@ -1,11 +1,11 @@
 <?xml version='1.0' encoding='utf-8'?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.2.1-nightly.20261005+g6a560fb4</title><pubDate>Mon, 5 Oct 2026 23:13:37 +0100</pubDate><sparkle:version>613</sparkle:version><sparkle:shortVersionString>0.2.1-nightly.20261005+g6a560fb4</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.2.1-nightly.20261005+g6a560fb4
-Build number: 613
-Commit: 6a560fb47d6e36d7a2af28438775a84bf996c3af
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Speecher nightly updates</title><link>https://github.com/firemonster612/speecher/releases</link><description>Speecher nightly updates</description><item><title>0.2.1-nightly.20261006+g8a4a3dfb</title><pubDate>Tue, 6 Oct 2026 19:03:56 +0100</pubDate><sparkle:version>614</sparkle:version><sparkle:shortVersionString>0.2.1-nightly.20261006+g8a4a3dfb</sparkle:shortVersionString><description><![CDATA[<pre>Version: 0.2.1-nightly.20261006+g8a4a3dfb
+Build number: 614
+Commit: 8a4a3dfbff65355cc082374ab1595720836bcf99
 
 This Nightly Build is untested. Use the Stable Release unless you want the latest master build.
 
 Windows installer: Speecher-Setup-x64.exe
 
 Update channels: https://github.com/firemonster612/speecher#installation--updates
-</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher-build613.dmg" length="46025271" type="application/x-apple-diskimage" sparkle:edSignature="TZ+VJwzAMJs4t74DIComkrgJmfBWJxWGFFkgJCVlvmhf2+XWjrjuu/extMG9KhMqwmpkUAzMyeP21eY54q3CDw==" /></item></channel></rss>
+</pre>]]></description><enclosure url="https://github.com/firemonster612/speecher/releases/download/nightly/speecher-build614.dmg" length="46025555" type="application/x-apple-diskimage" sparkle:edSignature="O23BojZEyY7d7b3ybEXOVV21+NqdRbe7yYHHmkF3vwO4gQehIWFgcHdCcddGsrzmSp0TrdPAgseIKDSTpQJsCQ==" /></item></channel></rss>
