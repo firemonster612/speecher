@@ -166,16 +166,17 @@ static void attachParentConsole()
 
 // A window or daemon run outlives the console it was started from, and
 // closing that console ends every process attached to it. speecher.com, if
-// that is what started this, stops waiting for it.
+// that is what started this, stops waiting for it, but only once this has
+// left the console: a shell that exits with the launcher closes it.
 static void detachParentConsole()
 {
+    FreeConsole();
     const HANDLE launcherWait = OpenEventW(EVENT_MODIFY_STATE, FALSE,
                                            consoleDetachedEventName(GetCurrentProcessId()).c_str());
     if (launcherWait) {
         SetEvent(launcherWait);
         CloseHandle(launcherWait);
     }
-    FreeConsole();
 }
 
 // Whether stderr is a console that takes the escape codes that rewrite the

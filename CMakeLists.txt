@@ -1235,6 +1235,11 @@ if(TARGET speecher_frontend_win)
   # for. Plain Win32, no Qt. The installer ships it as speecher.com.
   add_executable(speecher-console src/helpers/ConsoleLauncher.cpp)
   target_include_directories(speecher-console PRIVATE src)
+  set_target_properties(speecher-console PROPERTIES
+    AUTOMOC OFF
+    AUTORCC OFF
+    AUTOUIC OFF
+  )
   add_custom_command(TARGET speecher POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       "${SPEECHER_WASDK_BOOTSTRAP_DLL}" "$<TARGET_FILE_DIR:speecher>"

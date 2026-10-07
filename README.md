@@ -205,7 +205,7 @@ open build/speecher.app     # macOS
 
 The four CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
 
-On Windows, `speecher.exe` is a windowed program, which Command Prompt and PowerShell do not wait for. The installer puts `speecher.com` beside it, and both shells try `.com` before `.exe`, so `speecher status` runs the console launcher: it starts `speecher.exe` with the same arguments, waits for it, and returns its exit status. Ctrl+C reaches Speecher itself. The Start menu and Open with still start `speecher.exe`, with no console window. In a build tree the launcher is `build\speecher-console.exe`.
+On Windows, `speecher` in Command Prompt or PowerShell runs `speecher.com`, a console launcher that waits for `speecher.exe` and returns its exit status; see [docs/windows.md](docs/windows.md#installing) for how it works.
 
 ### Transcribing audio files
 

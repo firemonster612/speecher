@@ -45,9 +45,11 @@ handles, waits for it, and returns its exit status. Ctrl+C reaches Speecher
 itself rather than ending the launcher first. A run that opens a
 window or starts the background app tells the launcher to stop waiting, so the
 prompt comes back while Speecher keeps running. The Start menu shortcut and
-Open with start `speecher.exe` directly, with no console window. The build
-produces the launcher as `build\speecher-console.exe`; the installer ships it as
-`speecher.com`.
+Open with start `speecher.exe` directly, with no console window. Bind hotkeys
+and GUI launchers such as the Run box or PowerToys Run to `speecher.exe` too: a
+bare `speecher` finds `speecher.com` first and briefly opens a console window.
+The build produces the launcher as `build\speecher-console.exe`; the installer
+ships it as `speecher.com`.
 
 Current releases are unsigned. If Microsoft Defender SmartScreen blocks a
 browser download, choose "More info", check that the file came from the

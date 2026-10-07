@@ -140,6 +140,29 @@ try {
     $App | Stop-Process -Force
     $App.WaitForExit()
 
+    # A run that goes on in the background releases the launcher, so the
+    # prompt comes back while Speecher keeps running.
+    $LauncherRun = Start-Process $Launcher -ArgumentList "--daemon" -PassThru
+    $null = $LauncherRun.Handle # keeps ExitCode readable after it exits
+    if (-not $LauncherRun.WaitForExit(10000)) {
+        $LauncherRun | Stop-Process -Force
+        throw "speecher.com --daemon was still waiting after 10 seconds"
+    }
+    if ($LauncherRun.ExitCode -ne 0) {
+        throw "speecher.com --daemon exited with $($LauncherRun.ExitCode)"
+    }
+    # The launcher's console host is its child too, so match by name.
+    $Child = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($LauncherRun.Id) AND Name = 'speecher.exe'"
+    $App = if ($Child) { Get-Process -Id $Child.ProcessId -ErrorAction SilentlyContinue }
+    if (-not $App) {
+        throw "speecher.com --daemon returned but speecher.exe is no longer running"
+    }
+    & $Exe quit
+    if (-not $App.WaitForExit(10000)) {
+        throw "speecher.exe quit did not stop the background app the launcher started"
+    }
+    Write-Output "speecher.com stopped waiting once the background app was running"
+
     # Restart Manager closing the running app without forcing, the way Setup
     # does when it replaces files in use. Only the tray window answers it;
     # before it did, Speecher stayed running here even with a window open.

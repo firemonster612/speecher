@@ -258,7 +258,9 @@ end;
 // cannot delete the locked files, so the folder stays behind with Speecher
 // still running from it. Once the person has confirmed, quit Speecher; if it
 // is still running, stop before anything is removed rather than leave half an
-// install.
+// install. The Path entry comes off here rather than afterwards because the
+// uninstaller announces the environment change while it removes files, and
+// terminals opened later should not look for speecher in a removed folder.
 //
 // Folders an earlier interrupted uninstall left behind were not created by
 // this install, so Inno does not remove them and the install folder outlives
@@ -269,16 +271,16 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   case CurUninstallStep of
     usUninstall:
-      while SpeecherRunning() and not QuitSpeecher() do
-        if SuppressibleMsgBox('Speecher is still running. Quit it from its tray icon, then click Retry.',
-                              mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
-          Abort;
-    usPostUninstall:
       begin
+        while SpeecherRunning() and not QuitSpeecher() do
+          if SuppressibleMsgBox('Speecher is still running. Quit it from its tray icon, then click Retry.',
+                                mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
+            Abort;
         RemoveFromPath();
-        if not HoldsFiles(ExpandConstant('{app}')) then
-          RemoveEmptyTree(ExpandConstant('{app}'));
       end;
+    usPostUninstall:
+      if not HoldsFiles(ExpandConstant('{app}')) then
+        RemoveEmptyTree(ExpandConstant('{app}'));
   end;
 end;
 
