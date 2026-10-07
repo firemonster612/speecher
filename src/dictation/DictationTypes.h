@@ -43,8 +43,9 @@ QString dictationStateLabel(DictationState state, const QString &message = {});
 
 // What a Start/Stop control presents for a session state name, matching
 // what toggle() would actually do (DictationSession::toggleSession): it stops
-// starting and listening, cancels a refinement, and does nothing during
-// stopping and delivering, when it is disabled and names the state instead.
+// starting and listening, cancels a refinement, dictates a follow-up to an
+// edit under review, and does nothing during stopping and delivering, when
+// it is disabled and names the state instead.
 struct DictationToggleAction {
     QString label;
     bool enabled = true;
@@ -85,11 +86,15 @@ struct SessionKeys {
 };
 // Escape cancels a cancelable session where the platform takes it for the
 // whole session, unless the Cancel or Pause Shortcut is Escape: both cannot
-// hold it at once. While a selection edit is reviewed pause does nothing, so
-// only a Cancel Shortcut of Escape, which keeps the original as Escape would,
-// leaves Escape be; Enter replaces then. Nothing is taken while the session
+// hold it at once. While a selection edit is up for review, a follow-up to it
+// dictated or not, Escape is taken on every platform, since there it keeps
+// the review rather than reaching the Target and its selection; only a
+// Cancel Shortcut of Escape, which does the same, leaves it be, and a Pause
+// Shortcut of Escape while the follow-up can be paused. Enter
+// replaces while the edit waits. Nothing is taken while the session
 // shortcuts are suspended, as while one is being recorded.
 SessionKeys sessionKeysWanted(const QString &stateName,
+                              bool reviewUp,
                               bool escapeCancelsDictation,
                               const ShortcutBinding &cancelShortcut,
                               const ShortcutBinding &pauseShortcut,

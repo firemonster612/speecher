@@ -292,9 +292,6 @@ private slots:
         QCOMPARE(review.instruction, QStringLiteral("“make it Thursday”"));
         QCOMPARE(review.summary, QStringLiteral("1 change"));
         QCOMPARE(review.keys.replace, QStringLiteral("Enter"));
-        // The Global Shortcut does nothing while the edit waits.
-        session.toggle();
-        QCOMPARE(session.state(), DictationState::Reviewing);
         // Keys the controller lets go of leave the buttons at once.
         session.setReviewKeys({QStringLiteral("Esc"), QString()});
         QCOMPARE(reviews.count(), 2);
@@ -305,6 +302,253 @@ private slots:
         QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
         QCOMPARE(delivery.lastTarget.selectionStart, 4);
         QCOMPARE(delivery.lastSettings.pasteRules, defaultPasteRules());
+        QCOMPARE(session.lastMessage(), QStringLiteral("Input sent"));
+    }
+
+    // A follow-up is dictated as a session of its own, edits the revision
+    // under review rather than the selection, and comes back as a review
+    // against the original selection.
+    void followUpEditsTheRevisionUnderReview()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        settings.setInsightsEnabled(true);
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
+        target.target.selectedText = QStringLiteral("Move the standup to Wednesday.");
+        target.target.selectionStart = 4;
+        target.target.selectionEnd = 34;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+        QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
+        QSignalSpy ended(&session, &DictationSession::popupSelectionEditReviewEnded);
+        QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
+        const auto lastReview = [&reviews] { return reviews.last().first().value<SelectionEditReview>(); };
+
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("make it Thursday"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Move the standup to Thursday."));
+        QCOMPARE(session.state(), DictationState::Reviewing);
+        const int capturesBefore = target.captureCalls;
+
+        session.toggle();
+        QVERIFY(lastReview().following);
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("actually make it Friday"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 2);
+        // The follow-up edits the revision, and the Target is not read again.
+        QCOMPARE(refiner->lastContext.target.selectedText, QStringLiteral("Move the standup to Thursday."));
+        QCOMPARE(refiner->lastRawTranscript, QStringLiteral("actually make it Friday"));
+        QCOMPARE(target.captureCalls, capturesBefore);
+        refiner->emitCompletedText(QStringLiteral("Move the standup to Friday."));
+
+        QCOMPARE(session.state(), DictationState::Reviewing);
+        const SelectionEditReview review = lastReview();
+        QVERIFY(!review.following);
+        QCOMPARE(review.instruction, QStringLiteral("“make it Thursday” then “actually make it Friday”"));
+        // Against the original selection: Wednesday became Friday.
+        QCOMPARE(review.summary, QStringLiteral("1 change"));
+        QCOMPARE(ended.count(), 0);
+        QCOMPARE(delivery.calls, 0);
+
+        session.replaceSelection();
+        QCOMPARE(ended.count(), 1);
+        QCOMPARE(delivery.calls, 1);
+        QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Friday."));
+        QCOMPARE(delivery.lastTarget.selectionStart, 4);
+        // Insights counts every instruction spoken for the edit.
+        QCOMPARE(recorded.count(), 1);
+        QCOMPARE(recorded.first().first().value<DictationRecord>().words, 7);
+        QCOMPARE(recorded.first().first().value<DictationRecord>().refinementProviders,
+                 QStringList{QStringLiteral("openai")});
+    }
+
+    void aFollowUpThatComesToNothingLeavesTheReview_data()
+    {
+        QTest::addColumn<QString>("how");
+        QTest::newRow("cancelled while listening") << QStringLiteral("cancel");
+        // Push-to-talk starts rather than toggles.
+        QTest::newRow("started by push-to-talk, then cancelled") << QStringLiteral("push-to-talk");
+        QTest::newRow("refinement failed") << QStringLiteral("refinement");
+        QTest::newRow("nothing heard") << QStringLiteral("silence");
+        QTest::newRow("stopped while refining") << QStringLiteral("stop refining");
+    }
+
+    void aFollowUpThatComesToNothingLeavesTheReview()
+    {
+        QFETCH(QString, how);
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
+        target.target.selectedText = QStringLiteral("Move the standup to Wednesday.");
+        target.target.selectionStart = 0;
+        target.target.selectionEnd = 30;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+        QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
+        QSignalSpy ended(&session, &DictationSession::popupSelectionEditReviewEnded);
+        QSignalSpy errors(&session, &DictationSession::popupErrorRequested);
+
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("make it Thursday"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Move the standup to Thursday."));
+        const SelectionEditReview before = reviews.last().first().value<SelectionEditReview>();
+
+        if (how == QStringLiteral("push-to-talk")) {
+            session.startListening();
+        } else {
+            session.toggle();
+        }
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        if (how == QStringLiteral("cancel") || how == QStringLiteral("push-to-talk")) {
+            session.cancel();
+        } else if (how == QStringLiteral("stop refining")) {
+            speech->emitFinalText(QStringLiteral("actually make it Friday"));
+            session.stopListening();
+            QTRY_COMPARE(refiner->refineCalls, 2);
+            session.toggle();
+        } else if (how == QStringLiteral("refinement")) {
+            speech->emitFinalText(QStringLiteral("actually make it Friday"));
+            session.stopListening();
+            QTRY_COMPARE(refiner->refineCalls, 2);
+            refiner->emitFailure(QStringLiteral("refinement unavailable"));
+        } else {
+            session.stopListening();
+        }
+
+        QTRY_COMPARE(session.state(), DictationState::Reviewing);
+        const SelectionEditReview after = reviews.last().first().value<SelectionEditReview>();
+        QVERIFY(!after.following);
+        QCOMPARE(after.instruction, before.instruction);
+        QCOMPARE(after.runs, before.runs);
+        QCOMPARE(ended.count(), 0);
+        QCOMPARE(errors.count(), 0);
+        session.replaceSelection();
+        QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
+    }
+
+    void aFollowUpAskedForWhileTheMicrophoneStopsWaits_data()
+    {
+        QTest::addColumn<bool>("cancelIt");
+        QTest::newRow("then stopped") << false;
+        QTest::newRow("then cancelled") << true;
+    }
+
+    // A follow-up asked for while a cancelled one still stops the microphone
+    // waits for it. Dropped before it begins, by a stop or a cancel, it leaves
+    // the review shown as it was, buttons and all.
+    void aFollowUpAskedForWhileTheMicrophoneStopsWaits()
+    {
+        QFETCH(bool, cancelIt);
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
+        target.target.selectedText = QStringLiteral("Move the standup to Wednesday.");
+        target.target.selectionStart = 0;
+        target.target.selectionEnd = 30;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+        QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("make it Thursday"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Move the standup to Thursday."));
+
+        session.toggle();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        bool asked = false;
+        audio.onStop = [&] {
+            if (std::exchange(asked, true)) {
+                return;
+            }
+            session.toggle();
+            QVERIFY(session.startPending());
+            QVERIFY(!reviews.last().first().value<SelectionEditReview>().following);
+            if (cancelIt) {
+                session.cancel();
+            } else {
+                session.stopListening();
+            }
+        };
+        session.cancel();
+        QCoreApplication::processEvents();
+        QVERIFY(!session.startPending());
+        QCOMPARE(session.state(), DictationState::Reviewing);
+        QVERIFY(!reviews.last().first().value<SelectionEditReview>().following);
+    }
+
+    // What a failed follow-up met is not the revision kept: its receipt is
+    // the one that revision would have had.
+    void aFailedFollowUpLeavesTheKeptRevisionsReceipt()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
+        target.target.selectedText = QStringLiteral("Move the standup to Wednesday.");
+        target.target.selectionStart = 0;
+        target.target.selectionEnd = 30;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("make it Thursday"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Move the standup to Thursday."));
+
+        session.toggle();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitPartialText(QStringLiteral("actually Friday"));
+        speech->emitFailure(QStringLiteral("connection lost"));
+        QTRY_COMPARE(refiner->refineCalls, 2);
+        refiner->emitFailure(QStringLiteral("refinement unavailable"));
+        QCOMPARE(session.state(), DictationState::Reviewing);
+        session.replaceSelection();
+        QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
         QCOMPARE(session.lastMessage(), QStringLiteral("Input sent"));
     }
 
@@ -345,6 +589,7 @@ private slots:
         DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
         QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
         QSignalSpy messages(&session, &DictationSession::popupMessageRequested);
+        QSignalSpy ended(&session, &DictationSession::popupSelectionEditReviewEnded);
 
         session.startListening();
         QTRY_COMPARE(session.state(), DictationState::Listening);
@@ -360,6 +605,7 @@ private slots:
             QCOMPARE(delivery.calls, 0);
             QCOMPARE(hidden.count(), 1);
             QCOMPARE(messages.count(), 0);
+            QCOMPARE(ended.count(), 1);
             return;
         }
         if (selectionMoved) {

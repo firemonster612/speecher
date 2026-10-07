@@ -28,9 +28,12 @@ DictationToggleAction dictationToggleAction(const QString &stateName)
     if (lowered == QStringLiteral("refining")) {
         return {QStringLiteral("Cancel refinement"), true};
     }
+    // As the Global Shortcut does then: a follow-up instruction.
+    if (lowered == QStringLiteral("reviewing")) {
+        return {QStringLiteral("Ask for more changes"), true};
+    }
     // Nothing to do while the text is on its way, so the control says why.
-    if (lowered == QStringLiteral("stopping") || lowered == QStringLiteral("delivering")
-        || lowered == QStringLiteral("reviewing")) {
+    if (lowered == QStringLiteral("stopping") || lowered == QStringLiteral("delivering")) {
         return {dictationStatusLabel(lowered), false};
     }
     // Keyed on the state name because that is what the callers receive over
@@ -100,6 +103,7 @@ bool dictationPausable(const QString &stateName)
 }
 
 SessionKeys sessionKeysWanted(const QString &stateName,
+                              bool reviewUp,
                               bool escapeCancelsDictation,
                               const ShortcutBinding &cancelShortcut,
                               const ShortcutBinding &pauseShortcut,
@@ -109,9 +113,11 @@ SessionKeys sessionKeysWanted(const QString &stateName,
         return {};
     }
     const ShortcutBinding escape{QKeySequence(Qt::Key_Escape)};
-    const bool reviewing = stateName.toLower() == QStringLiteral("reviewing");
+    const bool waiting = stateName.toLower() == QStringLiteral("reviewing");
     const bool cancels = dictationCancelable(stateName) && escapeCancelsDictation && pauseShortcut != escape;
-    return {cancelShortcut != escape && (reviewing || cancels), reviewing};
+    // A Pause Shortcut of Escape holds it while a follow-up can be paused.
+    const bool keepsReview = reviewUp && !(dictationPausable(stateName) && pauseShortcut == escape);
+    return {cancelShortcut != escape && (keepsReview || cancels), waiting};
 }
 
 QString cancelDictationCaption()

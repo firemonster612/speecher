@@ -550,6 +550,11 @@ typedef NS_ENUM(NSInteger, SpeecherEditRunKind) {
 // empty where no key does.
 @property (nonatomic, readonly, copy) NSString *keepKey;
 @property (nonatomic, readonly, copy) NSString *replaceKey;
+// How to ask for more changes by voice; empty without a Global Shortcut.
+@property (nonatomic, readonly, copy) NSString *followUpHint;
+// A follow-up is being dictated: the edit stays up, dimmed and without its
+// buttons, above the dictation capsule.
+@property (nonatomic, readonly) BOOL following;
 @end
 
 // speecher::PreviewLine: the preview as its line shows it, and whether words
@@ -584,10 +589,12 @@ typedef NS_ENUM(NSInteger, SpeecherEditRunKind) {
 @property (class, nonatomic, readonly) CGFloat previewFontScale;
 @property (class, nonatomic, readonly) CGFloat previewFadeWidth;
 // A selection edit's review: the room above and below it, the gap between its
-// parts, and the lines of the edit before it scrolls.
+// parts, the lines of the edit before it scrolls, and how faded the edit is
+// while a follow-up is dictated.
 @property (class, nonatomic, readonly) CGFloat reviewVerticalMargin;
 @property (class, nonatomic, readonly) CGFloat reviewSpacing;
 @property (class, nonatomic, readonly) NSInteger reviewMaxLines;
+@property (class, nonatomic, readonly) CGFloat followUpEditOpacity;
 + (CGFloat)minimumPreviewBarWidthForLobeWidth:(CGFloat)lobeWidth shoulderHeight:(CGFloat)shoulderHeight
     NS_SWIFT_NAME(minimumPreviewBarWidth(lobeWidth:shoulderHeight:));
 @end
@@ -1221,9 +1228,11 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, copy, nullable) void (^popupMessageRequested)(NSString *message,
                                                                    SpeecherPopupOutcome outcome,
                                                                    SpeecherErrorAction *fix);
-// A selection edit to show in the pill's place until the session leaves
-// Reviewing.
+// A selection edit to show, again with each change, until
+// popupSelectionEditReviewEnded; a follow-up runs through other states while
+// it stays up.
 @property (nonatomic, copy, nullable) void (^popupSelectionEditReviewRequested)(SpeecherSelectionEditReview *review);
+@property (nonatomic, copy, nullable) void (^popupSelectionEditReviewEnded)(void);
 // The review's captions (speecher::keepOriginalCaption, replaceSelectionCaption,
 // showWholeEditCaption and showChangesOnlyCaption).
 @property (class, nonatomic, readonly, copy) NSString *keepOriginalCaption;

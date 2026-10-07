@@ -781,7 +781,8 @@ void ApplicationController::updateSessionShortcuts()
     }
     const QString state = m_session->stateName();
     const ShortcutBinding cancelShortcut = globalShortcut(GlobalShortcutRole::Cancel);
-    const SessionKeys wanted = sessionKeysWanted(state, m_platform->escapeCancelsDictation(), cancelShortcut,
+    const SessionKeys wanted = sessionKeysWanted(state, m_session->reviewUp(), m_platform->escapeCancelsDictation(),
+                                                 cancelShortcut,
                                                  globalShortcut(GlobalShortcutRole::Pause),
                                                  m_shortcutSuspensions > 0);
     bool escapeHeld = false;
@@ -792,7 +793,8 @@ void ApplicationController::updateSessionShortcuts()
     }
     m_cancelShortcutBinder->setArmed(dictationCancelable(state));
     m_pauseShortcutBinder->setArmed(dictationPausable(state));
-    m_session->setReviewKeys(reviewKeysFor(escapeHeld, enterHeld, cancelShortcut.displayText()));
+    m_session->setReviewKeys(reviewKeysFor(escapeHeld, enterHeld, cancelShortcut.displayText(),
+                                           globalShortcutDisplay()));
 }
 
 void ApplicationController::registerGlobalShortcut(GlobalShortcutRole role)
@@ -949,13 +951,6 @@ void ApplicationController::handleShortcutPressed()
     }
     m_shortcutDown = true;
     m_shortcutPress.start();
-    // The Global Shortcut does nothing while a selection edit waits for
-    // review; a deferred start scheduled now would begin a new session the
-    // moment the review ended.
-    if (m_session->state() == DictationState::Reviewing) {
-        m_shortcutStartedSession = false;
-        return;
-    }
     m_shortcutStartedSession = !sessionActive() && !m_microphoneStartPending;
     if (m_shortcutStartedSession && globalShortcutReportsRelease()
         && m_settings->shortcutActivationMode() == ShortcutActivationMode::PushToTalk) {
@@ -1052,9 +1047,6 @@ void ApplicationController::handleShortcutReleased(qint64 heldMs)
 
 void ApplicationController::toggle()
 {
-    if (m_session->state() == DictationState::Reviewing) {
-        return;
-    }
     if (sessionActive() || m_microphoneStartPending) {
         stopListening();
         return;

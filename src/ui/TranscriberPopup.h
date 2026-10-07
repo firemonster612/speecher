@@ -57,9 +57,11 @@ public slots:
     // something to do, an explicitly labelled button ("Install and restart").
     void setUpdateBanner(const UpdateBannerModel &banner);
     void setWhatsNewBanner(const WhatsNewBannerModel &banner, bool visible);
-    // A selection edit as a card in place of the capsule, until the session
-    // leaves Reviewing.
+    // A selection edit as a card in place of the capsule, until
+    // hideSelectionEditReview. While a follow-up is dictated the card stays
+    // above the capsule, dimmed and without its buttons.
     void showSelectionEditReview(const SelectionEditReview &review);
+    void hideSelectionEditReview();
 
 signals:
     void errorDismissed();
@@ -106,7 +108,6 @@ private:
     void buildReviewCard();
     // Fills the card with the review, folded or whole.
     void applyReview();
-    void hideReview();
 
     QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;
@@ -131,6 +132,8 @@ private:
     QScrollArea *m_reviewScroll = nullptr;
     QLabel *m_reviewText = nullptr;
     QLabel *m_reviewSummary = nullptr;
+    QWidget *m_reviewFooter = nullptr;
+    QGraphicsOpacityEffect *m_reviewDim = nullptr;
     QPushButton *m_reviewKeep = nullptr;
     QPushButton *m_reviewReplace = nullptr;
     SelectionEditReview m_review;

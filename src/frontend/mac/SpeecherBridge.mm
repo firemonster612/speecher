@@ -1150,6 +1150,8 @@ static NSArray<SpeecherEditRun *> *bridgedEditRuns(const QList<speecher::EditRun
 @property (nonatomic, copy) NSString *summary;
 @property (nonatomic, copy) NSString *keepKey;
 @property (nonatomic, copy) NSString *replaceKey;
+@property (nonatomic, copy) NSString *followUpHint;
+@property (nonatomic) BOOL following;
 @end
 
 @implementation SpeecherSelectionEditReview
@@ -1163,6 +1165,8 @@ static NSArray<SpeecherEditRun *> *bridgedEditRuns(const QList<speecher::EditRun
     review.summary = core.summary.toNSString();
     review.keepKey = core.keys.keep.toNSString();
     review.replaceKey = core.keys.replace.toNSString();
+    review.followUpHint = core.followUpHint.toNSString();
+    review.following = core.following;
     return review;
 }
 
@@ -1288,6 +1292,11 @@ static NSArray<SpeecherEditRun *> *bridgedEditRuns(const QList<speecher::EditRun
 + (NSInteger)reviewMaxLines
 {
     return speecher::popup::kReviewMaxLines;
+}
+
++ (CGFloat)followUpEditOpacity
+{
+    return speecher::popup::kFollowUpEditOpacity;
 }
 
 + (CGFloat)minimumPreviewBarWidthForLobeWidth:(CGFloat)lobeWidth shoulderHeight:(CGFloat)shoulderHeight
@@ -2672,6 +2681,15 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                          if (bridge.popupSelectionEditReviewRequested) {
                              bridge.popupSelectionEditReviewRequested(
                                  [SpeecherSelectionEditReview reviewWithCore:review]);
+                         }
+                     });
+    QObject::connect(session,
+                     &DictationSession::popupSelectionEditReviewEnded,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupSelectionEditReviewEnded) {
+                             bridge.popupSelectionEditReviewEnded();
                          }
                      });
 }

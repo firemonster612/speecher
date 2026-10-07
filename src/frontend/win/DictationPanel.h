@@ -74,10 +74,16 @@ private:
     // edit scrolls and Replace looks like the default button, and pressing
     // its controls.
     QRect reviewGeometryForTest() const;
-    // Whether the whole card shows: laid out inside the window and inside
-    // the window region that clips it. False until WinUI has laid the card
-    // out in the island's new size.
+    // Whether the whole card shows, and while a follow-up is dictated the
+    // capsule under it: laid out inside the window and inside the window
+    // region that clips it. False until WinUI has laid them out in the
+    // island's new size.
     bool reviewFullyVisibleForTest() const;
+    // Whether the card shows as it does while a follow-up is dictated: its
+    // edit dimmed and its footer gone.
+    bool reviewFollowingForTest() const;
+    // The footer's hint on asking for more changes; empty while hidden.
+    QString reviewHintForTest() const;
     QString reviewTextForTest() const;
     QString reviewToggleForTest() const;
     bool reviewScrollsForTest() const;

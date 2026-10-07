@@ -19,6 +19,9 @@ constexpr qsizetype kFoldAboveWords = 40;
 constexpr qsizetype kFoldContextWords = 6;
 // Fewer words than this left out are not worth a gap.
 constexpr qsizetype kFoldMinimumWords = 3;
+// A review names the last few instructions, so follow-ups never push the
+// card past the screen.
+constexpr qsizetype kShownInstructions = 3;
 // An edit that keeps less than this share of its words is a rewrite.
 constexpr double kRewriteKeptShare = 0.5;
 // The comparison table's limit in cells. Past it, past about two thousand
@@ -247,13 +250,23 @@ QString changesSummary(qsizetype changes)
 
 SelectionEditReview selectionEditReview(const QString &original,
                                         const QString &revised,
-                                        const QString &instruction,
+                                        const QStringList &instructions,
                                         const ReviewKeys &keys)
 {
     SelectionEditReview review;
-    const QString said = instruction.simplified();
-    review.instruction = said.isEmpty() ? QString() : QStringLiteral("“%1”").arg(said);
+    QStringList quoted;
+    for (const QString &instruction : instructions) {
+        if (const QString said = instruction.simplified(); !said.isEmpty()) {
+            quoted.append(QStringLiteral("“%1”").arg(said));
+        }
+    }
+    const bool earlier = quoted.size() > kShownInstructions;
+    review.instruction = (earlier ? QStringLiteral("… then ") : QString())
+        + quoted.mid(quoted.size() - std::min(quoted.size(), kShownInstructions)).join(QStringLiteral(" then "));
     review.keys = keys;
+    review.followUpHint = keys.followUp.isEmpty()
+        ? QString()
+        : QStringLiteral("Press %1 to ask for more changes").arg(keys.followUp);
     const QStringList before = words(original);
     const QStringList after = words(revised);
     const std::optional<QList<EditRun>> runs = diff(before, after);
@@ -314,9 +327,10 @@ QString enterKeyName()
 #endif
 }
 
-ReviewKeys reviewKeysFor(bool escapeHeld, bool enterHeld, const QString &cancelShortcut)
+ReviewKeys reviewKeysFor(bool escapeHeld, bool enterHeld, const QString &cancelShortcut,
+                         const QString &globalShortcut)
 {
-    return {escapeHeld ? escapeKeyName() : cancelShortcut, enterHeld ? enterKeyName() : QString()};
+    return {escapeHeld ? escapeKeyName() : cancelShortcut, enterHeld ? enterKeyName() : QString(), globalShortcut};
 }
 
 QString selectionChangedNote()

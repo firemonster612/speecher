@@ -66,7 +66,10 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   through in PlaceholderText over a fifth of its NegativeText, as Badge fills.
   Its buttons name their key in a PlaceholderText label inside the frame the
   style draws (`KeyedButton` in `src/ui/TranscriberPopup.cpp`), because a push
-  button draws its text in one colour.
+  button draws its text in one colour. While a follow-up instruction is
+  dictated the edit fades through a `QGraphicsOpacityEffect`, as the preview
+  line's start does, because disabling the label would leave its marks at full
+  strength.
 - **Settings pages follow Kirigami Addons FormCard.** Bold header above the
   card, title and small grey description on the left, control on the right,
   inset separators, button rows with a trailing arrow, cards capped at 30

@@ -852,7 +852,7 @@ private slots:
         const SelectionEditReview review = selectionEditReview(
             QStringLiteral("Can we move the standup to Wednesday? Half the team is out on Thursday."),
             QStringLiteral("Can we move the standup to Thursday? Half the team is out on Wednesday."),
-            QStringLiteral("swap the two days"),
+            {QStringLiteral("swap the two days")},
             {QStringLiteral("Esc"), QStringLiteral("Enter")});
         const QList<EditRun> expected{
             {Kind::Kept, QStringLiteral("Can we move the standup to ")},
@@ -867,11 +867,15 @@ private slots:
         QVERIFY(review.folded.isEmpty());
         QCOMPARE(review.summary, QStringLiteral("2 changes"));
         QCOMPARE(review.instruction, QStringLiteral("“swap the two days”"));
+        const SelectionEditReview many = selectionEditReview(
+            QStringLiteral("a"), QStringLiteral("b"),
+            {QStringLiteral("one"), QStringLiteral("two"), QStringLiteral("three"), QStringLiteral("four")}, {});
+        QCOMPARE(many.instruction, QStringLiteral("… then “two” then “three” then “four”"));
         QCOMPARE(review.keys.replace, QStringLiteral("Enter"));
 
         // A word added or removed alone keeps the space after it outside its mark.
         const SelectionEditReview added = selectionEditReview(
-            QStringLiteral("a good plan"), QStringLiteral("a very good plan"), QString(), {});
+            QStringLiteral("a good plan"), QStringLiteral("a very good plan"), {}, {});
         QCOMPARE(added.runs, (QList<EditRun>{{Kind::Kept, QStringLiteral("a ")},
                                              {Kind::Added, QStringLiteral("very"), QStringLiteral(" ")},
                                              {Kind::Kept, QStringLiteral("good plan")}}));
@@ -879,7 +883,7 @@ private slots:
 
         // A removed word never touches the kept word before it.
         const SelectionEditReview dropped = selectionEditReview(
-            QStringLiteral("It broke again lol, sorry."), QStringLiteral("It broke again, sorry."), QString(), {});
+            QStringLiteral("It broke again lol, sorry."), QStringLiteral("It broke again, sorry."), {}, {});
         QCOMPARE(dropped.runs, (QList<EditRun>{{Kind::Kept, QStringLiteral("It broke again ")},
                                                {Kind::Removed, QStringLiteral("lol")},
                                                {Kind::Kept, QStringLiteral(", sorry.")}}));
@@ -896,7 +900,7 @@ private slots:
         const SelectionEditReview review = selectionEditReview(
             QStringLiteral("their plan ") + middle + QStringLiteral(" and color"),
             QStringLiteral("there plan ") + middle + QStringLiteral(" and colour"),
-            QString(), {});
+            {}, {});
         QCOMPARE(review.summary, QStringLiteral("2 changes"));
         // The changed words and six words either side of each; the forty
         // unchanged words between them fold to one gap.
@@ -916,28 +920,28 @@ private slots:
                            "last night. can someone look at it before standup?"),
             QStringLiteral("Good morning. The build is failing again, most likely because of the change "
                            "Marco merged last night. Could someone investigate before the stand-up?"),
-            QString(), {});
+            {}, {});
         QCOMPARE(formal.summary, QStringLiteral("Rewritten"));
         const SelectionEditReview rewrite = selectionEditReview(
             QStringLiteral("hey so the build is broken again lol"),
             QStringLiteral("Good morning. The build is failing again."),
-            QString(), {});
+            {}, {});
         QCOMPARE(rewrite.runs, (QList<EditRun>{{Kind::Kept, QStringLiteral("Good morning. The build is failing again.")}}));
         QCOMPARE(rewrite.summary, QStringLiteral("Rewritten"));
 
         const SelectionEditReview same = selectionEditReview(
-            QStringLiteral("Nothing to do."), QStringLiteral("Nothing to do."), QString(), {});
+            QStringLiteral("Nothing to do."), QStringLiteral("Nothing to do."), {}, {});
         QCOMPARE(same.summary, QStringLiteral("No changes"));
         // Replace would still change the text, so it never says nothing changed.
         const SelectionEditReview spacing = selectionEditReview(
-            QStringLiteral("Hello world"), QStringLiteral("Hello\nworld"), QString(), {});
+            QStringLiteral("Hello world"), QStringLiteral("Hello\nworld"), {}, {});
         QCOMPARE(spacing.summary, QStringLiteral("Spacing changes only"));
         QCOMPARE(spacing.runs, (QList<EditRun>{{Kind::Kept, QStringLiteral("Hello\nworld")}}));
 
         // Cutting most of a selection is a rewrite too: the shortened text
         // alone, not every cut word struck through.
         const SelectionEditReview cut = selectionEditReview(
-            QStringLiteral("Keep this. ") + middle, QStringLiteral("Keep this."), QString(), {});
+            QStringLiteral("Keep this. ") + middle, QStringLiteral("Keep this."), {}, {});
         QCOMPARE(cut.summary, QStringLiteral("Rewritten"));
     }
 
@@ -946,7 +950,7 @@ private slots:
         using Kind = EditRun::Kind;
         // Unicode word boundaries split CJK text, so one changed word is one change.
         const SelectionEditReview review = selectionEditReview(
-            QString::fromUtf8("今日は良い天気ですね"), QString::fromUtf8("今日は悪い天気ですね"), QString(), {});
+            QString::fromUtf8("今日は良い天気ですね"), QString::fromUtf8("今日は悪い天気ですね"), {}, {});
         QCOMPARE(review.summary, QStringLiteral("1 change"));
         QCOMPARE(review.runs.first().kind, Kind::Kept);
         QVERIFY(std::any_of(review.runs.cbegin(), review.runs.cend(), [](const EditRun &run) {
@@ -964,7 +968,7 @@ private slots:
     void selectionEditReviewKeepsLeadingSpacesWithTheFirstWord()
     {
         const SelectionEditReview review = selectionEditReview(
-            QStringLiteral("\nHello world"), QStringLiteral("Hello world"), QString(), {});
+            QStringLiteral("\nHello world"), QStringLiteral("Hello world"), {}, {});
         QCOMPARE(review.summary, QStringLiteral("Spacing changes only"));
     }
 
@@ -976,7 +980,7 @@ private slots:
         popup.showPopup(1);
         popup.setSessionState(DictationState::Reviewing);
         popup.showSelectionEditReview(selectionEditReview(QStringLiteral("on Wednesday"),
-                                                          QStringLiteral("on Thursday"), QString(),
+                                                          QStringLiteral("on Thursday"), {},
                                                           {escapeKeyName(), enterKeyName()}));
         auto *card = popup.findChild<QFrame *>(QStringLiteral("reviewCard"));
         auto *pill = popup.findChild<QFrame *>(QStringLiteral("previewPill"));
@@ -992,10 +996,21 @@ private slots:
         QCOMPARE(keep.count(), 1);
         // Where Enter does nothing, Replace is not drawn as the default.
         popup.showSelectionEditReview(selectionEditReview(QStringLiteral("on Wednesday"),
-                                                          QStringLiteral("on Thursday"), QString(),
+                                                          QStringLiteral("on Thursday"), {},
                                                           {escapeKeyName(), QString()}));
         QVERIFY(!replaceButton->isDefault());
+        // A follow-up: the card stays, without its buttons, over the capsule.
+        SelectionEditReview following = selectionEditReview(QStringLiteral("on Wednesday"),
+                                                            QStringLiteral("on Thursday"), {}, {});
+        following.following = true;
+        popup.showSelectionEditReview(following);
+        popup.setSessionState(DictationState::Listening);
+        QVERIFY(!card->isHidden());
+        QVERIFY(!pill->isHidden());
+        QVERIFY(replaceButton->isHidden() || !replaceButton->isVisibleTo(card));
         popup.setSessionState(DictationState::Delivering);
+        QVERIFY(!card->isHidden());
+        popup.hideSelectionEditReview();
         QVERIFY(card->isHidden());
         QVERIFY(!pill->isHidden());
     }
@@ -1081,7 +1096,7 @@ private slots:
                            "I'd rather not run it with three people."),
             QStringLiteral("Can we move the standup to Thursday? Half the team is out on Wednesday and "
                            "I'd rather not run it with three people."),
-            QStringLiteral("swap the two days"), keys));
+            {QStringLiteral("swap the two days")}, keys));
         grab("review-small");
         const QString notes = QStringLiteral(
             "Thanks for the update on the release. I looked through the notes and %1 are a couple of things I "
@@ -1097,7 +1112,7 @@ private slots:
                       QStringLiteral("its"), QStringLiteral("are blockers"), QStringLiteral("there")),
             notes.arg(QStringLiteral("there"), QStringLiteral("colour"), QStringLiteral("doesn't"),
                       QStringLiteral("it's"), QStringLiteral("is a blocker"), QStringLiteral("its")),
-            QStringLiteral("fix the grammar"), keys));
+            {QStringLiteral("fix the grammar")}, keys));
         grab("review-folded");
         popup.findChild<QLabel *>(QStringLiteral("reviewSummary"))->linkActivated(QStringLiteral("whole"));
         grab("review-whole");
@@ -1106,8 +1121,28 @@ private slots:
                            "last night. can someone look at it before standup?"),
             QStringLiteral("Good morning. The build is failing again, most likely because of the change "
                            "Marco merged last night. Could someone investigate before the stand-up?"),
-            QStringLiteral("make this more formal"), {escapeKeyName(), QString()}));
+            {QStringLiteral("make this more formal")}, {escapeKeyName(), QString()}));
         grab("review-rewrite");
+        SelectionEditReview following = selectionEditReview(
+            QStringLiteral("Can we move the standup to Wednesday? Half the team is out on Thursday and "
+                           "I'd rather not run it with three people."),
+            QStringLiteral("Can we move the standup to Thursday? Half the team is out on Wednesday and "
+                           "I'd rather not run it with three people."),
+            {QStringLiteral("swap the two days")}, {escapeKeyName(), enterKeyName(), QStringLiteral("Meta+Space")});
+        popup.showSelectionEditReview(following);
+        grab("review-hint");
+        following.following = true;
+        popup.showSelectionEditReview(following);
+        popup.setSessionState(DictationState::Listening);
+        popup.showListeningIndicator();
+        popup.setPreview(QStringLiteral("actually make it Friday"));
+        speak();
+        grab("review-following");
+        popup.setSessionState(DictationState::Refining);
+        popup.setRefining(true);
+        grab("review-following-refining");
+        popup.setRefining(false);
+        popup.hideSelectionEditReview();
         popup.setSessionState(DictationState::Delivering);
         popup.showMessage(QStringLiteral("Copied • ") + selectionChangedNote(), PopupOutcome::Copied);
         grab("receipt-selection-changed");

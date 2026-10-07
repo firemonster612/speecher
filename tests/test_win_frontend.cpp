@@ -117,7 +117,7 @@ SelectionEditReview shortReview(const ReviewKeys &keys)
 {
     return selectionEditReview(QStringLiteral("Move the standup to Wednesday."),
                                QStringLiteral("Move the standup to Thursday."),
-                               QStringLiteral("make it Thursday"), keys);
+                               {QStringLiteral("make it Thursday")}, keys);
 }
 
 SelectionEditReview longReview(const ReviewKeys &keys)
@@ -126,7 +126,7 @@ SelectionEditReview longReview(const ReviewKeys &keys)
         QStringLiteral("The quarterly numbers look steady and nobody expects surprises this time. ").repeated(18);
     return selectionEditReview(QStringLiteral("Their report says ") + middle + QStringLiteral("See you their."),
                                QStringLiteral("The report says ") + middle + QStringLiteral("See you there."),
-                               QStringLiteral("fix the grammar"), keys);
+                               {QStringLiteral("fix the grammar")}, keys);
 }
 
 // An edit that keeps too few words to compare, shown whole as a rewrite.
@@ -136,7 +136,7 @@ SelectionEditReview rewriteReview(const ReviewKeys &keys)
         QStringLiteral("hey can someone look at the build its broken again since marco merged"),
         QStringLiteral("Good morning. The build is failing again, most likely because of the change "
                        "Marco merged last night. Could someone investigate before the stand-up?"),
-        QStringLiteral("make this more formal"), keys);
+        {QStringLiteral("make this more formal")}, keys);
 }
 
 template<typename Widget>
@@ -572,7 +572,8 @@ private slots:
 
     // A selection edit's review takes the capsule's place, as wide as an
     // error's wrapped text plus the preview's margins, takes clicks without
-    // taking focus, and leaves with the Reviewing state.
+    // taking focus, and leaves when the session ends the review, not on a
+    // state.
     void nativeSelectionEditReviewTakesTheCapsulesPlace()
     {
         if (!nativeUiAvailable()) {
@@ -586,12 +587,10 @@ private slots:
         // WinUI lays the card out in the island's new size a moment after
         // the window takes it.
         QTRY_VERIFY2(panel->reviewFullyVisibleForTest(), qPrintable(describeBoxes({panel->reviewGeometryForTest()})));
-        const QRect capsule = panel->capsuleGeometryForTest();
         const QRect card = panel->reviewGeometryForTest();
-        QVERIFY2(std::abs(capsule.width() - (520 + 2 * 16) * dipScale()) <= 1,
-                 qPrintable(describeBoxes({capsule})));
-        QVERIFY2(std::abs(card.width() - capsule.width()) <= 1 && std::abs(card.height() - capsule.height()) <= 1,
-                 qPrintable(describeBoxes({capsule, card})));
+        QVERIFY2(std::abs(card.width() - (520 + 2 * 16) * dipScale()) <= 1, qPrintable(describeBoxes({card})));
+        QVERIFY2(panel->capsuleGeometryForTest().isEmpty(),
+                 qPrintable(describeBoxes({card, panel->capsuleGeometryForTest()})));
         const qintptr style = panel->windowStyleForTest();
         QVERIFY(style & WS_EX_NOACTIVATE);
         QVERIFY(!(style & WS_EX_TRANSPARENT));
@@ -611,7 +610,10 @@ private slots:
         QVERIFY(std::abs(panel->reviewGeometryForTest().bottom() - card.bottom()) <= 1);
 
         session->stateChanged(dictationStateName(DictationState::Delivering));
+        QVERIFY(!panel->reviewGeometryForTest().isEmpty());
+        session->popupSelectionEditReviewEnded();
         QVERIFY(panel->reviewGeometryForTest().isEmpty());
+        QVERIFY(!panel->capsuleGeometryForTest().isEmpty());
         session->stateChanged(dictationStateName(DictationState::Idle));
         panel->dismissForTest();
     }
@@ -635,6 +637,7 @@ private slots:
         panel->pressReplaceForTest();
         QTRY_COMPARE(replaced.count(), 1);
         QCOMPARE(kept.count(), 1);
+        session->popupSelectionEditReviewEnded();
         session->stateChanged(dictationStateName(DictationState::Idle));
         panel->dismissForTest();
     }
@@ -677,6 +680,76 @@ private slots:
         QTRY_VERIFY(panel->reviewTextForTest().contains(ellipsis));
         QTRY_VERIFY2(panel->reviewFullyVisibleForTest(), qPrintable(describeBoxes({panel->reviewGeometryForTest()})));
         QTRY_VERIFY2(keptBottom(false), qPrintable(describeBoxes({folded, panel->reviewGeometryForTest()})));
+        session->popupSelectionEditReviewEnded();
+        session->stateChanged(dictationStateName(DictationState::Idle));
+        panel->dismissForTest();
+    }
+
+    // While a follow-up is dictated the card stays up, dimmed and without its
+    // footer, above the ordinary capsule, through listening and refining,
+    // and keeps the Show all it had. Without the follow-up it is alone again.
+    void nativeFollowUpShowsTheCardOverTheCapsule()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI islands require an interactive desktop");
+        }
+        DictationPanel *panel = frontEnd->dictationPanelForTest();
+        DictationSession *session = controller->session();
+        const QChar ellipsis(0x2026);
+        const auto describe = [panel] {
+            return describeBoxes({panel->reviewGeometryForTest(), panel->capsuleGeometryForTest()});
+        };
+        SelectionEditReview review = longReview({escapeKeyName(), enterKeyName(), QStringLiteral("Ctrl+Space")});
+        panel->showForTest(45);
+        session->stateChanged(dictationStateName(DictationState::Reviewing));
+        session->popupSelectionEditReviewRequested(review);
+        QTRY_VERIFY2(panel->reviewFullyVisibleForTest(), qPrintable(describe()));
+        QCOMPARE(panel->reviewHintForTest(), QStringLiteral("Press Ctrl+Space to ask for more changes"));
+        QVERIFY(!panel->reviewFollowingForTest());
+        panel->pressReviewToggleForTest();
+        QTRY_VERIFY(!panel->reviewTextForTest().contains(ellipsis));
+
+        // The session shows the review again, following, then starts a
+        // dictation of its own.
+        review.following = true;
+        session->popupSelectionEditReviewRequested(review);
+        // As a session start does: a preview frozen before would drop the
+        // follow-up's words.
+        session->popupFrozenChanged(false);
+        panel->showForTest(46);
+        session->stateChanged(dictationStateName(DictationState::Starting));
+        session->stateChanged(dictationStateName(DictationState::Listening));
+        panel->drivePreviewForTest(QStringLiteral("actually make it Friday"));
+        const auto cardOverCapsule = [panel] {
+            const QRect card = panel->reviewGeometryForTest();
+            const QRect capsule = panel->capsuleGeometryForTest();
+            return panel->reviewFullyVisibleForTest() && !capsule.isEmpty() && capsule.top() > card.bottom()
+                && std::abs(capsule.center().x() - card.center().x()) <= 1;
+        };
+        QTRY_VERIFY2(cardOverCapsule(), qPrintable(describe()));
+        QVERIFY(panel->reviewFollowingForTest());
+        QVERIFY(!panel->reviewTextForTest().contains(ellipsis));
+        QVERIFY(!panel->previewGeometryForTest().isEmpty());
+        QVERIFY(!panel->pauseGeometryForTest().isEmpty());
+        QVERIFY(!(panel->windowStyleForTest() & WS_EX_TRANSPARENT));
+
+        session->stateChanged(dictationStateName(DictationState::Stopping));
+        panel->driveStatusForTest(QStringLiteral("Stopping"));
+        session->stateChanged(dictationStateName(DictationState::Refining));
+        session->popupRefiningChanged(true);
+        QTRY_VERIFY2(cardOverCapsule() && !panel->spinnerGeometryForTest().isEmpty(), qPrintable(describe()));
+
+        // The edit comes back for review: the card alone, still whole.
+        session->popupRefiningChanged(false);
+        review.following = false;
+        session->stateChanged(dictationStateName(DictationState::Reviewing));
+        session->popupSelectionEditReviewRequested(review);
+        QTRY_VERIFY2(panel->reviewFullyVisibleForTest() && panel->capsuleGeometryForTest().isEmpty(),
+                     qPrintable(describe()));
+        QVERIFY(!panel->reviewFollowingForTest());
+        QVERIFY(!panel->reviewTextForTest().contains(ellipsis));
+        session->popupSelectionEditReviewEnded();
+        QVERIFY(panel->reviewGeometryForTest().isEmpty());
         session->stateChanged(dictationStateName(DictationState::Idle));
         panel->dismissForTest();
     }
@@ -786,7 +859,7 @@ private slots:
                            "and I'd rather not run it with three people."),
             QStringLiteral("Can we move the standup to Thursday? Half the team is out on Wednesday "
                            "and I'd rather not run it with three people."),
-            QStringLiteral("swap the two days"), keys));
+            {QStringLiteral("swap the two days")}, keys));
         grabReview(QString());
         controller->session()->popupSelectionEditReviewRequested(longReview(keys));
         grabReview(QStringLiteral("-folded"));
@@ -796,6 +869,36 @@ private slots:
         grabReview(QStringLiteral("-less"));
         controller->session()->popupSelectionEditReviewRequested(rewriteReview({escapeKeyName(), QString()}));
         grabReview(QStringLiteral("-rewritten"));
+        controller->session()->popupSelectionEditReviewEnded();
+        // The hint on asking for more changes, then a follow-up dictated
+        // under the dimmed card: listening with live words, then refining.
+        SelectionEditReview following = selectionEditReview(
+            QStringLiteral("Can we move the standup to Wednesday? Half the team is out on Thursday "
+                           "and I'd rather not run it with three people."),
+            QStringLiteral("Can we move the standup to Thursday? Half the team is out on Wednesday "
+                           "and I'd rather not run it with three people."),
+            {QStringLiteral("swap the two days")}, {escapeKeyName(), enterKeyName(), QStringLiteral("Ctrl+Space")});
+        controller->session()->popupSelectionEditReviewRequested(following);
+        grabReview(QStringLiteral("-hint"));
+        following.following = true;
+        controller->session()->popupSelectionEditReviewRequested(following);
+        // As a session start does; the frozen-preview grab above left the
+        // preview frozen, which drops live words.
+        controller->session()->popupFrozenChanged(false);
+        panel->showForTest(45);
+        controller->session()->stateChanged(dictationStateName(DictationState::Listening));
+        panel->drivePreviewForTest(QStringLiteral("actually make it Friday"));
+        for (int i = 0; i < 20; ++i) {
+            panel->driveLevelForTest(i % 2 ? 0.2f : 0.7f);
+            QTest::qWait(24);
+        }
+        grabReview(QStringLiteral("-following"));
+        controller->session()->stateChanged(dictationStateName(DictationState::Refining));
+        panel->driveStatusForTest(QStringLiteral("Stopping"));
+        controller->session()->popupRefiningChanged(true);
+        grabReview(QStringLiteral("-following-refining"));
+        controller->session()->popupRefiningChanged(false);
+        controller->session()->popupSelectionEditReviewEnded();
         controller->session()->stateChanged(dictationStateName(DictationState::Idle));
         panel->dismissForTest();
 

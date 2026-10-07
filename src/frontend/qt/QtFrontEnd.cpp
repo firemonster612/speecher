@@ -464,6 +464,8 @@ void QtFrontEnd::wireSessionToPopup()
     connect(m_popup, &TranscriberPopup::cancelRequested, m_controller, &ApplicationController::cancel);
     connect(session, &DictationSession::popupSelectionEditReviewRequested, m_popup,
             &TranscriberPopup::showSelectionEditReview);
+    connect(session, &DictationSession::popupSelectionEditReviewEnded, m_popup,
+            &TranscriberPopup::hideSelectionEditReview);
     connect(m_popup, &TranscriberPopup::keepOriginalRequested, m_controller, &ApplicationController::cancel);
     connect(m_popup, &TranscriberPopup::replaceSelectionRequested, session, &DictationSession::replaceSelection);
     connect(m_popup, &TranscriberPopup::errorDismissed, session, [session] {

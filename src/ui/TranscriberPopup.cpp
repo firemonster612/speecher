@@ -781,11 +781,18 @@ void TranscriberPopup::buildReviewCard()
     m_reviewScroll->viewport()->setAutoFillBackground(false);
     m_reviewScroll->setWidget(m_reviewText);
     m_reviewScroll->setFixedWidth(kPopupErrorWrapWidth);
+    // Faded while a follow-up is dictated: the edit is about to change.
+    m_reviewDim = new QGraphicsOpacityEffect(m_reviewScroll);
+    m_reviewDim->setOpacity(popup::kFollowUpEditOpacity);
+    m_reviewDim->setEnabled(false);
+    m_reviewScroll->setGraphicsEffect(m_reviewDim);
     card->addWidget(m_reviewScroll);
 
-    auto *footer = new QHBoxLayout;
+    m_reviewFooter = new QWidget(m_reviewCard);
+    auto *footer = new QHBoxLayout(m_reviewFooter);
+    footer->setContentsMargins(0, 0, 0, 0);
     footer->setSpacing(popup::kReviewSpacing);
-    m_reviewSummary = new QLabel(m_reviewCard);
+    m_reviewSummary = new QLabel(m_reviewFooter);
     m_reviewSummary->setObjectName(QStringLiteral("reviewSummary"));
     m_reviewSummary->setForegroundRole(QPalette::PlaceholderText);
     m_reviewSummary->setTextFormat(Qt::RichText);
@@ -795,24 +802,28 @@ void TranscriberPopup::buildReviewCard()
         applyReview();
     });
     footer->addWidget(m_reviewSummary, 1);
-    m_reviewKeep = new KeyedButton(m_reviewCard);
+    m_reviewKeep = new KeyedButton(m_reviewFooter);
     m_reviewKeep->setObjectName(QStringLiteral("reviewKeep"));
-    m_reviewReplace = new KeyedButton(m_reviewCard);
+    m_reviewReplace = new KeyedButton(m_reviewFooter);
     m_reviewReplace->setObjectName(QStringLiteral("reviewReplace"));
     connect(m_reviewKeep, &QPushButton::clicked, this, &TranscriberPopup::keepOriginalRequested);
     connect(m_reviewReplace, &QPushButton::clicked, this, &TranscriberPopup::replaceSelectionRequested);
-    footer->addWidget(m_reviewKeep);
-    footer->addWidget(m_reviewReplace);
-    card->addLayout(footer);
-    m_layout->addWidget(m_reviewCard, 0, Qt::AlignHCenter);
+    footer->addWidget(m_reviewKeep, 0, Qt::AlignBottom);
+    footer->addWidget(m_reviewReplace, 0, Qt::AlignBottom);
+    card->addWidget(m_reviewFooter);
+    // Above the capsule, which shows under it while a follow-up is dictated.
+    m_layout->insertWidget(m_layout->indexOf(m_previewPill), m_reviewCard, 0, Qt::AlignHCenter);
     applyFonts();
 }
 
 void TranscriberPopup::showSelectionEditReview(const SelectionEditReview &review)
 {
+    // A new review starts folded; the same one, followed up, keeps its view.
+    if (m_reviewCard->isHidden()) {
+        m_reviewWhole = false;
+    }
     m_review = review;
-    m_reviewWhole = false;
-    m_previewPill->hide();
+    m_previewPill->setVisible(review.following);
     m_reviewCard->show();
     applyReview();
 }
@@ -828,7 +839,12 @@ void TranscriberPopup::applyReview()
         const QString toggle = m_reviewWhole ? showChangesOnlyCaption() : showWholeEditCaption();
         summary += QStringLiteral(" · <a href=\"whole\">%1</a>").arg(toggle.toHtmlEscaped());
     }
+    if (!m_review.followUpHint.isEmpty()) {
+        summary += QStringLiteral("<br>") + m_review.followUpHint.toHtmlEscaped();
+    }
     m_reviewSummary->setText(summary);
+    m_reviewFooter->setVisible(!m_review.following);
+    m_reviewDim->setEnabled(m_review.following);
     static_cast<KeyedButton *>(m_reviewKeep)->setCaption(keepOriginalCaption(), m_review.keys.keep);
     static_cast<KeyedButton *>(m_reviewReplace)->setCaption(replaceSelectionCaption(), m_review.keys.replace);
     // The style marks the button Enter presses, where Enter does.
@@ -841,7 +857,7 @@ void TranscriberPopup::applyReview()
     repositionIfVisible();
 }
 
-void TranscriberPopup::hideReview()
+void TranscriberPopup::hideSelectionEditReview()
 {
     if (m_reviewCard->isHidden()) {
         return;
@@ -849,6 +865,7 @@ void TranscriberPopup::hideReview()
     m_reviewCard->hide();
     m_previewPill->show();
     adjustSize();
+    repositionIfVisible();
 }
 
 QSize TranscriberPopup::sizeHint() const
@@ -860,9 +877,13 @@ QSize TranscriberPopup::sizeHint() const
         return !banner || banner->isHidden() ? 0
                                              : banner->sizeHint().height() + spacing;
     };
-    const int pillHeight = m_reviewCard && !m_reviewCard->isHidden() ? m_reviewCard->sizeHint().height()
-        : m_pillLayout                                              ? m_previewPill->height()
-                                                                    : m_waveform->height();
+    const bool reviewing = m_reviewCard && !m_reviewCard->isHidden();
+    const int capsuleHeight = m_pillLayout ? m_previewPill->height() : m_waveform->height();
+    // The review's card, with the capsule under it while a follow-up is
+    // dictated.
+    const int pillHeight = !reviewing ? capsuleHeight
+        : m_previewPill->isHidden()  ? m_reviewCard->sizeHint().height()
+                                     : m_reviewCard->sizeHint().height() + spacing + capsuleHeight;
     // Room for the widest a capsule gets, so an error's icon, wrapped text and
     // Dismiss chip are never clipped by the window.
     const int width = std::max(620, m_layout->sizeHint().width());
@@ -872,9 +893,6 @@ QSize TranscriberPopup::sizeHint() const
 void TranscriberPopup::setSessionState(DictationState state)
 {
     const DictationState previous = std::exchange(m_sessionState, state);
-    if (state != DictationState::Reviewing) {
-        hideReview();
-    }
     applySessionControls();
     // The buttons set the strip's height; an error capsule sizes itself.
     if (!errorShown()) {

@@ -59,6 +59,8 @@ inline constexpr int kPreviewFadeWidth = 28;
 inline constexpr int kReviewVerticalMargin = 12;
 inline constexpr int kReviewSpacing = 8;
 inline constexpr int kReviewMaxLines = 12;
+// The edit under review fades to this while a follow-up is dictated.
+inline constexpr qreal kFollowUpEditOpacity = 0.5;
 
 // The narrowest text bar that still carves the contour around a lobe this
 // wide: an end cap and a whole fillet either side of the lobe. A shorter

@@ -222,10 +222,6 @@ struct DictationPanel::Native : QObject {
         DictationSession *session = controller->session();
         connect(session, &DictationSession::stateChanged, this, [this](const QString &name) {
             sessionState = name;
-            // A review lasts as long as the session's Reviewing state.
-            if (name != dictationStateName(DictationState::Reviewing)) {
-                reviewShown = false;
-            }
             refresh();
         });
         connect(session, &DictationSession::previewDisplayChanged, this,
@@ -278,6 +274,12 @@ struct DictationPanel::Native : QObject {
                 });
         connect(session, &DictationSession::popupErrorRequested, this, &Native::showProblem);
         connect(session, &DictationSession::popupSelectionEditReviewRequested, this, &Native::showReview);
+        // A follow-up runs through the states of a dictation while the card
+        // stays up, so the card goes on this signal, not on a state.
+        connect(session, &DictationSession::popupSelectionEditReviewEnded, this, [this] {
+            reviewShown = false;
+            refresh();
+        });
     }
 
     ~Native() override
@@ -352,7 +354,6 @@ struct DictationPanel::Native : QObject {
         chrome = Microsoft::UI::Xaml::Markup::XamlReader::Load(
             LR"(<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" />)")
             .as<Border>();
-        chrome.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
         outline = capsuleShape();
         content = StackPanel();
         content.VerticalAlignment(VerticalAlignment::Center);
@@ -497,9 +498,16 @@ struct DictationPanel::Native : QObject {
         Microsoft::UI::Xaml::Automation::AutomationProperties::SetLiveSetting(
             text, Microsoft::UI::Xaml::Automation::Peers::AutomationLiveSetting::Assertive);
         chrome.HorizontalAlignment(HorizontalAlignment::Center);
-        chrome.VerticalAlignment(VerticalAlignment::Bottom);
+        // The review card, when there is one, sits above the capsule; the
+        // two stand on the window's bottom edge.
+        panelStack = StackPanel();
+        panelStack.HorizontalAlignment(HorizontalAlignment::Center);
+        panelStack.VerticalAlignment(VerticalAlignment::Bottom);
+        panelStack.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
+        panelStack.Children().Append(reviewFrame);
+        panelStack.Children().Append(chrome);
         Grid surface;
-        surface.Children().Append(chrome);
+        surface.Children().Append(panelStack);
         // The island takes a new size from the bridge's MoveAndResize only
         // when its StateChanged event arrives, after refresh() has laid the
         // capsule out in the old size and set the click region from that.
@@ -511,21 +519,27 @@ struct DictationPanel::Native : QObject {
 
     // A selection edit's review, in the capsule's place while the session
     // waits in Reviewing: what was said, the edit, and its summary beside
-    // Keep original and Replace.
+    // Keep original and Replace. While a follow-up is dictated it stays above
+    // the capsule, its edit dimmed and its footer gone. A card of its own, in
+    // the plain rounded outline an error's capsule takes.
     void buildReviewCard()
     {
         reviewCard = StackPanel();
         reviewCard.Spacing(popup::kReviewSpacing);
         reviewCard.Padding({popup::kPreviewSideMargin, popup::kReviewVerticalMargin,
                             popup::kPreviewSideMargin, popup::kReviewVerticalMargin});
-        reviewCard.Visibility(Visibility::Collapsed);
-        // refreshReview() sizes the window from a Measure taken as the review
-        // changes, before WinUI's own layout pass. When the edit shrinks back
-        // under the scroll viewer's line limit, that pass can settle the card
-        // at another height, and the window keeps the first one until some
-        // later refresh. The window follows the card's settled height.
+        // layOutReviewCard() sizes the window from a Measure taken as the
+        // review changes, before WinUI's own layout pass. When the edit
+        // shrinks back under the scroll viewer's line limit, that pass can
+        // settle the card at another height, and the window keeps the first
+        // one until some later refresh. The window follows the card's settled
+        // height. The card keeps its own height in its frame rather than
+        // stretching to the outline, which is still the measured size then;
+        // stretched, it would never report the settled one.
+        reviewCard.VerticalAlignment(VerticalAlignment::Top);
         reviewCard.SizeChanged([this](const auto &, const SizeChangedEventArgs &args) {
-            if (reviewShown && int(std::ceil(args.NewSize().Height)) != height) {
+            if (reviewShown && int(std::ceil(args.NewSize().Height)) != reviewHeight) {
+                reviewLaidOutWidth = 0;
                 refresh();
             }
         });
@@ -557,14 +571,22 @@ struct DictationPanel::Native : QObject {
         reviewToggle.Click([this](const auto &, const auto &) {
             reviewWhole = !reviewWhole;
             fillReview();
+            reviewScroll.ChangeView(nullptr, 0.0, nullptr, true);
             refresh();
         });
+        StackPanel summaryRow;
+        summaryRow.Orientation(Orientation::Horizontal);
+        summaryRow.Spacing(popup::kReviewSpacing);
+        summaryRow.Children().Append(reviewSummary);
+        summaryRow.Children().Append(reviewToggle);
+        // How to ask for more changes, under the summary.
+        reviewHint = TextBlock();
+        reviewHint.FontSize(previewFontSize);
+        reviewHint.TextWrapping(TextWrapping::Wrap);
         StackPanel summary;
-        summary.Orientation(Orientation::Horizontal);
-        summary.Spacing(popup::kReviewSpacing);
         summary.VerticalAlignment(VerticalAlignment::Center);
-        summary.Children().Append(reviewSummary);
-        summary.Children().Append(reviewToggle);
+        summary.Children().Append(summaryRow);
+        summary.Children().Append(reviewHint);
 
         reviewKeep = keyedButton(keepOriginalCaption());
         reviewKeep.Click([this](const auto &, const auto &) { emit panel->keepOriginalRequested(); });
@@ -575,20 +597,27 @@ struct DictationPanel::Native : QObject {
         buttons.Spacing(popup::kReviewSpacing);
         buttons.Children().Append(reviewKeep);
         buttons.Children().Append(reviewReplace);
+        buttons.VerticalAlignment(VerticalAlignment::Bottom);
 
-        Grid footer;
-        footer.ColumnSpacing(popup::kReviewSpacing);
+        reviewFooter = Grid();
+        reviewFooter.ColumnSpacing(popup::kReviewSpacing);
         ColumnDefinition summaryColumn;
         summaryColumn.Width({1, GridUnitType::Star});
         ColumnDefinition buttonsColumn;
         buttonsColumn.Width({0, GridUnitType::Auto});
-        footer.ColumnDefinitions().Append(summaryColumn);
-        footer.ColumnDefinitions().Append(buttonsColumn);
+        reviewFooter.ColumnDefinitions().Append(summaryColumn);
+        reviewFooter.ColumnDefinitions().Append(buttonsColumn);
         Grid::SetColumn(buttons, 1);
-        footer.Children().Append(summary);
-        footer.Children().Append(buttons);
-        reviewCard.Children().Append(footer);
-        content.Children().Append(reviewCard);
+        reviewFooter.Children().Append(summary);
+        reviewFooter.Children().Append(buttons);
+        reviewCard.Children().Append(reviewFooter);
+
+        reviewOutline = capsuleShape();
+        reviewFrame = Grid();
+        reviewFrame.HorizontalAlignment(HorizontalAlignment::Center);
+        reviewFrame.Visibility(Visibility::Collapsed);
+        reviewFrame.Children().Append(reviewOutline);
+        reviewFrame.Children().Append(reviewCard);
     }
 
     // A push button that names the key doing what a click does, after its
@@ -744,7 +773,7 @@ struct DictationPanel::Native : QObject {
         RECT pill{};
         GetWindowRect(window, &pill);
         const int x = pill.left + (pill.right - pill.left - bannerWidth) / 2;
-        const int y = pill.bottom - px(height) - bannerHeight - px(bannerGap);
+        const int y = pill.bottom - px(contentHeight()) - bannerHeight - px(bannerGap);
         SetWindowPos(banner, HWND_TOPMOST, x, y, bannerWidth, bannerHeight,
                      SWP_NOACTIVATE);
         bannerSource.SiteBridge().MoveAndResize({0, 0, bannerWidth, bannerHeight});
@@ -815,14 +844,23 @@ struct DictationPanel::Native : QObject {
         }
     }
 
+    // The same review comes again as a follow-up starts and ends; it keeps
+    // its Show all and its scrolling then, and a new one starts folded at the
+    // top.
     void showReview(const SelectionEditReview &value)
     {
+        const bool fresh = !reviewShown;
         review = value;
-        reviewWhole = false;
         reviewShown = true;
+        if (fresh) {
+            reviewWhole = false;
+        }
         ensureWindow();
         applyTheme();
         fillReview();
+        if (fresh) {
+            reviewScroll.ChangeView(nullptr, 0.0, nullptr, true);
+        }
         refresh();
         reposition();
         ShowWindow(window, SW_SHOWNOACTIVATE);
@@ -833,16 +871,22 @@ struct DictationPanel::Native : QObject {
     void fillReview()
     {
         win::PaneHost theme;
-        theme.effectiveTheme = [this] { return chrome.ActualTheme(); };
+        theme.effectiveTheme = [this] { return reviewFrame.ActualTheme(); };
         const Brush secondary = win::themeBrush(L"SettingsCardDescriptionForeground", theme);
         reviewInstruction.Text(win::hs(review.instruction));
         reviewInstruction.Foreground(secondary);
         reviewInstruction.Visibility(review.instruction.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
         const bool folded = !review.folded.isEmpty() && !reviewWhole;
         fillEdit(folded ? review.folded : review.runs, secondary, theme);
-        reviewScroll.ChangeView(nullptr, 0.0, nullptr, true);
+        reviewLaidOutWidth = 0;
+        // Dimmed while a follow-up is dictated: the edit is about to change.
+        reviewScroll.Opacity(review.following ? popup::kFollowUpEditOpacity : 1.0);
+        reviewFooter.Visibility(review.following ? Visibility::Collapsed : Visibility::Visible);
         reviewSummary.Text(win::hs(review.summary));
         reviewSummary.Foreground(secondary);
+        reviewHint.Text(win::hs(review.followUpHint));
+        reviewHint.Foreground(secondary);
+        reviewHint.Visibility(review.followUpHint.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
         reviewToggle.Content(box_value(win::hs(reviewWhole ? showChangesOnlyCaption() : showWholeEditCaption())));
         reviewToggle.Visibility(review.folded.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
         setButtonKey(reviewKeep, review.keys.keep, secondary);
@@ -931,7 +975,7 @@ struct DictationPanel::Native : QObject {
     void applyTheme()
     {
         if (chrome) {
-            chrome.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
+            panelStack.RequestedTheme(win::requestedTheme(controller->settings()->theme()));
             // The rectangles captured the text brush at creation; a theme
             // change hands them the newly resolved one. While the status text
             // shimmers its foreground is the animated gradient, which would
@@ -1045,12 +1089,13 @@ struct DictationPanel::Native : QObject {
         if (!window) {
             return;
         }
-        if (reviewShown) {
+        if (reviewShown && !review.following) {
             refreshReview();
             return;
         }
-        reviewCard.Visibility(Visibility::Collapsed);
-        row.Visibility(Visibility::Visible);
+        // The capsule, under the review card while a follow-up is dictated.
+        chrome.Visibility(Visibility::Visible);
+        reviewFrame.Visibility(reviewShown ? Visibility::Visible : Visibility::Collapsed);
         const bool hasProblem = !problem.isEmpty();
         // A finished delivery: the outcome message is the whole story, so the
         // spent preview words go and the icon and message centre in the pill.
@@ -1201,6 +1246,13 @@ struct DictationPanel::Native : QObject {
         surfaceHeight = wraps ? wantedHeight
             : previewTopPadding + lineHeight + previewStripSpacing
                 + std::max({compactStripHeight, sessionButtonSize, lineHeight + 6}) + previewBottomPadding;
+        if (reviewShown) {
+            const int cardWidth = reviewWidth();
+            layOutReviewCard(cardWidth);
+            reviewFrame.Margin({0, 0, 0, bannerGap});
+            surfaceWidth = std::max(surfaceWidth, cardWidth);
+            surfaceHeight += reviewHeight + bannerGap;
+        }
         resize(wantedWidth, wantedHeight);
         updateOutline(showPreview ? previewTopPadding + lineHeight + previewShoulderDrop : 0, inkWidth);
         chrome.UpdateLayout();
@@ -1211,43 +1263,62 @@ struct DictationPanel::Native : QObject {
         refreshBanner();
     }
 
-    // The review card alone, as tall as it measures, in the plain rounded
-    // outline an error's capsule takes. Past its line limit the edit scrolls.
+    // The review card alone, in the capsule's place.
     void refreshReview()
     {
         setShimmer(false);
         wave->setRunning(false);
         setTakesClicks(true);
-        previewText.Visibility(Visibility::Collapsed);
-        row.Visibility(Visibility::Collapsed);
-        countdown.Visibility(Visibility::Collapsed);
-        content.Padding({});
-        reviewCard.Visibility(Visibility::Visible);
-        constexpr float unbounded = std::numeric_limits<float>::infinity();
-        probe.FontSize(previewFontSize);
-        probe.Text(L"Ag");
-        probe.Measure({unbounded, unbounded});
-        reviewScroll.MaxHeight(std::ceil(probe.DesiredSize().Height) * popup::kReviewMaxLines);
-        // Narrower than the shared width on a screen too small for it, as a
-        // problem wraps narrower there.
-        POINT pointer{};
-        GetCursorPos(&pointer);
-        MONITORINFO monitor{sizeof(monitor)};
-        GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
-        const int cardWidth = std::min(
-            reviewCardWidth, int((monitor.rcWork.right - monitor.rcWork.left) / scale()) - screenEdgeMargin);
-        reviewCard.Measure({float(cardWidth), unbounded});
-        const int cardHeight = int(std::ceil(reviewCard.DesiredSize().Height));
+        chrome.Visibility(Visibility::Collapsed);
+        reviewFrame.Visibility(Visibility::Visible);
+        reviewFrame.Margin({});
+        const int cardWidth = reviewWidth();
+        layOutReviewCard(cardWidth);
         surfaceWidth = cardWidth;
-        surfaceHeight = cardHeight;
-        resize(cardWidth, cardHeight);
-        updateOutline(0, 0);
-        chrome.UpdateLayout();
+        surfaceHeight = reviewHeight;
+        resizeSurface();
+        panelStack.UpdateLayout();
         if (IsWindowVisible(window)) {
             reposition();
         }
         limitClicksToCapsule();
         refreshBanner();
+    }
+
+    // The card's width: the shared one, narrower on a screen too small for
+    // it, as a problem wraps narrower there.
+    int reviewWidth() const
+    {
+        POINT pointer{};
+        GetCursorPos(&pointer);
+        MONITORINFO monitor{sizeof(monitor)};
+        GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
+        return std::min(reviewCardWidth,
+                        int((monitor.rcWork.right - monitor.rcWork.left) / scale()) - screenEdgeMargin);
+    }
+
+    // Sizes the card to this width and as tall as it measures, the edit
+    // scrolling past its line limit, with its outline around it. Only when
+    // the review or the width changed: while a follow-up is dictated the
+    // panel refreshes with every word, and the card stays as it was.
+    void layOutReviewCard(int cardWidth)
+    {
+        if (cardWidth == reviewLaidOutWidth) {
+            return;
+        }
+        reviewLaidOutWidth = cardWidth;
+        constexpr float unbounded = std::numeric_limits<float>::infinity();
+        probe.FontSize(previewFontSize);
+        probe.Text(L"Ag");
+        probe.Measure({unbounded, unbounded});
+        reviewScroll.MaxHeight(std::ceil(probe.DesiredSize().Height) * popup::kReviewMaxLines);
+        reviewCard.Width(cardWidth);
+        reviewCard.Measure({float(cardWidth), unbounded});
+        reviewHeight = int(std::ceil(reviewCard.DesiredSize().Height));
+        // Inside its half-DIP margin, so the frame is exactly the card's size.
+        reviewOutline.Data(capsuleGeometry(cardWidth - 1, reviewHeight - 1));
+        reviewOutline.Width(cardWidth - 1);
+        reviewOutline.Height(reviewHeight - 1);
     }
 
     // Clicks reach the panel's controls, or pass through it to the
@@ -1265,8 +1336,9 @@ struct DictationPanel::Native : QObject {
     // The surface is sized for the widest preview, so while the panel takes
     // clicks the empty band beside the capsule would swallow clicks meant for
     // the application below. A window region keeps hit testing, child island
-    // included, to the capsule's rectangle. The region clips drawing too, so
-    // it holds every pixel of the outline, stroke and fillets included.
+    // included, to the capsule's rectangle, and to the review card's above it.
+    // The region clips drawing too, so it holds every pixel of the outlines,
+    // strokes and fillets included.
     void limitClicksToCapsule()
     {
         // The words bar across the top, and under it only the tab's width
@@ -1275,10 +1347,18 @@ struct DictationPanel::Native : QObject {
         RECT bar{};
         RECT tab{};
         RECT joins{};
-        if (takesClicks) {
-            const auto bounds = chrome.TransformToVisual(nullptr).TransformBounds(
-                {0, 0, float(chrome.ActualWidth()), float(chrome.ActualHeight())});
-            const auto px = [this](double dip) { return int(std::lround(dip * scale())); };
+        RECT card{};
+        const auto px = [this](double dip) { return int(std::lround(dip * scale())); };
+        const auto boundsOf = [](const FrameworkElement &element) {
+            return element.TransformToVisual(nullptr).TransformBounds(
+                {0, 0, float(element.ActualWidth()), float(element.ActualHeight())});
+        };
+        if (takesClicks && reviewFrame.Visibility() == Visibility::Visible) {
+            const auto bounds = boundsOf(reviewFrame);
+            card = {px(bounds.X), px(bounds.Y), px(bounds.X + bounds.Width), px(bounds.Y + bounds.Height)};
+        }
+        if (takesClicks && chrome.Visibility() == Visibility::Visible) {
+            const auto bounds = boundsOf(chrome);
             bar = {px(bounds.X), px(bounds.Y), px(bounds.X + bounds.Width), px(bounds.Y + bounds.Height)};
             if (outlineTabHalf > 0) {
                 const double middle = bounds.X + bounds.Width / 2.0;
@@ -1293,16 +1373,17 @@ struct DictationPanel::Native : QObject {
             }
         }
         if (EqualRect(&bar, &clickRegion) && EqualRect(&tab, &clickTab)
-            && EqualRect(&joins, &clickJoins)) {
+            && EqualRect(&joins, &clickJoins) && EqualRect(&card, &clickCard)) {
             return;
         }
         clickRegion = bar;
         clickTab = tab;
         clickJoins = joins;
+        clickCard = card;
         HRGN region = nullptr;
         if (takesClicks) {
-            region = CreateRectRgnIndirect(&bar);
-            for (const RECT &part : {tab, joins}) {
+            region = CreateRectRgn(0, 0, 0, 0);
+            for (const RECT &part : {bar, tab, joins, card}) {
                 if (!IsRectEmpty(&part)) {
                     HRGN extra = CreateRectRgnIndirect(&part);
                     CombineRgn(region, region, extra, RGN_OR);
@@ -1497,9 +1578,24 @@ struct DictationPanel::Native : QObject {
         height = newHeight;
         chrome.Width(width);
         chrome.Height(height);
+        resizeSurface();
+    }
+
+    void resizeSurface()
+    {
         if (source) {
             source.SiteBridge().MoveAndResize({0, 0, px(surfaceWidth), px(surfaceHeight)});
         }
+    }
+
+    // How far the panel's content reaches up from the window's bottom edge:
+    // the capsule, the review card, or the card above the capsule.
+    int contentHeight() const
+    {
+        if (!reviewShown) {
+            return height;
+        }
+        return review.following ? reviewHeight + bannerGap + height : reviewHeight;
     }
 
     void reposition()
@@ -1588,17 +1684,31 @@ struct DictationPanel::Native : QObject {
     ProgressBar countdown{nullptr};
     Button fixButton{nullptr};
     Button dismiss{nullptr};
+    // The review card above the capsule (chrome), standing on the window's
+    // bottom edge.
+    StackPanel panelStack{nullptr};
+    // The card and its outline.
+    Grid reviewFrame{nullptr};
+    Microsoft::UI::Xaml::Shapes::Path reviewOutline{nullptr};
     StackPanel reviewCard{nullptr};
     TextBlock reviewInstruction{nullptr};
     ScrollViewer reviewScroll{nullptr};
     TextBlock reviewEdit{nullptr};
     TextBlock reviewSummary{nullptr};
     HyperlinkButton reviewToggle{nullptr};
+    TextBlock reviewHint{nullptr};
+    // The summary, the hint and the buttons, gone while following up.
+    Grid reviewFooter{nullptr};
     Button reviewKeep{nullptr};
     Button reviewReplace{nullptr};
     SelectionEditReview review;
-    // The card holds the capsule's place until the session leaves Reviewing.
+    // The card shows from a review's first arrival until the session ends
+    // it, through any follow-up.
     bool reviewShown = false;
+    // The card's height as layOutReviewCard() measured it, and the width it
+    // measured at; 0 when the card has changed since.
+    int reviewHeight = 0;
+    int reviewLaidOutWidth = 0;
     // Show all: the whole edit instead of the folded one.
     bool reviewWhole = false;
     PopupErrorAction fix;
@@ -1623,6 +1733,8 @@ struct DictationPanel::Native : QObject {
     RECT clickRegion{};
     RECT clickTab{};
     RECT clickJoins{};
+    // The review card's part of that region.
+    RECT clickCard{};
     // The carved outline's shoulder, the tab's half width and the fillet's
     // radius in DIPs, which the click region follows; 0 while the outline is
     // a plain capsule.
@@ -1776,24 +1888,40 @@ double DictationPanel::outlineLobeWidthForTest() const
 
 QRect DictationPanel::reviewGeometryForTest() const
 {
-    return m_native->controlGeometry(m_native->reviewCard);
+    return m_native->controlGeometry(m_native->reviewFrame);
 }
 
 bool DictationPanel::reviewFullyVisibleForTest() const
 {
     const QRect card = reviewGeometryForTest();
     RECT window{};
-    RECT region{};
-    if (card.isEmpty() || !GetWindowRect(m_native->window, &window)
-        || GetWindowRgnBox(m_native->window, &region) == ERROR) {
+    if (card.isEmpty() || !GetWindowRect(m_native->window, &window)) {
         return false;
     }
-    const QRect windowRect(window.left, window.top, window.right - window.left, window.bottom - window.top);
-    // The region is in the window's own coordinates.
-    const QRect regionRect(window.left + region.left, window.top + region.top, region.right - region.left,
-                           region.bottom - region.top);
+    QRect shown(window.left, window.top, window.right - window.left, window.bottom - window.top);
+    // A window that takes no clicks has no region clipping it. The region is
+    // in the window's own coordinates.
+    if (RECT region{}; GetWindowRgnBox(m_native->window, &region) != ERROR) {
+        shown &= QRect(window.left + region.left, window.top + region.top, region.right - region.left,
+                       region.bottom - region.top);
+    }
     // A pixel either way is rounding between the two measures.
-    return windowRect.intersected(regionRect).adjusted(-1, -1, 1, 1).contains(card);
+    shown.adjust(-1, -1, 1, 1);
+    const QRect capsule = capsuleGeometryForTest();
+    return shown.contains(card) && (capsule.isEmpty() || shown.contains(capsule));
+}
+
+bool DictationPanel::reviewFollowingForTest() const
+{
+    return m_native->reviewFooter.Visibility() == Visibility::Collapsed
+        && m_native->reviewScroll.Opacity() < 1.0;
+}
+
+QString DictationPanel::reviewHintForTest() const
+{
+    const TextBlock hint = m_native->reviewHint;
+    return hint.Visibility() == Visibility::Collapsed ? QString()
+                                                      : QString::fromStdWString(std::wstring(hint.Text()));
 }
 
 QString DictationPanel::reviewTextForTest() const
@@ -1850,8 +1978,9 @@ bool DictationPanel::saveGrabForTest(const QString &path) const
     if (!window || !IsWindowVisible(window)) {
         return false;
     }
-    const QRect capsule = capsuleGeometryForTest();
-    RECT rect{capsule.left(), capsule.top(), capsule.x() + capsule.width(), capsule.y() + capsule.height()};
+    // The capsule, the review card, or both while a follow-up is dictated.
+    const QRect shown = capsuleGeometryForTest() | reviewGeometryForTest();
+    RECT rect{shown.left(), shown.top(), shown.x() + shown.width(), shown.y() + shown.height()};
     if (qEnvironmentVariableIsSet("SPEECHER_TEST_PANEL_BANNERS")
         && m_native->banner && IsWindowVisible(m_native->banner)) {
         RECT notices{};
