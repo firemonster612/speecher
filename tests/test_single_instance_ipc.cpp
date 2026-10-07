@@ -8,13 +8,15 @@
 #include <QFileInfo>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
-#include <QUuid>
-#ifdef Q_OS_WIN
-#include <QScopeGuard>
-#include <QSemaphore>
 #include <QThread>
+#include <QUuid>
+#include <iostream>
+#include <sstream>
+#ifdef Q_OS_WIN
+#include <QSemaphore>
 #include <functional>
 #endif
 
@@ -353,6 +355,58 @@ private slots:
         QTRY_VERIFY(client->isFinished());
         delete client;
         QCOMPARE(exitCode, echoes ? 0 : 1);
+    }
+
+    void lastPrintsTheRunningInstancesTranscript_data()
+    {
+        QTest::addColumn<QString>("text");
+        QTest::addColumn<QString>("message");
+        QTest::addColumn<int>("exitCode");
+        QTest::newRow("a transcript") << QStringLiteral("Ship it on Friday.") << QString() << 0;
+        QTest::newRow("no transcript yet") << QString() << QString() << 1;
+        QTest::newRow("instance older than last") << QString() << kUnknownIpcCommandMessage << 1;
+    }
+
+    void lastPrintsTheRunningInstancesTranscript()
+    {
+        QFETCH(QString, text);
+        QFETCH(QString, message);
+        QFETCH(int, exitCode);
+        IpcResponse reply{!text.isEmpty(), QStringLiteral("idle"), message};
+        reply.text = text;
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [reply](const QString &, const QString &, QLocalSocket *socket) {
+                    SingleInstanceIpc::writeResponse(socket, reply);
+                });
+        CommandLineDecision decision;
+        decision.mode = LaunchMode::RunCli;
+        decision.ipcCommand = QStringLiteral("last");
+
+        std::ostringstream out;
+        std::ostringstream err;
+        int lastExitCode = -1;
+        {
+            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+            std::streambuf *const stderrBuffer = std::cerr.rdbuf(err.rdbuf());
+            const auto restoreStreams = qScopeGuard([stdoutBuffer, stderrBuffer] {
+                std::cout.rdbuf(stdoutBuffer);
+                std::cerr.rdbuf(stderrBuffer);
+            });
+            QThread *client = QThread::create([&lastExitCode, &decision, platform] {
+                lastExitCode = runCliCommand(decision, platform);
+            });
+            client->start();
+            QTRY_VERIFY(client->isFinished());
+            delete client;
+        }
+        QCOMPARE(lastExitCode, exitCode);
+        QCOMPARE(QString::fromStdString(out.str()), text.isEmpty() ? QString() : text + QLatin1Char('\n'));
+        QCOMPARE(QString::fromStdString(err.str()).contains(QStringLiteral("older")), !message.isEmpty());
     }
 
     void singleInstanceIpcExpiresIncompleteRequests()

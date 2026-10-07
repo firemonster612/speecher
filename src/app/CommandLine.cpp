@@ -105,6 +105,7 @@ Commands (sent to the running Speecher):
   toggle | start | stop    control dictation
   cancel                   throw away the dictation in progress
   status                   print the dictation state
+  last                     print the last transcript
   settings | setup         open settings or the setup assistant
   quit                     quit the running Speecher
 
@@ -521,6 +522,38 @@ QString parseListenArguments(const QStringList &arguments, CommandLineDecision *
     return {};
 }
 
+int reportOlderInstance(const char *problem)
+{
+    std::cerr << "The running Speecher is older and " << problem
+              << ". Quit it with `speecher quit` and run the command again.\n";
+    return 1;
+}
+
+// Prints the running instance's last transcript, or nothing when it has none
+// or there is no running instance.
+int printLastTranscript(const std::shared_ptr<const SingleInstancePlatform> &platform)
+{
+    IpcResponse response;
+    QString ipcError;
+    const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(
+        QStringLiteral("last"), &response, 2500, platform, &ipcError);
+    if (ipcResult == IpcCommandResult::Unavailable) {
+        return 1;
+    }
+    if (ipcResult != IpcCommandResult::Sent) {
+        std::cerr << ipcError.toStdString() << "\n";
+        return 1;
+    }
+    if (response.message == kUnknownIpcCommandMessage) {
+        return reportOlderInstance("doesn't know `last`");
+    }
+    if (response.text.isEmpty()) {
+        return 1;
+    }
+    std::cout << response.text.toStdString() << "\n";
+    return 0;
+}
+
 } // namespace
 
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
@@ -550,6 +583,7 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
         || verb == QStringLiteral("stop")
         || verb == QStringLiteral("cancel")
         || verb == QStringLiteral("status")
+        || verb == QStringLiteral("last")
         || verb == QStringLiteral("settings")
         || verb == QStringLiteral("setup")
         || verb == QStringLiteral("grab")
@@ -668,6 +702,9 @@ int runCliCommand(const CommandLineDecision &decision,
                   const std::shared_ptr<const SingleInstancePlatform> &platform)
 {
     const QString &command = decision.ipcCommand;
+    if (command == QStringLiteral("last")) {
+        return printLastTranscript(platform);
+    }
     IpcResponse response;
     QString ipcError;
     const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(command,
@@ -681,9 +718,7 @@ int runCliCommand(const CommandLineDecision &decision,
         const bool ignoredProfile = overrides.writingProfile && response.writingProfile != *overrides.writingProfile;
         const bool ignoredLanguage = overrides.spokenLanguage && response.spokenLanguage != *overrides.spokenLanguage;
         if (response.ok && (ignoredProfile || ignoredLanguage)) {
-            std::cerr << "The running Speecher is older and ignored " << (ignoredProfile ? "--profile" : "--language")
-                      << ". Quit it with `speecher quit` and run the command again.\n";
-            return 1;
+            return reportOlderInstance(ignoredProfile ? "ignored --profile" : "ignored --language");
         }
         std::cout << response.state.toStdString() << "\n";
         return response.ok ? 0 : 1;

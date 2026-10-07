@@ -198,10 +198,11 @@ open build/speecher.app     # macOS
 ./build/speecher start
 ./build/speecher stop
 ./build/speecher status
+./build/speecher last
 ./build/speecher --version
 ```
 
-The four CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
+These CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`. `last` prints the running app's last transcript, the text the tray panel and Home show, which helps when a paste landed in the wrong window. It is kept in memory only, so it prints nothing and exits with status 1 when there is no transcript yet or no running app.
 
 ### Transcribing audio files
 
