@@ -545,6 +545,8 @@ set(SPEECHER_APP_SOURCES
   src/app/NetworkReachability.cpp
   src/app/ProviderAvailability.cpp
   src/app/CommandLine.cpp
+  src/app/CommandLineTool.cpp
+  src/app/CommandLineToolPresentation.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
   src/app/ManifestUpdater.cpp
@@ -574,6 +576,8 @@ set(SPEECHER_APP_HEADERS
   src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CommandLine.h
+  src/app/CommandLineTool.h
+  src/app/CommandLineToolPresentation.h
   src/app/CompositionSockets.h
   src/app/HeadlessTranscribe.h
   src/app/ManifestUpdater.h

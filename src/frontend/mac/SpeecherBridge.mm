@@ -6,6 +6,8 @@
 #include "app/PhoneTransfer.h"
 #include "app/PhoneTransferPresentation.h"
 #include "app/AccessibilityPresentation.h"
+#include "app/CommandLineTool.h"
+#include "app/CommandLineToolPresentation.h"
 #include "app/SetupSteps.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateBanner.h"
@@ -2867,6 +2869,38 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (NSString *)trayQuitCaption
 {
     return speecher::trayQuitCaption().toNSString();
+}
+
++ (NSString *)commandLineToolPath
+{
+    return @(speecher::kCommandLineToolPath);
+}
+
++ (NSString *)commandLineToolInstallCommand
+{
+    return speecher::commandLineToolInstallCommand(QCoreApplication::applicationFilePath(),
+                                                   QString::fromUtf8(speecher::kCommandLineToolPath))
+        .toNSString();
+}
+
++ (NSString *)installCommandLineToolCaption
+{
+    return speecher::installCommandLineToolCaption().toNSString();
+}
+
++ (NSString *)commandLineToolInstalledTitle
+{
+    return speecher::commandLineToolInstalledTitle().toNSString();
+}
+
++ (NSString *)commandLineToolInstalledText
+{
+    return speecher::commandLineToolInstalledText().toNSString();
+}
+
++ (NSString *)commandLineToolFailedTitle
+{
+    return speecher::commandLineToolFailedTitle().toNSString();
 }
 
 - (NSString *)inputLevelLabel

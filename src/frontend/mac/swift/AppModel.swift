@@ -593,6 +593,36 @@ final class AppModel: ObservableObject {
         accessibilityProblem = bridge.enableAccessibility() ?? ""
     }
 
+    /// Writes the speecher command, asking for an administrator's password
+    /// when its folder needs one, and says how it went. NSAppleScript rather
+    /// than osascript, so the password prompt names Speecher as the app
+    /// asking; it holds the main thread until the prompt is answered.
+    /// AuthorizationExecuteWithPrivileges is deprecated, and a privileged
+    /// helper is a lot of machinery for writing one file.
+    func installCommandLineTool() {
+        let userCancelled = -128 // userCanceledErr
+        let folder = (SpeecherBridge.commandLineToolPath as NSString).deletingLastPathComponent
+        let privileges = FileManager.default.isWritableFile(atPath: folder) ? "" : " with administrator privileges"
+        let command = SpeecherBridge.commandLineToolInstallCommand
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = NSAppleScript(source: "do shell script \"\(command)\"\(privileges)")
+        var error: NSDictionary?
+        script?.executeAndReturnError(&error)
+        if (error?[NSAppleScript.errorNumber] as? Int) == userCancelled { return }
+        let alert = NSAlert()
+        if script != nil && error == nil {
+            alert.messageText = SpeecherBridge.commandLineToolInstalledTitle
+            alert.informativeText = SpeecherBridge.commandLineToolInstalledText
+        } else {
+            alert.alertStyle = .warning
+            alert.messageText = SpeecherBridge.commandLineToolFailedTitle
+            alert.informativeText = error?[NSAppleScript.errorMessage] as? String ?? ""
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
     /// A new recording starts clean: what the last one reported is stale.
     func beginShortcutRecording(by recorder: ShortcutRecorder) {
         activeShortcutRecorder = recorder

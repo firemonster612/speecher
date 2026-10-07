@@ -4,6 +4,7 @@
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
+#include "app/CommandLineTool.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
@@ -42,6 +43,7 @@
 #include <QLocalSocket>
 #include <QPalette>
 #include <QPointer>
+#include <QProcess>
 #include <QLabel>
 #include <QLayout>
 #include <QList>
@@ -1362,6 +1364,49 @@ private slots:
         QCOMPARE(requested.count(), 1);
     }
 
+#endif
+
+#ifdef Q_OS_UNIX
+    // What macOS's "Install command line tool…" writes: a two-line script
+    // that runs the binary from a path a shell would otherwise split, with
+    // every argument intact, and hands back its exit status. Installing again
+    // replaces it, and a symlink there is replaced rather than written through.
+    void commandLineToolExecsTheBinaryWithItsArguments()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString binary = directory.filePath(QStringLiteral("speecher it's \"$HOME\""));
+        QFile fake(binary);
+        QVERIFY(fake.open(QIODevice::WriteOnly));
+        fake.write("#!/bin/sh\nprintf '%s|' \"$@\"\nexit 3\n");
+        fake.close();
+        QVERIFY(fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner));
+        const QString tool = directory.filePath(QStringLiteral("bin/speecher"));
+        const auto install = [&] {
+            return QProcess::execute(QStringLiteral("/bin/sh"),
+                                     {QStringLiteral("-c"), commandLineToolInstallCommand(binary, tool)});
+        };
+
+        QCOMPARE(install(), 0);
+        QFile script(tool);
+        QVERIFY(script.open(QIODevice::ReadOnly));
+        const QByteArray contents = script.readAll();
+        QVERIFY(contents.startsWith("#!/bin/sh\n"));
+        QCOMPARE(contents.count('\n'), 2);
+        QProcess run;
+        run.start(tool, {QStringLiteral("a b"), QString(), QStringLiteral("*")});
+        QVERIFY(run.waitForFinished());
+        QCOMPARE(run.readAllStandardOutput(), QByteArray("a b||*|"));
+        QCOMPARE(run.exitCode(), 3);
+
+        const QString elsewhere = directory.filePath(QStringLiteral("elsewhere"));
+        QVERIFY(QFile(elsewhere).open(QIODevice::WriteOnly));
+        QVERIFY(QFile::remove(tool));
+        QVERIFY(QFile::link(elsewhere, tool));
+        QCOMPARE(install(), 0);
+        QVERIFY(!QFileInfo(tool).isSymLink());
+        QCOMPARE(QFileInfo(elsewhere).size(), 0);
+    }
 #endif
 
 #ifdef Q_OS_LINUX

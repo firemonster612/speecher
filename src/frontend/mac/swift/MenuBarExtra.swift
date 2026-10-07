@@ -13,6 +13,7 @@ import SwiftUI
 struct MenuBarPanel: View {
     @ObservedObject var model: AppModel
     let openSettings: () -> Void
+    let installCommandLineTool: () -> Void
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -71,6 +72,7 @@ struct MenuBarPanel: View {
                 }
             }
             Button(model.bridge.traySettingsCaption) { openSettings() }
+            Button(SpeecherBridge.installCommandLineToolCaption) { installCommandLineTool() }
             Button(model.bridge.trayQuitCaption) { model.bridge.quit() }
         }
         // Every button spans the panel, which is what Apple's own example for
@@ -127,6 +129,11 @@ final class SpeecherMenuBarExtra: NSObject {
             rootView: MenuBarPanel(model: model, openSettings: { [weak self] in
                 self?.popover.performClose(nil)
                 openSettings()
+            }, installCommandLineTool: { [weak self] in
+                self?.popover.performClose(nil)
+                // The install holds the main thread while its password prompt
+                // is up, so the panel closes first rather than hanging over it.
+                DispatchQueue.main.async { model.installCommandLineTool() }
             }))
         hostingController.sizingOptions = [.preferredContentSize]
         popover.contentViewController = hostingController
