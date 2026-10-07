@@ -896,6 +896,8 @@ private slots:
         QCOMPARE(parse({}).mode, LaunchMode::RunGui);
         QCOMPARE(parse({QStringLiteral("--grab"), QStringLiteral("shot.png")}).mode, LaunchMode::RunGui);
 
+        QCOMPARE(parse({QStringLiteral("--srt")}).headless.format, TranscriptFormat::Srt);
+        QCOMPARE(parse({QStringLiteral("--vtt"), QStringLiteral("--vtt")}).headless.format, TranscriptFormat::WebVtt);
         QCOMPARE(parse({QStringLiteral("--output"), QStringLiteral("NONE")}).headless.destination,
                  TranscriptDestination::None);
         QCOMPARE(parse({QStringLiteral("--cleanup"), QStringLiteral("Medium")}).headless.cleanupStrength,
@@ -916,6 +918,8 @@ private slots:
                                            QStringList{QStringLiteral("--frobnicate")},
                                            QStringList{QStringLiteral("-x")},
                                            QStringList{QStringLiteral("--daemon")},
+                                           QStringList{QStringLiteral("--srt"), QStringLiteral("--vtt")},
+                                           QStringList{QStringLiteral("--vtt"), QStringLiteral("--raw")},
                                            QStringList{QStringLiteral("--output"), dir.filePath(QStringLiteral("nowhere"))}}) {
             const CommandLineDecision refused = parse(mistake);
             QCOMPARE(refused.mode, LaunchMode::Exit);

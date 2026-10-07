@@ -356,6 +356,11 @@ QString exportedTranscript(const TranscribeFileResult &result, TranscriptFormat 
     return format == TranscriptFormat::Text ? shownTranscript(result, raw) : subtitleFile(result.segments, format);
 }
 
+QString subtitlesNeedTimings(const QString &speechProvider)
+{
+    return QStringLiteral("Subtitles need timings, and %1 returned none.").arg(speechProvider);
+}
+
 QString subtitlesNote(const QList<TranscribeFileResult> &results, const TranscribeBatchLabels &labels)
 {
     if (std::all_of(results.cbegin(), results.cend(), [](const TranscribeFileResult &result) { return result.failed(); })) {
@@ -365,7 +370,7 @@ QString subtitlesNote(const QList<TranscribeFileResult> &results, const Transcri
         return canExportAs(result, TranscriptFormat::Srt);
     });
     if (!timed) {
-        return QStringLiteral("Subtitles need timings, and %1 returned none.").arg(labels.speech);
+        return subtitlesNeedTimings(labels.speech);
     }
     // labels.refinement is empty when the batch did not refine.
     return labels.refinement.isEmpty()

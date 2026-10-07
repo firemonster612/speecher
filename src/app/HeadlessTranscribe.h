@@ -32,6 +32,9 @@ struct HeadlessTranscribeOptions {
     bool printTranscripts = false;
     // Print and save what the speech provider heard, not the refined text.
     bool raw = false;
+    // Save and print subtitles instead of text. A file whose speech provider
+    // returned no timings fails.
+    TranscriptFormat format = TranscriptFormat::Text;
     // One JSON object per file on out, then a summary object.
     bool json = false;
 };
@@ -40,8 +43,9 @@ struct HeadlessTranscribeOptions {
 // touches a running instance's dictation. Progress, saved paths and failures
 // go to err (rewriting one line when err is a terminal), transcripts to out.
 // Returns the exit code: 0 when every file succeeded, 1 when any failed
-// (saving included) or the session is busy, 2 for no files or a provider the
-// registry does not offer. Each refusal is explained on err.
+// (saving, and subtitles without timings, included) or the session is busy,
+// 2 for no files or a provider the registry does not offer. Each refusal is
+// explained on err.
 int runHeadlessTranscribe(const QStringList &files,
                           const HeadlessTranscribeOptions &options,
                           SettingsStore *settings,

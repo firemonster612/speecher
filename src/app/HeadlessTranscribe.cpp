@@ -101,6 +101,7 @@ int runHeadlessTranscribe(const QStringList &files,
         return finish(2, error);
     }
     const bool refines = refinesTranscripts(resolved, settings->snapshot().refinement);
+    const QString speechProvider = batchLabels(resolved, *providers, settings->snapshot().refinement).speech;
     // Saving happens here rather than in the session, so --raw can save what
     // it prints.
     TranscribeOptions sessionOptions = resolved;
@@ -160,16 +161,24 @@ int runHeadlessTranscribe(const QStringList &files,
                          if (errIsTerminal) {
                              err << "\r\033[K";
                          }
-                         const QString text = shownTranscript(result, options.raw);
+                         // Without timings there are no subtitles, so the file
+                         // fails; its JSON still carries the text, as a failed
+                         // file's does.
+                         const bool exportable = canExportAs(result, options.format);
+                         if (!result.failed() && !exportable) {
+                             result.error = subtitlesNeedTimings(speechProvider);
+                         }
+                         const QString text = exportable ? exportedTranscript(result, options.format, options.raw)
+                                                         : shownTranscript(result, options.raw);
                          // A transcript that was asked to be saved and was not
                          // fails the file, though it still prints.
-                         bool ok = !result.failed();
+                         bool ok = exportable;
                          if (ok && resolved.destination != TranscriptDestination::None) {
                              const QString folder = resolved.destination == TranscriptDestination::Folder
                                  ? resolved.folder
                                  : QFileInfo(result.path).absolutePath();
                              QString error;
-                             result.savedPath = saveTranscript(result.path, folder, text, &error);
+                             result.savedPath = saveTranscript(result.path, folder, text, &error, options.format);
                              if (!error.isEmpty()) {
                                  result.error = error;
                                  ok = false;
@@ -200,7 +209,7 @@ int runHeadlessTranscribe(const QStringList &files,
                                  object.insert(QStringLiteral("error"), result.error);
                              }
                              writeJson(out, object);
-                         } else if (options.printTranscripts && !result.failed()) {
+                         } else if (options.printTranscripts && exportable) {
                              if (files.size() > 1) {
                                  out << "# " << name.toStdString() << "\n\n";
                              }

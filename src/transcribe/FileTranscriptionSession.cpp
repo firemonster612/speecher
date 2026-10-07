@@ -108,13 +108,18 @@ void probeAudioDuration(const QString &path, QObject *receiver, std::function<vo
 // renames over whatever took the name meanwhile. A write that fails part way
 // removes the file instead, so no truncated transcript is left to mistake for
 // a whole one.
-QString saveTranscript(const QString &audioPath, const QString &folder, const QString &text, QString *error)
+QString saveTranscript(const QString &audioPath,
+                       const QString &folder,
+                       const QString &text,
+                       QString *error,
+                       TranscriptFormat format)
 {
     const QString stem = QFileInfo(audioPath).completeBaseName() + QStringLiteral("-transcribed");
+    const QString extension = transcriptFileExtension(format);
     const QDir dir(folder);
     for (int copy = 1;; ++copy) {
-        const QString name = copy == 1 ? stem + QStringLiteral(".txt")
-                                       : QStringLiteral("%1 (%2).txt").arg(stem).arg(copy);
+        const QString name = copy == 1 ? QStringLiteral("%1.%2").arg(stem, extension)
+                                       : QStringLiteral("%1 (%2).%3").arg(stem).arg(copy).arg(extension);
         QFile file(dir.filePath(name));
         if (file.exists()) {
             continue;
