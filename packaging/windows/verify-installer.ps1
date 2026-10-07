@@ -23,6 +23,16 @@ function Start-Speecher([string]$Argument) {
     return $Process
 }
 
+# Quits the background app through the launcher, which waits for the quit
+# command and hands back its status. A native command's status is also the
+# step's exit status if nothing runs after it, so it is checked here.
+function Stop-BackgroundApp {
+    & (Join-Path $InstallDir "speecher.com") quit | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "speecher.com quit exited with $LASTEXITCODE"
+    }
+}
+
 # How many entries of the user's Path name the install folder.
 function Get-PathEntryCount {
     @([Environment]::GetEnvironmentVariable("Path", "User") -split ";" | Where-Object { $_ -eq $InstallDir }).Count
@@ -157,7 +167,7 @@ try {
     if (-not $App) {
         throw "speecher.com --daemon returned but speecher.exe is no longer running"
     }
-    & $Exe quit
+    Stop-BackgroundApp
     if (-not $App.WaitForExit(10000)) {
         throw "speecher.exe quit did not stop the background app the launcher started"
     }
@@ -179,7 +189,7 @@ try {
     if (-not $App) {
         throw "speecher.com --daemon returned its captured output but speecher.exe is not running"
     }
-    & $Exe quit
+    Stop-BackgroundApp
     if (-not $App.WaitForExit(10000)) {
         throw "speecher.exe quit did not stop the background app started with captured output"
     }
