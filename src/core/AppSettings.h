@@ -374,6 +374,9 @@ struct AppSettings {
     QList<BindingRule> bindings;
     QList<VocabularyEntry> vocabulary;
     QList<LearnedCorrection> learnedCorrections;
+    // Terms one run adds, such as --vocab-file's, in order. They lead the
+    // speech request and refinement whatever the saved list says. Never saved.
+    QStringList sessionVocabulary;
     bool correctionLearningEnabled = true;
     bool insightsEnabled = true;
 };

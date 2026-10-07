@@ -55,10 +55,10 @@ QString writingProfileFor(const AppSettings &settings, const Target &target)
                                  writingProfileFromName(settings.refinement.defaultWritingProfile));
 }
 
-// Every stored term for the Writing Profile in priority order, not the speech
-// request's capped list: the speech service takes a hundred hints, while
-// refinement reads the list as prompt text and can use the rest. The terms'
-// contexts go into `context`.
+// The session's terms in their order, then every stored term for the Writing
+// Profile in priority order, not the speech request's capped list: the speech
+// service takes a hundred hints, while refinement reads the list as prompt
+// text and can use the rest. The terms' contexts go into `context`.
 QStringList refinementVocabulary(const AppSettings &settings,
                                  const QString &writingProfile,
                                  QHash<QString, QString> &context)
@@ -80,10 +80,13 @@ QStringList refinementVocabulary(const AppSettings &settings,
         deduplicated.append(cleaned);
         return cleaned;
     };
+    for (const QString &term : settings.sessionVocabulary) {
+        append(term);
+    }
     const QList<VocabularyEntry> entries = normalizeVocabularyEntries(settings.vocabulary);
-    // Learned corrections first: there are few of them, each came from a
-    // real edit, and a full list must not push them out. One whose text is a
-    // term limited to other profiles stays out with it.
+    // Learned corrections next: there are few of them, each came from a
+    // real edit, and a full saved list must not push them out. One whose text
+    // is a term limited to other profiles stays out with it.
     for (const LearnedCorrection &correction : settings.learnedCorrections) {
         if (correction.enabled && !vocabularyTermExcluded(entries, correction.corrected, writingProfile)) {
             append(correction.corrected);
@@ -166,7 +169,8 @@ QStringList TranscriptPipeline::speechVocabulary(const AppSettings &settings, co
 {
     return speecher::speechVocabulary(settings.vocabulary,
                                       settings.learnedCorrections,
-                                      writingProfileFor(settings, target));
+                                      writingProfileFor(settings, target),
+                                      settings.sessionVocabulary);
 }
 
 RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSettings &settings,

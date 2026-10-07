@@ -120,7 +120,8 @@ Transcribe without a window, printing the results:
   --model <id>             speech provider: %1
   --no-vocabulary          skip the custom vocabulary and corrections
   --vocab-file <path>      add the file's terms, one per line, to the custom
-                           vocabulary for this run; # starts a comment line
+                           vocabulary for this run, even with
+                           --no-vocabulary; # starts a comment line
   --refine <id|none>       refinement provider: %2, none
   --cleanup <level>        %3
   --profile <name>         writing profile; seeds cleanup and tone: %4

@@ -2,8 +2,6 @@
 
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
-#include "core/Vocabulary.h"
-#include "core/VocabularyLimit.h"
 #include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "dictation/StartupPreparationRunner.h"
@@ -245,15 +243,8 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
         m_batchSettings.learnedCorrections.clear();
         m_batchSettings.bindings.clear();
     }
-    m_batchSettings.vocabulary = withAddedVocabulary(m_batchSettings.vocabulary, options.addedVocabulary);
-    // The run's terms go first, in the file's order, as many as fit.
-    QStringList speechTerms;
-    for (const QString &term : options.addedVocabulary + TranscriptPipeline::speechVocabulary(m_batchSettings, Target{})) {
-        if (!speechTerms.contains(term, Qt::CaseInsensitive)) {
-            speechTerms.append(term);
-        }
-    }
-    m_batchSettings.speech.vocabulary = VocabularyLimit::limited(speechTerms);
+    m_batchSettings.sessionVocabulary = options.addedVocabulary;
+    m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, Target{});
     m_results.clear();
     m_running = true;
     m_index = -1;

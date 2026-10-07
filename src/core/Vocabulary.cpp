@@ -3,6 +3,7 @@
 
 #include <QFile>
 #include <QRegularExpression>
+#include <QSet>
 #include <QStringList>
 #include <QTextBoundaryFinder>
 
@@ -121,13 +122,27 @@ bool vocabularyTermExcluded(const QList<VocabularyEntry> &entries,
 
 QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
                              const QList<LearnedCorrection> &corrections,
-                             const QString &writingProfile)
+                             const QString &writingProfile,
+                             const QStringList &leadingTerms)
 {
     const QList<VocabularyEntry> normalized = normalizeVocabularyEntries(entries);
+    // Every term in send order, capped once at the end: capping the saved
+    // ones first would pack them without the leading terms ahead of them.
     QStringList terms;
+    QSet<QString> seen;
+    const auto append = [&terms, &seen](const QString &term) {
+        const QString cleaned = term.simplified();
+        if (!seen.contains(cleaned.toCaseFolded())) {
+            seen.insert(cleaned.toCaseFolded());
+            terms.append(cleaned);
+        }
+    };
+    for (const QString &term : leadingTerms) {
+        append(term);
+    }
     for (const VocabularyEntry &entry : normalized) {
         if (entry.keyTerm && (writingProfile.isEmpty() || vocabularyEntryApplies(entry, writingProfile))) {
-            terms.append(entry.term);
+            append(entry.term);
         }
     }
     // Corrections sit last, so an over-cap list drops them before any term
@@ -137,8 +152,8 @@ QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
         const bool listed = std::any_of(normalized.cbegin(), normalized.cend(), [&](const VocabularyEntry &entry) {
             return entry.term.compare(correction.corrected.simplified(), Qt::CaseInsensitive) == 0;
         });
-        if (correction.enabled && !listed && !terms.contains(correction.corrected, Qt::CaseInsensitive)) {
-            terms.append(correction.corrected);
+        if (correction.enabled && !listed) {
+            append(correction.corrected);
         }
     }
     return VocabularyLimit::limited(terms);
@@ -179,21 +194,6 @@ std::optional<QStringList> readVocabularyFile(const QString &path)
         return std::nullopt;
     }
     return parseVocabularyFile(text);
-}
-
-QList<VocabularyEntry> withAddedVocabulary(QList<VocabularyEntry> entries, const QStringList &terms)
-{
-    for (const QString &term : terms) {
-        auto listed = std::find_if(entries.begin(), entries.end(), [&term](const VocabularyEntry &entry) {
-            return entry.term.simplified().compare(term, Qt::CaseInsensitive) == 0;
-        });
-        if (listed == entries.end()) {
-            entries.append({term});
-        } else {
-            listed->profiles.clear();
-        }
-    }
-    return entries;
 }
 
 QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &entries)
