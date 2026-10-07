@@ -43,6 +43,8 @@ class ModelFieldTest {
                 { settings = it },
                 {},
                 {},
+                chipEnabled = true,
+                onTurnOnChip = {},
             )
         }
     }

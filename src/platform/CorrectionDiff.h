@@ -26,18 +26,19 @@ inline constexpr int correctionMinContextChars = 8;
 
 // Observation timing, shared for the same reason. AT-SPI has no usable
 // text-change signal across toolkits, so that observer polls the control at
-// first, first + settle and first + 2 * settle; macOS delivers accessibility
-// notifications instead, so that observer waits `settle` for the text to stop
-// changing and gives up after the same total window.
+// first and every `settle` after it until the window closes; macOS and Windows
+// deliver change notifications instead, so those observers wait `settle` for
+// the text to stop changing and give up after the same window. The window is
+// long enough to place the cursor in a word and retype it.
 inline constexpr int correctionFirstSampleMs = 2000;
 inline constexpr int correctionSettleMs = 2500;
-inline constexpr int correctionWindowMs = correctionFirstSampleMs + 2 * correctionSettleMs;
+inline constexpr int correctionWindowMs = 30000;
 
 // Turns repeated readings of the edited control into a learned correction. An
 // edit only counts once the same text has been read twice, which is what keeps
-// a half-typed word out of the vocabulary; a reading that no longer locates the
-// span, or that shows an edit too large to be a correction, abandons the
-// observation outright rather than guessing.
+// a half-typed word out of the vocabulary. A reading that shows no correction,
+// such as a word caught mid-edit, starts the count again; one that no longer
+// locates the span abandons the observation outright rather than guessing.
 class CorrectionTracker {
 public:
     using Observed = std::function<void(const QString &original,

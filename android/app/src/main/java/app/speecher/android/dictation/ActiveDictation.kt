@@ -4,6 +4,7 @@ import android.view.inputmethod.InputConnection
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import app.speecher.protocol.CorrectionWindow
 
 /** Both Android services share one process and one active dictation session. */
 object ActiveDictation {
@@ -14,6 +15,11 @@ object ActiveDictation {
     @Volatile var settings = SpeecherSettings()
     @Volatile var observe: ((DictationState) -> Unit)? = null
     @Volatile var onInserted: (() -> Unit)? = null
+    /**
+     * Set while the dictation button's service runs: it watches the field an insertion went into
+     * for the person's correction, given the inserted words and the target app's package.
+     */
+    @Volatile var watchCorrections: ((CorrectionWindow, String) -> Unit)? = null
     /** What the chip read of the target window at tap, if the user opted in and it arrived. */
     @Volatile var screen: ScreenCapture? = null
     /** A base64 JPEG screenshot from the tap, if the user opted in and it arrived. */

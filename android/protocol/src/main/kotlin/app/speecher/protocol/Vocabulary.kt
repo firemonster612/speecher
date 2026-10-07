@@ -73,18 +73,82 @@ fun normalizedVocabulary(words: List<VocabularyWord>): List<VocabularyWord> {
  * terms of [MAX_SPEECH_TOKENS] tokens in all. A term that does not fit is skipped and shorter ones
  * after it can still go. The desktop's speechVocabulary and VocabularyLimit::limited.
  */
-fun speechTerms(words: List<VocabularyWord>): List<String> {
+fun speechTerms(words: List<VocabularyWord>): List<String> =
+    limitedSpeechTerms(normalizedVocabulary(words).filter { it.keyTerm }.map { it.term })
+
+/**
+ * The speech terms of a dictation under [profile]: [vocabulary]'s key terms for it, then each
+ * enabled correction's spelling. Corrections sit last, so an over-cap list drops them before any
+ * term the person typed. One whose spelling is a listed term adds nothing: that word's own profiles
+ * and key term decide whether it goes. The desktop's speechVocabulary.
+ */
+fun speechTerms(
+    vocabulary: List<VocabularyWord>,
+    profile: WritingProfile,
+    corrections: List<LearnedCorrection>,
+): List<String> {
+    val words = normalizedVocabulary(vocabulary)
+    val terms =
+        words.filter { it.keyTerm && it.appliesTo(profile) }.mapTo(mutableListOf()) { it.term }
+    for (correction in corrections) {
+        val spelling = correction.corrected.simplified()
+        if (
+            correction.enabled &&
+                words.none { sameTerm(it.term, spelling) } &&
+                terms.none { sameTerm(it, spelling) }
+        )
+            terms += spelling
+    }
+    return limitedSpeechTerms(terms)
+}
+
+/**
+ * The words a refinement under [profile] reads: each enabled correction's spelling first, as there
+ * are few and each came from a real edit, then [vocabulary]'s words for the profile. A spelling
+ * appears once, ignoring case, and keeps the context a word gives it. A correction whose spelling
+ * is a word limited to other profiles stays out with it. The desktop's refinementVocabulary.
+ */
+fun refinementVocabulary(
+    vocabulary: List<VocabularyWord>,
+    profile: WritingProfile,
+    corrections: List<LearnedCorrection>,
+): List<VocabularyWord> {
+    val words = normalizedVocabulary(vocabulary)
+    val learned =
+        corrections
+            .map { it.copy(corrected = it.corrected.simplified()) }
+            .filter { correction ->
+                correction.enabled &&
+                    words.none { sameTerm(it.term, correction.corrected) && !it.appliesTo(profile) }
+            }
+            .map { VocabularyWord(it.corrected, source = "learned") }
+    val kept = mutableListOf<VocabularyWord>()
+    for (word in learned + words.filter { it.appliesTo(profile) }) {
+        val index = kept.indexOfFirst { sameTerm(it.term, word.term) }
+        if (index < 0) kept += word
+        else if (kept[index].context.isEmpty())
+            kept[index] = kept[index].copy(context = word.context)
+    }
+    return kept
+}
+
+/**
+ * Whether a dictation under [profile] uses this word: it is limited to no profile or to that one.
+ */
+private fun VocabularyWord.appliesTo(profile: WritingProfile): Boolean =
+    profiles.isEmpty() || profile in profiles
+
+/**
+ * [terms] in order, no more than [MAX_SPEECH_TERMS] of [MAX_SPEECH_TOKENS] tokens in all. A term
+ * that does not fit is skipped and shorter ones after it can still go. VocabularyLimit::limited.
+ */
+private fun limitedSpeechTerms(terms: List<String>): List<String> {
     val kept = mutableListOf<String>()
     var tokens = 0
-    for (word in normalizedVocabulary(words)) {
-        val termTokens = word.term.split(' ').size
-        if (
-            !word.keyTerm ||
-                kept.size >= MAX_SPEECH_TERMS ||
-                tokens + termTokens > MAX_SPEECH_TOKENS
-        )
-            continue
-        kept += word.term
+    for (term in terms) {
+        val termTokens = term.split(' ').size
+        if (kept.size >= MAX_SPEECH_TERMS || tokens + termTokens > MAX_SPEECH_TOKENS) continue
+        kept += term
         tokens += termTokens
     }
     return kept

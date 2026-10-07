@@ -12,10 +12,14 @@ import app.speecher.android.update.UpdateChannel
 import app.speecher.android.update.checkIntervalMinutes
 import app.speecher.protocol.AppCategory
 import app.speecher.protocol.CleanupStrength
+import app.speecher.protocol.CorrectionEvidence
+import app.speecher.protocol.Corrections
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.DEFAULT_SPEECH_ENDPOINT_PATH
 import app.speecher.protocol.ENGLISH_LANGUAGE
+import app.speecher.protocol.LearnedCorrection
+import app.speecher.protocol.PendingCorrection
 import app.speecher.protocol.RecognitionRule
 import app.speecher.protocol.Replacement
 import app.speecher.protocol.SpeechEndpoint
@@ -23,7 +27,9 @@ import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
 import app.speecher.protocol.normalizedVocabulary
+import app.speecher.protocol.withEvidence
 import app.speecher.protocol.withUsage
+import java.util.UUID
 import kotlin.enums.enumEntries
 import kotlin.math.roundToInt
 import org.json.JSONArray
@@ -155,6 +161,8 @@ class SettingsStore(private val context: Context) {
                         ?.let { name -> IntervalUnit.entries.firstOrNull { it.name == name } }
                         ?.takeIf { updateCheckMinutes % it.minutes == 0 },
                 insightsEnabled = insightsEnabled(),
+                correctionLearningEnabled = correctionLearningEnabled(),
+                learnedCorrections = loadCorrections().learned,
             )
             // So no profile names a tone or level that is gone, and no rule a profile.
             .withCustomChoices()
@@ -275,6 +283,7 @@ class SettingsStore(private val context: Context) {
             settings.updateCheckUnit?.let { putString("updateCheckUnit", it.name) }
                 ?: remove("updateCheckUnit")
             putBoolean("insightsEnabled", settings.insightsEnabled)
+            putBoolean("correctionLearning", settings.correctionLearningEnabled)
             putInt("version", VERSION)
         }
     }
@@ -307,6 +316,41 @@ class SettingsStore(private val context: Context) {
         if (used != words)
             preferences.edit { putString("vocabulary", vocabularyJson(normalizedVocabulary(used))) }
     }
+
+    /**
+     * Learns from [evidence] of an edit in the app [applicationId], unless learning is off. Writes
+     * only the corrections and the edits waiting to be seen again, leaving every other setting as
+     * stored.
+     */
+    fun recordCorrection(
+        evidence: CorrectionEvidence,
+        applicationId: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        if (!correctionLearningEnabled()) return
+        val corrections = loadCorrections()
+        val next =
+            withEvidence(corrections, evidence, applicationId, nowMs) {
+                UUID.randomUUID().toString()
+            }
+        if (next != corrections)
+            preferences.edit {
+                putString("learnedCorrections", learnedJson(next.learned))
+                putString("correctionEvidence", pendingJson(next.pending))
+            }
+    }
+
+    /**
+     * Applies [edit] to the stored learned corrections, newest first, rather than to a copy a
+     * screen loaded earlier, which may lack one learned since.
+     */
+    fun editCorrections(edit: (List<LearnedCorrection>) -> List<LearnedCorrection>) {
+        val learned = loadCorrections().learned
+        preferences.edit { putString("learnedCorrections", learnedJson(edit(learned))) }
+    }
+
+    /** Just [SpeecherSettings.correctionLearningEnabled], read without loading the rest. */
+    fun correctionLearningEnabled(): Boolean = preferences.getBoolean("correctionLearning", true)
 
     /**
      * Keeps what settings from an earlier release meant, once. That release placed the chip by the
@@ -373,6 +417,82 @@ class SettingsStore(private val context: Context) {
                             if (!word.keyTerm) put("keyTerm", false)
                             if (word.priority) put("priority", true)
                         }
+                }
+            )
+            .toString()
+
+    /**
+     * The desktop's CorrectionSettingsCodec, with its keys; an entry missing its text is dropped.
+     */
+    private fun loadCorrections(): Corrections =
+        Corrections(
+            objects("learnedCorrections")
+                .map {
+                    val createdAtMs = it.optLong("createdAtMs")
+                    LearnedCorrection(
+                        it.optString("id"),
+                        it.optString("original"),
+                        it.optString("corrected"),
+                        it.optString("applicationId"),
+                        createdAtMs,
+                        it.optDouble("confidence", 0.0),
+                        it.optBoolean("enabled", true),
+                        it.optInt("evidenceCount", 1),
+                        it.optLong("lastObservedAtMs", createdAtMs),
+                    )
+                }
+                .filter {
+                    it.id.isNotEmpty() && it.original.isNotBlank() && it.corrected.isNotBlank()
+                },
+            objects("correctionEvidence")
+                .map {
+                    PendingCorrection(
+                        it.optString("original"),
+                        it.optString("corrected"),
+                        it.optString("applicationId"),
+                        it.optInt("count"),
+                        it.optLong("firstObservedAtMs"),
+                        it.optLong("lastObservedAtMs"),
+                        it.optDouble("confidence", 0.0),
+                    )
+                }
+                .filter { it.original.isNotEmpty() && it.corrected.isNotEmpty() && it.count > 0 },
+        )
+
+    private fun learnedJson(corrections: List<LearnedCorrection>): String =
+        JSONArray(
+                corrections.map {
+                    JSONObject(
+                        mapOf(
+                            "id" to it.id,
+                            "original" to it.original,
+                            "corrected" to it.corrected,
+                            "applicationId" to it.applicationId,
+                            "createdAtMs" to it.createdAtMs,
+                            "confidence" to it.confidence,
+                            "enabled" to it.enabled,
+                            "evidenceCount" to it.evidenceCount,
+                            "lastObservedAtMs" to it.lastObservedAtMs,
+                        )
+                    )
+                }
+            )
+            .toString()
+
+    private fun pendingJson(pending: List<PendingCorrection>): String =
+        JSONArray(
+                pending.map {
+                    JSONObject(
+                        mapOf(
+                            "original" to it.original,
+                            "corrected" to it.corrected,
+                            "applicationId" to it.applicationId,
+                            "count" to it.count,
+                            "firstObservedAtMs" to it.firstObservedAtMs,
+                            "lastObservedAtMs" to it.lastObservedAtMs,
+                            "confidence" to it.confidence,
+                        )
+                    )
                 }
             )
             .toString()

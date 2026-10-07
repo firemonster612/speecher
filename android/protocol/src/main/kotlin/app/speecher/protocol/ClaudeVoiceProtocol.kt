@@ -168,7 +168,7 @@ internal fun String.simplified(): String = buildString {
 
 // QChar::isSpace(): unlike Char.isWhitespace(), it includes NEL (U+0085) and excludes
 // U+001C..U+001F.
-private fun Char.isQtWhitespace(): Boolean =
+internal fun Char.isQtWhitespace(): Boolean =
     this in '\t'..'\r' || this == '\u0085' || Character.isSpaceChar(this)
 
 // Only ASCII letters fold, so "É" and "é" count as different terms.

@@ -5,6 +5,7 @@ import app.speecher.android.update.UpdateChannel
 import app.speecher.protocol.CustomCleanupLevel
 import app.speecher.protocol.CustomTone
 import app.speecher.protocol.ENGLISH_LANGUAGE
+import app.speecher.protocol.LearnedCorrection
 import app.speecher.protocol.OAuthProvider
 import app.speecher.protocol.ProviderFailureKind
 import app.speecher.protocol.RecognitionRule
@@ -423,6 +424,17 @@ data class SpeecherSettings(
      * stops recording; it does not delete what is kept.
      */
     val insightsEnabled: Boolean = true,
+    /**
+     * Watch the field after an insertion for the person's edit, and learn repeated corrections. On
+     * by default, as on the desktop.
+     */
+    val correctionLearningEnabled: Boolean = true,
+    /**
+     * Newest first. They apply whether or not learning is on. [SettingsStore.save] leaves them as
+     * stored, as the service may have learned one since; edit them with
+     * [SettingsStore.editCorrections].
+     */
+    val learnedCorrections: List<LearnedCorrection> = emptyList(),
 ) {
     /** Whether dictation transcribes with a server of the person's own, which needs no account. */
     val transcribesWithServer: Boolean
@@ -441,14 +453,6 @@ data class SpeecherSettings(
     fun withRefinement(provider: Provider, choice: RefinementChoice): SpeecherSettings =
         if (provider == Provider.Claude) copy(claudeRefinement = choice)
         else copy(chatGptRefinement = choice)
-
-    /**
-     * The words a dictation under [profile] uses, for both its speech hints and its refinement:
-     * those limited to no profile or to this one.
-     */
-    fun vocabularyFor(profile: WritingProfile): List<VocabularyWord> = vocabulary.filter {
-        it.profiles.isEmpty() || profile in it.profiles
-    }
 
     fun fastMode(provider: Provider): Boolean =
         if (provider == Provider.Claude) claudeFastMode else chatGptSpeed != OpenAiSpeed.Standard

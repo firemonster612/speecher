@@ -72,14 +72,12 @@ void CorrectionTracker::sample(const QString &windowText)
         cancel();
         return;
     }
-    if (*edited == m_window.original) {
+    const std::optional<CorrectionEvidence> evidence = *edited == m_window.original
+        ? std::nullopt
+        : analyzeCorrection(m_window.original, *edited);
+    if (!evidence) {
         m_lastEdited.clear();
         m_matchingSamples = 0;
-        return;
-    }
-    const std::optional<CorrectionEvidence> evidence = analyzeCorrection(m_window.original, *edited);
-    if (!evidence) {
-        cancel();
         return;
     }
     if (*edited == m_lastEdited) {

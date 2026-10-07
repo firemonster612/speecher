@@ -19,6 +19,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.platform.ComposeView
 import app.speecher.android.auth.TokenStore
 import app.speecher.android.dictation.ActiveDictation
+import app.speecher.android.dictation.CorrectionObserver
 import app.speecher.android.dictation.DictationEngine
 import app.speecher.android.dictation.DictationState
 import app.speecher.android.dictation.FailureReason
@@ -62,6 +63,21 @@ class SpeecherChipService : AccessibilityService() {
     private var placement = SpeecherSettings()
     private var passwordFocused = false
     private val refresh = Runnable { updateChip() }
+    private val corrections =
+        CorrectionObserver(
+            handler,
+            { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) },
+            { SettingsStore(this).correctionLearningEnabled() },
+            { on ->
+                serviceInfo = serviceInfo.apply {
+                    val textChanged = AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+                    eventTypes =
+                        if (on) eventTypes or textChanged else eventTypes and textChanged.inv()
+                }
+            },
+        ) { evidence, app ->
+            SettingsStore(this).recordCorrection(evidence, app)
+        }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -72,9 +88,18 @@ class SpeecherChipService : AccessibilityService() {
             swap.previousId?.let { softKeyboardController.switchToInputMethod(it) }
             swap.clear()
         }
+        // The keyboard is gone by the time the person edits what it inserted; this service is not.
+        ActiveDictation.watchCorrections = { window, app ->
+            handler.post { corrections.observe(window, app) }
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // Subscribed only while a field is watched; typing moves no keyboard.
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+            corrections.textChanged(event)
+            return
+        }
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED) {
             passwordFocused = event.source?.isPassword == true
         }
@@ -456,6 +481,8 @@ class SpeecherChipService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        ActiveDictation.watchCorrections = null
+        corrections.cancel()
         handler.removeCallbacks(refresh)
         removeChip()
         owner.destroy()

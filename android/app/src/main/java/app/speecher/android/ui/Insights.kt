@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -29,12 +30,14 @@ import app.speecher.android.dictation.InsightsRange
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.dictation.insightTiles
 import app.speecher.android.dictation.summarize
+import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.LocalDateTime
 
 /**
  * The stats kept of inserted dictations, for a chosen period, and the controls over keeping them.
- * [onClear] deletes the history; [clearFailed] says the last attempt could not.
+ * [onClear] deletes the history; [clearFailed] says the last attempt could not. The learned
+ * corrections card stands for the desktop Home's; [onOpenCorrections] opens their page.
  */
 @Composable
 fun Insights(
@@ -43,6 +46,8 @@ fun Insights(
     onChange: (SpeecherSettings) -> Unit,
     onClear: () -> Unit,
     clearFailed: Boolean,
+    chipEnabled: Boolean,
+    onOpenCorrections: () -> Unit,
     today: LocalDate = LocalDate.now(),
 ) {
     when {
@@ -60,6 +65,12 @@ fun Insights(
             )
         else -> Stats(records, today)
     }
+    LearnedCorrectionsCard(
+        settings.learnedCorrections.size,
+        settings.correctionLearningEnabled,
+        chipEnabled,
+        onOpenCorrections,
+    )
     Section("Insights settings")
     ListItem(
         headlineContent = { Text("Keep insights about your dictation") },
@@ -72,6 +83,56 @@ fun Insights(
         colors = rowColors(),
     )
     ClearHistory(onClear, clearFailed)
+}
+
+/**
+ * How many corrections were learned and how learning stands, the desktop's Home card. Its action
+ * opens the corrections page, whether to review them or to turn learning on there.
+ */
+@Composable
+private fun LearnedCorrectionsCard(
+    count: Int,
+    learningOn: Boolean,
+    chipEnabled: Boolean,
+    onOpen: () -> Unit,
+) {
+    val note =
+        when {
+            !learningOn -> "Learning is off."
+            !chipEnabled -> "Turn on the dictation button to learn corrections."
+            count == 0 -> "Fix a dictated word the same way twice and it appears here."
+            else -> "Speecher learned these from edits you made after dictating."
+        }
+    val action =
+        when {
+            !learningOn -> "Turn on learning"
+            count == 0 -> null
+            else -> "Review learned corrections"
+        }
+    Card(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Learned corrections", style = MaterialTheme.typography.titleMedium)
+            // Nothing learned yet is said by the note alone, not by a big 0.
+            if (count > 0) {
+                Text(
+                    NumberFormat.getIntegerInstance().format(count),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                Text(
+                    if (count == 1) "Correction learned" else "Corrections learned",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                note,
+                Modifier.padding(top = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            action?.let { FilledTonalButton(onOpen, Modifier.padding(top = 12.dp)) { Text(it) } }
+        }
+    }
 }
 
 @Composable
@@ -199,7 +260,9 @@ private fun InsightsPreview(
             {},
             {},
             clearFailed,
-            previewToday,
+            chipEnabled = true,
+            onOpenCorrections = {},
+            today = previewToday,
         )
     }
 }

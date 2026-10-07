@@ -17,7 +17,7 @@ data class Replacement(val phrase: String, val text: String)
 private data class Word(val text: String, val start: Int, val end: Int)
 
 /** Letters and numbers make words; anything else, punctuation included, separates them. */
-private fun Char.isWordPart(): Boolean =
+internal fun Char.isWordPart(): Boolean =
     isLetterOrDigit() ||
         category == CharCategory.LETTER_NUMBER ||
         category == CharCategory.OTHER_NUMBER
@@ -93,6 +93,31 @@ fun withVariablesFilled(rules: List<Replacement>, date: String, time: String): L
     rules.map {
         it.copy(text = it.text.replace("{date}", date).replace("{time}", time))
     }
+
+/**
+ * [rules], the person's own, then each enabled correction as a replacement: those learned in the
+ * app [applicationId] first, then those for every app. A phrase already claimed stays with its
+ * rule. A correction's text goes in as typed, braces and all, so fill [rules]' variables first. The
+ * desktop's activeBindings.
+ */
+fun withLearnedCorrections(
+    rules: List<Replacement>,
+    corrections: List<LearnedCorrection>,
+    applicationId: String,
+): List<Replacement> {
+    val claimed = rules.mapTo(mutableSetOf()) { normalizedPhrase(it.phrase) }
+    val learned =
+        corrections.filter {
+            it.enabled && it.applicationId.isNotEmpty() && sameTerm(it.applicationId, applicationId)
+        } + corrections.filter { it.enabled && it.applicationId.isEmpty() }
+    return rules +
+        learned
+            .filter {
+                val phrase = normalizedPhrase(it.original)
+                phrase.isNotEmpty() && claimed.add(phrase)
+            }
+            .map { Replacement(it.original, it.corrected) }
+}
 
 /**
  * [current] with the snippets of a JSON file after them: an array of objects with phrase or trigger

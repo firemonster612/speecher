@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher Android: learned corrections (mockup)</title>
+<style>
+  /* The app's light scheme, from android/app/src/main/java/app/speecher/android/ui/Theme.kt. */
+  :root {
+    --app-bg: #faf9f4;
+    --on-surface: #1c1b18;
+    --on-variant: #5f5c53;
+    --primary: #1f1f1f;
+    --on-primary: #f2f0e6;
+    --outline: #8c897f;
+    --outline-variant: #d6d3c7;
+    --card: #e3e1d7;
+    --tonal: #e6e3d8;
+    --font: Roboto, "Noto Sans", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 var(--font); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  .screens { display: flex; flex-wrap: wrap; gap: 24px; }
+  .screen { width: 340px; }
+  .caption { font-size: 13px; margin: 0 0 8px; opacity: .8; }
+  .phone {
+    width: 340px; height: 640px; overflow: hidden;
+    border: 1px solid var(--outline-variant); border-radius: 20px;
+    background: var(--app-bg); color: var(--on-surface);
+    display: flex; flex-direction: column;
+  }
+  .status { height: 24px; flex: none; }
+  .appbar { height: 56px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 4px 0 4px; font-size: 20px; }
+  .appbar .back { width: 48px; height: 48px; border: 0; background: none; font-size: 22px; }
+  .body { flex: 1; overflow-y: auto; padding-bottom: 24px; }
+
+  .section { font-size: 14px; font-weight: 500; color: var(--primary); padding: 24px 16px 8px; }
+  .help { color: var(--on-variant); padding: 8px 16px; }
+  .row { display: flex; align-items: center; gap: 16px; padding: 10px 16px; min-height: 56px; }
+  .row.click { cursor: pointer; }
+  .row .text { flex: 1; min-width: 0; }
+  .row .head { font-size: 16px; }
+  .row .sub { color: var(--on-variant); }
+  .row.disabled .head, .row.disabled .sub-first { opacity: .38; }
+  .chev { color: var(--on-variant); font-size: 20px; }
+
+  .switch { flex: none; width: 52px; height: 32px; border-radius: 16px; border: 2px solid var(--outline);
+            background: var(--card); position: relative; padding: 0; }
+  .switch::after { content: ""; position: absolute; top: 6px; left: 6px; width: 16px; height: 16px;
+                   border-radius: 50%; background: var(--outline); transition: all .15s; }
+  .switch[aria-checked="true"] { background: var(--primary); border-color: var(--primary); }
+  .switch[aria-checked="true"]::after { left: 22px; top: 2px; width: 24px; height: 24px; background: var(--on-primary); }
+  .switch:disabled { opacity: .38; cursor: default; }
+
+  .icon-button { flex: none; width: 40px; height: 40px; border: 0; border-radius: 20px; background: none; font-size: 18px; color: var(--on-variant); }
+  .icon-button:hover { background: rgba(0,0,0,.06); }
+  .arrow { color: var(--on-variant); padding: 0 4px; }
+  .trailing { display: flex; align-items: center; gap: 4px; }
+
+  .buttons { display: flex; gap: 8px; padding: 16px; }
+  .outlined { border: 1px solid var(--outline); background: none; border-radius: 20px; height: 40px; padding: 0 24px; color: var(--primary); }
+  .outlined:disabled { opacity: .38; cursor: default; }
+  .tonal { border: 0; background: var(--tonal); border-radius: 20px; height: 40px; padding: 0 24px; }
+  .text-button { border: 0; background: none; color: var(--primary); font-weight: 500; height: 40px; padding: 0 12px; border-radius: 20px; }
+
+  .card { background: var(--card); border-radius: 12px; margin: 16px 16px 0; padding: 16px; }
+  .card .title { font-size: 16px; font-weight: 500; }
+  .card .label { font-size: 14px; font-weight: 500; color: var(--on-variant); }
+  .big { font-size: 28px; }
+  .small { font-size: 12px; color: var(--on-variant); }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px; }
+  .tiles .card { margin: 0; }
+
+  .flow { width: 100%; max-width: 728px; }
+  .flow ol { margin: 4px 0 0; padding-left: 20px; }
+  .flow li { margin: 4px 0; }
+  .flow code { font: 12px var(--font-mono, monospace); }
+  h2 { font-size: 15px; margin: 0 0 4px; }
+</style>
+</head>
+<body>
+
+<div class="screens">
+
+  <!-- 1. The Settings list gains one row, after Replacements & snippets. -->
+  <div class="screen">
+    <p class="caption">1. Settings: one new row under Dictation</p>
+    <div class="phone">
+      <div class="status"></div>
+      <div class="appbar"><button class="back">←</button>Settings</div>
+      <div class="body">
+        <div class="section">Dictation</div>
+        <div class="row"><div class="text"><div class="head">Transcription</div><div class="sub">Claude Voice</div></div><span class="chev">›</span></div>
+        <div class="row"><div class="text"><div class="head">Refinement</div><div class="sub">Claude, Haiku</div></div><span class="chev">›</span></div>
+        <div class="row"><div class="text"><div class="head">Dictation panel</div><div class="sub">Compact</div></div><span class="chev">›</span></div>
+        <div class="row"><div class="text"><div class="head">Vocabulary</div><div class="sub">12 words</div></div><span class="chev">›</span></div>
+        <div class="row"><div class="text"><div class="head">Replacements &amp; snippets</div><div class="sub">2 replacements</div></div><span class="chev">›</span></div>
+        <div class="row click" data-open="page"><div class="text"><div class="head">Learned corrections</div><div class="sub" id="summary">3 corrections</div></div><span class="chev">›</span></div>
+        <div class="section">App</div>
+        <div class="row"><div class="text"><div class="head">Setup assistant</div><div class="sub">Go through the first-run steps again.</div></div><span class="chev">›</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. The page: the desktop's toggle, list, help and Undo, as Compose rows. -->
+  <div class="screen">
+    <p class="caption">2. Learned corrections page (interactive)</p>
+    <div class="phone">
+      <div class="status"></div>
+      <div class="appbar"><button class="back">←</button>Learned corrections</div>
+      <div class="body">
+        <div class="row">
+          <div class="text"><div class="head">Learn corrections</div>
+            <div class="sub">After inserting text, briefly watch for your edits to it and learn repeated corrections.</div></div>
+          <button class="switch" role="switch" aria-checked="true" id="learn"></button>
+        </div>
+        <div class="help">Turn a correction off to stop using it.</div>
+        <div id="list"></div>
+        <div class="buttons"><button class="outlined" id="undo">Undo last correction</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Nothing learned yet. -->
+  <div class="screen">
+    <p class="caption">3. Nothing learned yet</p>
+    <div class="phone">
+      <div class="status"></div>
+      <div class="appbar"><button class="back">←</button>Learned corrections</div>
+      <div class="body">
+        <div class="row">
+          <div class="text"><div class="head">Learn corrections</div>
+            <div class="sub">After inserting text, briefly watch for your edits to it and learn repeated corrections.</div></div>
+          <button class="switch" role="switch" aria-checked="true"></button>
+        </div>
+        <div class="help">Turn a correction off to stop using it.</div>
+        <div class="row"><div class="text"><div class="head">No learned corrections yet</div>
+          <div class="sub">When you fix a dictated word the same way more than once, the correction appears here.</div></div></div>
+        <div class="buttons"><button class="outlined" disabled>Undo last correction</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. The dictation button (the accessibility service) is what sees edits. -->
+  <div class="screen">
+    <p class="caption">4. Dictation button off: nothing can watch edits</p>
+    <div class="phone">
+      <div class="status"></div>
+      <div class="appbar"><button class="back">←</button>Learned corrections</div>
+      <div class="body">
+        <div class="row disabled">
+          <div class="text"><div class="head">Learn corrections</div>
+            <div class="sub sub-first">After inserting text, briefly watch for your edits to it and learn repeated corrections.</div>
+            <div class="sub">Turn on the dictation button to learn corrections.</div>
+            <button class="text-button" style="margin-left:-12px">Turn on</button></div>
+          <button class="switch" role="switch" aria-checked="true" disabled></button>
+        </div>
+        <div class="help">Turn a correction off to stop using it.</div>
+        <div class="row"><div class="text"><div class="head">Speecher</div><div class="sub">Heard “speaker” · Slack</div><div class="sub">Learned automatically · confidence 75%</div></div>
+          <div class="trailing"><button class="switch" role="switch" aria-checked="true"></button><button class="icon-button">✕</button></div></div>
+        <div class="buttons"><button class="outlined">Undo last correction</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. The desktop's Home card, on Android's Insights page, which is where Home's stats live. -->
+  <div class="screen">
+    <p class="caption">5. Insights: the desktop's Home card, learning on and learning off</p>
+    <div class="phone">
+      <div class="status"></div>
+      <div class="appbar"><button class="back">←</button>Insights</div>
+      <div class="body">
+        <div class="section">Your dictation</div>
+        <div class="tiles">
+          <div class="card"><div class="label">Words</div><div class="big">4,812</div></div>
+          <div class="card"><div class="label">Dictations</div><div class="big">213</div></div>
+        </div>
+        <div class="card">
+          <div class="title">Learned corrections</div>
+          <div class="big">3</div>
+          <div class="small">Corrections learned</div>
+          <div class="small" style="margin-top:8px">Speecher learned these from edits you made after dictating.</div>
+          <div style="margin-top:12px"><button class="tonal">Review learned corrections</button></div>
+        </div>
+        <div class="card">
+          <div class="title">Learned corrections</div>
+          <div class="small" style="margin-top:8px">Learning is off.</div>
+          <div style="margin-top:12px"><button class="tonal">Turn on learning</button></div>
+        </div>
+        <div class="section">Insights settings</div>
+        <div class="row"><div class="text"><div class="head">Keep insights about your dictation</div></div>
+          <button class="switch" role="switch" aria-checked="true"></button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow">
+    <h2>How a correction is learned and surfaced</h2>
+    <ol>
+      <li>Insert sends “ping the team on speaker today” into the field. Just before the commit, the keyboard reads up to 24 characters on each side of the cursor.</li>
+      <li>The panel switches back to the person's keyboard as it does now. The dictation button's service reads the field from 2 s after Insert, every 2.5 s, for 30 s. Two matching readings with an edit (“speaker” → “Speecher”) make one observation. When nothing follows the dictation, the end of the field pins it on that side.</li>
+      <li>Nothing appears in the moment, the same as on desktop: no toast, no panel message. A case-only fix such as “github” → “GitHub” is learned on the first observation. Any other fix needs to happen twice.</li>
+      <li>Once learned, the correction replaces the heard word in later dictations, its spelling goes to the speech service and refinement, and it shows on the page above and on Insights.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  const corrections = [
+    { heard: "speaker", corrected: "Speecher", app: "Slack", confidence: 75, on: true },
+    { heard: "github", corrected: "GitHub", app: "All apps", confidence: 98, on: true },
+    { heard: "cube control", corrected: "kubectl", app: "Termux", confidence: 75, on: false },
+  ];
+  const list = document.getElementById("list");
+  const undo = document.getElementById("undo");
+  const summary = document.getElementById("summary");
+  const learn = document.getElementById("learn");
+
+  function render() {
+    list.innerHTML = "";
+    if (corrections.length === 0) {
+      list.innerHTML = `<div class="row"><div class="text"><div class="head">No learned corrections yet</div>
+        <div class="sub">When you fix a dictated word the same way more than once, the correction appears here.</div></div></div>`;
+    }
+    corrections.forEach((c, i) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `<div class="text"><div class="head">${c.corrected}</div>
+          <div class="sub">Heard “${c.heard}” · ${c.app}</div>
+          <div class="sub">Learned automatically · confidence ${c.confidence}%</div></div>
+        <div class="trailing">
+          <button class="switch" role="switch" aria-checked="${c.on}" aria-label="Use ${c.corrected}"></button>
+          <button class="icon-button" aria-label="Remove ${c.corrected}">✕</button></div>`;
+      row.querySelector(".switch").onclick = () => { c.on = !c.on; render(); };
+      row.querySelector(".icon-button").onclick = () => { corrections.splice(i, 1); render(); };
+      list.appendChild(row);
+    });
+    undo.disabled = corrections.length === 0;
+    const n = corrections.length;
+    const count = n === 0 ? "No corrections" : n === 1 ? "1 correction" : `${n} corrections`;
+    summary.textContent = learn.getAttribute("aria-checked") === "true" ? count : `${count}, learning off`;
+  }
+  // The newest correction is first, as on the desktop, so Undo removes the top one.
+  undo.onclick = () => { corrections.shift(); render(); };
+  learn.onclick = () => {
+    learn.setAttribute("aria-checked", learn.getAttribute("aria-checked") === "true" ? "false" : "true");
+    render();
+  };
+  render();
+</script>
+</body>
+</html>
