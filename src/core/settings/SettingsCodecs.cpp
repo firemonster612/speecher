@@ -410,6 +410,27 @@ void SettingsCodecs::recordVocabularyUsage(const QString &text)
     VocabularySettingsCodec::recordUsage(m_settings, text);
 }
 
+QStringList SettingsCodecs::addVocabularyTerms(const QStringList &terms)
+{
+    QList<VocabularyEntry> entries = vocabularyEntries();
+    QStringList held;
+    for (const QString &term : terms) {
+        const QString cleaned = term.simplified();
+        const bool listed = std::any_of(entries.cbegin(), entries.cend(), [&cleaned](const VocabularyEntry &entry) {
+            return entry.term.compare(cleaned, Qt::CaseInsensitive) == 0;
+        });
+        if (listed) {
+            held.append(term);
+        } else {
+            entries.append({cleaned});
+        }
+    }
+    if (held.size() < terms.size()) {
+        setVocabularyEntries(entries);
+    }
+    return held;
+}
+
 AudioCaptureSettings SettingsCodecs::audioCaptureSettings() const
 {
     return normalizedAudioCaptureSettings({

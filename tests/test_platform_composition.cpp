@@ -1207,6 +1207,35 @@ private slots:
         settings.raw().clear();
     }
 
+    // Every argument after `vocabulary add` is a term; none is a dictation option.
+    void vocabularyAddIsAClientCommand()
+    {
+        const auto parse = [](QStringList arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("vocabulary")} + arguments,
+                                    {});
+        };
+        const CommandLineDecision decision =
+            parse({QStringLiteral("add"), QStringLiteral("FileTranscriptionSession"), QStringLiteral("Speecher CLI")});
+        QCOMPARE(decision.mode, LaunchMode::RunCli);
+        QCOMPARE(decision.ipcCommand, QStringLiteral("addVocabulary"));
+        QCOMPARE(decision.vocabularyTerms,
+                 QStringList({QStringLiteral("FileTranscriptionSession"), QStringLiteral("Speecher CLI")}));
+
+        std::ostringstream usage;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        for (const QStringList &mistake : {QStringList{},
+                                           QStringList{QStringLiteral("list")},
+                                           QStringList{QStringLiteral("add")},
+                                           QStringList{QStringLiteral("add"), QStringLiteral(" ")},
+                                           QStringList{QStringLiteral("add"), QStringLiteral("KWin"),
+                                                       QStringLiteral("--profile"), QStringLiteral("ai-coding")}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
+    }
+
     void quitIsAClientCommand()
     {
         const CommandLineDecision decision = parseCommandLine(

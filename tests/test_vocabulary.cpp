@@ -3,6 +3,8 @@
 #include "core/VocabularyLimit.h"
 #include "core/SettingsStore.h"
 
+#include <QSignalSpy>
+
 using namespace speecher;
 
 namespace {
@@ -167,6 +169,28 @@ private slots:
         // It opens but cannot be read.
         QCOMPARE(readVocabularyFile(QStringLiteral("/proc/self/mem")), std::nullopt);
 #endif
+    }
+
+    void addingTermsSkipsTheOnesAlreadyListed()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setVocabularyEntries({{QStringLiteral("KWin"), QStringLiteral("csv"), false, 3, 10}});
+        QSignalSpy added(&settings, &SettingsStore::vocabularyAdded);
+
+        QCOMPARE(settings.addVocabularyTerms({QStringLiteral("kwin"), QStringLiteral("  File   Session "),
+                                              QStringLiteral("file session")}),
+                 QStringList({QStringLiteral("kwin"), QStringLiteral("file session")}));
+        QCOMPARE(added.count(), 1);
+        const QList<VocabularyEntry> entries = settings.vocabularyEntries();
+        QCOMPARE(vocabularyTermsOf(entries), QStringList({QStringLiteral("KWin"), QStringLiteral("File Session")}));
+        QCOMPARE(entries.first().source, QStringLiteral("csv"));
+        QCOMPARE(entries.first().frequency, 3);
+        QCOMPARE(entries.last().source, QStringLiteral("manual"));
+        QVERIFY(entries.last().keyTerm);
+
+        QCOMPARE(settings.addVocabularyTerms({QStringLiteral("KWIN")}), QStringList({QStringLiteral("KWIN")}));
+        QCOMPARE(added.count(), 1);
     }
 
     void vocabularyMetadataPersistsImportsDeduplicatesAndTracksUsage()

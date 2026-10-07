@@ -187,7 +187,8 @@ public slots:
                           QLocalSocket *socket,
                           const QStringList &files = {},
                           const QString &writingProfile = {},
-                          const QString &spokenLanguage = {});
+                          const QString &spokenLanguage = {},
+                          const QStringList &terms = {});
 
 signals:
     void stateChanged(const QString &stateName);
