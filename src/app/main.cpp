@@ -36,6 +36,7 @@
 #include <QThread>
 #endif
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QIcon>
 #include <QSettings>
@@ -49,8 +50,12 @@
 #include <QTimer>
 #include <QMutex>
 
+#include <atomic>
+#include <csignal>
 #include <cstdio>
 #include <iostream>
+#include <optional>
+#include <thread>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #else
@@ -178,6 +183,75 @@ static bool stderrIsTerminal()
 }
 #endif
 
+// Set by Ctrl-C, or a line on stdin, while `speecher listen` records.
+static std::atomic<bool> g_listenStopRequested{false};
+
+#ifdef Q_OS_WIN
+static BOOL WINAPI stopListeningOnCtrlC(DWORD event)
+{
+    if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT) {
+        return FALSE;
+    }
+    // The second one ends the process as usual.
+    return !g_listenStopRequested.exchange(true);
+}
+
+static bool readStdinByte(char *byte)
+{
+    DWORD read = 0;
+    return ReadFile(GetStdHandle(STD_INPUT_HANDLE), byte, 1, &read, nullptr) && read == 1;
+}
+#else
+static void stopListeningOnSigint(int)
+{
+    g_listenStopRequested = true;
+    // The second one ends the process as usual.
+    std::signal(SIGINT, SIG_DFL);
+}
+
+static bool readStdinByte(char *byte)
+{
+    return ::read(STDIN_FILENO, byte, 1) == 1;
+}
+#endif
+
+// Ctrl-C and Enter end the recording rather than the process, so what was
+// said is still transcribed. stdin is read raw on a thread of its own, since
+// the event loop cannot watch a Windows console; one that ends without a
+// line, such as /dev/null, stops nothing.
+static void installListenStopHandlers()
+{
+#ifdef Q_OS_WIN
+    SetConsoleCtrlHandler(stopListeningOnCtrlC, TRUE);
+#else
+    std::signal(SIGINT, stopListeningOnSigint);
+#endif
+    std::thread([] {
+        char byte = 0;
+        while (readStdinByte(&byte)) {
+            if (byte == '\n') {
+                g_listenStopRequested = true;
+                return;
+            }
+        }
+    }).detach();
+}
+
+// macOS may ask the first time, and answers once the event loop runs.
+static bool microphoneAccessGranted(const PlatformComposition &platform, QObject *context)
+{
+    std::optional<bool> granted;
+    QEventLoop loop;
+    platform.requestMicrophoneAccess(context, [&](bool answer) {
+        granted = answer;
+        loop.quit();
+    });
+    if (!granted) {
+        loop.exec();
+    }
+    return *granted;
+}
+
 #ifdef Q_OS_LINUX
 static QString kdeWidgetStyle()
 {
@@ -271,6 +345,25 @@ int main(int argc, char **argv)
         registerProviders(providers, settings.secrets(), &localModels);
         return runHeadlessTranscribe(decision.transcribeFiles, decision.headless, &settings, &providers,
                                      std::cout, std::cerr, stderrIsTerminal());
+    }
+    if (decision.mode == LaunchMode::ListenHeadless) {
+        // As transcribe: its own microphone and providers, beside whatever a
+        // running instance is doing.
+        QCoreApplication app(argc, argv);
+        SettingsStore settings;
+        LocalModelStore localModels;
+        ProviderRegistry providers;
+        registerProviders(providers, settings.secrets(), &localModels);
+        if (!microphoneAccessGranted(*platform, &app)) {
+            std::cerr << "Microphone access is off for this terminal. Allow it under Privacy & Security > "
+                         "Microphone, then try again.\n";
+            return 1;
+        }
+        AudioInput *microphone = platform->createAudioInput(&settings, &app);
+        installListenStopHandlers();
+        return runHeadlessListen(decision.headless, decision.untilSilenceMs, microphone,
+                                 [] { return g_listenStopRequested.load(); }, &settings, &providers, std::cout,
+                                 std::cerr);
     }
 
 #ifdef SPEECHER_WITH_WINUI

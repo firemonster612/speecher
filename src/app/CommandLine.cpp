@@ -12,6 +12,7 @@
 #include <QFileInfo>
 #include <QProcess>
 
+#include <functional>
 #include <iostream>
 
 namespace speecher {
@@ -93,6 +94,11 @@ QStringList absolutePaths(const QStringList &paths)
     return absolute;
 }
 
+// How long `listen --until-silence` waits without speech when given no
+// seconds, and the most it takes.
+constexpr double kDefaultUntilSilenceSeconds = 2;
+constexpr int kMaxUntilSilenceSeconds = 3600;
+
 const char kHelp[] = R"(Usage: speecher [command] [options]
 
 Commands (sent to the running Speecher):
@@ -122,6 +128,17 @@ Transcribe without a window, printing the results:
   --raw                    print and save the raw transcript, not the refined one
   --json                   print one JSON object per file, then a summary
   Exit status: 0 all files transcribed, 1 some failed, 2 usage error.
+
+Record from the microphone once and print what was said:
+  speecher listen [options]
+  --until-silence [seconds]
+                           also stop after this much silence once speech has
+                           started (default 2); Enter and Ctrl-C always stop,
+                           keeping what was said
+  Takes --model, --no-vocabulary, --refine, --cleanup, --profile, --tone,
+  --language, --raw and --json as transcribe does; --json prints one object.
+  Exit status: 0 transcript printed, 1 failed or heard no speech, 2 usage
+  error.
 
 Options:
   --format plain|html      output format for toggle and start
@@ -322,6 +339,74 @@ QStringList sessionOverrideArguments(const SessionOverrides &overrides)
     return arguments;
 }
 
+// The argument after index, which it moves past, or nothing at the end.
+std::optional<QString> takeValue(const QStringList &arguments, qsizetype &index)
+{
+    if (index + 1 < arguments.size()) {
+        return arguments.at(++index);
+    }
+    return std::nullopt;
+}
+
+// Reads one of the choices transcribe and listen share into options, taking
+// its value from value(). Returns false for an option that is not one of them;
+// sets error for a usage mistake.
+bool readSharedChoice(const QString &argument,
+                      const std::function<std::optional<QString>()> &value,
+                      HeadlessTranscribeOptions &options,
+                      QString *error)
+{
+    const auto choice = [&](const CliNames &choices, std::optional<QString> *target) {
+        const std::optional<QString> given = value();
+        if (!given) {
+            *error = QStringLiteral("%1 requires a value").arg(argument);
+            return;
+        }
+        *target = storedId(choices, *given);
+        if (!*target) {
+            *error = QStringLiteral("Unknown %1 value: %2 (expected %3)")
+                         .arg(argument, *given, cliNames(choices).join(QStringLiteral(", ")));
+        }
+    };
+    if (argument == QStringLiteral("--no-vocabulary")) {
+        options.applyVocabulary = false;
+    } else if (argument == QStringLiteral("--raw")) {
+        options.raw = true;
+    } else if (argument == QStringLiteral("--json")) {
+        options.json = true;
+    } else if (argument == QStringLiteral("--model") || argument == QStringLiteral("--refine")) {
+        // Checked against the registry once it exists; this only reads it.
+        const std::optional<QString> given = value();
+        if (!given) {
+            *error = QStringLiteral("%1 requires a value").arg(argument);
+        } else {
+            (argument == QStringLiteral("--model") ? options.speechProviderId
+                                                   : options.refinementProviderId) = given->toLower();
+        }
+    } else if (argument == QStringLiteral("--cleanup")) {
+        choice(cleanupNames(), &options.cleanupStrength);
+    } else if (argument == QStringLiteral("--profile")) {
+        const std::optional<QString> given = value();
+        if (!given) {
+            *error = QStringLiteral("--profile requires a value");
+        } else {
+            options.writingProfile = writingProfileNamed(*given, error);
+        }
+    } else if (argument == QStringLiteral("--language")) {
+        const std::optional<QString> given = value();
+        if (!given) {
+            *error = QStringLiteral("--language requires a value");
+        } else {
+            options.spokenLanguage = spokenLanguageNamed(*given, error);
+        }
+    } else if (argument == QStringLiteral("--tone")) {
+        choice(toneNames(), &options.tone);
+    } else {
+        return false;
+    }
+    return true;
+}
+
 // Reads `speecher transcribe`'s arguments. Returns an error message for a
 // usage mistake.
 QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecision *decision)
@@ -349,59 +434,12 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
             continue;
         }
         headless = true;
-        const auto value = [&]() -> std::optional<QString> {
-            if (index + 1 < arguments.size()) {
-                return arguments.at(++index);
-            }
-            return std::nullopt;
-        };
-        const auto choice = [&](const CliNames &choices, std::optional<QString> *target) -> QString {
-            const std::optional<QString> given = value();
-            if (!given) {
-                return QStringLiteral("%1 requires a value").arg(argument);
-            }
-            *target = storedId(choices, *given);
-            return *target ? QString()
-                           : QStringLiteral("Unknown %1 value: %2 (expected %3)")
-                                 .arg(argument, *given, cliNames(choices).join(QStringLiteral(", ")));
-        };
+        const auto value = [&] { return takeValue(arguments, index); };
         QString error;
-        if (argument == QStringLiteral("--headless")) {
-        } else if (argument == QStringLiteral("--no-vocabulary")) {
-            options.applyVocabulary = false;
+        if (readSharedChoice(argument, value, options, &error)) {
+        } else if (argument == QStringLiteral("--headless")) {
         } else if (argument == QStringLiteral("--stdout")) {
             options.printTranscripts = true;
-        } else if (argument == QStringLiteral("--raw")) {
-            options.raw = true;
-        } else if (argument == QStringLiteral("--json")) {
-            options.json = true;
-        } else if (argument == QStringLiteral("--model") || argument == QStringLiteral("--refine")) {
-            // Checked against the registry once it exists; this only reads it.
-            const std::optional<QString> given = value();
-            if (!given) {
-                error = QStringLiteral("%1 requires a value").arg(argument);
-            } else {
-                (argument == QStringLiteral("--model") ? options.speechProviderId
-                                                       : options.refinementProviderId) = given->toLower();
-            }
-        } else if (argument == QStringLiteral("--cleanup")) {
-            error = choice(cleanupNames(), &options.cleanupStrength);
-        } else if (argument == QStringLiteral("--profile")) {
-            const std::optional<QString> given = value();
-            if (!given) {
-                error = QStringLiteral("--profile requires a value");
-            } else {
-                options.writingProfile = writingProfileNamed(*given, &error);
-            }
-        } else if (argument == QStringLiteral("--language")) {
-            const std::optional<QString> given = value();
-            if (!given) {
-                error = QStringLiteral("--language requires a value");
-            } else {
-                options.spokenLanguage = spokenLanguageNamed(*given, &error);
-            }
-        } else if (argument == QStringLiteral("--tone")) {
-            error = choice(toneNames(), &options.tone);
         } else if (argument == QStringLiteral("--output")) {
             const std::optional<QString> given = value();
             if (!given) {
@@ -438,6 +476,39 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         }
     }
     decision->mode = LaunchMode::TranscribeHeadless;
+    return {};
+}
+
+// Reads `speecher listen`'s arguments. Returns an error message for a usage
+// mistake.
+QString parseListenArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    for (qsizetype index = 0; index < arguments.size(); ++index) {
+        const QString argument = arguments.at(index);
+        QString error;
+        if (argument == QStringLiteral("--until-silence")) {
+            // The seconds are optional, and listen takes no other plain
+            // argument they could be mistaken for.
+            double seconds = kDefaultUntilSilenceSeconds;
+            if (index + 1 < arguments.size() && !arguments.at(index + 1).startsWith(QLatin1Char('-'))) {
+                bool ok = false;
+                seconds = arguments.at(++index).toDouble(&ok);
+                if (!ok || seconds <= 0 || seconds > kMaxUntilSilenceSeconds) {
+                    error = QStringLiteral("--until-silence takes seconds above 0 and up to %1, not %2")
+                                .arg(kMaxUntilSilenceSeconds)
+                                .arg(arguments.at(index));
+                }
+            }
+            decision->untilSilenceMs = int(seconds * 1000);
+        } else if (!readSharedChoice(argument, [&] { return takeValue(arguments, index); }, decision->headless,
+                                     &error)) {
+            error = QStringLiteral("Unknown listen option: %1").arg(argument);
+        }
+        if (!error.isEmpty()) {
+            return error;
+        }
+    }
+    decision->mode = LaunchMode::ListenHeadless;
     return {};
 }
 
@@ -481,8 +552,8 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     QString overrideError;
     SessionOverrides &overrides = decision.sessionOverrides;
     overrides.outputFormat = requestedOutputFormat(arguments, &overrideError);
-    // transcribe reads its own --profile and --language.
-    if (overrideError.isEmpty() && verb != QStringLiteral("transcribe")) {
+    // transcribe and listen read their own --profile and --language.
+    if (overrideError.isEmpty() && verb != QStringLiteral("transcribe") && verb != QStringLiteral("listen")) {
         overrides.writingProfile = requestedWritingProfile(arguments, &overrideError);
         if (overrideError.isEmpty()) {
             overrides.spokenLanguage = spokenLanguageOption(arguments, &overrideError);
@@ -530,6 +601,14 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
         if (decision.mode == LaunchMode::TranscribeHeadless) {
             return decision;
         }
+    } else if (verb == QStringLiteral("listen")) {
+        const QString error = parseListenArguments(arguments.mid(2), &decision);
+        if (!error.isEmpty()) {
+            std::cerr << error.toStdString() << "\n\n"
+                      << helpText().toStdString();
+            return {LaunchMode::Exit, 2};
+        }
+        return decision;
     } else {
         QStringList files;
         for (const QString &argument : arguments.mid(1)) {

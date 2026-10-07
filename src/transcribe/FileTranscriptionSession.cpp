@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <utility>
 
 namespace speecher {
 namespace {
@@ -182,6 +183,41 @@ bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeO
     if (m_running || paths.isEmpty()) {
         return false;
     }
+    m_input = nullptr;
+    beginBatch(paths, options);
+    return true;
+}
+
+bool FileTranscriptionSession::startListening(AudioInput *input, const TranscribeOptions &options)
+{
+    if (m_running) {
+        return false;
+    }
+    m_input = input;
+    // There is no file to save the transcript beside.
+    TranscribeOptions listening = options;
+    listening.destination = TranscriptDestination::None;
+    beginBatch({QString()}, listening);
+    return true;
+}
+
+// QtAudioInput::stop() spins an event loop for the post-roll; the audio it
+// delivers meanwhile still counts, so the input only ends once it returns.
+void FileTranscriptionSession::finishListening()
+{
+    if (m_microphone != Microphone::Listening) {
+        return;
+    }
+    m_microphone = Microphone::Stopping;
+    m_input->stop();
+    m_microphone = Microphone::Off;
+    if (m_streaming && !m_sendTimer.isActive()) {
+        m_sendTimer.start();
+    }
+}
+
+void FileTranscriptionSession::beginBatch(const QStringList &paths, const TranscribeOptions &options)
+{
     m_paths = paths;
     m_options = options;
     m_batchSettings = m_settings->snapshot();
@@ -209,7 +245,6 @@ bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeO
     m_index = -1;
     emit batchStarted(paths.size());
     finishFile();
-    return true;
 }
 
 void FileTranscriptionSession::cancel()
@@ -229,6 +264,10 @@ void FileTranscriptionSession::startFile()
     m_transcript->clear();
     m_pcm.clear();
     emit fileStarted(m_index, m_current.path);
+    if (m_input) {
+        startMicrophone();
+        return;
+    }
 
     m_decoder = new QAudioDecoder(this);
     auto converter = std::make_shared<AudioPcmConverter>();
@@ -261,6 +300,39 @@ void FileTranscriptionSession::startFile()
     });
     m_decoder->setSource(QUrl::fromLocalFile(m_current.path));
     m_decoder->start();
+}
+
+// The microphone fills m_pcm as a decoder would, from before the providers
+// prepare, and the send timer keeps up with it once one is streaming.
+void FileTranscriptionSession::startMicrophone()
+{
+    connect(m_input, &AudioInput::audioChunk, this, [this](const QByteArray &pcm) {
+        if (m_microphone == Microphone::Off) {
+            return;
+        }
+        m_pcm += pcm;
+        if (m_streaming && !m_sendTimer.isActive()) {
+            m_sendTimer.start();
+        }
+    });
+    // As a dictation: a microphone that drops after it heard something still
+    // has those words transcribed.
+    connect(m_input, &AudioInput::failed, this, [this](const QString &message) {
+        if (m_pcm.isEmpty()) {
+            failFile(message);
+            return;
+        }
+        m_current.error = message;
+        finishListening();
+    });
+    m_microphone = Microphone::Listening;
+    QString error;
+    if (!m_input->start(&error)) {
+        m_microphone = Microphone::Off;
+        failFile(error);
+        return;
+    }
+    prepareProviders();
 }
 
 void FileTranscriptionSession::prepareProviders()
@@ -405,6 +477,7 @@ void FileTranscriptionSession::beginStreaming()
     if (attemptId != m_attemptId) {
         return;
     }
+    m_streaming = true;
     m_sendTimer.start();
 }
 
@@ -412,6 +485,10 @@ void FileTranscriptionSession::sendNextChunk()
 {
     if (m_sent >= m_pcm.size()) {
         m_sendTimer.stop();
+        // The microphone's next chunk starts the timer again.
+        if (m_microphone != Microphone::Off) {
+            return;
+        }
         m_inputFinished = true;
         m_transcriber->finishInput(m_attemptId);
         return;
@@ -617,6 +694,7 @@ void FileTranscriptionSession::releaseTranscriber()
         return;
     }
     disconnect(m_transcriber, nullptr, this, nullptr);
+    m_streaming = false;
     m_transcriber->cancelAttempt(m_attemptId++);
     m_transcriber->deleteLater();
     m_transcriber = nullptr;
@@ -634,6 +712,12 @@ void FileTranscriptionSession::releaseFileResources()
         m_decoder->deleteLater();
     }
     releaseTranscriber();
+    if (m_input) {
+        disconnect(m_input, nullptr, this, nullptr);
+        if (std::exchange(m_microphone, Microphone::Off) == Microphone::Listening) {
+            m_input->stop();
+        }
+    }
     if (m_refiner) {
         disconnect(m_refiner, nullptr, this, nullptr);
         m_refiner->cancel();

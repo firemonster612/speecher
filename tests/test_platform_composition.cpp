@@ -929,6 +929,49 @@ private slots:
                  2);
     }
 
+    // listen takes transcribe's choices and --until-silence, with or without
+    // its seconds; the --profile and --language it reads are its own.
+    void listenTakesTranscribesChoicesAndASilenceTimeout()
+    {
+        const auto parse = [](QStringList options) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("listen")} + options, {});
+        };
+
+        const CommandLineDecision decision =
+            parse({QStringLiteral("--until-silence"), QStringLiteral("1.5"), QStringLiteral("--refine"),
+                   QStringLiteral("none"), QStringLiteral("--profile"), QStringLiteral("ai-coding"),
+                   QStringLiteral("--language"), QStringLiteral("de"), QStringLiteral("--tone"),
+                   QStringLiteral("formal"), QStringLiteral("--raw"), QStringLiteral("--json")});
+        QCOMPARE(decision.mode, LaunchMode::ListenHeadless);
+        QCOMPARE(decision.untilSilenceMs, std::optional(1500));
+        QCOMPARE(decision.headless.refinementProviderId, std::optional(QStringLiteral("none")));
+        QCOMPARE(decision.headless.writingProfile, std::optional(QStringLiteral("ai_coding")));
+        QCOMPARE(decision.headless.spokenLanguage, std::optional(QStringLiteral("de")));
+        QCOMPARE(decision.headless.tone, std::optional(QStringLiteral("formal")));
+        QVERIFY(decision.headless.raw);
+        QVERIFY(decision.headless.json);
+        QVERIFY(!decision.sessionOverrides.writingProfile);
+        QVERIFY(!decision.sessionOverrides.spokenLanguage);
+
+        QCOMPARE(parse({}).mode, LaunchMode::ListenHeadless);
+        QCOMPARE(parse({}).untilSilenceMs, std::nullopt);
+        QCOMPARE(parse({QStringLiteral("--until-silence")}).untilSilenceMs, std::optional(2000));
+        QCOMPARE(parse({QStringLiteral("--until-silence"), QStringLiteral("--no-vocabulary")}).untilSilenceMs,
+                 std::optional(2000));
+
+        for (const QStringList &mistake : {QStringList{QStringLiteral("--until-silence"), QStringLiteral("soon")},
+                                           QStringList{QStringLiteral("--until-silence"), QStringLiteral("0")},
+                                           QStringList{QStringLiteral("--until-silence"), QStringLiteral("7200")},
+                                           QStringList{QStringLiteral("--stdout")},
+                                           QStringList{QStringLiteral("--output"), QStringLiteral("none")},
+                                           QStringList{QStringLiteral("memo.wav")},
+                                           QStringList{QStringLiteral("--cleanup"), QStringLiteral("extreme")}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
+    }
+
     // A custom tone or level is named by its id without custom_, with - for _.
     void transcribeTakesCustomTonesAndLevels()
     {

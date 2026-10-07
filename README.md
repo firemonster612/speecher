@@ -216,6 +216,18 @@ speecher transcribe --json --output none a.wav b.wav     # one JSON object per f
 
 `--model` picks the speech provider, `--refine` the refinement provider (or `none`), `--cleanup` the cleanup level (`none`, `light`, `medium`, `high`), `--profile` a writing profile whose saved cleanup and tone seed the run, `--tone` a tone, and `--language` the Spoken Language (a code such as `de`, or `auto`). `--no-vocabulary` skips custom vocabulary, `--raw` prints and saves the unrefined transcript. Unset choices come from your settings. The exit status is 0 when every file was transcribed and saved, 1 when any failed or could not be saved, and 2 for a usage error. `speecher --help` lists every option. The run reads the same settings and sign-in stores as a running Speecher, the way the Codex and Claude CLIs share theirs, so a token it refreshes is the one the app uses next.
 
+### Voice input from the terminal
+
+`speecher listen` records from the microphone once and prints the transcript to stdout, so a script or a coding agent can take spoken input. Progress and errors go to stderr. Enter or Ctrl-C stops the recording and keeps what was said; `--until-silence [seconds]` also stops it after that much silence once you have started speaking (2 seconds when no number is given). An agent has no key to press, so it needs `--until-silence`.
+
+```sh
+git commit -m "$(speecher listen --until-silence)"
+speecher listen --until-silence 2 --refine none   # no refinement
+speecher listen --json --profile ai-coding        # one JSON object with the text
+```
+
+It takes the same `--model`, `--refine`, `--cleanup`, `--profile`, `--tone`, `--language`, `--no-vocabulary`, `--raw` and `--json` choices as `transcribe`, with unset ones from your settings. Like `transcribe`, it runs in the calling process with its own microphone and provider connections, so it works while Speecher is running and even while it is dictating. Silence is judged by the Skip silence threshold in your microphone settings. The exit status is 0 when a transcript was printed, 1 when it failed or heard no speech, and 2 for a usage error.
+
 On Linux, Speecher uses one window with a KDE-style sidebar, searchable settings pages, and dictation controls; `speecher settings` opens it on General settings. On macOS, Speecher is a menu bar app: dictation lives in the menu bar item and a floating panel, and settings open in a native window from the menu bar, the Dock, or ⌘,.
 On Windows, Speecher uses a WinUI 3 settings window, a notification-area icon,
 and a non-activating dictation panel.

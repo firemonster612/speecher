@@ -24,6 +24,9 @@ enum class LaunchMode {
     // `speecher transcribe` with options: transcribe the files in this
     // process without a window, print the results and quit.
     TranscribeHeadless,
+    // `speecher listen`: record from the microphone in this process, print
+    // the transcript and quit.
+    ListenHeadless,
 };
 
 struct CommandLineDecision {
@@ -42,7 +45,10 @@ struct CommandLineDecision {
     // file manager's "Open with" passes). TranscribeHeadless: the files to
     // transcribe.
     QStringList transcribeFiles;
+    // TranscribeHeadless and ListenHeadless: the choices for the run.
     HeadlessTranscribeOptions headless;
+    // ListenHeadless: stop after this long without speech once there was some.
+    std::optional<int> untilSilenceMs;
 };
 
 // Decides what the process is for, before any GUI type is constructed, so that
