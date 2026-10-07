@@ -3,6 +3,7 @@
 
 #include "app/HeadlessTranscribe.h"
 #include "core/SettingsStore.h"
+#include "core/VocabularyLimit.h"
 #include "dictation/DictationSession.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/Subtitles.h"
@@ -247,11 +248,13 @@ private slots:
                                                return new ScriptedTranscriber(&m_script, parent);
                                            });
         m_refinedWith.clear();
+        m_refinedVocabulary.clear();
         m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
                                                [this](QObject *parent) {
                                                    auto *refiner = new FakeRefiner(parent);
                                                    connect(refiner, &TranscriptRefiner::completed, this, [this, refiner] {
                                                        m_refinedWith = {refiner->lastStyle, refiner->lastTone};
+                                                       m_refinedVocabulary = refiner->lastVocabulary;
                                                    });
                                                    refiner->autoComplete = true;
                                                    refiner->autoCompleteText = QStringLiteral("Heard it.");
@@ -887,6 +890,125 @@ private slots:
         QVERIFY(m_script.vocabulary.isEmpty());
     }
 
+    // A term only the run adds reaches the speech provider ahead of the saved
+    // ones, and refinement, while the saved vocabulary stays as it was.
+    void addedVocabularyIsForThisBatchOnly()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setVocabularyEntries({{QStringLiteral("Speecher")}});
+        const QList<VocabularyEntry> saved = settings.vocabularyEntries();
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+        options.addedVocabulary = {QStringLiteral("readSharedChoice")};
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        QCOMPARE(m_script.vocabulary, QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher")}));
+        QVERIFY(m_refinedVocabulary.contains(QStringLiteral("readSharedChoice")));
+        QCOMPARE(settings.vocabularyEntries(), saved);
+    }
+
+    // A long file's terms lead the speech request and refinement in the
+    // file's order, ahead of a saved term with Priority and uses, as many as
+    // each takes, and the batch starts without delay.
+    void addedVocabularyLeadsInItsOwnOrder()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        VocabularyEntry favourite{QStringLiteral("Speecher")};
+        favourite.starred = true;
+        favourite.frequency = 5;
+        settings.setVocabularyEntries({favourite});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+        for (int index = 20000; index > 0; --index) {
+            options.addedVocabulary.append(QStringLiteral("term%1").arg(index));
+        }
+        QElapsedTimer elapsed;
+        elapsed.start();
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        // Gathering the terms used to take half a minute for this many.
+        QVERIFY(elapsed.elapsed() < 5000);
+
+        QCOMPARE(m_script.vocabulary, options.addedVocabulary.first(VocabularyLimit::maxKeyterms));
+        QCOMPARE(m_refinedVocabulary, options.addedVocabulary.first(VocabularyLimit::maxRefinementTerms));
+    }
+
+    // The run's terms and the saved ones are capped together: a saved term
+    // too long to follow a longer saved one still goes when the run's term
+    // leaves it room.
+    void addedVocabularySharesOneCapWithTheSavedTerms()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        const auto words = [](const QString &word, int count) {
+            return QStringList(count, word).join(QLatin1Char(' '));
+        };
+        VocabularyEntry longer{words(QStringLiteral("long"), 300)};
+        longer.frequency = 2;
+        VocabularyEntry shorter{words(QStringLiteral("short"), 250)};
+        shorter.frequency = 1;
+        SettingsStore settings;
+        settings.setVocabularyEntries({longer, shorter});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.addedVocabulary = {words(QStringLiteral("added"), 201)};
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        QCOMPARE(m_script.vocabulary, QStringList({options.addedVocabulary.first(), shorter.term}));
+    }
+
+    // Without the saved vocabulary only the run's terms go, and a run's term
+    // the saved list limits to another profile, or keeps from the speech
+    // service, goes anyway.
+    void addedVocabularyOverridesTheSavedEntry()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        VocabularyEntry elsewhere{QStringLiteral("readSharedChoice")};
+        elsewhere.profiles = {WritingProfile::Email};
+        elsewhere.keyTerm = false;
+        settings.setVocabularyEntries({{QStringLiteral("Speecher")}, elsewhere});
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+        options.writingProfile = WritingProfile::AiCoding;
+        options.addedVocabulary = {QStringLiteral("readSharedChoice")};
+
+        for (const bool applyVocabulary : {true, false}) {
+            FileTranscriptionSession session(&settings, m_registry.get());
+            QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+            options.applyVocabulary = applyVocabulary;
+            m_refinedVocabulary.clear();
+
+            QVERIFY(session.start({audio}, options));
+            QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+            const QStringList expected = applyVocabulary
+                ? QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher")})
+                : QStringList({QStringLiteral("readSharedChoice")});
+            QCOMPARE(m_script.vocabulary, expected);
+            QCOMPARE(m_refinedVocabulary, expected);
+        }
+    }
+
     void savingNowhereWritesNothingAndStillDelivers()
     {
         QTemporaryDir dir;
@@ -1214,6 +1336,7 @@ private:
     Script m_script;
     // Style and tone the last refinement ran with.
     QStringList m_refinedWith;
+    QStringList m_refinedVocabulary;
 };
 
 } // namespace

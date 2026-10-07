@@ -33,6 +33,7 @@ TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options, const
     TranscribeOptions resolved;
     resolved.speechProviderId = options.speechProviderId.value_or(settings.speech.providerId);
     resolved.applyVocabulary = options.applyVocabulary;
+    resolved.addedVocabulary = options.addedVocabulary;
     resolved.refinementProviderId = options.refinementProviderId.value_or(settings.refinement.providerId);
     resolved.writingProfile = options.writingProfile.value_or(settings.refinement.defaultWritingProfile);
     const WritingProfileSettings profile = writingProfileSettingsFor(

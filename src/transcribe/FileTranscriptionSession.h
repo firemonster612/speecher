@@ -38,6 +38,9 @@ enum class TranscriptDestination {
 struct TranscribeOptions {
     QString speechProviderId;
     bool applyVocabulary = true;
+    // Terms added to the custom vocabulary for this batch, even without
+    // applyVocabulary.
+    QStringList addedVocabulary;
     QString refinementProviderId = QStringLiteral("none");
     QString cleanupStrength = QStringLiteral("none");
     QString tone = QStringLiteral("none");

@@ -26,12 +26,15 @@ QStringList limited(const QStringList &terms)
     QSet<QString> seen;
     int tokens = 0;
     for (const QString &rawTerm : terms) {
+        if (result.size() >= maxKeyterms) {
+            break;
+        }
         const QString term = rawTerm.simplified();
         if (term.isEmpty() || seen.contains(term)) {
             continue;
         }
         const int termTokens = tokenCount(term);
-        if (termTokens <= 0 || result.size() >= maxKeyterms || tokens + termTokens > maxTokens) {
+        if (termTokens <= 0 || tokens + termTokens > maxTokens) {
             continue;
         }
         result << term;
