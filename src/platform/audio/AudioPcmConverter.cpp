@@ -90,6 +90,8 @@ QVector<float> decodeMonoSamples(const QByteArray &data, const QAudioFormat &for
     return samples;
 }
 
+} // namespace
+
 float rmsForPcm16(const QByteArray &pcm)
 {
     const int samples = pcm.size() / int(sizeof(qint16));
@@ -107,7 +109,10 @@ float rmsForPcm16(const QByteArray &pcm)
     return float(std::sqrt(sum / samples));
 }
 
-} // namespace
+bool isVoiced(float rms, int thresholdPercent)
+{
+    return rms >= float(thresholdPercent) / 100.0f;
+}
 
 void AudioPcmConverter::reset(const QAudioFormat &sourceFormat)
 {

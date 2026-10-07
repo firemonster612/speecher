@@ -2,6 +2,7 @@
 
 #include "core/SettingsStore.h"
 #include "core/Target.h"
+#include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
 #include "transcribe/TranscribePresentation.h"
 
@@ -44,6 +45,20 @@ TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options, const
     return resolved;
 }
 
+// Why a run cannot use the providers it resolved to, or empty when it can.
+QString unofferedProviderError(const TranscribeOptions &resolved, ProviderRegistry *providers)
+{
+    if (!offers(providers->speechProviders(), resolved.speechProviderId)) {
+        return QStringLiteral("Unknown speech provider: %1 (see speecher --help)").arg(resolved.speechProviderId);
+    }
+    if (resolved.refinementProviderId != QStringLiteral("none")
+        && !offers(providers->refinementProviders(), resolved.refinementProviderId)) {
+        return QStringLiteral("Unknown refinement provider: %1 (see speecher --help)")
+            .arg(resolved.refinementProviderId);
+    }
+    return {};
+}
+
 void writeJson(std::ostream &out, const QJsonObject &object)
 {
     out << QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString() << '\n';
@@ -82,13 +97,8 @@ int runHeadlessTranscribe(const QStringList &files,
         return finish(2, QStringLiteral("No audio files to transcribe"));
     }
     const TranscribeOptions resolved = resolveOptions(options, settings->snapshot());
-    if (!offers(providers->speechProviders(), resolved.speechProviderId)) {
-        return finish(2, QStringLiteral("Unknown speech provider: %1 (see speecher --help)").arg(resolved.speechProviderId));
-    }
-    if (resolved.refinementProviderId != QStringLiteral("none")
-        && !offers(providers->refinementProviders(), resolved.refinementProviderId)) {
-        return finish(2, QStringLiteral("Unknown refinement provider: %1 (see speecher --help)")
-                             .arg(resolved.refinementProviderId));
+    if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
+        return finish(2, error);
     }
     const bool refines = refinesTranscripts(resolved, settings->snapshot().refinement);
     // Saving happens here rather than in the session, so --raw can save what
@@ -220,6 +230,91 @@ int runHeadlessTranscribe(const QStringList &files,
         loop.exec();
     }
     return finish(failed > 0 ? 1 : 0);
+}
+
+int runHeadlessListen(const HeadlessTranscribeOptions &options,
+                      std::optional<int> untilSilenceMs,
+                      AudioInput *microphone,
+                      const std::function<bool()> &stopRequested,
+                      bool enterStops,
+                      SettingsStore *settings,
+                      ProviderRegistry *providers,
+                      std::ostream &out,
+                      std::ostream &err)
+{
+    // Every --json run prints one object, including one that never started.
+    const auto finish = [&](int exitCode, const QString &text, const QString &error) {
+        if (!error.isEmpty()) {
+            err << error.toStdString() << "\n";
+        }
+        if (options.json) {
+            QJsonObject object{{QStringLiteral("ok"), exitCode == 0}, {QStringLiteral("text"), text}};
+            if (!error.isEmpty()) {
+                object.insert(QStringLiteral("error"), error);
+            }
+            writeJson(out, object);
+        } else if (exitCode == 0) {
+            out << text.toStdString() << "\n";
+            out.flush();
+        }
+        return exitCode;
+    };
+    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot());
+    if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
+        return finish(2, {}, error);
+    }
+    if (!microphone) {
+        return finish(1, {},
+                      QStringLiteral("Microphone access is off for this terminal. Allow it under Privacy & Security "
+                                     "> Microphone, then try again."));
+    }
+
+    FileTranscriptionSession session(settings, providers);
+    QEventLoop loop;
+    TranscribeFileResult result;
+    QObject::connect(&session, &FileTranscriptionSession::fileRefining, &loop, [&] {
+        err << transcribePhaseLabel(TranscribePhase::Refining).toStdString() << "\n" << std::flush;
+    });
+    QObject::connect(&session, &FileTranscriptionSession::fileFinished, &loop,
+                     [&](int, const TranscribeFileResult &finished) { result = finished; });
+    QObject::connect(&session, &FileTranscriptionSession::batchFinished, &loop, [&] { loop.quit(); });
+
+    // Speech by Skip silence's threshold restarts the clock, which is not
+    // running until the first.
+    const int voiceThreshold = settings->audioCaptureSettings().vadThresholdPercent;
+    QElapsedTimer sinceSpeech;
+    QObject::connect(microphone, &AudioInput::audioChunk, &loop, [&](const QByteArray &pcm) {
+        if (isVoiced(rmsForPcm16(pcm), voiceThreshold)) {
+            sinceSpeech.start();
+        }
+    });
+    QTimer poll;
+    poll.setInterval(100);
+    QObject::connect(&poll, &QTimer::timeout, &loop, [&] {
+        const bool silent = untilSilenceMs && sinceSpeech.isValid() && sinceSpeech.elapsed() >= *untilSilenceMs;
+        if (!silent && !stopRequested()) {
+            return;
+        }
+        poll.stop();
+        err << transcribePhaseLabel(TranscribePhase::Finishing).toStdString() << "\n" << std::flush;
+        session.finishListening();
+    });
+
+    // Returns once the microphone is open, or the run has failed.
+    session.startListening(microphone, resolved);
+    if (session.isRunning()) {
+        const QString stopKeys = enterStops ? QStringLiteral("Enter or Ctrl-C") : QStringLiteral("Ctrl-C");
+        err << (untilSilenceMs ? QStringLiteral("Listening. Press %1 to stop, or pause for %2 s.")
+                                     .arg(stopKeys)
+                                     .arg(*untilSilenceMs / 1000.0)
+                               : QStringLiteral("Listening. Press %1 to stop.").arg(stopKeys))
+                   .toStdString()
+            << "\n"
+            << std::flush;
+        poll.start();
+        loop.exec();
+    }
+    return finish(result.failed() ? 1 : 0, shownTranscript(result, options.raw), result.error);
 }
 
 } // namespace speecher

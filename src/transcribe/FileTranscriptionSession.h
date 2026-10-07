@@ -91,8 +91,9 @@ void probeAudioDuration(const QString &path, QObject *receiver, std::function<vo
 // Returns the path written, or empty with error set.
 QString saveTranscript(const QString &audioPath, const QString &folder, const QString &text, QString *error);
 
-// Transcribes audio files one after another with fresh provider instances,
-// so a batch never shares a transcriber or refiner with live dictation.
+// Transcribes audio files one after another, or what a microphone hears,
+// with fresh provider instances, so a batch never shares a transcriber or
+// refiner with live dictation.
 class FileTranscriptionSession : public QObject {
     Q_OBJECT
 
@@ -103,6 +104,13 @@ public:
     bool isRunning() const;
     // False when a batch is already running or there is nothing to do.
     bool start(const QStringList &paths, const TranscribeOptions &options);
+    // Transcribes what input hears until finishListening(), as one file with
+    // no path that is never saved. Audio heard while the providers prepare waits for them, and a
+    // provider that fails before any reached it hands all of it to the next.
+    // False when a batch is already running.
+    bool startListening(AudioInput *input, const TranscribeOptions &options);
+    // Stops the microphone; what it heard is still transcribed and refined.
+    void finishListening();
     // Stops the current file, skips the rest and still emits batchFinished.
     void cancel();
 
@@ -119,7 +127,12 @@ signals:
     void batchFinished(const QList<speecher::TranscribeFileResult> &results, bool cancelled);
 
 private:
+    // Where the microphone is, for a batch started with startListening().
+    enum class Microphone { Off, Listening, Stopping };
+
+    void beginBatch(const QStringList &paths, const TranscribeOptions &options);
     void startFile();
+    void startMicrophone();
     void handleDecodedBuffer();
     void handleDecodeFinished();
     void prepareProviders();
@@ -155,11 +168,16 @@ private:
     int m_index = -1;
 
     QPointer<QAudioDecoder> m_decoder;
+    // The microphone a startListening() batch reads instead of a file.
+    QPointer<AudioInput> m_input;
+    Microphone m_microphone = Microphone::Off;
     QPointer<SpeechTranscriber> m_transcriber;
     QPointer<TranscriptRefiner> m_refiner;
     QByteArray m_pcm;
     qsizetype m_sent = 0;
     bool m_inputFinished = false;
+    // An attempt is open for the audio; false while a provider prepares.
+    bool m_streaming = false;
     quint64 m_attemptId = 0;
     quint64 m_preparationRevision = 0;
     int m_reconnectsLeft = 0;

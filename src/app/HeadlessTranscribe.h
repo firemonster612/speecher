@@ -4,16 +4,19 @@
 
 #include <QStringList>
 
+#include <functional>
 #include <iosfwd>
 #include <optional>
 
 namespace speecher {
 
+class AudioInput;
 class ProviderRegistry;
 class SettingsStore;
 
 // The choices `speecher transcribe` takes on its command line. Each unset one
 // comes from the user's settings, the way the Transcribe page seeds its form.
+// `speecher listen` takes the same, without the ones about files.
 struct HeadlessTranscribeOptions {
     std::optional<QString> speechProviderId;
     bool applyVocabulary = true;
@@ -46,5 +49,24 @@ int runHeadlessTranscribe(const QStringList &files,
                           std::ostream &out,
                           std::ostream &err,
                           bool errIsTerminal);
+
+// Records once from microphone, null when the user refused microphone access,
+// until stopRequested() turns true, or, with
+// untilSilenceMs, until that long passes without speech once speech was heard.
+// It is polled, so it may be set from a signal handler; enterStops says
+// whether pressing Enter sets it, for the hint. Then prints the
+// transcript to out, or with options.json one object with it, and progress
+// and failures to err. Like runHeadlessTranscribe it uses its own providers.
+// Returns 0 when it printed a transcript, 1 when it failed (hearing no speech
+// included), 2 for a provider the registry does not offer.
+int runHeadlessListen(const HeadlessTranscribeOptions &options,
+                      std::optional<int> untilSilenceMs,
+                      AudioInput *microphone,
+                      const std::function<bool()> &stopRequested,
+                      bool enterStops,
+                      SettingsStore *settings,
+                      ProviderRegistry *providers,
+                      std::ostream &out,
+                      std::ostream &err);
 
 } // namespace speecher

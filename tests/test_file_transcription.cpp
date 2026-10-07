@@ -9,6 +9,7 @@
 #include "transcribe/TranscribePresentation.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QMediaFormat>
 #include <QMimeDatabase>
 #include <QRegularExpression>
@@ -113,6 +114,17 @@ void writeWav(const QString &path)
     QFile file(path);
     QVERIFY(file.open(QIODevice::WriteOnly));
     file.write(wavBytes(data, rate, channels));
+}
+
+// 100 ms of 16 kHz mono s16 at one level, as a microphone delivers it: 0 is
+// silence, 8000 is well above Skip silence's default threshold.
+QByteArray microphoneChunk(qint16 level)
+{
+    QByteArray chunk;
+    for (int i = 0; i < 1600; ++i) {
+        chunk.append(reinterpret_cast<const char *>(&level), 2);
+    }
+    return chunk;
 }
 
 QString readFile(const QString &path)
@@ -648,6 +660,160 @@ private slots:
         QCOMPARE(finished.first().first().value<QList<TranscribeFileResult>>().first().error,
                  QStringLiteral("No speech service is available. ChatGPT Codex couldn't be reached and Custom "
                                 "Endpoint had a server error."));
+    }
+
+    // What the microphone hears while a provider prepares waits for it. One
+    // that never connected hands all of it, and what came meanwhile, to the
+    // next; once the microphone stops, nothing more is taken.
+    void listeningSendsEverythingHeardToTheProviderThatConnects()
+    {
+        FakeSpeechTranscriber *codex = nullptr;
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           [&codex](QObject *parent) {
+                                               codex = new FakeSpeechTranscriber(parent);
+                                               codex->autoCompleteOnFinish = false;
+                                               return codex;
+                                           });
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        FakeAudioInput microphone;
+        microphone.onStart = [&microphone] { microphone.pushAudio(microphoneChunk(8000)); };
+        TranscribeOptions options;
+        options.speechProviderId = QStringLiteral("codex");
+
+        QVERIFY(session.startListening(&microphone, options));
+        QVERIFY(microphone.active);
+        QTRY_VERIFY_WITH_TIMEOUT(codex && !codex->audioChunks.isEmpty(), 10000);
+        microphone.pushAudio(microphoneChunk(8000));
+        codex->emitFailure(QStringLiteral("offline"), false, QStringLiteral("connect"), ProviderFailureKind::Network);
+        microphone.pushAudio(microphoneChunk(8000));
+        QTRY_COMPARE_WITH_TIMEOUT(m_script.bytes, 9600, 10000);
+        microphone.pushAudio(microphoneChunk(0));
+        session.finishListening();
+        QVERIFY(!microphone.active);
+        microphone.pushAudio(microphoneChunk(8000));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        const TranscribeFileResult result = finished.first().first().value<QList<TranscribeFileResult>>().first();
+        QVERIFY2(result.error.isEmpty(), qPrintable(result.error));
+        QVERIFY(result.path.isEmpty());
+        QVERIFY(result.savedPath.isEmpty());
+        QCOMPARE(m_script.attempts, 1);
+        QCOMPARE(result.raw, QStringLiteral("heard 12800"));
+    }
+
+    // Stopping, as Enter and Ctrl-C do, keeps what was said and prints it.
+    void listenPrintsWhatWasSaidWhenStopped()
+    {
+        SettingsStore settings;
+        FakeAudioInput microphone;
+        bool stop = false;
+        microphone.onStart = [&] {
+            microphone.pushAudio(microphoneChunk(8000));
+            QTimer::singleShot(200, &microphone, [&] {
+                microphone.pushAudio(microphoneChunk(8000));
+                stop = true;
+            });
+        };
+        HeadlessTranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+        options.refinementProviderId = QStringLiteral("none");
+        std::ostringstream out;
+        std::ostringstream err;
+
+        QCOMPARE(runHeadlessListen(options, std::nullopt, &microphone, [&] { return stop; }, true, &settings,
+                                   m_registry.get(), out, err),
+                 0);
+        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("heard 6400\n"));
+        QVERIFY(!microphone.active);
+        QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("Press Enter or Ctrl-C to stop.")));
+
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+        options.json = true;
+        stop = false;
+        out.str({});
+        QCOMPARE(runHeadlessListen(options, std::nullopt, &microphone, [&] { return stop; }, true, &settings,
+                                   m_registry.get(), out, err),
+                 0);
+        QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
+                 QJsonObject({{QStringLiteral("ok"), true}, {QStringLiteral("text"), QStringLiteral("Heard it.")}}));
+    }
+
+    // --until-silence ends the recording once speech has started and gone
+    // quiet, and not during the silence before it.
+    void listenStopsAfterSilenceOnceSpeechStarted()
+    {
+        SettingsStore settings;
+        FakeAudioInput microphone;
+        microphone.onStart = [&microphone] {
+            for (int i = 0; i < 5; ++i) {
+                QTimer::singleShot(i * 100, &microphone, [&microphone] { microphone.pushAudio(microphoneChunk(0)); });
+            }
+            QTimer::singleShot(500, &microphone, [&microphone] { microphone.pushAudio(microphoneChunk(8000)); });
+        };
+        HeadlessTranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+        options.refinementProviderId = QStringLiteral("none");
+        std::ostringstream out;
+        std::ostringstream err;
+        // A run the silence never ends stops here, and fails the timing below.
+        QElapsedTimer clock;
+        clock.start();
+
+        QCOMPARE(runHeadlessListen(options, 300, &microphone, [&clock] { return clock.elapsed() > 3000; }, false,
+                                   &settings, m_registry.get(), out, err),
+                 0);
+        QVERIFY2(clock.elapsed() < 2500, qPrintable(QString::number(clock.elapsed())));
+        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("heard 19200\n"));
+        // Enter is not read here, so the hint leaves it out.
+        QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("Press Ctrl-C to stop, or pause for 0.3 s.")));
+    }
+
+    void listenFailsWithoutAMicrophoneOrAKnownProvider()
+    {
+        SettingsStore settings;
+        FakeAudioInput microphone;
+        microphone.startResult = false;
+        microphone.startError = QStringLiteral("No microphone was found.");
+        HeadlessTranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+        options.refinementProviderId = QStringLiteral("none");
+        options.json = true;
+        std::ostringstream out;
+        std::ostringstream err;
+        const auto run = [&] {
+            return runHeadlessListen(options, std::nullopt, &microphone, [] { return true; }, false, &settings,
+                                     m_registry.get(), out, err);
+        };
+
+        QCOMPARE(run(), 1);
+        QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
+                 QJsonObject({{QStringLiteral("ok"), false},
+                              {QStringLiteral("text"), QString()},
+                              {QStringLiteral("error"), QStringLiteral("No microphone was found.")}}));
+        QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("No microphone was found.")));
+
+        // Refused microphone access, which macOS asks about, fails the same way.
+        out.str({});
+        QCOMPARE(runHeadlessListen(options, std::nullopt, nullptr, [] { return true; }, false, &settings,
+                                   m_registry.get(), out, err),
+                 1);
+        const QJsonObject refused = QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object();
+        QCOMPARE(refused.value(QStringLiteral("ok")), QJsonValue(false));
+        QVERIFY(refused.value(QStringLiteral("error")).toString().startsWith(
+            QStringLiteral("Microphone access is off")));
+
+        microphone.startResult = true;
+        options.speechProviderId = QStringLiteral("nope");
+        out.str({});
+        QCOMPARE(run(), 2);
+        QVERIFY(!microphone.started);
+        QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("ok")),
+                 QJsonValue(false));
     }
 
     void numbersASaveThatWouldOverwrite()

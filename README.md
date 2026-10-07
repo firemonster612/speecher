@@ -220,6 +220,18 @@ On Linux, Speecher uses one window with a KDE-style sidebar, searchable settings
 On Windows, Speecher uses a WinUI 3 settings window, a notification-area icon,
 and a non-activating dictation panel.
 
+### Voice input from the terminal
+
+`speecher listen` records from the microphone once and prints the transcript to stdout, so a script or a coding agent can take spoken input. Progress and errors go to stderr. Ctrl-C, or Enter when stdin is a terminal, stops the recording and keeps what was said; `--until-silence [seconds]` also stops it after that much silence once you have started speaking (2 seconds when no number is given). An agent has no key to press, so it needs `--until-silence`. Piped stdin is left unread, so `listen` can run inside a `while read` loop.
+
+```sh
+git commit -m "$(speecher listen --until-silence)"
+speecher listen --until-silence 2 --refine none   # no refinement
+speecher listen --json --profile ai-coding        # one JSON object with the text
+```
+
+It takes the same `--model`, `--refine`, `--cleanup`, `--profile`, `--tone`, `--language`, `--no-vocabulary`, `--raw` and `--json` choices as `transcribe`, with unset ones from your settings. Like `transcribe`, it runs in the calling process with its own microphone and provider connections, so it works while Speecher is running and even while it is dictating. Silence is judged by the Skip silence threshold in your microphone settings. The exit status is 0 when a transcript was printed, 1 when it failed or heard no speech, and 2 for a usage error.
+
 ## Uninstall
 
 Remove Speecher's shortcut in your desktop's keyboard settings. If you added an AppImage to the app menu, delete `~/.local/bin/speecher`, `~/.local/share/applications/io.github.firemonster612.speecher.desktop`, and `~/.local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg`.

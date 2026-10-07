@@ -36,6 +36,7 @@
 #include <QThread>
 #endif
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QIcon>
 #include <QSettings>
@@ -49,11 +50,18 @@
 #include <QTimer>
 #include <QMutex>
 
+#include <atomic>
+#include <csignal>
 #include <cstdio>
+#include <cstdlib>
+#include <functional>
 #include <iostream>
+#include <optional>
+#include <thread>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #else
+#include <termios.h>
 #include <unistd.h>
 #endif
 
@@ -128,6 +136,14 @@ static QStringList commandLineArguments(int argc, char **argv)
 }
 
 #ifdef Q_OS_WIN
+// Whether a standard stream was left unset, rather than given a file, pipe or
+// console.
+static bool unredirected(DWORD stream)
+{
+    const HANDLE handle = GetStdHandle(stream);
+    return handle == nullptr || handle == INVALID_HANDLE_VALUE || GetFileType(handle) == FILE_TYPE_UNKNOWN;
+}
+
 // Speecher is a GUI-subsystem program, so a command-line run starts with no
 // console. Borrow the one it was started from, if any, and point stdout and
 // stderr at it unless they already go to a file or pipe. cmd.exe does not
@@ -137,10 +153,6 @@ static void attachParentConsole()
     if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
         return;
     }
-    const auto unredirected = [](DWORD stream) {
-        const HANDLE handle = GetStdHandle(stream);
-        return handle == nullptr || handle == INVALID_HANDLE_VALUE || GetFileType(handle) == FILE_TYPE_UNKNOWN;
-    };
     if (unredirected(STD_OUTPUT_HANDLE)) {
         std::freopen("CONOUT$", "w", stdout);
     }
@@ -177,6 +189,152 @@ static bool stderrIsTerminal()
     return isatty(fileno(stderr));
 }
 #endif
+
+// Set by Ctrl-C, or Enter at a terminal, while `speecher listen` records.
+static std::atomic<bool> g_listenStopRequested{false};
+
+#ifdef Q_OS_WIN
+static BOOL WINAPI stopListeningOnCtrlC(DWORD event)
+{
+    if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT) {
+        return FALSE;
+    }
+    // The second one ends the process as usual.
+    return !g_listenStopRequested.exchange(true);
+}
+
+// Reads stdin a byte at a time when it is a console. A GUI-subsystem program
+// is not handed the console attachParentConsole borrowed as its stdin, so that
+// one is opened by name; a launcher that passes its own handles hands it over.
+// Empty for a file, a pipe or no console.
+static std::function<bool(char *)> openTerminalInput()
+{
+    const HANDLE input = unredirected(STD_INPUT_HANDLE)
+        ? CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                      OPEN_EXISTING, 0, nullptr)
+        : GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    if (!GetConsoleMode(input, &mode)) {
+        return {};
+    }
+    return [input](char *byte) {
+        DWORD read = 0;
+        return ReadFile(input, byte, 1, &read, nullptr) && read == 1;
+    };
+}
+#else
+// The terminal's settings from before listen changed them, put back on every
+// way out. Saved before g_terminalChanged is set.
+static termios g_savedTerminal;
+static std::atomic<bool> g_terminalChanged{false};
+
+// Safe in a signal handler.
+static void restoreTerminal()
+{
+    if (g_terminalChanged) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &g_savedTerminal);
+    }
+}
+
+static void restoreTerminalAndEnd(int signal)
+{
+    restoreTerminal();
+    std::signal(signal, SIG_DFL);
+    std::raise(signal);
+}
+
+static void stopListeningOnSigint(int signal)
+{
+    // The second one ends the process as usual.
+    if (g_listenStopRequested.exchange(true)) {
+        restoreTerminalAndEnd(signal);
+    }
+}
+
+// Reads stdin a byte at a time when it is the terminal this process is in the
+// foreground of; a background run would be stopped for reading it. Turns off
+// the terminal's signal keys meanwhile: Ctrl-C's SIGINT goes to the whole
+// foreground process group, so the shell around `x="$(speecher listen)"`
+// would drop the line along with what was said. Empty otherwise.
+static std::function<bool(char *)> openTerminalInput()
+{
+    // Not a terminal, or one this process is in the background of.
+    if (tcgetpgrp(STDIN_FILENO) != getpgrp() || tcgetattr(STDIN_FILENO, &g_savedTerminal) != 0) {
+        return {};
+    }
+    g_terminalChanged = true;
+    std::atexit(restoreTerminal);
+    // SIGABRT covers an uncaught exception.
+    for (const int signal : {SIGTERM, SIGHUP, SIGABRT}) {
+        // One the parent ignores, as nohup does SIGHUP, stays ignored.
+        if (std::signal(signal, restoreTerminalAndEnd) == SIG_IGN) {
+            std::signal(signal, SIG_IGN);
+        }
+    }
+    termios terminal = g_savedTerminal;
+    // Without canonical mode Ctrl-C needs no Enter after it to be read.
+    terminal.c_lflag &= ~(ISIG | ICANON);
+    terminal.c_cc[VMIN] = 1;
+    terminal.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &terminal);
+    return [](char *byte) { return ::read(STDIN_FILENO, byte, 1) == 1; };
+}
+#endif
+
+// Ctrl-C and Enter end the recording rather than the process, so what was
+// said is still transcribed. Only a terminal's stdin is read for Enter: piped
+// input, such as a surrounding `while read` loop's, is left alone. It is read
+// raw on a thread of its own, since the event loop cannot watch a Windows
+// console. Returns whether Enter is read.
+static bool installListenStopHandlers()
+{
+#ifdef Q_OS_WIN
+    // A parent may have left Ctrl+C ignored, which would hide it from the handler.
+    SetConsoleCtrlHandler(nullptr, FALSE);
+    SetConsoleCtrlHandler(stopListeningOnCtrlC, TRUE);
+#else
+    std::signal(SIGINT, stopListeningOnSigint);
+#endif
+    const std::function<bool(char *)> readByte = openTerminalInput();
+    if (!readByte) {
+        return false;
+    }
+    // Read on after a stop, so a terminal's Ctrl-C can still end a slow
+    // transcription.
+    std::thread([readByte] {
+        char byte = 0;
+        while (readByte(&byte)) {
+            if (byte == '\n' || byte == '\r') {
+                g_listenStopRequested = true;
+            }
+#ifndef Q_OS_WIN
+            // Ctrl-C, which the terminal now hands over as a byte. The second
+            // one ends the process, with the status a shell gives SIGINT.
+            constexpr char kCtrlC = '\x03';
+            if (byte == kCtrlC && g_listenStopRequested.exchange(true)) {
+                restoreTerminal();
+                std::_Exit(128 + SIGINT);
+            }
+#endif
+        }
+    }).detach();
+    return true;
+}
+
+// macOS may ask the first time, and answers once the event loop runs.
+static bool microphoneAccessGranted(const PlatformComposition &platform, QObject *context)
+{
+    std::optional<bool> granted;
+    QEventLoop loop;
+    platform.requestMicrophoneAccess(context, [&](bool answer) {
+        granted = answer;
+        loop.quit();
+    });
+    if (!granted) {
+        loop.exec();
+    }
+    return *granted;
+}
 
 #ifdef Q_OS_LINUX
 static QString kdeWidgetStyle()
@@ -271,6 +429,21 @@ int main(int argc, char **argv)
         registerProviders(providers, settings.secrets(), &localModels);
         return runHeadlessTranscribe(decision.transcribeFiles, decision.headless, &settings, &providers,
                                      std::cout, std::cerr, stderrIsTerminal());
+    }
+    if (decision.mode == LaunchMode::ListenHeadless) {
+        // As transcribe: its own microphone and providers, beside whatever a
+        // running instance is doing.
+        QCoreApplication app(argc, argv);
+        SettingsStore settings;
+        LocalModelStore localModels;
+        ProviderRegistry providers;
+        registerProviders(providers, settings.secrets(), &localModels);
+        AudioInput *microphone =
+            microphoneAccessGranted(*platform, &app) ? platform->createAudioInput(&settings, &app) : nullptr;
+        const bool enterStops = installListenStopHandlers();
+        return runHeadlessListen(decision.headless, decision.untilSilenceMs, microphone,
+                                 [] { return g_listenStopRequested.load(); }, enterStops, &settings, &providers,
+                                 std::cout, std::cerr);
     }
 
 #ifdef SPEECHER_WITH_WINUI

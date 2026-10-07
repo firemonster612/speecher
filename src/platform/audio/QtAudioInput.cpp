@@ -603,7 +603,7 @@ void QtAudioInput::processOutputChunk(const QByteArray &pcm, float rms)
         return;
     }
 
-    const bool voiced = rms >= float(m_captureSettings.vadThresholdPercent) / 100.0f;
+    const bool voiced = isVoiced(rms, m_captureSettings.vadThresholdPercent);
     if (!m_vadSpeaking) {
         if (!voiced) {
             appendPreRoll(pcm);
