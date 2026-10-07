@@ -55,6 +55,8 @@ public:
     PhoneTransfer(const AppSettings &settings, const QStringList &addresses,
                   QObject *parent = nullptr);
 
+    ~PhoneTransfer() override;
+
     PhoneTransferState state() const { return m_state; }
     // What the QR code carries; empty unless Waiting.
     QString link() const;

@@ -77,16 +77,21 @@ bool isPrivateIPv4(const QHostAddress &address)
 }
 
 // Container and VM bridges report themselves as Ethernet, and a phone cannot
-// reach their addresses.
+// reach their addresses: Docker, Podman, libvirt, LXC/LXD/Incus, VirtualBox
+// and VMware on Linux, macOS's bridgeN, and Hyper-V and WSL's vEthernet on
+// Windows, which only its human-readable name shows.
 bool isVirtualBridge(const QNetworkInterface &interface)
 {
     static const QStringList prefixes{
-        QStringLiteral("docker"), QStringLiteral("br-"),     QStringLiteral("virbr"),
-        QStringLiteral("veth"),   QStringLiteral("vboxnet"), QStringLiteral("vmnet"),
+        QStringLiteral("docker"), QStringLiteral("br-"),    QStringLiteral("virbr"),
+        QStringLiteral("veth"),   QStringLiteral("podman"), QStringLiteral("cni-"),
+        QStringLiteral("lxcbr"),  QStringLiteral("lxdbr"),  QStringLiteral("incusbr"),
+        QStringLiteral("vboxnet"), QStringLiteral("vmnet"), QStringLiteral("bridge"),
     };
-    return std::any_of(prefixes.begin(), prefixes.end(), [&](const QString &prefix) {
-        return interface.name().startsWith(prefix);
-    });
+    return interface.humanReadableName().startsWith(QStringLiteral("vEthernet"))
+        || std::any_of(prefixes.begin(), prefixes.end(), [&](const QString &prefix) {
+               return interface.name().startsWith(prefix);
+           });
 }
 
 } // namespace
@@ -273,6 +278,13 @@ PhoneTransfer::PhoneTransfer(const AppSettings &settings, const QStringList &add
             serve(socket);
         }
     });
+}
+
+PhoneTransfer::~PhoneTransfer()
+{
+    // Destroying the server takes its sockets down, and one still sending
+    // would report an interruption from an object that is going away.
+    blockSignals(true);
 }
 
 QString PhoneTransfer::link() const

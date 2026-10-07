@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <array>
+#include <memory>
 
 using namespace speecher;
 
@@ -201,6 +202,34 @@ private slots:
         QTRY_COMPARE(transfer.state(), PhoneTransferState::Interrupted);
         QCOMPARE(transfer.link(), QString());
         QVERIFY(!phoneTransferText(settings, transfer.state()).steps.isEmpty());
+    }
+
+    // The dialog closes, and destroys its transfer, while a send is stuck.
+    // The sockets it takes down must not report the transfer's state from an
+    // object that is going away.
+    void closingDuringASendSaysNothing()
+    {
+        AppSettings settings;
+        VocabularyEntry large;
+        large.term = QStringLiteral("large");
+        large.context = QString(16 * 1024 * 1024, QLatin1Char('x'));
+        settings.vocabulary = {large};
+        auto transfer = std::make_unique<PhoneTransfer>(settings,
+                                                        QStringList{QStringLiteral("127.0.0.1")});
+        const LinkParts parts = partsOf(transfer->link());
+        int changes = 0;
+        QObject watcher;
+        QObject::connect(transfer.get(), &PhoneTransfer::stateChanged, &watcher,
+                         [&changes] { ++changes; });
+
+        QTcpSocket phone;
+        phone.setReadBufferSize(4);
+        QObject::connect(&phone, &QTcpSocket::connected, [&] { phone.write(parts.token); });
+        phone.connectToHost(QHostAddress::LocalHost, parts.port);
+        QTRY_VERIFY(phone.bytesAvailable() > 0);
+
+        transfer.reset();
+        QCOMPARE(changes, 0);
     }
 
     void connectionsBeyondTheCapAreClosedAtOnce()

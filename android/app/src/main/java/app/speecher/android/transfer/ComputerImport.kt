@@ -59,7 +59,8 @@ enum class ImportFailure(val title: String, val detail: String = "") {
     ),
     NoLocalNetwork(
         "Speecher can't reach your network",
-        "Allow Speecher to find nearby devices, then scan again.",
+        "Scan again and allow Speecher to find nearby devices. If Android no longer asks, Scan " +
+            "again opens Speecher's settings, where Nearby devices is under Permissions.",
     ),
 }
 
@@ -132,16 +133,17 @@ private val IPV4 = Regex("""(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})""")
  *
  * @throws ImportFailed when no address answers, or what comes back does not open or parse.
  */
-suspend fun fetchSettings(link: ImportLink): ComputerSettings {
-    val sealed = withContext(Dispatchers.IO) { fetchSealed(link) }
-    return try {
-        parseComputerSettings(String(openSealed(link.key, sealed), Charsets.UTF_8))
-    } catch (e: GeneralSecurityException) {
-        throw ImportFailed(ImportFailure.Unreadable, e)
-    } catch (e: JSONException) {
-        throw ImportFailed(ImportFailure.Unreadable, e)
+suspend fun fetchSettings(link: ImportLink): ComputerSettings =
+    withContext(Dispatchers.IO) {
+        val sealed = fetchSealed(link)
+        try {
+            parseComputerSettings(String(openSealed(link.key, sealed), Charsets.UTF_8))
+        } catch (e: GeneralSecurityException) {
+            throw ImportFailed(ImportFailure.Unreadable, e)
+        } catch (e: JSONException) {
+            throw ImportFailed(ImportFailure.Unreadable, e)
+        }
     }
-}
 
 private suspend fun fetchSealed(link: ImportLink): ByteArray = coroutineScope {
     var failure: IOException? = null

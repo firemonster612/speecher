@@ -52,6 +52,7 @@ import app.speecher.android.ui.ChipPosition
 import app.speecher.android.ui.ComputerImport
 import app.speecher.android.ui.ComputerImportViewModel
 import app.speecher.android.ui.Home
+import app.speecher.android.ui.ImportState
 import app.speecher.android.ui.Insights
 import app.speecher.android.ui.Onboarding
 import app.speecher.android.ui.SettingsPage
@@ -120,7 +121,18 @@ class MainActivity : ComponentActivity() {
     private var whatsNewFrom = Page.Home
     // Counts checks begun and channel changes, so only the latest check reports what it found.
     private var checkCount = 0
-    private var page by mutableStateOf(Page.Home)
+    private var shownPage by mutableStateOf(Page.Home)
+    // Leaving the import page by any route ends the import, so showing the page whenever an import
+    // is under way never brings back an old one.
+    private var page: Page
+        get() = shownPage
+        set(value) {
+            if (shownPage == Page.ComputerImport && value != Page.ComputerImport) {
+                computerImport.dismiss()
+            }
+            shownPage = value
+        }
+
     // Where leaving setup goes: Settings when its Setup assistant row opened it, otherwise Home.
     private var setupFrom = Page.Home
     // The page open from the Settings list, or null for the list itself.
@@ -165,8 +177,6 @@ class MainActivity : ComponentActivity() {
             page = Page.Settings
             settingsPage = SettingsPage.valueOf(it)
         }
-        // The import outlives a recreated activity, so its page comes back with it.
-        if (computerImport.state != null) page = Page.ComputerImport
         if (savedInstanceState == null) handleIntent(intent)
         setContent {
             SpeecherTheme {
@@ -184,6 +194,11 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(signIn.activeProvider) {
                     if (signIn.activeProvider != null) return@LaunchedEffect
                     if (signIn.error == null) returnFromSignIn() else signInFrom = null
+                }
+                // The import outlives the activity, so a recreated one, or one a scan finished
+                // behind, shows it too.
+                LaunchedEffect(computerImport.state != null) {
+                    if (computerImport.state != null) page = Page.ComputerImport
                 }
                 BackHandler(page != Page.Home, ::back)
                 when (page) {
@@ -215,14 +230,7 @@ class MainActivity : ComponentActivity() {
                                 { microphone.launch(Manifest.permission.RECORD_AUDIO) },
                                 { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                                 ::openAccessibilitySettings,
-                                {
-                                    startActivity(
-                                        Intent(
-                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                            Uri.fromParts("package", packageName, null),
-                                        )
-                                    )
-                                },
+                                ::openAppSettings,
                                 onFinish = ::leaveSetup,
                                 onUseServer = {
                                     changeSettings(
@@ -448,7 +456,7 @@ class MainActivity : ComponentActivity() {
         when {
             page == Page.ChipPosition -> page = Page.Settings
             page == Page.WhatsNew -> page = whatsNewFrom
-            page == Page.ComputerImport -> leaveImport()
+            page == Page.ComputerImport -> page = Page.Settings
             page == Page.Settings && settingsPage != null -> settingsPage = null
             page == Page.Setup -> leaveSetup()
             else -> page = Page.Home
@@ -463,23 +471,21 @@ class MainActivity : ComponentActivity() {
     // From Android 17 a socket to the computer's private address fails until the app holds this.
     private val localNetwork =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                startScanner()
-            } else {
-                computerImport.fail(ImportFailure.NoLocalNetwork)
-                page = Page.ComputerImport
-            }
+            if (granted) startScanner() else computerImport.fail(ImportFailure.NoLocalNetwork)
         }
 
     private fun scanComputerCode() {
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN &&
-                checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) !=
-                    PackageManager.PERMISSION_GRANTED
-        ) {
-            localNetwork.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
-        } else {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN) {
             startScanner()
+            return
+        }
+        val permission = Manifest.permission.ACCESS_LOCAL_NETWORK
+        when {
+            checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED -> startScanner()
+            // Denied twice, Android stops asking, so only Speecher's settings can allow it.
+            computerImport.state == ImportState.Failed(ImportFailure.NoLocalNetwork) &&
+                !shouldShowRequestPermissionRationale(permission) -> openAppSettings()
+            else -> localNetwork.launch(permission)
         }
     }
 
@@ -487,16 +493,22 @@ class MainActivity : ComponentActivity() {
     private fun startScanner() {
         val options =
             GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+        // The activity may be recreated before the scan ends, so its result goes to the import,
+        // which outlives it, never to this activity.
+        val retained = computerImport
         GmsBarcodeScanning.getClient(this, options)
             .startScan()
-            .addOnSuccessListener {
-                computerImport.importFrom(it.rawValue.orEmpty())
-                page = Page.ComputerImport
-            }
-            .addOnFailureListener {
-                computerImport.fail(ImportFailure.ScannerUnavailable)
-                page = Page.ComputerImport
-            }
+            .addOnSuccessListener { retained.importFrom(it.rawValue.orEmpty()) }
+            .addOnFailureListener { retained.fail(ImportFailure.ScannerUnavailable) }
+    }
+
+    private fun openAppSettings() {
+        startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", packageName, null),
+            )
+        )
     }
 
     private fun import(computer: ComputerSettings) {
@@ -510,11 +522,6 @@ class MainActivity : ComponentActivity() {
      */
     private fun merge(computer: ComputerSettings) {
         changeSettings(settingsStore.load().withImported(computer))
-        leaveImport()
-    }
-
-    private fun leaveImport() {
-        computerImport.dismiss()
         page = Page.Settings
     }
 

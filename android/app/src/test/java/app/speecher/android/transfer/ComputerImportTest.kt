@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -362,7 +363,8 @@ class ComputerImportTest {
                 runBlocking {
                     val fetch = launch(Dispatchers.IO) { fetchSettings(link) }
                     tokenSent.await()
-                    fetch.cancelAndJoin()
+                    // Well under the read timeout, so only closing the socket ends it in time.
+                    withTimeout(2_000) { fetch.cancelAndJoin() }
                 }
                 second.soTimeout = 100
                 assertThrows(SocketTimeoutException::class.java) { second.accept() }

@@ -125,5 +125,10 @@ lists every profile, built-in and custom; `name` is empty for a built-in.
   desktop does not use palette roles, because scanners read dark-on-light
   codes most reliably.
 - Phones without Google Play services cannot scan the code.
-- Learned corrections, per-app Writing Profile overrides and paste rules have
-  no counterpart on the phone and stay on the desktop; the dialog lists them.
+- On Android 17 and later the app needs the local network permission
+  (`ACCESS_LOCAL_NETWORK`, shown as Nearby devices) before any socket to the
+  computer's private address opens, so it asks before the first scan. Without
+  it the import page says so and opens the app's settings.
+- Learned corrections and app-specific paste rules have no counterpart on the
+  phone, and the desktop's application recognition rules name desktop apps.
+  All three stay on the desktop, and the dialog lists them.
