@@ -236,6 +236,7 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
                       std::optional<int> untilSilenceMs,
                       AudioInput *microphone,
                       const std::function<bool()> &stopRequested,
+                      bool enterStops,
                       SettingsStore *settings,
                       ProviderRegistry *providers,
                       std::ostream &out,
@@ -302,10 +303,11 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
     // Returns once the microphone is open, or the run has failed.
     session.startListening(microphone, resolved);
     if (session.isRunning()) {
-        err << (untilSilenceMs
-                    ? QStringLiteral("Listening. Press Enter or Ctrl-C to stop, or pause for %1 s.")
-                          .arg(*untilSilenceMs / 1000.0)
-                    : QStringLiteral("Listening. Press Enter or Ctrl-C to stop."))
+        const QString stopKeys = enterStops ? QStringLiteral("Enter or Ctrl-C") : QStringLiteral("Ctrl-C");
+        err << (untilSilenceMs ? QStringLiteral("Listening. Press %1 to stop, or pause for %2 s.")
+                                     .arg(stopKeys)
+                                     .arg(*untilSilenceMs / 1000.0)
+                               : QStringLiteral("Listening. Press %1 to stop.").arg(stopKeys))
                    .toStdString()
             << "\n"
             << std::flush;

@@ -724,18 +724,19 @@ private slots:
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessListen(options, std::nullopt, &microphone, [&] { return stop; }, &settings,
+        QCOMPARE(runHeadlessListen(options, std::nullopt, &microphone, [&] { return stop; }, true, &settings,
                                    m_registry.get(), out, err),
                  0);
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("heard 6400\n"));
         QVERIFY(!microphone.active);
+        QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("Press Enter or Ctrl-C to stop.")));
 
         options.refinementProviderId = QStringLiteral("openai");
         options.cleanupStrength = QStringLiteral("balanced");
         options.json = true;
         stop = false;
         out.str({});
-        QCOMPARE(runHeadlessListen(options, std::nullopt, &microphone, [&] { return stop; }, &settings,
+        QCOMPARE(runHeadlessListen(options, std::nullopt, &microphone, [&] { return stop; }, true, &settings,
                                    m_registry.get(), out, err),
                  0);
         QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
@@ -763,11 +764,13 @@ private slots:
         QElapsedTimer clock;
         clock.start();
 
-        QCOMPARE(runHeadlessListen(options, 300, &microphone, [&clock] { return clock.elapsed() > 3000; }, &settings,
-                                   m_registry.get(), out, err),
+        QCOMPARE(runHeadlessListen(options, 300, &microphone, [&clock] { return clock.elapsed() > 3000; }, false,
+                                   &settings, m_registry.get(), out, err),
                  0);
         QVERIFY2(clock.elapsed() < 2500, qPrintable(QString::number(clock.elapsed())));
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("heard 19200\n"));
+        // Enter is not read here, so the hint leaves it out.
+        QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("Press Ctrl-C to stop, or pause for 0.3 s.")));
     }
 
     void listenFailsWithoutAMicrophoneOrAKnownProvider()
@@ -783,7 +786,7 @@ private slots:
         std::ostringstream out;
         std::ostringstream err;
         const auto run = [&] {
-            return runHeadlessListen(options, std::nullopt, &microphone, [] { return true; }, &settings,
+            return runHeadlessListen(options, std::nullopt, &microphone, [] { return true; }, false, &settings,
                                      m_registry.get(), out, err);
         };
 
@@ -796,8 +799,8 @@ private slots:
 
         // Refused microphone access, which macOS asks about, fails the same way.
         out.str({});
-        QCOMPARE(runHeadlessListen(options, std::nullopt, nullptr, [] { return true; }, &settings, m_registry.get(),
-                                   out, err),
+        QCOMPARE(runHeadlessListen(options, std::nullopt, nullptr, [] { return true; }, false, &settings,
+                                   m_registry.get(), out, err),
                  1);
         const QJsonObject refused = QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object();
         QCOMPARE(refused.value(QStringLiteral("ok")), QJsonValue(false));

@@ -49,7 +49,9 @@
 #endif
 #include <QTest>
 
+#include <iostream>
 #include <memory>
+#include <sstream>
 #include <utility>
 
 using namespace speecher;
@@ -972,6 +974,15 @@ private slots:
             QCOMPARE(refused.mode, LaunchMode::Exit);
             QCOMPARE(refused.exitCode, 2);
         }
+
+        // A negative number is the seconds, refused for its range.
+        std::ostringstream usage;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        QCOMPARE(parse({QStringLiteral("--until-silence"), QStringLiteral("-1")}).exitCode, 2);
+        QVERIFY2(QString::fromStdString(usage.str())
+                     .startsWith(QStringLiteral("--until-silence takes seconds from 0.1 to 3600, not -1\n")),
+                 usage.str().c_str());
     }
 
     // A custom tone or level is named by its id without custom_, with - for _.

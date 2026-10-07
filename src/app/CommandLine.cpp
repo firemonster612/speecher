@@ -490,17 +490,23 @@ QString parseListenArguments(const QStringList &arguments, CommandLineDecision *
         QString error;
         if (argument == QStringLiteral("--until-silence")) {
             // The seconds are optional, and listen takes no other plain
-            // argument they could be mistaken for.
+            // argument they could be mistaken for. A negative number is
+            // still the seconds, given wrong, rather than an option.
             double seconds = kDefaultUntilSilenceSeconds;
-            if (index + 1 < arguments.size() && !arguments.at(index + 1).startsWith(QLatin1Char('-'))) {
+            if (index + 1 < arguments.size()) {
+                const QString next = arguments.at(index + 1);
                 bool ok = false;
-                seconds = arguments.at(++index).toDouble(&ok);
-                // Written so that nan, which fails every comparison, fails it.
-                if (!(ok && seconds >= kMinUntilSilenceSeconds && seconds <= kMaxUntilSilenceSeconds)) {
-                    return QStringLiteral("--until-silence takes seconds from %1 to %2, not %3")
-                        .arg(kMinUntilSilenceSeconds)
-                        .arg(kMaxUntilSilenceSeconds)
-                        .arg(arguments.at(index));
+                const double given = next.toDouble(&ok);
+                if (ok || !next.startsWith(QLatin1Char('-'))) {
+                    ++index;
+                    // Written so that nan, which fails every comparison, fails it.
+                    if (!(ok && given >= kMinUntilSilenceSeconds && given <= kMaxUntilSilenceSeconds)) {
+                        return QStringLiteral("--until-silence takes seconds from %1 to %2, not %3")
+                            .arg(kMinUntilSilenceSeconds)
+                            .arg(kMaxUntilSilenceSeconds)
+                            .arg(next);
+                    }
+                    seconds = given;
                 }
             }
             decision->untilSilenceMs = int(seconds * 1000);

@@ -53,7 +53,8 @@ int runHeadlessTranscribe(const QStringList &files,
 // Records once from microphone, null when the user refused microphone access,
 // until stopRequested() turns true, or, with
 // untilSilenceMs, until that long passes without speech once speech was heard.
-// It is polled, so it may be set from a signal handler. Then prints the
+// It is polled, so it may be set from a signal handler; enterStops says
+// whether pressing Enter sets it, for the hint. Then prints the
 // transcript to out, or with options.json one object with it, and progress
 // and failures to err. Like runHeadlessTranscribe it uses its own providers.
 // Returns 0 when it printed a transcript, 1 when it failed (hearing no speech
@@ -62,6 +63,7 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
                       std::optional<int> untilSilenceMs,
                       AudioInput *microphone,
                       const std::function<bool()> &stopRequested,
+                      bool enterStops,
                       SettingsStore *settings,
                       ProviderRegistry *providers,
                       std::ostream &out,

@@ -53,6 +53,7 @@
 #include <atomic>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <optional>
@@ -60,6 +61,7 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #else
+#include <termios.h>
 #include <unistd.h>
 #endif
 
@@ -205,7 +207,7 @@ static BOOL WINAPI stopListeningOnCtrlC(DWORD event)
 // is not handed the console attachParentConsole borrowed as its stdin, so that
 // one is opened by name; a launcher that passes its own handles hands it over.
 // Empty for a file, a pipe or no console.
-static std::function<bool(char *)> terminalByteReader()
+static std::function<bool(char *)> openTerminalInput()
 {
     const HANDLE input = unredirected(STD_INPUT_HANDLE)
         ? CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
@@ -221,19 +223,60 @@ static std::function<bool(char *)> terminalByteReader()
     };
 }
 #else
-static void stopListeningOnSigint(int)
+// The terminal's settings from before listen changed them, put back on every
+// way out. Saved before g_terminalChanged is set.
+static termios g_savedTerminal;
+static std::atomic<bool> g_terminalChanged{false};
+
+// Safe in a signal handler.
+static void restoreTerminal()
 {
-    g_listenStopRequested = true;
-    // The second one ends the process as usual.
-    std::signal(SIGINT, SIG_DFL);
+    if (g_terminalChanged) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &g_savedTerminal);
+    }
 }
 
-// Reads stdin a byte at a time when it is a terminal; empty otherwise.
-static std::function<bool(char *)> terminalByteReader()
+static void restoreTerminalAndEnd(int signal)
 {
-    if (!isatty(STDIN_FILENO)) {
+    restoreTerminal();
+    std::signal(signal, SIG_DFL);
+    std::raise(signal);
+}
+
+static void stopListeningOnSigint(int signal)
+{
+    // The second one ends the process as usual.
+    if (g_listenStopRequested.exchange(true)) {
+        restoreTerminalAndEnd(signal);
+    }
+}
+
+// Reads stdin a byte at a time when it is the terminal this process is in the
+// foreground of; a background run would be stopped for reading it. Turns off
+// the terminal's signal keys meanwhile: Ctrl-C's SIGINT goes to the whole
+// foreground process group, so the shell around `x="$(speecher listen)"`
+// would drop the line along with what was said. Empty otherwise.
+static std::function<bool(char *)> openTerminalInput()
+{
+    // Not a terminal, or one this process is in the background of.
+    if (tcgetpgrp(STDIN_FILENO) != getpgrp() || tcgetattr(STDIN_FILENO, &g_savedTerminal) != 0) {
         return {};
     }
+    g_terminalChanged = true;
+    std::atexit(restoreTerminal);
+    // SIGABRT covers an uncaught exception.
+    for (const int signal : {SIGTERM, SIGHUP, SIGABRT}) {
+        // One the parent ignores, as nohup does SIGHUP, stays ignored.
+        if (std::signal(signal, restoreTerminalAndEnd) == SIG_IGN) {
+            std::signal(signal, SIG_IGN);
+        }
+    }
+    termios terminal = g_savedTerminal;
+    // Without canonical mode Ctrl-C needs no Enter after it to be read.
+    terminal.c_lflag &= ~(ISIG | ICANON);
+    terminal.c_cc[VMIN] = 1;
+    terminal.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &terminal);
     return [](char *byte) { return ::read(STDIN_FILENO, byte, 1) == 1; };
 }
 #endif
@@ -242,27 +285,40 @@ static std::function<bool(char *)> terminalByteReader()
 // said is still transcribed. Only a terminal's stdin is read for Enter: piped
 // input, such as a surrounding `while read` loop's, is left alone. It is read
 // raw on a thread of its own, since the event loop cannot watch a Windows
-// console.
-static void installListenStopHandlers()
+// console. Returns whether Enter is read.
+static bool installListenStopHandlers()
 {
 #ifdef Q_OS_WIN
+    // A parent may have left Ctrl+C ignored, which would hide it from the handler.
+    SetConsoleCtrlHandler(nullptr, FALSE);
     SetConsoleCtrlHandler(stopListeningOnCtrlC, TRUE);
 #else
     std::signal(SIGINT, stopListeningOnSigint);
 #endif
-    const std::function<bool(char *)> readByte = terminalByteReader();
+    const std::function<bool(char *)> readByte = openTerminalInput();
     if (!readByte) {
-        return;
+        return false;
     }
+    // Read on after a stop, so a terminal's Ctrl-C can still end a slow
+    // transcription.
     std::thread([readByte] {
         char byte = 0;
         while (readByte(&byte)) {
-            if (byte == '\n') {
+            if (byte == '\n' || byte == '\r') {
                 g_listenStopRequested = true;
-                return;
             }
+#ifndef Q_OS_WIN
+            // Ctrl-C, which the terminal now hands over as a byte. The second
+            // one ends the process, with the status a shell gives SIGINT.
+            constexpr char kCtrlC = '\x03';
+            if (byte == kCtrlC && g_listenStopRequested.exchange(true)) {
+                restoreTerminal();
+                std::_Exit(128 + SIGINT);
+            }
+#endif
         }
     }).detach();
+    return true;
 }
 
 // macOS may ask the first time, and answers once the event loop runs.
@@ -384,10 +440,10 @@ int main(int argc, char **argv)
         registerProviders(providers, settings.secrets(), &localModels);
         AudioInput *microphone =
             microphoneAccessGranted(*platform, &app) ? platform->createAudioInput(&settings, &app) : nullptr;
-        installListenStopHandlers();
+        const bool enterStops = installListenStopHandlers();
         return runHeadlessListen(decision.headless, decision.untilSilenceMs, microphone,
-                                 [] { return g_listenStopRequested.load(); }, &settings, &providers, std::cout,
-                                 std::cerr);
+                                 [] { return g_listenStopRequested.load(); }, enterStops, &settings, &providers,
+                                 std::cout, std::cerr);
     }
 
 #ifdef SPEECHER_WITH_WINUI
