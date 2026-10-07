@@ -1,8 +1,21 @@
 #include "app/CommandLineTool.h"
 
+#include "app/CommandLineToolPresentation.h"
+
 #include <QFileInfo>
 
 namespace speecher {
+
+namespace {
+
+// An AppleScript string escapes only backslashes and double quotes.
+QString appleScriptString(QString value)
+{
+    value.replace(QLatin1Char('\\'), QStringLiteral("\\\\")).replace(QLatin1Char('"'), QStringLiteral("\\\""));
+    return QStringLiteral("\"") + value + QStringLiteral("\"");
+}
+
+} // namespace
 
 QString shellQuote(QString value)
 {
@@ -11,32 +24,29 @@ QString shellQuote(QString value)
         + QStringLiteral("'");
 }
 
-bool isLastingAppLocation(const QString &binaryPath)
-{
-    return !binaryPath.startsWith(QStringLiteral("/Volumes/"))
-        && !binaryPath.contains(QStringLiteral("/AppTranslocation/"));
-}
-
 QString commandLineToolInstallCommand(const QString &binaryPath, const QString &toolPath)
 {
+    const QString folder = QFileInfo(toolPath).path();
     const QString exec = QStringLiteral("exec %1 \"$@\"").arg(shellQuote(binaryPath));
     // printf writes the newlines, so the command has none of its own and fits
-    // in one AppleScript string. rm first: redirecting onto a symlink left by
-    // a manual install would write through it into whatever it points at.
-    return QStringLiteral("mkdir -p %1 && rm -f %2 && printf '%s\\n' '#!/bin/sh' %3 > %2 && chmod 755 %2")
-        .arg(shellQuote(QFileInfo(toolPath).path()), shellQuote(toolPath), shellQuote(exec));
+    // in one AppleScript string. The script is written beside toolPath and
+    // renamed onto it: the rename replaces a symlink left by a manual install
+    // rather than writing through it, and nothing can swap one in between.
+    return QStringLiteral("mkdir -p %1 && tmp=$(mktemp %1/.speecher.XXXXXX) && printf '%s\\n' '#!/bin/sh' %3 > \"$tmp\""
+                          " && chmod 755 \"$tmp\" && mv -f \"$tmp\" %2")
+        .arg(shellQuote(folder), shellQuote(toolPath), shellQuote(exec));
 }
 
 QString commandLineToolInstallScript(const QString &binaryPath, const QString &toolPath,
                                      bool withAdministratorPrivileges)
 {
-    // An AppleScript string escapes only backslashes and double quotes.
-    QString command = commandLineToolInstallCommand(binaryPath, toolPath);
-    command.replace(QLatin1Char('\\'), QStringLiteral("\\\\"))
-        .replace(QLatin1Char('"'), QStringLiteral("\\\""));
-    return QStringLiteral("do shell script \"%1\"%2")
-        .arg(command, withAdministratorPrivileges ? QStringLiteral(" with administrator privileges")
-                                                  : QString());
+    QString script = QStringLiteral("do shell script ")
+        + appleScriptString(commandLineToolInstallCommand(binaryPath, toolPath));
+    if (withAdministratorPrivileges) {
+        script += QStringLiteral(" with prompt %1 with administrator privileges")
+                      .arg(appleScriptString(commandLineToolPasswordPrompt()));
+    }
+    return script;
 }
 
 } // namespace speecher

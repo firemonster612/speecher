@@ -5,6 +5,7 @@
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
 #include "app/CommandLineTool.h"
+#include "app/CommandLineToolPresentation.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
@@ -395,24 +396,30 @@ public:
 };
 
 #ifdef Q_OS_UNIX
-// The command inside `do shell script "…"`, read the way AppleScript reads a
-// string: \\ and \" are its escapes and a bare " ends it. Empty when the
-// script is not one well-formed string.
-QString appleScriptShellCommand(const QString &script)
+// The strings in an AppleScript script, read the way AppleScript reads them:
+// \\ and \" are their escapes and a bare " ends one. The rest of the script,
+// with each string emptied to "", goes in rest. Empty when a string is not
+// well formed.
+QStringList appleScriptStrings(const QString &script, QString &rest)
 {
-    const QString opening = QStringLiteral("do shell script \"");
-    if (!script.startsWith(opening) || !script.endsWith(QLatin1Char('"'))) {
-        return {};
-    }
-    const qsizetype closing = script.size() - 1;
-    QString command;
-    for (qsizetype i = opening.size(); i < closing; ++i) {
+    QStringList strings;
+    bool inString = false;
+    for (qsizetype i = 0; i < script.size(); ++i) {
         QChar c = script.at(i);
         if (c == QLatin1Char('"')) {
-            return {};
+            inString = !inString;
+            if (inString) {
+                strings.append(QString());
+            }
+            rest += c;
+            continue;
+        }
+        if (!inString) {
+            rest += c;
+            continue;
         }
         if (c == QLatin1Char('\\')) {
-            if (++i == closing) {
+            if (++i == script.size()) {
                 return {};
             }
             c = script.at(i);
@@ -420,9 +427,9 @@ QString appleScriptShellCommand(const QString &script)
                 return {};
             }
         }
-        command += c;
+        strings.last() += c;
     }
-    return command;
+    return inString ? QStringList() : strings;
 }
 #endif
 
@@ -1438,10 +1445,13 @@ private slots:
         QCOMPARE(install(), 0);
         QVERIFY(!QFileInfo(tool).isSymLink());
         QCOMPARE(QFileInfo(elsewhere).size(), 0);
+        QCOMPARE(QDir(QFileInfo(tool).path()).entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot),
+                 QStringList{QStringLiteral("speecher")});
     }
 
-    // osascript reads the script's string the way AppleScript does, so a
-    // path's backslashes and double quotes must reach sh as they were.
+    // osascript reads the script's strings the way AppleScript does, so a
+    // path's backslashes and double quotes must reach sh as they were, and
+    // the password prompt must read as written.
     void commandLineToolScriptKeepsTheBinaryPathIntact_data()
     {
         QTest::addColumn<QString>("name");
@@ -1464,37 +1474,20 @@ private slots:
         fake.close();
         QVERIFY(fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner));
         const QString tool = directory.filePath(QStringLiteral("bin/speecher"));
-        const QString script = commandLineToolInstallScript(binary, tool, false);
+        const QString script = commandLineToolInstallScript(binary, tool, true);
 
-        const QString command = appleScriptShellCommand(script);
-        QVERIFY2(!command.isEmpty(), qPrintable(script));
-        QCOMPARE(QProcess::execute(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), command}), 0);
+        QString rest;
+        const QStringList strings = appleScriptStrings(script, rest);
+        QCOMPARE(rest, QStringLiteral("do shell script \"\" with prompt \"\" with administrator privileges"));
+        QCOMPARE(strings.size(), 2);
+        QCOMPARE(strings.at(1), commandLineToolPasswordPrompt());
+        QCOMPARE(QProcess::execute(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), strings.at(0)}), 0);
         QProcess run;
         run.start(tool, {QStringLiteral("a b")});
         QVERIFY(run.waitForFinished());
         QCOMPARE(run.readAllStandardOutput(), QByteArray("a b|"));
     }
-
-    void commandLineToolScriptAsksForAdministratorPrivilegesOnlyWhenTold()
-    {
-        const QString binary = QStringLiteral("/Applications/speecher.app/Contents/MacOS/speecher");
-        const QString tool = QString::fromUtf8(kCommandLineToolPath);
-        QVERIFY(commandLineToolInstallScript(binary, tool, true).endsWith(QStringLiteral("\" with administrator privileges")));
-        QVERIFY(commandLineToolInstallScript(binary, tool, false).endsWith(QLatin1Char('"')));
-    }
 #endif
-
-    // A disk image is ejected and a translocated app's folder goes when it
-    // quits, so a speecher command pointing into either stops working.
-    void commandLineToolNeedsALastingAppLocation()
-    {
-        QVERIFY(isLastingAppLocation(QStringLiteral("/Applications/speecher.app/Contents/MacOS/speecher")));
-        QVERIFY(isLastingAppLocation(QStringLiteral("/Users/me/Applications/speecher.app/Contents/MacOS/speecher")));
-        QVERIFY(!isLastingAppLocation(QStringLiteral("/Volumes/Speecher/speecher.app/Contents/MacOS/speecher")));
-        QVERIFY(!isLastingAppLocation(QStringLiteral(
-            "/private/var/folders/x1/abc123/T/AppTranslocation/0A1B2C3D-4E5F-6789-ABCD-EF0123456789/d/"
-            "speecher.app/Contents/MacOS/speecher")));
-    }
 
 #ifdef Q_OS_LINUX
     void setupAssistantPutsTheGlobalShortcutBeforeFinish()

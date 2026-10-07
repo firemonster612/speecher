@@ -2871,24 +2871,28 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::trayQuitCaption().toNSString();
 }
 
-+ (NSString *)commandLineToolPath
-{
-    return @(speecher::kCommandLineToolPath);
-}
-
 + (NSString *)commandLineToolLocationProblem
 {
-    if (speecher::isLastingAppLocation(QCoreApplication::applicationFilePath())) {
+    // A disk image is ejected, and a translocated app's folder goes when it
+    // quits, so a command pointing into either stops working. Both are mounted
+    // read-only; an external drive or a second APFS volume is not.
+    NSURL *bundle = NSBundle.mainBundle.bundleURL;
+    NSNumber *readOnly = nil;
+    [bundle getResourceValue:&readOnly forKey:NSURLVolumeIsReadOnlyKey error:nil];
+    if (!readOnly.boolValue && ![bundle.path containsString:@"/AppTranslocation/"]) {
         return nil;
     }
     return speecher::commandLineToolMoveAppText().toNSString();
 }
 
-+ (NSString *)commandLineToolInstallScriptWithAdministratorPrivileges:(BOOL)withAdministratorPrivileges
++ (NSString *)commandLineToolInstallScript
 {
-    return speecher::commandLineToolInstallScript(QCoreApplication::applicationFilePath(),
-                                                  QString::fromUtf8(speecher::kCommandLineToolPath),
-                                                  withAdministratorPrivileges)
+    const QString toolPath = QString::fromUtf8(speecher::kCommandLineToolPath);
+    // A missing folder is not writable either: creating it under /usr/local
+    // takes an administrator too.
+    const bool folderWritable = QFileInfo(QFileInfo(toolPath).path()).isWritable();
+    return speecher::commandLineToolInstallScript(QCoreApplication::applicationFilePath(), toolPath,
+                                                  !folderWritable)
         .toNSString();
 }
 

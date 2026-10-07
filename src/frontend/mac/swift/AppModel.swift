@@ -159,6 +159,8 @@ final class AppModel: ObservableObject {
     /// costs nothing new.
     private var deferredLoaded = false
     private var keyWindowObserver: NSObjectProtocol?
+    /// The osascript writing the speecher command, while it runs.
+    private var commandLineToolInstaller: Process?
 
     var accessibilitySupported: Bool { bridge.accessibilitySupported }
     var shortcutSupported: Bool { bridge.shortcutSupported }
@@ -600,37 +602,46 @@ final class AppModel: ObservableObject {
     /// AuthorizationExecuteWithPrivileges is deprecated, and a privileged
     /// helper is a lot of machinery for writing one file.
     func installCommandLineTool() {
+        // A second click would stack a second password prompt on the first.
+        guard commandLineToolInstaller == nil else { return }
         if let problem = SpeecherBridge.commandLineToolLocationProblem {
             Self.showCommandLineToolFailure(problem)
             return
         }
-        let folder = (SpeecherBridge.commandLineToolPath as NSString).deletingLastPathComponent
         let osascript = Process()
         osascript.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        osascript.arguments = ["-e", SpeecherBridge.commandLineToolInstallScript(
-            withAdministratorPrivileges: !FileManager.default.isWritableFile(atPath: folder))]
+        osascript.arguments = ["-e", SpeecherBridge.commandLineToolInstallScript()]
         osascript.standardOutput = FileHandle.nullDevice
         let errors = Pipe()
         osascript.standardError = errors
-        osascript.terminationHandler = { process in
+        osascript.terminationHandler = { [weak self] process in
             let succeeded = process.terminationStatus == 0
             let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    self?.commandLineToolInstaller = nil
                     if succeeded {
                         Self.showCommandLineToolInstalled()
                     } else if !message.contains("(-128)") { // userCanceledErr: the prompt was cancelled
-                        Self.showCommandLineToolFailure(message)
+                        Self.showCommandLineToolFailure(Self.osascriptErrorReason(message))
                     }
                 }
             }
         }
         do {
             try osascript.run()
+            commandLineToolInstaller = osascript
         } catch {
             Self.showCommandLineToolFailure(error.localizedDescription)
         }
+    }
+
+    /// osascript reports a failed script as "0:171: execution error: <reason>
+    /// (<code>)"; the alert shows only the reason.
+    private static func osascriptErrorReason(_ message: String) -> String {
+        message.replacingOccurrences(of: #"(?s)^\d+:\d+: execution error: (.*) \(-?\d+\)$"#, with: "$1",
+                                     options: .regularExpression)
     }
 
     private static func showCommandLineToolInstalled() {
