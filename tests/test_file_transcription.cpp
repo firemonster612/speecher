@@ -5,6 +5,7 @@
 #include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
 #include "dictation/DictationSession.h"
+#include "recording/RecordingSession.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/Subtitles.h"
 #include "transcribe/TranscribePresentation.h"
@@ -17,6 +18,7 @@
 #include <QRegularExpression>
 #include <QScopeGuard>
 #include <QFile>
+#include <QPointer>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 #include <QAudioBufferInput>
 #include <QImage>
@@ -138,6 +140,25 @@ QString readFile(const QString &path)
 {
     QFile file(path);
     return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).trimmed() : QString();
+}
+
+QByteArray fileBytes(const QString &path)
+{
+    QFile file(path);
+    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+
+// The text of each "[hh:mm:ss] me: text" line of a recording; a line in any
+// other shape is kept whole, so a comparison shows it.
+QStringList recordedTexts(const QString &path)
+{
+    static const QRegularExpression line(QStringLiteral("^\\[\\d\\d:\\d\\d:\\d\\d\\] me: (.+)$"));
+    QStringList texts;
+    for (const QString &written : readFile(path).split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+        const QRegularExpressionMatch match = line.match(written);
+        texts << (match.hasMatch() ? match.captured(1) : written);
+    }
+    return texts;
 }
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
@@ -878,6 +899,136 @@ private slots:
                  QJsonValue(false));
     }
 
+    // One line per utterance, timed from the start and flushed at once; a file
+    // that exists is never written to, the next free name is.
+    void aRecordingTranscriptAppendsTimedLinesBesideExistingFiles()
+    {
+        QCOMPARE(defaultRecordingPath(QStringLiteral("/data"), QDateTime(QDate(2026, 10, 7), QTime(9, 5))),
+                 QStringLiteral("/data/recordings/2026-10-07-0905.md"));
+        const QString path = m_dir.filePath(QStringLiteral("calls/call.md"));
+        RecordingTranscript first;
+        QString error;
+        QVERIFY2(first.create(path, &error), qPrintable(error));
+        QCOMPARE(first.path(), path);
+        QVERIFY(first.append(3723456, QStringLiteral("me"), QStringLiteral(" Can you\nlook at it? "), &error));
+        // Read while the file is open, as tail -f does.
+        QCOMPARE(fileBytes(path), QByteArray("[01:02:03] me: Can you look at it?\n"));
+        QVERIFY(first.append(3724000, QStringLiteral("me"), QStringLiteral("Yes."), &error));
+        first.close();
+
+        RecordingTranscript second;
+        QVERIFY(second.create(path, &error));
+        QCOMPARE(second.path(), m_dir.filePath(QStringLiteral("calls/call-2.md")));
+        RecordingTranscript third;
+        QVERIFY(third.create(path, &error));
+        QCOMPARE(third.path(), m_dir.filePath(QStringLiteral("calls/call-3.md")));
+        QCOMPARE(fileBytes(path), QByteArray("[01:02:03] me: Can you look at it?\n[01:02:04] me: Yes.\n"));
+    }
+
+    // Each final is written as it arrives, and so is the partial a stream
+    // leaves when the provider ends it; the next stream carries on, and
+    // stopping writes the last one.
+    void aRecordingAppendsFinalsInOrderThroughARollover()
+    {
+        DictationSession::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        bool microphoneStopped = false;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            microphone->onStop = [&microphoneStopped] { microphoneStopped = true; };
+            return microphone.data();
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+
+        QString error;
+        const QString path = recording.start(QString(), m_dir.path(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        QVERIFY(path.startsWith(m_dir.filePath(QStringLiteral("recordings/"))));
+        QVERIFY(recording.isRecording());
+        microphone->pushAudio(microphoneChunk(8000));
+        QTRY_VERIFY_WITH_TIMEOUT(!m_codex->audioChunks.isEmpty(), 10000);
+        m_codex->emitPartialText(QStringLiteral("Can you"));
+        m_codex->emitFinalText(QStringLiteral("Can you look at the retry logic?"));
+        QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Can you look at the retry logic?")});
+
+        m_codex->emitPartialText(QStringLiteral("I'll check"));
+        m_codex->emitCompletion();
+        QCOMPARE(m_codex->startCalls, 2);
+        microphone->pushAudio(microphoneChunk(8000));
+        m_codex->emitFinalText(QStringLiteral("it today."));
+        m_codex->emitPartialText(QStringLiteral("Bye"));
+        // The provider finishes the last utterance once the input ends.
+        m_codex->autoCompleteOnFinish = false;
+        recording.stop();
+        QVERIFY(microphoneStopped);
+        QTRY_COMPARE_WITH_TIMEOUT(m_codex->stopCalls, 1, 10000);
+        QCOMPARE(stopped.count(), 0);
+        m_codex->emitFinalText(QStringLiteral("Bye."));
+        m_codex->emitCompletion();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 10000);
+
+        QVERIFY(!recording.isRecording());
+        QCOMPARE(stopped.first().first().value<RecordingStatus>().path, path);
+        QCOMPARE(recordedTexts(path), QStringList({QStringLiteral("Can you look at the retry logic?"),
+                                                   QStringLiteral("I'll check"), QStringLiteral("it today."),
+                                                   QStringLiteral("Bye.")}));
+    }
+
+    // A provider that transcribes only once the audio ends cannot record yet,
+    // and a microphone that cannot start leaves no file. A stream that fails
+    // part way stops, and the recording says why until it is stopped.
+    void aRecordingRefusesWhatCannotRecordAndReportsAStoppedStream()
+    {
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("claude"));
+        bool microphoneStarts = true;
+        RecordingSession recording(&settings, m_registry.get(), [&microphoneStarts](QObject *parent) {
+            auto *microphone = new FakeAudioInput(parent);
+            microphone->startResult = microphoneStarts;
+            microphone->startError = QStringLiteral("No microphone was found.");
+            return microphone;
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        QVERIFY(recording.start(QString(), m_dir.filePath(QStringLiteral("refused")), &error).isEmpty());
+        QCOMPARE(error, QStringLiteral("Recording needs a speech provider that streams text as it hears it, such as "
+                                       "Claude Voice or ChatGPT Codex. Scripted does not."));
+        QVERIFY(!QFileInfo::exists(m_dir.filePath(QStringLiteral("refused"))));
+
+        registerStreamingCodex();
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        microphoneStarts = false;
+        const QString deaf = m_dir.filePath(QStringLiteral("deaf.md"));
+        QVERIFY(recording.start(deaf, m_dir.path(), &error).isEmpty());
+        QCOMPARE(error, QStringLiteral("No microphone was found."));
+        QVERIFY(!QFileInfo::exists(deaf));
+        QVERIFY(!recording.isRecording());
+
+        microphoneStarts = true;
+        const QString path = recording.start(m_dir.filePath(QStringLiteral("call.md")), m_dir.path(), &error);
+        QCOMPARE(path, m_dir.filePath(QStringLiteral("call.md")));
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex->startCalls == 1, 10000);
+        m_codex->emitFinalText(QStringLiteral("Said before."));
+        m_codex->emitFailure(QStringLiteral("Server error"), false, QStringLiteral("streaming"),
+                           ProviderFailureKind::Server);
+        const RecordingStatus status = recording.status();
+        QVERIFY(status.recording);
+        QCOMPARE(status.path, path);
+        QCOMPARE(status.streams.size(), 1);
+        QCOMPARE(status.streams.first().speaker, QStringLiteral("me"));
+        QVERIFY(!status.streams.first().running);
+        QCOMPARE(status.streams.first().problem, QStringLiteral("Server error"));
+
+        recording.stop();
+        QCOMPARE(stopped.count(), 1);
+        QVERIFY(!recording.isRecording());
+        QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Said before.")});
+    }
+
     void numbersASaveThatWouldOverwrite()
     {
         const QString audio = m_dir.filePath(QStringLiteral("talk.mp3.wav"));
@@ -1538,9 +1689,23 @@ private:
         return options;
     }
 
+    // A provider that streams finals as Codex does; m_codex is the latest
+    // instance, the one a session's attempts go to.
+    void registerStreamingCodex()
+    {
+        m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
+                                           [this](QObject *parent) {
+                                               m_codex = new FakeSpeechTranscriber(parent);
+                                               m_codex->providerId = QStringLiteral("codex");
+                                               m_codex->streamsFinals = true;
+                                               return m_codex.data();
+                                           });
+    }
+
     QTemporaryDir m_dir;
     std::unique_ptr<ProviderRegistry> m_registry;
     Script m_script;
+    QPointer<FakeSpeechTranscriber> m_codex;
     // Style and tone the last refinement ran with.
     QStringList m_refinedWith;
     QStringList m_refinedVocabulary;

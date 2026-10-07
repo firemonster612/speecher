@@ -246,6 +246,9 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
                                   m_batchSettings.speech.fallbackProviderIds);
     m_batchSettings.refinement.providerId = options.refinementProviderId;
     m_batchSettings.speech.timedSegments = true;
+    if (options.streamedFinalsOnly) {
+        m_batchSettings.speech.codexFinalRetranscribe = false;
+    }
     // The page's profile stands in for the one a target would have implied,
     // for the terms that apply as for everything else.
     m_batchSettings.refinement.sessionWritingProfile = writingProfileFromName(options.writingProfile);
@@ -279,6 +282,7 @@ void FileTranscriptionSession::startFile()
     m_current.path = m_paths.at(m_index);
     m_transcript->clear();
     m_pcm.clear();
+    m_pcmDropped = 0;
     emit fileStarted(m_index, m_current.path);
     if (m_input) {
         startMicrophone();
@@ -334,7 +338,7 @@ void FileTranscriptionSession::startMicrophone()
     // As a dictation: a microphone that drops after it heard something still
     // has those words transcribed.
     connect(m_input, &AudioInput::failed, this, [this](const QString &message) {
-        if (m_pcm.isEmpty()) {
+        if (m_pcmDropped == 0 && m_pcm.isEmpty()) {
             failFile(message);
             return;
         }
@@ -389,6 +393,12 @@ void FileTranscriptionSession::prepareSpeechProvider()
                                    QStringLiteral("Unknown speech provider: %1").arg(providerId)});
             continue;
         }
+        if (m_options.streamedFinalsOnly && !m_transcriber->streamsFinalText(speech)) {
+            m_speechIssues.append({ProviderRole::Speech, providerId, Stage::Prepare, ProviderFailureKind::Unavailable,
+                                   QStringLiteral("%1 does not stream final text")
+                                       .arg(m_providers->speechProviderLabel(providerId))});
+            continue;
+        }
         connectTranscriber();
 
         std::optional<RefinementRefreshJob> refreshJob;
@@ -434,13 +444,15 @@ void FileTranscriptionSession::connectTranscriber()
     connect(m_transcriber, &SpeechTranscriber::partialTranscript, this,
             [this](quint64 attemptId, const QString &text) {
                 if (attemptId == m_attemptId) {
+                    m_heardFromProvider = true;
                     m_transcript->setPartial(text);
                 }
             });
     connect(m_transcriber, &SpeechTranscriber::finalTranscript, this,
             [this](quint64 attemptId, const QString &text) {
                 if (attemptId == m_attemptId) {
-                    m_transcript->commitFinal(text);
+                    m_heardFromProvider = true;
+                    commitFinal(text);
                 }
             });
     connect(m_transcriber, &SpeechTranscriber::attemptTranscript, this,
@@ -479,6 +491,7 @@ void FileTranscriptionSession::beginStreaming()
     m_transcript->clear();
     m_current.segments.clear();
     m_sent = 0;
+    m_heardFromProvider = false;
     m_inputFinished = false;
     m_reconnectsLeft = kReconnectsPerFile;
     m_attemptBaseText.clear();
@@ -499,7 +512,7 @@ void FileTranscriptionSession::beginStreaming()
 
 void FileTranscriptionSession::sendNextChunk()
 {
-    if (m_sent >= m_pcm.size()) {
+    if (m_sent >= m_pcmDropped + m_pcm.size()) {
         m_sendTimer.stop();
         // The microphone's next chunk starts the timer again.
         if (m_microphone != Microphone::Off) {
@@ -509,7 +522,7 @@ void FileTranscriptionSession::sendNextChunk()
         m_transcriber->finishInput(m_attemptId);
         return;
     }
-    const QByteArray chunk = m_pcm.mid(m_sent, kChunkBytes);
+    const QByteArray chunk = m_pcm.mid(m_sent - m_pcmDropped, kChunkBytes);
     m_sent += chunk.size();
     const quint64 attemptId = m_attemptId;
     m_transcriber->sendAudio(attemptId, chunk);
@@ -517,7 +530,20 @@ void FileTranscriptionSession::sendNextChunk()
     if (attemptId != m_attemptId) {
         return;
     }
-    emit fileProgress(m_index, qreal(m_sent) / qreal(m_pcm.size()));
+    emit fileProgress(m_index, qreal(m_sent) / qreal(m_pcmDropped + m_pcm.size()));
+    dropSentMicrophoneAudio();
+}
+
+// Once the provider has sent text, no other provider takes the input from its
+// start (see handleSpeechFailure) and a new stream picks up at the next unsent
+// chunk, so what was sent is never needed again.
+void FileTranscriptionSession::dropSentMicrophoneAudio()
+{
+    if (!m_input || !m_heardFromProvider) {
+        return;
+    }
+    m_pcm.remove(0, m_sent - m_pcmDropped);
+    m_pcmDropped = m_sent;
 }
 
 // Mirrors DictationSession::startNextAttempt: a fresh stream on the same
@@ -532,7 +558,7 @@ void FileTranscriptionSession::startNextAttempt()
 {
     const QString partial = m_transcript->partial();
     if (!partial.isEmpty()) {
-        m_transcript->commitFinal(partial);
+        commitFinal(partial);
     }
     m_attemptBaseText = m_transcript->text();
     m_attemptStartMs = m_sent * 1000 / kBytesPerSecond;
@@ -570,11 +596,12 @@ void FileTranscriptionSession::handleSpeechFailure(const SpeechFailure &failure)
         return;
     }
     // Nothing reached a service yet: no audio went out, or the file's first
-    // attempt never connected and only buffered what it was given. Then the
-    // next provider may take the file instead, from its start, as the audio
-    // is on disk; after, never: what was sent is not sent again.
-    const bool nothingReachedAService =
-        m_attemptStartMs == 0 && (m_sent == 0 || failure.phase == QStringLiteral("connect"));
+    // attempt never connected and only buffered what it was given, and no
+    // text came back. Then the next provider may take the file instead, from
+    // its start, as the audio is on disk; after, never: what was sent is not
+    // sent again.
+    const bool nothingReachedAService = m_attemptStartMs == 0 && !m_heardFromProvider
+        && (m_sent == 0 || failure.phase == QStringLiteral("connect"));
     const ProviderAttemptIssue issue{ProviderRole::Speech, m_speechChain.at(m_speechIndex),
                                      nothingReachedAService ? Stage::Connect : Stage::Interrupted, failure.kind,
                                      failure.message};
@@ -740,6 +767,13 @@ void FileTranscriptionSession::releaseFileResources()
         m_refiner->deleteLater();
     }
     m_pcm.clear();
+    m_pcmDropped = 0;
+}
+
+void FileTranscriptionSession::commitFinal(const QString &text)
+{
+    m_transcript->commitFinal(text);
+    emit fileTextFinalized(m_index, text);
 }
 
 } // namespace speecher

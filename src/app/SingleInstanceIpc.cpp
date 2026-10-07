@@ -110,6 +110,9 @@ IpcCommandResult sendRequest(const QJsonObject &request,
             response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
             response->text = object.value(QStringLiteral("text")).toString();
             response->skippedTerms = stringList(object.value(QStringLiteral("skippedTerms")));
+            if (object.contains(QStringLiteral("recording"))) {
+                response->recording = recordingStatusFromJson(object.value(QStringLiteral("recording")).toObject());
+            }
         }
         return IpcCommandResult::Sent;
     }
@@ -422,6 +425,9 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
     }
     if (!response.skippedTerms.isEmpty()) {
         object.insert(QStringLiteral("skippedTerms"), QJsonArray::fromStringList(response.skippedTerms));
+    }
+    if (response.recording) {
+        object.insert(QStringLiteral("recording"), recordingStatusJson(*response.recording));
     }
     QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     responseBytes.append('\n');

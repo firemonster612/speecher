@@ -149,6 +149,8 @@ public:
     using SettingsCodecs::setCodexFinalRetranscribe;
     using SettingsCodecs::setSpokenLanguage;
     using SettingsCodecs::setSetupCompleted;
+    using SettingsCodecs::recordingConsentNoticeShown;
+    using SettingsCodecs::setRecordingConsentNoticeShown;
     using SettingsCodecs::setStoredApiKeyFallback;
     using SettingsCodecs::setTheme;
     using SettingsCodecs::setTranscriptionPreviewEnabled;

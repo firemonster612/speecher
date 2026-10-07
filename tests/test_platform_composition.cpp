@@ -1077,6 +1077,42 @@ private slots:
                                 "Ollama isn't running.\n"));
     }
 
+    // record's subcommands go to the running Speecher; --to is made absolute
+    // here, where the shell's directory is known.
+    void recordIsSentToTheRunningSpeecher()
+    {
+        const auto parse = [](QStringList arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("record")} + arguments, {});
+        };
+
+        const CommandLineDecision start =
+            parse({QStringLiteral("start"), QStringLiteral("--to"), QStringLiteral("call.md"), QStringLiteral("--mic-only")});
+        QCOMPARE(start.mode, LaunchMode::RunCli);
+        QCOMPARE(start.ipcCommand, QStringLiteral("recordStart"));
+        QCOMPARE(start.recordPath, QDir::current().absoluteFilePath(QStringLiteral("call.md")));
+        QCOMPARE(parse({QStringLiteral("start")}).recordPath, QString());
+        const CommandLineDecision status = parse({QStringLiteral("status"), QStringLiteral("--json")});
+        QCOMPARE(status.ipcCommand, QStringLiteral("recordStatus"));
+        QVERIFY(status.json);
+        QCOMPARE(parse({QStringLiteral("stop")}).ipcCommand, QStringLiteral("recordStop"));
+
+        std::ostringstream usage;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        for (const QStringList &mistake : {QStringList{},
+                                           QStringList{QStringLiteral("pause")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--to")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--to"), QDir::tempPath()},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--json")},
+                                           QStringList{QStringLiteral("stop"), QStringLiteral("--to"), QStringLiteral("a.md")},
+                                           QStringList{QStringLiteral("status"), QStringLiteral("--profile"),
+                                                       QStringLiteral("ai-coding")}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
+    }
+
     // A custom tone or level is named by its id without custom_, with - for _.
     void transcribeTakesCustomTonesAndLevels()
     {

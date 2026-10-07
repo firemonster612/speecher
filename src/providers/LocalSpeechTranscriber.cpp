@@ -84,6 +84,12 @@ SpeechPrepareResult LocalSpeechTranscriber::prepare(const SpeechSettings &settin
     return {ready, error, ProviderFailureKind::Unavailable};
 }
 
+bool LocalSpeechTranscriber::streamsFinalText(const SpeechSettings &settings) const
+{
+    const LocalModel *model = findLocalModel(settings.local.modelId);
+    return model && model->streams;
+}
+
 void LocalSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
 {
     m_idleTimer.stop();

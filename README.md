@@ -247,6 +247,25 @@ speecher providers --json | jq '.[] | select(.usable == false)'
 
 It judges each provider the way the Dictation and Refinement settings do and words a problem as their rows do ("No server URL is set."). While Speecher is running it asks Speecher, which knows the sign-ins it has seen and the Local Runners it has looked for. Otherwise it judges from your settings, the downloaded Local Models and the system's network state. It makes no network calls, reads no keyring and refreshes no sign-in, so a sign-in nothing has checked yet, and whether a Local Runner is running, read as `Unknown` in the table and `null` in JSON. A provider that doesn't sign in has `signsIn` false, `signedIn` `null` and `-` in the table.
 
+### Recording a call
+
+`speecher record start` records the microphone into a transcript file that a coding agent can follow with `tail -f`, and prints the file's path. The recording runs in the Speecher app, which `record start` starts when it isn't running; dictation keeps working meanwhile. Each utterance is appended as one line, timed from the start of the recording, once the speech provider has finished it:
+
+```
+[00:12:09] me: Yes, I'll check it today.
+```
+
+```sh
+speecher record start                  # recordings/<yyyy-mm-dd-hhmm>.md in Speecher's data folder
+speecher record start --to call.md     # or this file
+speecher record status                 # path, duration and streams; --json for one object
+speecher record stop                   # writes the last utterance, then prints the path
+```
+
+Speecher's data folder is `~/.local/share/io.github.firemonster612/speecher` on Linux. An existing file is never overwritten: the recording goes to `call-2.md` and so on instead. Files are kept until you delete them. The tray icon and its tooltip show that a recording is running. The first `record start` prints a reminder that recording other people may need their consent.
+
+Recording needs a speech provider that streams text as it hears it: Claude Voice, ChatGPT Codex, or a Local Model that streams. Custom Endpoints can't record yet. If the speech stream stops, for example when the provider refuses a second session while you dictate, the recording stays open and `record status` says why, on stdout and stderr, until you stop it. `record status` exits with 1 when nothing is recording. Only the microphone is recorded for now; `--mic-only` is accepted and changes nothing.
+
 ## Uninstall
 
 Remove Speecher's shortcut in your desktop's keyboard settings. If you added an AppImage to the app menu, delete `~/.local/bin/speecher`, `~/.local/share/applications/io.github.firemonster612.speecher.desktop`, and `~/.local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg`.

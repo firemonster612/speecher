@@ -1037,12 +1037,15 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSString *toggleLabel;
 @property (nonatomic, readonly) BOOL toggleEnabled;
 @property (nonatomic, readonly) BOOL listening;
+// Whether a recording runs, which `speecher record` starts. Re-read on every
+// statusChanged, which a recording starting or stopping also sends.
+@property (nonatomic, readonly) BOOL recording;
 // The captions the menu bar panel shares with the Linux and Windows trays.
 @property (nonatomic, readonly, copy) NSString *traySettingsCaption;
 // The notice while Accessibility is off (speecher::accessibilityNoticeText).
 - (NSString *)accessibilityNoticeText:(BOOL)compact NS_SWIFT_NAME(accessibilityNoticeText(compact:));
 // The menu bar item's accessible name (speecher::trayToolTip).
-- (NSString *)trayToolTip:(BOOL)listening NS_SWIFT_NAME(trayToolTip(listening:));
+- (NSString *)trayToolTip:(BOOL)listening recording:(BOOL)recording NS_SWIFT_NAME(trayToolTip(listening:recording:));
 @property (nonatomic, readonly, copy) NSString *trayQuitCaption;
 // A level meter's accessible name, in the menu bar panel and setup.
 @property (nonatomic, readonly, copy) NSString *inputLevelLabel;

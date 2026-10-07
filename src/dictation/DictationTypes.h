@@ -95,7 +95,8 @@ QString resumeCaption();
 QString cancelCaption();
 
 // The captions every tray menu, tray panel and menu bar panel shares.
-QString trayToolTip(bool listening);
+// recording: a recording is running, which `speecher record` starts.
+QString trayToolTip(bool listening, bool recording);
 QString traySettingsCaption();
 QString trayQuitCaption();
 QString copyTranscriptCaption();

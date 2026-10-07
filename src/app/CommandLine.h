@@ -54,8 +54,12 @@ struct CommandLineDecision {
     HeadlessTranscribeOptions headless;
     // ListenHeadless: stop after this long without speech once there was some.
     std::optional<int> untilSilenceMs;
-    // ListProviders: a JSON array instead of a table.
+    // ListProviders: a JSON array instead of a table. RunCli's record status:
+    // one JSON object.
     bool json = false;
+    // RunCli's record start: the absolute path of --to, or empty for the
+    // default file.
+    QString recordPath;
 };
 
 // Decides what the process is for, before any GUI type is constructed, so that

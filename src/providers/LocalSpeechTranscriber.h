@@ -43,6 +43,8 @@ public:
     QString label() const override;
     bool requiresRefresh(const SpeechSettings &settings) const override;
     SpeechPrepareResult prepare(const SpeechSettings &settings) override;
+    // The models that stream; the rest transcribe once the input ends.
+    bool streamsFinalText(const SpeechSettings &settings) const override;
     void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override;
     void finishInput(quint64 attemptId) override;

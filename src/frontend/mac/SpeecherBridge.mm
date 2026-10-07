@@ -2170,6 +2170,15 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                              bridge.statusChanged(status.toNSString());
                          }
                      });
+    QObject::connect(controller,
+                     &ApplicationController::recordingChanged,
+                     &_state->lifetime,
+                     [weakSelf, controller] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.statusChanged) {
+                             bridge.statusChanged(controller->statusLabel().toNSString());
+                         }
+                     });
     _state->microphoneTest = new speecher::MicrophoneTest(*controller, &_state->lifetime);
     QObject::connect(_state->microphoneTest,
                      &speecher::MicrophoneTest::changed,
@@ -2770,9 +2779,14 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::accessibilityNoticeText(false, compact).toNSString();
 }
 
-- (NSString *)trayToolTip:(BOOL)listening
+- (BOOL)recording
 {
-    return speecher::trayToolTip(listening).toNSString();
+    return _state->controller->isRecording();
+}
+
+- (NSString *)trayToolTip:(BOOL)listening recording:(BOOL)recording
+{
+    return speecher::trayToolTip(listening, recording).toNSString();
 }
 
 - (NSString *)traySettingsCaption

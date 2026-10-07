@@ -94,6 +94,7 @@ public:
     QString updatesLastRunVersion() const; void setUpdatesLastRunVersion(const QString &value);
     qint64 updatesLastRunBuildNumber() const; void setUpdatesLastRunBuildNumber(qint64 value);
     QString updatesPendingWhatsNewVersion() const; void setUpdatesPendingWhatsNewVersion(const QString &value);
+    bool recordingConsentNoticeShown() const; void setRecordingConsentNoticeShown(bool value);
     QString claudeCredentialsPath() const; QString claudeEndpointBase() const; QString claudeVoicePath() const;
     QString storedApiKeyFallback() const; void setStoredApiKeyFallback(const QString &value); void clearStoredApiKeyFallback();
     AppSettings snapshot() const;

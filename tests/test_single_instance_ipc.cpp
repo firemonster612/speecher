@@ -9,6 +9,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QScopeGuard>
@@ -22,6 +25,9 @@
 #include <QSemaphore>
 #include <functional>
 #endif
+
+#include <iostream>
+#include <sstream>
 
 using namespace speecher;
 
@@ -319,6 +325,67 @@ private slots:
         QCOMPARE(commands.first().at(1).toString(), QStringLiteral("html"));
         QCOMPARE(commands.first().at(4).toString(), QStringLiteral("ai_coding"));
         QCOMPARE(commands.first().at(5).toString(), QStringLiteral("de"));
+    }
+
+    // record start hands over its file; every record command's answer
+    // carries the recording, which record status prints.
+    void recordCommandsCarryTheRecordingBothWays()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+        const RecordingStatus recording{true, QStringLiteral("/tmp/call.md"), 3723000,
+                                        {{QStringLiteral("me"), false, QStringLiteral("Server error")}}};
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [recording](const QString &command, const QString &, QLocalSocket *socket) {
+                    IpcResponse reply{true, QStringLiteral("idle"), {}};
+                    reply.recording = command == QStringLiteral("recordStatus") ? recording : RecordingStatus();
+                    SingleInstanceIpc::writeResponse(socket, reply);
+                });
+
+        IpcResponse response;
+        QThread *client = QThread::create([platform, &response] {
+            SingleInstanceIpc::sendCommandDetailed(QStringLiteral("recordStart"), SessionOverrides(),
+                                                   {QStringLiteral("/tmp/call.md")}, &response, 2000, platform);
+        });
+        client->start();
+        QTRY_VERIFY(client->isFinished());
+        delete client;
+        QCOMPARE(commands.first().at(0).toString(), QStringLiteral("recordStart"));
+        QCOMPARE(commands.first().at(3).toStringList(), QStringList{QStringLiteral("/tmp/call.md")});
+        QVERIFY(response.recording && !response.recording->recording);
+
+        CommandLineDecision decision;
+        decision.mode = LaunchMode::RunCli;
+        decision.ipcCommand = QStringLiteral("recordStatus");
+        decision.json = true;
+        std::ostringstream out;
+        std::ostringstream err;
+        int exitCode = -1;
+        client = QThread::create([&] {
+            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+            std::streambuf *const stderrBuffer = std::cerr.rdbuf(err.rdbuf());
+            exitCode = runCliCommand(decision, platform);
+            std::cout.rdbuf(stdoutBuffer);
+            std::cerr.rdbuf(stderrBuffer);
+        });
+        client->start();
+        QTRY_VERIFY(client->isFinished());
+        delete client;
+        QCOMPARE(exitCode, 0);
+        QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
+                 QJsonObject({{QStringLiteral("recording"), true},
+                              {QStringLiteral("path"), QStringLiteral("/tmp/call.md")},
+                              {QStringLiteral("durationMs"), 3723000},
+                              {QStringLiteral("streams"),
+                               QJsonArray{QJsonObject{{QStringLiteral("speaker"), QStringLiteral("me")},
+                                                      {QStringLiteral("state"), QStringLiteral("stopped")},
+                                                      {QStringLiteral("problem"), QStringLiteral("Server error")}}}}}));
+        // The problem goes to stderr too, for a script that reads only stdout.
+        QCOMPARE(QString::fromStdString(err.str()), QStringLiteral("The me stream stopped: Server error\n"));
     }
 
     void theCommandLineFailsWhenTheInstanceIgnoresTheProfile_data()

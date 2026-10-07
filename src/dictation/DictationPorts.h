@@ -220,6 +220,13 @@ public:
         return std::nullopt;
     }
     virtual SpeechPrepareResult prepare(const SpeechSettings &settings) = 0;
+    // Whether finalTranscript arrives while the audio still streams, an
+    // utterance at a time, rather than all at the end. A recording needs it.
+    virtual bool streamsFinalText(const SpeechSettings &settings) const
+    {
+        Q_UNUSED(settings);
+        return false;
+    }
     virtual void startAttempt(quint64 attemptId, const SpeechSettings &settings) = 0;
     virtual void sendAudio(quint64 attemptId, const QByteArray &pcm) = 0;
     virtual void finishInput(quint64 attemptId) = 0;

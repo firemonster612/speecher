@@ -47,6 +47,10 @@ struct TranscribeOptions {
     QString writingProfile = WritingProfile::Other;
     // Replaces the Spoken Language setting for this batch.
     std::optional<QString> spokenLanguage;
+    // A recording's: each final the provider streams is the transcript as it
+    // arrives, so only speech providers that stream final text take the
+    // audio, and Codex does not transcribe it again at the end.
+    bool streamedFinalsOnly = false;
     TranscriptDestination destination = TranscriptDestination::BesideInput;
     QString folder;
 };
@@ -129,6 +133,10 @@ signals:
     void fileDecoded(int index, const QVector<float> &peaks, qint64 durationMs);
     void fileProgress(int index, qreal fractionOfAudioSent);
     void filePartialText(int index, const QString &text);
+    // Each piece of text that will not change again, in order: a final the
+    // provider sent, or the partial a stream left when it ended. A
+    // whole-attempt transcript, which replaces them, is not one.
+    void fileTextFinalized(int index, const QString &text);
     void fileRefining(int index);
     void fileFinished(int index, const speecher::TranscribeFileResult &result);
     // Every file that finished or failed; a cancelled one is left out.
@@ -160,6 +168,8 @@ private:
     void failFile(const QString &message);
     void finishFile();
     void releaseFileResources();
+    void commitFinal(const QString &text);
+    void dropSentMicrophoneAudio();
 
     SettingsStore *m_settings;
     ProviderRegistry *m_providers;
@@ -182,7 +192,14 @@ private:
     QPointer<SpeechTranscriber> m_transcriber;
     QPointer<TranscriptRefiner> m_refiner;
     QByteArray m_pcm;
+    // Microphone audio dropped from the front of m_pcm once sent and no other
+    // provider can need it, so a long recording does not keep all it heard.
+    qsizetype m_pcmDropped = 0;
+    // Bytes sent, counted from the start of the input.
     qsizetype m_sent = 0;
+    // The current provider has sent text, so the audio before m_sent reached
+    // it and will not be sent again.
+    bool m_heardFromProvider = false;
     bool m_inputFinished = false;
     // An attempt is open for the audio; false while a provider prepares.
     bool m_streaming = false;

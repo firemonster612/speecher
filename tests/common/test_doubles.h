@@ -228,6 +228,11 @@ public:
         return prepareResult;
     }
 
+    bool streamsFinalText(const SpeechSettings &) const override
+    {
+        return streamsFinals;
+    }
+
     void startAttempt(quint64 attemptId, const SpeechSettings &settings) override
     {
         ++startCalls;
@@ -296,6 +301,7 @@ public:
     bool backgroundPrepare = false;
     unsigned long backgroundPrepareDelayMs = 0;
     SpeechPrepareResult prepareResult{true, {}};
+    bool streamsFinals = false;
     // Runs inside startAttempt(), as a provider that fails at once would.
     std::function<void()> onStartAttempt;
     // Runs inside cancelAttempt(), as a provider that emits while it stops.
