@@ -413,7 +413,7 @@ bool readSharedChoice(const QStringList &arguments,
     } else if (argument == QStringLiteral("--vocab-file")) {
         const std::optional<QString> given = value();
         if (!given) {
-            *error = QStringLiteral("--vocab-file requires a file");
+            *error = QStringLiteral("--vocab-file requires a value");
         } else if (const std::optional<QStringList> terms = readVocabularyFile(*given)) {
             options.addedVocabulary += *terms;
         } else {

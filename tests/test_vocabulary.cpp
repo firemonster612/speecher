@@ -159,6 +159,16 @@ private slots:
         QCOMPARE(imported.size(), 150);
     }
 
+    void vocabularyFileHoldsOneTermPerLine()
+    {
+        QCOMPARE(parseVocabularyFile("readSharedChoice\n\n# a comment\n  Speecher   CLI  \r\n"),
+                 QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
+#ifdef Q_OS_LINUX
+        // It opens but cannot be read.
+        QCOMPARE(readVocabularyFile(QStringLiteral("/proc/self/mem")), std::nullopt);
+#endif
+    }
+
     void vocabularyMetadataPersistsImportsDeduplicatesAndTracksUsage()
     {
         SettingsStore settings;

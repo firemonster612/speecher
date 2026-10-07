@@ -966,10 +966,14 @@ private slots:
         const QString vocabulary = dir.filePath(QStringLiteral("terms.txt"));
         QFile vocabularyFile(vocabulary);
         QVERIFY(vocabularyFile.open(QIODevice::WriteOnly));
-        vocabularyFile.write("readSharedChoice\n\n# a comment\n  Speecher CLI  \r\n");
+        vocabularyFile.write("readSharedChoice\nSpeecher CLI\n");
         vocabularyFile.close();
         QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary}).headless.addedVocabulary,
                  QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
+        QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary, QStringLiteral("--vocab-file"), vocabulary})
+                     .headless.addedVocabulary,
+                 QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI"),
+                              QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
         QCOMPARE(parse({QStringLiteral("--until-silence")}).untilSilenceMs, std::optional(2000));
         QCOMPARE(parse({QStringLiteral("--until-silence"), QStringLiteral("--no-vocabulary")}).untilSilenceMs,
                  std::optional(2000));
