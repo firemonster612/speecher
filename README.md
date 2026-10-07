@@ -84,7 +84,9 @@ Microsoft Defender SmartScreen warning after a browser download. Choose
 **More info > Run anyway** after checking that the file came from the Speecher
 GitHub release. The installer is per-user and needs no administrator access.
 Speecher downloads later installers in-app, verifies their SHA-256 values, and
-runs them silently after the active Dictation Session finishes.
+runs them silently after the active Dictation Session finishes. The installer also
+adds its folder to your user Path, so `speecher` works in a new Command Prompt or
+PowerShell window; uninstalling takes it off again.
 
 The default Update Channel is Stable Release. Nightly Builds are republished from every push to `master`, not on a nightly schedule. Switch channels in **Settings > General > Updates**.
 
@@ -202,6 +204,8 @@ open build/speecher.app     # macOS
 ```
 
 The four CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
+
+On Windows, `speecher.exe` is a windowed program, which Command Prompt and PowerShell do not wait for. The installer puts `speecher.com` beside it, and both shells try `.com` before `.exe`, so `speecher status` runs the console launcher: it starts `speecher.exe` with the same arguments, waits for it, and returns its exit status. Ctrl+C reaches Speecher itself. The Start menu and Open with still start `speecher.exe`, with no console window. In a build tree the launcher is `build\speecher-console.exe`.
 
 ### Transcribing audio files
 

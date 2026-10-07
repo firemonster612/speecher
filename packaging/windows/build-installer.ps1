@@ -32,6 +32,12 @@ New-Item $RedistDir -ItemType Directory -Force | Out-Null
 New-Item $DistDir -ItemType Directory -Force | Out-Null
 
 Copy-Item $Exe $AppDir
+# cmd and PowerShell try speecher.com before speecher.exe, and wait for it.
+$Launcher = Join-Path $BuildDir "speecher-console.exe"
+if (-not (Test-Path $Launcher)) {
+    throw "Console launcher not found: $Launcher"
+}
+Copy-Item $Launcher (Join-Path $AppDir "speecher.com")
 $Bootstrap = Join-Path $BuildDir "Microsoft.WindowsAppRuntime.Bootstrap.dll"
 if (-not (Test-Path $Bootstrap)) {
     throw "Windows App Runtime bootstrap DLL not found: $Bootstrap"

@@ -29,6 +29,9 @@ Compression=lzma2
 SolidCompression=yes
 ; Tells Explorer to re-read the Open with registrations below.
 ChangesAssociations=yes
+; And the user's Path, which install and uninstall change in [Code], so a
+; new terminal finds speecher.com.
+ChangesEnvironment=yes
 
 [Files]
 Source: "{#SourceDir}\app\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -198,6 +201,59 @@ begin
   RemoveDir(Dir);
 end;
 
+// The user's Path without any entry naming Dir, compared without case as
+// Windows does. Every other entry, empty ones too, stays as it was, so the
+// result equals Path when Dir is not on it.
+function PathWithout(const Path, Dir: String): String;
+var
+  Rest, Entry: String;
+  Split: Integer;
+begin
+  Result := '';
+  Rest := Path + ';';
+  repeat
+    Split := Pos(';', Rest);
+    Entry := Copy(Rest, 1, Split - 1);
+    Rest := Copy(Rest, Split + 1, Length(Rest));
+    if CompareText(Entry, Dir) <> 0 then
+      Result := Result + ';' + Entry;
+  until Rest = '';
+  Delete(Result, 1, 1);
+end;
+
+// Puts the install folder on the user's Path, once, so `speecher` in a new
+// terminal runs speecher.com.
+procedure AddToPath();
+var
+  Dir, Path: String;
+begin
+  Dir := ExpandConstant('{app}');
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', Path) then
+    Path := '';
+  if PathWithout(Path, Dir) <> Path then
+    Exit;
+  if (Path <> '') and (Path[Length(Path)] <> ';') then
+    Path := Path + ';';
+  RegWriteExpandStringValue(HKCU, 'Environment', 'Path', Path + Dir);
+end;
+
+procedure RemoveFromPath();
+var
+  Path, Kept: String;
+begin
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', Path) then
+    Exit;
+  Kept := PathWithout(Path, ExpandConstant('{app}'));
+  if Kept <> Path then
+    RegWriteExpandStringValue(HKCU, 'Environment', 'Path', Kept);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    AddToPath();
+end;
+
 // The uninstaller has no Restart Manager step. Run under a live Speecher, it
 // cannot delete the locked files, so the folder stays behind with Speecher
 // still running from it. Once the person has confirmed, quit Speecher; if it
@@ -218,8 +274,11 @@ begin
                               mbError, MB_RETRYCANCEL, IDCANCEL) = IDCANCEL then
           Abort;
     usPostUninstall:
-      if not HoldsFiles(ExpandConstant('{app}')) then
-        RemoveEmptyTree(ExpandConstant('{app}'));
+      begin
+        RemoveFromPath();
+        if not HoldsFiles(ExpandConstant('{app}')) then
+          RemoveEmptyTree(ExpandConstant('{app}'));
+      end;
   end;
 end;
 

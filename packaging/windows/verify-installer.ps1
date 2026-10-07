@@ -23,6 +23,11 @@ function Start-Speecher([string]$Argument) {
     return $Process
 }
 
+# How many entries of the user's Path name the install folder.
+function Get-PathEntryCount {
+    @([Environment]::GetEnvironmentVariable("Path", "User") -split ";" | Where-Object { $_ -eq $InstallDir }).Count
+}
+
 try {
     $Arguments = @(
         "/VERYSILENT",
@@ -37,7 +42,7 @@ try {
     }
 
     $Exe = Join-Path $InstallDir "speecher.exe"
-    foreach ($Required in "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll") {
+    foreach ($Required in "speecher.com", "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll") {
         if (-not (Test-Path (Join-Path $InstallDir $Required))) {
             throw "Installed application is missing $Required"
         }
@@ -59,7 +64,7 @@ try {
     if (-not $VcRuntime) {
         throw "No Visual C++ runtime DLLs found under VCToolsRedistDir '$env:VCToolsRedistDir'"
     }
-    $Missing = foreach ($Binary in Get-ChildItem $InstallDir -Recurse -Include *.exe, *.dll) {
+    $Missing = foreach ($Binary in Get-ChildItem $InstallDir -Recurse -Include *.exe, *.com, *.dll) {
         $Dump = (& dumpbin /nologo /dependents $Binary.FullName) -join "`n"
         if ($LASTEXITCODE -ne 0) {
             throw "dumpbin failed on $($Binary.FullName) with exit code $LASTEXITCODE"
@@ -97,6 +102,22 @@ try {
             throw "The installer made Speecher the default for $Extension"
         }
     }
+
+    # The console launcher waits for speecher.exe and hands back its output
+    # and exit status; a usage error exits with 2.
+    $Launcher = Join-Path $InstallDir "speecher.com"
+    $Status = & $Launcher status
+    if ($LASTEXITCODE -ne 0 -or $Status -ne "idle") {
+        throw "speecher.com status printed '$Status' and exited with $LASTEXITCODE"
+    }
+    & $Launcher status --format html 2>$null
+    if ($LASTEXITCODE -ne 2) {
+        throw "speecher.com returned $LASTEXITCODE for a usage error rather than 2"
+    }
+    if ((Get-PathEntryCount) -ne 1) {
+        throw "The installer did not put $InstallDir on the user's Path"
+    }
+    Write-Output "speecher.com returned speecher.exe's output and exit status"
 
     # Launch with only system directories on PATH to prove the install is
     # self-contained. WinUI 3 cannot render into the offscreen QPA platform
@@ -170,6 +191,9 @@ public static class RestartManager {
         throw "Setup could not close the running application"
     }
     Write-Output "Setup closed the running application"
+    if ((Get-PathEntryCount) -ne 1) {
+        throw "Reinstalling left $(Get-PathEntryCount) entries for $InstallDir on the user's Path"
+    }
 
     # Uninstalling under the running app must quit it rather than leave its
     # locked files, and the folder, behind. The empty folders stand in for
@@ -189,6 +213,9 @@ public static class RestartManager {
         throw "Uninstall left files behind:`n$((Get-ChildItem $InstallDir -Recurse -Force).FullName -join "`n")"
     }
     Write-Output "Uninstall quit the running application and removed its folder"
+    if ((Get-PathEntryCount) -ne 0) {
+        throw "Uninstall left $InstallDir on the user's Path"
+    }
 
     # A folder this install did not create that still holds a file stays.
     $Install = Start-Process $InstallerPath -ArgumentList $Arguments -Wait -PassThru

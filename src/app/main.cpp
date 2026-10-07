@@ -60,6 +60,7 @@
 #include <thread>
 #ifdef Q_OS_WIN
 #include <windows.h>
+#include "helpers/ConsoleLauncher.h"
 #else
 #include <termios.h>
 #include <unistd.h>
@@ -164,9 +165,16 @@ static void attachParentConsole()
 }
 
 // A window or daemon run outlives the console it was started from, and
-// closing that console ends every process attached to it.
+// closing that console ends every process attached to it. speecher.com, if
+// that is what started this, stops waiting for it.
 static void detachParentConsole()
 {
+    const HANDLE launcherWait = OpenEventW(EVENT_MODIFY_STATE, FALSE,
+                                           consoleDetachedEventName(GetCurrentProcessId()).c_str());
+    if (launcherWait) {
+        SetEvent(launcherWait);
+        CloseHandle(launcherWait);
+    }
     FreeConsole();
 }
 
