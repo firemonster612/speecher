@@ -202,6 +202,7 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
+        settings.setSelectionEditReviewEnabled(false);
         settings.setRefinementProvider(QStringLiteral("openai"));
         settings.setCustomVocabulary({QStringLiteral("Speecher")});
         settings.setWritingProfileSettings({
@@ -253,6 +254,161 @@ private slots:
                  QStringLiteral("Hello team—the release is tomorrow!"));
         QCOMPARE(delivery->lastTarget.selectionStart, 10);
         QCOMPARE(delivery->lastTarget.selectionEnd, 33);
+    }
+
+    void selectionEditWaitsForReplace()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
+        target.target.selectedText = QStringLiteral("Move the standup to Wednesday.");
+        target.target.selectionStart = 4;
+        target.target.selectionEnd = 34;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+        session.setReviewKeys({QStringLiteral("Esc"), QStringLiteral("Enter")});
+        QSignalSpy reviews(&session, &DictationSession::popupSelectionEditReviewRequested);
+
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("make it Thursday"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Move the standup to Thursday."));
+
+        QCOMPARE(session.state(), DictationState::Reviewing);
+        QCOMPARE(delivery.calls, 0);
+        QCOMPARE(reviews.count(), 1);
+        const auto review = reviews.first().first().value<SelectionEditReview>();
+        QCOMPARE(review.instruction, QStringLiteral("“make it Thursday”"));
+        QCOMPARE(review.summary, QStringLiteral("1 change"));
+        QCOMPARE(review.keys.replace, QStringLiteral("Enter"));
+        // The Global Shortcut does nothing while the edit waits.
+        session.toggle();
+        QCOMPARE(session.state(), DictationState::Reviewing);
+        // Keys the controller lets go of leave the buttons at once.
+        session.setReviewKeys({QStringLiteral("Esc"), QString()});
+        QCOMPARE(reviews.count(), 2);
+        QVERIFY(reviews.last().first().value<SelectionEditReview>().keys.replace.isEmpty());
+
+        session.replaceSelection();
+        QCOMPARE(delivery.calls, 1);
+        QCOMPARE(delivery.lastText, QStringLiteral("Move the standup to Thursday."));
+        QCOMPARE(delivery.lastTarget.selectionStart, 4);
+        QCOMPARE(delivery.lastSettings.pasteRules, defaultPasteRules());
+        QCOMPARE(session.lastMessage(), QStringLiteral("Input sent"));
+    }
+
+    void selectionEditReviewEndsWithoutReplacing_data()
+    {
+        QTest::addColumn<bool>("selectionMoved");
+        QTest::addColumn<bool>("focusMoved");
+        QTest::newRow("keep original") << false << false;
+        QTest::newRow("selection changed, then replace") << true << false;
+        // Another control with the same selection is still not the one the
+        // edit was made in.
+        QTest::newRow("another control focused, then replace") << false << true;
+    }
+
+    // Keep original leaves the selection alone and says nothing. Replace after
+    // the selection moved must not paste over the new one: the edit goes to
+    // the clipboard and the receipt says why.
+    void selectionEditReviewEndsWithoutReplacing()
+    {
+        QFETCH(bool, selectionMoved);
+        QFETCH(bool, focusMoved);
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
+        target.target.selectedText = QStringLiteral("Keep this original text");
+        target.target.selectionStart = 0;
+        target.target.selectionEnd = 23;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+        QSignalSpy hidden(&session, &DictationSession::popupHideRequested);
+        QSignalSpy messages(&session, &DictationSession::popupMessageRequested);
+
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("make this shorter"));
+        session.stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Keep the original"));
+        QCOMPARE(session.state(), DictationState::Reviewing);
+
+        if (!selectionMoved && !focusMoved) {
+            session.cancel();
+            QCOMPARE(session.state(), DictationState::Idle);
+            QCOMPARE(delivery.calls, 0);
+            QCOMPARE(hidden.count(), 1);
+            QCOMPARE(messages.count(), 0);
+            return;
+        }
+        if (selectionMoved) {
+            target.target.selectedText.clear();
+            target.target.selectionStart = target.target.selectionEnd = 7;
+        }
+        target.focused = !focusMoved;
+        session.replaceSelection();
+        QCOMPARE(delivery.calls, 1);
+        QCOMPARE(delivery.lastText, QStringLiteral("Keep the original"));
+        QCOMPARE(delivery.lastSettings.pasteRules,
+                 (QList<PasteRule>{{PasteRuleScope::Global, QString(), PasteMethod::ClipboardOnly}}));
+        QCOMPARE(session.lastMessage(), QStringLiteral("Input sent • Your selection changed"));
+    }
+
+    // Speech that dropped after the instruction was heard leaves the session
+    // ready to paste the raw words, but a refined edit replaced is no fallback.
+    void aReviewedEditAfterSpeechDroppedIsNotTheRawTranscript()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setRefinementProvider(QStringLiteral("openai"));
+        FakeAudioInput audio;
+        FakeMediaController media;
+        FakeTargetProvider target;
+        target.target.applicationId = QStringLiteral("org.kde.kate");
+        target.target.selectedText = QStringLiteral("the release is tomorrow");
+        target.target.selectionStart = 0;
+        target.target.selectionEnd = 23;
+        FakeDelivery delivery;
+        ProviderRegistry registry;
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(registry, &speech);
+        registerFakeRefiner(registry, &refiner);
+        DictationSession session(&settings, &audio, &media, &target, &delivery, &registry);
+
+        session.startListening();
+        QTRY_COMPARE(session.state(), DictationState::Listening);
+        speech->emitPartialText(QStringLiteral("make it friday"));
+        for (int failure = 0; failure < 3; ++failure) {
+            speech->emitFailure(QStringLiteral("stream closed"), true, QStringLiteral("streaming"));
+        }
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("The release is Friday."));
+        QCOMPARE(session.state(), DictationState::Reviewing);
+        session.replaceSelection();
+        QCOMPARE(delivery.calls, 1);
+        QVERIFY(!session.lastMessage().contains(QStringLiteral("Used raw transcript")));
     }
 
     void selectionEditingFailurePreservesTheSelectedText()

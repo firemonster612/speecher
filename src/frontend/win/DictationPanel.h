@@ -29,6 +29,10 @@ signals:
     void whatsNewRequested();
     // The error's fix button was pressed.
     void fixRequested(const PopupErrorAction &fix);
+    // A selection edit review's buttons, which WinFrontEnd sends to the
+    // controller and the session.
+    void keepOriginalRequested();
+    void replaceSelectionRequested();
 
 private:
     friend class WinFrontEndTests;
@@ -65,6 +69,22 @@ private:
     // shoulder means the capsule fell back to a plain rounded box.
     double outlineShoulderForTest() const;
     double outlineLobeWidthForTest() const;
+    // A selection edit's review card: where it is, the edit's text as shown,
+    // the Show all toggle's caption (empty while it is hidden), whether the
+    // edit scrolls and Replace looks like the default button, and pressing
+    // its controls.
+    QRect reviewGeometryForTest() const;
+    // Whether the whole card shows: laid out inside the window and inside
+    // the window region that clips it. False until WinUI has laid the card
+    // out in the island's new size.
+    bool reviewFullyVisibleForTest() const;
+    QString reviewTextForTest() const;
+    QString reviewToggleForTest() const;
+    bool reviewScrollsForTest() const;
+    bool reviewReplaceIsDefaultForTest() const;
+    void pressReviewToggleForTest();
+    void pressKeepOriginalForTest();
+    void pressReplaceForTest();
     struct Native;
     std::unique_ptr<Native> m_native;
 };

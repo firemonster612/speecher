@@ -211,7 +211,11 @@ ShortcutBinding KGlobalAccelSessionShortcutBinder::storedShortcut() const
 void KGlobalAccelSessionShortcutBinder::bind()
 {
     SessionShortcutBinder::bind();
-    // Also drops what an earlier build or a crashed run left registered.
+    dropLeftoverRegistration();
+}
+
+void KGlobalAccelSessionShortcutBinder::dropLeftoverRegistration()
+{
     if (!m_action) {
         take({});
         letGo();

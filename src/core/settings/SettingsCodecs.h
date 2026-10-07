@@ -21,6 +21,7 @@ public:
     int previewWords() const; void setPreviewWords(int value);
     bool transcriptionPreviewEnabled() const; void setTranscriptionPreviewEnabled(bool value);
     bool refinementPreviewEnabled() const; void setRefinementPreviewEnabled(bool value);
+    bool selectionEditReviewEnabled() const; void setSelectionEditReviewEnabled(bool value);
     QString theme() const; void setTheme(const QString &value);
     bool pauseMediaDuringTranscription() const; void setPauseMediaDuringTranscription(bool value);
     bool soundsEnabled() const; void setSoundsEnabled(bool value);

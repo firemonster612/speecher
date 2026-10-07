@@ -59,7 +59,14 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   and Windows use their native spinners there. The QR code in "Copy settings
   to your phone" is black on white in every theme, not palette roles, because
   scanners read dark-on-light codes most reliably; `qrCodeImage` in
-  `src/app/PhoneTransfer.cpp` draws it for every front end.
+  `src/app/PhoneTransfer.cpp` draws it for every front end. The popup's review of a
+  selection edit marks words in rich text rather than paint: added words over
+  a fifth of the colour scheme's PositiveText on Base (Highlight where no
+  scheme names one), removed ones struck
+  through in PlaceholderText over a fifth of its NegativeText, as Badge fills.
+  Its buttons name their key in a PlaceholderText label inside the frame the
+  style draws (`KeyedButton` in `src/ui/TranscriberPopup.cpp`), because a push
+  button draws its text in one colour.
 - **Settings pages follow Kirigami Addons FormCard.** Bold header above the
   card, title and small grey description on the left, control on the right,
   inset separators, button rows with a trailing arrow, cards capped at 30

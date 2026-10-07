@@ -172,6 +172,16 @@ void SettingsCodecs::setRefinementPreviewEnabled(bool value)
     m_settings.setValue(SettingsKeys::UiRefinementPreviewEnabled, value);
 }
 
+bool SettingsCodecs::selectionEditReviewEnabled() const
+{
+    return value(SettingsKeys::UiSelectionEditReviewEnabled, true).toBool();
+}
+
+void SettingsCodecs::setSelectionEditReviewEnabled(bool value)
+{
+    m_settings.setValue(SettingsKeys::UiSelectionEditReviewEnabled, value);
+}
+
 int SettingsCodecs::previewWords() const
 {
     return std::clamp(value(SettingsKeys::UiPreviewWords, 7).toInt(), 1, 40);
@@ -1465,6 +1475,7 @@ AppSettings SettingsCodecs::snapshot() const
     settings.launchAtLogin = launchAtLogin();
     settings.ui.transcriptionPreviewEnabled = transcriptionPreviewEnabled();
     settings.ui.refinementPreviewEnabled = refinementPreviewEnabled();
+    settings.ui.selectionEditReviewEnabled = selectionEditReviewEnabled();
     settings.ui.previewWords = previewWords();
     settings.ui.theme = theme();
     settings.ui.pauseMediaDuringTranscription = pauseMediaDuringTranscription();

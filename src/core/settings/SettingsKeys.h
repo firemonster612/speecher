@@ -11,6 +11,7 @@ inline const QString SetupCompleted = QStringLiteral("app/setupCompleted");
 inline const QString LaunchAtLogin = QStringLiteral("app/launchAtLogin");
 inline const QString UiTranscriptionPreviewEnabled = QStringLiteral("ui/transcriptionPreviewEnabled");
 inline const QString UiRefinementPreviewEnabled = QStringLiteral("ui/refinementPreviewEnabled");
+inline const QString UiSelectionEditReviewEnabled = QStringLiteral("ui/selectionEditReviewEnabled");
 inline const QString UiPreviewWords = QStringLiteral("ui/previewWords");
 inline const QString UiTheme = QStringLiteral("ui/theme");
 inline const QString UiPauseMedia = QStringLiteral("ui/pauseMediaDuringTranscription");

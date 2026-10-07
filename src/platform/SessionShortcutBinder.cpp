@@ -112,6 +112,19 @@ QString SessionShortcutBinder::resume()
     return hold();
 }
 
+void SessionShortcutBinder::holdWhileArmed(const ShortcutBinding &keys)
+{
+    letGo();
+    m_holding = false;
+    m_binding = keys;
+    hold();
+}
+
+bool SessionShortcutBinder::holding() const
+{
+    return m_holding;
+}
+
 QString SessionShortcutBinder::hold()
 {
     const bool wanted = m_armed && m_suspensions == 0 && !m_binding.isEmpty();

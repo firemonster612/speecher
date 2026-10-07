@@ -25,6 +25,7 @@
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupGeometry.h"
 #include "dictation/PopupPresentation.h"
+#include "dictation/SelectionEditPresentation.h"
 #include "frontend/mac/MacCustomRows.h"
 // The schema context: what this machine can offer the descriptors. Shared with
 // the Qt front end rather than reassembled, because the device and provider
@@ -1115,6 +1116,58 @@ SpeecherFallbackList *bridgedFallbackList(speecher::ProviderRole role, const spe
 @implementation SpeecherPreviewLine
 @end
 
+@interface SpeecherEditRun ()
+@property (nonatomic) SpeecherEditRunKind kind;
+@property (nonatomic, copy) NSString *text;
+@property (nonatomic, copy) NSString *trailing;
+@end
+
+@implementation SpeecherEditRun
+@end
+
+static NSArray<SpeecherEditRun *> *bridgedEditRuns(const QList<speecher::EditRun> &runs)
+{
+    // SpeecherEditRunKind mirrors speecher::EditRun::Kind value for value.
+    static_assert(int(SpeecherEditRunKindKept) == int(speecher::EditRun::Kind::Kept));
+    static_assert(int(SpeecherEditRunKindRemoved) == int(speecher::EditRun::Kind::Removed));
+    static_assert(int(SpeecherEditRunKindAdded) == int(speecher::EditRun::Kind::Added));
+    static_assert(int(SpeecherEditRunKindOmitted) == int(speecher::EditRun::Kind::Omitted));
+    NSMutableArray<SpeecherEditRun *> *bridged = [NSMutableArray arrayWithCapacity:NSUInteger(runs.size())];
+    for (const speecher::EditRun &run : runs) {
+        SpeecherEditRun *edit = [[SpeecherEditRun alloc] init];
+        edit.kind = static_cast<SpeecherEditRunKind>(run.kind);
+        edit.text = run.text.toNSString();
+        edit.trailing = run.trailing.toNSString();
+        [bridged addObject:edit];
+    }
+    return bridged;
+}
+
+@interface SpeecherSelectionEditReview ()
+@property (nonatomic, copy) NSString *instruction;
+@property (nonatomic, copy) NSArray<SpeecherEditRun *> *runs;
+@property (nonatomic, copy) NSArray<SpeecherEditRun *> *folded;
+@property (nonatomic, copy) NSString *summary;
+@property (nonatomic, copy) NSString *keepKey;
+@property (nonatomic, copy) NSString *replaceKey;
+@end
+
+@implementation SpeecherSelectionEditReview
+
++ (SpeecherSelectionEditReview *)reviewWithCore:(const speecher::SelectionEditReview &)core
+{
+    SpeecherSelectionEditReview *review = [[SpeecherSelectionEditReview alloc] init];
+    review.instruction = core.instruction.toNSString();
+    review.runs = bridgedEditRuns(core.runs);
+    review.folded = bridgedEditRuns(core.folded);
+    review.summary = core.summary.toNSString();
+    review.keepKey = core.keys.keep.toNSString();
+    review.replaceKey = core.keys.replace.toNSString();
+    return review;
+}
+
+@end
+
 @implementation SpeecherPopupGeometry
 
 + (CGFloat)pillHeight
@@ -1220,6 +1273,21 @@ SpeecherFallbackList *bridgedFallbackList(speecher::ProviderRole role, const spe
 + (CGFloat)previewFadeWidth
 {
     return speecher::popup::kPreviewFadeWidth;
+}
+
++ (CGFloat)reviewVerticalMargin
+{
+    return speecher::popup::kReviewVerticalMargin;
+}
+
++ (CGFloat)reviewSpacing
+{
+    return speecher::popup::kReviewSpacing;
+}
+
++ (NSInteger)reviewMaxLines
+{
+    return speecher::popup::kReviewMaxLines;
 }
 
 + (CGFloat)minimumPreviewBarWidthForLobeWidth:(CGFloat)lobeWidth shoulderHeight:(CGFloat)shoulderHeight
@@ -2596,6 +2664,16 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                                                         [SpeecherErrorAction actionWithCore:fix]);
                          }
                      });
+    QObject::connect(session,
+                     &DictationSession::popupSelectionEditReviewRequested,
+                     &_state->lifetime,
+                     [weakSelf](const speecher::SelectionEditReview &review) {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.popupSelectionEditReviewRequested) {
+                             bridge.popupSelectionEditReviewRequested(
+                                 [SpeecherSelectionEditReview reviewWithCore:review]);
+                         }
+                     });
 }
 
 - (void)notePopupPresented:(uint64_t)generation
@@ -3047,6 +3125,11 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     _state->controller->session()->togglePause();
 }
 
+- (void)replaceSelection
+{
+    _state->controller->session()->replaceSelection();
+}
+
 - (BOOL)pauseVisible
 {
     return speecher::sessionControls(_state->controller->stateName()).pauseVisible;
@@ -3203,6 +3286,26 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::renewingSignInText().toNSString();
 }
 
++ (NSString *)keepOriginalCaption
+{
+    return speecher::keepOriginalCaption().toNSString();
+}
+
++ (NSString *)replaceSelectionCaption
+{
+    return speecher::replaceSelectionCaption().toNSString();
+}
+
++ (NSString *)showWholeEditCaption
+{
+    return speecher::showWholeEditCaption().toNSString();
+}
+
++ (NSString *)showChangesOnlyCaption
+{
+    return speecher::showChangesOnlyCaption().toNSString();
+}
+
 + (NSString *)statusLabelFor:(SpeecherDictationState)state
 {
     // SpeecherDictationState mirrors speecher::DictationState value for value.
@@ -3214,6 +3317,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     static_assert(int(SpeecherDictationStateRefining) == int(speecher::DictationState::Refining));
     static_assert(int(SpeecherDictationStateDelivering) == int(speecher::DictationState::Delivering));
     static_assert(int(SpeecherDictationStateError) == int(speecher::DictationState::Error));
+    static_assert(int(SpeecherDictationStateReviewing) == int(speecher::DictationState::Reviewing));
     return speecher::dictationStatusLabel(
                speecher::dictationStateName(static_cast<speecher::DictationState>(state)))
         .toNSString();

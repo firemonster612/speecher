@@ -120,6 +120,10 @@ WinFrontEnd::WinFrontEnd(ApplicationController *controller,
         showMainWindow();
         m_native->settingsWindow()->showPage(fix.pageId);
     });
+    connect(m_native->panel.get(), &DictationPanel::keepOriginalRequested, controller,
+            &ApplicationController::cancel);
+    connect(m_native->panel.get(), &DictationPanel::replaceSelectionRequested, controller->session(),
+            &DictationSession::replaceSelection);
     // On-screen windows only, never the microphone: an update restart must not
     // reopen a recording the new process was never asked for. The restart
     // already waits for the session to finish; resuming what it waited out

@@ -38,6 +38,9 @@
       <SolidColorBrush x:Key="StatsImageBackground" Color="#F3F3F3"/>
       <!-- SystemFillColorCaution: a paused dictation's waveform and status. -->
       <SolidColorBrush x:Key="PausedForeground" Color="#9D5D00"/>
+      <!-- TextOnAccentFillColorSecondary: the key named beside the caption
+           on the dictation popup's accent button. -->
+      <SolidColorBrush x:Key="AccentButtonSecondaryForeground" Color="#B3FFFFFF"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <SolidColorBrush x:Key="SettingsCardBackground" Color="#0DFFFFFF"/>
@@ -51,6 +54,7 @@
       <SolidColorBrush x:Key="NegativeTextForeground" Color="#FF99A4"/>
       <SolidColorBrush x:Key="StatsImageBackground" Color="#202020"/>
       <SolidColorBrush x:Key="PausedForeground" Color="#FCE100"/>
+      <SolidColorBrush x:Key="AccentButtonSecondaryForeground" Color="#80000000"/>
     </ResourceDictionary>
     <ResourceDictionary x:Key="HighContrast">
       <SolidColorBrush x:Key="SettingsCardBackground" Color="{ThemeResource SystemColorButtonFaceColor}"/>
@@ -64,6 +68,7 @@
       <SolidColorBrush x:Key="NegativeTextForeground" Color="{ThemeResource SystemColorWindowTextColor}"/>
       <SolidColorBrush x:Key="StatsImageBackground" Color="{ThemeResource SystemColorWindowColor}"/>
       <SolidColorBrush x:Key="PausedForeground" Color="{ThemeResource SystemColorWindowTextColor}"/>
+      <SolidColorBrush x:Key="AccentButtonSecondaryForeground" Color="{ThemeResource SystemColorHighlightTextColor}"/>
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 

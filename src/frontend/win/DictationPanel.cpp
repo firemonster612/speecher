@@ -7,6 +7,7 @@
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupGeometry.h"
 #include "dictation/PopupPresentation.h"
+#include "dictation/SelectionEditPresentation.h"
 #include "frontend/win/SettingsPage.h"
 #include "frontend/win/WaveformBars.h"
 
@@ -26,12 +27,14 @@
 #include <winrt/Microsoft.UI.Xaml.Automation.Provider.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
+#include <winrt/Microsoft.UI.Xaml.Documents.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Microsoft.UI.Xaml.Input.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
 #include <winrt/Microsoft.UI.Xaml.Shapes.h>
+#include <winrt/Windows.UI.Text.h>
 #pragma pop_macro("GetCurrentTime")
 
 #include <QImage>
@@ -96,6 +99,11 @@ constexpr int sessionButtonGap = popup::kButtonGap;
 constexpr int spinnerSize = 16;
 constexpr win::WaveformGeometry panelBars{popup::kBarCount, popup::kBarWidth, popup::kBarGap,
                                           popup::kBarDotHeight};
+// A selection edit's review: a card as wide as an error's wrapped text plus
+// the preview's side margins, its changed words marked with a fifth of a
+// tone over the card, as the Linux and macOS badges fill.
+constexpr int reviewCardWidth = kPopupErrorWrapWidth + previewChromeWidth;
+constexpr double editTintShare = 0.2;
 constexpr auto windowClassName = L"SpeecherDictationPanel";
 
 // A brush's colour, for brushes built from the theme's text. High-contrast
@@ -104,6 +112,23 @@ winrt::Windows::UI::Color solidColor(const Brush &brush)
 {
     const auto solid = brush.try_as<SolidColorBrush>();
     return solid ? solid.Color() : winrt::Windows::UI::Color{255, 128, 128, 128};
+}
+
+// WinUI's accent button, which marks the default action.
+Microsoft::UI::Xaml::Style accentButtonStyle()
+{
+    return Application::Current().Resources()
+        .Lookup(box_value(hstring(L"AccentButtonStyle")))
+        .as<Microsoft::UI::Xaml::Style>();
+}
+
+// A text highlighter's brush: a fifth of the tone, over the card behind it.
+// Highlighters take only solid brushes.
+SolidColorBrush editTint(const Brush &tone)
+{
+    auto color = solidColor(tone);
+    color.A = static_cast<uint8_t>(color.A * editTintShare);
+    return SolidColorBrush(color);
 }
 
 // Whether every pixel is the same colour, which is what a capture with no
@@ -197,6 +222,10 @@ struct DictationPanel::Native : QObject {
         DictationSession *session = controller->session();
         connect(session, &DictationSession::stateChanged, this, [this](const QString &name) {
             sessionState = name;
+            // A review lasts as long as the session's Reviewing state.
+            if (name != dictationStateName(DictationState::Reviewing)) {
+                reviewShown = false;
+            }
             refresh();
         });
         connect(session, &DictationSession::previewDisplayChanged, this,
@@ -248,6 +277,7 @@ struct DictationPanel::Native : QObject {
                     refresh();
                 });
         connect(session, &DictationSession::popupErrorRequested, this, &Native::showProblem);
+        connect(session, &DictationSession::popupSelectionEditReviewRequested, this, &Native::showReview);
     }
 
     ~Native() override
@@ -406,9 +436,7 @@ struct DictationPanel::Native : QObject {
         // The one fix of an error or an outcome, ahead of Dismiss as the way
         // forward.
         fixButton = Button();
-        fixButton.Style(Application::Current().Resources()
-                            .Lookup(box_value(hstring(L"AccentButtonStyle")))
-                            .as<Microsoft::UI::Xaml::Style>());
+        fixButton.Style(accentButtonStyle());
         fixButton.Visibility(Visibility::Collapsed);
         fixButton.Click([this](const auto &, const auto &) {
             const PopupErrorAction chosen = fix;
@@ -431,6 +459,7 @@ struct DictationPanel::Native : QObject {
         countdown.Margin({24, 0, 24, 12});
         countdown.Visibility(Visibility::Collapsed);
         content.Children().Append(countdown);
+        buildReviewCard();
         countdownTick.setInterval(50);
         // An error holds its countdown while the pointer is on it, so a long
         // one can be read to the end. The tick reads the cursor rather than
@@ -471,8 +500,123 @@ struct DictationPanel::Native : QObject {
         chrome.VerticalAlignment(VerticalAlignment::Bottom);
         Grid surface;
         surface.Children().Append(chrome);
+        // The island takes a new size from the bridge's MoveAndResize only
+        // when its StateChanged event arrives, after refresh() has laid the
+        // capsule out in the old size and set the click region from that.
+        // The region follows the capsule to where the new size puts it.
+        surface.SizeChanged([this](const auto &, const auto &) { limitClicksToCapsule(); });
         source.Content(surface);
         resize(panelWidth);
+    }
+
+    // A selection edit's review, in the capsule's place while the session
+    // waits in Reviewing: what was said, the edit, and its summary beside
+    // Keep original and Replace.
+    void buildReviewCard()
+    {
+        reviewCard = StackPanel();
+        reviewCard.Spacing(popup::kReviewSpacing);
+        reviewCard.Padding({popup::kPreviewSideMargin, popup::kReviewVerticalMargin,
+                            popup::kPreviewSideMargin, popup::kReviewVerticalMargin});
+        reviewCard.Visibility(Visibility::Collapsed);
+        // refreshReview() sizes the window from a Measure taken as the review
+        // changes, before WinUI's own layout pass. When the edit shrinks back
+        // under the scroll viewer's line limit, that pass can settle the card
+        // at another height, and the window keeps the first one until some
+        // later refresh. The window follows the card's settled height.
+        reviewCard.SizeChanged([this](const auto &, const SizeChangedEventArgs &args) {
+            if (reviewShown && int(std::ceil(args.NewSize().Height)) != height) {
+                refresh();
+            }
+        });
+
+        reviewInstruction = TextBlock();
+        reviewInstruction.FontSize(previewFontSize);
+        reviewInstruction.TextWrapping(TextWrapping::Wrap);
+        reviewCard.Children().Append(reviewInstruction);
+
+        reviewEdit = TextBlock();
+        reviewEdit.FontSize(previewFontSize);
+        reviewEdit.TextWrapping(TextWrapping::Wrap);
+        reviewScroll = ScrollViewer();
+        reviewScroll.HorizontalScrollBarVisibility(ScrollBarVisibility::Disabled);
+        reviewScroll.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
+        reviewScroll.IsTabStop(false);
+        reviewScroll.Content(reviewEdit);
+        reviewCard.Children().Append(reviewScroll);
+
+        reviewSummary = TextBlock();
+        reviewSummary.FontSize(previewFontSize);
+        reviewSummary.VerticalAlignment(VerticalAlignment::Center);
+        reviewToggle = HyperlinkButton();
+        reviewToggle.FontSize(previewFontSize);
+        reviewToggle.Padding({0, 0, 0, 0});
+        reviewToggle.VerticalAlignment(VerticalAlignment::Center);
+        reviewToggle.IsTabStop(false);
+        reviewToggle.AllowFocusOnInteraction(false);
+        reviewToggle.Click([this](const auto &, const auto &) {
+            reviewWhole = !reviewWhole;
+            fillReview();
+            refresh();
+        });
+        StackPanel summary;
+        summary.Orientation(Orientation::Horizontal);
+        summary.Spacing(popup::kReviewSpacing);
+        summary.VerticalAlignment(VerticalAlignment::Center);
+        summary.Children().Append(reviewSummary);
+        summary.Children().Append(reviewToggle);
+
+        reviewKeep = keyedButton(keepOriginalCaption());
+        reviewKeep.Click([this](const auto &, const auto &) { emit panel->keepOriginalRequested(); });
+        reviewReplace = keyedButton(replaceSelectionCaption());
+        reviewReplace.Click([this](const auto &, const auto &) { emit panel->replaceSelectionRequested(); });
+        StackPanel buttons;
+        buttons.Orientation(Orientation::Horizontal);
+        buttons.Spacing(popup::kReviewSpacing);
+        buttons.Children().Append(reviewKeep);
+        buttons.Children().Append(reviewReplace);
+
+        Grid footer;
+        footer.ColumnSpacing(popup::kReviewSpacing);
+        ColumnDefinition summaryColumn;
+        summaryColumn.Width({1, GridUnitType::Star});
+        ColumnDefinition buttonsColumn;
+        buttonsColumn.Width({0, GridUnitType::Auto});
+        footer.ColumnDefinitions().Append(summaryColumn);
+        footer.ColumnDefinitions().Append(buttonsColumn);
+        Grid::SetColumn(buttons, 1);
+        footer.Children().Append(summary);
+        footer.Children().Append(buttons);
+        reviewCard.Children().Append(footer);
+        content.Children().Append(reviewCard);
+    }
+
+    // A push button that names the key doing what a click does, after its
+    // caption in a secondary colour. Never focused: the Target keeps the
+    // keyboard.
+    static Button keyedButton(const QString &caption)
+    {
+        StackPanel parts;
+        parts.Orientation(Orientation::Horizontal);
+        parts.Spacing(popup::kReviewSpacing);
+        TextBlock captionText;
+        captionText.Text(win::hs(caption));
+        parts.Children().Append(captionText);
+        parts.Children().Append(TextBlock());
+        Button button;
+        button.Content(parts);
+        button.IsTabStop(false);
+        button.AllowFocusOnInteraction(false);
+        Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(button, win::hs(caption));
+        return button;
+    }
+
+    static void setButtonKey(const Button &button, const QString &key, const Brush &ink)
+    {
+        const TextBlock keyText = button.Content().as<StackPanel>().Children().GetAt(1).as<TextBlock>();
+        keyText.Text(win::hs(key));
+        keyText.Foreground(ink);
+        keyText.Visibility(key.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
     }
 
     // The notices float above the pill in a transparent window of their
@@ -495,9 +639,7 @@ struct DictationPanel::Native : QObject {
         bannerSource = DesktopWindowXamlSource();
         bannerSource.Initialize(Microsoft::UI::GetWindowIdFromWindow(banner));
 
-        const auto accentStyle = Application::Current().Resources()
-                                     .Lookup(box_value(hstring(L"AccentButtonStyle")))
-                                     .as<Microsoft::UI::Xaml::Style>();
+        const auto accentStyle = accentButtonStyle();
         const auto makeRow = [&accentStyle](Grid &capsule, Microsoft::UI::Xaml::Shapes::Path &shape,
                                             StackPanel &row, TextBlock &message, Button &action) {
             row = StackPanel();
@@ -673,6 +815,99 @@ struct DictationPanel::Native : QObject {
         }
     }
 
+    void showReview(const SelectionEditReview &value)
+    {
+        review = value;
+        reviewWhole = false;
+        reviewShown = true;
+        ensureWindow();
+        applyTheme();
+        fillReview();
+        refresh();
+        reposition();
+        ShowWindow(window, SW_SHOWNOACTIVATE);
+        refreshBanner();
+    }
+
+    // Fills the card with the review, folded or whole, in the panel's theme.
+    void fillReview()
+    {
+        win::PaneHost theme;
+        theme.effectiveTheme = [this] { return chrome.ActualTheme(); };
+        const Brush secondary = win::themeBrush(L"SettingsCardDescriptionForeground", theme);
+        reviewInstruction.Text(win::hs(review.instruction));
+        reviewInstruction.Foreground(secondary);
+        reviewInstruction.Visibility(review.instruction.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
+        const bool folded = !review.folded.isEmpty() && !reviewWhole;
+        fillEdit(folded ? review.folded : review.runs, secondary, theme);
+        reviewScroll.ChangeView(nullptr, 0.0, nullptr, true);
+        reviewSummary.Text(win::hs(review.summary));
+        reviewSummary.Foreground(secondary);
+        reviewToggle.Content(box_value(win::hs(reviewWhole ? showChangesOnlyCaption() : showWholeEditCaption())));
+        reviewToggle.Visibility(review.folded.isEmpty() ? Visibility::Collapsed : Visibility::Visible);
+        setButtonKey(reviewKeep, review.keys.keep, secondary);
+        // Replace is the default button where Enter presses it.
+        const bool replaceIsDefault = !review.keys.replace.isEmpty();
+        if (replaceIsDefault) {
+            reviewReplace.Style(accentButtonStyle());
+        } else {
+            reviewReplace.ClearValue(FrameworkElement::StyleProperty());
+        }
+        setButtonKey(reviewReplace, review.keys.replace,
+                     replaceIsDefault ? win::themeBrush(L"AccentButtonSecondaryForeground", theme) : secondary);
+    }
+
+    // The edit as runs: added words over a fifth of the success colour,
+    // removed ones struck through in the secondary colour over a fifth of the
+    // critical colour, and left-out words as a secondary ellipsis. A run's
+    // trailing spaces stay unmarked. A Run has no background of its own, so
+    // the tints are text highlighters, whose ranges count the characters of
+    // every run together.
+    void fillEdit(const QList<EditRun> &runs, const Brush &secondary, const win::PaneHost &theme)
+    {
+        namespace Documents = Microsoft::UI::Xaml::Documents;
+        reviewEdit.Inlines().Clear();
+        reviewEdit.TextHighlighters().Clear();
+        // A highlighter without a foreground paints its words in the system's
+        // highlight colour, so each keeps the colour its words already have.
+        Documents::TextHighlighter added;
+        added.Background(editTint(win::themeBrush(L"PositiveTextForeground", theme)));
+        added.Foreground(SolidColorBrush(solidColor(reviewEdit.Foreground())));
+        Documents::TextHighlighter removed;
+        removed.Background(editTint(win::themeBrush(L"NegativeTextForeground", theme)));
+        removed.Foreground(SolidColorBrush(solidColor(secondary)));
+        int32_t position = 0;
+        for (const EditRun &run : runs) {
+            Documents::Run words;
+            words.Text(win::hs(run.text));
+            const Documents::TextRange range{position, int32_t(run.text.size())};
+            switch (run.kind) {
+            case EditRun::Kind::Kept:
+                break;
+            case EditRun::Kind::Added:
+                added.Ranges().Append(range);
+                break;
+            case EditRun::Kind::Removed:
+                words.Foreground(secondary);
+                words.TextDecorations(winrt::Windows::UI::Text::TextDecorations::Strikethrough);
+                removed.Ranges().Append(range);
+                break;
+            case EditRun::Kind::Omitted:
+                words.Foreground(secondary);
+                break;
+            }
+            reviewEdit.Inlines().Append(words);
+            if (!run.trailing.isEmpty()) {
+                Documents::Run trailing;
+                trailing.Text(win::hs(run.trailing));
+                reviewEdit.Inlines().Append(trailing);
+            }
+            position += int32_t(run.text.size() + run.trailing.size());
+        }
+        reviewEdit.TextHighlighters().Append(added);
+        reviewEdit.TextHighlighters().Append(removed);
+    }
+
     void hide()
     {
         whatsNewAutoHide.stop();
@@ -810,6 +1045,12 @@ struct DictationPanel::Native : QObject {
         if (!window) {
             return;
         }
+        if (reviewShown) {
+            refreshReview();
+            return;
+        }
+        reviewCard.Visibility(Visibility::Collapsed);
+        row.Visibility(Visibility::Visible);
         const bool hasProblem = !problem.isEmpty();
         // A finished delivery: the outcome message is the whole story, so the
         // spent preview words go and the icon and message centre in the pill.
@@ -829,11 +1070,7 @@ struct DictationPanel::Native : QObject {
         // transparent space around a live capsule must not intercept clicks in
         // the target application.
         const bool interactive = hasProblem || offersFix || controlsWidth > 0;
-        const LONG_PTR style = GetWindowLongPtrW(window, GWL_EXSTYLE);
-        const LONG_PTR wantedStyle = interactive ? style & ~WS_EX_TRANSPARENT : style | WS_EX_TRANSPARENT;
-        if (style != wantedStyle) {
-            SetWindowLongPtrW(window, GWL_EXSTYLE, wantedStyle);
-        }
+        setTakesClicks(interactive);
         // A receipt outranks the refining flag, which can still be set when
         // the delivery lands.
         glyph.Glyph(hstring((finished                   ? outcomeGlyph(outcome)
@@ -970,8 +1207,59 @@ struct DictationPanel::Native : QObject {
         if (IsWindowVisible(window)) {
             reposition();
         }
-        limitClicksToCapsule(interactive);
+        limitClicksToCapsule();
         refreshBanner();
+    }
+
+    // The review card alone, as tall as it measures, in the plain rounded
+    // outline an error's capsule takes. Past its line limit the edit scrolls.
+    void refreshReview()
+    {
+        setShimmer(false);
+        wave->setRunning(false);
+        setTakesClicks(true);
+        previewText.Visibility(Visibility::Collapsed);
+        row.Visibility(Visibility::Collapsed);
+        countdown.Visibility(Visibility::Collapsed);
+        content.Padding({});
+        reviewCard.Visibility(Visibility::Visible);
+        constexpr float unbounded = std::numeric_limits<float>::infinity();
+        probe.FontSize(previewFontSize);
+        probe.Text(L"Ag");
+        probe.Measure({unbounded, unbounded});
+        reviewScroll.MaxHeight(std::ceil(probe.DesiredSize().Height) * popup::kReviewMaxLines);
+        // Narrower than the shared width on a screen too small for it, as a
+        // problem wraps narrower there.
+        POINT pointer{};
+        GetCursorPos(&pointer);
+        MONITORINFO monitor{sizeof(monitor)};
+        GetMonitorInfoW(MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST), &monitor);
+        const int cardWidth = std::min(
+            reviewCardWidth, int((monitor.rcWork.right - monitor.rcWork.left) / scale()) - screenEdgeMargin);
+        reviewCard.Measure({float(cardWidth), unbounded});
+        const int cardHeight = int(std::ceil(reviewCard.DesiredSize().Height));
+        surfaceWidth = cardWidth;
+        surfaceHeight = cardHeight;
+        resize(cardWidth, cardHeight);
+        updateOutline(0, 0);
+        chrome.UpdateLayout();
+        if (IsWindowVisible(window)) {
+            reposition();
+        }
+        limitClicksToCapsule();
+        refreshBanner();
+    }
+
+    // Clicks reach the panel's controls, or pass through it to the
+    // application below.
+    void setTakesClicks(bool value)
+    {
+        takesClicks = value;
+        const LONG_PTR style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+        const LONG_PTR wantedStyle = takesClicks ? style & ~WS_EX_TRANSPARENT : style | WS_EX_TRANSPARENT;
+        if (style != wantedStyle) {
+            SetWindowLongPtrW(window, GWL_EXSTYLE, wantedStyle);
+        }
     }
 
     // The surface is sized for the widest preview, so while the panel takes
@@ -979,7 +1267,7 @@ struct DictationPanel::Native : QObject {
     // the application below. A window region keeps hit testing, child island
     // included, to the capsule's rectangle. The region clips drawing too, so
     // it holds every pixel of the outline, stroke and fillets included.
-    void limitClicksToCapsule(bool interactive)
+    void limitClicksToCapsule()
     {
         // The words bar across the top, and under it only the tab's width
         // when the outline carves one, so clicks beside the tab go through,
@@ -987,7 +1275,7 @@ struct DictationPanel::Native : QObject {
         RECT bar{};
         RECT tab{};
         RECT joins{};
-        if (interactive) {
+        if (takesClicks) {
             const auto bounds = chrome.TransformToVisual(nullptr).TransformBounds(
                 {0, 0, float(chrome.ActualWidth()), float(chrome.ActualHeight())});
             const auto px = [this](double dip) { return int(std::lround(dip * scale())); };
@@ -1012,7 +1300,7 @@ struct DictationPanel::Native : QObject {
         clickTab = tab;
         clickJoins = joins;
         HRGN region = nullptr;
-        if (interactive) {
+        if (takesClicks) {
             region = CreateRectRgnIndirect(&bar);
             for (const RECT &part : {tab, joins}) {
                 if (!IsRectEmpty(&part)) {
@@ -1300,6 +1588,19 @@ struct DictationPanel::Native : QObject {
     ProgressBar countdown{nullptr};
     Button fixButton{nullptr};
     Button dismiss{nullptr};
+    StackPanel reviewCard{nullptr};
+    TextBlock reviewInstruction{nullptr};
+    ScrollViewer reviewScroll{nullptr};
+    TextBlock reviewEdit{nullptr};
+    TextBlock reviewSummary{nullptr};
+    HyperlinkButton reviewToggle{nullptr};
+    Button reviewKeep{nullptr};
+    Button reviewReplace{nullptr};
+    SelectionEditReview review;
+    // The card holds the capsule's place until the session leaves Reviewing.
+    bool reviewShown = false;
+    // Show all: the whole edit instead of the folded one.
+    bool reviewWhole = false;
     PopupErrorAction fix;
     QString status;
     QString preview;
@@ -1314,6 +1615,9 @@ struct DictationPanel::Native : QObject {
     Phase phase = Phase::Live;
     Brush normalForeground{nullptr};
     Microsoft::UI::Xaml::Media::Animation::Storyboard shimmer{nullptr};
+    // Whether the panel takes clicks, which limitClicksToCapsule() keeps to
+    // the capsule.
+    bool takesClicks = false;
     // The window region limitClicksToCapsule() last set, as the words bar,
     // the tab under it and the fillets' band; empty for none.
     RECT clickRegion{};
@@ -1468,6 +1772,73 @@ double DictationPanel::outlineShoulderForTest() const
 double DictationPanel::outlineLobeWidthForTest() const
 {
     return 2 * m_native->outlineTabHalf;
+}
+
+QRect DictationPanel::reviewGeometryForTest() const
+{
+    return m_native->controlGeometry(m_native->reviewCard);
+}
+
+bool DictationPanel::reviewFullyVisibleForTest() const
+{
+    const QRect card = reviewGeometryForTest();
+    RECT window{};
+    RECT region{};
+    if (card.isEmpty() || !GetWindowRect(m_native->window, &window)
+        || GetWindowRgnBox(m_native->window, &region) == ERROR) {
+        return false;
+    }
+    const QRect windowRect(window.left, window.top, window.right - window.left, window.bottom - window.top);
+    // The region is in the window's own coordinates.
+    const QRect regionRect(window.left + region.left, window.top + region.top, region.right - region.left,
+                           region.bottom - region.top);
+    // A pixel either way is rounding between the two measures.
+    return windowRect.intersected(regionRect).adjusted(-1, -1, 1, 1).contains(card);
+}
+
+QString DictationPanel::reviewTextForTest() const
+{
+    QString text;
+    for (const auto &piece : m_native->reviewEdit.Inlines()) {
+        if (const auto run = piece.try_as<winrt::Microsoft::UI::Xaml::Documents::Run>()) {
+            text += QString::fromStdWString(std::wstring(run.Text()));
+        }
+    }
+    return text;
+}
+
+QString DictationPanel::reviewToggleForTest() const
+{
+    const HyperlinkButton toggle = m_native->reviewToggle;
+    if (toggle.Visibility() == Visibility::Collapsed) {
+        return {};
+    }
+    return QString::fromStdWString(std::wstring(unbox_value<hstring>(toggle.Content())));
+}
+
+bool DictationPanel::reviewScrollsForTest() const
+{
+    return m_native->reviewScroll.ScrollableHeight() > 0;
+}
+
+bool DictationPanel::reviewReplaceIsDefaultForTest() const
+{
+    return m_native->reviewReplace.Style() == accentButtonStyle();
+}
+
+void DictationPanel::pressReviewToggleForTest()
+{
+    winrt::Microsoft::UI::Xaml::Automation::Peers::HyperlinkButtonAutomationPeer(m_native->reviewToggle).Invoke();
+}
+
+void DictationPanel::pressKeepOriginalForTest()
+{
+    winrt::Microsoft::UI::Xaml::Automation::Peers::ButtonAutomationPeer(m_native->reviewKeep).Invoke();
+}
+
+void DictationPanel::pressReplaceForTest()
+{
+    winrt::Microsoft::UI::Xaml::Automation::Peers::ButtonAutomationPeer(m_native->reviewReplace).Invoke();
 }
 
 // Copies the panel's screen rectangle, DWM-composed, so the picture carries

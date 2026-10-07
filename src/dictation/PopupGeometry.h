@@ -52,6 +52,14 @@ inline constexpr int kMaxPreviewWidth = 320;
 inline constexpr qreal kPreviewFontScale = 0.9;
 inline constexpr int kPreviewFadeWidth = 28;
 
+// A selection edit's review: a card as wide as an error's wrap width plus
+// the preview's side margins, this much room above and below, this gap
+// between its instruction, its edit and its buttons, and at most this many
+// lines of the edit before it scrolls.
+inline constexpr int kReviewVerticalMargin = 12;
+inline constexpr int kReviewSpacing = 8;
+inline constexpr int kReviewMaxLines = 12;
+
 // The narrowest text bar that still carves the contour around a lobe this
 // wide: an end cap and a whole fillet either side of the lobe. A shorter
 // preview is centred in this width instead of collapsing the capsule into a

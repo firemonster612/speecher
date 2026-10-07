@@ -5,6 +5,7 @@
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"
+#include "dictation/SelectionEditPresentation.h"
 #include "dictation/StartupPreparationRunner.h"
 #include "dictation/TranscriptPipeline.h"
 
@@ -58,6 +59,10 @@ public:
     // Whether the system says it can reach the internet. Only an outcome's
     // wording uses it: every provider in a chain is still tried.
     void setReachability(Reachability reachability);
+    // The keys that keep and replace while a selection edit is reviewed, as
+    // the review names them. The controller sets them whenever it takes or
+    // lets go of keys; a review on screen is shown again with the new ones.
+    void setReviewKeys(const ReviewKeys &keys);
 
 public slots:
     void toggle();
@@ -69,9 +74,13 @@ public slots:
     void cancelForShutdown();
     // Throws the session away from Starting through Refining: nothing is
     // pasted, copied or recorded, and the popup says "Canceled" for a moment.
+    // While a selection edit is reviewed it keeps the original, silently.
     // Dismisses an error; does nothing while idle or delivering, when the text
     // is already out.
     void cancel();
+    // Ends a review by putting the edit in place of the selection, or on the
+    // clipboard when the selection is no longer the one it was made from.
+    void replaceSelection();
     // Pause turns the microphone off and lets the speech provider finish the
     // words already spoken; they stay in the transcript. Resume listens on in
     // a fresh speech attempt. Stop while paused delivers what was said.
@@ -115,6 +124,9 @@ signals:
                                PopupOutcome outcome,
                                const speecher::PopupErrorAction &fix = {});
     void popupErrorRequested(const QString &message, const speecher::PopupErrorAction &fix);
+    // A selection edit to show against the selection until replaceSelection()
+    // or cancel() ends the review.
+    void popupSelectionEditReviewRequested(const speecher::SelectionEditReview &review);
     // What a session learned about a provider's sign-in: present when it
     // prepared, missing or turned down when it failed for that.
     void providerSignInObserved(const QString &providerId, bool signedIn);
@@ -163,6 +175,9 @@ private:
     void retireRefiner();
     void deliverWithoutRefinement();
     void failSelectionEdit(const QString &message);
+    void reviewSelectionEdit(const QString &revised);
+    void emitReview();
+    bool selectionUnchanged();
     void handleSpeechFailure(const SpeechFailure &failure);
     void endSpeechAfterFailure(const SpeechFailure &failure);
     void rollOverSpeechAttempt();
@@ -184,7 +199,8 @@ private:
     void updateListening();
     void refillReconnectsIfAttemptWasStable();
     bool attemptWasStable() const;
-    void deliverFinal(const QString &text);
+    // note follows the receipt, such as why an edit went to the clipboard.
+    void deliverFinal(const QString &text, const QString &note = {});
     void discard();
     void clearScreenshotContext();
     void resumePausedMedia();
@@ -219,6 +235,9 @@ private:
     QString m_lastFailure;
     QString m_speechWarning;
     QString m_lastTranscript;
+    // The selection edit under review.
+    QString m_reviewedEdit;
+    ReviewKeys m_reviewKeys;
     TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
     quint64 m_audioGeneration = 0;

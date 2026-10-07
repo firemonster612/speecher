@@ -23,6 +23,7 @@ public:
     ScreenshotContextProvider *createScreenshotContextProvider(QObject *parent) const override;
     TextDeliveryAdapter *createTextDelivery(TargetProvider *targetProvider, QObject *parent) const override;
     PopupPositioner *createPopupPositioner(QObject *parent) const override;
+    SessionKeyGrab *createSessionKeyGrab(QObject *parent) const override;
     GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
                                                      QObject *parent) const override;
 

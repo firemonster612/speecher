@@ -25,7 +25,8 @@ public:
     PopupPositioner *createPopupPositioner(QObject *parent) const override;
     GlobalShortcutBinder *createGlobalShortcutBinder(GlobalShortcutRole role,
                                                      QObject *parent) const override;
-    CancelKeyGrab *createCancelKeyGrab(QObject *parent) const override;
+    SessionKeyGrab *createSessionKeyGrab(QObject *parent) const override;
+    bool escapeCancelsDictation() const override { return true; }
 
     AccessibilityState accessibilityState() const override;
     bool requestAccessibility(QString *error = nullptr) const override;

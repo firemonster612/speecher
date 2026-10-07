@@ -7,7 +7,7 @@
 #include "platform/audio/E2EAudioInput.h"
 #include "platform/audio/QtAudioInput.h"
 #include "platform/RoutingShortcutBinder.h"
-#include "platform/win/WinCancelKeyGrab.h"
+#include "platform/win/WinSessionKeyGrab.h"
 #include "platform/win/WinCommunicationsAudioInput.h"
 #include "platform/win/WinGlobalShortcutBinder.h"
 #include "platform/win/WinMediaController.h"
@@ -147,9 +147,9 @@ GlobalShortcutBinder *WindowsComposition::createGlobalShortcutBinder(GlobalShort
     return new RoutingShortcutBinder(combination, new WinSingleKeyShortcutBinder(action), parent);
 }
 
-CancelKeyGrab *WindowsComposition::createCancelKeyGrab(QObject *parent) const
+SessionKeyGrab *WindowsComposition::createSessionKeyGrab(QObject *parent) const
 {
-    return new WinCancelKeyGrab(parent);
+    return new WinSessionKeyGrab(parent);
 }
 
 AccessibilityState WindowsComposition::accessibilityState() const

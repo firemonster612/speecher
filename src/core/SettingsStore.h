@@ -99,6 +99,7 @@ public:
     using SettingsCodecs::previewWords;
     using SettingsCodecs::recordVocabularyUsage;
     using SettingsCodecs::refinementPreviewEnabled;
+    using SettingsCodecs::selectionEditReviewEnabled;
     using SettingsCodecs::refinementProvider;
     using SettingsCodecs::refinementFallbackProviders;
     using SettingsCodecs::refinementProviderChosen;
@@ -131,6 +132,7 @@ public:
     using SettingsCodecs::setPauseMediaDuringTranscription;
     using SettingsCodecs::setPreviewWords;
     using SettingsCodecs::setRefinementPreviewEnabled;
+    using SettingsCodecs::setSelectionEditReviewEnabled;
     using SettingsCodecs::setRefinementProvider;
     using SettingsCodecs::setRefinementFallbackProviders;
     using SettingsCodecs::setRefinementStyle;

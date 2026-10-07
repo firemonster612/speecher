@@ -25,7 +25,7 @@ class DictationSession;
 class FileTranscriptionSession;
 struct TranscribeOptions;
 class AudioInput;
-class CancelKeyGrab;
+class SessionKeyGrab;
 class InsightsLog;
 class LocalModelStore;
 class LocalSetup;
@@ -272,7 +272,7 @@ private:
     GlobalShortcutBinder *m_shortcutBinder = nullptr;
     GlobalShortcutBinder *m_cancelShortcutBinder = nullptr;
     GlobalShortcutBinder *m_pauseShortcutBinder = nullptr;
-    CancelKeyGrab *m_cancelKeyGrab = nullptr;
+    SessionKeyGrab *m_sessionKeyGrab = nullptr;
     int m_shortcutSuspensions = 0;
     SingleInstanceIpc *m_ipc = nullptr;
     bool m_accessibilitySupported = false;

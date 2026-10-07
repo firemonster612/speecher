@@ -41,6 +41,9 @@ public:
     bool supported() const override;
     QString unsupportedReason() const override;
     void bind() override;
+    // Lets go of what an earlier build or a crashed run left registered
+    // under this action, which would otherwise keep its keys from every app.
+    void dropLeftoverRegistration();
 
 protected:
     bool take(const QKeySequence &keys) override;

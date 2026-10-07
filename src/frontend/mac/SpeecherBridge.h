@@ -520,6 +520,38 @@ typedef NS_ENUM(NSInteger, SpeecherErrorFix) {
 @property (nonatomic, readonly) BOOL busyVisible;
 @end
 
+// speecher::EditRun::Kind: how a selection edit's review marks a stretch.
+typedef NS_ENUM(NSInteger, SpeecherEditRunKind) {
+    SpeecherEditRunKindKept,
+    SpeecherEditRunKindRemoved,
+    SpeecherEditRunKindAdded,
+    // Unchanged words a folded review leaves out; its text is the ellipsis.
+    SpeecherEditRunKindOmitted,
+};
+
+// speecher::EditRun: text marked by its kind, then trailing unmarked.
+@interface SpeecherEditRun : NSObject
+@property (nonatomic, readonly) SpeecherEditRunKind kind;
+@property (nonatomic, readonly, copy) NSString *text;
+@property (nonatomic, readonly, copy) NSString *trailing;
+@end
+
+// speecher::SelectionEditReview: a selection edit waiting for Keep original or
+// Replace, worded by core.
+@interface SpeecherSelectionEditReview : NSObject
+// What was said, quoted; empty for nothing.
+@property (nonatomic, readonly, copy) NSString *instruction;
+@property (nonatomic, readonly, copy) NSArray<SpeecherEditRun *> *runs;
+// The changed stretches with the unchanged words between them omitted; empty
+// when the whole edit is short enough to show.
+@property (nonatomic, readonly, copy) NSArray<SpeecherEditRun *> *folded;
+@property (nonatomic, readonly, copy) NSString *summary;
+// The keys that keep the original and replace it (speecher::ReviewKeys);
+// empty where no key does.
+@property (nonatomic, readonly, copy) NSString *keepKey;
+@property (nonatomic, readonly, copy) NSString *replaceKey;
+@end
+
 // speecher::PreviewLine: the preview as its line shows it, and whether words
 // were cut from its front.
 @interface SpeecherPreviewLine : NSObject
@@ -551,6 +583,11 @@ typedef NS_ENUM(NSInteger, SpeecherErrorFix) {
 @property (class, nonatomic, readonly) CGFloat maxPreviewWidth;
 @property (class, nonatomic, readonly) CGFloat previewFontScale;
 @property (class, nonatomic, readonly) CGFloat previewFadeWidth;
+// A selection edit's review: the room above and below it, the gap between its
+// parts, and the lines of the edit before it scrolls.
+@property (class, nonatomic, readonly) CGFloat reviewVerticalMargin;
+@property (class, nonatomic, readonly) CGFloat reviewSpacing;
+@property (class, nonatomic, readonly) NSInteger reviewMaxLines;
 + (CGFloat)minimumPreviewBarWidthForLobeWidth:(CGFloat)lobeWidth shoulderHeight:(CGFloat)shoulderHeight
     NS_SWIFT_NAME(minimumPreviewBarWidth(lobeWidth:shoulderHeight:));
 @end
@@ -707,6 +744,7 @@ typedef NS_ENUM(NSInteger, SpeecherDictationState) {
     SpeecherDictationStateRefining,
     SpeecherDictationStateDelivering,
     SpeecherDictationStateError,
+    SpeecherDictationStateReviewing,
 };
 
 // Mirrors speecher::MicrophoneTestState.
@@ -1149,6 +1187,9 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // pauses it or resumes it while paused (speecher::DictationSession).
 - (void)cancel;
 - (void)togglePause;
+// Ends a selection edit's review with the edit in place of the selection
+// (speecher::DictationSession::replaceSelection); cancel keeps the original.
+- (void)replaceSelection;
 // The buttons either side of the waveform for the current state
 // (speecher::sessionControls), and whether Cancel belongs in the menu bar
 // panel (speecher::dictationCancelable). Re-read on every statusChanged.
@@ -1180,6 +1221,15 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, copy, nullable) void (^popupMessageRequested)(NSString *message,
                                                                    SpeecherPopupOutcome outcome,
                                                                    SpeecherErrorAction *fix);
+// A selection edit to show in the pill's place until the session leaves
+// Reviewing.
+@property (nonatomic, copy, nullable) void (^popupSelectionEditReviewRequested)(SpeecherSelectionEditReview *review);
+// The review's captions (speecher::keepOriginalCaption, replaceSelectionCaption,
+// showWholeEditCaption and showChangesOnlyCaption).
+@property (class, nonatomic, readonly, copy) NSString *keepOriginalCaption;
+@property (class, nonatomic, readonly, copy) NSString *replaceSelectionCaption;
+@property (class, nonatomic, readonly, copy) NSString *showWholeEditCaption;
+@property (class, nonatomic, readonly, copy) NSString *showChangesOnlyCaption;
 // speecher::checkingCredentialsStatus() and accessibilityGrantActionLabel().
 @property (class, nonatomic, readonly, copy) NSString *checkingCredentialsStatus;
 @property (class, nonatomic, readonly, copy) NSString *accessibilityGrantActionLabel;
@@ -1683,6 +1733,7 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 namespace speecher {
 class ApplicationController;
 struct PopupErrorAction;
+struct SelectionEditReview;
 }
 
 @interface SpeecherBridge (Cxx)
@@ -1691,6 +1742,10 @@ struct PopupErrorAction;
 
 @interface SpeecherErrorAction (Cxx)
 + (SpeecherErrorAction *)actionWithCore:(const speecher::PopupErrorAction &)action;
+@end
+
+@interface SpeecherSelectionEditReview (Cxx)
++ (SpeecherSelectionEditReview *)reviewWithCore:(const speecher::SelectionEditReview &)review;
 @end
 #endif
 

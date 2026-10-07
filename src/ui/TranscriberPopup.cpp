@@ -4,6 +4,7 @@
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupGeometry.h"
 #include "platform/FallbackPopupPositioner.h"
+#include "ui/settings/SettingsPageSupport.h"
 #include "ui/WaveformWidget.h"
 
 #include <QApplication>
@@ -19,6 +20,9 @@
 #include <QPaintEvent>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QScrollArea>
+#include <QStyleOptionButton>
 #include <QStyle>
 #include <QPropertyAnimation>
 #include <QTimer>
@@ -399,6 +403,111 @@ protected:
     }
 };
 
+// A push button that names the key doing what a click does, after its
+// caption in the PlaceholderText role. A push button draws one run of text
+// in one colour, so the two are labels inside the frame the style draws.
+class KeyedButton final : public QPushButton {
+public:
+    explicit KeyedButton(QWidget *parent)
+        : QPushButton(parent)
+        , m_caption(new QLabel(this))
+        , m_key(new QLabel(this))
+    {
+        // A click leaves the Target focused.
+        setFocusPolicy(Qt::NoFocus);
+        m_caption->setForegroundRole(QPalette::ButtonText);
+        m_key->setForegroundRole(QPalette::PlaceholderText);
+        auto *row = new QHBoxLayout(this);
+        row->setSpacing(settings::smallSpacing());
+        row->addStretch();
+        row->addWidget(m_caption);
+        row->addWidget(m_key);
+        row->addStretch();
+        for (QLabel *label : {m_caption, m_key}) {
+            label->setAttribute(Qt::WA_TransparentForMouseEvents);
+        }
+    }
+
+    void setCaption(const QString &caption, const QString &key)
+    {
+        m_caption->setText(caption);
+        m_key->setText(key);
+        m_key->setVisible(!key.isEmpty());
+        setAccessibleName(caption);
+        updateGeometry();
+    }
+
+    QSize sizeHint() const override
+    {
+        QStyleOptionButton option;
+        initStyleOption(&option);
+        const QSize labels = layout()->sizeHint().shrunkBy(layout()->contentsMargins());
+        return style()->sizeFromContents(QStyle::CT_PushButton, &option, labels, this);
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        return sizeHint();
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        // The labels sit where the style puts a button's own text.
+        QStyleOptionButton option;
+        initStyleOption(&option);
+        const QRect contents = style()->subElementRect(QStyle::SE_PushButtonContents, &option, this);
+        layout()->setContentsMargins(contents.left(), contents.top(), width() - 1 - contents.right(),
+                                     height() - 1 - contents.bottom());
+        QPushButton::resizeEvent(event);
+    }
+
+private:
+    QLabel *m_caption;
+    QLabel *m_key;
+};
+
+// A fifth of a tone over Base, as Badge fills.
+constexpr int kEditTintPercent = 20;
+
+// The edit as rich text: added words over a tint of the colour scheme's
+// PositiveText, removed ones struck through in PlaceholderText over a tint of
+// its NegativeText, and left-out words as a grey ellipsis. Without a scheme
+// both tones fall back to plain text, so added words take Highlight instead
+// and the two marks still differ in more than the strike.
+QString reviewHtml(const QList<EditRun> &runs, const QPalette &palette)
+{
+    const QColor base = palette.color(QPalette::Base);
+    const QString grey = palette.color(QPalette::PlaceholderText).name();
+    QColor positive = settings::positiveTextColor(palette);
+    if (positive == settings::negativeTextColor(palette)) {
+        positive = palette.color(QPalette::Highlight);
+    }
+    const QString added = mixed(base, positive, kEditTintPercent).name();
+    const QString removed = mixed(base, settings::negativeTextColor(palette), kEditTintPercent).name();
+    QString html;
+    for (const EditRun &run : runs) {
+        const QString words = run.text.toHtmlEscaped();
+        switch (run.kind) {
+        case EditRun::Kind::Kept:
+            html += words;
+            break;
+        case EditRun::Kind::Removed:
+            html += QStringLiteral("<span style=\"color:%1;background-color:%2;text-decoration:line-through\">%3</span>")
+                        .arg(grey, removed, words);
+            break;
+        case EditRun::Kind::Added:
+            html += QStringLiteral("<span style=\"background-color:%1\">%2</span>").arg(added, words);
+            break;
+        case EditRun::Kind::Omitted:
+            html += QStringLiteral("<span style=\"color:%1\">%2</span>").arg(grey, words);
+            break;
+        }
+        html += run.trailing.toHtmlEscaped();
+    }
+    return QStringLiteral("<div style=\"white-space:pre-wrap\">%1</div>").arg(html);
+}
+
 } // namespace
 
 TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
@@ -630,6 +739,116 @@ TranscriberPopup::TranscriberPopup(PopupPositioner *positioner, QWidget *parent)
     // the user is speaking. Desktop accessibility is offered on the Dictation
     // page and in the setup assistant.
     m_layout->addWidget(m_previewPill, 0, Qt::AlignHCenter);
+    buildReviewCard();
+}
+
+// A card in the capsule's place while a selection edit waits: what was said,
+// the edit, and its summary beside Keep original and Replace. As wide as an
+// error's text, in the plain rounded outline errors take.
+void TranscriberPopup::buildReviewCard()
+{
+    m_reviewCard = new PillFrame(this);
+    m_reviewCard->setObjectName(QStringLiteral("reviewCard"));
+    m_reviewCard->setFrameShape(QFrame::NoFrame);
+    m_reviewCard->setAutoFillBackground(false);
+    m_reviewCard->hide();
+    auto *card = new QVBoxLayout(m_reviewCard);
+    card->setContentsMargins(popup::kPreviewSideMargin, popup::kReviewVerticalMargin,
+                             popup::kPreviewSideMargin, popup::kReviewVerticalMargin);
+    card->setSpacing(popup::kReviewSpacing);
+
+    m_reviewInstruction = new QLabel(m_reviewCard);
+    m_reviewInstruction->setObjectName(QStringLiteral("reviewInstruction"));
+    m_reviewInstruction->setForegroundRole(QPalette::PlaceholderText);
+    m_reviewInstruction->setTextFormat(Qt::PlainText);
+    m_reviewInstruction->setWordWrap(true);
+    m_reviewInstruction->setFixedWidth(kPopupErrorWrapWidth);
+    card->addWidget(m_reviewInstruction);
+
+    m_reviewText = new QLabel;
+    m_reviewText->setObjectName(QStringLiteral("reviewText"));
+    m_reviewText->setForegroundRole(QPalette::Text);
+    m_reviewText->setTextFormat(Qt::RichText);
+    m_reviewText->setWordWrap(true);
+    m_reviewText->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    m_reviewScroll = new QScrollArea(m_reviewCard);
+    m_reviewScroll->setObjectName(QStringLiteral("reviewScroll"));
+    m_reviewScroll->setFrameShape(QFrame::NoFrame);
+    m_reviewScroll->setFocusPolicy(Qt::NoFocus);
+    m_reviewScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_reviewScroll->setWidgetResizable(true);
+    // The card's Base shows through.
+    m_reviewScroll->viewport()->setAutoFillBackground(false);
+    m_reviewScroll->setWidget(m_reviewText);
+    m_reviewScroll->setFixedWidth(kPopupErrorWrapWidth);
+    card->addWidget(m_reviewScroll);
+
+    auto *footer = new QHBoxLayout;
+    footer->setSpacing(popup::kReviewSpacing);
+    m_reviewSummary = new QLabel(m_reviewCard);
+    m_reviewSummary->setObjectName(QStringLiteral("reviewSummary"));
+    m_reviewSummary->setForegroundRole(QPalette::PlaceholderText);
+    m_reviewSummary->setTextFormat(Qt::RichText);
+    m_reviewSummary->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    connect(m_reviewSummary, &QLabel::linkActivated, this, [this] {
+        m_reviewWhole = !m_reviewWhole;
+        applyReview();
+    });
+    footer->addWidget(m_reviewSummary, 1);
+    m_reviewKeep = new KeyedButton(m_reviewCard);
+    m_reviewKeep->setObjectName(QStringLiteral("reviewKeep"));
+    m_reviewReplace = new KeyedButton(m_reviewCard);
+    m_reviewReplace->setObjectName(QStringLiteral("reviewReplace"));
+    connect(m_reviewKeep, &QPushButton::clicked, this, &TranscriberPopup::keepOriginalRequested);
+    connect(m_reviewReplace, &QPushButton::clicked, this, &TranscriberPopup::replaceSelectionRequested);
+    footer->addWidget(m_reviewKeep);
+    footer->addWidget(m_reviewReplace);
+    card->addLayout(footer);
+    m_layout->addWidget(m_reviewCard, 0, Qt::AlignHCenter);
+    applyFonts();
+}
+
+void TranscriberPopup::showSelectionEditReview(const SelectionEditReview &review)
+{
+    m_review = review;
+    m_reviewWhole = false;
+    m_previewPill->hide();
+    m_reviewCard->show();
+    applyReview();
+}
+
+void TranscriberPopup::applyReview()
+{
+    const bool folded = !m_review.folded.isEmpty() && !m_reviewWhole;
+    m_reviewInstruction->setText(m_review.instruction);
+    m_reviewInstruction->setVisible(!m_review.instruction.isEmpty());
+    m_reviewText->setText(reviewHtml(folded ? m_review.folded : m_review.runs, palette()));
+    QString summary = m_review.summary.toHtmlEscaped();
+    if (!m_review.folded.isEmpty()) {
+        const QString toggle = m_reviewWhole ? showChangesOnlyCaption() : showWholeEditCaption();
+        summary += QStringLiteral(" · <a href=\"whole\">%1</a>").arg(toggle.toHtmlEscaped());
+    }
+    m_reviewSummary->setText(summary);
+    static_cast<KeyedButton *>(m_reviewKeep)->setCaption(keepOriginalCaption(), m_review.keys.keep);
+    static_cast<KeyedButton *>(m_reviewReplace)->setCaption(replaceSelectionCaption(), m_review.keys.replace);
+    // The style marks the button Enter presses, where Enter does.
+    m_reviewReplace->setDefault(!m_review.keys.replace.isEmpty());
+    // The edit scrolls past its line limit.
+    const int limit = QFontMetrics(m_reviewText->font()).lineSpacing() * popup::kReviewMaxLines;
+    m_reviewScroll->setFixedHeight(std::min(m_reviewText->heightForWidth(kPopupErrorWrapWidth), limit));
+    m_reviewCard->adjustSize();
+    adjustSize();
+    repositionIfVisible();
+}
+
+void TranscriberPopup::hideReview()
+{
+    if (m_reviewCard->isHidden()) {
+        return;
+    }
+    m_reviewCard->hide();
+    m_previewPill->show();
+    adjustSize();
 }
 
 QSize TranscriberPopup::sizeHint() const
@@ -641,7 +860,9 @@ QSize TranscriberPopup::sizeHint() const
         return !banner || banner->isHidden() ? 0
                                              : banner->sizeHint().height() + spacing;
     };
-    const int pillHeight = m_pillLayout ? m_previewPill->height() : m_waveform->height();
+    const int pillHeight = m_reviewCard && !m_reviewCard->isHidden() ? m_reviewCard->sizeHint().height()
+        : m_pillLayout                                              ? m_previewPill->height()
+                                                                    : m_waveform->height();
     // Room for the widest a capsule gets, so an error's icon, wrapped text and
     // Dismiss chip are never clipped by the window.
     const int width = std::max(620, m_layout->sizeHint().width());
@@ -651,6 +872,9 @@ QSize TranscriberPopup::sizeHint() const
 void TranscriberPopup::setSessionState(DictationState state)
 {
     const DictationState previous = std::exchange(m_sessionState, state);
+    if (state != DictationState::Reviewing) {
+        hideReview();
+    }
     applySessionControls();
     // The buttons set the strip's height; an error capsule sizes itself.
     if (!errorShown()) {
@@ -1048,6 +1272,10 @@ void TranscriberPopup::changeEvent(QEvent *event)
     }
     if (!m_applyingTheme && (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange)) {
         applyTheme();
+        // The edit's marks are colours written into its text.
+        if (m_reviewCard && !m_reviewCard->isHidden()) {
+            applyReview();
+        }
     }
     QWidget::changeEvent(event);
 }
@@ -1149,6 +1377,11 @@ void TranscriberPopup::applyFonts()
 {
     m_preview->setFont(errorShown() ? QApplication::font() : popupTextFont());
     m_waveform->setFont(popupTextFont());
+    if (m_reviewCard) {
+        for (QLabel *label : {m_reviewInstruction, m_reviewText, m_reviewSummary}) {
+            label->setFont(popupTextFont());
+        }
+    }
 }
 
 } // namespace speecher

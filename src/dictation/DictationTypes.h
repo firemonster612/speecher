@@ -3,6 +3,7 @@
 #include "core/OutputFormat.h"
 #include "core/ProviderChain.h"
 #include "core/ProviderFailure.h"
+#include "core/ShortcutBinding.h"
 
 #include <QList>
 #include <QString>
@@ -32,6 +33,9 @@ enum class DictationState {
     Refining,
     Delivering,
     Error,
+    // A selection edit waits for Replace or Keep original. Last, so the
+    // macOS bridge's mirror of these values keeps the ones before it.
+    Reviewing,
 };
 
 QString dictationStateName(DictationState state);
@@ -66,10 +70,30 @@ QString dictationShortcutHint(const QString &shortcut);
 bool dictationListeningPresentation(const QString &stateName);
 
 // Whether a session state name is one a cancel would throw away, Starting
-// through Refining: trays offer Cancel then, and Windows and macOS take Escape.
+// through Refining, or Reviewing, where cancel keeps the original selection:
+// trays offer Cancel then, and Windows and macOS take Escape.
 bool dictationCancelable(const QString &stateName);
 // Whether pause or resume applies: Listening or Paused.
 bool dictationPausable(const QString &stateName);
+
+// Which of Escape and Enter a session wants taken from the desktop.
+struct SessionKeys {
+    bool escape = false;
+    bool enter = false;
+
+    bool operator==(const SessionKeys &other) const = default;
+};
+// Escape cancels a cancelable session where the platform takes it for the
+// whole session, unless the Cancel or Pause Shortcut is Escape: both cannot
+// hold it at once. While a selection edit is reviewed pause does nothing, so
+// only a Cancel Shortcut of Escape, which keeps the original as Escape would,
+// leaves Escape be; Enter replaces then. Nothing is taken while the session
+// shortcuts are suspended, as while one is being recorded.
+SessionKeys sessionKeysWanted(const QString &stateName,
+                              bool escapeCancelsDictation,
+                              const ShortcutBinding &cancelShortcut,
+                              const ShortcutBinding &pauseShortcut,
+                              bool suspended);
 // The trays' Cancel item.
 QString cancelDictationCaption();
 
