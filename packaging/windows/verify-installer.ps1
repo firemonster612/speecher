@@ -163,6 +163,28 @@ try {
     }
     Write-Output "speecher.com stopped waiting once the background app was running"
 
+    # Capturing that run's output returns too: the background app lets go of
+    # the pipe rather than holding it until it quits.
+    $Capture = Start-Job { $Out = & $using:Launcher --daemon; $LASTEXITCODE }
+    $Returned = Wait-Job $Capture -Timeout 10
+    $App = Get-Process speecher -ErrorAction SilentlyContinue | Where-Object Path -eq $Exe
+    if (-not $Returned) {
+        $Capture | Stop-Job
+        throw "Capturing the output of speecher.com --daemon was still waiting after 10 seconds"
+    }
+    $CaptureExit = Receive-Job $Capture
+    if ($CaptureExit -ne 0) {
+        throw "speecher.com --daemon exited with $CaptureExit when its output was captured"
+    }
+    if (-not $App) {
+        throw "speecher.com --daemon returned its captured output but speecher.exe is not running"
+    }
+    & $Exe quit
+    if (-not $App.WaitForExit(10000)) {
+        throw "speecher.exe quit did not stop the background app started with captured output"
+    }
+    Write-Output "Capturing speecher.com --daemon's output returned while the background app ran"
+
     # Restart Manager closing the running app without forcing, the way Setup
     # does when it replaces files in use. Only the tray window answers it;
     # before it did, Speecher stayed running here even with a window open.

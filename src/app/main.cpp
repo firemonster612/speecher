@@ -59,6 +59,7 @@
 #include <optional>
 #include <thread>
 #ifdef Q_OS_WIN
+#include <io.h>
 #include <windows.h>
 #include "helpers/ConsoleLauncher.h"
 #else
@@ -164,13 +165,30 @@ static void attachParentConsole()
     std::cerr.clear();
 }
 
+// Points a standard stream at NUL. freopen closes the handle the stream had,
+// which the CRT took from the standard handle at startup, and the standard
+// handle is pointed at NUL to match.
+static void reopenOnNul(FILE *stream, const char *mode, DWORD standardHandle)
+{
+    std::freopen("NUL", mode, stream);
+    SetStdHandle(standardHandle, reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stream))));
+}
+
 // A window or daemon run outlives the console it was started from, and
-// closing that console ends every process attached to it. speecher.com, if
-// that is what started this, stops waiting for it, but only once this has
-// left the console: a shell that exits with the launcher closes it.
+// closing that console ends every process attached to it. It also lets go of
+// the standard handles it was given: a caller reading a redirected stdout,
+// such as `$out = speecher --daemon`, waits until every writer closes the
+// pipe. speecher.com, if that is what started this, stops waiting for it, but
+// only once this has left the console: a shell that exits with the launcher
+// closes it.
 static void detachParentConsole()
 {
     FreeConsole();
+    reopenOnNul(stdin, "r", STD_INPUT_HANDLE);
+    reopenOnNul(stdout, "w", STD_OUTPUT_HANDLE);
+    reopenOnNul(stderr, "w", STD_ERROR_HANDLE);
+    std::cout.clear();
+    std::cerr.clear();
     const HANDLE launcherWait = OpenEventW(EVENT_MODIFY_STATE, FALSE,
                                            consoleDetachedEventName(GetCurrentProcessId()).c_str());
     if (launcherWait) {
@@ -627,11 +645,14 @@ int main(int argc, char **argv)
             });
         }
     }
+    // A grab ends by itself, so it keeps the console and the launcher waits
+    // for its exit status.
     if (!decision.grabPath.isEmpty()) {
         QTimer::singleShot(600, &controller, [&controller, &app, &decision] {
             app.exit(controller.grabMainWindow(decision.grabPath) ? 0 : 1);
         });
+    } else {
+        detachParentConsole();
     }
-    detachParentConsole();
     return app.exec();
 }

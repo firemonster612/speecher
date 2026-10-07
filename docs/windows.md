@@ -37,14 +37,15 @@ access, and installs to `%LOCALAPPDATA%\Programs\Speecher`.
 
 The installer adds that folder to the user Path and uninstalling removes it, so
 `speecher` runs in any Command Prompt or PowerShell window opened afterwards.
+
 Both shells try `speecher.com` before `speecher.exe`. `speecher.exe` is a
 GUI-subsystem program that the shells start without waiting, so its exit status
 would be lost and the prompt would come back first; `speecher.com` is a small
 console program that starts `speecher.exe` with the same arguments and standard
 handles, waits for it, and returns its exit status. Ctrl+C reaches Speecher
-itself rather than ending the launcher first. A run that opens a
-window or starts the background app tells the launcher to stop waiting, so the
-prompt comes back while Speecher keeps running. The Start menu shortcut and
+itself rather than ending the launcher first. A run that opens a window or
+starts the background app tells the launcher to stop waiting, so the prompt
+comes back while Speecher keeps running. The Start menu shortcut and
 Open with start `speecher.exe` directly, with no console window. Bind hotkeys
 and GUI launchers such as the Run box or PowerToys Run to `speecher.exe` too: a
 bare `speecher` finds `speecher.com` first and briefly opens a console window.
