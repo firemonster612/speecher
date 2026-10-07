@@ -85,6 +85,16 @@ typedef NSDictionary<NSString *, id> SpeecherRecord;
 @property (nonatomic, readonly, copy) NSString *someChoice;
 // Icon columns only: the schema's platform-neutral icon ("microphone", "star").
 @property (nonatomic, readonly, copy) NSString *iconId;
+// Where records are edited as rows of pickers, a titled line of its own.
+@property (nonatomic, readonly) BOOL ownLine;
+// For a column whose options depend on the record: one list per record, in
+// the records' order. Empty otherwise.
+@property (nonatomic, readonly, copy) NSArray<NSArray<RowOptionModel *> *> *recordOptions;
+// For an own-line column or one whose note depends on the record, what shows
+// under each record's field. Empty otherwise.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *recordNotes;
+// Whether each of recordNotes is a caution.
+@property (nonatomic, readonly, copy) NSArray<NSNumber *> *recordNoteCautions;
 @end
 
 // What an Icon column shows for one record (speecher::IconCell).
@@ -1504,14 +1514,15 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *cleanupStrengths;
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *writingTones;
 @property (nonatomic, readonly, copy) NSArray<RowOptionModel *> *writingProfiles;
-// Choices seeded from the user's settings, with the cleanup strength and tone
-// of the named writing profile as the user set it up; nil names the default
-// profile. Never written back to the settings.
+// Choices seeded from the user's settings, with the services, cleanup
+// strength and tone of the named writing profile as the user set it up; nil
+// names the default profile. Never written back to the settings.
 - (SpeecherTranscribeOptions *)transcribeOptionsWithWritingProfile:(nullable NSString *)profile
     NS_SWIFT_NAME(transcribeOptions(writingProfile:));
-// The model a refinement provider is set to use, or empty for none.
-- (NSString *)refinementModelForProvider:(NSString *)providerId
-    NS_SWIFT_NAME(refinementModel(provider:));
+// The model a refinement provider is set to use under the named writing
+// profile, which may pick its own, or empty for none.
+- (NSString *)refinementModelForProvider:(NSString *)providerId writingProfile:(NSString *)profile
+    NS_SWIFT_NAME(refinementModel(provider:writingProfile:));
 // The extensions the file chooser offers, audio and video, without dots.
 @property (nonatomic, readonly, copy) NSArray<NSString *> *transcribableExtensions;
 // Under the file chooser while no files are listed.

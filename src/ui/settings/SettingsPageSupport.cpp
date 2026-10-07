@@ -650,6 +650,41 @@ void setComboItemEnabled(QComboBox *combo, int index, bool enabled, const QStrin
     item->setToolTip(toolTip);
 }
 
+namespace {
+
+bool offersExactly(const QComboBox *combo, const QList<RowOption> &options)
+{
+    if (combo->count() != options.size()) {
+        return false;
+    }
+    for (int index = 0; index < combo->count(); ++index) {
+        if (combo->itemData(index).toString() != options.at(index).id
+            || combo->itemText(index) != options.at(index).label) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+void setOptions(QComboBox *combo, const QList<RowOption> &options)
+{
+    if (!offersExactly(combo, options)) {
+        const QSignalBlocker blocker(combo);
+        combo->clear();
+        for (const RowOption &option : options) {
+            combo->addItem(option.label, option.id);
+        }
+    }
+    // Which choices are open can change while the choices stay the same, as
+    // Ultrafast does with the OpenAI model.
+    for (int index = 0; index < options.size(); ++index) {
+        const RowOption &option = options.at(index);
+        setComboItemEnabled(combo, index, option.enabled, option.enabled ? QString() : option.help);
+    }
+}
+
 int tightSpacing() { return 4; }
 int relatedSpacing() { return 8; }
 int groupGap() { return 18; }

@@ -43,6 +43,14 @@ struct CollectionColumnSnapshot {
     QString someChoice;
     // Icon columns only: the schema's platform-neutral icon id.
     QString iconId;
+    // Where records are edited as rows of pickers, a titled line of its own.
+    bool ownLine = false;
+    // For a column whose options depend on the record: one list per record,
+    // in the records' order. Empty otherwise.
+    QList<QList<RowOption>> recordOptions;
+    // For an own-line column or one whose note depends on the record, what
+    // shows under each record's field (shownFieldNote). Empty otherwise.
+    QList<FieldNote> recordNotes;
 };
 
 struct CollectionSnapshot {

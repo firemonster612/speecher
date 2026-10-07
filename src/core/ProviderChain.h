@@ -3,12 +3,17 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 namespace speecher {
 
 enum class ProviderRole {
     Speech,
     Refinement,
 };
+
+// A provider's registry label, by role and id.
+using ProviderLabels = std::function<QString(ProviderRole role, const QString &providerId)>;
 
 // A primary may be followed by at most this many fallbacks.
 inline constexpr int kMaxFallbackProviders = 2;
@@ -26,8 +31,11 @@ QStringList normalizedFallbackProviders(ProviderRole role,
                                         const QString &primary,
                                         const QStringList &fallbacks);
 
-// The primary followed by its normalized fallbacks: the order a Dictation
-// Session tries them in. Empty for a refinement primary of "none".
+// The primary followed by its fallbacks, without blanks, unknown ids or
+// repeats: the order a Dictation Session tries them in. Empty for a
+// refinement primary of "none". Stored fallbacks hold at most
+// kMaxFallbackProviders; a Writing Profile's service leads the page's whole
+// chain, so a session's may hold one more.
 QStringList providerChain(ProviderRole role, const QString &primary, const QStringList &fallbacks);
 
 } // namespace speecher

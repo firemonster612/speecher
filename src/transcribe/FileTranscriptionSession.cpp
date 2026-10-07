@@ -226,15 +226,26 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     m_paths = paths;
     m_options = options;
     m_batchSettings = m_settings->snapshot();
+    if (options.spokenLanguage) {
+        m_batchSettings.speech.language = *options.spokenLanguage;
+    }
+    // The page's providers start at the profile's. Kept, they run as the
+    // profile has them, with its model and ahead of the saved chain; one the
+    // page or command line changed runs as the settings have it.
+    const AppSettings profiled = m_providers->withProfileProviders(
+        m_batchSettings, writingProfileSettingsFor(m_batchSettings.refinement.writingProfiles,
+                                                   writingProfileFromName(options.writingProfile)));
+    if (profiled.speech.providerId == options.speechProviderId) {
+        m_batchSettings.speech = profiled.speech;
+    }
+    if (profiled.refinement.providerId == options.refinementProviderId) {
+        m_batchSettings.refinement = profiled.refinement;
+    }
     m_batchSettings.speech.providerId = options.speechProviderId;
-    // The page's provider leads the saved fallbacks.
     m_speechChain = providerChain(ProviderRole::Speech, options.speechProviderId,
                                   m_batchSettings.speech.fallbackProviderIds);
     m_batchSettings.refinement.providerId = options.refinementProviderId;
     m_batchSettings.speech.timedSegments = true;
-    if (options.spokenLanguage) {
-        m_batchSettings.speech.language = *options.spokenLanguage;
-    }
     // The page's profile stands in for the one a target would have implied,
     // for the terms that apply as for everything else.
     m_batchSettings.refinement.sessionWritingProfile = writingProfileFromName(options.writingProfile);

@@ -176,13 +176,16 @@ final class TranscriptionModel: ObservableObject {
         shownViews = max(0, shownViews - 1)
     }
 
-    /// Picking a profile brings its cleanup and tone, as it does for
-    /// dictation; both stay adjustable afterwards.
+    /// Picking a profile brings its services, cleanup and tone, as it does
+    /// for dictation; all stay adjustable afterwards.
     var profile: String {
         get { options.profile }
         set {
             let chosen = bridge.transcribeOptions(writingProfile: newValue)
             options.profile = newValue
+            options.speech = chosen.speechProviderId
+            options.refiner = refinementProviders.contains { $0.providerId == chosen.refinementProviderId }
+                ? chosen.refinementProviderId : "none"
             options.cleanup = chosen.cleanupStrength
             options.tone = chosen.tone
         }
@@ -208,7 +211,7 @@ final class TranscriptionModel: ObservableObject {
         speechProviders.first { $0.providerId == options.speech }?.summary ?? ""
     }
 
-    var refinementModel: String { bridge.refinementModel(provider: options.refiner) }
+    var refinementModel: String { bridge.refinementModel(provider: options.refiner, writingProfile: options.profile) }
     var refinementModelHint: String { bridge.transcribeRefinementModelHint }
 
     /// The pane's fixed wording, from core.
@@ -684,28 +687,29 @@ struct TranscribePane: View {
                 Text(model.text(.refiner))
                 Text(model.text(.refinerHelp))
             }
-            // Why the rows under it do nothing yet, once, rather than four
+            if !model.refinementModel.isEmpty {
+                LabeledContent {
+                    Text(model.refinementModel)
+                } label: {
+                    Text(model.text(.refinerModel))
+                    Text(model.refinementModelHint)
+                }
+            }
+            // The Writing Profile first: it sets the Cleanup Level and Tone
+            // under it. It stays open without a refiner, since it may pick one,
+            // and its speech service and terms apply either way.
+            Picker(selection: $model.profile) {
+                options(model.profiles)
+            } label: {
+                Text(model.text(.writingProfile))
+                Text(model.text(.writingProfileHelp))
+            }
+            // Why the rows under it do nothing yet, once, rather than two
             // silently dimmed rows.
             if model.options.refiner == "none" {
                 Text(model.text(.needsRefiner))
             }
-            // The Writing Profile first: it sets the Cleanup Level and Tone
-            // under it.
             Group {
-                if !model.refinementModel.isEmpty {
-                    LabeledContent {
-                        Text(model.refinementModel)
-                    } label: {
-                        Text(model.text(.refinerModel))
-                        Text(model.refinementModelHint)
-                    }
-                }
-                Picker(selection: $model.profile) {
-                    options(model.profiles)
-                } label: {
-                    Text(model.text(.writingProfile))
-                    Text(model.text(.writingProfileHelp))
-                }
                 Picker(selection: $model.options.cleanup) {
                     options(model.cleanupStrengths)
                 } label: {

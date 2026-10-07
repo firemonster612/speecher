@@ -596,6 +596,10 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 @property (nonatomic, copy) NSString *everyChoice;
 @property (nonatomic, copy) NSString *someChoice;
 @property (nonatomic, copy) NSString *iconId;
+@property (nonatomic) BOOL ownLine;
+@property (nonatomic, copy) NSArray<NSArray<RowOptionModel *> *> *recordOptions;
+@property (nonatomic, copy) NSArray<NSString *> *recordNotes;
+@property (nonatomic, copy) NSArray<NSNumber *> *recordNoteCautions;
 @end
 
 @implementation CollectionColumnModel
@@ -1639,6 +1643,7 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (CollectionModel *)collectionModel:(const CollectionDescriptor &)collection
 {
     NSMutableArray<CollectionColumnModel *> *columns = [NSMutableArray array];
+    const QList<QVariantMap> records = collection.records ? collection.records(_state->draft) : QList<QVariantMap>();
     for (const CollectionColumn &column : collection.columns) {
         CollectionColumnModel *model = [[CollectionColumnModel alloc] init];
         model.columnId = column.id.toNSString();
@@ -1654,6 +1659,23 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
         model.everyChoice = column.everyChoice.toNSString();
         model.someChoice = column.someChoice.toNSString();
         model.iconId = column.iconId.toNSString();
+        model.ownLine = column.ownLine;
+        NSMutableArray<NSArray<RowOptionModel *> *> *recordOptions = [NSMutableArray array];
+        NSMutableArray<NSString *> *recordNotes = [NSMutableArray array];
+        NSMutableArray<NSNumber *> *recordNoteCautions = [NSMutableArray array];
+        for (const QVariantMap &record : records) {
+            if (column.recordOptions) {
+                [recordOptions addObject:[self bridgedOptions:column.recordOptions(_state->draft, record)]];
+            }
+            if (column.recordNote || column.ownLine) {
+                const speecher::FieldNote note = speecher::shownFieldNote(column, _state->draft, record);
+                [recordNotes addObject:note.text.toNSString()];
+                [recordNoteCautions addObject:@(note.caution)];
+            }
+        }
+        model.recordOptions = recordOptions;
+        model.recordNotes = recordNotes;
+        model.recordNoteCautions = recordNoteCautions;
         [columns addObject:model];
     }
     CollectionModel *model = [[CollectionModel alloc] init];
@@ -4017,10 +4039,11 @@ static std::optional<QString> optionalString(NSString *value)
                                         : settings.refinement.defaultWritingProfile;
     const speecher::WritingProfileSettings chosen = speecher::writingProfileSettingsFor(
         settings.refinement.writingProfiles, speecher::writingProfileFromName(profileName));
+    const AppSettings resolved = _state->controller->providerRegistry()->withProfileProviders(settings, chosen);
     SpeecherTranscribeOptions *options = [[SpeecherTranscribeOptions alloc] init];
-    options.speechProviderId = settings.speech.providerId.toNSString();
+    options.speechProviderId = resolved.speech.providerId.toNSString();
     options.applyVocabulary = YES;
-    options.refinementProviderId = settings.refinement.providerId.toNSString();
+    options.refinementProviderId = resolved.refinement.providerId.toNSString();
     options.cleanupStrength = speecher::refinedCleanupLevel(chosen.cleanupStrength, chosen.outputLanguage).toNSString();
     options.tone = chosen.tone.toNSString();
     options.writingProfile = chosen.profile.toNSString();
@@ -4029,11 +4052,13 @@ static std::optional<QString> optionalString(NSString *value)
     return options;
 }
 
-- (NSString *)refinementModelForProvider:(NSString *)providerId
+- (NSString *)refinementModelForProvider:(NSString *)providerId writingProfile:(NSString *)profile
 {
-    return speecher::refinementModel(QString::fromNSString(providerId),
-                                     _state->controller->settings()->snapshot().refinement)
-        .toNSString();
+    const AppSettings settings = _state->controller->settings()->snapshot();
+    const AppSettings resolved = _state->controller->providerRegistry()->withProfileProviders(
+        settings, speecher::writingProfileSettingsFor(settings.refinement.writingProfiles,
+                                                      speecher::writingProfileFromName(QString::fromNSString(profile))));
+    return speecher::refinementModel(QString::fromNSString(providerId), resolved.refinement).toNSString();
 }
 
 - (NSArray<NSString *> *)transcribableExtensions

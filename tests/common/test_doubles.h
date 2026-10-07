@@ -234,6 +234,7 @@ public:
         currentAttemptId = attemptId;
         lastVocabulary = settings.vocabulary;
         lastLanguage = settings.language;
+        lastLocalModel = settings.local.modelId;
         if (onStartAttempt) {
             onStartAttempt();
         }
@@ -309,6 +310,7 @@ public:
     QList<QByteArray> audioChunks;
     QStringList lastVocabulary;
     QString lastLanguage;
+    QString lastLocalModel;
 };
 
 class FakeRefiner final : public TranscriptRefiner {
@@ -382,6 +384,7 @@ public:
         lastBindingVocabulary = settings.bindingVocabulary;
         lastStyle = settings.style;
         lastTone = settings.tone;
+        lastAnthropicModel = settings.anthropicModel;
         if (autoComplete) {
             emit completed(autoCompleteText);
         }
@@ -427,6 +430,7 @@ public:
     RefinementContext lastContext;
     QString lastStyle;
     QString lastTone;
+    QString lastAnthropicModel;
 };
 
 class FakeDelivery final : public TextDeliveryAdapter {

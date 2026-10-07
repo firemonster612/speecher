@@ -279,21 +279,6 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     if (overrides.spokenLanguage) {
         settings.speech.language = *overrides.spokenLanguage;
     }
-    // A fallback that is missing or can't listen for the Spoken Language is
-    // passed over; the primary stops the dictation, as it always has.
-    QString providerError;
-    if (!selectSpeechTranscriber(settings.speech.providerId, &providerError)) {
-        setState(DictationState::Error, providerError, speechSetupAction(settings.speech.providerId));
-        return;
-    }
-    if (const QString problem = spokenLanguageProblem(settings.speech, m_providers->speechProviderLabel(settings.speech.providerId));
-        !problem.isEmpty()) {
-        setState(DictationState::Error, problem, {ErrorFix::SettingsPage, QStringLiteral("dictation")});
-        return;
-    }
-    if (settings.refinement.providerId != QStringLiteral("none")) {
-        selectTranscriptRefiner(settings.refinement.providerId, nullptr);
-    }
 
     ++m_generation;
     ++m_attemptId;
@@ -305,10 +290,10 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_finishingPausedAttempt = false;
     m_attemptEndedDuringStop = false;
     m_pendingAudio.clear();
-    m_speechChain = providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
+    // The chains wait for the target, whose Writing Profile may lead them.
+    m_speechChain.clear();
     m_speechIndex = 0;
-    m_refinementChain = providerChain(ProviderRole::Refinement, settings.refinement.providerId,
-                                      settings.refinement.fallbackProviderIds);
+    m_refinementChain.clear();
     m_refinementIndex = 0;
     m_usedRawTranscript = false;
     m_refinerRefreshed = false;
@@ -316,8 +301,7 @@ void DictationSession::startSession(const SessionOverrides &overrides)
     m_providerHistory = {};
     m_listeningMs = 0;
     setState(DictationState::Starting);
-    qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
-                      << "credentialsPath=" + settings.speech.claudeCredentialsPath
+    qInfo().noquote() << "startListening credentialsPath=" + settings.speech.claudeCredentialsPath
                       << "voiceBase=" + settings.speech.claudeEndpointBase;
     m_speechWarning.clear();
     m_lastTranscript.clear();
@@ -363,8 +347,11 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
         ? m_targetProvider->capture(m_sessionSettings->appRecognitionRules)
         : Target{};
     m_target.category = classifyTarget(m_target, m_sessionSettings->appRecognitionRules);
-    // The target settles the Writing Profile, and with it the terms the
-    // speech request may carry.
+    // The target settles the Writing Profile, and with it the services the
+    // session runs and the terms the speech request may carry.
+    if (!selectProviders()) {
+        return;
+    }
     m_sessionSettings->speech.vocabulary =
         TranscriptPipeline::speechVocabulary(*m_sessionSettings, m_target);
     const AppSettings settings = *m_sessionSettings;
@@ -391,6 +378,36 @@ void DictationSession::continueStartupAfterPopup(quint64 generation)
     }
 
     prepareSpeechProvider();
+}
+
+// The target's Writing Profile's own services lead the chains. A fallback
+// that is missing or can't listen for the Spoken Language is passed over
+// later; the primary stops the dictation, as it always has.
+bool DictationSession::selectProviders()
+{
+    m_sessionSettings = m_providers->withProfileProviders(
+        *m_sessionSettings, TranscriptPipeline::writingProfile(*m_sessionSettings, m_target));
+    const AppSettings &settings = *m_sessionSettings;
+    qInfo().noquote() << "startListening speechProvider=" + settings.speech.providerId
+                      << "refinementProvider=" + settings.refinement.providerId;
+    QString providerError;
+    if (!selectSpeechTranscriber(settings.speech.providerId, &providerError)) {
+        failStartup(providerError, speechSetupAction(settings.speech.providerId));
+        return false;
+    }
+    if (const QString problem =
+            spokenLanguageProblem(settings.speech, m_providers->speechProviderLabel(settings.speech.providerId));
+        !problem.isEmpty()) {
+        failStartup(problem, {ErrorFix::SettingsPage, QStringLiteral("dictation")});
+        return false;
+    }
+    if (settings.refinement.providerId != QStringLiteral("none")) {
+        selectTranscriptRefiner(settings.refinement.providerId, nullptr);
+    }
+    m_speechChain = providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
+    m_refinementChain = providerChain(ProviderRole::Refinement, settings.refinement.providerId,
+                                      settings.refinement.fallbackProviderIds);
+    return true;
 }
 
 // Walks the speech chain on from m_speechIndex, never back: the first
@@ -674,10 +691,7 @@ void DictationSession::noteRan(ProviderRole role, const QString &providerId)
 
 ProviderLabels DictationSession::providerLabels() const
 {
-    return [this](ProviderRole role, const QString &providerId) {
-        return role == ProviderRole::Speech ? m_providers->speechProviderLabel(providerId)
-                                            : m_providers->refinementProviderLabel(providerId);
-    };
+    return m_providers->labels();
 }
 
 void DictationSession::setReachability(Reachability reachability)

@@ -773,7 +773,7 @@ private slots:
     {
         UpdateTestContext errorContext(false);
         errorContext.session->startListening();
-        QCOMPARE(errorContext.session->state(), DictationState::Error);
+        QTRY_COMPARE(errorContext.session->state(), DictationState::Error);
         TestManifestUpdater errorUpdater(&errorContext.settings, errorContext.session.get());
         ManifestUpdaterTestAccess::setState(errorUpdater,
                                             UpdateController::State::ReadyToRestart);

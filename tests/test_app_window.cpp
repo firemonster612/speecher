@@ -736,7 +736,7 @@ private slots:
         // An unknown speech provider fails the session as it starts.
         controller.settings()->setSpeechProvider(QStringLiteral("missing"));
         controller.session()->startListening();
-        QCOMPARE(controller.session()->stateName(), QStringLiteral("error"));
+        QTRY_COMPARE(controller.session()->stateName(), QStringLiteral("error"));
         QVERIFY(!controller.session()->lastFailure().isEmpty());
         // The status line says it, so the note under it waits.
         auto *status = page.findChild<QLabel *>(QStringLiteral("dictationStatus"));
@@ -1183,6 +1183,36 @@ private slots:
         windowAgain->click();
         QVERIFY(pageStart->isVisibleTo(&page));
         QVERIFY(!listed(&page));
+    }
+
+    // Picking a profile that picks its own services switches the page's
+    // speech and refinement choices to them, and the model row to its model.
+    void transcribeFollowsTheProfilesServices()
+    {
+        ApplicationController controller(true);
+        AppSettings stored = controller.settings()->snapshot();
+        stored.speech.providerId = QStringLiteral("claude");
+        stored.refinement.providerId = QStringLiteral("openai");
+        stored.refinement.writingProfiles[1].speechProvider = QStringLiteral("codex");
+        stored.refinement.writingProfiles[1].refinementProvider = QStringLiteral("anthropic");
+        stored.refinement.writingProfiles[1].refinementModel = QStringLiteral("claude-sonnet-5-5");
+        controller.settings()->applySnapshot(stored);
+        TranscribePage page(&controller);
+        auto *speech = page.findChild<QComboBox *>(QStringLiteral("transcribeSpeech"));
+        auto *refiner = page.findChild<QComboBox *>(QStringLiteral("transcribeRefiner"));
+        auto *profile = page.findChild<QComboBox *>(QStringLiteral("transcribeProfile"));
+        auto *model = page.findChild<QPushButton *>(QStringLiteral("transcribeRefinerModel"))
+                          ->findChild<QLabel *>(QStringLiteral("rowDescription"));
+        QCOMPARE(speech->currentData().toString(), QStringLiteral("claude"));
+
+        profile->setCurrentIndex(profile->findData(WritingProfile::Email));
+        QCOMPARE(speech->currentData().toString(), QStringLiteral("codex"));
+        QCOMPARE(refiner->currentData().toString(), QStringLiteral("anthropic"));
+        QCOMPARE(model->text(), QStringLiteral("claude-sonnet-5-5"));
+
+        profile->setCurrentIndex(profile->findData(WritingProfile::Work));
+        QCOMPARE(speech->currentData().toString(), QStringLiteral("claude"));
+        QCOMPARE(refiner->currentData().toString(), QStringLiteral("openai"));
     }
 
     void transcribeModelRowOpensRefinement()

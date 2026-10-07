@@ -274,6 +274,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/VocabularyLimit.cpp
   src/core/Vocabulary.cpp
   src/core/WordPreview.cpp
+  src/core/WritingProfileProviders.cpp
   src/dictation/DictationTypes.cpp
   src/dictation/PopupPresentation.cpp
 )
@@ -311,6 +312,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/VocabularyLimit.h
   src/core/Vocabulary.h
   src/core/WordPreview.h
+  src/core/WritingProfileProviders.h
   src/dictation/DictationTypes.h
   src/dictation/PopupGeometry.h
   src/dictation/PopupPresentation.h

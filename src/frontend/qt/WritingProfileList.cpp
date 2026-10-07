@@ -57,7 +57,7 @@ private:
             rebuild(choices);
         }
         for (qsizetype index = 0; index < m_rows.size(); ++index) {
-            const QString summary = writingProfileSummary(m_draft, choices.at(index).id);
+            const QString summary = m_grid.recordSummary(m_draft, choices.at(index).id);
             m_rows.at(index)->findChild<QLabel *>(QStringLiteral("rowDescription"))->setText(summary);
             m_rows.at(index)->setAccessibleDescription(summary);
         }

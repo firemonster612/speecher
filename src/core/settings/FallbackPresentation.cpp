@@ -9,6 +9,12 @@
 #include <algorithm>
 
 namespace speecher {
+
+QString providerNotInBuildLabel()
+{
+    return QStringLiteral("Provider not in this build");
+}
+
 namespace {
 
 const QString kNone = QStringLiteral("none");
@@ -42,7 +48,7 @@ QString labelOf(const QList<RowOption> &providers, const QString &id)
             return provider.label;
         }
     }
-    return QStringLiteral("Provider not in this build");
+    return providerNotInBuildLabel();
 }
 
 // A server on this computer or its network, which keeps answering without

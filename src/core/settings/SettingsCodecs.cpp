@@ -73,6 +73,35 @@ QString defaultRefinementProvider()
     return QStringLiteral("openai");
 }
 
+QString profileKey(ProviderRole role, const char *field)
+{
+    return QLatin1String(role == ProviderRole::Speech ? "speech" : "refinement") + QLatin1String(field);
+}
+
+// A Writing Profile's own provider for a role and its model. An id no chain
+// can hold reads as the page's choice, and a model as the provider's own
+// without a provider of the profile's to go with.
+void readProfileProvider(const QJsonObject &object, ProviderRole role, QString &provider, QString &model)
+{
+    provider = object.value(profileKey(role, "Provider")).toString();
+    if (!isChainProviderId(role, provider)) {
+        provider.clear();
+        return;
+    }
+    model = object.value(profileKey(role, "Model")).toString().trimmed();
+}
+
+void writeProfileProvider(QJsonObject &object, ProviderRole role, const QString &provider, const QString &model)
+{
+    if (!isChainProviderId(role, provider)) {
+        return;
+    }
+    object.insert(profileKey(role, "Provider"), provider);
+    if (!model.trimmed().isEmpty()) {
+        object.insert(profileKey(role, "Model"), model.trimmed());
+    }
+}
+
 } // namespace
 
 SettingsCodecs::SettingsCodecs()
@@ -686,6 +715,10 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
             object.value(QStringLiteral("name")).toString(),
             object.value(QStringLiteral("outputLanguage")).toString(),
         });
+        readProfileProvider(object, ProviderRole::Speech, settings.last().speechProvider,
+                            settings.last().speechModel);
+        readProfileProvider(object, ProviderRole::Refinement, settings.last().refinementProvider,
+                            settings.last().refinementModel);
     }
     bool hasAiCoding = false;
     for (const WritingProfileSettings &entry : settings) {
@@ -730,6 +763,9 @@ void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSetting
         if (!settings.outputLanguage.isEmpty()) {
             object.insert(QStringLiteral("outputLanguage"), settings.outputLanguage);
         }
+        writeProfileProvider(object, ProviderRole::Speech, settings.speechProvider, settings.speechModel);
+        writeProfileProvider(object, ProviderRole::Refinement, settings.refinementProvider,
+                             settings.refinementModel);
         array.append(object);
     }
     m_settings.setValue(SettingsKeys::WritingProfiles,
