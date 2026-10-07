@@ -1050,8 +1050,12 @@ private slots:
         std::ostringstream err;
 
         QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        // Subtitles come from the timings, so nothing is refined.
+        QVERIFY(m_refinedWith.isEmpty());
         const QString srt = QStringLiteral("1\n00:00:00,000 --> 00:00:01,000\nheard words");
-        QCOMPARE(readFile(dir.filePath(QStringLiteral("memo-transcribed.srt"))), srt);
+        QFile saved(dir.filePath(QStringLiteral("memo-transcribed.srt")));
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(saved.readAll()), srt + QLatin1Char('\n'));
         QCOMPARE(QString::fromStdString(out.str()), srt + QLatin1Char('\n'));
 
         options.format = TranscriptFormat::WebVtt;

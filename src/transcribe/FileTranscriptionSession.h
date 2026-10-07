@@ -93,8 +93,8 @@ void probeAudioDuration(const QString &path, QObject *receiver, std::function<vo
 QString saveTranscript(const QString &audioPath,
                        const QString &folder,
                        const QString &text,
-                       QString *error,
-                       TranscriptFormat format = TranscriptFormat::Text);
+                       TranscriptFormat format,
+                       QString *error);
 
 // Transcribes audio files one after another, or what a microphone hears,
 // with fresh provider instances, so a batch never shares a transcriber or

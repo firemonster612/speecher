@@ -1094,7 +1094,8 @@ winrt::fire_and_forget TranscribePane::exportAll(PaneHost &host)
         for (const TranscribeFileResult &result : std::as_const(m_results)) {
             QString error;
             if (!result.failed()) {
-                saveTranscript(result.path, qs(folder.Path()), shownTranscript(result, m_showRaw), &error);
+                saveTranscript(result.path, qs(folder.Path()), shownTranscript(result, m_showRaw),
+                               TranscriptFormat::Text, &error);
             }
             if (!error.isEmpty()) {
                 errors << error;

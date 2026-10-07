@@ -100,12 +100,17 @@ int runHeadlessTranscribe(const QStringList &files,
     if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
         return finish(2, error);
     }
-    const bool refines = refinesTranscripts(resolved, settings->snapshot().refinement);
-    const QString speechProvider = batchLabels(resolved, *providers, settings->snapshot().refinement).speech;
     // Saving happens here rather than in the session, so --raw can save what
     // it prints.
     TranscribeOptions sessionOptions = resolved;
     sessionOptions.destination = TranscriptDestination::None;
+    // Subtitles come from the timed Raw Transcript, so refining would be a
+    // call whose text nobody sees.
+    if (options.format != TranscriptFormat::Text) {
+        sessionOptions.refinementProviderId = QStringLiteral("none");
+    }
+    const bool refines = refinesTranscripts(sessionOptions, settings->snapshot().refinement);
+    const QString speechProvider = batchLabels(resolved, *providers, settings->snapshot().refinement).speech;
 
     FileTranscriptionSession session(settings, providers);
     QEventLoop loop;
@@ -178,7 +183,7 @@ int runHeadlessTranscribe(const QStringList &files,
                                  ? resolved.folder
                                  : QFileInfo(result.path).absolutePath();
                              QString error;
-                             result.savedPath = saveTranscript(result.path, folder, text, &error, options.format);
+                             result.savedPath = saveTranscript(result.path, folder, text, options.format, &error);
                              if (!error.isEmpty()) {
                                  result.error = error;
                                  ok = false;

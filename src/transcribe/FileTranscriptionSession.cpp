@@ -111,8 +111,8 @@ void probeAudioDuration(const QString &path, QObject *receiver, std::function<vo
 QString saveTranscript(const QString &audioPath,
                        const QString &folder,
                        const QString &text,
-                       QString *error,
-                       TranscriptFormat format)
+                       TranscriptFormat format,
+                       QString *error)
 {
     const QString stem = QFileInfo(audioPath).completeBaseName() + QStringLiteral("-transcribed");
     const QString extension = transcriptFileExtension(format);
@@ -659,7 +659,7 @@ void FileTranscriptionSession::completeFile(const QString &text)
         : m_options.folder;
     if (m_options.destination != TranscriptDestination::None) {
         QString error;
-        m_current.savedPath = saveTranscript(m_current.path, folder, text, &error);
+        m_current.savedPath = saveTranscript(m_current.path, folder, text, TranscriptFormat::Text, &error);
         if (!error.isEmpty()) {
             m_current.error = error;
         }
