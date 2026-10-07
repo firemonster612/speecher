@@ -1031,6 +1031,57 @@ private slots:
         QVERIFY(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("summary")).toBool());
     }
 
+    // Subtitles are saved and printed in place of text, and fail a file whose
+    // speech provider returned no timings with the window's reason.
+    void headlessRunWritesSubtitlesOnlyFromTimings()
+    {
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        HeadlessTranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+        options.format = TranscriptFormat::Srt;
+        options.printTranscripts = true;
+        m_script.segments = {{0, 1000, QStringLiteral("heard words")}};
+        std::ostringstream out;
+        std::ostringstream err;
+
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        // Subtitles come from the timings, so nothing is refined.
+        QVERIFY(m_refinedWith.isEmpty());
+        const QString srt = QStringLiteral("1\n00:00:00,000 --> 00:00:01,000\nheard words");
+        QFile saved(dir.filePath(QStringLiteral("memo-transcribed.srt")));
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        QCOMPARE(QString::fromUtf8(saved.readAll()), srt + QLatin1Char('\n'));
+        QCOMPARE(QString::fromStdString(out.str()), srt + QLatin1Char('\n'));
+
+        options.format = TranscriptFormat::WebVtt;
+        options.printTranscripts = false;
+        options.json = true;
+        out.str({});
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        const QJsonObject vtt = QJsonDocument::fromJson(out.str().substr(0, out.str().find('\n')).c_str()).object();
+        QCOMPARE(vtt.value(QStringLiteral("saved")).toString(), dir.filePath(QStringLiteral("memo-transcribed.vtt")));
+        QCOMPARE(vtt.value(QStringLiteral("text")).toString(),
+                 QStringLiteral("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nheard words"));
+
+        m_script.segments.clear();
+        options.format = TranscriptFormat::Srt;
+        options.json = false;
+        options.printTranscripts = true;
+        out.str({});
+        err.str({});
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 1);
+        QVERIFY(out.str().empty());
+        QVERIFY2(QString::fromStdString(err.str())
+                     .contains(QStringLiteral("memo.wav: failed: Subtitles need timings, and Scripted returned none.")),
+                 err.str().c_str());
+        QVERIFY(!QFile::exists(dir.filePath(QStringLiteral("memo-transcribed (2).srt"))));
+    }
+
     // Each video container the pickers offer: its audio track decodes and
     // reaches the speech provider as half a second of 16 kHz audio.
     void decodesTheAudioTrackOfVideoContainers_data()

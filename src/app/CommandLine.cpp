@@ -127,6 +127,8 @@ Transcribe without a window, printing the results:
                            where to save <name>-transcribed.txt (default beside)
   --stdout                 also print each transcript
   --raw                    print and save the raw transcript, not the refined one
+  --srt | --vtt            save and print SRT or WebVTT subtitles instead, from
+                           the raw transcript; only local models give timings
   --json                   print one JSON object per file, then a summary
   Exit status: 0 all files transcribed, 1 some failed, 2 usage error.
 
@@ -443,6 +445,13 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         } else if (argument == QStringLiteral("--headless")) {
         } else if (argument == QStringLiteral("--stdout")) {
             options.printTranscripts = true;
+        } else if (argument == QStringLiteral("--srt") || argument == QStringLiteral("--vtt")) {
+            const TranscriptFormat format =
+                argument == QStringLiteral("--srt") ? TranscriptFormat::Srt : TranscriptFormat::WebVtt;
+            if (options.format != TranscriptFormat::Text && options.format != format) {
+                error = QStringLiteral("--srt and --vtt cannot be used together");
+            }
+            options.format = format;
         } else if (argument == QStringLiteral("--output")) {
             const std::optional<QString> given = value();
             if (!given) {
@@ -465,6 +474,10 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         if (!error.isEmpty()) {
             return error;
         }
+    }
+    if (options.raw && options.format != TranscriptFormat::Text) {
+        return QStringLiteral("--raw cannot be used with --srt or --vtt, whose subtitles always come from the raw "
+                              "transcript");
     }
     if (files.isEmpty()) {
         return QStringLiteral("transcribe needs at least one audio file");

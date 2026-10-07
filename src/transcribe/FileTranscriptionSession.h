@@ -3,6 +3,7 @@
 #include "core/AppSettings.h"
 #include "dictation/DictationPorts.h"
 #include "dictation/TranscriptPipeline.h"
+#include "transcribe/Subtitles.h"
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -86,10 +87,14 @@ bool isAudioFile(const QString &path);
 // cannot be read, or once receiver is gone.
 void probeAudioDuration(const QString &path, QObject *receiver, std::function<void(qint64)> done);
 
-// Writes text as "<name>-transcribed.txt" in folder, numbering it
-// "<name>-transcribed (2).txt" and so on rather than overwrite a file.
-// Returns the path written, or empty with error set.
-QString saveTranscript(const QString &audioPath, const QString &folder, const QString &text, QString *error);
+// Writes text as "<name>-transcribed.txt" in folder, or .srt or .vtt for
+// subtitles, numbering it "<name>-transcribed (2).txt" and so on rather than
+// overwrite a file. Returns the path written, or empty with error set.
+QString saveTranscript(const QString &audioPath,
+                       const QString &folder,
+                       const QString &text,
+                       TranscriptFormat format,
+                       QString *error);
 
 // Transcribes audio files one after another, or what a microphone hears,
 // with fresh provider instances, so a batch never shares a transcriber or

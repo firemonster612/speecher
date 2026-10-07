@@ -4084,7 +4084,7 @@ static std::optional<QString> optionalString(NSString *value)
 {
     QString error;
     speecher::saveTranscript(QString::fromNSString(audioPath), QString::fromNSString(folder),
-                             QString::fromNSString(text), &error);
+                             QString::fromNSString(text), speecher::TranscriptFormat::Text, &error);
     return error.isEmpty() ? nil : error.toNSString();
 }
 

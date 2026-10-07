@@ -1036,7 +1036,7 @@ void TranscribePage::exportAll()
     for (const TranscribeFileResult &result : m_model->results()) {
         QString error;
         if (!result.failed()) {
-            saveTranscript(result.path, folder, shownTranscript(result, showingRaw()), &error);
+            saveTranscript(result.path, folder, shownTranscript(result, showingRaw()), TranscriptFormat::Text, &error);
         }
         if (!error.isEmpty()) {
             errors << error;
