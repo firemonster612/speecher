@@ -108,11 +108,16 @@ The CLI binary lives inside the bundle, at
 with your arguments. macOS asks for an administrator's password when
 `/usr/local/bin` is not writable; cancelling changes nothing. The script
 points at the app where it is now, so after moving the app, install it again.
+It refuses while Speecher runs from a disk image, or from the temporary
+location Gatekeeper runs a downloaded app from until it is moved (App
+Translocation), since either path goes away; move the app to Applications and
+open it again first.
 
 The manual equivalent, for an app in `/Applications`:
 
 ```sh
 sudo mkdir -p /usr/local/bin
+sudo rm -f /usr/local/bin/speecher
 sudo tee /usr/local/bin/speecher >/dev/null <<'EOF'
 #!/bin/sh
 exec '/Applications/speecher.app/Contents/MacOS/speecher' "$@"

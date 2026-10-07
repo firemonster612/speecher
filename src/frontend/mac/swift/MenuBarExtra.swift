@@ -131,8 +131,8 @@ final class SpeecherMenuBarExtra: NSObject {
                 openSettings()
             }, installCommandLineTool: { [weak self] in
                 self?.popover.performClose(nil)
-                // The install holds the main thread while its password prompt
-                // is up, so the panel closes first rather than hanging over it.
+                // On the next turn, so the panel has closed before the install
+                // can raise an alert, rather than hanging over it.
                 DispatchQueue.main.async { model.installCommandLineTool() }
             }))
         hostingController.sizingOptions = [.preferredContentSize]

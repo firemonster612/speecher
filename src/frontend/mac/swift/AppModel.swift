@@ -594,31 +594,58 @@ final class AppModel: ObservableObject {
     }
 
     /// Writes the speecher command, asking for an administrator's password
-    /// when its folder needs one, and says how it went. NSAppleScript rather
-    /// than osascript, so the password prompt names Speecher as the app
-    /// asking; it holds the main thread until the prompt is answered.
+    /// when its folder needs one, and says how it went. osascript runs in its
+    /// own process so the password prompt never holds the main thread, which
+    /// serves the CLI's socket, the menu bar and any dictation in progress.
     /// AuthorizationExecuteWithPrivileges is deprecated, and a privileged
     /// helper is a lot of machinery for writing one file.
     func installCommandLineTool() {
-        let userCancelled = -128 // userCanceledErr
-        let folder = (SpeecherBridge.commandLineToolPath as NSString).deletingLastPathComponent
-        let privileges = FileManager.default.isWritableFile(atPath: folder) ? "" : " with administrator privileges"
-        let command = SpeecherBridge.commandLineToolInstallCommand
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = NSAppleScript(source: "do shell script \"\(command)\"\(privileges)")
-        var error: NSDictionary?
-        script?.executeAndReturnError(&error)
-        if (error?[NSAppleScript.errorNumber] as? Int) == userCancelled { return }
-        let alert = NSAlert()
-        if script != nil && error == nil {
-            alert.messageText = SpeecherBridge.commandLineToolInstalledTitle
-            alert.informativeText = SpeecherBridge.commandLineToolInstalledText
-        } else {
-            alert.alertStyle = .warning
-            alert.messageText = SpeecherBridge.commandLineToolFailedTitle
-            alert.informativeText = error?[NSAppleScript.errorMessage] as? String ?? ""
+        if let problem = SpeecherBridge.commandLineToolLocationProblem {
+            Self.showCommandLineToolFailure(problem)
+            return
         }
+        let folder = (SpeecherBridge.commandLineToolPath as NSString).deletingLastPathComponent
+        let osascript = Process()
+        osascript.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        osascript.arguments = ["-e", SpeecherBridge.commandLineToolInstallScript(
+            withAdministratorPrivileges: !FileManager.default.isWritableFile(atPath: folder))]
+        osascript.standardOutput = FileHandle.nullDevice
+        let errors = Pipe()
+        osascript.standardError = errors
+        osascript.terminationHandler = { process in
+            let succeeded = process.terminationStatus == 0
+            let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if succeeded {
+                        Self.showCommandLineToolInstalled()
+                    } else if !message.contains("(-128)") { // userCanceledErr: the prompt was cancelled
+                        Self.showCommandLineToolFailure(message)
+                    }
+                }
+            }
+        }
+        do {
+            try osascript.run()
+        } catch {
+            Self.showCommandLineToolFailure(error.localizedDescription)
+        }
+    }
+
+    private static func showCommandLineToolInstalled() {
+        let alert = NSAlert()
+        alert.messageText = SpeecherBridge.commandLineToolInstalledTitle
+        alert.informativeText = SpeecherBridge.commandLineToolInstalledText
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    private static func showCommandLineToolFailure(_ reason: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = SpeecherBridge.commandLineToolFailedTitle
+        alert.informativeText = reason
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }

@@ -394,6 +394,38 @@ public:
     QStringList calls;
 };
 
+#ifdef Q_OS_UNIX
+// The command inside `do shell script "…"`, read the way AppleScript reads a
+// string: \\ and \" are its escapes and a bare " ends it. Empty when the
+// script is not one well-formed string.
+QString appleScriptShellCommand(const QString &script)
+{
+    const QString opening = QStringLiteral("do shell script \"");
+    if (!script.startsWith(opening) || !script.endsWith(QLatin1Char('"'))) {
+        return {};
+    }
+    const qsizetype closing = script.size() - 1;
+    QString command;
+    for (qsizetype i = opening.size(); i < closing; ++i) {
+        QChar c = script.at(i);
+        if (c == QLatin1Char('"')) {
+            return {};
+        }
+        if (c == QLatin1Char('\\')) {
+            if (++i == closing) {
+                return {};
+            }
+            c = script.at(i);
+            if (c != QLatin1Char('\\') && c != QLatin1Char('"')) {
+                return {};
+            }
+        }
+        command += c;
+    }
+    return command;
+}
+#endif
+
 } // namespace
 
 class PlatformCompositionTests : public QObject {
@@ -1407,7 +1439,62 @@ private slots:
         QVERIFY(!QFileInfo(tool).isSymLink());
         QCOMPARE(QFileInfo(elsewhere).size(), 0);
     }
+
+    // osascript reads the script's string the way AppleScript does, so a
+    // path's backslashes and double quotes must reach sh as they were.
+    void commandLineToolScriptKeepsTheBinaryPathIntact_data()
+    {
+        QTest::addColumn<QString>("name");
+        QTest::newRow("space") << QStringLiteral("speecher app");
+        QTest::newRow("backslash") << QStringLiteral("speecher\\app");
+        QTest::newRow("double quote") << QStringLiteral("speecher\"app");
+        QTest::newRow("single quote") << QStringLiteral("speecher'app");
+        QTest::newRow("dollar") << QStringLiteral("speecher$HOME");
+    }
+
+    void commandLineToolScriptKeepsTheBinaryPathIntact()
+    {
+        QFETCH(QString, name);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString binary = directory.filePath(name);
+        QFile fake(binary);
+        QVERIFY(fake.open(QIODevice::WriteOnly));
+        fake.write("#!/bin/sh\nprintf '%s|' \"$@\"\n");
+        fake.close();
+        QVERIFY(fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner));
+        const QString tool = directory.filePath(QStringLiteral("bin/speecher"));
+        const QString script = commandLineToolInstallScript(binary, tool, false);
+
+        const QString command = appleScriptShellCommand(script);
+        QVERIFY2(!command.isEmpty(), qPrintable(script));
+        QCOMPARE(QProcess::execute(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), command}), 0);
+        QProcess run;
+        run.start(tool, {QStringLiteral("a b")});
+        QVERIFY(run.waitForFinished());
+        QCOMPARE(run.readAllStandardOutput(), QByteArray("a b|"));
+    }
+
+    void commandLineToolScriptAsksForAdministratorPrivilegesOnlyWhenTold()
+    {
+        const QString binary = QStringLiteral("/Applications/speecher.app/Contents/MacOS/speecher");
+        const QString tool = QString::fromUtf8(kCommandLineToolPath);
+        QVERIFY(commandLineToolInstallScript(binary, tool, true).endsWith(QStringLiteral("\" with administrator privileges")));
+        QVERIFY(commandLineToolInstallScript(binary, tool, false).endsWith(QLatin1Char('"')));
+    }
 #endif
+
+    // A disk image is ejected and a translocated app's folder goes when it
+    // quits, so a speecher command pointing into either stops working.
+    void commandLineToolNeedsALastingAppLocation()
+    {
+        QVERIFY(isLastingAppLocation(QStringLiteral("/Applications/speecher.app/Contents/MacOS/speecher")));
+        QVERIFY(isLastingAppLocation(QStringLiteral("/Users/me/Applications/speecher.app/Contents/MacOS/speecher")));
+        QVERIFY(!isLastingAppLocation(QStringLiteral("/Volumes/Speecher/speecher.app/Contents/MacOS/speecher")));
+        QVERIFY(!isLastingAppLocation(QStringLiteral(
+            "/private/var/folders/x1/abc123/T/AppTranslocation/0A1B2C3D-4E5F-6789-ABCD-EF0123456789/d/"
+            "speecher.app/Contents/MacOS/speecher")));
+    }
 
 #ifdef Q_OS_LINUX
     void setupAssistantPutsTheGlobalShortcutBeforeFinish()

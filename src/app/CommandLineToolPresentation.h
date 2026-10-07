@@ -11,5 +11,8 @@ QString installCommandLineToolCaption();
 QString commandLineToolInstalledTitle();
 QString commandLineToolInstalledText();
 QString commandLineToolFailedTitle();
+// Why it was not installed when the app is not in a lasting location
+// (isLastingAppLocation).
+QString commandLineToolMoveAppText();
 
 } // namespace speecher

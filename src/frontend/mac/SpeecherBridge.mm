@@ -2876,10 +2876,19 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return @(speecher::kCommandLineToolPath);
 }
 
-+ (NSString *)commandLineToolInstallCommand
++ (NSString *)commandLineToolLocationProblem
 {
-    return speecher::commandLineToolInstallCommand(QCoreApplication::applicationFilePath(),
-                                                   QString::fromUtf8(speecher::kCommandLineToolPath))
+    if (speecher::isLastingAppLocation(QCoreApplication::applicationFilePath())) {
+        return nil;
+    }
+    return speecher::commandLineToolMoveAppText().toNSString();
+}
+
++ (NSString *)commandLineToolInstallScriptWithAdministratorPrivileges:(BOOL)withAdministratorPrivileges
+{
+    return speecher::commandLineToolInstallScript(QCoreApplication::applicationFilePath(),
+                                                  QString::fromUtf8(speecher::kCommandLineToolPath),
+                                                  withAdministratorPrivileges)
         .toNSString();
 }
 
