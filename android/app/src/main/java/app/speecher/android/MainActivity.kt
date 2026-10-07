@@ -256,6 +256,8 @@ class MainActivity : ComponentActivity() {
                                     ::changeSettings,
                                     ::signInFromSettings,
                                     { page = Page.ChipPosition },
+                                    status.chipEnabled,
+                                    ::openAccessibilitySettings,
                                 )
                             }
                         }
@@ -271,6 +273,11 @@ class MainActivity : ComponentActivity() {
                                 ::changeSettings,
                                 ::deleteInsights,
                                 clearInsightsFailed,
+                                status.chipEnabled,
+                                {
+                                    page = Page.Settings
+                                    settingsPage = SettingsPage.LearnedCorrections
+                                },
                             )
                         }
                     }

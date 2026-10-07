@@ -27,11 +27,13 @@ import app.speecher.protocol.failureKind
 import app.speecher.protocol.modelSupportsUltrafast
 import app.speecher.protocol.preferredTranscript
 import app.speecher.protocol.refineTranscript
+import app.speecher.protocol.refinementVocabulary
 import app.speecher.protocol.replaceSpoken
 import app.speecher.protocol.replacementAliases
 import app.speecher.protocol.speechTerms
 import app.speecher.protocol.transcribeSpeech
 import app.speecher.protocol.webSocketTransport
+import app.speecher.protocol.withLearnedCorrections
 import app.speecher.protocol.withVariablesFilled
 import java.io.ByteArrayOutputStream
 import java.util.Date
@@ -783,13 +785,18 @@ fun createDictationEngine(
                     .build()
             )
             .build()
-    // The replacement step's rules: the user's own, {date} and {time} as the phone shows them now.
+    // The replacement step's rules: the user's own, {date} and {time} as the phone shows them now,
+    // then the learned corrections for the target app.
     fun replacements(): List<Replacement> {
         val now = Date()
-        return withVariablesFilled(
-            settings.replacements,
-            DateFormat.getDateFormat(context).format(now),
-            DateFormat.getTimeFormat(context).format(now),
+        return withLearnedCorrections(
+            withVariablesFilled(
+                settings.replacements,
+                DateFormat.getDateFormat(context).format(now),
+                DateFormat.getTimeFormat(context).format(now),
+            ),
+            settings.learnedCorrections,
+            ActiveDictation.target?.packageName.orEmpty(),
         )
     }
     fun token(account: Provider) =
@@ -812,7 +819,11 @@ fun createDictationEngine(
                 account.oauth,
                 token(account),
                 raw,
-                settings.vocabularyFor(context.profile),
+                refinementVocabulary(
+                    settings.vocabulary,
+                    context.profile,
+                    settings.learnedCorrections,
+                ),
                 choice.model,
                 choice.effort,
                 context,
@@ -874,7 +885,9 @@ fun createDictationEngine(
             }
             val terms =
                 speechTerms(
-                    settings.vocabularyFor(writingProfile(settings, ActiveDictation.target))
+                    settings.vocabulary,
+                    writingProfile(settings, ActiveDictation.target),
+                    settings.learnedCorrections,
                 )
             // Each speech provider's client; a new provider adds its branch here.
             when (selected) {
@@ -931,9 +944,21 @@ fun createDictationEngine(
             val target = ActiveDictation.target
             if (target?.secure != true)
                 ActiveDictation.latest = LatestTranscript(text, target?.label)
-            val committed = connection()?.commitText(text, 1) == true
+            val connection = connection()
+            // Read before the commit: the text on each side pins the words for an edit after it.
+            val window =
+                connection
+                    ?.takeIf {
+                        settings.correctionLearningEnabled &&
+                            target?.secure == false &&
+                            ActiveDictation.watchCorrections != null
+                    }
+                    ?.let { correctionWindow(it, text) }
+            val committed = connection?.commitText(text, 1) == true
             if (committed) {
                 SettingsStore(context).recordVocabularyUsage(text)
+                if (window != null && target != null)
+                    ActiveDictation.watchCorrections?.invoke(window, target.packageName)
                 main.post(onInserted)
             }
             committed

@@ -127,6 +127,7 @@ enum class SettingsPage(val title: String) {
     DictationPanel("Dictation panel"),
     Vocabulary("Vocabulary"),
     Replacements("Replacements & snippets"),
+    LearnedCorrections("Learned corrections"),
     Profiles("Profiles"),
     AppRules("Application rules"),
     Tones("Tones"),
@@ -223,6 +224,7 @@ fun Settings(
             else count(settings.replacements.size, "replacement", "replacements"),
             onOpen,
         )
+        PageRow(SettingsPage.LearnedCorrections, correctionsSummary(settings), onOpen)
 
         if (settings.refinementEnabled) {
             Section("Advanced")
@@ -281,6 +283,8 @@ fun SettingsPageContent(
     onChange: (SpeecherSettings) -> Unit,
     onSignIn: (Provider) -> Unit,
     onSetChipPosition: () -> Unit,
+    chipEnabled: Boolean,
+    onTurnOnChip: () -> Unit,
 ) {
     when (page) {
         SettingsPage.Transcription -> TranscriptionSettings(settings, signedIn, onChange, onSignIn)
@@ -289,6 +293,8 @@ fun SettingsPageContent(
         SettingsPage.DictationPanel -> DictationPanelSettings(settings, onChange, onSetChipPosition)
         SettingsPage.Vocabulary -> VocabularySettings(settings, onChange)
         SettingsPage.Replacements -> ReplacementSettings(settings, onChange)
+        SettingsPage.LearnedCorrections ->
+            CorrectionSettings(settings, chipEnabled, onTurnOnChip, onChange)
         SettingsPage.Profiles -> ProfileSettings(settings, onChange)
         SettingsPage.AppRules -> AppRuleSettings(settings, onChange)
         SettingsPage.Tones -> ToneSettings(settings, onChange)
@@ -298,6 +304,14 @@ fun SettingsPageContent(
 }
 
 private fun count(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
+
+private fun correctionsSummary(settings: SpeecherSettings): String {
+    val corrections = settings.learnedCorrections
+    val learned =
+        if (corrections.isEmpty()) "No corrections"
+        else count(corrections.size, "correction", "corrections")
+    return if (settings.correctionLearningEnabled) learned else "$learned, learning off"
+}
 
 /** The provider dictation will use, as the pickers show it, or null with no account. */
 private fun shownProvider(preferred: Provider, signedIn: Set<Provider>): Provider? =
@@ -1260,6 +1274,8 @@ internal fun SettingsTranscriptionServerPreview() = SpeecherTheme {
             { settings = it },
             {},
             {},
+            chipEnabled = true,
+            onTurnOnChip = {},
         )
     }
 }
@@ -1276,6 +1292,8 @@ internal fun SettingsRefinementPreview() = SpeecherTheme {
                 {},
                 {},
                 {},
+                chipEnabled = true,
+                onTurnOnChip = {},
             )
         }
     }
@@ -1301,6 +1319,8 @@ internal fun SettingsRefinementHaikuPreview() = SpeecherTheme {
                 { settings = it },
                 {},
                 {},
+                chipEnabled = true,
+                onTurnOnChip = {},
             )
         }
     }
@@ -1318,6 +1338,8 @@ internal fun SettingsDictationPanelPreview() = SpeecherTheme {
             { settings = it },
             {},
             {},
+            chipEnabled = true,
+            onTurnOnChip = {},
         )
     }
 }
@@ -1343,6 +1365,8 @@ private fun VocabularyPreview(vocabulary: List<VocabularyWord>) = SpeecherTheme 
             { settings = it },
             {},
             {},
+            chipEnabled = true,
+            onTurnOnChip = {},
         )
     }
 }
@@ -1371,6 +1395,8 @@ internal fun SettingsProfilesPreview() = SpeecherTheme {
             { settings = it },
             {},
             {},
+            chipEnabled = true,
+            onTurnOnChip = {},
         )
     }
 }

@@ -8,6 +8,7 @@ import androidx.lifecycle.LifecycleRegistry
 import app.speecher.protocol.VocabularyWord
 import app.speecher.protocol.WritingProfile
 import app.speecher.protocol.WritingProfileSettings
+import app.speecher.protocol.refinementVocabulary
 import app.speecher.protocol.speechTerms
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -88,8 +89,8 @@ class VocabularyTest {
                     )
             )
         assertEquals(
-            listOf(VocabularyWord("Speecher"), kubernetes),
-            settings.vocabularyFor(WritingProfile.Work),
+            listOf(kubernetes, VocabularyWord("Speecher")),
+            refinementVocabulary(settings.vocabulary, WritingProfile.Work, emptyList()),
         )
     }
 
@@ -107,7 +108,7 @@ class VocabularyTest {
             )
         assertEquals(
             listOf("PR", "Speecher"),
-            speechTerms(settings.vocabularyFor(WritingProfile.Work)),
+            speechTerms(settings.vocabulary, WritingProfile.Work, emptyList()),
         )
     }
 

@@ -36,6 +36,8 @@ class ProviderPickerTest {
                     {},
                     { signIn = it },
                     {},
+                    chipEnabled = true,
+                    onTurnOnChip = {},
                 )
             }
         }
@@ -57,6 +59,8 @@ class ProviderPickerTest {
                     { settings = it },
                     {},
                     {},
+                    chipEnabled = true,
+                    onTurnOnChip = {},
                 )
             }
         }
