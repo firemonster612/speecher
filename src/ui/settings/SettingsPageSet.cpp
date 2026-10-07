@@ -446,7 +446,8 @@ void SettingsPageSet::runPageAction(const QString &rowId)
         return;
     }
     if (rowId == QStringLiteral("copyToPhone")) {
-        openPhoneTransferDialog(m_draft, qobject_cast<QWidget *>(parent()));
+        openPhoneTransferDialog(m_controller->settings()->snapshot(),
+                                qobject_cast<QWidget *>(parent()));
         return;
     }
     if (rowId == QStringLiteral("clearInsights")) {

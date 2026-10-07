@@ -47,8 +47,9 @@ Version 1. Both sides treat anything else as an error.
 speecher://import?v=1&a=192.168.1.20,10.0.0.5&p=53817&t=<token>&k=<key>&n=<name>
 ```
 
-- `a`: the desktop's private IPv4 addresses on interfaces that are up, comma
-  separated, at most four. The phone tries each in turn.
+- `a`: the desktop's private IPv4 addresses on interfaces that are up, other
+  than container and VM bridges, comma separated, at most four. The phone
+  tries each in turn.
 - `p`: the TCP port.
 - `t`: 16 random bytes, base64url without padding.
 - `k`: 32 random bytes, the ChaCha20-Poly1305 key, base64url without padding.
@@ -63,9 +64,16 @@ speecher://import?v=1&a=192.168.1.20,10.0.0.5&p=53817&t=<token>&k=<key>&n=<name>
    a 12-byte nonce, the ciphertext, and the 16-byte Poly1305 tag (RFC 8439,
    no associated data). It then closes the connection and stops listening.
 
-The desktop drops a connection that has not sent its token within 10 seconds.
-The phone gives each address 3 seconds to connect and the read 10 seconds.
-A length over 4 MiB is an error.
+The desktop drops a connection that has not sent its token within 10 seconds,
+and keeps at most 8 connections open at once, closing any beyond that as soon
+as it arrives. The phone gives each address 3 seconds to connect and the read
+10 seconds. A length over 4 MiB is an error.
+
+Once the token matches, the code is spent even if the send fails. If the
+phone disconnects before the desktop has written the whole bundle, or the
+write has not finished within 30 seconds, the desktop drops the connection and
+the dialog says the phone lost the connection and to open it again for a new
+code. The desktop never reopens the port for the same code.
 
 **The bundle** is the decrypted UTF-8 JSON object. Every key is present.
 
@@ -109,6 +117,9 @@ lists every profile, built-in and custom; `name` is empty for a built-in.
 
 - Both devices must be on the same network. Guest and corporate Wi-Fi that
   isolate clients block the transfer, and the phone says so.
+- A network that gives the computer only a public or carrier-grade NAT
+  (100.64.0.0/10) address shows no code, because the code carries only
+  private addresses.
 - Windows asks for firewall permission the first time the dialog opens.
 - The QR code is drawn black on white in every theme, the one place the
   desktop does not use palette roles, because scanners read dark-on-light

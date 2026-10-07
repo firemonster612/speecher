@@ -36,6 +36,8 @@ QImage qrCodeImage(const QString &text, int maximumSide);
 enum class PhoneTransferState {
     Waiting,
     Sent,
+    // The phone took the code but left before it had the settings.
+    Interrupted,
     // No address a phone could reach, so no code to show.
     NoNetwork,
     // The system refused a listening port.
@@ -61,6 +63,7 @@ signals:
     void stateChanged();
 
 private:
+    qsizetype openConnections() const;
     void serve(QTcpSocket *socket);
     void setState(PhoneTransferState state);
 

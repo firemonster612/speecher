@@ -11,6 +11,9 @@
 #include <QUrlQuery>
 #include <QtEndian>
 
+#include <algorithm>
+#include <array>
+
 using namespace speecher;
 
 namespace {
@@ -173,6 +176,58 @@ private slots:
         QCOMPARE(plain, phoneTransferBundle(settings, QSysInfo::machineHostName()));
 
         QCOMPARE(exchange(parts.port, parts.token), QByteArray());
+    }
+
+    void aPhoneThatLeavesMidSendInterruptsTheTransfer()
+    {
+        // Larger than both sockets' buffers, so the desktop is still writing
+        // when the phone leaves.
+        AppSettings settings;
+        VocabularyEntry large;
+        large.term = QStringLiteral("large");
+        large.context = QString(16 * 1024 * 1024, QLatin1Char('x'));
+        settings.vocabulary = {large};
+        PhoneTransfer transfer(settings, {QStringLiteral("127.0.0.1")});
+        const LinkParts parts = partsOf(transfer.link());
+
+        QTcpSocket phone;
+        // A phone that stops reading after the first few bytes.
+        phone.setReadBufferSize(4);
+        QObject::connect(&phone, &QTcpSocket::connected, [&] { phone.write(parts.token); });
+        phone.connectToHost(QHostAddress::LocalHost, parts.port);
+        QTRY_VERIFY(phone.bytesAvailable() > 0);
+        phone.abort();
+
+        QTRY_COMPARE(transfer.state(), PhoneTransferState::Interrupted);
+        QCOMPARE(transfer.link(), QString());
+        QVERIFY(!phoneTransferText(settings, transfer.state()).steps.isEmpty());
+    }
+
+    void connectionsBeyondTheCapAreClosedAtOnce()
+    {
+        PhoneTransfer transfer(sampleSettings(), {QStringLiteral("127.0.0.1")});
+        const LinkParts parts = partsOf(transfer.link());
+        std::array<QTcpSocket, 8> idle;
+        for (QTcpSocket &socket : idle) {
+            socket.connectToHost(QHostAddress::LocalHost, parts.port);
+        }
+        QTRY_VERIFY(std::all_of(idle.begin(), idle.end(), [](const QTcpSocket &socket) {
+            return socket.state() == QAbstractSocket::ConnectedState;
+        }));
+
+        QTcpSocket excess;
+        excess.connectToHost(QHostAddress::LocalHost, parts.port);
+        // Well inside the ten seconds an idle connection is otherwise given.
+        QTRY_COMPARE_WITH_TIMEOUT(excess.state(), QAbstractSocket::UnconnectedState, 2000);
+        QCOMPARE(transfer.state(), PhoneTransferState::Waiting);
+
+        for (QTcpSocket &socket : idle) {
+            socket.abort();
+        }
+        // The desktop sees them go on a later pass of its event loop, so a
+        // first try may still find it full. A refused try spends nothing.
+        QVERIFY(QTest::qWaitFor([&] { return !exchange(parts.port, parts.token).isEmpty(); }));
+        QCOMPARE(transfer.state(), PhoneTransferState::Sent);
     }
 
     void withoutANetworkThereIsNoCode()

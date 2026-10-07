@@ -12,9 +12,17 @@ import app.speecher.protocol.WritingProfileSettings
 import java.io.DataOutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.SocketTimeoutException
+import java.util.concurrent.CountDownLatch
+import javax.crypto.AEADBadTagException
 import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -32,7 +40,7 @@ class ComputerImportTest {
                 "speecher://import?v=1&a=192.168.1.20,10.0.0.5&p=53817&t=AAECAwQFBgcICQoLDA0ODw" +
                     "&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&n=enzo%27s%20thinkpad"
             )
-        assertEquals(listOf("192.168.1.20", "10.0.0.5"), link.addresses)
+        assertEquals(listOf("192.168.1.20", "10.0.0.5"), link.addresses.map { it.hostAddress })
         assertEquals(53817, link.port)
         assertArrayEquals(token, link.token)
         assertArrayEquals(key, link.key)
@@ -50,6 +58,33 @@ class ComputerImportTest {
     }
 
     @Test
+    fun `a code must point at one to four private IPv4 addresses`() {
+        val rest =
+            "&p=53817&t=AAECAwQFBgcICQoLDA0ODw&k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&n=pc"
+        for (addresses in
+            listOf(
+                "enzo-thinkpad.local",
+                "8.8.8.8",
+                "172.32.0.1",
+                "10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4,10.0.0.5",
+            )) {
+            assertEquals(
+                addresses,
+                ImportFailure.NotSpeecherCode,
+                failureOf("speecher://import?v=1&a=$addresses$rest"),
+            )
+        }
+        assertEquals(
+            listOf("172.16.0.1", "172.31.255.254", "10.0.0.3", "192.168.0.4"),
+            parseImportLink(
+                    "speecher://import?v=1&a=172.16.0.1,172.31.255.254,10.0.0.3,192.168.0.4$rest"
+                )
+                .addresses
+                .map { it.hostAddress },
+        )
+    }
+
+    @Test
     fun `sealed settings open with the key from the code`() {
         assertEquals(
             """{"format":1,"computer":"test"}""",
@@ -63,6 +98,17 @@ class ComputerImportTest {
                 )
             ),
         )
+    }
+
+    @Test
+    fun `sealed settings with one byte altered do not open`() {
+        val sealed =
+            hex(
+                "a0a1a2a3a4a5a6a7a8a9aaab77891e303f8ba3d98235c238de999296ed2ba7da31485a81" +
+                    "c0bda8c5531f993f914144b39ebecba5459cac59a143"
+            )
+        sealed[20] = (sealed[20].toInt() xor 1).toByte()
+        assertThrows(AEADBadTagException::class.java) { openSealed(key, sealed) }
     }
 
     @Test
@@ -270,8 +316,11 @@ class ComputerImportTest {
                         }
                 }
             }
-            val settings =
-                fetchSettings(ImportLink(listOf("127.0.0.1"), server.localPort, token, key, "pc"))
+            val settings = runBlocking {
+                fetchSettings(
+                    ImportLink(listOf(server.inetAddress), server.localPort, token, key, "pc")
+                )
+            }
             desktop.join()
             assertEquals(
                 ComputerSettings(
@@ -285,6 +334,39 @@ class ComputerImportTest {
                 ),
                 settings,
             )
+        }
+    }
+
+    @Test
+    fun `cancelling while the computer holds the connection stops before the next address`() {
+        val first = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val second = ServerSocket(first.localPort, 1, InetAddress.getByName("127.0.0.2"))
+        first.use {
+            second.use {
+                val tokenSent = CountDownLatch(1)
+                thread {
+                    first.accept().use { phone ->
+                        phone.getInputStream().readNBytes(16)
+                        tokenSent.countDown()
+                        phone.getInputStream().read()
+                    }
+                }
+                val link =
+                    ImportLink(
+                        listOf(first.inetAddress, second.inetAddress),
+                        first.localPort,
+                        token,
+                        key,
+                        "pc",
+                    )
+                runBlocking {
+                    val fetch = launch(Dispatchers.IO) { fetchSettings(link) }
+                    tokenSent.await()
+                    fetch.cancelAndJoin()
+                }
+                second.soTimeout = 100
+                assertThrows(SocketTimeoutException::class.java) { second.accept() }
+            }
         }
     }
 

@@ -15,6 +15,7 @@ import app.speecher.protocol.withCleanupLevel
 import app.speecher.protocol.withTone
 import java.io.DataInputStream
 import java.io.IOException
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URI
@@ -25,6 +26,13 @@ import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -36,7 +44,7 @@ import org.json.JSONObject
 enum class ImportFailure(val title: String, val detail: String = "") {
     NotSpeecherCode("That isn't a Speecher code"),
     OtherVersion(
-        "This code is from a different version of Speecher.",
+        "This code is from a different version of Speecher",
         "Update both apps and try again.",
     ),
     Unreachable(
@@ -45,7 +53,14 @@ enum class ImportFailure(val title: String, val detail: String = "") {
             "while it is open on the computer.",
     ),
     Unreadable("Couldn't read the settings from your computer"),
-    ScannerUnavailable("Couldn't start the code scanner", "Scanning needs Google Play services."),
+    ScannerUnavailable(
+        "Couldn't start the code scanner",
+        "It needs Google Play services, which may still be downloading it. Try again in a minute.",
+    ),
+    NoLocalNetwork(
+        "Speecher can't reach your network",
+        "Allow Speecher to find nearby devices, then scan again.",
+    ),
 }
 
 class ImportFailed(val failure: ImportFailure, cause: Throwable? = null) :
@@ -56,7 +71,7 @@ class ImportFailed(val failure: ImportFailure, cause: Throwable? = null) :
  * gets the settings once, the [key] they are sealed with, and the [computer]'s name.
  */
 class ImportLink(
-    val addresses: List<String>,
+    val addresses: List<InetAddress>,
     val port: Int,
     val token: ByteArray,
     val key: ByteArray,
@@ -80,8 +95,8 @@ fun parseImportLink(scanned: String): ImportLink =
         if (version != "1") throw ImportFailed(ImportFailure.OtherVersion)
         val base64 = Base64.getUrlDecoder()
         ImportLink(
-            query.getValue("a").split(',').filter(String::isNotEmpty).also {
-                require(it.isNotEmpty())
+            query.getValue("a").split(',').map(::privateAddress).also {
+                require(it.size in 1..MAX_ADDRESSES)
             },
             query.getValue("p").toInt().also { require(it in 1..65535) },
             base64.decode(query.getValue("t")).also { require(it.size == TOKEN_BYTES) },
@@ -95,13 +110,30 @@ fun parseImportLink(scanned: String): ImportLink =
     }
 
 /**
- * The settings the computer serves for [link], trying each of its addresses in turn. Blocks, so
- * call it off the main thread.
+ * [text] as a private (RFC 1918) IPv4 address. Read numerically, so a crafted code can neither make
+ * the phone look up a name nor send the token off the local network.
+ */
+private fun privateAddress(text: String): InetAddress {
+    val octets =
+        requireNotNull(IPV4.matchEntire(text)) { "Not an IPv4 address: $text" }
+            .destructured
+            .toList()
+            .map(String::toInt)
+    require(octets.all { it <= 255 }) { "Not an IPv4 address: $text" }
+    return InetAddress.getByAddress(ByteArray(4) { octets[it].toByte() }).also {
+        require(it.isSiteLocalAddress) { "Not a private address: $text" }
+    }
+}
+
+private val IPV4 = Regex("""(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})""")
+
+/**
+ * The settings the computer serves for [link], trying each of its addresses in turn.
  *
  * @throws ImportFailed when no address answers, or what comes back does not open or parse.
  */
-fun fetchSettings(link: ImportLink): ComputerSettings {
-    val sealed = fetchSealed(link)
+suspend fun fetchSettings(link: ImportLink): ComputerSettings {
+    val sealed = withContext(Dispatchers.IO) { fetchSealed(link) }
     return try {
         parseComputerSettings(String(openSealed(link.key, sealed), Charsets.UTF_8))
     } catch (e: GeneralSecurityException) {
@@ -111,20 +143,39 @@ fun fetchSettings(link: ImportLink): ComputerSettings {
     }
 }
 
-private fun fetchSealed(link: ImportLink): ByteArray {
+private suspend fun fetchSealed(link: ImportLink): ByteArray = coroutineScope {
     var failure: IOException? = null
     for (address in link.addresses) {
+        // The computer serves its settings once, so a cancelled import must not reach it again.
+        ensureActive()
         try {
-            return Socket().use { socket ->
-                socket.connect(InetSocketAddress(address, link.port), CONNECT_TIMEOUT_MS)
-                socket.soTimeout = READ_TIMEOUT_MS
-                socket.getOutputStream().write(link.token)
-                val input = DataInputStream(socket.getInputStream())
-                val length = input.readInt()
-                if (length !in 0..MAX_SEALED_BYTES) throw IOException("A length of $length bytes")
-                ByteArray(length).also(input::readFully)
+            return@coroutineScope Socket().use { socket ->
+                // Blocking socket calls ignore cancellation; closing the socket ends them.
+                val closer =
+                    launch(start = CoroutineStart.UNDISPATCHED) {
+                        try {
+                            awaitCancellation()
+                        } finally {
+                            socket.close()
+                        }
+                    }
+                try {
+                    socket.connect(InetSocketAddress(address, link.port), CONNECT_TIMEOUT_MS)
+                    socket.soTimeout = READ_TIMEOUT_MS
+                    ensureActive()
+                    socket.getOutputStream().write(link.token)
+                    val input = DataInputStream(socket.getInputStream())
+                    val length = input.readInt()
+                    if (length !in 0..MAX_SEALED_BYTES) {
+                        throw IOException("A length of $length bytes")
+                    }
+                    ByteArray(length).also(input::readFully)
+                } finally {
+                    closer.cancel()
+                }
             }
         } catch (e: IOException) {
+            ensureActive()
             failure = e
         }
     }
@@ -335,6 +386,7 @@ private fun <T, N> changes(
     )
 }
 
+private const val MAX_ADDRESSES = 4
 private const val TOKEN_BYTES = 16
 private const val KEY_BYTES = 32
 private const val NONCE_BYTES = 12

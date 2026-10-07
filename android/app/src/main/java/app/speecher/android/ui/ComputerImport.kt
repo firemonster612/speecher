@@ -14,6 +14,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -25,13 +29,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import app.speecher.android.dictation.SpeecherSettings
 import app.speecher.android.transfer.Changes
 import app.speecher.android.transfer.ComputerSettings
+import app.speecher.android.transfer.ImportFailed
 import app.speecher.android.transfer.ImportFailure
 import app.speecher.android.transfer.ImportPreview
+import app.speecher.android.transfer.fetchSettings
 import app.speecher.android.transfer.importPreview
+import app.speecher.android.transfer.parseImportLink
 import app.speecher.android.transfer.withImported
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /** Where an import from the computer is. */
 sealed interface ImportState {
@@ -43,8 +54,52 @@ sealed interface ImportState {
 }
 
 /**
+ * The import the Import from computer page shows, and its fetch. Kept outside the activity because
+ * the computer serves its settings once, so recreating the activity must not lose them.
+ */
+class ComputerImportViewModel : ViewModel() {
+    /** Null when no import is open. */
+    var state by mutableStateOf<ImportState?>(null)
+        private set
+
+    private var fetch: Job? = null
+
+    /** Fetches the settings the [scanned] code points at, for the page to preview. */
+    fun importFrom(scanned: String) {
+        fetch?.cancel()
+        val link =
+            try {
+                parseImportLink(scanned)
+            } catch (failed: ImportFailed) {
+                state = ImportState.Failed(failed.failure)
+                return
+            }
+        state = ImportState.Fetching(link.computer)
+        fetch = viewModelScope.launch {
+            state =
+                try {
+                    ImportState.Fetched(fetchSettings(link))
+                } catch (failed: ImportFailed) {
+                    ImportState.Failed(failed.failure)
+                }
+        }
+    }
+
+    fun fail(failure: ImportFailure) {
+        fetch?.cancel()
+        state = ImportState.Failed(failure)
+    }
+
+    fun dismiss() {
+        fetch?.cancel()
+        state = null
+    }
+}
+
+/**
  * The Import from computer page: fetching, why it failed, or what importing would change against
- * the [phone]'s settings, with Cancel and Import.
+ * the [phone]'s settings, with Cancel and Import. When there is nothing to show, Done still merges,
+ * since the computer may have larger use counts.
  */
 @Composable
 fun ComputerImport(
@@ -53,6 +108,7 @@ fun ComputerImport(
     onBack: () -> Unit,
     onScanAgain: () -> Unit,
     onImport: (ComputerSettings) -> Unit,
+    onDone: (ComputerSettings) -> Unit,
 ) {
     when (state) {
         is ImportState.Fetching ->
@@ -87,9 +143,12 @@ fun ComputerImport(
             }
         is ImportState.Fetched -> {
             val computer = state.settings
-            val preview = importPreview(phone, computer)
+            val preview = remember(phone, computer) { importPreview(phone, computer) }
             if (preview.changesNothing) {
-                StatusScreen(onBack, bottomBar = { Buttons { Button(onBack) { Text("Done") } } }) {
+                StatusScreen(
+                    onBack,
+                    bottomBar = { Buttons { Button({ onDone(computer) }) { Text("Done") } } },
+                ) {
                     Text(
                         "Everything from ${computer.computer} is already on this phone.",
                         textAlign = TextAlign.Center,

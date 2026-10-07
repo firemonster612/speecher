@@ -46,15 +46,12 @@ import app.speecher.android.dictation.loadInsights
 import app.speecher.android.dictation.oauth
 import app.speecher.android.dictation.sharedHttp
 import app.speecher.android.transfer.ComputerSettings
-import app.speecher.android.transfer.ImportFailed
 import app.speecher.android.transfer.ImportFailure
-import app.speecher.android.transfer.fetchSettings
-import app.speecher.android.transfer.parseImportLink
 import app.speecher.android.transfer.withImported
 import app.speecher.android.ui.ChipPosition
 import app.speecher.android.ui.ComputerImport
+import app.speecher.android.ui.ComputerImportViewModel
 import app.speecher.android.ui.Home
-import app.speecher.android.ui.ImportState
 import app.speecher.android.ui.Insights
 import app.speecher.android.ui.Onboarding
 import app.speecher.android.ui.SettingsPage
@@ -87,7 +84,6 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -134,9 +130,7 @@ class MainActivity : ComponentActivity() {
     // The Settings page a sign-in started from, to go back to once it succeeds or is left. Saved
     // with the activity, so recreating it while the browser is up keeps it.
     private var signInFrom: SettingsPage? = null
-    // The import from the computer the Import from computer page shows, and its fetch.
-    private var computerImport by mutableStateOf<ImportState?>(null)
-    private var importJob: Job? = null
+    private val computerImport: ComputerImportViewModel by viewModels()
     private val snackbar = SnackbarHostState()
 
     private val microphone =
@@ -171,6 +165,8 @@ class MainActivity : ComponentActivity() {
             page = Page.Settings
             settingsPage = SettingsPage.valueOf(it)
         }
+        // The import outlives a recreated activity, so its page comes back with it.
+        if (computerImport.state != null) page = Page.ComputerImport
         if (savedInstanceState == null) handleIntent(intent)
         setContent {
             SpeecherTheme {
@@ -321,8 +317,15 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     Page.ComputerImport ->
-                        computerImport?.let {
-                            ComputerImport(it, settings, ::back, ::scanComputerCode, ::import)
+                        computerImport.state?.let {
+                            ComputerImport(
+                                it,
+                                settings,
+                                ::back,
+                                ::scanComputerCode,
+                                ::import,
+                                ::merge,
+                            )
                         }
                     Page.WhatsNew ->
                         SpeecherScreen("What's New", onBack = ::back) {
@@ -457,54 +460,61 @@ class MainActivity : ComponentActivity() {
         setupFrom = Page.Home
     }
 
-    /** Starts Google's code scanner, which needs no camera permission, for the computer's code. */
+    // From Android 17 a socket to the computer's private address fails until the app holds this.
+    private val localNetwork =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                startScanner()
+            } else {
+                computerImport.fail(ImportFailure.NoLocalNetwork)
+                page = Page.ComputerImport
+            }
+        }
+
     private fun scanComputerCode() {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN &&
+                checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) !=
+                    PackageManager.PERMISSION_GRANTED
+        ) {
+            localNetwork.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+        } else {
+            startScanner()
+        }
+    }
+
+    /** Starts Google's code scanner, which needs no camera permission, for the computer's code. */
+    private fun startScanner() {
         val options =
             GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
         GmsBarcodeScanning.getClient(this, options)
             .startScan()
-            .addOnSuccessListener { importFrom(it.rawValue.orEmpty()) }
+            .addOnSuccessListener {
+                computerImport.importFrom(it.rawValue.orEmpty())
+                page = Page.ComputerImport
+            }
             .addOnFailureListener {
-                importJob?.cancel()
-                computerImport = ImportState.Failed(ImportFailure.ScannerUnavailable)
+                computerImport.fail(ImportFailure.ScannerUnavailable)
                 page = Page.ComputerImport
             }
     }
 
-    /** Fetches the settings the [scanned] code points at, for the import page to preview. */
-    private fun importFrom(scanned: String) {
-        importJob?.cancel()
-        page = Page.ComputerImport
-        val link =
-            try {
-                parseImportLink(scanned)
-            } catch (failed: ImportFailed) {
-                computerImport = ImportState.Failed(failed.failure)
-                return
-            }
-        computerImport = ImportState.Fetching(link.computer)
-        importJob = lifecycleScope.launch {
-            computerImport =
-                try {
-                    ImportState.Fetched(withContext(Dispatchers.IO) { fetchSettings(link) })
-                } catch (failed: ImportFailed) {
-                    ImportState.Failed(failed.failure)
-                }
-        }
+    private fun import(computer: ComputerSettings) {
+        merge(computer)
+        lifecycleScope.launch { snackbar.showSnackbar("Imported from ${computer.computer}") }
     }
 
     /**
      * Merges [computer]'s settings into those stored now, not the copy the preview showed, since a
      * dictation may have stored use counts meanwhile.
      */
-    private fun import(computer: ComputerSettings) {
+    private fun merge(computer: ComputerSettings) {
         changeSettings(settingsStore.load().withImported(computer))
         leaveImport()
-        lifecycleScope.launch { snackbar.showSnackbar("Imported from ${computer.computer}") }
     }
 
     private fun leaveImport() {
-        importJob?.cancel()
+        computerImport.dismiss()
         page = Page.Settings
     }
 

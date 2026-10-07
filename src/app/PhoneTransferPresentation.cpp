@@ -20,6 +20,9 @@ QString status(PhoneTransferState state)
         return QStringLiteral("Waiting for your phone… This code works once, while this window is open.");
     case PhoneTransferState::Sent:
         return QStringLiteral("Sent to your phone. Finish the import there.");
+    case PhoneTransferState::Interrupted:
+        return QStringLiteral("Your phone lost the connection. Close this and open it again for a "
+                              "new code.");
     case PhoneTransferState::NoNetwork:
         return QStringLiteral("This computer isn't connected to a network. Connect it to the same "
                               "Wi-Fi as your phone, then open this again.");
@@ -35,7 +38,9 @@ PhoneTransferText phoneTransferText(const AppSettings &settings, PhoneTransferSt
 {
     PhoneTransferText text;
     text.title = QStringLiteral("Copy settings to your phone");
-    if (state == PhoneTransferState::Waiting || state == PhoneTransferState::Sent) {
+    // Every state that has shown a code keeps the steps, so the layout stays put.
+    if (state == PhoneTransferState::Waiting || state == PhoneTransferState::Sent
+        || state == PhoneTransferState::Interrupted) {
         text.steps = {
             QStringLiteral("Open Speecher on your phone."),
             QStringLiteral("Go to Settings, then Import from computer."),

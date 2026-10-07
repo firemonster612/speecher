@@ -29,6 +29,10 @@ constexpr qsizetype kNonceSize = 12;
 constexpr qsizetype kTagSize = 16;
 constexpr int kMaxAddresses = 4;
 constexpr int kTokenTimeoutMs = 10'000;
+// Long enough for a slow Wi-Fi link to take a large bundle.
+constexpr int kSendDeadlineMs = 30'000;
+// Connections open at once; only one of them can be the phone.
+constexpr qsizetype kMaxConnections = 8;
 constexpr int kQuietZoneModules = 4;
 
 QByteArray randomBytes(qsizetype size)
@@ -70,6 +74,19 @@ bool isPrivateIPv4(const QHostAddress &address)
     return address.protocol() == QAbstractSocket::IPv4Protocol
         && std::any_of(privateRanges.begin(), privateRanges.end(),
                        [&](const auto &range) { return address.isInSubnet(range); });
+}
+
+// Container and VM bridges report themselves as Ethernet, and a phone cannot
+// reach their addresses.
+bool isVirtualBridge(const QNetworkInterface &interface)
+{
+    static const QStringList prefixes{
+        QStringLiteral("docker"), QStringLiteral("br-"),     QStringLiteral("virbr"),
+        QStringLiteral("veth"),   QStringLiteral("vboxnet"), QStringLiteral("vmnet"),
+    };
+    return std::any_of(prefixes.begin(), prefixes.end(), [&](const QString &prefix) {
+        return interface.name().startsWith(prefix);
+    });
 }
 
 } // namespace
@@ -178,7 +195,7 @@ QStringList phoneTransferAddresses()
             || !flags.testFlag(QNetworkInterface::IsRunning)
             || flags.testFlag(QNetworkInterface::IsLoopBack)
             || flags.testFlag(QNetworkInterface::IsPointToPoint)
-            || interface.type() == QNetworkInterface::Virtual) {
+            || interface.type() == QNetworkInterface::Virtual || isVirtualBridge(interface)) {
             continue;
         }
         const int rank = interface.type() == QNetworkInterface::Wifi       ? 0
@@ -248,6 +265,11 @@ PhoneTransfer::PhoneTransfer(const AppSettings &settings, const QStringList &add
                                  randomBytes(kNonceSize));
     connect(&m_server, &QTcpServer::newConnection, this, [this] {
         while (QTcpSocket *socket = m_server.nextPendingConnection()) {
+            if (openConnections() > kMaxConnections) {
+                socket->abort();
+                socket->deleteLater();
+                continue;
+            }
             serve(socket);
         }
     });
@@ -259,6 +281,17 @@ QString PhoneTransfer::link() const
         return {};
     }
     return phoneTransferLink(m_addresses, m_server.serverPort(), m_token, m_key, m_computerName);
+}
+
+qsizetype PhoneTransfer::openConnections() const
+{
+    // The server parents every socket it accepts; a closed one only awaits
+    // deletion.
+    const QList<QTcpSocket *> sockets =
+        m_server.findChildren<QTcpSocket *>(Qt::FindDirectChildrenOnly);
+    return std::count_if(sockets.begin(), sockets.end(), [](const QTcpSocket *socket) {
+        return socket->state() != QAbstractSocket::UnconnectedState;
+    });
 }
 
 void PhoneTransfer::serve(QTcpSocket *socket)
@@ -280,15 +313,25 @@ void PhoneTransfer::serve(QTcpSocket *socket)
             socket->abort();
             return;
         }
-        // Served once: nobody else may connect, even with the code.
+        // Served once: nobody else may connect, even with the code, so a send
+        // that does not finish spends it.
         m_server.close();
         socket->setProperty("answered", true);
+        connect(socket, &QTcpSocket::disconnected, this, [this] {
+            if (m_state == PhoneTransferState::Waiting) {
+                setState(PhoneTransferState::Interrupted);
+            }
+        });
+        // A phone that stops reading would otherwise hold the send forever.
+        QTimer::singleShot(kSendDeadlineMs, socket, &QTcpSocket::abort);
         QByteArray length(4, Qt::Uninitialized);
         qToBigEndian<quint32>(quint32(m_sealed.size()), length.data());
         connect(socket, &QTcpSocket::bytesWritten, this, [this, socket] {
             if (socket->bytesToWrite() == 0) {
-                socket->disconnectFromHost();
+                // Before disconnecting, which would otherwise read as an
+                // interruption.
                 setState(PhoneTransferState::Sent);
+                socket->disconnectFromHost();
             }
         });
         socket->write(length + m_sealed);

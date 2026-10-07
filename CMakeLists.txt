@@ -1041,10 +1041,6 @@ if(ATSPI_FOUND)
   target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)
 endif()
 
-# The application: sessions, permissions and single-instance IPC, with no user
-# interface of its own. Deliberately free of Qt Widgets so that a front end
-# built on something else can drive it; see
-# docs/adr/0001-per-platform-front-ends.md.
 # The phone transfer's QR code and cipher (docs/adr/0008-phone-transfer-over-the-lan.md).
 # Both are single files; Qt has neither.
 include(FetchContent)
@@ -1066,6 +1062,10 @@ target_include_directories(speecher_qrcodegen SYSTEM PUBLIC "${qrcodegen_SOURCE_
 add_library(speecher_monocypher STATIC "${monocypher_SOURCE_DIR}/src/monocypher.c")
 target_include_directories(speecher_monocypher SYSTEM PUBLIC "${monocypher_SOURCE_DIR}/src")
 
+# The application: sessions, permissions and single-instance IPC, with no user
+# interface of its own. Deliberately free of Qt Widgets so that a front end
+# built on something else can drive it; see
+# docs/adr/0001-per-platform-front-ends.md.
 add_library(speecher_app STATIC
   ${SPEECHER_APP_SOURCES}
   ${SPEECHER_APP_HEADERS}
