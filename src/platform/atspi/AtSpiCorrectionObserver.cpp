@@ -30,9 +30,8 @@ void CorrectionObserver::schedule(
     if (!m_tracker.active()) {
         return;
     }
-    for (const int delay : {correctionFirstSampleMs,
-                            correctionFirstSampleMs + correctionSettleMs,
-                            correctionWindowMs}) {
+    for (int delay = correctionFirstSampleMs; delay <= correctionWindowMs;
+         delay += correctionSettleMs) {
         QTimer::singleShot(delay, context, [this, snapshot, sampledWindow, generation] {
             // Reading the window costs an AT-SPI round trip, so skip it once
             // this observation is over or a later one has replaced it.

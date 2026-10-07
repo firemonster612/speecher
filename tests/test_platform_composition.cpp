@@ -2198,6 +2198,14 @@ private slots:
         rewritten.sample(QStringLiteral("before text an entirely different phrase after text"));
         rewritten.sample(QStringLiteral("before text an entirely different phrase after text"));
         QCOMPARE(observations, 0);
+
+        // A reading caught mid-edit is no correction, but the watch goes on.
+        CorrectionTracker midEdit;
+        midEdit.begin(window, observed);
+        midEdit.sample(QStringLiteral("before text c after text"));
+        midEdit.sample(QStringLiteral("before text Qt after text"));
+        midEdit.sample(QStringLiteral("before text Qt after text"));
+        QCOMPARE(observations, 1);
     }
 
     void correctionTrackerDisablePreventsAndCancelsObservation()
