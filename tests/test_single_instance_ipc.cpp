@@ -8,13 +8,15 @@
 #include <QFileInfo>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
-#include <QUuid>
-#ifdef Q_OS_WIN
-#include <QScopeGuard>
-#include <QSemaphore>
 #include <QThread>
+#include <QUuid>
+#include <iostream>
+#include <sstream>
+#ifdef Q_OS_WIN
+#include <QSemaphore>
 #include <functional>
 #endif
 
@@ -385,14 +387,26 @@ private slots:
         decision.mode = LaunchMode::RunCli;
         decision.ipcCommand = QStringLiteral("last");
 
+        std::ostringstream out;
+        std::ostringstream err;
         int lastExitCode = -1;
-        QThread *client = QThread::create([&lastExitCode, &decision, platform] {
-            lastExitCode = runCliCommand(decision, platform);
-        });
-        client->start();
-        QTRY_VERIFY(client->isFinished());
-        delete client;
+        {
+            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+            std::streambuf *const stderrBuffer = std::cerr.rdbuf(err.rdbuf());
+            const auto restoreStreams = qScopeGuard([stdoutBuffer, stderrBuffer] {
+                std::cout.rdbuf(stdoutBuffer);
+                std::cerr.rdbuf(stderrBuffer);
+            });
+            QThread *client = QThread::create([&lastExitCode, &decision, platform] {
+                lastExitCode = runCliCommand(decision, platform);
+            });
+            client->start();
+            QTRY_VERIFY(client->isFinished());
+            delete client;
+        }
         QCOMPARE(lastExitCode, exitCode);
+        QCOMPARE(QString::fromStdString(out.str()), text.isEmpty() ? QString() : text + QLatin1Char('\n'));
+        QCOMPARE(QString::fromStdString(err.str()).contains(QStringLiteral("older")), !message.isEmpty());
     }
 
     void singleInstanceIpcExpiresIncompleteRequests()

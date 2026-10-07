@@ -701,10 +701,10 @@ bool quitOnLastWindowClosed(LaunchMode mode)
 int runCliCommand(const CommandLineDecision &decision,
                   const std::shared_ptr<const SingleInstancePlatform> &platform)
 {
-    if (decision.ipcCommand == QStringLiteral("last")) {
+    const QString &command = decision.ipcCommand;
+    if (command == QStringLiteral("last")) {
         return printLastTranscript(platform);
     }
-    const QString &command = decision.ipcCommand;
     IpcResponse response;
     QString ipcError;
     const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(command,
