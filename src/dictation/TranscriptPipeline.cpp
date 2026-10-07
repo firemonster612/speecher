@@ -80,17 +80,19 @@ QStringList refinementVocabulary(const AppSettings &settings,
         deduplicated.append(cleaned);
         return cleaned;
     };
-    for (const QString &term : settings.sessionVocabulary) {
-        append(term);
-    }
     const QList<VocabularyEntry> entries = normalizeVocabularyEntries(settings.vocabulary);
-    // Learned corrections next: there are few of them, each came from a
-    // real edit, and a full saved list must not push them out. One whose text
-    // is a term limited to other profiles stays out with it.
+    // Learned corrections first: there are few of them, each came from a
+    // real edit, and neither a long run's terms nor a full saved list may push
+    // them out. One whose text is a term limited to other profiles stays out
+    // with it.
     for (const LearnedCorrection &correction : settings.learnedCorrections) {
         if (correction.enabled && !vocabularyTermExcluded(entries, correction.corrected, writingProfile)) {
             append(correction.corrected);
         }
+    }
+    // Then the run's own terms, in their order, ahead of the saved ones.
+    for (const QString &term : settings.sessionVocabulary) {
+        append(term);
     }
     for (const VocabularyEntry &entry : entries) {
         if (vocabularyEntryApplies(entry, writingProfile)) {
