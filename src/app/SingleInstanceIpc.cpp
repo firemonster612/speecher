@@ -364,6 +364,7 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
             response->message = object.value(QStringLiteral("message")).toString();
             response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
             response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
+            response->text = object.value(QStringLiteral("text")).toString();
         }
         return IpcCommandResult::Sent;
     }
@@ -388,6 +389,9 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
     }
     if (!response.spokenLanguage.isEmpty()) {
         object.insert(QStringLiteral("spokenLanguage"), response.spokenLanguage);
+    }
+    if (!response.text.isEmpty()) {
+        object.insert(QStringLiteral("text"), response.text);
     }
     QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     responseBytes.append('\n');

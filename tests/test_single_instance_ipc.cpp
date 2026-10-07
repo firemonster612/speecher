@@ -355,6 +355,46 @@ private slots:
         QCOMPARE(exitCode, echoes ? 0 : 1);
     }
 
+    void lastPrintsTheRunningInstancesTranscript_data()
+    {
+        QTest::addColumn<QString>("text");
+        QTest::addColumn<QString>("message");
+        QTest::addColumn<int>("exitCode");
+        QTest::newRow("a transcript") << QStringLiteral("Ship it on Friday.") << QString() << 0;
+        QTest::newRow("no transcript yet") << QString() << QString() << 1;
+        QTest::newRow("instance older than last") << QString() << kUnknownIpcCommandMessage << 1;
+    }
+
+    void lastPrintsTheRunningInstancesTranscript()
+    {
+        QFETCH(QString, text);
+        QFETCH(QString, message);
+        QFETCH(int, exitCode);
+        IpcResponse reply{!text.isEmpty(), QStringLiteral("idle"), message};
+        reply.text = text;
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [reply](const QString &, const QString &, QLocalSocket *socket) {
+                    SingleInstanceIpc::writeResponse(socket, reply);
+                });
+        CommandLineDecision decision;
+        decision.mode = LaunchMode::RunCli;
+        decision.ipcCommand = QStringLiteral("last");
+
+        int lastExitCode = -1;
+        QThread *client = QThread::create([&lastExitCode, &decision, platform] {
+            lastExitCode = runCliCommand(decision, platform);
+        });
+        client->start();
+        QTRY_VERIFY(client->isFinished());
+        delete client;
+        QCOMPARE(lastExitCode, exitCode);
+    }
+
     void singleInstanceIpcExpiresIncompleteRequests()
     {
         const QString name = uniqueIpcName();

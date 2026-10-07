@@ -24,7 +24,13 @@ struct IpcResponse {
     // --profile or --language, which ignores them.
     QString writingProfile;
     QString spokenLanguage;
+    // The last transcript, in reply to the last command.
+    QString text;
 };
+
+// The message an instance answers a command it doesn't know with. Clients
+// compare against it to tell an instance older than their command.
+inline const QString kUnknownIpcCommandMessage = QStringLiteral("Unknown command");
 
 enum class IpcCommandResult {
     Sent,

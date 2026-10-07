@@ -1131,11 +1131,15 @@ void ApplicationController::handleIpcCommand(const QString &command,
 #endif
     } else if (command == QStringLiteral("status")) {
         SingleInstanceIpc::writeResponse(socket, response());
+    } else if (command == QStringLiteral("last")) {
+        IpcResponse reply = response(!m_lastTranscript.isEmpty());
+        reply.text = m_lastTranscript;
+        SingleInstanceIpc::writeResponse(socket, reply);
     } else if (command == QStringLiteral("quit")) {
         SingleInstanceIpc::writeResponse(socket, response());
         quitApplication();
     } else {
-        SingleInstanceIpc::writeResponse(socket, response(false, QStringLiteral("Unknown command")));
+        SingleInstanceIpc::writeResponse(socket, response(false, kUnknownIpcCommandMessage));
     }
 }
 
