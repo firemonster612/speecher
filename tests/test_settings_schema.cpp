@@ -2260,6 +2260,74 @@ private slots:
         QCOMPARE(refinement->helpValue(settings), QStringLiteral("The service that cleans up your text."));
     }
 
+    // `speecher providers` judges every provider from the facts its rows
+    // read, says unknown for what nobody has checked, and words a problem as
+    // the primary's row does.
+    void aProviderReportAgreesWithItsRow()
+    {
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        settings.speech.language = QStringLiteral("en");
+        settings.refinement.providerId = QStringLiteral("openai");
+        LiveFacts facts;
+        const auto report = [&](ProviderRole role, const QString &id) {
+            const QList<ProviderReport> reports =
+                providerReports(settings, facts, speechChoices(), refinementChoices());
+            const auto found = std::find_if(reports.cbegin(), reports.cend(), [&](const ProviderReport &report) {
+                return report.role == role && report.id == id;
+            });
+            return found == reports.cend() ? ProviderReport{} : *found;
+        };
+
+        const QList<ProviderReport> reports = providerReports(settings, facts, speechChoices(), refinementChoices());
+        QCOMPARE(reports.size(), 8);
+        QCOMPARE(reports.first().label, QStringLiteral("Claude Voice"));
+        QCOMPARE(reports.last().role, ProviderRole::Refinement);
+        QCOMPARE(reports.last().label, QStringLiteral("Local Runner"));
+
+        // A sign-in nobody has seen and a runner nobody looked for are unknown.
+        ProviderReport codex = report(ProviderRole::Speech, QStringLiteral("codex"));
+        QVERIFY(codex.configured);
+        QCOMPARE(codex.signedIn, std::nullopt);
+        QCOMPARE(codex.usable, std::nullopt);
+        QVERIFY(codex.problem.isEmpty());
+        settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        QCOMPARE(report(ProviderRole::Refinement, QStringLiteral("local")).usable, std::nullopt);
+        facts.runnersChecked = true;
+        const ProviderReport runner = report(ProviderRole::Refinement, QStringLiteral("local"));
+        QVERIFY(runner.configured);
+        QCOMPARE(runner.usable, std::optional(false));
+        QCOMPARE(runner.problem, QStringLiteral("Ollama isn't running."));
+
+        // What settings must hold.
+        const ProviderReport local = report(ProviderRole::Speech, QStringLiteral("local"));
+        QVERIFY(!local.configured);
+        QCOMPARE(local.signedIn, std::nullopt);
+        QCOMPARE(local.usable, std::optional(false));
+        QCOMPARE(local.problem, QStringLiteral("No model downloaded."));
+        QCOMPARE(report(ProviderRole::Refinement, QStringLiteral("endpoint")).problem,
+                 QStringLiteral("No server URL is set."));
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        QCOMPARE(report(ProviderRole::Speech, QStringLiteral("local")).usable, std::optional(true));
+
+        // A sign-in once seen, and the primary's row saying the same.
+        facts.signedIn.insert(QStringLiteral("codex"), false);
+        facts.signedIn.insert(QStringLiteral("claude"), true);
+        codex = report(ProviderRole::Speech, QStringLiteral("codex"));
+        QCOMPARE(codex.signedIn, std::optional(false));
+        QCOMPARE(codex.usable, std::optional(false));
+        QCOMPARE(codex.problem, QStringLiteral("Not signed in to ChatGPT."));
+        QCOMPARE(primaryProviderStatus(ProviderRole::Speech, settings, facts, speechChoices()), codex.problem);
+        QCOMPARE(report(ProviderRole::Speech, QStringLiteral("claude")).usable, std::optional(true));
+
+        facts.reachability = Reachability::Offline;
+        settings.speech.endpoint.baseUrl = QStringLiteral("https://api.example.com");
+        const ProviderReport endpoint = report(ProviderRole::Speech, QStringLiteral("endpoint"));
+        QVERIFY(endpoint.configured);
+        QCOMPARE(endpoint.problem, QStringLiteral("Can't reach Custom Endpoint right now."));
+    }
+
     // The Fallbacks row adds the first fallback's reason it can't stand in,
     // in the negative tone, as the mockup's "Model not downloaded" shows.
     void theFallbacksRowSaysWhyAFallbackCantStandIn()

@@ -7,6 +7,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <optional>
+
 namespace speecher {
 
 // Why a fallback can't stand in right now, judged only from what the app
@@ -31,6 +33,32 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
 // now. Dictation starts with Custom Endpoint." Empty while it can.
 QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, const LiveFacts &facts,
                               const QList<RowOption> &providers);
+
+// One provider as `speecher providers` reports it, judged by fallbackProblem()
+// from the same facts and worded as the primary's row words it.
+struct ProviderReport {
+    QString id;
+    ProviderRole role = ProviderRole::Speech;
+    // The registry label.
+    QString label;
+    // Holds what it needs from settings: a downloaded model, a server URL, a
+    // chosen Local Runner.
+    bool configured = false;
+    // Empty for a provider that doesn't sign in, and for one whose sign-in
+    // nothing has seen.
+    std::optional<bool> signedIn;
+    // Empty while the verdict turns on what nobody has checked: a sign-in not
+    // seen, or whether the Local Runner is running.
+    std::optional<bool> usable;
+    // "Not signed in to ChatGPT."; empty while nothing known stops it.
+    QString problem;
+};
+
+// Every provider `speechProviders` and `refinementProviders` hold, speech
+// first, in their order.
+QList<ProviderReport> providerReports(const AppSettings &settings, const LiveFacts &facts,
+                                      const QList<RowOption> &speechProviders,
+                                      const QList<RowOption> &refinementProviders);
 
 // Whether a speech fallback is skipped because it can't listen for the
 // Spoken Language, by its own language list or its Local Model's catalog

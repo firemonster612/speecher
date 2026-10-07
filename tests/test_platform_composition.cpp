@@ -4,6 +4,7 @@
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
+#include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
@@ -1002,6 +1003,48 @@ private slots:
         QVERIFY2(QString::fromStdString(usage.str())
                      .startsWith(QStringLiteral("--until-silence takes seconds from 0.1 to 3600, not -1\n")),
                  usage.str().c_str());
+    }
+
+    // providers takes --json and nothing else. Its table and its JSON say
+    // unknown, or null, for what nobody has checked.
+    void providersPrintsATableOrJson()
+    {
+        const auto parse = [](QStringList options) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("providers")} + options,
+                                    {});
+        };
+        QCOMPARE(parse({}).mode, LaunchMode::ListProviders);
+        QVERIFY(!parse({}).json);
+        QVERIFY(parse({QStringLiteral("--json")}).json);
+        {
+            std::ostringstream usage;
+            std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+            const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+            QCOMPARE(parse({QStringLiteral("--table")}).exitCode, 2);
+            QVERIFY(QString::fromStdString(usage.str()).startsWith(QStringLiteral("Unknown providers option: --table\n")));
+        }
+
+        const QList<ProviderReport> reports{
+            {QStringLiteral("codex"), ProviderRole::Speech, QStringLiteral("ChatGPT Codex"), true},
+            {QStringLiteral("local"), ProviderRole::Refinement, QStringLiteral("Local Runner"), true, std::nullopt,
+             false, QStringLiteral("Ollama isn't running.")},
+        };
+        std::ostringstream json;
+        printProviderReports(reports, true, json);
+        QCOMPARE(QString::fromStdString(json.str()),
+                 QStringLiteral(R"([{"configured":true,"id":"codex","label":"ChatGPT Codex","problem":null,)"
+                                R"("role":"speech","signedIn":null,"usable":null},)"
+                                R"({"configured":true,"id":"local","label":"Local Runner",)"
+                                R"("problem":"Ollama isn't running.","role":"refinement","signedIn":null,)"
+                                R"("usable":false}])"
+                                "\n"));
+        std::ostringstream table;
+        printProviderReports(reports, false, table);
+        QCOMPARE(QString::fromStdString(table.str()),
+                 QStringLiteral("ROLE        ID     NAME           CONFIGURED  SIGNED IN  USABLE   PROBLEM\n"
+                                "speech      codex  ChatGPT Codex  yes         unknown    unknown\n"
+                                "refinement  local  Local Runner   yes         -          no       "
+                                "Ollama isn't running.\n"));
     }
 
     // A custom tone or level is named by its id without custom_, with - for _.

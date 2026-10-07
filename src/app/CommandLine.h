@@ -27,6 +27,9 @@ enum class LaunchMode {
     // `speecher listen`: record from the microphone in this process, print
     // the transcript and quit.
     ListenHeadless,
+    // `speecher providers`: print every provider's state from what this
+    // process knows, and quit.
+    ListProviders,
 };
 
 struct CommandLineDecision {
@@ -49,6 +52,8 @@ struct CommandLineDecision {
     HeadlessTranscribeOptions headless;
     // ListenHeadless: stop after this long without speech once there was some.
     std::optional<int> untilSilenceMs;
+    // ListProviders: a JSON array instead of a table.
+    bool json = false;
 };
 
 // Decides what the process is for, before any GUI type is constructed, so that
