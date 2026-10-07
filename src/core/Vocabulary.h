@@ -5,6 +5,8 @@
 #include <QByteArray>
 #include <QList>
 
+#include <optional>
+
 namespace speecher {
 
 // Trims, deduplicates case-insensitively, and orders by send priority: key
@@ -33,5 +35,12 @@ QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
 // deleted loses it.
 QStringList offeredVocabularyProfiles(const QStringList &ids,
                                       const QList<WritingProfileSettings> &profiles);
+// The terms in a vocabulary file, one per line, skipping blank lines and ones
+// starting with #. Nothing when the file cannot be read.
+std::optional<QStringList> readVocabularyFile(const QString &path);
+// `entries` with `terms` added for one run, as key terms for every profile
+// that go to the speech service first. A term already listed keeps its own
+// Key term and profiles.
+QList<VocabularyEntry> withAddedVocabulary(QList<VocabularyEntry> entries, const QStringList &terms);
 
 } // namespace speecher

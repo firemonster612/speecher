@@ -961,6 +961,15 @@ private slots:
 
         QCOMPARE(parse({}).mode, LaunchMode::ListenHeadless);
         QCOMPARE(parse({}).untilSilenceMs, std::nullopt);
+
+        QTemporaryDir dir;
+        const QString vocabulary = dir.filePath(QStringLiteral("terms.txt"));
+        QFile vocabularyFile(vocabulary);
+        QVERIFY(vocabularyFile.open(QIODevice::WriteOnly));
+        vocabularyFile.write("readSharedChoice\n\n# a comment\n  Speecher CLI  \r\n");
+        vocabularyFile.close();
+        QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary}).headless.addedVocabulary,
+                 QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
         QCOMPARE(parse({QStringLiteral("--until-silence")}).untilSilenceMs, std::optional(2000));
         QCOMPARE(parse({QStringLiteral("--until-silence"), QStringLiteral("--no-vocabulary")}).untilSilenceMs,
                  std::optional(2000));
@@ -973,6 +982,8 @@ private slots:
                                            QStringList{QStringLiteral("--stdout")},
                                            QStringList{QStringLiteral("--output"), QStringLiteral("none")},
                                            QStringList{QStringLiteral("memo.wav")},
+                                           QStringList{QStringLiteral("--vocab-file")},
+                                           QStringList{QStringLiteral("--vocab-file"), dir.filePath(QStringLiteral("missing.txt"))},
                                            QStringList{QStringLiteral("--cleanup"), QStringLiteral("extreme")}}) {
             const CommandLineDecision refused = parse(mistake);
             QCOMPARE(refused.mode, LaunchMode::Exit);

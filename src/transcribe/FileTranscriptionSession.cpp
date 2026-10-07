@@ -2,6 +2,7 @@
 
 #include "core/SettingsStore.h"
 #include "core/TranscriptState.h"
+#include "core/Vocabulary.h"
 #include "core/settings/SpokenLanguages.h"
 #include "dictation/DictationSession.h"
 #include "dictation/StartupPreparationRunner.h"
@@ -238,13 +239,13 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     // The page's profile stands in for the one a target would have implied,
     // for the terms that apply as for everything else.
     m_batchSettings.refinement.sessionWritingProfile = writingProfileFromName(options.writingProfile);
-    m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, Target{});
     if (!options.applyVocabulary) {
-        m_batchSettings.speech.vocabulary.clear();
         m_batchSettings.vocabulary.clear();
         m_batchSettings.learnedCorrections.clear();
         m_batchSettings.bindings.clear();
     }
+    m_batchSettings.vocabulary = withAddedVocabulary(m_batchSettings.vocabulary, options.addedVocabulary);
+    m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, Target{});
     m_results.clear();
     m_running = true;
     m_index = -1;

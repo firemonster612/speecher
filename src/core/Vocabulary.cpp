@@ -1,6 +1,7 @@
 #include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
 
+#include <QFile>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QTextBoundaryFinder>
@@ -153,6 +154,32 @@ QStringList offeredVocabularyProfiles(const QStringList &ids,
         }
     }
     return offered;
+}
+
+std::optional<QStringList> readVocabularyFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return std::nullopt;
+    }
+    QStringList terms;
+    for (const QString &line : QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'))) {
+        const QString term = line.simplified();
+        if (!term.isEmpty() && !term.startsWith(QLatin1Char('#'))) {
+            terms.append(term);
+        }
+    }
+    return terms;
+}
+
+QList<VocabularyEntry> withAddedVocabulary(QList<VocabularyEntry> entries, const QStringList &terms)
+{
+    for (const QString &term : terms) {
+        VocabularyEntry entry{term};
+        entry.starred = true;
+        entries.append(entry);
+    }
+    return entries;
 }
 
 QList<VocabularyEntry> normalizeVocabularyEntries(const QList<VocabularyEntry> &entries)

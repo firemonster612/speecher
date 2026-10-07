@@ -20,6 +20,8 @@ class SettingsStore;
 struct HeadlessTranscribeOptions {
     std::optional<QString> speechProviderId;
     bool applyVocabulary = true;
+    // From --vocab-file, for this run only.
+    QStringList addedVocabulary;
     std::optional<QString> refinementProviderId;
     std::optional<QString> cleanupStrength;
     // Seeds cleanup and tone from the user's settings for this profile.

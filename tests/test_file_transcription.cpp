@@ -247,11 +247,13 @@ private slots:
                                                return new ScriptedTranscriber(&m_script, parent);
                                            });
         m_refinedWith.clear();
+        m_refinedVocabulary.clear();
         m_registry->registerRefinementProvider({QStringLiteral("openai"), QStringLiteral("Fake")},
                                                [this](QObject *parent) {
                                                    auto *refiner = new FakeRefiner(parent);
                                                    connect(refiner, &TranscriptRefiner::completed, this, [this, refiner] {
                                                        m_refinedWith = {refiner->lastStyle, refiner->lastTone};
+                                                       m_refinedVocabulary = refiner->lastVocabulary;
                                                    });
                                                    refiner->autoComplete = true;
                                                    refiner->autoCompleteText = QStringLiteral("Heard it.");
@@ -887,6 +889,30 @@ private slots:
         QVERIFY(m_script.vocabulary.isEmpty());
     }
 
+    // A term only the run adds reaches the speech provider ahead of the saved
+    // ones, and refinement, while the saved vocabulary stays as it was.
+    void addedVocabularyIsForThisBatchOnly()
+    {
+        const QString audio = m_dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        settings.setVocabularyEntries({{QStringLiteral("Speecher")}});
+        const QList<VocabularyEntry> saved = settings.vocabularyEntries();
+        FileTranscriptionSession session(&settings, m_registry.get());
+        QSignalSpy finished(&session, &FileTranscriptionSession::batchFinished);
+        TranscribeOptions options = speechOnly();
+        options.refinementProviderId = QStringLiteral("openai");
+        options.cleanupStrength = QStringLiteral("balanced");
+        options.addedVocabulary = {QStringLiteral("readSharedChoice")};
+
+        QVERIFY(session.start({audio}, options));
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 10000);
+
+        QCOMPARE(m_script.vocabulary, QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher")}));
+        QVERIFY(m_refinedVocabulary.contains(QStringLiteral("readSharedChoice")));
+        QCOMPARE(settings.vocabularyEntries(), saved);
+    }
+
     void savingNowhereWritesNothingAndStillDelivers()
     {
         QTemporaryDir dir;
@@ -1214,6 +1240,7 @@ private:
     Script m_script;
     // Style and tone the last refinement ran with.
     QStringList m_refinedWith;
+    QStringList m_refinedVocabulary;
 };
 
 } // namespace

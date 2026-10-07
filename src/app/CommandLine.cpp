@@ -3,6 +3,7 @@
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
 #include "app/SingleInstanceIpc.h"
+#include "core/Vocabulary.h"
 #include "core/settings/SettingsCodecs.h"
 #include "core/settings/SettingsSchema.h"
 #include "core/settings/SpokenLanguages.h"
@@ -118,6 +119,8 @@ Transcribe without a window, printing the results:
                            below also implies it
   --model <id>             speech provider: %1
   --no-vocabulary          skip the custom vocabulary and corrections
+  --vocab-file <path>      add the file's terms, one per line, to the custom
+                           vocabulary for this run; # starts a comment line
   --refine <id|none>       refinement provider: %2, none
   --cleanup <level>        %3
   --profile <name>         writing profile; seeds cleanup and tone: %4
@@ -138,8 +141,9 @@ Record from the microphone once and print what was said:
                            also stop after this much silence once speech has
                            started (default 2); Ctrl-C, and Enter at a
                            terminal, always stop, keeping what was said
-  Takes --model, --no-vocabulary, --refine, --cleanup, --profile, --tone,
-  --language, --raw and --json as transcribe does; --json prints one object.
+  Takes --model, --no-vocabulary, --vocab-file, --refine, --cleanup,
+  --profile, --tone, --language, --raw and --json as transcribe does; --json
+  prints one object.
   Exit status: 0 transcript printed, 1 failed or heard no speech, 2 usage
   error.
 
@@ -406,6 +410,15 @@ bool readSharedChoice(const QStringList &arguments,
         }
     } else if (argument == QStringLiteral("--tone")) {
         choice(toneNames(), &options.tone);
+    } else if (argument == QStringLiteral("--vocab-file")) {
+        const std::optional<QString> given = value();
+        if (!given) {
+            *error = QStringLiteral("--vocab-file requires a file");
+        } else if (const std::optional<QStringList> terms = readVocabularyFile(*given)) {
+            options.addedVocabulary += *terms;
+        } else {
+            *error = QStringLiteral("Cannot read vocabulary file %1").arg(*given);
+        }
     } else {
         return false;
     }
