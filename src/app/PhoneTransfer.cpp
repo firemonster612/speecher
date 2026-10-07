@@ -76,10 +76,12 @@ bool isPrivateIPv4(const QHostAddress &address)
                        [&](const auto &range) { return address.isInSubnet(range); });
 }
 
-// Container and VM bridges report themselves as Ethernet, and a phone cannot
-// reach their addresses: Docker, Podman, libvirt, LXC/LXD/Incus, VirtualBox
-// and VMware on Linux, macOS's bridgeN, and Hyper-V and WSL's vEthernet on
-// Windows, which only its human-readable name shows.
+// Container and VM bridges report themselves as Ethernet, and a phone usually
+// cannot reach their addresses: Docker, Podman, libvirt, LXC/LXD/Incus,
+// VirtualBox and VMware on Linux, macOS's bridgeN, and Hyper-V and WSL's
+// vEthernet on Windows, which only its human-readable name shows. Some carry
+// the computer's real LAN address, a Hyper-V external switch or a bridge over
+// the network card, so they rank last rather than being left out.
 bool isVirtualBridge(const QNetworkInterface &interface)
 {
     static const QStringList prefixes{
@@ -192,7 +194,8 @@ QString phoneTransferLink(const QStringList &addresses, quint16 port, const QByt
 QStringList phoneTransferAddresses()
 {
     // Ranked so the phone, which tries them in turn, reaches the likeliest
-    // first: a phone is on Wi-Fi, so Wi-Fi, then wired, then anything else.
+    // first: a phone is on Wi-Fi, so Wi-Fi, then wired, then anything else,
+    // then bridges.
     QList<QPair<int, QString>> ranked;
     for (const QNetworkInterface &interface : QNetworkInterface::allInterfaces()) {
         const QNetworkInterface::InterfaceFlags flags = interface.flags();
@@ -200,10 +203,11 @@ QStringList phoneTransferAddresses()
             || !flags.testFlag(QNetworkInterface::IsRunning)
             || flags.testFlag(QNetworkInterface::IsLoopBack)
             || flags.testFlag(QNetworkInterface::IsPointToPoint)
-            || interface.type() == QNetworkInterface::Virtual || isVirtualBridge(interface)) {
+            || interface.type() == QNetworkInterface::Virtual) {
             continue;
         }
-        const int rank = interface.type() == QNetworkInterface::Wifi       ? 0
+        const int rank = isVirtualBridge(interface)                       ? 3
+                         : interface.type() == QNetworkInterface::Wifi     ? 0
                          : interface.type() == QNetworkInterface::Ethernet ? 1
                                                                             : 2;
         for (const QNetworkAddressEntry &entry : interface.addressEntries()) {

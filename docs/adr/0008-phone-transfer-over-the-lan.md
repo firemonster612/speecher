@@ -47,9 +47,10 @@ Version 1. Both sides treat anything else as an error.
 speecher://import?v=1&a=192.168.1.20,10.0.0.5&p=53817&t=<token>&k=<key>&n=<name>
 ```
 
-- `a`: the desktop's private IPv4 addresses on interfaces that are up, other
-  than container and VM bridges, comma separated, at most four. The phone
-  tries each in turn.
+- `a`: the desktop's private IPv4 addresses on interfaces that are up, comma
+  separated, at most four: Wi-Fi first, then wired, then container and VM
+  bridges, which can carry the real LAN address. The phone tries each in
+  turn.
 - `p`: the TCP port.
 - `t`: 16 random bytes, base64url without padding.
 - `k`: 32 random bytes, the ChaCha20-Poly1305 key, base64url without padding.
