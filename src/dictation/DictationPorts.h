@@ -231,6 +231,10 @@ public:
     virtual void sendAudio(quint64 attemptId, const QByteArray &pcm) = 0;
     virtual void finishInput(quint64 attemptId) = 0;
     virtual void cancelAttempt(quint64 attemptId) = 0;
+    // Finalizes the utterance heard so far while the stream carries on, for a
+    // provider that does not end one at a silence by itself. Providers that do
+    // ignore it.
+    virtual void endUtterance(quint64 attemptId) { Q_UNUSED(attemptId) }
 
 signals:
     void partialTranscript(quint64 attemptId, const QString &text);

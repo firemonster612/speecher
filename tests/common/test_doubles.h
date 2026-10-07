@@ -268,6 +268,13 @@ public:
         }
     }
 
+    void endUtterance(quint64 attemptId) override
+    {
+        if (attemptId == currentAttemptId && onEndUtterance) {
+            onEndUtterance();
+        }
+    }
+
     void emitPartialText(const QString &text)
     {
         emit partialTranscript(currentAttemptId, text);
@@ -306,6 +313,8 @@ public:
     std::function<void()> onStartAttempt;
     // Runs inside cancelAttempt(), as a provider that emits while it stops.
     std::function<void(quint64)> onCancelAttempt;
+    // Runs inside endUtterance(), as a provider that finalizes when asked.
+    std::function<void()> onEndUtterance;
     int backgroundPrepareCalls = 0;
     int prepareCalls = 0;
     int startCalls = 0;

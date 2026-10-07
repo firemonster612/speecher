@@ -129,6 +129,7 @@ void CodexDictationClient::start(const QUrl &url,
     m_finalUtteranceIds.clear();
     m_sessionStarted = false;
     m_finishRequested = false;
+    m_utteranceEndPending = false;
     m_finalizing = false;
     m_sessionClosed = false;
     m_cancelled = false;
@@ -242,6 +243,27 @@ void CodexDictationClient::flushPendingAudio()
     m_pendingAudio.clear();
 }
 
+void CodexDictationClient::endUtterance()
+{
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    if (m_finishRequested || m_finalizing || m_sessionClosed || m_cancelled || m_failureEmitted) {
+        return;
+    }
+    if (!m_sessionStarted) {
+        m_utteranceEndPending = true;
+        return;
+    }
+    sendAudioFlush();
+#endif
+}
+
+void CodexDictationClient::sendAudioFlush()
+{
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    m_socket.sendTextMessage(QStringLiteral("{\"type\":\"audio.flush\",\"reason\":\"client\"}"));
+#endif
+}
+
 void CodexDictationClient::stop()
 {
 #ifdef SPEECHER_WITH_QT_WEBSOCKETS
@@ -263,7 +285,7 @@ void CodexDictationClient::requestFinalization()
     }
     flushPendingAudio();
     m_finalizing = true;
-    m_socket.sendTextMessage(QStringLiteral("{\"type\":\"audio.flush\",\"reason\":\"client\"}"));
+    sendAudioFlush();
     m_socket.sendTextMessage(QStringLiteral("{\"type\":\"session.close\"}"));
     m_closeTimer.start();
 #endif
@@ -314,6 +336,9 @@ void CodexDictationClient::handleTextMessage(const QString &message)
             emit connected();
             if (m_finishRequested) {
                 requestFinalization();
+            } else if (m_utteranceEndPending) {
+                m_utteranceEndPending = false;
+                sendAudioFlush();
             }
         }
         return;

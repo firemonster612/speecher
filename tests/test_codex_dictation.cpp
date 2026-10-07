@@ -216,6 +216,47 @@ private slots:
         QCOMPARE(audio.size(), sent);
     }
 
+    // A recording ends each utterance with a flush and keeps the session: no
+    // close, and an idle stream still gets its keep-alive. One asked for
+    // before session.started follows the audio that waited for it.
+    void codexEndsAnUtteranceAndKeepsTheSession()
+    {
+        QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
+        server.setSupportedSubprotocols({QStringLiteral("openai-bearer.test-token")});
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        CodexDictationClient client(nullptr, 8000, 300);
+        QSignalSpy connected(&client, &CodexDictationClient::connected);
+        client.start(QUrl(QStringLiteral("ws://127.0.0.1:%1/dictation/stream").arg(server.serverPort())),
+                     QStringLiteral("test-token"), 16000, QStringLiteral("auto"));
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 1000);
+        std::unique_ptr<QWebSocket> peer(server.nextPendingConnection());
+        QStringList types;
+        connect(peer.get(), &QWebSocket::textMessageReceived, this, [&](const QString &message) {
+            const QString type =
+                QJsonDocument::fromJson(message.toUtf8()).object().value(QStringLiteral("type")).toString();
+            if (type != QStringLiteral("session.start")) {
+                types << type;
+            }
+        });
+
+        const QByteArray speech = QByteArray::fromHex("0102ff00");
+        client.sendAudio(speech);
+        client.endUtterance();
+        peer->sendTextMessage(QStringLiteral(
+            R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{}}})"));
+        QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
+        client.sendAudio(speech);
+        client.endUtterance();
+        QTRY_COMPARE_WITH_TIMEOUT(types.size(), 4, 1000);
+        QCOMPARE(types, QStringList({QStringLiteral("audio.append"), QStringLiteral("audio.flush"),
+                                     QStringLiteral("audio.append"), QStringLiteral("audio.flush")}));
+
+        // Idle after the flush: the keep-alive's silence, and still no close.
+        QTRY_VERIFY_WITH_TIMEOUT(types.size() >= 5, 1000);
+        QCOMPARE(types.at(4), QStringLiteral("audio.append"));
+        QVERIFY(!types.contains(QStringLiteral("session.close")));
+    }
+
     void codexDictationClientEndsAStreamOnAnyServiceEnd_data()
     {
         QTest::addColumn<bool>("sessionStarted");

@@ -249,7 +249,7 @@ It judges each provider the way the Dictation and Refinement settings do and wor
 
 ### Recording a call
 
-`speecher record start` records the microphone into a transcript file that a coding agent can follow with `tail -f`, and prints the file's path. The recording runs in the Speecher app, which `record start` starts when it isn't running; dictation keeps working meanwhile. Each utterance is appended as one line, timed from the start of the recording, once the speech provider has finished it:
+`speecher record start` records the microphone into a transcript file that a coding agent can follow with `tail -f`, and prints the file's path. The recording runs in the Speecher app, which `record start` starts when it isn't running; dictation keeps working meanwhile. Each utterance is appended as one line once you pause, or after 25 seconds of unbroken speech, and the provider has finished its text. The time is when that text was finished, counted from the start of the recording:
 
 ```
 [00:12:09] me: Yes, I'll check it today.

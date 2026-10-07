@@ -221,6 +221,15 @@ void FileTranscriptionSession::finishListening()
     }
 }
 
+void FileTranscriptionSession::endUtterance()
+{
+    if (m_microphone != Microphone::Listening) {
+        return;
+    }
+    m_utteranceEnds.append(m_pcmDropped + m_pcm.size());
+    endUtteranceOnceSent();
+}
+
 void FileTranscriptionSession::beginBatch(const QStringList &paths, const TranscribeOptions &options)
 {
     m_paths = paths;
@@ -283,6 +292,7 @@ void FileTranscriptionSession::startFile()
     m_transcript->clear();
     m_pcm.clear();
     m_pcmDropped = 0;
+    m_utteranceEnds.clear();
     emit fileStarted(m_index, m_current.path);
     if (m_input) {
         startMicrophone();
@@ -512,6 +522,7 @@ void FileTranscriptionSession::beginStreaming()
 
 void FileTranscriptionSession::sendNextChunk()
 {
+    endUtteranceOnceSent();
     if (m_sent >= m_pcmDropped + m_pcm.size()) {
         m_sendTimer.stop();
         // The microphone's next chunk starts the timer again.
@@ -532,6 +543,16 @@ void FileTranscriptionSession::sendNextChunk()
     }
     emit fileProgress(m_index, qreal(m_sent) / qreal(m_pcmDropped + m_pcm.size()));
     dropSentMicrophoneAudio();
+}
+
+// Audio a provider is still preparing for, or the send timer has yet to
+// reach, waits; each end goes after the audio heard before it.
+void FileTranscriptionSession::endUtteranceOnceSent()
+{
+    while (m_streaming && !m_utteranceEnds.isEmpty() && m_sent >= m_utteranceEnds.first()) {
+        m_utteranceEnds.removeFirst();
+        m_transcriber->endUtterance(m_attemptId);
+    }
 }
 
 // Once the provider has sent text, no other provider takes the input from its

@@ -60,7 +60,10 @@ RecordingStatus recordingStatusFromJson(const QJsonObject &object);
 // Records the microphone into a transcript file until stop(), with its own
 // microphone input and providers, beside any dictation. Each final text the
 // speech provider streams becomes a line, timed from the recording's start;
-// partials are never written.
+// partials are never written. A line carries the time its text was
+// finalised, as streamed finals come with no timings. The recording ends an
+// utterance itself at a pause or once it runs long, so a provider that
+// finalizes only when asked (Codex) still writes lines while it runs.
 class RecordingSession : public QObject {
     Q_OBJECT
 
@@ -91,6 +94,8 @@ signals:
     void stopped(const speecher::RecordingStatus &status);
 
 private:
+    void trackUtterance(const QByteArray &pcm);
+    void endUtterance();
     void writeLine(const QString &text);
     void handleTranscriptionFinished(const QList<TranscribeFileResult> &results);
     void finish();
@@ -107,6 +112,13 @@ private:
     bool m_stopping = false;
     // Ends a stop the provider never finishes.
     QTimer m_stopDeadline;
+    // Skip silence's threshold, which says what audio is speech.
+    int m_voiceThreshold = 0;
+    // Runs from the latest speech until a pause ends the utterance; while it
+    // runs, an utterance is open.
+    QTimer m_pauseTimer;
+    // Audio heard since the open utterance began.
+    qsizetype m_utteranceBytes = 0;
 };
 
 } // namespace speecher

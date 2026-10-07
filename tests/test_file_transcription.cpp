@@ -978,6 +978,78 @@ private slots:
                                                    QStringLiteral("Bye.")}));
     }
 
+    // A provider that finalizes only when asked, as Codex does, still writes
+    // each utterance while the recording runs: a pause after speech ends it,
+    // once, and quiet audio does not start another.
+    void aRecordingEndsAnUtteranceAtAPause()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QString error;
+        const QString path = recording.start(QString(), m_dir.path(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
+        const QStringList utterances{QStringLiteral("Can you look at the retry logic?"),
+                                     QStringLiteral("It drops the last chunk.")};
+        int ends = 0;
+        m_codex->onEndUtterance = [&] { m_codex->emitFinalText(utterances.value(ends++)); };
+
+        microphone->pushAudio(microphoneChunk(8000));
+        microphone->pushAudio(microphoneChunk(0));
+        QCOMPARE(ends, 0);
+        QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), utterances.mid(0, 1), 2000);
+        for (int i = 0; i < 10; ++i) {
+            microphone->pushAudio(microphoneChunk(0));
+            QTest::qWait(100);
+        }
+        QCOMPARE(ends, 1);
+        microphone->pushAudio(microphoneChunk(8000));
+        QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), utterances, 2000);
+        QCOMPARE(ends, 2);
+    }
+
+    // Speech with no pause is ended at 25 s of audio, under Codex's 30 s
+    // limit, and what follows is the next utterance.
+    void aRecordingEndsALongUtteranceAt25Seconds()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QString error;
+        const QString path = recording.start(QString(), m_dir.path(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
+        // Seconds of audio the provider had when asked each time.
+        QList<qsizetype> heardAtEnds;
+        m_codex->onEndUtterance = [&] {
+            qsizetype heard = 0;
+            for (const QByteArray &chunk : std::as_const(m_codex->audioChunks)) {
+                heard += chunk.size();
+            }
+            heardAtEnds << heard / (16000 * 2);
+            m_codex->emitFinalText(QStringLiteral("Part %1.").arg(heardAtEnds.size()));
+        };
+
+        // 30 s, in the microphone's 100 ms chunks.
+        for (int i = 0; i < 300; ++i) {
+            microphone->pushAudio(microphoneChunk(8000));
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), QStringList({QStringLiteral("Part 1."), QStringLiteral("Part 2.")}),
+                                  10000);
+        QCOMPARE(heardAtEnds, QList<qsizetype>({25, 30}));
+    }
+
     // A provider that transcribes only once the audio ends cannot record yet,
     // and a microphone that cannot start leaves no file. A stream that fails
     // part way stops, and the recording says why until it is stopped.

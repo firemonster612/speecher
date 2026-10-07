@@ -248,6 +248,13 @@ void CodexSpeechTranscriber::finishInput(quint64 attemptId)
     }
 }
 
+void CodexSpeechTranscriber::endUtterance(quint64 attemptId)
+{
+    if (m_client && attemptId == m_attemptId) {
+        m_client->endUtterance();
+    }
+}
+
 void CodexSpeechTranscriber::cancelAttempt(quint64 attemptId)
 {
     if (attemptId != m_attemptId) {

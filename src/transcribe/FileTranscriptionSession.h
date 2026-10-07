@@ -123,6 +123,9 @@ public:
     bool startListening(AudioInput *input, const TranscribeOptions &options);
     // Stops the microphone; what it heard is still transcribed and refined.
     void finishListening();
+    // Has the speech provider finalize the utterance the microphone has heard,
+    // once that audio has gone to it; see SpeechTranscriber::endUtterance.
+    void endUtterance();
     // Stops the current file, skips the rest and still emits batchFinished.
     void cancel();
 
@@ -170,6 +173,7 @@ private:
     void releaseFileResources();
     void commitFinal(const QString &text);
     void dropSentMicrophoneAudio();
+    void endUtteranceOnceSent();
 
     SettingsStore *m_settings;
     ProviderRegistry *m_providers;
@@ -197,6 +201,8 @@ private:
     qsizetype m_pcmDropped = 0;
     // Bytes sent, counted from the start of the input.
     qsizetype m_sent = 0;
+    // Where each endUtterance() not yet passed on waits for m_sent to reach.
+    QList<qsizetype> m_utteranceEnds;
     // The current provider has sent text, so the audio before m_sent reached
     // it and will not be sent again.
     bool m_heardFromProvider = false;

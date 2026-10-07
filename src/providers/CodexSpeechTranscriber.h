@@ -27,6 +27,7 @@ public:
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override;
     void finishInput(quint64 attemptId) override;
     void cancelAttempt(quint64 attemptId) override;
+    void endUtterance(quint64 attemptId) override;
 
 private:
     void startFinalRetranscribe(quint64 attemptId);

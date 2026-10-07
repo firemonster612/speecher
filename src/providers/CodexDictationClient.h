@@ -47,6 +47,12 @@ public:
     // which the service takes as detect.
     void start(const QUrl &url, const QString &accessToken, int sampleRateHz, const QString &spokenLanguage);
     void sendAudio(const QByteArray &pcm);
+    // Asks for the final of the utterance sent so far with an audio.flush and
+    // keeps the session open. The server's VAD does not end an utterance at a
+    // silence, and sends transcript.final only after a flush
+    // (docs/research/0004). Before session.started, the flush follows the
+    // audio that waits for it.
+    void endUtterance();
     void stop();
     void cancel();
 
@@ -63,6 +69,7 @@ private:
     void sendSessionStart(int sampleRateHz, const QString &language);
     void sendAudioMessage(const QByteArray &pcm);
     void flushPendingAudio();
+    void sendAudioFlush();
     void requestFinalization();
     void extendCloseWait();
     void handleTextMessage(const QString &message);
@@ -77,6 +84,8 @@ private:
     QSet<QString> m_finalUtteranceIds;
     bool m_sessionStarted = false;
     bool m_finishRequested = false;
+    // An endUtterance() before session.started.
+    bool m_utteranceEndPending = false;
     bool m_finalizing = false;
     bool m_sessionClosed = false;
     bool m_cancelled = false;

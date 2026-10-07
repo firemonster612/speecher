@@ -2,6 +2,7 @@
 
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
+#include "platform/audio/AudioPcmConverter.h"
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingPresentation.h"
 #include "transcribe/FileTranscriptionSession.h"
@@ -18,6 +19,12 @@ namespace {
 const QString kMicrophoneSpeaker = QStringLiteral("me");
 // How long a stop waits for the provider to finish the last utterance.
 constexpr int kStopTimeoutMs = 15000;
+// A pause this long after speech ends the utterance.
+constexpr int kUtterancePauseMs = 800;
+// Speech that runs this long without a pause is ended anyway, under Codex's
+// 30 s max_utterance_duration_ms. Counted in audio, as the service counts it:
+// 16 kHz mono s16.
+constexpr qsizetype kLongestUtteranceBytes = qsizetype(25) * 16000 * 2;
 
 } // namespace
 
@@ -123,6 +130,9 @@ RecordingSession::RecordingSession(SettingsStore *settings,
     m_stopDeadline.setSingleShot(true);
     m_stopDeadline.setInterval(kStopTimeoutMs);
     connect(&m_stopDeadline, &QTimer::timeout, m_transcription, &FileTranscriptionSession::cancel);
+    m_pauseTimer.setSingleShot(true);
+    m_pauseTimer.setInterval(kUtterancePauseMs);
+    connect(&m_pauseTimer, &QTimer::timeout, this, &RecordingSession::endUtterance);
     connect(m_transcription, &FileTranscriptionSession::fileTextFinalized, this,
             [this](int, const QString &text) { writeLine(text); });
     connect(m_transcription, &FileTranscriptionSession::batchFinished, this,
@@ -188,6 +198,11 @@ QString RecordingSession::start(const QString &path, const QString &dataFolder, 
         delete m_microphone;
         return {};
     }
+    // After the transcription's own connection, so the audio that ends an
+    // utterance is already queued for the provider.
+    m_voiceThreshold = m_settings->audioCaptureSettings().vadThresholdPercent;
+    m_utteranceBytes = 0;
+    connect(m_microphone, &AudioInput::audioChunk, this, &RecordingSession::trackUtterance);
     qInfo().noquote() << "recording started path=" + m_transcript.path();
     emit recordingChanged(true);
     return m_transcript.path();
@@ -199,12 +214,39 @@ void RecordingSession::stop()
         return;
     }
     m_stopping = true;
+    m_pauseTimer.stop();
     if (!m_transcription->isRunning()) {
         finish();
         return;
     }
     m_stopDeadline.start();
     m_transcription->finishListening();
+}
+
+// Skip silence holds quiet audio back, so a pause is timed by the clock
+// rather than by the audio that arrives.
+void RecordingSession::trackUtterance(const QByteArray &pcm)
+{
+    if (m_stopping) {
+        return;
+    }
+    if (isVoiced(rmsForPcm16(pcm), m_voiceThreshold)) {
+        m_pauseTimer.start();
+    }
+    if (!m_pauseTimer.isActive()) {
+        return;
+    }
+    m_utteranceBytes += pcm.size();
+    if (m_utteranceBytes >= kLongestUtteranceBytes) {
+        endUtterance();
+    }
+}
+
+void RecordingSession::endUtterance()
+{
+    m_pauseTimer.stop();
+    m_utteranceBytes = 0;
+    m_transcription->endUtterance();
 }
 
 void RecordingSession::writeLine(const QString &text)
