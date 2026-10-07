@@ -9,12 +9,16 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <algorithm>
+#include <istream>
+#include <optional>
 #include <ostream>
 
 namespace speecher {
@@ -66,6 +70,41 @@ QString unofferedProviderError(const TranscribeOptions &resolved, ProviderRegist
     return {};
 }
 
+// Copies in to a file named stdin in dir, because the decoder cannot probe a
+// pipe. The file has no extension: the decoder probes its content, and the
+// name is what progress shows and the saved transcript is named after.
+// Returns its path, or empty with error set.
+QString spoolStdin(std::istream &in, const QTemporaryDir &dir, QString *error)
+{
+    if (!dir.isValid()) {
+        *error = QStringLiteral("Could not read stdin: %1").arg(dir.errorString());
+        return {};
+    }
+    QFile file(dir.filePath(QStringLiteral("stdin")));
+    if (!file.open(QIODevice::WriteOnly)) {
+        *error = QStringLiteral("Could not read stdin: %1").arg(file.errorString());
+        return {};
+    }
+    char buffer[64 * 1024];
+    qint64 total = 0;
+    while (in.read(buffer, sizeof buffer) || in.gcount() > 0) {
+        if (file.write(buffer, in.gcount()) != in.gcount()) {
+            *error = QStringLiteral("Could not read stdin: %1").arg(file.errorString());
+            return {};
+        }
+        total += in.gcount();
+    }
+    if (in.bad()) {
+        *error = QStringLiteral("Could not read stdin");
+        return {};
+    }
+    if (total == 0) {
+        *error = QStringLiteral("No audio on stdin");
+        return {};
+    }
+    return file.fileName();
+}
+
 void writeJson(std::ostream &out, const QJsonObject &object)
 {
     out << QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString() << '\n';
@@ -78,6 +117,7 @@ int runHeadlessTranscribe(const QStringList &files,
                           const HeadlessTranscribeOptions &options,
                           SettingsStore *settings,
                           ProviderRegistry *providers,
+                          std::istream &in,
                           std::ostream &out,
                           std::ostream &err,
                           bool errIsTerminal)
@@ -107,6 +147,19 @@ int runHeadlessTranscribe(const QStringList &files,
     if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
         return finish(2, error);
     }
+    // Removes the spooled audio on every return.
+    std::optional<QTemporaryDir> stdinDir;
+    QString stdinPath;
+    if (files == QStringList{kStdinFile}) {
+        stdinDir.emplace();
+        QString error;
+        stdinPath = spoolStdin(in, *stdinDir, &error);
+        if (stdinPath.isEmpty()) {
+            failed = 1;
+            return finish(1, error);
+        }
+    }
+    const QStringList inputs = stdinPath.isEmpty() ? files : QStringList{stdinPath};
     // Saving happens here rather than in the session, so --raw can save what
     // it prints.
     TranscribeOptions sessionOptions = resolved;
@@ -211,7 +264,8 @@ int runHeadlessTranscribe(const QStringList &files,
                          }
                          err.flush();
                          if (options.json) {
-                             QJsonObject object{{QStringLiteral("file"), result.path},
+                             QJsonObject object{{QStringLiteral("file"),
+                                                 result.path == stdinPath ? kStdinFile : result.path},
                                                 {QStringLiteral("ok"), ok},
                                                 {QStringLiteral("text"), text}};
                              if (!result.savedPath.isEmpty()) {
@@ -244,7 +298,7 @@ int runHeadlessTranscribe(const QStringList &files,
     tick.start();
     // The session is this run's own and the files are there, so a refusal
     // would mean a batch already under way.
-    if (!session.start(files, sessionOptions)) {
+    if (!session.start(inputs, sessionOptions)) {
         return finish(1, QStringLiteral("Could not start: a transcription is already running"));
     }
     if (session.isRunning()) {

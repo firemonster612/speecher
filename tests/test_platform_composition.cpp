@@ -914,6 +914,26 @@ private slots:
         QCOMPARE(ended.mode, LaunchMode::TranscribeHeadless);
         QCOMPARE(ended.transcribeFiles, QStringList{dashed});
 
+        // - reads stdin, always headless, saving nowhere unless given a folder.
+        const auto parseStdin = [](QStringList options) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("transcribe")} + options, {});
+        };
+        const CommandLineDecision piped = parseStdin({QStringLiteral("--stdout"), QStringLiteral("-")});
+        QCOMPARE(piped.mode, LaunchMode::TranscribeHeadless);
+        QCOMPARE(piped.transcribeFiles, QStringList{QStringLiteral("-")});
+        QCOMPARE(piped.headless.destination, TranscriptDestination::None);
+        QCOMPARE(parseStdin({QStringLiteral("--output"), dir.path(), QStringLiteral("-")}).headless.destination,
+                 TranscriptDestination::Folder);
+        for (const QStringList &mistake : {QStringList{QStringLiteral("-")},
+                                           QStringList{QStringLiteral("--headless"), QStringLiteral("-")},
+                                           QStringList{QStringLiteral("--stdout"), QStringLiteral("--output"),
+                                                       QStringLiteral("beside"), QStringLiteral("-")},
+                                           QStringList{QStringLiteral("--output"), QStringLiteral("none"),
+                                                       QStringLiteral("-")},
+                                           QStringList{QStringLiteral("--stdout"), QStringLiteral("-"), audio}}) {
+            QCOMPARE(parseStdin(mistake).exitCode, 2);
+        }
+
         for (const QStringList &mistake : {QStringList{QStringLiteral("--cleanup"), QStringLiteral("extreme")},
                                            QStringList{QStringLiteral("--frobnicate")},
                                            QStringList{QStringLiteral("-x")},

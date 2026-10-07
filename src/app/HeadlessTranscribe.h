@@ -14,6 +14,9 @@ class AudioInput;
 class ProviderRegistry;
 class SettingsStore;
 
+// The file name `speecher transcribe` reads stdin for; it is the only file.
+inline const QString kStdinFile = QStringLiteral("-");
+
 // The choices `speecher transcribe` takes on its command line. Each unset one
 // comes from the user's settings, the way the Transcribe page seeds its form.
 // `speecher listen` takes the same, without the ones about files.
@@ -42,16 +45,18 @@ struct HeadlessTranscribeOptions {
 };
 
 // Transcribes files without a window, with its own providers, so it never
-// touches a running instance's dictation. Progress, saved paths and failures
-// go to err (rewriting one line when err is a terminal), transcripts to out.
-// Returns the exit code: 0 when every file succeeded, 1 when any failed
-// (saving, and subtitles without timings, included) or the session is busy,
-// 2 for no files or a provider the registry does not offer. Each refusal is
-// explained on err.
+// touches a running instance's dictation. Files of just kStdinFile read the
+// audio from in, through a temporary file named stdin that is removed when
+// the run ends. Progress, saved paths and failures go to err (rewriting one
+// line when err is a terminal), transcripts to out. Returns the exit code: 0
+// when every file succeeded, 1 when any failed (saving, subtitles without
+// timings and empty stdin included) or the session is busy, 2 for no files or
+// a provider the registry does not offer. Each refusal is explained on err.
 int runHeadlessTranscribe(const QStringList &files,
                           const HeadlessTranscribeOptions &options,
                           SettingsStore *settings,
                           ProviderRegistry *providers,
+                          std::istream &in,
                           std::ostream &out,
                           std::ostream &err,
                           bool errIsTerminal);

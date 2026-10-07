@@ -1088,10 +1088,11 @@ private slots:
         options.refinementProviderId = QStringLiteral("openai");
         options.cleanupStrength = QStringLiteral("balanced");
         options.json = true;
+        std::istringstream in;
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
         QStringList lines = QString::fromStdString(out.str()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
         QCOMPARE(lines.size(), 2);
         const QJsonObject result = QJsonDocument::fromJson(lines.at(0).toUtf8()).object();
@@ -1112,7 +1113,7 @@ private slots:
         options.raw = true;
         options.destination = TranscriptDestination::None;
         out.str({});
-        QCOMPARE(runHeadlessTranscribe({broken, audio}, options, &settings, m_registry.get(), out, err, false), 1);
+        QCOMPARE(runHeadlessTranscribe({broken, audio}, options, &settings, m_registry.get(), in, out, err, false), 1);
         const QString printed = QString::fromStdString(out.str());
         QVERIFY2(printed.startsWith(QStringLiteral("# memo.wav\n\nheard ")), qPrintable(printed));
         QVERIFY(!printed.contains(QStringLiteral("broken.wav")));
@@ -1190,10 +1191,11 @@ private slots:
         options.destination = TranscriptDestination::Folder;
         options.folder = dir.filePath(QStringLiteral("gone"));
         options.json = true;
+        std::istringstream in;
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 1);
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 1);
         QStringList lines = QString::fromStdString(out.str()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
         QCOMPARE(lines.size(), 2);
         const QJsonObject result = QJsonDocument::fromJson(lines.at(0).toUtf8()).object();
@@ -1204,9 +1206,46 @@ private slots:
 
         out.str({});
         err.str({});
-        QCOMPARE(runHeadlessTranscribe({}, options, &settings, m_registry.get(), out, err, false), 2);
+        QCOMPARE(runHeadlessTranscribe({}, options, &settings, m_registry.get(), in, out, err, false), 2);
         QVERIFY(!err.str().empty());
         QVERIFY(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("summary")).toBool());
+    }
+
+    // `transcribe -` names the piped audio stdin, and fails on empty stdin.
+    void headlessRunReadsAudioFromStdin()
+    {
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        QFile wav(audio);
+        QVERIFY(wav.open(QIODevice::ReadOnly));
+        std::istringstream in(wav.readAll().toStdString());
+        SettingsStore settings;
+        HeadlessTranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+        options.refinementProviderId = QStringLiteral("none");
+        options.destination = TranscriptDestination::Folder;
+        options.folder = dir.path();
+        options.json = true;
+        std::ostringstream out;
+        std::ostringstream err;
+
+        QCOMPARE(runHeadlessTranscribe({kStdinFile}, options, &settings, m_registry.get(), in, out, err, false), 0);
+        const QJsonObject result =
+            QJsonDocument::fromJson(QByteArray::fromStdString(out.str().substr(0, out.str().find('\n')))).object();
+        QCOMPARE(result.value(QStringLiteral("file")).toString(), QStringLiteral("-"));
+        QCOMPARE(result.value(QStringLiteral("ok")).toBool(), true);
+        QCOMPARE(result.value(QStringLiteral("saved")).toString(), dir.filePath(QStringLiteral("stdin-transcribed.txt")));
+        QVERIFY2(QString::fromStdString(err.str()).contains(QStringLiteral("stdin: saved ")), err.str().c_str());
+
+        std::istringstream empty;
+        out.str({});
+        err.str({});
+        QCOMPARE(runHeadlessTranscribe({kStdinFile}, options, &settings, m_registry.get(), empty, out, err, false), 1);
+        QCOMPARE(QString::fromStdString(err.str()), QStringLiteral("No audio on stdin\n"));
+        const QJsonObject summary = QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object();
+        QCOMPARE(summary.value(QStringLiteral("failed")).toInt(), 1);
+        QCOMPARE(summary.value(QStringLiteral("succeeded")).toInt(), 0);
     }
 
     // Subtitles are saved and printed in place of text, and fail a file whose
@@ -1224,10 +1263,11 @@ private slots:
         options.format = TranscriptFormat::Srt;
         options.printTranscripts = true;
         m_script.segments = {{0, 1000, QStringLiteral("heard words")}};
+        std::istringstream in;
         std::ostringstream out;
         std::ostringstream err;
 
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
         // Subtitles come from the timings, so nothing is refined.
         QVERIFY(m_refinedWith.isEmpty());
         const QString srt = QStringLiteral("1\n00:00:00,000 --> 00:00:01,000\nheard words");
@@ -1240,7 +1280,7 @@ private slots:
         options.printTranscripts = false;
         options.json = true;
         out.str({});
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
         const QJsonObject vtt = QJsonDocument::fromJson(out.str().substr(0, out.str().find('\n')).c_str()).object();
         QCOMPARE(vtt.value(QStringLiteral("saved")).toString(), dir.filePath(QStringLiteral("memo-transcribed.vtt")));
         QCOMPARE(vtt.value(QStringLiteral("text")).toString(),
@@ -1252,7 +1292,7 @@ private slots:
         options.printTranscripts = true;
         out.str({});
         err.str({});
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 1);
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 1);
         QVERIFY(out.str().empty());
         QVERIFY2(QString::fromStdString(err.str())
                      .contains(QStringLiteral("memo.wav: failed: Subtitles need timings, and Scripted returned none.")),

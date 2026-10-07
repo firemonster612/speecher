@@ -59,6 +59,8 @@
 #include <optional>
 #include <thread>
 #ifdef Q_OS_WIN
+#include <fcntl.h>
+#include <io.h>
 #include <windows.h>
 #else
 #include <termios.h>
@@ -427,8 +429,12 @@ int main(int argc, char **argv)
         LocalModelStore localModels;
         ProviderRegistry providers;
         registerProviders(providers, settings.secrets(), &localModels);
+#ifdef Q_OS_WIN
+        // Audio piped to `transcribe -` is binary.
+        _setmode(_fileno(stdin), _O_BINARY);
+#endif
         return runHeadlessTranscribe(decision.transcribeFiles, decision.headless, &settings, &providers,
-                                     std::cout, std::cerr, stderrIsTerminal());
+                                     std::cin, std::cout, std::cerr, stderrIsTerminal());
     }
     if (decision.mode == LaunchMode::ListenHeadless) {
         // As transcribe: its own microphone and providers, beside whatever a
