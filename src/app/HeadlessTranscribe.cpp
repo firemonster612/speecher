@@ -262,6 +262,11 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
     if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
         return finish(2, {}, error);
     }
+    if (!microphone) {
+        return finish(1, {},
+                      QStringLiteral("Microphone access is off for this terminal. Allow it under Privacy & Security "
+                                     "> Microphone, then try again."));
+    }
 
     FileTranscriptionSession session(settings, providers);
     QEventLoop loop;

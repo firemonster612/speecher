@@ -12,7 +12,6 @@
 #include <QFileInfo>
 #include <QProcess>
 
-#include <functional>
 #include <iostream>
 
 namespace speecher {
@@ -95,8 +94,9 @@ QStringList absolutePaths(const QStringList &paths)
 }
 
 // How long `listen --until-silence` waits without speech when given no
-// seconds, and the most it takes.
+// seconds, and the least and most it takes.
 constexpr double kDefaultUntilSilenceSeconds = 2;
+constexpr double kMinUntilSilenceSeconds = 0.1;
 constexpr int kMaxUntilSilenceSeconds = 3600;
 
 const char kHelp[] = R"(Usage: speecher [command] [options]
@@ -133,8 +133,8 @@ Record from the microphone once and print what was said:
   speecher listen [options]
   --until-silence [seconds]
                            also stop after this much silence once speech has
-                           started (default 2); Enter and Ctrl-C always stop,
-                           keeping what was said
+                           started (default 2); Ctrl-C, and Enter at a
+                           terminal, always stop, keeping what was said
   Takes --model, --no-vocabulary, --refine, --cleanup, --profile, --tone,
   --language, --raw and --json as transcribe does; --json prints one object.
   Exit status: 0 transcript printed, 1 failed or heard no speech, 2 usage
@@ -348,14 +348,16 @@ std::optional<QString> takeValue(const QStringList &arguments, qsizetype &index)
     return std::nullopt;
 }
 
-// Reads one of the choices transcribe and listen share into options, taking
-// its value from value(). Returns false for an option that is not one of them;
-// sets error for a usage mistake.
-bool readSharedChoice(const QString &argument,
-                      const std::function<std::optional<QString>()> &value,
+// Reads one of the choices transcribe and listen share, the one at index,
+// into options, moving index past its value. Returns false for an option that
+// is not one of them; sets error for a usage mistake.
+bool readSharedChoice(const QStringList &arguments,
+                      qsizetype &index,
                       HeadlessTranscribeOptions &options,
                       QString *error)
 {
+    const QString argument = arguments.at(index);
+    const auto value = [&] { return takeValue(arguments, index); };
     const auto choice = [&](const CliNames &choices, std::optional<QString> *target) {
         const std::optional<QString> given = value();
         if (!given) {
@@ -436,7 +438,7 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         headless = true;
         const auto value = [&] { return takeValue(arguments, index); };
         QString error;
-        if (readSharedChoice(argument, value, options, &error)) {
+        if (readSharedChoice(arguments, index, options, &error)) {
         } else if (argument == QStringLiteral("--headless")) {
         } else if (argument == QStringLiteral("--stdout")) {
             options.printTranscripts = true;
@@ -493,15 +495,16 @@ QString parseListenArguments(const QStringList &arguments, CommandLineDecision *
             if (index + 1 < arguments.size() && !arguments.at(index + 1).startsWith(QLatin1Char('-'))) {
                 bool ok = false;
                 seconds = arguments.at(++index).toDouble(&ok);
-                if (!ok || seconds <= 0 || seconds > kMaxUntilSilenceSeconds) {
-                    error = QStringLiteral("--until-silence takes seconds above 0 and up to %1, not %2")
-                                .arg(kMaxUntilSilenceSeconds)
-                                .arg(arguments.at(index));
+                // Written so that nan, which fails every comparison, fails it.
+                if (!(ok && seconds >= kMinUntilSilenceSeconds && seconds <= kMaxUntilSilenceSeconds)) {
+                    return QStringLiteral("--until-silence takes seconds from %1 to %2, not %3")
+                        .arg(kMinUntilSilenceSeconds)
+                        .arg(kMaxUntilSilenceSeconds)
+                        .arg(arguments.at(index));
                 }
             }
             decision->untilSilenceMs = int(seconds * 1000);
-        } else if (!readSharedChoice(argument, [&] { return takeValue(arguments, index); }, decision->headless,
-                                     &error)) {
+        } else if (!readSharedChoice(arguments, index, decision->headless, &error)) {
             error = QStringLiteral("Unknown listen option: %1").arg(argument);
         }
         if (!error.isEmpty()) {

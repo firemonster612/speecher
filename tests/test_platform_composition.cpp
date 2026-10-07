@@ -961,6 +961,8 @@ private slots:
 
         for (const QStringList &mistake : {QStringList{QStringLiteral("--until-silence"), QStringLiteral("soon")},
                                            QStringList{QStringLiteral("--until-silence"), QStringLiteral("0")},
+                                           QStringList{QStringLiteral("--until-silence"), QStringLiteral("0.05")},
+                                           QStringList{QStringLiteral("--until-silence"), QStringLiteral("nan")},
                                            QStringList{QStringLiteral("--until-silence"), QStringLiteral("7200")},
                                            QStringList{QStringLiteral("--stdout")},
                                            QStringList{QStringLiteral("--output"), QStringLiteral("none")},

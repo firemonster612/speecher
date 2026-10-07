@@ -53,6 +53,7 @@
 #include <atomic>
 #include <csignal>
 #include <cstdio>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <thread>
@@ -133,6 +134,14 @@ static QStringList commandLineArguments(int argc, char **argv)
 }
 
 #ifdef Q_OS_WIN
+// Whether a standard stream was left unset, rather than given a file, pipe or
+// console.
+static bool unredirected(DWORD stream)
+{
+    const HANDLE handle = GetStdHandle(stream);
+    return handle == nullptr || handle == INVALID_HANDLE_VALUE || GetFileType(handle) == FILE_TYPE_UNKNOWN;
+}
+
 // Speecher is a GUI-subsystem program, so a command-line run starts with no
 // console. Borrow the one it was started from, if any, and point stdout and
 // stderr at it unless they already go to a file or pipe. cmd.exe does not
@@ -142,10 +151,6 @@ static void attachParentConsole()
     if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
         return;
     }
-    const auto unredirected = [](DWORD stream) {
-        const HANDLE handle = GetStdHandle(stream);
-        return handle == nullptr || handle == INVALID_HANDLE_VALUE || GetFileType(handle) == FILE_TYPE_UNKNOWN;
-    };
     if (unredirected(STD_OUTPUT_HANDLE)) {
         std::freopen("CONOUT$", "w", stdout);
     }
@@ -183,7 +188,7 @@ static bool stderrIsTerminal()
 }
 #endif
 
-// Set by Ctrl-C, or a line on stdin, while `speecher listen` records.
+// Set by Ctrl-C, or Enter at a terminal, while `speecher listen` records.
 static std::atomic<bool> g_listenStopRequested{false};
 
 #ifdef Q_OS_WIN
@@ -196,10 +201,24 @@ static BOOL WINAPI stopListeningOnCtrlC(DWORD event)
     return !g_listenStopRequested.exchange(true);
 }
 
-static bool readStdinByte(char *byte)
+// Reads stdin a byte at a time when it is a console. A GUI-subsystem program
+// is not handed the console attachParentConsole borrowed as its stdin, so that
+// one is opened by name; a launcher that passes its own handles hands it over.
+// Empty for a file, a pipe or no console.
+static std::function<bool(char *)> terminalByteReader()
 {
-    DWORD read = 0;
-    return ReadFile(GetStdHandle(STD_INPUT_HANDLE), byte, 1, &read, nullptr) && read == 1;
+    const HANDLE input = unredirected(STD_INPUT_HANDLE)
+        ? CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                      OPEN_EXISTING, 0, nullptr)
+        : GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    if (!GetConsoleMode(input, &mode)) {
+        return {};
+    }
+    return [input](char *byte) {
+        DWORD read = 0;
+        return ReadFile(input, byte, 1, &read, nullptr) && read == 1;
+    };
 }
 #else
 static void stopListeningOnSigint(int)
@@ -209,16 +228,21 @@ static void stopListeningOnSigint(int)
     std::signal(SIGINT, SIG_DFL);
 }
 
-static bool readStdinByte(char *byte)
+// Reads stdin a byte at a time when it is a terminal; empty otherwise.
+static std::function<bool(char *)> terminalByteReader()
 {
-    return ::read(STDIN_FILENO, byte, 1) == 1;
+    if (!isatty(STDIN_FILENO)) {
+        return {};
+    }
+    return [](char *byte) { return ::read(STDIN_FILENO, byte, 1) == 1; };
 }
 #endif
 
 // Ctrl-C and Enter end the recording rather than the process, so what was
-// said is still transcribed. stdin is read raw on a thread of its own, since
-// the event loop cannot watch a Windows console; one that ends without a
-// line, such as /dev/null, stops nothing.
+// said is still transcribed. Only a terminal's stdin is read for Enter: piped
+// input, such as a surrounding `while read` loop's, is left alone. It is read
+// raw on a thread of its own, since the event loop cannot watch a Windows
+// console.
 static void installListenStopHandlers()
 {
 #ifdef Q_OS_WIN
@@ -226,9 +250,13 @@ static void installListenStopHandlers()
 #else
     std::signal(SIGINT, stopListeningOnSigint);
 #endif
-    std::thread([] {
+    const std::function<bool(char *)> readByte = terminalByteReader();
+    if (!readByte) {
+        return;
+    }
+    std::thread([readByte] {
         char byte = 0;
-        while (readStdinByte(&byte)) {
+        while (readByte(&byte)) {
             if (byte == '\n') {
                 g_listenStopRequested = true;
                 return;
@@ -354,12 +382,8 @@ int main(int argc, char **argv)
         LocalModelStore localModels;
         ProviderRegistry providers;
         registerProviders(providers, settings.secrets(), &localModels);
-        if (!microphoneAccessGranted(*platform, &app)) {
-            std::cerr << "Microphone access is off for this terminal. Allow it under Privacy & Security > "
-                         "Microphone, then try again.\n";
-            return 1;
-        }
-        AudioInput *microphone = platform->createAudioInput(&settings, &app);
+        AudioInput *microphone =
+            microphoneAccessGranted(*platform, &app) ? platform->createAudioInput(&settings, &app) : nullptr;
         installListenStopHandlers();
         return runHeadlessListen(decision.headless, decision.untilSilenceMs, microphone,
                                  [] { return g_listenStopRequested.load(); }, &settings, &providers, std::cout,

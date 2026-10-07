@@ -794,6 +794,16 @@ private slots:
                               {QStringLiteral("error"), QStringLiteral("No microphone was found.")}}));
         QVERIFY(QString::fromStdString(err.str()).contains(QStringLiteral("No microphone was found.")));
 
+        // Refused microphone access, which macOS asks about, fails the same way.
+        out.str({});
+        QCOMPARE(runHeadlessListen(options, std::nullopt, nullptr, [] { return true; }, &settings, m_registry.get(),
+                                   out, err),
+                 1);
+        const QJsonObject refused = QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object();
+        QCOMPARE(refused.value(QStringLiteral("ok")), QJsonValue(false));
+        QVERIFY(refused.value(QStringLiteral("error")).toString().startsWith(
+            QStringLiteral("Microphone access is off")));
+
         microphone.startResult = true;
         options.speechProviderId = QStringLiteral("nope");
         out.str({});

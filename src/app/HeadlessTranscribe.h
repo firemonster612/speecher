@@ -50,7 +50,8 @@ int runHeadlessTranscribe(const QStringList &files,
                           std::ostream &err,
                           bool errIsTerminal);
 
-// Records once from microphone until stopRequested() turns true, or, with
+// Records once from microphone, null when the user refused microphone access,
+// until stopRequested() turns true, or, with
 // untilSilenceMs, until that long passes without speech once speech was heard.
 // It is polled, so it may be set from a signal handler. Then prints the
 // transcript to out, or with options.json one object with it, and progress
