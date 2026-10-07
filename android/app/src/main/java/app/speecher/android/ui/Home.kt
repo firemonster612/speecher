@@ -50,6 +50,7 @@ import java.text.NumberFormat
 /**
  * A full-screen page with a scrolling body. Pages you navigate to get a top bar with [title] and a
  * back arrow; root pages ([onBack] null) have none, because their body starts with its own title.
+ * [verticalArrangement] places a body shorter than the page.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,9 +58,14 @@ fun SpeecherScreen(
     title: String,
     onBack: (() -> Unit)?,
     actions: @Composable () -> Unit = {},
+    bottomBar: @Composable () -> Unit = {},
+    snackbarHost: @Composable () -> Unit = {},
+    verticalArrangement: Arrangement.Vertical = Arrangement.Top,
     content: @Composable () -> Unit,
 ) {
     Scaffold(
+        bottomBar = bottomBar,
+        snackbarHost = snackbarHost,
         topBar = {
             if (onBack != null) {
                 TopAppBar(
@@ -75,7 +81,7 @@ fun SpeecherScreen(
                     actions = { actions() },
                 )
             }
-        }
+        },
     ) { padding ->
         Column(
             // The keyboard shrinks the page rather than panning the window under the status bar.
@@ -84,7 +90,8 @@ fun SpeecherScreen(
                 .consumeWindowInsets(padding)
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = 24.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement,
         ) {
             content()
         }

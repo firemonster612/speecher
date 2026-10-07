@@ -48,6 +48,9 @@ struct RootView: View {
                 .keyboardShortcut(.defaultAction)
             Button("Cancel", role: .cancel) {}
         }
+        .sheet(item: $model.phoneTransfer) { transfer in
+            PhoneTransferSheet(transfer: transfer)
+        }
     }
 
     /// The banner and the title keep to the column a grouped form centres its
@@ -92,6 +95,92 @@ struct RootView: View {
                     .font(.title2.weight(.semibold))
             }
             .scenePadding([.top, .horizontal])
+        }
+    }
+}
+
+extension SpeecherPhoneTransfer: Identifiable {}
+
+/// "Copy settings to your phone": the code the Android app scans, then what
+/// moves and what stays. Its transfer listens for as long as the sheet is up.
+struct PhoneTransferSheet: View {
+    let transfer: SpeecherPhoneTransfer
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.dismiss) private var dismiss
+    /// Re-read whenever the transfer changes.
+    @State private var status: String
+    @State private var waiting: Bool
+
+    /// Large enough to scan from across a desk.
+    private static let codeSide: CGFloat = 240
+
+    init(transfer: SpeecherPhoneTransfer) {
+        self.transfer = transfer
+        _status = State(initialValue: transfer.status)
+        _waiting = State(initialValue: transfer.waiting)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(transfer.title)
+                .font(.headline)
+            HStack(alignment: .top, spacing: 18) {
+                if let code = transfer.codeImage(side: Self.codeSide, scale: displayScale) {
+                    Image(nsImage: code)
+                        .interpolation(.none)
+                        // Once sent, the code is spent.
+                        .opacity(waiting ? 1 : 0.25)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    if !transfer.steps.isEmpty {
+                        list(transfer.steps) { "\($0 + 1)." }
+                    }
+                    section(transfer.includedHeading, transfer.included)
+                    if !transfer.stays.isEmpty {
+                        section(transfer.staysHeading, transfer.stays)
+                    }
+                    Text(transfer.neverIncluded)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            HStack {
+                Text(status)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(transfer.close) { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .scenePadding()
+        .frame(width: 620)
+        .onAppear {
+            // Weak, as the transfer holds this closure.
+            transfer.changed = { [weak transfer] in
+                guard let transfer else { return }
+                status = transfer.status
+                waiting = transfer.waiting
+            }
+        }
+    }
+
+    private func section(_ heading: String, _ items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(heading)
+                .bold()
+            list(items) { _ in "•" }
+        }
+    }
+
+    private func list(_ items: [String], marker: @escaping (Int) -> String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(marker(index))
+                    Text(item)
+                }
+            }
         }
     }
 }
@@ -304,14 +393,15 @@ final class SpeecherSettingsWindow {
         titleObserver = model.$pane.sink { [weak window] pane in
             window?.title = panes.first { $0.id == pane }?.title ?? "Settings"
         }
-        // A recording or a microphone test must not outlive the window it was
-        // started in.
+        // A recording, a microphone test or a phone transfer must not outlive
+        // the window it was started in.
         closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
         ) { [weak model] _ in
             MainActor.assumeIsolated {
                 model?.stopShortcutRecording()
                 model?.bridge.stopMicrophoneTest()
+                model?.phoneTransfer = nil
             }
         }
     }

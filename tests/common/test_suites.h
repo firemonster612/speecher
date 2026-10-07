@@ -75,6 +75,7 @@ int runDictationSessionRefinementTests(int argc, char **argv);
 int runDictationSessionFallbacksTests(int argc, char **argv);
 int runRefinersTests(int argc, char **argv);
 int runVocabularyTests(int argc, char **argv);
+int runPhoneTransferTests(int argc, char **argv);
 int runInsightsTests(int argc, char **argv);
 int runProviderAuthTests(int argc, char **argv);
 int runClaudeVoiceTests(int argc, char **argv);

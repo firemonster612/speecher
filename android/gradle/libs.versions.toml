@@ -14,6 +14,8 @@ browser = "1.10.0"
 lifecycle = "2.11.0"
 savedstate = "1.5.0"
 espresso = "3.7.0"
+codeScanner = "16.1.0"
+fragment = "1.9.1"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
@@ -39,6 +41,8 @@ browser = { module = "androidx.browser:browser", version.ref = "browser" }
 lifecycle = { module = "androidx.lifecycle:lifecycle-runtime", version.ref = "lifecycle" }
 lifecycle-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 savedstate = { module = "androidx.savedstate:savedstate", version.ref = "savedstate" }
+code-scanner = { module = "com.google.android.gms:play-services-code-scanner", version.ref = "codeScanner" }
+fragment = { module = "androidx.fragment:fragment", version.ref = "fragment" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

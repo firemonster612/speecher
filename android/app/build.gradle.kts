@@ -95,6 +95,9 @@ dependencies {
     implementation(libs.lifecycle.compose)
     implementation(libs.savedstate)
     implementation(libs.serialization.json)
+    implementation(libs.code.scanner)
+    // The scanner alone brings a Fragment older than 1.3, which mishandles activity results.
+    implementation(libs.fragment)
     testImplementation(libs.junit4)
     testImplementation(libs.mockwebserver)
     testImplementation(libs.robolectric)

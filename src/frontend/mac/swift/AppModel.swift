@@ -132,6 +132,11 @@ final class AppModel: ObservableObject {
     @Published var confirmingClearInsights = false
     /// Deleting the history failed, and the alert saying so is up.
     @Published var clearInsightsFailed = false
+    /// The transfer the "Copy settings to your phone" sheet shows while it is
+    /// up. Replacing or clearing it stops the old one, which closes its port.
+    @Published var phoneTransfer: SpeecherPhoneTransfer? {
+        didSet { if oldValue !== phoneTransfer { oldValue?.stop() } }
+    }
     /// The view an alternatives pane should switch to when it next shows,
     /// by view id; the pane clears it once it has.
     @Published var requestedView: String? = nil
@@ -489,6 +494,11 @@ final class AppModel: ObservableObject {
         // SwiftUI dialog on the settings window (RootView).
         if rowId == "clearInsights" {
             confirmingClearInsights = true
+            return
+        }
+        // A SwiftUI sheet on the settings window too (RootView).
+        if rowId == "copyToPhone" {
+            phoneTransfer = bridge.startPhoneTransfer()
             return
         }
         if rowId == "resetCustomSystemPrompt" {
