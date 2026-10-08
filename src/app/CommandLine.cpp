@@ -107,7 +107,7 @@ Commands (sent to the running Speecher):
   cancel                   throw away the dictation in progress
   status                   print the dictation state
   last                     print the last transcript
-  vocabulary add <terms...>
+  vocabulary add [--] <terms...>
                            save the terms to the custom vocabulary
   settings | setup         open settings or the setup assistant
   quit                     quit the running Speecher
@@ -601,17 +601,24 @@ QString parseVocabularyArguments(const QStringList &arguments, CommandLineDecisi
     if (arguments.first().toLower() != QStringLiteral("add")) {
         return QStringLiteral("Unknown vocabulary command: %1 (expected add)").arg(arguments.first());
     }
-    const QStringList terms = arguments.mid(1);
-    if (terms.isEmpty()) {
-        return QStringLiteral("vocabulary add needs at least one term");
-    }
-    for (const QString &term : terms) {
-        if (term.startsWith(QLatin1Char('-'))) {
-            return QStringLiteral("Unknown vocabulary add option: %1").arg(term);
+    QStringList terms;
+    bool optionsEnded = false;
+    for (const QString &argument : arguments.mid(1)) {
+        if (!optionsEnded && argument == QStringLiteral("--")) {
+            optionsEnded = true;
+            continue;
         }
-        if (term.simplified().isEmpty()) {
+        if (!optionsEnded && argument.startsWith(QLatin1Char('-'))) {
+            return QStringLiteral("Unknown vocabulary add option: %1 (put -- before a term that starts with -)")
+                .arg(argument);
+        }
+        if (argument.simplified().isEmpty()) {
             return QStringLiteral("vocabulary add cannot save a blank term");
         }
+        terms << argument;
+    }
+    if (terms.isEmpty()) {
+        return QStringLiteral("vocabulary add needs at least one term");
     }
     decision->mode = LaunchMode::RunCli;
     decision->ipcCommand = QStringLiteral("addVocabulary");
@@ -659,7 +666,7 @@ int addVocabularyTerms(const QStringList &terms, const std::shared_ptr<const Sin
     IpcResponse response;
     QString ipcError;
     const IpcCommandResult ipcResult = SingleInstanceIpc::sendVocabularyTerms(terms, &response, 2500, platform, &ipcError);
-    QStringList held;
+    std::optional<QStringList> held;
     if (ipcResult == IpcCommandResult::Unavailable) {
         held = SettingsCodecs().addVocabularyTerms(terms);
     } else if (ipcResult != IpcCommandResult::Sent) {
@@ -667,10 +674,14 @@ int addVocabularyTerms(const QStringList &terms, const std::shared_ptr<const Sin
         return 1;
     } else if (response.message == kUnknownIpcCommandMessage) {
         return reportOlderInstance("doesn't know `vocabulary add`");
-    } else {
+    } else if (response.ok) {
         held = response.skippedTerms;
     }
-    for (const QString &term : std::as_const(held)) {
+    if (!held) {
+        std::cerr << "Could not save the vocabulary to Speecher's settings.\n";
+        return 1;
+    }
+    for (const QString &term : std::as_const(*held)) {
         std::cerr << "Already in the vocabulary: " << term.toStdString() << "\n";
     }
     return 0;

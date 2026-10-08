@@ -1220,6 +1220,8 @@ private slots:
         QCOMPARE(decision.ipcCommand, QStringLiteral("addVocabulary"));
         QCOMPARE(decision.vocabularyTerms,
                  QStringList({QStringLiteral("FileTranscriptionSession"), QStringLiteral("Speecher CLI")}));
+        QCOMPARE(parse({QStringLiteral("add"), QStringLiteral("--"), QStringLiteral("-fsanitize")}).vocabularyTerms,
+                 QStringList({QStringLiteral("-fsanitize")}));
 
         std::ostringstream usage;
         std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
@@ -1228,6 +1230,8 @@ private slots:
                                            QStringList{QStringLiteral("list")},
                                            QStringList{QStringLiteral("add")},
                                            QStringList{QStringLiteral("add"), QStringLiteral(" ")},
+                                           QStringList{QStringLiteral("add"), QStringLiteral("--")},
+                                           QStringList{QStringLiteral("add"), QStringLiteral("-fsanitize")},
                                            QStringList{QStringLiteral("add"), QStringLiteral("KWin"),
                                                        QStringLiteral("--profile"), QStringLiteral("ai-coding")}}) {
             const CommandLineDecision refused = parse(mistake);

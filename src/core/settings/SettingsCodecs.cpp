@@ -18,6 +18,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 
 #include <algorithm>
 
@@ -410,12 +411,28 @@ void SettingsCodecs::recordVocabularyUsage(const QString &text)
     VocabularySettingsCodec::recordUsage(m_settings, text);
 }
 
-QStringList SettingsCodecs::addVocabularyTerms(const QStringList &terms)
+std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList &terms)
 {
+    // Two `vocabulary add`s with no app running would each read the list, and
+    // the second to write would drop the first one's terms. Windows keeps the
+    // settings in the registry, so its lock goes in the per-user temp folder.
+    // Not <file>.lock, which QSettings takes for itself while it syncs.
+#ifdef Q_OS_WIN
+    QLockFile lock(QDir::temp().filePath(QStringLiteral("speecher-vocabulary.lock")));
+#else
+    QLockFile lock(m_settings.fileName() + QStringLiteral(".vocabulary.lock"));
+#endif
+    if (!lock.tryLock(5000)) {
+        return std::nullopt;
+    }
+    // Re-reads what another process saved since this one opened the settings.
+    m_settings.sync();
     QList<VocabularyEntry> entries = vocabularyEntries();
     QStringList held;
     for (const QString &term : terms) {
         const QString cleaned = term.simplified();
+        // A term limited to some Writing Profiles counts too: adding it again
+        // for every profile would list it twice.
         const bool listed = std::any_of(entries.cbegin(), entries.cend(), [&cleaned](const VocabularyEntry &entry) {
             return entry.term.compare(cleaned, Qt::CaseInsensitive) == 0;
         });
@@ -427,6 +444,10 @@ QStringList SettingsCodecs::addVocabularyTerms(const QStringList &terms)
     }
     if (held.size() < terms.size()) {
         setVocabularyEntries(entries);
+    }
+    m_settings.sync();
+    if (m_settings.status() != QSettings::NoError) {
+        return std::nullopt;
     }
     return held;
 }

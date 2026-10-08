@@ -57,7 +57,7 @@ public:
     bool recordCorrectionEvidence(const CorrectionEvidence &evidence,
                                   const QString &applicationId);
     // SettingsCodecs::addVocabularyTerms, announcing the terms it saved.
-    QStringList addVocabularyTerms(const QStringList &terms);
+    std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
 
     using SettingsCodecs::anthropicAuthMode;
     using SettingsCodecs::autoCheckUpdates;

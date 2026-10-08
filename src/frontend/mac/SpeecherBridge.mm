@@ -2276,6 +2276,15 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                              bridge.transcriptChanged(text.toNSString());
                          }
                      });
+    QObject::connect(controller->settings(),
+                     &speecher::SettingsStore::vocabularyAdded,
+                     &_state->lifetime,
+                     [weakSelf] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.vocabularyAdded) {
+                             bridge.vocabularyAdded();
+                         }
+                     });
     [self connectPanelTo:controller->session()];
     [self connectLocalSetup:controller->localSetup()];
     [self connectTranscriptionTo:controller->fileTranscription()];

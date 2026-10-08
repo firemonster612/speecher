@@ -175,19 +175,24 @@ private slots:
     {
         SettingsStore settings;
         settings.raw().clear();
-        settings.setVocabularyEntries({{QStringLiteral("KWin"), QStringLiteral("csv"), false, 3, 10}});
+        VocabularyEntry limited{QStringLiteral("pnpm")};
+        limited.profiles = {QStringLiteral("work")};
+        settings.setVocabularyEntries({{QStringLiteral("KWin"), QStringLiteral("csv"), false, 3, 10}, limited});
         QSignalSpy added(&settings, &SettingsStore::vocabularyAdded);
 
+        // A term limited to some Writing Profiles is already listed.
         QCOMPARE(settings.addVocabularyTerms({QStringLiteral("kwin"), QStringLiteral("  File   Session "),
-                                              QStringLiteral("file session")}),
-                 QStringList({QStringLiteral("kwin"), QStringLiteral("file session")}));
+                                              QStringLiteral("file session"), QStringLiteral("PNPM")}),
+                 QStringList({QStringLiteral("kwin"), QStringLiteral("file session"), QStringLiteral("PNPM")}));
         QCOMPARE(added.count(), 1);
         const QList<VocabularyEntry> entries = settings.vocabularyEntries();
-        QCOMPARE(vocabularyTermsOf(entries), QStringList({QStringLiteral("KWin"), QStringLiteral("File Session")}));
+        QCOMPARE(vocabularyTermsOf(entries),
+                 QStringList({QStringLiteral("KWin"), QStringLiteral("File Session"), QStringLiteral("pnpm")}));
         QCOMPARE(entries.first().source, QStringLiteral("csv"));
         QCOMPARE(entries.first().frequency, 3);
-        QCOMPARE(entries.last().source, QStringLiteral("manual"));
-        QVERIFY(entries.last().keyTerm);
+        QCOMPARE(entries.at(1).source, QStringLiteral("manual"));
+        QVERIFY(entries.at(1).keyTerm);
+        QCOMPARE(entries.last().profiles, limited.profiles);
 
         QCOMPARE(settings.addVocabularyTerms({QStringLiteral("KWIN")}), QStringList({QStringLiteral("KWIN")}));
         QCOMPARE(added.count(), 1);

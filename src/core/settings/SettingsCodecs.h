@@ -4,6 +4,8 @@
 
 #include <QSettings>
 
+#include <optional>
+
 namespace speecher {
 
 // How output/pasteRules is stored. Nothing stored reads as defaultPasteRules().
@@ -35,8 +37,9 @@ public:
     QList<VocabularyEntry> vocabularyEntries() const; void setVocabularyEntries(const QList<VocabularyEntry> &entries);
     void recordVocabularyUsage(const QString &text);
     // Saves each term the list does not hold yet, ignoring case, as a manual
-    // key term. Returns the ones it held already.
-    QStringList addVocabularyTerms(const QStringList &terms);
+    // key term, and writes the settings out. Returns the ones it held already,
+    // or nothing when the settings could not be written.
+    std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
     AudioCaptureSettings audioCaptureSettings() const; void setAudioCaptureSettings(const AudioCaptureSettings &value);
     QList<AppRecognitionRule> appRecognitionRules() const; void setAppRecognitionRules(const QList<AppRecognitionRule> &rules);
     QList<BindingRule> bindingRules() const; bool setBindingRules(const QList<BindingRule> &rules, QString *error = nullptr);

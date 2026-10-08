@@ -231,6 +231,10 @@ final class AppModel: ObservableObject {
         bridge.lastRecordChanged = { [weak self] in
             self?.refreshTranscriptDetail()
         }
+        // Every edit is committed as it is made, so re-reading loses none.
+        bridge.vocabularyAdded = { [weak self] in
+            self?.reloadSettingsDraft()
+        }
         // These closures must reach the bridge through self: the bridge owns
         // them, so capturing the local `bridge` would retain it in a cycle and
         // its dealloc — the watcher, the signal connections — would never run.

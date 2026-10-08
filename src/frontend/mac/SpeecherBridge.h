@@ -1187,6 +1187,8 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 @property (nonatomic, readonly) BOOL insightsEnabled;
 // The log gained or lost records.
 @property (nonatomic, copy, nullable) void (^insightsChanged)(void);
+// `speecher vocabulary add` saved terms through the running app.
+@property (nonatomic, copy, nullable) void (^vocabularyAdded)(void);
 - (SpeecherInsightsModel *)insightsSummaryForRange:(SpeecherInsightsRange)range
     NS_SWIFT_NAME(insightsSummary(range:));
 // Deletes every record, once the person has confirmed it. NO when the
