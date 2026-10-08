@@ -407,9 +407,14 @@ private slots:
                                                       {QStringLiteral("lostAudioMs"), 2000}}}}}));
         // The problem goes to stderr too, for a script that reads only stdout.
         QCOMPARE(QString::fromStdString(err.str()),
-                 QStringLiteral("The me stream is reconnecting: Connection reset\n"
-                                "The me stream was down so long that the oldest 00:00:02 of audio waiting for it "
+                 QStringLiteral("The microphone stream is reconnecting: Connection reset\n"
+                                "The microphone stream was down so long that the oldest 00:00:02 of audio waiting for it "
                                 "was dropped.\n"));
+
+        QCOMPARE(run(QStringLiteral("recordStatus"), false), 0);
+        QCOMPARE(QString::fromStdString(out.str()),
+                 QStringLiteral("path: /tmp/call.md\nduration: 01:02:03\n"
+                                "microphone: reconnecting, Connection reset, lost 00:00:02 of audio\n"));
 
         // A recording whose file missed lines still prints the file, says
         // what it missed, and fails.

@@ -1486,7 +1486,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!m_codex->audioChunks.isEmpty(), 5000);
         QCOMPARE(m_codex->audioChunks.first(), QByteArray(3200, '\0'));
         QCOMPARE(recordingStreamProblemText(recording.status().streams.first()),
-                 QStringLiteral("The me stream was down so long that the oldest 00:00:02 of audio waiting for it was "
+                 QStringLiteral("The microphone stream was down so long that the oldest 00:00:02 of audio waiting for it was "
                                 "dropped."));
     }
 

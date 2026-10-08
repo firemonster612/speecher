@@ -5,7 +5,7 @@ Speecher turns a short spoken input into text for a chosen desktop target. It ca
 ## Language
 
 **Dictation Session**:
-One recording that starts through toggle or push-to-talk and ends after Speecher produces and delivers text.
+One dictation, from the microphone opening through toggle or push-to-talk until Speecher produces and delivers text. Not a Recording, which is a call written to a file.
 _Avoid_: Recording job, transcription run
 
 **Recording**:
