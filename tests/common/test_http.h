@@ -9,7 +9,6 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
-#include <QTimer>
 
 namespace speecher::test {
 
@@ -86,8 +85,6 @@ public:
     }
 
     QList<QByteArray> requests;
-    // How long each answer takes, as a slow server's would.
-    int answerDelayMs = 0;
 
 private:
     void answer(QTcpSocket *socket)
@@ -103,11 +100,9 @@ private:
         const QByteArray response = m_routes.contains(route)
             ? next()
             : httpResponse("404 Not Found", "text/plain", "404 page not found for [" + line + "]");
-        QTimer::singleShot(answerDelayMs, socket, [socket, response] {
-            socket->write(response);
-            socket->flush();
-            socket->disconnectFromHost();
-        });
+        socket->write(response);
+        socket->flush();
+        socket->disconnectFromHost();
     }
 
     QTcpServer m_server;

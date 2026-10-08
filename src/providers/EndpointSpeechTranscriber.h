@@ -26,11 +26,6 @@ SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint
                                           const QString &prompt,
                                           const QString &spokenLanguage);
 
-// How long the server may send nothing about an upload: a batch server sends
-// nothing while it transcribes, so this allows a long recording on a slow
-// machine.
-constexpr int kSpeechEndpointSilenceMs = 60000;
-
 // Transcription through the speech Custom Endpoint: an OpenAI-style
 // POST {base}{path} with the whole attempt's audio once input finishes.
 // Sends the audio once; a failure fails the attempt (rule A7).
@@ -45,9 +40,11 @@ class EndpointSpeechTranscriber final : public SpeechTranscriber {
     Q_OBJECT
 
 public:
-    // The deadline caps a server that keeps trickling.
+    // A batch server sends nothing while it transcribes, so the inactivity
+    // limit allows a long recording on a slow machine; the deadline caps a
+    // server that keeps trickling.
     explicit EndpointSpeechTranscriber(QObject *parent = nullptr,
-                                       int inactivityTimeoutMs = kSpeechEndpointSilenceMs,
+                                       int inactivityTimeoutMs = 60000,
                                        int deadlineMs = 300000);
 
     QString id() const override;
@@ -55,6 +52,7 @@ public:
     bool requiresRefresh(const SpeechSettings &settings) const override;
     SpeechPrepareResult prepare(const SpeechSettings &settings) override;
     bool streamsFinalText(const SpeechSettings &settings) const override;
+    int utteranceAnswerTimeoutMs() const override;
     void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override;
     void finishInput(quint64 attemptId) override;

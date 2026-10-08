@@ -6,6 +6,7 @@
 #include <QtEndian>
 
 #include <functional>
+#include <optional>
 
 namespace speecher::test {
 
@@ -206,6 +207,11 @@ public:
         return true;
     }
 
+    int utteranceAnswerTimeoutMs() const override
+    {
+        return utteranceAnswerTimeout.value_or(SpeechTranscriber::utteranceAnswerTimeoutMs());
+    }
+
     std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &) override
     {
         if (!backgroundPrepare) {
@@ -319,6 +325,7 @@ public:
     unsigned long backgroundPrepareDelayMs = 0;
     SpeechPrepareResult prepareResult{true, {}};
     bool streamsFinals = false;
+    std::optional<int> utteranceAnswerTimeout;
     // Runs inside startAttempt(), as a provider that fails at once would.
     std::function<void()> onStartAttempt;
     // Runs inside cancelAttempt(), as a provider that emits while it stops.

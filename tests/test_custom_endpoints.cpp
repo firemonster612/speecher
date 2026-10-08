@@ -430,6 +430,26 @@ private slots:
         QVERIFY(!server.hasPendingConnections());
     }
 
+    // An utterance the server hears no words in is still answered: its final
+    // is empty.
+    void speechEndpointAnswersAnUtteranceWithNoWordsWithAnEmptyFinal()
+    {
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\" \"}"));
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy finals(&transcriber, &SpeechTranscriber::finalTranscript);
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = server.origin();
+        settings.cutIntoUtterances = true;
+        transcriber.startAttempt(1, settings);
+        transcriber.beginUtterance(1);
+        transcriber.sendAudio(1, QByteArray(640, 'a'));
+        transcriber.endUtterance(1);
+
+        QTRY_COMPARE_WITH_TIMEOUT(finals.size(), 1, 2000);
+        QCOMPARE(finals.first().at(1).toString(), QString());
+    }
+
     void chatCompletionsSendsThePromptAndStreamsTheReply()
     {
         FakeServer server;

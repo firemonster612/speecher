@@ -203,6 +203,12 @@ bool FileTranscriptionSession::isRunning() const
     return m_running;
 }
 
+// A running file always has its speech provider.
+int FileTranscriptionSession::utteranceAnswerTimeoutMs() const
+{
+    return m_transcriber->utteranceAnswerTimeoutMs();
+}
+
 bool FileTranscriptionSession::start(const QStringList &paths, const TranscribeOptions &options)
 {
     if (m_running || paths.isEmpty()) {

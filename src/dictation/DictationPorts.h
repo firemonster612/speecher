@@ -224,6 +224,9 @@ public:
     // turned down may be taken once it has run again. A key from Settings
     // is not renewed.
     virtual bool renewsSignIn() const { return false; }
+    // How long the provider may take to answer an utterance once it has all
+    // of it; a recording's stop waits that long for each one left.
+    virtual int utteranceAnswerTimeoutMs() const { return 15000; }
     // Whether finalTranscript arrives while the audio still streams, an
     // utterance at a time, by itself or at each endUtterance(), rather than
     // all at the end. A recording needs it.

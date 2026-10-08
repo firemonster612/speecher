@@ -1260,38 +1260,40 @@ private slots:
         QVERIFY(!recordingStreamProblemText(stream).isEmpty());
     }
 
-    // A stop waits for the uploads queued behind the one answering, each in
-    // its turn, an answer with no words too.
-    void aRecordingStopWaitsForEachQueuedUpload()
+    // A stop waits as long as the provider may take to answer each utterance
+    // left, from the last answer, one with no words too, and then gives up.
+    void aRecordingStopWaitsAsLongAsItsProviderTakesForEachUtterance()
     {
-        const int stopTimeoutMs = RecordingSession::stopTimeoutMs();
-        RecordingSession::setStopTimeoutMs(1200);
-        const auto restore = qScopeGuard([stopTimeoutMs] { RecordingSession::setStopTimeoutMs(stopTimeoutMs); });
-        FakeServer server;
-        server.answerDelayMs = 800;
-        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"\"}"));
-        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"Yes.\"}"));
+        registerStreamingCodex();
         SettingsStore settings;
-        useEndpoint(settings, server);
-        QPointer<FakeAudioInput> microphone;
-        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
-            microphone = new FakeAudioInput(parent);
-            return microphone.data();
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
         });
         QSignalSpy stopped(&recording, &RecordingSession::stopped);
         QString error;
         const QString path = startRecording(recording, QString(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
-
-        microphone->pushAudio(microphoneChunk(8000));
-        QTRY_COMPARE_WITH_TIMEOUT(server.requests.size(), 1, 3000);
-        microphone->pushAudio(microphoneChunk(8000));
+        m_codex->utteranceAnswerTimeout = 1200;
+        m_codex->autoCompleteOnFinish = false;
         recording.stop();
+        QTimer::singleShot(800, m_codex, [codex = m_codex] { codex->emitFinalText(QString()); });
+        QTimer::singleShot(1600, m_codex, [codex = m_codex] {
+            codex->emitFinalText(QStringLiteral("Yes."));
+            codex->emitCompletion();
+        });
         QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
         QCOMPARE(recordingStreamProblemText(stopped.first().first().value<RecordingStatus>().streams.first()),
                  QString());
         QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Yes.")});
-        QCOMPARE(server.requests.size(), 2);
+
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        m_codex->utteranceAnswerTimeout = 1200;
+        m_codex->autoCompleteOnFinish = false;
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 2, 3000);
+        QCOMPARE(stopped.last().first().value<RecordingStatus>().streams.first().problem,
+                 recordingStopTimedOutText());
     }
 
     // A stop ends the utterance being spoken once the microphone has

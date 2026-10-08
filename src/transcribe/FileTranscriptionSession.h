@@ -136,6 +136,9 @@ public:
     void endUtterance();
     // Stops the current file, skips the rest and still emits batchFinished.
     void cancel();
+    // How long the current speech provider may take to answer an utterance,
+    // while running; see SpeechTranscriber::utteranceAnswerTimeoutMs.
+    int utteranceAnswerTimeoutMs() const;
 
 signals:
     void batchStarted(int count);

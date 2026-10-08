@@ -3,7 +3,6 @@
 #include "core/SettingsStore.h"
 #include "dictation/DictationPorts.h"
 #include "platform/audio/AudioPcmConverter.h"
-#include "providers/EndpointSpeechTranscriber.h"
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingPresentation.h"
 #include "transcribe/FileTranscriptionSession.h"
@@ -20,10 +19,6 @@ namespace {
 
 // Who the microphone's lines name; system audio's will be "them".
 const QString kMicrophoneSpeaker = QStringLiteral("me");
-// How long a stop waits for the provider to finish each utterance left, up
-// to kLongestRecordingStopMs in all: long enough for the upload of one and
-// the Custom Endpoint's silence while a slow server transcribes it.
-constexpr int kStopTimeoutMs = kSpeechEndpointSilenceMs + 5000;
 // A pause this long after speech ends the utterance.
 constexpr int kUtterancePauseMs = 800;
 // Speech that runs this long without a pause is ended anyway, under Codex's
@@ -32,18 +27,6 @@ constexpr int kUtterancePauseMs = 800;
 constexpr qsizetype kLongestUtteranceBytes = qsizetype(25) * 16000 * 2;
 
 } // namespace
-
-int RecordingSession::s_stopTimeoutMs = kStopTimeoutMs;
-
-int RecordingSession::stopTimeoutMs()
-{
-    return s_stopTimeoutMs;
-}
-
-void RecordingSession::setStopTimeoutMs(int ms)
-{
-    s_stopTimeoutMs = ms;
-}
 
 QString defaultRecordingPath(const QString &dataFolder, const QDateTime &startedAt)
 {
@@ -219,7 +202,8 @@ void RecordingSession::stop()
         return;
     }
     m_stopLimit.setRemainingTime(kLongestRecordingStopMs);
-    m_stopDeadline.start(s_stopTimeoutMs);
+    m_utteranceAnswerTimeoutMs = m_transcription->utteranceAnswerTimeoutMs();
+    m_stopDeadline.start(m_utteranceAnswerTimeoutMs);
     m_transcription->finishListening();
     // The utterance being spoken ends here, as the others did at a pause,
     // once the microphone has delivered its post-roll: a provider that
@@ -291,11 +275,11 @@ void RecordingSession::endUtterance()
 }
 
 // While a stop waits, each utterance the provider answers gives it time for
-// the next.
+// the next, up to kLongestRecordingStopMs in all.
 void RecordingSession::extendStop()
 {
     if (m_stopDeadline.isActive()) {
-        m_stopDeadline.start(int(std::min<qint64>(s_stopTimeoutMs, m_stopLimit.remainingTime())));
+        m_stopDeadline.start(int(std::min<qint64>(m_utteranceAnswerTimeoutMs, m_stopLimit.remainingTime())));
     }
 }
 

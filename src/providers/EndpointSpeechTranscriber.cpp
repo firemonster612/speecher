@@ -24,6 +24,9 @@ constexpr qsizetype promptTailChars = 200;
 // How much of the quiet before an utterance goes up with it, 300 ms, so a
 // first sound softer than what counts as voice is not cut.
 constexpr qsizetype leadInBytes = sampleRateHz * 2 * 3 / 10;
+// How long an utterance's upload may take, before the server's silence while
+// it transcribes.
+constexpr int uploadAllowanceMs = 5000;
 
 QHttpPart formField(const QString &name, const QByteArray &value)
 {
@@ -182,6 +185,11 @@ SpeechPrepareResult EndpointSpeechTranscriber::prepare(const SpeechSettings &set
 bool EndpointSpeechTranscriber::streamsFinalText(const SpeechSettings &) const
 {
     return true;
+}
+
+int EndpointSpeechTranscriber::utteranceAnswerTimeoutMs() const
+{
+    return uploadAllowanceMs + m_inactivityTimeoutMs;
 }
 
 void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)

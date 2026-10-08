@@ -80,10 +80,6 @@ public:
     // Ends the recording at once and removes its file, for a start whose
     // caller stopped waiting and so took it for a failure.
     void discard();
-    // How long a stop waits for the provider to answer each utterance left.
-    // Tests lower it.
-    static int stopTimeoutMs();
-    static void setStopTimeoutMs(int ms);
 
 signals:
     void recordingChanged(bool recording);
@@ -102,8 +98,6 @@ private:
     void abandon(const QString &error);
     void finish();
 
-    static int s_stopTimeoutMs;
-
     SettingsStore *m_settings;
     ProviderRegistry *m_providers;
     MicrophoneFactory m_createMicrophone;
@@ -119,6 +113,9 @@ private:
     QTimer m_stopDeadline;
     // When a stop gives up on the provider, however much it still answers.
     QDeadlineTimer m_stopLimit;
+    // How long a stop waits for each utterance left, as long as the provider
+    // may take to answer one.
+    int m_utteranceAnswerTimeoutMs = 0;
     // Skip silence's threshold, which says what audio is speech.
     int m_voiceThreshold = 0;
     // Runs from the latest speech until a pause ends the utterance; while it
