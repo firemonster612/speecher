@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 #include "app/CommandLine.h"
+#include "app/ProvidersCommand.h"
 #include "app/SingleInstanceIpc.h"
 #include "platform/PopupPositioner.h"
 #include "platform/PopupSurface.h"
@@ -407,6 +408,67 @@ private slots:
         QCOMPARE(lastExitCode, exitCode);
         QCOMPARE(QString::fromStdString(out.str()), text.isEmpty() ? QString() : text + QLatin1Char('\n'));
         QCOMPARE(QString::fromStdString(err.str()).contains(QStringLiteral("older")), !message.isEmpty());
+    }
+
+    void providersAsksTheRunningApp_data()
+    {
+        QTest::addColumn<QString>("message");
+        QTest::addColumn<bool>("answered");
+        QTest::newRow("the app's reports") << QString() << true;
+        QTest::newRow("app older than providers") << kUnknownIpcCommandMessage << false;
+    }
+
+    // The running app's reports arrive as it judged them. One that doesn't
+    // know the command leaves them to this process without a word.
+    void providersAsksTheRunningApp()
+    {
+        QFETCH(QString, message);
+        QFETCH(bool, answered);
+        const QList<ProviderReport> sent{
+            {QStringLiteral("codex"), ProviderRole::Speech, QStringLiteral("ChatGPT Codex"), true, true, false, false,
+             QStringLiteral("Not signed in to ChatGPT.")},
+            {QStringLiteral("local"), ProviderRole::Refinement, QStringLiteral("Local Runner"), false, true,
+             std::nullopt, true, {}},
+        };
+        IpcResponse reply{true, QStringLiteral("idle"), message};
+        if (answered) {
+            reply.text = QString::fromUtf8(providerReportsJson(sent));
+        }
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QString command;
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [reply, &command](const QString &received, const QString &, QLocalSocket *socket) {
+                    command = received;
+                    SingleInstanceIpc::writeResponse(socket, reply);
+                });
+
+        std::optional<QList<ProviderReport>> reports;
+        QString error;
+        QThread *client = QThread::create([&reports, &error, platform] {
+            reports = runningAppProviderReports(platform, &error);
+        });
+        client->start();
+        QTRY_VERIFY(client->isFinished());
+        delete client;
+        QCOMPARE(command, QStringLiteral("providers"));
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(reports.has_value(), answered);
+        if (answered) {
+            QCOMPARE(providerReportsJson(*reports), providerReportsJson(sent));
+        }
+    }
+
+    void providersFallsBackWithoutARunningApp()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        QString error;
+        QVERIFY(!runningAppProviderReports(std::make_shared<FakeSingleInstancePlatform>(name), &error));
+        QVERIFY(error.isEmpty());
     }
 
     void singleInstanceIpcExpiresIncompleteRequests()

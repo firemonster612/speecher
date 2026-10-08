@@ -92,6 +92,17 @@ QList<RowOption> refinementChoices()
     return choices;
 }
 
+// A provider's line in `speecher providers`, or an empty report for one the
+// registry doesn't offer.
+ProviderReport reportOf(ProviderRole role, const QString &id, const AppSettings &settings, const LiveFacts &facts)
+{
+    const QList<ProviderReport> reports = providerReports(settings, facts, speechChoices(), refinementChoices());
+    const auto found = std::find_if(reports.cbegin(), reports.cend(), [&](const ProviderReport &report) {
+        return report.role == role && report.id == id;
+    });
+    return found == reports.cend() ? ProviderReport{} : *found;
+}
+
 QStringList ids(const QList<RowOption> &options)
 {
     QStringList ids;
@@ -2215,8 +2226,14 @@ private slots:
         settings.speech.endpoint.baseUrl = QStringLiteral("https://api.example.com");
         QCOMPARE(speech(QStringLiteral("endpoint")), FallbackProblem::Offline);
 
-        // A runner is missing only once a look has found it isn't running.
+        // A runner other than llama-server can't clean up without a model.
         settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::NoModel);
+        settings.refinement.localRunner.runner = QStringLiteral("llama-server");
+        QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::None);
+
+        // A runner is missing only once a look has found it isn't running.
+        settings.refinement.localRunner = {QStringLiteral("ollama"), QStringLiteral("gemma4:e4b")};
         QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::None);
         facts.runnersChecked = true;
         QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::NoRunner);
@@ -2260,6 +2277,119 @@ private slots:
         QCOMPARE(refinement->helpValue(settings), QStringLiteral("The service that cleans up your text."));
     }
 
+    // `speecher providers` judges every provider from the facts its rows
+    // read, says unknown for what nobody has checked, and words a problem as
+    // the primary's row does.
+    void aProviderReportAgreesWithItsRow()
+    {
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("codex");
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        settings.speech.language = QStringLiteral("en");
+        settings.refinement.providerId = QStringLiteral("openai");
+        LiveFacts facts;
+        const auto report = [&](ProviderRole role, const QString &id) { return reportOf(role, id, settings, facts); };
+
+        const QList<ProviderReport> reports = providerReports(settings, facts, speechChoices(), refinementChoices());
+        QCOMPARE(reports.size(), 8);
+        QCOMPARE(reports.first().label, QStringLiteral("Claude Voice"));
+        QCOMPARE(reports.last().role, ProviderRole::Refinement);
+        QCOMPARE(reports.last().label, QStringLiteral("Local Runner"));
+
+        // A sign-in nobody has seen and a runner nobody looked for are unknown.
+        ProviderReport codex = report(ProviderRole::Speech, QStringLiteral("codex"));
+        QVERIFY(codex.configured);
+        QVERIFY(codex.signsIn);
+        QCOMPARE(codex.signedIn, std::nullopt);
+        QCOMPARE(codex.usable, std::nullopt);
+        QVERIFY(codex.problem.isEmpty());
+        settings.refinement.localRunner = {QStringLiteral("ollama"), QStringLiteral("gemma4:e4b")};
+        QCOMPARE(report(ProviderRole::Refinement, QStringLiteral("local")).usable, std::nullopt);
+        facts.runnersChecked = true;
+        const ProviderReport runner = report(ProviderRole::Refinement, QStringLiteral("local"));
+        QVERIFY(runner.configured);
+        QCOMPARE(runner.usable, std::optional(false));
+        QCOMPARE(runner.problem, QStringLiteral("Ollama isn't running."));
+
+        // What settings must hold.
+        const ProviderReport local = report(ProviderRole::Speech, QStringLiteral("local"));
+        QVERIFY(!local.configured);
+        QVERIFY(!local.signsIn);
+        QCOMPARE(local.signedIn, std::nullopt);
+        QCOMPARE(local.usable, std::optional(false));
+        QCOMPARE(local.problem, QStringLiteral("No model downloaded."));
+        QCOMPARE(report(ProviderRole::Refinement, QStringLiteral("endpoint")).problem,
+                 QStringLiteral("No server URL is set."));
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        QCOMPARE(report(ProviderRole::Speech, QStringLiteral("local")).usable, std::optional(true));
+
+        // A sign-in once seen, and the primary's row saying the same.
+        facts.signedIn.insert(QStringLiteral("codex"), false);
+        facts.signedIn.insert(QStringLiteral("claude"), true);
+        codex = report(ProviderRole::Speech, QStringLiteral("codex"));
+        QCOMPARE(codex.signedIn, std::optional(false));
+        QCOMPARE(codex.usable, std::optional(false));
+        QCOMPARE(codex.problem, QStringLiteral("Not signed in to ChatGPT."));
+        QCOMPARE(primaryProviderStatus(ProviderRole::Speech, settings, facts, speechChoices()), codex.problem);
+        QCOMPARE(report(ProviderRole::Speech, QStringLiteral("claude")).usable, std::optional(true));
+
+        facts.reachability = Reachability::Offline;
+        settings.speech.endpoint.baseUrl = QStringLiteral("https://api.example.com");
+        const ProviderReport endpoint = report(ProviderRole::Speech, QStringLiteral("endpoint"));
+        QVERIFY(endpoint.configured);
+        QCOMPARE(endpoint.problem, QStringLiteral("Can't reach Custom Endpoint right now."));
+    }
+
+    // A primary's report gives the problem its row gives, less the row's word
+    // on what happens instead.
+    void aProviderReportWordsAProblemAsThePrimarysRow()
+    {
+        AppSettings settings;
+        settings.speech.language = QStringLiteral("en");
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        LiveFacts facts;
+        // The report's problem, then the row's.
+        const auto speechProblems = [&](const QString &primary) {
+            settings.speech.providerId = primary;
+            return QStringList{reportOf(ProviderRole::Speech, primary, settings, facts).problem,
+                               primaryProviderStatus(ProviderRole::Speech, settings, facts, speechChoices())};
+        };
+        QCOMPARE(speechProblems(QStringLiteral("endpoint")), QStringList(2, QStringLiteral("No server URL is set.")));
+        QCOMPARE(speechProblems(QStringLiteral("local")), QStringList(2, QStringLiteral("No model downloaded.")));
+        facts.reachability = Reachability::Offline;
+        QCOMPARE(speechProblems(QStringLiteral("codex")),
+                 QStringList(2, QStringLiteral("Can't reach ChatGPT right now.")));
+
+        settings.refinement.providerId = QStringLiteral("local");
+        facts.runnersChecked = true;
+        const ProviderReport unchosen = reportOf(ProviderRole::Refinement, QStringLiteral("local"), settings, facts);
+        QVERIFY(!unchosen.configured);
+        QCOMPARE(unchosen.problem, QStringLiteral("No Ollama, LM Studio or llama-server is running."));
+        settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        const ProviderReport modelless = reportOf(ProviderRole::Refinement, QStringLiteral("local"), settings, facts);
+        QVERIFY(!modelless.configured);
+        QCOMPARE(modelless.usable, std::optional(false));
+        QCOMPARE(modelless.problem, QStringLiteral("No cleanup model chosen."));
+        QCOMPARE(primaryProviderStatus(ProviderRole::Refinement, settings, facts, refinementChoices()),
+                 QStringLiteral("No cleanup model chosen. Your words are pasted as spoken."));
+        settings.refinement.localRunner.model = QStringLiteral("gemma4:e4b");
+        const ProviderReport runner = reportOf(ProviderRole::Refinement, QStringLiteral("local"), settings, facts);
+        QVERIFY(runner.configured);
+        QCOMPARE(runner.problem, QStringLiteral("Ollama isn't running."));
+        QCOMPARE(primaryProviderStatus(ProviderRole::Refinement, settings, facts, refinementChoices()),
+                 QStringLiteral("Ollama isn't running. Your words are pasted as spoken."));
+
+        // The Spoken Language row's own words, where the primary's row says nothing.
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        settings.speech.providerId = QStringLiteral("local");
+        settings.speech.language = QStringLiteral("ja");
+        const ProviderReport local = reportOf(ProviderRole::Speech, QStringLiteral("local"), settings, facts);
+        QCOMPARE(local.usable, std::optional(false));
+        QCOMPARE(local.problem,
+                 QStringLiteral("Parakeet 0.6B can't listen for Japanese. Choose another Spoken Language."));
+        QCOMPARE(local.problem, spokenLanguageProblem(settings.speech, QStringLiteral("Local Model")));
+    }
+
     // The Fallbacks row adds the first fallback's reason it can't stand in,
     // in the negative tone, as the mockup's "Model not downloaded" shows.
     void theFallbacksRowSaysWhyAFallbackCantStandIn()
@@ -2284,6 +2414,9 @@ private slots:
 
         settings.refinement.fallbackProviderIds = {QStringLiteral("anthropic"), QStringLiteral("local")};
         settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        QCOMPARE(refinement->helpValue(settings),
+                 QStringLiteral("Anthropic, then Local Runner. No cleanup model chosen, so it can't stand in yet."));
+        settings.refinement.localRunner.model = QStringLiteral("gemma4:e4b");
         facts.runnersChecked = true;
         QCOMPARE(refinement->helpValue(settings),
                  QStringLiteral("Anthropic, then Local Runner. Ollama isn't running, so it can't stand in right now."));

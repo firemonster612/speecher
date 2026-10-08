@@ -235,6 +235,17 @@ speecher listen --json --profile ai-coding        # one JSON object with the tex
 
 It takes the same `--model`, `--refine`, `--cleanup`, `--profile`, `--tone`, `--language`, `--no-vocabulary`, `--vocab-file`, `--raw` and `--json` choices as `transcribe`, with unset ones from your settings. Like `transcribe`, it runs in the calling process with its own microphone and provider connections, so it works while Speecher is running and even while it is dictating. Silence is judged by the Skip silence threshold in your microphone settings. The exit status is 0 when a transcript was printed, 1 when it failed or heard no speech, and 2 for a usage error.
 
+### Checking providers
+
+`speecher providers` lists every speech and refinement provider this build offers, with whether it is configured, signed in and usable, so a script or agent can check before calling `listen`. `--json` prints a JSON array of objects with `id`, `role`, `label`, `signsIn`, `configured`, `signedIn`, `usable` and `problem`.
+
+```sh
+speecher providers
+speecher providers --json | jq '.[] | select(.usable == false)'
+```
+
+It judges each provider the way the Dictation and Refinement settings do and words a problem as their rows do ("No server URL is set."). While Speecher is running it asks Speecher, which knows the sign-ins it has seen and the Local Runners it has looked for. Otherwise it judges from your settings, the downloaded Local Models and the system's network state. It makes no network calls, reads no keyring and refreshes no sign-in, so a sign-in nothing has checked yet, and whether a Local Runner is running, read as `Unknown` in the table and `null` in JSON. A provider that doesn't sign in has `signsIn` false, `signedIn` `null` and `-` in the table.
+
 ## Uninstall
 
 Remove Speecher's shortcut in your desktop's keyboard settings. If you added an AppImage to the app menu, delete `~/.local/bin/speecher`, `~/.local/share/applications/io.github.firemonster612.speecher.desktop`, and `~/.local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg`.

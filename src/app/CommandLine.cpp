@@ -152,6 +152,14 @@ Record from the microphone once and print what was said:
   Exit status: 0 transcript printed, 1 failed or heard no speech, 2 usage
   error.
 
+Check which speech and refinement services can work:
+  speecher providers [--json]
+                           list each provider: configured, signed in and
+                           usable, as Speecher's settings judge them; asks the
+                           running Speecher, and asks no server, so a sign-in
+                           nothing has seen is unknown
+  --json                   print a JSON array of objects instead of a table
+
 Options:
   --format plain|html      output format for toggle and start
   --profile <name>         writing profile for toggle and start: %4
@@ -710,6 +718,17 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
                       << helpText().toStdString();
             return {LaunchMode::Exit, 2};
         }
+        return decision;
+    } else if (verb == QStringLiteral("providers")) {
+        for (const QString &argument : arguments.mid(2)) {
+            if (argument != QStringLiteral("--json")) {
+                std::cerr << "Unknown providers option: " << argument.toStdString() << "\n\n"
+                          << helpText().toStdString();
+                return {LaunchMode::Exit, 2};
+            }
+            decision.json = true;
+        }
+        decision.mode = LaunchMode::ListProviders;
         return decision;
     } else {
         QStringList files;

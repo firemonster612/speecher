@@ -79,7 +79,7 @@ QString describeBoxes(const QList<QRect> &boxes)
 // A provider's registry label, as the Add a fallback combo lists it.
 QString chainLabel(ProviderRole role, const ProviderRegistry &registry, const QString &id)
 {
-    for (const RowOption &provider : win::providerOptions(role, registry)) {
+    for (const RowOption &provider : registry.rowOptions(role)) {
         if (provider.id == id) {
             return provider.label;
         }

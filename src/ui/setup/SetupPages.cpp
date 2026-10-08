@@ -699,7 +699,7 @@ SpeechProviderSetupPage::SpeechProviderSetupPage(SettingsStore &settings,
     layout->addWidget(m_hint);
     layout->addWidget(m_checkAgain, 0, Qt::AlignLeft);
     m_fallbacks = new SetupFallbackSection(ProviderRole::Speech, m_settings,
-                                           providerOptions(m_providers.speechProviders()), m_local, this);
+                                           m_providers.rowOptions(ProviderRole::Speech), m_local, this);
     layout->addWidget(m_fallbacks);
     layout->addStretch();
 
@@ -1951,7 +1951,7 @@ RefinementSetupPage::RefinementSetupPage(SettingsStore &settings,
     layout->addWidget(m_fastModeHint);
     // Hidden while Skip cleanup is ticked, which makes the provider None.
     m_fallbacks = new SetupFallbackSection(ProviderRole::Refinement, m_settings,
-                                           providerOptions(providers.refinementProviders()), m_local, this);
+                                           providers.rowOptions(ProviderRole::Refinement), m_local, this);
     layout->addWidget(m_fallbacks);
     layout->addStretch();
 

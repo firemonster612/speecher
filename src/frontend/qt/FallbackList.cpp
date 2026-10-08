@@ -199,8 +199,8 @@ void FallbackList::restoreFocus(const QString &name)
 
 SchemaCustomRowFactory fallbackListRows(const ProviderRegistry &registry, const LocalSetup &local)
 {
-    const QList<RowOption> speechProviders = providerOptions(registry.speechProviders());
-    const QList<RowOption> refinementProviders = providerOptions(registry.refinementProviders());
+    const QList<RowOption> speechProviders = registry.rowOptions(ProviderRole::Speech);
+    const QList<RowOption> refinementProviders = registry.rowOptions(ProviderRole::Refinement);
     return [speechProviders, refinementProviders, &local](const SettingsRow &descriptor, QWidget *parent,
                                                           std::function<void()> notifyChanged) {
         const bool speech = descriptor.id == QStringLiteral("speechFallbackList");

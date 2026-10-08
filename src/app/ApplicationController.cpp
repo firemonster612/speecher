@@ -5,6 +5,7 @@
 #include "app/NetworkReachability.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProviderSetup.h"
+#include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "app/UpdateBanner.h"
 #include "app/UpdateController.h"
@@ -1134,6 +1135,10 @@ void ApplicationController::handleIpcCommand(const QString &command,
     } else if (command == QStringLiteral("last")) {
         IpcResponse reply = response(!m_lastTranscript.isEmpty());
         reply.text = m_lastTranscript;
+        SingleInstanceIpc::writeResponse(socket, reply);
+    } else if (command == QStringLiteral("providers")) {
+        IpcResponse reply = response();
+        reply.text = QString::fromUtf8(providerReportsJson(providerReports(*m_settings, *m_localSetup, *m_providers)));
         SingleInstanceIpc::writeResponse(socket, reply);
     } else if (command == QStringLiteral("quit")) {
         SingleInstanceIpc::writeResponse(socket, response());

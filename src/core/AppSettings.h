@@ -273,6 +273,10 @@ struct LocalRunnerSettings {
     QString runner;
     QString model;
 
+    // Every runner but llama-server, which answers with whichever model it
+    // loaded, needs a model named.
+    bool lacksModel() const { return model.isEmpty() && runner != QStringLiteral("llama-server"); }
+
     bool operator==(const LocalRunnerSettings &other) const = default;
 };
 

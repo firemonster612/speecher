@@ -77,22 +77,12 @@ QString gateNoticeKey(const SettingsRow &descriptor)
 
 } // namespace
 
-QList<RowOption> providerOptions(const QList<ProviderDescriptor> &providers)
-{
-    QList<RowOption> options;
-    options.reserve(providers.size());
-    for (const ProviderDescriptor &provider : providers) {
-        options.append({provider.id, provider.label, provider.summary});
-    }
-    return options;
-}
-
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
                               const ProviderRegistry &providers,
                               const QString &lastSeenVersion)
 {
     return {
-        providerOptions(providers.speechProviders()),
+        providers.rowOptions(ProviderRole::Speech),
         refinementProviders(providers.refinementProviders()),
         [&platform] {
             return settings::audioInputDeviceOptions(platform.availableAudioInputDevices());

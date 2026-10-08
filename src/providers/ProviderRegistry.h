@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/ProviderChain.h"
+#include "core/settings/SettingsSchema.h"
 #include "dictation/DictationPorts.h"
 
 #include <QHash>
@@ -56,6 +58,9 @@ public:
     // withWritingProfileProviders, passing over a profile's speech service
     // this registry lacks, as one that can't hear the Spoken Language is.
     AppSettings withProfileProviders(const AppSettings &settings, const WritingProfileSettings &profile) const;
+    // A role's providers as settings rows and fallback lists offer them: id,
+    // label and summary.
+    QList<RowOption> rowOptions(ProviderRole role) const;
 
     SpeechTranscriber *speechProvider(const QString &id);
     TranscriptRefiner *refinementProvider(const QString &id);

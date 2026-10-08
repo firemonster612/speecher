@@ -6,6 +6,7 @@
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
+#include "app/ProvidersCommand.h"
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
 #include "providers/LocalModelStore.h"
@@ -506,6 +507,10 @@ int main(int argc, char **argv)
         return runHeadlessListen(decision.headless, decision.untilSilenceMs, microphone,
                                  [] { return g_listenStopRequested.load(); }, enterStops, &settings, &providers,
                                  std::cout, std::cerr);
+    }
+    if (decision.mode == LaunchMode::ListProviders) {
+        QCoreApplication app(argc, argv);
+        return runProvidersCommand(decision.json, platform, std::cout, std::cerr);
     }
 
 #ifdef SPEECHER_WITH_WINUI

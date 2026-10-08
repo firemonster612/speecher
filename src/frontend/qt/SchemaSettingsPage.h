@@ -15,10 +15,6 @@ namespace speecher {
 class InlineMessage;
 class PlatformComposition;
 class ProviderRegistry;
-struct ProviderDescriptor;
-
-// A role's providers as schema rows offer them, by their registry labels.
-QList<RowOption> providerOptions(const QList<ProviderDescriptor> &providers);
 
 // What the Qt front end can tell the schema about this machine.
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
