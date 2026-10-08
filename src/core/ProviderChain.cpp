@@ -43,7 +43,13 @@ QStringList providerChain(ProviderRole role, const QString &primary, const QStri
     if (role == ProviderRole::Refinement && primary == QStringLiteral("none")) {
         return {};
     }
-    return QStringList{primary} + normalizedFallbackProviders(role, primary, fallbacks);
+    QStringList chain{primary};
+    for (const QString &id : fallbacks) {
+        if (!chain.contains(id) && isChainProviderId(role, id)) {
+            chain.append(id);
+        }
+    }
+    return chain;
 }
 
 } // namespace speecher

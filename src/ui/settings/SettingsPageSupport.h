@@ -109,6 +109,11 @@ void setComboItemEnabled(QComboBox *combo,
                          int index,
                          bool enabled,
                          const QString &toolTip = QString());
+// Fills combo with options, each closed one disabled with its help as the
+// tooltip. Rebuilding a combo resets its selection, so one that already
+// offers the same choices is left alone: the caller selects the value
+// straight after.
+void setOptions(QComboBox *combo, const QList<RowOption> &options);
 int tightSpacing();
 int relatedSpacing();
 int groupGap();

@@ -1160,6 +1160,15 @@ private slots:
             grab(QStringLiteral("refinement"), QStringLiteral("settings-refinement-bottom"), "bottom");
             grab(QStringLiteral("dictation:fallbacks"), QStringLiteral("fallbacks-dictation-full"));
             grab(QStringLiteral("refinement:fallbacks"), QStringLiteral("fallbacks-refinement-full"));
+            // Profiles with services of their own: Email refines with a Claude
+            // model, Personal dictates with ChatGPT Codex.
+            AppSettings profiles = store->snapshot();
+            profiles.refinement.writingProfiles[1].refinementProvider = QStringLiteral("anthropic");
+            profiles.refinement.writingProfiles[1].refinementModel = QStringLiteral("claude-sonnet-5-5");
+            profiles.refinement.writingProfiles[2].speechProvider = QStringLiteral("codex");
+            store->applySnapshot(profiles);
+            grab(QStringLiteral("writingProfiles"), QStringLiteral("settings-profiles"));
+            grab(QStringLiteral("writingProfiles"), QStringLiteral("settings-profiles-middle"), "middle");
             // A primary that can't work: its picker says so in the negative
             // tone.
             store->setSpeechProvider(QStringLiteral("endpoint"));

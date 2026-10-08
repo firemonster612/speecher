@@ -27,17 +27,23 @@ bool offers(const QList<ProviderDescriptor> &providers, const QString &id)
 }
 
 // The same seeding as the Transcribe page: the user's settings, with the
-// profile's cleanup and tone underneath anything given explicitly.
-TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options, const AppSettings &settings)
+// profile's services, cleanup and tone underneath anything given explicitly.
+TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options,
+                                 AppSettings settings,
+                                 const ProviderRegistry &providers)
 {
     TranscribeOptions resolved;
+    resolved.writingProfile = options.writingProfile.value_or(settings.refinement.defaultWritingProfile);
+    const WritingProfileSettings profile = writingProfileSettingsFor(
+        settings.refinement.writingProfiles, writingProfileFromName(resolved.writingProfile));
+    if (options.spokenLanguage) {
+        settings.speech.language = *options.spokenLanguage;
+    }
+    settings = providers.withProfileProviders(settings, profile);
     resolved.speechProviderId = options.speechProviderId.value_or(settings.speech.providerId);
     resolved.applyVocabulary = options.applyVocabulary;
     resolved.addedVocabulary = options.addedVocabulary;
     resolved.refinementProviderId = options.refinementProviderId.value_or(settings.refinement.providerId);
-    resolved.writingProfile = options.writingProfile.value_or(settings.refinement.defaultWritingProfile);
-    const WritingProfileSettings profile = writingProfileSettingsFor(
-        settings.refinement.writingProfiles, writingProfileFromName(resolved.writingProfile));
     resolved.cleanupStrength = options.cleanupStrength.value_or(profile.cleanupStrength);
     resolved.tone = options.tone.value_or(profile.tone);
     resolved.spokenLanguage = options.spokenLanguage;
@@ -97,7 +103,7 @@ int runHeadlessTranscribe(const QStringList &files,
     if (files.isEmpty()) {
         return finish(2, QStringLiteral("No audio files to transcribe"));
     }
-    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot());
+    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot(), *providers);
     if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
         return finish(2, error);
     }
@@ -274,7 +280,7 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
         }
         return exitCode;
     };
-    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot());
+    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot(), *providers);
     if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
         return finish(2, {}, error);
     }

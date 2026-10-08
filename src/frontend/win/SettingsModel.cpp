@@ -267,6 +267,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
     snapshot.ratedModels = row.ratedModels ? row.ratedModels(m_draft) : QList<RatedModel>();
     if (const CollectionDescriptor *collection = collectionForRow(row)) {
         CollectionSnapshot table;
+        const QList<QVariantMap> records = collection->records(m_draft);
         for (const CollectionColumn &column : collection->columns) {
             CollectionColumnSnapshot shown;
             shown.id = column.id;
@@ -282,6 +283,15 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
             shown.everyChoice = column.everyChoice;
             shown.someChoice = column.someChoice;
             shown.iconId = column.iconId;
+            shown.ownLine = column.ownLine;
+            for (const QVariantMap &record : records) {
+                if (column.recordOptions) {
+                    shown.recordOptions.append(column.recordOptions(m_draft, record));
+                }
+                if (column.recordNote || column.ownLine) {
+                    shown.recordNotes.append(shownFieldNote(column, m_draft, record));
+                }
+            }
             table.columns.append(shown);
         }
         table.lockedRecordCount = collection->lockedRecordCount ? collection->lockedRecordCount() : 0;
@@ -301,7 +311,7 @@ RowSnapshot SettingsModel::rowSnapshot(const SettingsRow &row) const
         table.actions = collection->actions;
         table.minimumHeight = collection->minimumHeight;
         snapshot.collection = table;
-        snapshot.value = QVariant::fromValue(collection->records(m_draft));
+        snapshot.value = QVariant::fromValue(records);
         return snapshot;
     }
     if (row.value) {

@@ -190,21 +190,22 @@ void deleteWritingProfile(const QString &rowId, const QList<QVariantMap> &record
     dialog.ShowAsync();
 }
 
-// One row per writing profile, each with its cleanup and tone pickers and its
-// instructions under them — the mac WritingProfileRows over the same grid
-// descriptor. A custom profile adds its name and a Delete button, and Add
-// profile follows the rows.
+// One row per writing profile, each with its cleanup and tone pickers, its
+// instructions under them and its services under those — the mac
+// WritingProfileRows over the same grid descriptor. A custom profile adds its
+// name and a Delete button, and Add profile follows the rows.
 UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
 {
     StackPanel rows;
     const QList<QVariantMap> records = row.value.value<QList<QVariantMap>>();
     QList<CollectionColumnSnapshot> choices;
+    QList<CollectionColumnSnapshot> ownLines;
     QList<CollectionColumnSnapshot> texts;
     QString profileTitle;
     if (row.collection) {
         for (const CollectionColumnSnapshot &column : row.collection->columns) {
             if (column.kind == ColumnKind::Choice) {
-                choices.append(column);
+                (column.ownLine ? ownLines : choices).append(column);
             } else if (column.kind == ColumnKind::Text) {
                 texts.append(column);
             } else if (column.id == kProfileColumn) {
@@ -217,20 +218,27 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
         StackPanel pickers;
         pickers.Orientation(Orientation::Horizontal);
         pickers.Spacing(8);
-        for (const CollectionColumnSnapshot &column : choices) {
+        // A column's options for this profile: its own where they depend on
+        // the profile, such as the models of the service it picked.
+        const auto optionsOf = [index](const CollectionColumnSnapshot &column) {
+            return column.recordOptions.isEmpty() ? column.options : column.recordOptions.at(index);
+        };
+        const auto picker = [&](const CollectionColumnSnapshot &column) {
             ComboBox combo;
             combo.MinWidth(140);
             int selected = -1;
-            for (const RowOption &option : column.options) {
+            for (const RowOption &option : optionsOf(column)) {
                 ComboBoxItem item;
                 item.Content(box_value(hs(option.label)));
                 item.Tag(box_value(hs(option.id)));
+                item.IsEnabled(option.enabled);
                 if (option.id == records.at(index).value(column.id).toString()) {
                     selected = combo.Items().Size();
                 }
                 combo.Items().Append(item);
             }
-            combo.SelectedIndex(selected);
+            // A choice its options no longer hold reads as the first, Default.
+            combo.SelectedIndex(selected < 0 && column.ownLine ? 0 : selected);
             nameProfileField(combo, profile, column.title);
             combo.SelectionChanged([rowId = row.id, records, index, columnId = column.id, &host](
                                        const IInspectable &sender, const auto &) {
@@ -244,6 +252,10 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 host.model->save(edited, rowId, records);
                 host.refresh();
             });
+            return combo;
+        };
+        for (const CollectionColumnSnapshot &column : choices) {
+            ComboBox combo = picker(column);
             if (index == 0) {
                 // The grid's column titles, once, directly above the first
                 // row's pickers so each header sits over its own column.
@@ -307,6 +319,30 @@ UIElement writingProfileRows(const RowSnapshot &row, PaneHost &host)
                 host.refresh();
             });
             controls.Children().Append(box);
+        }
+        // Each service on a titled line, with what core says of it under the
+        // picker. One with nothing to offer
+        // this profile, a model for a service without models, is left out.
+        for (const CollectionColumnSnapshot &column : ownLines) {
+            const QList<RowOption> options = optionsOf(column);
+            if (options.isEmpty()) {
+                continue;
+            }
+            StackPanel line;
+            line.Spacing(2);
+            line.Children().Append(secondaryText(column.title, host));
+            line.Children().Append(picker(column));
+            const FieldNote note = column.recordNotes.value(index);
+            if (!note.text.isEmpty()) {
+                TextBlock text = secondaryText(note.text, host);
+                if (note.caution) {
+                    if (const auto negative = themeBrush(L"NegativeTextForeground", host)) {
+                        text.Foreground(negative);
+                    }
+                }
+                line.Children().Append(text);
+            }
+            controls.Children().Append(line);
         }
         RowSnapshot profileRow;
         profileRow.id = row.id + QLatin1Char('.') + records.at(index).value(kProfileIdKey).toString();

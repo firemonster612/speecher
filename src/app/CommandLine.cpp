@@ -124,7 +124,8 @@ Transcribe without a window, printing the results:
                            --no-vocabulary; # starts a comment line
   --refine <id|none>       refinement provider: %2, none
   --cleanup <level>        %3
-  --profile <name>         writing profile; seeds cleanup and tone: %4
+  --profile <name>         writing profile; seeds its services, cleanup and
+                           tone: %4
   --tone <name>            %5
   --language <code>        spoken language: a code such as de, or auto
   --output <beside|none|DIR>

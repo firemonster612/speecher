@@ -175,6 +175,11 @@ QStringList TranscriptPipeline::speechVocabulary(const AppSettings &settings, co
                                       settings.sessionVocabulary);
 }
 
+WritingProfileSettings TranscriptPipeline::writingProfile(const AppSettings &settings, const Target &target)
+{
+    return writingProfileSettingsFor(settings.refinement.writingProfiles, writingProfileFor(settings, target));
+}
+
 RefinementSettings TranscriptPipeline::effectiveRefinementSettings(const AppSettings &settings,
                                                                    const Target &target)
 {

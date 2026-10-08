@@ -1120,6 +1120,62 @@ private slots:
         QVERIFY(!QFile::exists(dir.filePath(QStringLiteral("memo-transcribed (2).txt"))));
     }
 
+    // `transcribe --profile` runs the profile's own refinement provider, with
+    // the model it picked; `--refine` still replaces it.
+    void headlessRunUsesTheProfilesServicesUnlessTold()
+    {
+        QString anthropicModel;
+        m_registry->registerRefinementProvider({QStringLiteral("anthropic"), QStringLiteral("Anthropic")},
+                                               [&anthropicModel](QObject *parent) {
+                                                   auto *refiner = new FakeRefiner(parent);
+                                                   refiner->providerId = QStringLiteral("anthropic");
+                                                   refiner->autoComplete = true;
+                                                   refiner->autoCompleteText = QStringLiteral("Anthropic heard it.");
+                                                   connect(refiner, &TranscriptRefiner::completed, parent,
+                                                           [refiner, &anthropicModel] {
+                                                               anthropicModel = refiner->lastAnthropicModel;
+                                                           });
+                                                   return refiner;
+                                               });
+        QTemporaryDir dir;
+        const QString audio = dir.filePath(QStringLiteral("memo.wav"));
+        writeWav(audio);
+        SettingsStore settings;
+        AppSettings stored = settings.snapshot();
+        stored.refinement.providerId = QStringLiteral("openai");
+        stored.refinement.writingProfiles[1].refinementProvider = QStringLiteral("anthropic");
+        stored.refinement.writingProfiles[1].refinementModel = QStringLiteral("claude-sonnet-5-5");
+        settings.applySnapshot(stored);
+        HeadlessTranscribeOptions options;
+        options.writingProfile = WritingProfile::Email;
+        options.destination = TranscriptDestination::None;
+        options.json = true;
+        std::ostringstream out;
+        std::ostringstream err;
+        const auto text = [&out] {
+            const QString first = QString::fromStdString(out.str()).section(QLatin1Char('\n'), 0, 0);
+            return QJsonDocument::fromJson(first.toUtf8()).object().value(QStringLiteral("text")).toString();
+        };
+
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QCOMPARE(text(), QStringLiteral("Anthropic heard it."));
+        QCOMPARE(anthropicModel, QStringLiteral("claude-sonnet-5-5"));
+
+        options.refinementProviderId = QStringLiteral("openai");
+        out.str({});
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QCOMPARE(text(), QStringLiteral("Heard it."));
+
+        // A profile's speech service this build lacks is passed over for the
+        // settings' one, not refused as an unknown --model.
+        stored = settings.snapshot();
+        stored.refinement.writingProfiles[1].speechProvider = QStringLiteral("local");
+        settings.applySnapshot(stored);
+        out.str({});
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QCOMPARE(text(), QStringLiteral("Heard it."));
+    }
+
     // A transcript that could not be saved fails its file; a run that cannot
     // start says why instead of exiting quietly.
     void headlessRunFailsUnsavedTranscriptsAndRefusalsOutLoud()

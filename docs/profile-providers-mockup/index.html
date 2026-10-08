@@ -1,0 +1,207 @@
+<!doctype html>
+<!-- Per-profile speech and refinement providers (mockup). Open from disk; no build step.
+     "Today" is a real Linux grab; the rest is HTML rebuilt from it in Breeze Light roles.
+     New parts have a dashed orange outline. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher: per-profile providers (mockup)</title>
+<style>
+  :root {
+    --window: #eff0f1; --base: #ffffff; --button: #fcfcfc; --text: #232629;
+    --inactive: #707d8a; --highlight: #3daee9; --frame: #c9cbcd; --separator: #e3e5e7;
+    --negative: #da4453;
+    --font: "Noto Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.4 var(--font); }
+  .page { color: var(--foreground, #232629); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+  .tabs label { padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border, #c9cbcd); cursor: pointer; white-space: nowrap; }
+  input[name=view] { display: none; }
+  .view { display: none; }
+  #v-today:checked ~ .tabs label[for=v-today], #v-default:checked ~ .tabs label[for=v-default],
+  #v-coding:checked ~ .tabs label[for=v-coding], #v-email:checked ~ .tabs label[for=v-email],
+  #v-lang:checked ~ .tabs label[for=v-lang], #v-list:checked ~ .tabs label[for=v-list] {
+    background: var(--primary, #2b2d30); color: var(--primary-foreground, #fff); border-color: transparent; }
+  #v-today:checked ~ .views .today, #v-default:checked ~ .views .default, #v-coding:checked ~ .views .coding,
+  #v-email:checked ~ .views .email, #v-lang:checked ~ .views .lang, #v-list:checked ~ .views .list { display: block; }
+  .caption { margin: 0 0 10px; max-width: 640px; color: var(--muted-foreground, #50565c); }
+  img.grab { display: block; max-width: 100%; border: 1px solid var(--border, #c9cbcd); }
+
+  /* ------------------------------------------------ the record dialog (QDialog + QFormLayout) */
+  .dialog { width: 540px; max-width: 100%; background: var(--window); color: var(--text); border: 1px solid var(--frame); padding: 8px 10px 10px; }
+  .titlebar { margin: -8px -10px 8px; padding: 6px 10px; border-bottom: 1px solid var(--frame); font-weight: 700; text-align: center; }
+  .form { display: grid; grid-template-columns: max-content 1fr; column-gap: 8px; row-gap: 6px; align-items: start; }
+  .form > .label { text-align: right; padding-top: 5px; }
+  .field { min-width: 0; }
+  .help { font-size: 12px; color: var(--inactive); margin-top: 3px; }
+  .help.caution { color: var(--negative); }
+  .combo { display: inline-flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 104px; height: 30px; padding: 0 8px; background: var(--button); border: 1px solid var(--frame); border-radius: 3px; white-space: nowrap; }
+  .combo::after { content: ""; width: 6px; height: 6px; border-right: 1.3px solid var(--text); border-bottom: 1.3px solid var(--text); transform: rotate(45deg); margin: -4px 2px 0 0; }
+  .combo.editable { background: var(--base); min-width: 220px; }
+  .combo.disabled { color: #a8acb0; background: var(--window); }
+  .muted { color: var(--inactive); }
+  .textarea { height: 110px; background: var(--base); border: 1px solid var(--frame); border-radius: 3px; padding: 4px 6px; color: var(--inactive); }
+  .textarea.filled { color: var(--text); }
+  .line { height: 30px; background: var(--base); border: 1px solid var(--frame); border-radius: 3px; padding: 5px 6px; color: var(--inactive); }
+  .line.filled { color: var(--text); }
+  .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+  .buttons span { height: 30px; padding: 5px 14px; border: 1px solid var(--frame); border-radius: 3px; background: var(--button); }
+  .buttons span.ok { border-color: var(--highlight); background: #e5f3fb; }
+  .buttons span.delete { margin-right: auto; }
+  .new { outline: 2px dashed #f67400; outline-offset: 2px; border-radius: 3px; }
+
+  /* ------------------------------------------------ the Writing Profiles page card */
+  .settings { width: 540px; max-width: 100%; background: var(--window); color: var(--text); padding: 4px 10px 12px; border: 1px solid var(--frame); }
+  .settings h3 { font-size: 13px; margin: 8px 18px 8px; }
+  .card { background: var(--base); border: 1px solid var(--frame); border-radius: 6px; padding: 0 18px; }
+  .row { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 9px 0; }
+  .row + .row { border-top: 1px solid var(--separator); }
+  .row .text { flex: 1; min-width: 0; }
+  .row small { display: block; font-size: 12px; color: var(--inactive); }
+  .chevron { width: 8px; height: 8px; border-right: 1.3px solid var(--text); border-bottom: 1.3px solid var(--text); transform: rotate(-45deg); margin-right: 6px; flex: none; }
+</style>
+</head>
+<body>
+<div class="page">
+<input type="radio" name="view" id="v-today">
+<input type="radio" name="view" id="v-default" checked>
+<input type="radio" name="view" id="v-coding">
+<input type="radio" name="view" id="v-email">
+<input type="radio" name="view" id="v-lang">
+<input type="radio" name="view" id="v-list">
+<div class="tabs">
+  <label for="v-today">Today</label>
+  <label for="v-default">Untouched profile</label>
+  <label for="v-coding">AI coding: Local Model</label>
+  <label for="v-email">Email: Claude Opus</label>
+  <label for="v-lang">Language caution</label>
+  <label for="v-list">Profiles page</label>
+</div>
+
+<div class="views">
+
+<div class="view today">
+  <p class="caption">The Email profile's dialog today, grabbed from the Linux build.</p>
+  <img class="grab" src="today/dialog-today.png" alt="Today's profile dialog: Cleanup, Tone, Instructions, Output language">
+</div>
+
+<div class="view default">
+  <p class="caption">Two rows join the dialog under Output language. Both start at Default, which follows
+    the Dictation and Refinement pages, so existing profiles behave as before.</p>
+  <div class="dialog">
+    <div class="titlebar">Work</div>
+    <div class="form">
+      <div class="label">Profile</div><div class="field" style="padding-top:5px">Work</div>
+      <div class="label">Cleanup</div><div class="field"><span class="combo">Medium</span>
+        <div class="help">Also removes filler words and false starts, and adds paragraphs.</div></div>
+      <div class="label">Tone</div><div class="field"><span class="combo">No tone</span>
+        <div class="help">Keeps the tone you spoke in.</div></div>
+      <div class="label">Instructions</div><div class="field"><div class="textarea">Keep it short and sign off with my first name.</div></div>
+      <div class="label">Output language</div><div class="field"><div class="line">Same as spoken</div></div>
+      <div class="label new">Speech</div><div class="field new"><span class="combo">Default (Claude Voice)</span>
+        <div class="help">Set under Dictation, with its fallbacks.</div></div>
+      <div class="label new">Refinement</div><div class="field new"><span class="combo">Default (OpenAI)</span>
+        <div class="help">Set under Refinement, with its fallbacks.</div></div>
+    </div>
+    <div class="buttons"><span class="ok">✓ OK</span><span>Cancel</span></div>
+  </div>
+</div>
+
+<div class="view coding">
+  <p class="caption">AI coding picks a fast Local Model. A Model row appears for the chosen service and starts
+    at that service's own setting. Cleanup None already means no refinement, so the Refinement row says so
+    rather than offering a None of its own.</p>
+  <div class="dialog">
+    <div class="titlebar">AI coding</div>
+    <div class="form">
+      <div class="label">Profile</div><div class="field" style="padding-top:5px">AI coding</div>
+      <div class="label">Cleanup</div><div class="field"><span class="combo">None</span>
+        <div class="help">Pastes your words as spoken, unless the profile translates.</div></div>
+      <div class="label">Tone</div><div class="field"><span class="combo">No tone</span>
+        <div class="help">Keeps the tone you spoke in.</div></div>
+      <div class="label">Instructions</div><div class="field"><div class="textarea">Keep it short and sign off with my first name.</div></div>
+      <div class="label">Output language</div><div class="field"><div class="line">Same as spoken</div></div>
+      <div class="label new">Speech</div><div class="field new"><span class="combo">Local Model</span>
+        <div class="help">Falls back to the services under Dictation.</div></div>
+      <div class="label new">Model</div><div class="field new"><span class="combo">Moonshine Small</span>
+        <div class="help">Downloaded Local Models. Get more under Local models.</div></div>
+      <div class="label new">Refinement</div><div class="field new"><span class="combo">Default (OpenAI)</span>
+        <div class="help">Cleanup None skips refinement for this profile.</div></div>
+    </div>
+    <div class="buttons"><span class="ok">✓ OK</span><span>Cancel</span></div>
+  </div>
+</div>
+
+<div class="view email">
+  <p class="caption">Email refines with Anthropic on Opus 5.5 while every other profile stays on OpenAI.
+    Thinking, speed and sign-in stay on the Refinement and Accounts pages; the Anthropic card shows there
+    because a profile uses it.</p>
+  <div class="dialog">
+    <div class="titlebar">Email</div>
+    <div class="form">
+      <div class="label">Profile</div><div class="field" style="padding-top:5px">Email</div>
+      <div class="label">Cleanup</div><div class="field"><span class="combo">High</span>
+        <div class="help">Also rewrites for clarity, flow and organization, keeping the facts.</div></div>
+      <div class="label">Tone</div><div class="field"><span class="combo">Formal</span>
+        <div class="help">Professional and polished.</div></div>
+      <div class="label">Instructions</div><div class="field"><div class="textarea filled">Sign off with "Best, Sam".</div></div>
+      <div class="label">Output language</div><div class="field"><div class="line">Same as spoken</div></div>
+      <div class="label new">Speech</div><div class="field new"><span class="combo">Default (Claude Voice)</span>
+        <div class="help">Set under Dictation, with its fallbacks.</div></div>
+      <div class="label new">Refinement</div><div class="field new"><span class="combo">Anthropic</span>
+        <div class="help">Falls back to the providers under Refinement.</div></div>
+      <div class="label new">Model</div><div class="field new"><span class="combo editable">claude-opus-5-5</span>
+        <div class="help">Thinking and speed are Anthropic's settings under Refinement.</div></div>
+    </div>
+    <div class="buttons"><span class="ok">✓ OK</span><span>Cancel</span></div>
+  </div>
+</div>
+
+<div class="view lang">
+  <p class="caption">Spoken Language is Japanese and the profile picks a Local Model that doesn't listen for it.
+    Dictation still works: the profile's service is skipped and the Dictation page's choice runs, the way an
+    unsupported fallback is skipped today. The caution says so before saving.</p>
+  <div class="dialog">
+    <div class="titlebar">Personal</div>
+    <div class="form">
+      <div class="label">Profile</div><div class="field" style="padding-top:5px">Personal</div>
+      <div class="label">Cleanup</div><div class="field"><span class="combo">Light</span>
+        <div class="help">Fixes punctuation, capitals and clear mistakes, and keeps your wording.</div></div>
+      <div class="label">Tone</div><div class="field"><span class="combo">Casual</span>
+        <div class="help">Relaxed and friendly.</div></div>
+      <div class="label">Instructions</div><div class="field"><div class="textarea">Keep it short and sign off with my first name.</div></div>
+      <div class="label">Output language</div><div class="field"><div class="line">Same as spoken</div></div>
+      <div class="label new">Speech</div><div class="field new"><span class="combo">Local Model</span></div>
+      <div class="label new">Model</div><div class="field new"><span class="combo">Parakeet 0.6B</span>
+        <div class="help caution">Parakeet 0.6B doesn't listen for Japanese, your Spoken Language, so this profile uses Claude Voice.</div></div>
+      <div class="label new">Refinement</div><div class="field new"><span class="combo">Default (OpenAI)</span>
+        <div class="help">Set under Refinement, with its fallbacks.</div></div>
+    </div>
+    <div class="buttons"><span class="ok">✓ OK</span><span>Cancel</span></div>
+  </div>
+</div>
+
+<div class="view list">
+  <p class="caption">On the Writing Profiles page, a profile's own services join its summary. Profiles on
+    Default read as they do today. The list also stays editable when Refinement is None, since a profile can
+    now turn refinement on for itself.</p>
+  <div class="settings">
+    <h3>Profiles</h3>
+    <div class="card">
+      <div class="row"><div class="text">When the app isn't recognized<small>Apps are matched to profiles under Output.</small></div><span class="combo">Other</span></div>
+      <div class="row"><div class="text">Work<small>Medium cleanup, no tone. Used in Terminal, Konsole and 20 more.</small></div><span class="chevron"></span></div>
+      <div class="row"><div class="text">Email<small><span class="new">High cleanup, formal tone, Anthropic claude-opus-5-5.</span> Used in Thunderbird, KMail and 1 more.</small></div><span class="chevron"></span></div>
+      <div class="row"><div class="text">Personal<small>Light cleanup, casual tone. Used in Signal, Discord and 4 more.</small></div><span class="chevron"></span></div>
+      <div class="row"><div class="text">AI coding<small><span class="new">No cleanup, Local Model Moonshine Small.</span> Used in T3 Code, ChatGPT and 28 more.</small></div><span class="chevron"></span></div>
+      <div class="row"><div class="text">Other<small>Medium cleanup, no tone. Used when no other profile matches.</small></div><span class="chevron"></span></div>
+      <div class="row"><div class="text">Add profile</div><span class="chevron"></span></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+</body>
+</html>

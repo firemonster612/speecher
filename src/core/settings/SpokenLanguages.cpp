@@ -130,6 +130,24 @@ QString spokenLanguageProblem(const SpeechSettings &speech, const QString &servi
         .arg(service, englishName(speech.language));
 }
 
+QString profileSpokenLanguageProblem(const SpeechSettings &profileSpeech,
+                                     const QString &serviceLabel,
+                                     const QString &instead)
+{
+    if (listensForSpokenLanguage(profileSpeech)) {
+        return {};
+    }
+    const LocalModel *model = profileSpeech.providerId == QStringLiteral("local")
+        ? findLocalModel(profileSpeech.local.modelId)
+        : nullptr;
+    const QString service = model ? model->name : serviceLabel;
+    if (profileSpeech.language == QLatin1String(kAutomaticSpokenLanguage)) {
+        return QStringLiteral("%1 can't detect the language, so this profile uses %2.").arg(service, instead);
+    }
+    return QStringLiteral("%1 doesn't listen for %2, your Spoken Language, so this profile uses %3.")
+        .arg(service, englishName(profileSpeech.language), instead);
+}
+
 bool isKnownSpokenLanguage(const QString &language)
 {
     if (language == QLatin1String(kAutomaticSpokenLanguage) || claudeVoiceLanguages.contains(language)

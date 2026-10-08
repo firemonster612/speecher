@@ -307,8 +307,15 @@ private slots:
         on.refinement.providerId = QStringLiteral("openai");
         const Capabilities capable{true, false, true};
 
+        // The profiles themselves stay open: one may pick a speech service or
+        // refine for itself.
         for (const QString &id : {QStringLiteral("defaultWritingProfile"),
                                   QStringLiteral("writingProfileBehavior")}) {
+            const SettingsRow &row = *schema.row(id);
+            QVERIFY2(!row.enabled || row.enabled(off, capable), qPrintable(id));
+        }
+        for (const QString &id : {QStringLiteral("additionalInstructions"),
+                                  QStringLiteral("customSystemPromptEnabled")}) {
             const SettingsRow &row = *schema.row(id);
             QVERIFY2(!row.enabled(off, capable), qPrintable(id));
             QVERIFY2(row.enabled(on, capable), qPrintable(id));
@@ -1393,7 +1400,9 @@ private slots:
         }();
         QCOMPARE(gridColumns, (QStringList{QStringLiteral("profile"), QStringLiteral("cleanup"),
                                            QStringLiteral("tone"), QStringLiteral("instructions*"),
-                                           QStringLiteral("outputLanguage")}));
+                                           QStringLiteral("outputLanguage"), QStringLiteral("profileSpeech"),
+                                           QStringLiteral("profileSpeechModel"), QStringLiteral("profileRefinement"),
+                                           QStringLiteral("profileRefinementModel")}));
 
         AppSettings settings;
         QCOMPARE(instructions.dialog.summary(settings), QStringLiteral("None"));
@@ -1554,6 +1563,10 @@ private slots:
     // A profile's row says what it does and where Speecher uses it.
     void aProfileSummarySaysWhatItDoesAndWhereItApplies()
     {
+        const ProviderLabels labels = providerLabels(chainContext());
+        const auto writingProfileSummary = [&labels](const AppSettings &settings, const QString &id) {
+            return speecher::writingProfileSummary(settings, id, labels);
+        };
         AppSettings settings;
         QCOMPARE(writingProfileSummary(settings, QStringLiteral("email")),
                  QStringLiteral("Medium cleanup, no tone. Used in Thunderbird, KMail and 1 more."));
@@ -1572,6 +1585,193 @@ private slots:
         QCOMPARE(writingProfileSummary(settings, QStringLiteral("custom_notes")),
                  QStringLiteral("No cleanup. Used when no other profile matches."));
         QCOMPARE(writingProfileSummary(settings, QStringLiteral("other")), QStringLiteral("Medium cleanup, no tone."));
+
+        // Its own services follow the tone; a profile that isn't refined
+        // names only its speech service.
+        settings.refinement.writingProfiles[0].refinementProvider = QStringLiteral("anthropic");
+        settings.refinement.writingProfiles[0].refinementModel = QStringLiteral("claude-opus-5-5");
+        settings.refinement.writingProfiles[1].speechProvider = QStringLiteral("local");
+        settings.refinement.writingProfiles[1].speechModel = QStringLiteral("moonshine-small");
+        settings.refinement.writingProfiles[1].refinementProvider = QStringLiteral("openai");
+        QCOMPARE(writingProfileSummary(settings, QStringLiteral("email")),
+                 QStringLiteral("High cleanup, Formal tone, Anthropic Claude Opus 5.5. Has its own instructions. "
+                                "Used in Gmail, Thunderbird and 2 more."));
+        QCOMPARE(writingProfileSummary(settings, QStringLiteral("custom_notes")),
+                 QStringLiteral("No cleanup, Local Model Moonshine Small. Used when no other profile matches."));
+    }
+
+    // The profile dialog's service rows: Default names the page's choice,
+    // a Model row appears for a provider whose model a profile picks, a
+    // model goes only with that provider, and a Local Model that can't hear
+    // the Spoken Language says what runs instead.
+    void aProfilePicksItsOwnServicesInItsDialog()
+    {
+        SchemaContext context = chainContext();
+        context.liveFacts = [] {
+            LiveFacts facts;
+            facts.downloadedModels = {QStringLiteral("parakeet"), QStringLiteral("moonshine-small")};
+            return facts;
+        };
+        const CollectionDescriptor grid =
+            buildSettingsSchema(context).row(QStringLiteral("writingProfileBehavior"))->collection;
+        const auto column = [&grid](const QString &id) {
+            return *std::find_if(grid.columns.cbegin(), grid.columns.cend(),
+                                 [&id](const CollectionColumn &column) { return column.id == id; });
+        };
+        const auto labelled = [](const QList<RowOption> &options) {
+            QStringList ids;
+            for (const RowOption &option : options) {
+                ids.append(option.id + QLatin1Char('=') + option.label);
+            }
+            return ids;
+        };
+        AppSettings settings;
+        settings.speech.language = QStringLiteral("ja");
+        settings.refinement.providerId = QStringLiteral("none");
+
+        const CollectionColumn speech = column(QStringLiteral("profileSpeech"));
+        QCOMPARE(labelled(speech.options(settings)),
+                 (QStringList{QStringLiteral("=Default (Claude Voice)"), QStringLiteral("claude=Claude Voice"),
+                              QStringLiteral("codex=ChatGPT Codex"), QStringLiteral("local=Local Model"),
+                              QStringLiteral("endpoint=Custom Endpoint")}));
+        QCOMPARE(speech.options(settings).first().help, QStringLiteral("Set under Dictation, with its fallbacks."));
+        QCOMPARE(labelled(column(QStringLiteral("profileRefinement")).options(settings)).first(),
+                 QStringLiteral("=Default (None)"));
+
+        QVariantMap record = grid.records(settings).at(3);
+        const CollectionColumn speechModel = column(QStringLiteral("profileSpeechModel"));
+        QVERIFY(speechModel.recordOptions(settings, record).isEmpty());
+        record.insert(QStringLiteral("profileSpeech"), QStringLiteral("local"));
+        record.insert(QStringLiteral("profileSpeechModel"), QStringLiteral("parakeet"));
+        QCOMPARE(labelled(speechModel.recordOptions(settings, record)),
+                 (QStringList{QStringLiteral("=Default (Parakeet 0.6B)"), QStringLiteral("parakeet=Parakeet 0.6B"),
+                              QStringLiteral("moonshine-small=Moonshine Small")}));
+        const FieldNote caution = speechModel.recordNote(settings, record);
+        QVERIFY(caution.caution);
+        QCOMPARE(caution.text, QStringLiteral("Parakeet 0.6B doesn't listen for Japanese, your Spoken Language, so "
+                                              "this profile uses Claude Voice."));
+        QCOMPARE(speech.recordNote(settings, record).text, QString());
+
+        const CollectionColumn refinementModel = column(QStringLiteral("profileRefinementModel"));
+        record.insert(QStringLiteral("profileRefinement"), QStringLiteral("anthropic"));
+        record.insert(QStringLiteral("profileRefinementModel"), QStringLiteral("claude-sonnet-5-5"));
+        QCOMPARE(labelled(refinementModel.recordOptions(settings, record)).mid(0, 2),
+                 (QStringList{QStringLiteral("=Default (Claude Opus 5.5)"),
+                              QStringLiteral("claude-opus-5-5=Claude Opus 5.5")}));
+        QCOMPARE(refinementModel.recordNote(settings, record).text,
+                 QStringLiteral("Thinking and speed are Anthropic's settings under Refinement."));
+        record.insert(QStringLiteral("cleanup"), QStringLiteral("none"));
+        QCOMPARE(column(QStringLiteral("profileRefinement")).recordNote(settings, record).text,
+                 QStringLiteral("Cleanup None skips refinement for this profile."));
+
+        // Haiku gets the caution its card under Refinement gives it.
+        record.insert(QStringLiteral("profileRefinementModel"), QStringLiteral("claude-haiku-4-5"));
+        const FieldNote haiku = refinementModel.recordNote(settings, record);
+        QVERIFY(haiku.caution);
+        QCOMPARE(haiku.text, QStringLiteral("Haiku may treat transcript as instructions."));
+        record.insert(QStringLiteral("profileRefinementModel"), QStringLiteral("claude-sonnet-5-5"));
+
+        // An OpenAI model a profile picks is kept, as an Anthropic one is.
+        QVariantMap openAiModel = record;
+        openAiModel.insert(QStringLiteral("profileRefinement"), QStringLiteral("openai"));
+        openAiModel.insert(QStringLiteral("profileRefinementModel"), QStringLiteral("gpt-5.5"));
+        QList<QVariantMap> picked = grid.records(settings);
+        picked[3] = openAiModel;
+        AppSettings withOpenAi = settings;
+        grid.apply(withOpenAi, picked);
+        QCOMPARE(writingProfileSettingsFor(withOpenAi.refinement.writingProfiles, WritingProfile::AiCoding).refinementModel,
+                 QStringLiteral("gpt-5.5"));
+
+        // A model left from another provider goes with the provider change:
+        // OpenAI doesn't offer the Claude model, and saving drops it.
+        QVariantMap toOpenAi = record;
+        toOpenAi.insert(QStringLiteral("profileRefinement"), QStringLiteral("openai"));
+        QVERIFY(!ids(refinementModel.recordOptions(settings, toOpenAi)).contains(QStringLiteral("claude-sonnet-5-5")));
+        QList<QVariantMap> switched = grid.records(settings);
+        switched[3] = toOpenAi;
+        AppSettings openAi = settings;
+        grid.apply(openAi, switched);
+        QCOMPARE(writingProfileSettingsFor(openAi.refinement.writingProfiles, WritingProfile::AiCoding).refinementModel,
+                 QString());
+
+        record.insert(QStringLiteral("profileSpeech"), QStringLiteral("codex"));
+        QList<QVariantMap> records = grid.records(settings);
+        records[3] = record;
+        grid.apply(settings, records);
+        const WritingProfileSettings saved =
+            writingProfileSettingsFor(settings.refinement.writingProfiles, WritingProfile::AiCoding);
+        QCOMPARE(saved.speechProvider, QStringLiteral("codex"));
+        QCOMPARE(saved.speechModel, QString());
+        QCOMPARE(saved.refinementProvider, QStringLiteral("anthropic"));
+        QCOMPARE(saved.refinementModel, QStringLiteral("claude-sonnet-5-5"));
+    }
+
+    // A model no list offers, such as one a later release stopped
+    // suggesting, survives saving any profile until its own is changed.
+    void aSavedModelNoListOffersIsKept()
+    {
+        const CollectionDescriptor grid =
+            buildSettingsSchema(chainContext()).row(QStringLiteral("writingProfileBehavior"))->collection;
+        const CollectionColumn model = *std::find_if(grid.columns.cbegin(), grid.columns.cend(),
+                                                     [](const CollectionColumn &column) {
+                                                         return column.id == QStringLiteral("profileRefinementModel");
+                                                     });
+        AppSettings settings;
+        settings.refinement.writingProfiles[1].refinementProvider = QStringLiteral("anthropic");
+        settings.refinement.writingProfiles[1].refinementModel = QStringLiteral("claude-sonnet-4-6");
+        QVERIFY(ids(model.recordOptions(settings, grid.records(settings).at(1))).contains(QStringLiteral("claude-sonnet-4-6")));
+        AppSettings saved = settings;
+        grid.apply(saved, grid.records(settings));
+        QCOMPARE(writingProfileSettingsFor(saved.refinement.writingProfiles, WritingProfile::Email).refinementModel,
+                 QStringLiteral("claude-sonnet-4-6"));
+
+        QList<QVariantMap> switched = grid.records(settings);
+        switched[1].insert(QStringLiteral("profileRefinement"), QStringLiteral("openai"));
+        QVERIFY(!ids(model.recordOptions(settings, switched.at(1))).contains(QStringLiteral("claude-sonnet-4-6")));
+        grid.apply(settings, switched);
+        QCOMPARE(writingProfileSettingsFor(settings.refinement.writingProfiles, WritingProfile::Email).refinementModel,
+                 QString());
+    }
+
+    // A service a profile names that this build lacks stays in its dialog,
+    // disabled, so an unrelated edit keeps it.
+    void aProfileKeepsAServiceThisBuildLacks()
+    {
+        const CollectionDescriptor grid =
+            buildSettingsSchema(fakeContext()).row(QStringLiteral("writingProfileBehavior"))->collection;
+        const CollectionColumn speech = *std::find_if(grid.columns.cbegin(), grid.columns.cend(),
+                                                      [](const CollectionColumn &column) {
+                                                          return column.id == QStringLiteral("profileSpeech");
+                                                      });
+        AppSettings settings;
+        settings.refinement.writingProfiles[3].speechProvider = QStringLiteral("local");
+        const QList<RowOption> options = speech.recordOptions(settings, grid.records(settings).at(3));
+        QCOMPARE(options.last().id, QStringLiteral("local"));
+        QCOMPARE(options.last().label, QStringLiteral("Provider not in this build"));
+        QVERIFY(!options.last().enabled);
+        grid.apply(settings, grid.records(settings));
+        QCOMPARE(writingProfileSettingsFor(settings.refinement.writingProfiles, WritingProfile::AiCoding).speechProvider,
+                 QStringLiteral("local"));
+    }
+
+    // A profile can pick a speech service and refine for itself, so its list
+    // stays open while the Refinement page says None, and a provider only a
+    // profile picks still shows its card.
+    void profilesStayEditableAndTheirProvidersShowTheirCards()
+    {
+        const SettingsSchema schema = buildSettingsSchema(chainContext());
+        AppSettings settings;
+        settings.refinement.providerId = QStringLiteral("none");
+        const SettingsRow *profiles = schema.row(QStringLiteral("writingProfileBehavior"));
+        QVERIFY(!profiles->enabled || profiles->enabled(settings, Capabilities{}));
+        const SettingsRow *instructions = schema.row(QStringLiteral("additionalInstructions"));
+        QVERIFY(!instructions->enabled(settings, Capabilities{}));
+        const SettingsRow *anthropicModel = schema.row(QStringLiteral("anthropicModel"));
+        QVERIFY(!anthropicModel->visible(settings, Capabilities{}));
+
+        settings.refinement.writingProfiles[1].refinementProvider = QStringLiteral("anthropic");
+        QVERIFY(instructions->enabled(settings, Capabilities{}));
+        QVERIFY(anthropicModel->visible(settings, Capabilities{}));
     }
 
     // A row no pane shows is a setting nobody can reach, and a row two panes

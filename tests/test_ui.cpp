@@ -1696,6 +1696,57 @@ private slots:
         QCOMPARE(page->findChildren<QDialog *>(QStringLiteral("collectionRecordDialog")).size(), 1);
     }
 
+    // A profile's dialog follows its own choices: a Model row appears for a
+    // service whose model it picks, a model resets when its provider
+    // changes, and the Refinement note follows the cleanup level.
+    void aProfilesServiceRowsFollowItsChoices()
+    {
+        ProviderRegistry providers;
+        for (const QString &id : {QStringLiteral("claude"), QStringLiteral("local")}) {
+            providers.registerSpeechProvider({id, id, {}},
+                                             [](QObject *parent) { return new FakeSpeechTranscriber(parent); });
+        }
+        for (const QString &id : {QStringLiteral("openai"), QStringLiteral("anthropic")}) {
+            providers.registerRefinementProvider({id, id}, [](QObject *parent) { return new FakeRefiner(parent); });
+        }
+        const std::shared_ptr<const PlatformComposition> platform = platformComposition();
+        const std::unique_ptr<SchemaSettingsPage> page =
+            schemaPage(QStringLiteral("writingProfiles"), *platform, providers);
+        page->load(AppSettings{});
+        page->findChild<QPushButton *>(QStringLiteral("writingProfile_email"))->click();
+        QDialog *dialog = shownRecordDialog(*page);
+        QVERIFY(dialog);
+        const auto combo = [dialog](const QString &id) { return dialog->findChild<QComboBox *>(id); };
+        const auto pick = [&combo](const QString &id, const QString &value) {
+            combo(id)->setCurrentIndex(combo(id)->findData(value));
+        };
+
+        QVERIFY(!combo(QStringLiteral("profileSpeechModel"))->isVisibleTo(dialog));
+        pick(QStringLiteral("profileSpeech"), QStringLiteral("local"));
+        QVERIFY(combo(QStringLiteral("profileSpeechModel"))->isVisibleTo(dialog));
+
+        pick(QStringLiteral("profileRefinement"), QStringLiteral("anthropic"));
+        pick(QStringLiteral("profileRefinementModel"), QStringLiteral("claude-sonnet-5-5"));
+        QCOMPARE(combo(QStringLiteral("profileRefinementModel"))->currentData().toString(),
+                 QStringLiteral("claude-sonnet-5-5"));
+        pick(QStringLiteral("profileRefinement"), QStringLiteral("openai"));
+        QCOMPARE(combo(QStringLiteral("profileRefinementModel"))->currentData().toString(), QString());
+
+        auto *refinementHelp = dialog->findChild<QLabel *>(QStringLiteral("profileRefinementHelp"));
+        QCOMPARE(refinementHelp->text(), QStringLiteral("Falls back to the providers under Refinement."));
+        pick(QStringLiteral("cleanup"), QStringLiteral("none"));
+        QCOMPARE(refinementHelp->text(), QStringLiteral("Cleanup None skips refinement for this profile."));
+
+        acceptRecordDialog(dialog);
+        AppSettings applied;
+        page->appendToDraft(applied);
+        const WritingProfileSettings email =
+            writingProfileSettingsFor(applied.refinement.writingProfiles, WritingProfile::Email);
+        QCOMPARE(email.speechProvider, QStringLiteral("local"));
+        QCOMPARE(email.refinementProvider, QStringLiteral("openai"));
+        QCOMPARE(email.refinementModel, QString());
+    }
+
     // Edit… opens the selected term; its profiles can be limited, but not to
     // none, and its context is kept with it.
     void aTermsContextAndProfilesAreEditedInItsDialog()

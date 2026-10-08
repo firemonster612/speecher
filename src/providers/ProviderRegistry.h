@@ -51,6 +51,11 @@ public:
     QList<ProviderDescriptor> refinementProviders() const;
     // The id itself for one this registry does not offer.
     QString refinementProviderLabel(const QString &id) const;
+    // Both, by role, for as long as the registry lives.
+    ProviderLabels labels() const;
+    // withWritingProfileProviders, passing over a profile's speech service
+    // this registry lacks, as one that can't hear the Spoken Language is.
+    AppSettings withProfileProviders(const AppSettings &settings, const WritingProfileSettings &profile) const;
 
     SpeechTranscriber *speechProvider(const QString &id);
     TranscriptRefiner *refinementProvider(const QString &id);

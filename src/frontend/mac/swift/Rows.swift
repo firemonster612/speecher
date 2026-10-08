@@ -670,11 +670,11 @@ struct CredentialField: View {
     }
 }
 
-/// The cleanup strength, optional tone and instructions of each writing
-/// profile. This is a run of ordinary settings rows rather than an editable
-/// table — one row per profile, each with its pop-up buttons and its
-/// instructions under them. A custom profile adds its name and Delete, and
-/// Add profile follows the rows.
+/// The cleanup strength, optional tone, instructions and services of each
+/// writing profile. This is a run of ordinary settings rows rather than an
+/// editable table — one row per profile, each with its pop-up buttons, its
+/// instructions under them and its services under those. A custom profile
+/// adds its name and Delete, and Add profile follows the rows.
 struct WritingProfileRows: View {
     let row: SettingsRowModel
     @ObservedObject var model: AppModel
@@ -683,7 +683,24 @@ struct WritingProfileRows: View {
     private var records: [[String: Any]] { row.value as? [[String: Any]] ?? [] }
 
     private var choices: [CollectionColumnModel] {
-        row.collection?.columns.filter { $0.kind == .choice } ?? []
+        row.collection?.columns.filter { $0.kind == .choice && !$0.ownLine } ?? []
+    }
+
+    /// Each on a line of its own under the instructions: a profile's services.
+    private var ownLines: [CollectionColumnModel] {
+        row.collection?.columns.filter { $0.kind == .choice && $0.ownLine } ?? []
+    }
+
+    /// A column's options for one profile: its own where they depend on the
+    /// profile, such as the models of the service it picked.
+    private func options(_ column: CollectionColumnModel, _ index: Int) -> [RowOptionModel] {
+        column.recordOptions.indices.contains(index) ? column.recordOptions[index] : column.options
+    }
+
+    /// What a line says under its picker, as core words it for this profile.
+    private func note(_ column: CollectionColumnModel, _ index: Int) -> (text: String, caution: Bool) {
+        guard column.recordNotes.indices.contains(index) else { return ("", false) }
+        return (column.recordNotes[index], column.recordNoteCautions[index].boolValue)
     }
 
     private var texts: [CollectionColumnModel] {
@@ -728,6 +745,28 @@ struct WritingProfileRows: View {
                                   multiline: column.multiline) { edited in
                             let field = choice(index, column.columnId)
                             if edited != field.wrappedValue { field.wrappedValue = edited }
+                        }
+                    }
+                }
+                // A line with nothing to offer this profile, a model for a
+                // service without models, is left out.
+                ForEach(ownLines.filter { !options($0, index).isEmpty }, id: \.columnId) { column in
+                    LabeledContent(column.title) {
+                        VStack(alignment: .leading) {
+                            Picker(column.title, selection: choice(index, column.columnId)) {
+                                ForEach(options(column, index), id: \.rowOptionId) { option in
+                                    Text(option.label).tag(option.rowOptionId)
+                                        .selectionDisabled(!option.enabled)
+                                }
+                            }
+                            .labelsHidden()
+                            .fixedSize()
+                            let said = note(column, index)
+                            if !said.text.isEmpty {
+                                Text(said.text)
+                                    .font(.caption)
+                                    .foregroundStyle(said.caution ? Color.red : Color.secondary)
+                            }
                         }
                     }
                 }
