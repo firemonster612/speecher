@@ -6,7 +6,132 @@
 
 #include <memory>
 
+#ifdef SPEECHER_WITH_PULSE
+#include <QProcess>
+
+#include <pulse/pulseaudio.h>
+
+#include <optional>
+#endif
+
 using namespace speecher;
+
+#ifdef SPEECHER_WITH_PULSE
+namespace {
+
+// pactl's output, or nothing when it fails, as it does with no sound server.
+std::optional<QString> pactl(const QStringList &arguments)
+{
+    QProcess process;
+    process.start(QStringLiteral("pactl"), arguments);
+    if (!process.waitForFinished(5000) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        return std::nullopt;
+    }
+    return QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+}
+
+QStringList pactlLines(const QStringList &arguments)
+{
+    return pactl(arguments).value_or(QString()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+}
+
+// The name of the source each recording stream reads, by stream index.
+QHash<QString, QString> recordedSources()
+{
+    QHash<QString, QString> sourceNames;
+    for (const QString &line : pactlLines({QStringLiteral("list"), QStringLiteral("short"), QStringLiteral("sources")})) {
+        const QStringList fields = line.split(QLatin1Char('\t'));
+        sourceNames.insert(fields.value(0), fields.value(1));
+    }
+    QHash<QString, QString> sources;
+    for (const QString &line :
+         pactlLines({QStringLiteral("list"), QStringLiteral("short"), QStringLiteral("source-outputs")})) {
+        const QStringList fields = line.split(QLatin1Char('\t'));
+        sources.insert(fields.value(0), sourceNames.value(fields.value(1)));
+    }
+    return sources;
+}
+
+bool isRecorded(const QString &source)
+{
+    return recordedSources().values().contains(source);
+}
+
+// pactl cannot end a single stream, so this asks the server itself.
+bool killSourceOutput(uint32_t index)
+{
+    pa_mainloop *mainloop = pa_mainloop_new();
+    pa_context *context = pa_context_new(pa_mainloop_get_api(mainloop), "Speecher test");
+    const auto release = qScopeGuard([&] {
+        pa_context_disconnect(context);
+        pa_context_unref(context);
+        pa_mainloop_free(mainloop);
+    });
+    if (pa_context_connect(context, nullptr, PA_CONTEXT_NOAUTOSPAWN, nullptr) < 0) {
+        return false;
+    }
+    for (pa_context_state_t state; (state = pa_context_get_state(context)) != PA_CONTEXT_READY;) {
+        if (!PA_CONTEXT_IS_GOOD(state) || pa_mainloop_iterate(mainloop, 1, nullptr) < 0) {
+            return false;
+        }
+    }
+    bool killed = false;
+    pa_operation *operation = pa_context_kill_source_output(
+        context,
+        index,
+        [](pa_context *, int success, void *killed) { *static_cast<bool *>(killed) = success; },
+        &killed);
+    if (!operation) {
+        return false;
+    }
+    while (pa_operation_get_state(operation) == PA_OPERATION_RUNNING && pa_mainloop_iterate(mainloop, 1, nullptr) >= 0) {
+    }
+    pa_operation_unref(operation);
+    return killed;
+}
+
+// Two null sinks to move the default output between, the first of them the
+// default until they are unloaded and the previous default restored.
+class NullSinks {
+public:
+    NullSinks()
+        : m_previousDefault(pactl({QStringLiteral("get-default-sink")}).value_or(QString()))
+    {
+        for (const QString &name : {first, second}) {
+            if (const std::optional<QString> module = pactl(
+                    {QStringLiteral("load-module"), QStringLiteral("module-null-sink"), QStringLiteral("sink_name=") + name})) {
+                m_modules.append(*module);
+            }
+        }
+        m_ready = m_modules.size() == 2 && pactl({QStringLiteral("set-default-sink"), first});
+    }
+    ~NullSinks()
+    {
+        if (!m_previousDefault.isEmpty()) {
+            pactl({QStringLiteral("set-default-sink"), m_previousDefault});
+        }
+        for (const QString &module : std::as_const(m_modules)) {
+            pactl({QStringLiteral("unload-module"), module});
+        }
+    }
+    Q_DISABLE_COPY_MOVE(NullSinks)
+
+    bool isReady() const { return m_ready; }
+
+    const QString first = QStringLiteral("speecher_test_%1_first").arg(QCoreApplication::applicationPid());
+    const QString second = QStringLiteral("speecher_test_%1_second").arg(QCoreApplication::applicationPid());
+    // PulseAudio and pipewire-pulse both name a sink's monitor source this way.
+    const QString firstMonitor = first + QStringLiteral(".monitor");
+    const QString secondMonitor = second + QStringLiteral(".monitor");
+
+private:
+    QString m_previousDefault;
+    QStringList m_modules;
+    bool m_ready = false;
+};
+
+} // namespace
+#endif
 
 
 class PlatformLiveTests : public QObject {
@@ -106,10 +231,63 @@ private slots:
 
         std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
         QVERIFY(capture);
+        QSignalSpy failed(capture.get(), &AudioInput::failed);
         QString error;
         QVERIFY(!capture->start(&error));
         QVERIFY(error.startsWith(QStringLiteral("Could not connect to the sound server")));
         QVERIFY(!capture->isActive());
+        // The failed start is reported once, by its return value.
+        QTest::qWait(100);
+        QCOMPARE(failed.count(), 0);
+    }
+
+    void systemAudioCaptureFollowsDefaultOutput()
+    {
+        if (!pactl({QStringLiteral("info")})) {
+            QSKIP("No sound server, or no pactl to change its default output");
+        }
+        NullSinks sinks;
+        QVERIFY(sinks.isReady());
+        std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
+        QSignalSpy failed(capture.get(), &AudioInput::failed);
+        QString error;
+        QVERIFY2(capture->start(&error), qPrintable(error));
+        QTRY_VERIFY(isRecorded(sinks.firstMonitor));
+
+        QVERIFY(pactl({QStringLiteral("set-default-sink"), sinks.second}));
+        QTRY_VERIFY(isRecorded(sinks.secondMonitor));
+        QVERIFY(!isRecorded(sinks.firstMonitor));
+        QVERIFY(capture->isActive());
+        QCOMPARE(failed.count(), 0);
+    }
+
+    void systemAudioCaptureIgnoresFailureOfReplacedStream()
+    {
+        if (!pactl({QStringLiteral("info")})) {
+            QSKIP("No sound server, or no pactl to change its default output");
+        }
+        NullSinks sinks;
+        QVERIFY(sinks.isReady());
+        std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
+        QSignalSpy failed(capture.get(), &AudioInput::failed);
+        QString error;
+        QVERIFY2(capture->start(&error), qPrintable(error));
+        QTRY_VERIFY(isRecorded(sinks.firstMonitor));
+
+        // Nothing here handles events, so the killed stream's failure reaches
+        // the input only after the new default output's stream replaced it.
+        QVERIFY(killSourceOutput(recordedSources().key(sinks.firstMonitor).toUInt()));
+        QVERIFY(pactl({QStringLiteral("set-default-sink"), sinks.second}));
+        QDeadlineTimer deadline(5000);
+        while (!isRecorded(sinks.secondMonitor) && !deadline.hasExpired()) {
+            QThread::msleep(50);
+        }
+        QVERIFY(isRecorded(sinks.secondMonitor));
+
+        QTest::qWait(500);
+        QCOMPARE(failed.count(), 0);
+        QVERIFY(capture->isActive());
+        QVERIFY(isRecorded(sinks.secondMonitor));
     }
 #endif
 
