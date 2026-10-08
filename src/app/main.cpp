@@ -59,6 +59,8 @@
 #include <optional>
 #include <thread>
 #ifdef Q_OS_WIN
+#include <fcntl.h>
+#include <io.h>
 #include <windows.h>
 #else
 #include <termios.h>
@@ -190,6 +192,58 @@ static bool stderrIsTerminal()
 }
 #endif
 
+#ifdef Q_OS_WIN
+// Whether stdin is a console, which `transcribe -` would only wait on. A
+// GUI-subsystem program is not handed the console as its stdin, so an unset
+// one is the console too.
+static bool stdinIsTerminal()
+{
+    DWORD mode = 0;
+    return unredirected(STD_INPUT_HANDLE) || GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mode);
+}
+
+static BOOL WINAPI removeStdinSpoolOnConsoleEvent(DWORD)
+{
+    removeStdinSpool();
+    // The default handler then ends the process.
+    return FALSE;
+}
+#else
+static bool stdinIsTerminal()
+{
+    return isatty(STDIN_FILENO);
+}
+
+// One the parent ignores, as nohup does SIGHUP, stays ignored.
+static void handleUnlessIgnored(int signal, void (*handler)(int))
+{
+    if (std::signal(signal, handler) == SIG_IGN) {
+        std::signal(signal, SIG_IGN);
+    }
+}
+
+static void removeStdinSpoolAndEnd(int signal)
+{
+    removeStdinSpool();
+    std::signal(signal, SIG_DFL);
+    std::raise(signal);
+}
+#endif
+
+// A signal ends `transcribe -` without unwinding, so these remove the spooled
+// audio first; SIGPIPE covers a reader that quit early, as `| true` does. On
+// Windows a console event's removal is best effort, see removeStdinSpool.
+static void installStdinSpoolRemoval()
+{
+#ifdef Q_OS_WIN
+    SetConsoleCtrlHandler(removeStdinSpoolOnConsoleEvent, TRUE);
+#else
+    for (const int signal : {SIGINT, SIGTERM, SIGHUP, SIGPIPE}) {
+        handleUnlessIgnored(signal, removeStdinSpoolAndEnd);
+    }
+#endif
+}
+
 // Set by Ctrl-C, or Enter at a terminal, while `speecher listen` records.
 static std::atomic<bool> g_listenStopRequested{false};
 
@@ -266,10 +320,7 @@ static std::function<bool(char *)> openTerminalInput()
     std::atexit(restoreTerminal);
     // SIGABRT covers an uncaught exception.
     for (const int signal : {SIGTERM, SIGHUP, SIGABRT}) {
-        // One the parent ignores, as nohup does SIGHUP, stays ignored.
-        if (std::signal(signal, restoreTerminalAndEnd) == SIG_IGN) {
-            std::signal(signal, SIG_IGN);
-        }
+        handleUnlessIgnored(signal, restoreTerminalAndEnd);
     }
     termios terminal = g_savedTerminal;
     // Without canonical mode Ctrl-C needs no Enter after it to be read.
@@ -427,8 +478,19 @@ int main(int argc, char **argv)
         LocalModelStore localModels;
         ProviderRegistry providers;
         registerProviders(providers, settings.secrets(), &localModels);
+        if (decision.transcribeFiles == QStringList{kStdinFile}) {
+            if (stdinIsTerminal()) {
+                std::cerr << "transcribe - reads audio piped to stdin, not a terminal\n";
+                return 2;
+            }
+#ifdef Q_OS_WIN
+            // Audio piped to `transcribe -` is binary.
+            _setmode(_fileno(stdin), _O_BINARY);
+#endif
+            installStdinSpoolRemoval();
+        }
         return runHeadlessTranscribe(decision.transcribeFiles, decision.headless, &settings, &providers,
-                                     std::cout, std::cerr, stderrIsTerminal());
+                                     std::cin, std::cout, std::cerr, stderrIsTerminal());
     }
     if (decision.mode == LaunchMode::ListenHeadless) {
         // As transcribe: its own microphone and providers, beside whatever a

@@ -130,6 +130,9 @@ Transcribe without a window, printing the results:
   --language <code>        spoken language: a code such as de, or auto
   --output <beside|none|DIR>
                            where to save <name>-transcribed.txt (default beside)
+  -                        as the only file, read the audio from stdin; needs
+                           --stdout, --json or --output DIR, and saves as
+                           stdin-transcribed.txt
   --stdout                 also print each transcript
   --raw                    print and save the raw transcript, not the refined one
   --srt | --vtt            save and print SRT or WebVTT subtitles instead, from
@@ -427,17 +430,41 @@ bool readSharedChoice(const QStringList &arguments,
     return true;
 }
 
+// Finishes reading `speecher transcribe -`, which always runs headless and
+// has no folder to save beside, so it saves nowhere unless given one. Returns
+// an error message for a usage mistake.
+QString finishStdinTranscribe(const QStringList &files, bool besideGiven, CommandLineDecision *decision)
+{
+    HeadlessTranscribeOptions &options = decision->headless;
+    if (files.size() > 1) {
+        return QStringLiteral("- reads stdin and must be the only file");
+    }
+    if (besideGiven) {
+        return QStringLiteral("--output beside cannot be used with -, which has no folder");
+    }
+    if (options.destination == TranscriptDestination::BesideInput) {
+        options.destination = TranscriptDestination::None;
+    }
+    if (!options.printTranscripts && !options.json && options.destination != TranscriptDestination::Folder) {
+        return QStringLiteral("transcribe - needs --stdout, --json or --output <folder>");
+    }
+    decision->transcribeFiles = files;
+    decision->mode = LaunchMode::TranscribeHeadless;
+    return {};
+}
+
 // Reads `speecher transcribe`'s arguments. Returns an error message for a
 // usage mistake.
 QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecision *decision)
 {
     HeadlessTranscribeOptions &options = decision->headless;
     bool headless = false;
+    bool besideGiven = false;
     QStringList files;
     bool optionsEnded = false;
     for (qsizetype index = 0; index < arguments.size(); ++index) {
         const QString argument = arguments.at(index);
-        if (optionsEnded || !argument.startsWith(QLatin1Char('-'))) {
+        if (optionsEnded || !argument.startsWith(QLatin1Char('-')) || argument == kStdinFile) {
             files << argument;
             continue;
         }
@@ -469,6 +496,7 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
             options.format = format;
         } else if (argument == QStringLiteral("--output")) {
             const std::optional<QString> given = value();
+            besideGiven = given && given->toLower() == QStringLiteral("beside");
             if (!given) {
                 error = QStringLiteral("--output requires beside, none or a folder");
             } else if (given->toLower() == QStringLiteral("beside")) {
@@ -496,6 +524,9 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
     }
     if (files.isEmpty()) {
         return QStringLiteral("transcribe needs at least one audio file");
+    }
+    if (files.contains(kStdinFile)) {
+        return finishStdinTranscribe(files, besideGiven, decision);
     }
     decision->transcribeFiles = absolutePaths(files);
     if (!headless) {
