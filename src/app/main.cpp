@@ -187,16 +187,6 @@ static void attachParentConsole()
     std::cerr.clear();
 }
 
-// TEMP diagnostics for issue #239; removed once the daemon detach is confirmed.
-static void logStreamState(const char *tag)
-{
-    qInfo().noquote() << QStringLiteral("CONDIAG %1 in_fd=%2 out_fd=%3 err_fd=%4")
-                             .arg(QString::fromLatin1(tag))
-                             .arg(_fileno(stdin))
-                             .arg(_fileno(stdout))
-                             .arg(_fileno(stderr));
-}
-
 // Points a standard stream at NUL. freopen closes the handle the stream had,
 // which the CRT took from the standard handle at startup, and the standard
 // handle is pointed at NUL to match. A stream the CRT never bound a descriptor
@@ -205,15 +195,7 @@ static void logStreamState(const char *tag)
 // failed freopen or an unbound stream stops here instead.
 static void reopenOnNul(FILE *stream, const char *mode, DWORD standardHandle)
 {
-    qInfo().noquote() << QStringLiteral("CONDIAG reopenOnNul(%1) fd_before=%2")
-                             .arg(QString::fromLatin1(mode))
-                             .arg(_fileno(stream));
-    FILE *const reopened = std::freopen("NUL", mode, stream);
-    qInfo().noquote() << QStringLiteral("CONDIAG reopenOnNul(%1) freopen_ok=%2 fd_after=%3")
-                             .arg(QString::fromLatin1(mode))
-                             .arg(reopened != nullptr ? 1 : 0)
-                             .arg(_fileno(stream));
-    if (reopened == nullptr) {
+    if (std::freopen("NUL", mode, stream) == nullptr) {
         return;
     }
     const int fd = _fileno(stream);
@@ -237,13 +219,10 @@ static void reopenOnNul(FILE *stream, const char *mode, DWORD standardHandle)
 // handler fail-fasts the process.
 static void detachParentConsole()
 {
-    logStreamState("detach-begin");
     reopenOnNul(stdin, "r", STD_INPUT_HANDLE);
     reopenOnNul(stdout, "w", STD_OUTPUT_HANDLE);
     reopenOnNul(stderr, "w", STD_ERROR_HANDLE);
-    logStreamState("before-freeconsole");
     FreeConsole();
-    logStreamState("after-freeconsole");
     std::cout.clear();
     std::cerr.clear();
     const HANDLE launcherWait = OpenEventW(EVENT_MODIFY_STATE, FALSE,
