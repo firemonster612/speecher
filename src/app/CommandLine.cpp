@@ -846,8 +846,11 @@ int watchStatus(bool json, const std::shared_ptr<const SingleInstancePlatform> &
 {
     QString printed;
     const auto print = [&](const IpcResponse &status) {
-        // A change the line does not show, such as the idle status the
-        // Speecher that just started answers, prints nothing.
+        // A line the same as the last carries nothing new for a status
+        // bar, so it is not printed again: in text a change the line does
+        // not show, such as the idle status the Speecher that just started
+        // answers; with --json only an identical object, so a changed
+        // problem still prints.
         const QString line = statusLine(status, json);
         if (line == printed) {
             return;
@@ -864,10 +867,15 @@ int watchStatus(bool json, const std::shared_ptr<const SingleInstancePlatform> &
             refusal = status.message;
         }
     };
+    // Until it first answers, a Speecher that takes the connection but
+    // writes nothing is starting, quitting or has every slot taken, so it is
+    // tried again as though none ran. Once it has answered, the watch ends
+    // when it closes the connection.
     QString ipcError;
     IpcCommandResult result;
     while ((result = SingleInstanceIpc::watchStatus(onStatus, 2500, platform, &ipcError))
-           == IpcCommandResult::Unavailable) {
+               == IpcCommandResult::Unavailable
+           || result == IpcCommandResult::NoResponse) {
         print(idleStatus());
         QThread::msleep(kWatchConnectRetryMs);
     }

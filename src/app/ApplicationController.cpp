@@ -279,7 +279,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     const auto publishStatus = [this] { m_ipc->publishStatus(statusResponse()); };
     connect(m_session, &DictationSession::stateChanged, this, publishStatus);
     connect(m_recording, &RecordingSession::recordingChanged, this, publishStatus);
-    connect(m_recording, &RecordingSession::streamChanged, this, publishStatus);
+    connect(m_recording, &RecordingSession::problemChanged, this, publishStatus);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
     connect(m_pauseShortcutBinder, &GlobalShortcutBinder::activated, m_session, &DictationSession::togglePause);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateSessionShortcuts);

@@ -236,6 +236,13 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                 socket, QDeadlineTimer(incompleteRequestTimeoutMs));
             m_expirySweep.start();
             connect(socket, &QLocalSocket::readyRead, this, [this, socket] {
+                // A watcher has asked all it may: another watchStatus would
+                // write it every line twice, and any other command's answer
+                // would end its watch.
+                if (m_statusWatchers.contains(socket)) {
+                    socket->readAll();
+                    return;
+                }
                 // Collect complete frames before emitting: a commandReceived slot can
                 // disconnect the socket, whose disconnected handler removes the buffer
                 // this loop would otherwise still reference.
@@ -280,6 +287,9 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                 // Hold deletion off until every frame is handled.
                 m_socketsInCommand.insert(socket);
                 for (const QByteArray &frame : frames) {
+                    if (m_statusWatchers.contains(socket)) {
+                        break;
+                    }
                     QJsonParseError parseError;
                     const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
                     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {

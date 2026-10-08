@@ -1,10 +1,8 @@
 #include "common/test_suites.h"
-#include "app/ApplicationController.h"
 #include "app/CommandLine.h"
 #include "app/ProvidersCommand.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/SettingsStore.h"
-#include "dictation/DictationSession.h"
 #include "platform/PopupPositioner.h"
 #include "platform/PopupSurface.h"
 #include <QCoreApplication>
@@ -884,6 +882,55 @@ private slots:
         QCOMPARE(QString::fromStdString(err.str()), QString());
     }
 
+    // A Speecher that takes the connection but closes it unanswered, as one
+    // starting, quitting or with every slot taken does, is tried again.
+    void statusWatchRetriesASpeecherThatHasNotAnswered()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        auto ipc = std::make_unique<SingleInstanceIpc>(platform);
+        QVERIFY(ipc->listen());
+        int watches = 0;
+        connect(ipc.get(), &SingleInstanceIpc::commandReceived, ipc.get(),
+                [&ipc, &watches](const QString &, const QString &, QLocalSocket *socket) {
+                    if (++watches == 1) {
+                        socket->disconnectFromServer();
+                    } else {
+                        ipc->addStatusWatcher(socket, {true, QStringLiteral("listening"), {}});
+                    }
+                });
+        std::ostringstream out;
+        std::ostringstream err;
+        int exitCode = -1;
+        std::unique_ptr<QThread> cli =
+            startCommandLine(statusDecision(QStringLiteral("watchStatus"), false), platform, out, err, exitCode);
+        QTRY_COMPARE_WITH_TIMEOUT(watches, 2, 5000);
+        QCoreApplication::processEvents();
+        ipc.reset();
+
+        QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
+        QCOMPARE(exitCode, 0);
+        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("idle\nlistening\n"));
+        QCOMPARE(QString::fromStdString(err.str()), QString());
+    }
+
+    // status --json with no Speecher running prints the idle status.
+    void statusJsonWithoutSpeecherIsIdle()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        std::ostringstream out;
+        std::ostringstream err;
+        int exitCode = -1;
+        std::unique_ptr<QThread> cli = startCommandLine(statusDecision(QStringLiteral("status"), true),
+                                                        std::make_shared<FakeSingleInstancePlatform>(name), out, err,
+                                                        exitCode);
+        QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
+        QCOMPARE(exitCode, 0);
+        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral(R"({"recording":false,"state":"idle"})" "\n"));
+    }
+
     void statusWatchRefusesAnOlderInstance()
     {
         const QString name = uniqueIpcName();
@@ -906,43 +953,6 @@ private slots:
         QCOMPARE(QString::fromStdString(err.str()),
                  QStringLiteral("The running Speecher is older and doesn't know `status --watch`. Quit it with "
                                 "`speecher quit` and run the command again.\n"));
-    }
-
-    // The app's own controller answers status with the recording, and writes
-    // a watcher the dictation state as it changes.
-    void theControllerWritesItsStatusToWatchers()
-    {
-        ApplicationController controller(true);
-        const QString name = uniqueIpcName();
-        QLocalServer::removeServer(name);
-        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
-        auto ipc = std::make_unique<SingleInstanceIpc>(platform);
-        QVERIFY(ipc->listen());
-        QSignalSpy commands(ipc.get(), &SingleInstanceIpc::commandReceived);
-        connect(ipc.get(), &SingleInstanceIpc::commandReceived, &controller, &ApplicationController::handleIpcCommand);
-
-        std::ostringstream out;
-        std::ostringstream err;
-        int exitCode = -1;
-        std::unique_ptr<QThread> cli =
-            startCommandLine(statusDecision(QStringLiteral("status"), true), platform, out, err, exitCode);
-        QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
-        QCOMPARE(exitCode, 0);
-        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral(R"({"recording":false,"state":"idle"})" "\n"));
-
-        out.str({});
-        cli = startCommandLine(statusDecision(QStringLiteral("watchStatus"), false), platform, out, err, exitCode);
-        QTRY_COMPARE(commands.count(), 2);
-        // An unknown speech provider fails the session as it starts.
-        controller.settings()->setSpeechProvider(QStringLiteral("missing"));
-        controller.session()->startListening();
-        QTRY_COMPARE(controller.session()->stateName(), QStringLiteral("error"));
-        QCoreApplication::processEvents();
-        ipc.reset();
-
-        QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
-        QCOMPARE(exitCode, 0);
-        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("idle\nstarting\nerror\n"));
     }
 
     void singleInstanceIpcExpiresIncompleteRequests()

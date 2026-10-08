@@ -108,11 +108,14 @@ RecordingSession::RecordingSession(SettingsStore *settings,
             [this](int, const QString &reason) {
                 m_stream.state = RecordingStream::State::Reconnecting;
                 m_stream.problem = reason;
-                emit streamChanged();
+                emit problemChanged();
             });
     connect(m_transcription, &FileTranscriptionSession::microphoneAudioLost, this, [this](int, qint64 durationMs) {
+        const bool firstLoss = m_stream.lostAudioMs == 0;
         m_stream.lostAudioMs += durationMs;
-        emit streamChanged();
+        if (firstLoss) {
+            emit problemChanged();
+        }
     });
     connect(m_transcription, &FileTranscriptionSession::fileTextFinalized, this,
             [this](int, const QString &text) { writeLine(text); });
@@ -228,7 +231,7 @@ void RecordingSession::handleStreamConnected()
     m_stream.state = RecordingStream::State::Recording;
     m_stream.problem.clear();
     if (m_phase != Phase::Starting) {
-        emit streamChanged();
+        emit problemChanged();
         return;
     }
     m_phase = Phase::Recording;
@@ -273,6 +276,7 @@ void RecordingSession::writeLine(const QString &text)
         qWarning().noquote() << "recording could not write a line: " + error;
         if (m_unwrittenLines++ == 0) {
             m_writeError = error;
+            emit problemChanged();
         }
     }
 }
@@ -297,7 +301,7 @@ void RecordingSession::handleTranscriptionFinished(const QList<TranscribeFileRes
     }
     m_stream.problem = error.isEmpty() ? recordingStreamEndedText() : error;
     qWarning().noquote() << "recording stream stopped: " + m_stream.problem;
-    emit streamChanged();
+    emit problemChanged();
 }
 
 // No stream connected, so nothing was recorded and neither is the file.
