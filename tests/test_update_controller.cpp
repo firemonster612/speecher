@@ -1,6 +1,7 @@
 #include "common/test_prelude.h"
 #include "common/test_suites.h"
 #include "common/test_doubles.h"
+#include "common/test_manifest_updater_access.h"
 
 #include "app/ApplicationController.h"
 #include "app/ManifestUpdater.h"
@@ -37,76 +38,6 @@
 using namespace speecher;
 
 namespace speecher {
-
-class ManifestUpdaterTestAccess {
-public:
-    static void setState(ManifestUpdater &updater,
-                         UpdateController::State state,
-                         const QString &error = {})
-    {
-        updater.setState(state, error);
-    }
-
-    static void setAvailableVersion(ManifestUpdater &updater,
-                                    const QString &version,
-                                    UpdateChannel channel = UpdateChannel::Stable,
-                                    qint64 buildNumber = 0)
-    {
-        updater.m_manifest.version = version;
-        updater.m_manifest.channel = channel;
-        updater.m_manifest.buildNumber = buildNumber;
-    }
-
-    static std::optional<UpdateManifest> bestCandidate(std::optional<UpdateManifest> primary,
-                                                       std::optional<UpdateManifest> stable)
-    {
-        return ManifestUpdater::bestCandidate(std::move(primary), std::move(stable));
-    }
-
-    static void restartNow(ManifestUpdater &updater)
-    {
-        updater.restartNow();
-    }
-
-    static bool shouldOfferManifest(const UpdateManifest &manifest,
-                                    qint64 currentBuildNumber,
-                                    const QString &currentVersion,
-                                    UpdateChannel channel,
-                                    bool automaticCheck)
-    {
-        return ManifestUpdater::shouldOfferManifest(
-            manifest, currentBuildNumber, currentVersion, channel, automaticCheck);
-    }
-
-    static void finishCheck(ManifestUpdater &updater,
-                            QNetworkReply *reply,
-                            bool automatic)
-    {
-        updater.m_automaticCheck = automatic;
-        updater.m_reply = reply;
-        updater.finishCheck(reply);
-    }
-
-    static int nextCheckDelay(const ManifestUpdater &updater)
-    {
-        return updater.m_checkTimer->interval();
-    }
-
-    static bool checkTimerActive(const ManifestUpdater &updater)
-    {
-        return updater.m_checkTimer->isActive();
-    }
-
-    static void setAutomaticCheckFailures(ManifestUpdater &updater, int failures)
-    {
-        updater.m_automaticCheckFailures = failures;
-    }
-
-    static void setManualInstallRequired(ManifestUpdater &updater, bool required)
-    {
-        updater.m_manualInstallRequired = required;
-    }
-};
 
 #ifdef Q_OS_LINUX
 class AppImageUpdaterTestAccess {
@@ -758,7 +689,10 @@ private slots:
         UpdateTestContext context;
         TestManifestUpdater updater(&context.settings);
         bool busy = false;
-        updater.setBusyProvider([&busy] { return busy; });
+        updater.setRestartBlockerProvider([&busy] {
+            return busy ? UpdateController::RestartBlocker::Dictation
+                        : UpdateController::RestartBlocker::None;
+        });
         ManifestUpdaterTestAccess::setState(updater, UpdateController::State::ReadyToRestart);
         ManifestUpdaterTestAccess::restartNow(updater);
         QCOMPARE(updater.restartCount, 1);
@@ -799,7 +733,10 @@ private slots:
         UpdateTestContext pending;
         TestManifestUpdater pendingUpdater(&pending.settings);
         bool busy = true;
-        pendingUpdater.setBusyProvider([&busy] { return busy; });
+        pendingUpdater.setRestartBlockerProvider([&busy] {
+            return busy ? UpdateController::RestartBlocker::Dictation
+                        : UpdateController::RestartBlocker::None;
+        });
         pendingUpdater.setRestoreStateProvider([&busy] {
             return busy ? QStringLiteral("settings") : QString();
         });

@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 #include "common/test_doubles.h"
+#include "common/test_manifest_updater_access.h"
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
@@ -2734,6 +2735,90 @@ private slots:
         QTRY_VERIFY(connected);
         QVERIFY(!controller.isRecording());
         QVERIFY(!QFileInfo::exists(path));
+    }
+
+    // An update restart asked for mid-recording waits for the recording, and
+    // the stop's reply still reaches its caller before the app goes away.
+    void anUpdateRestartWaitsForARecordingToStop()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
+        ApplicationController controller(true, platform);
+        auto *updater = dynamic_cast<ManifestUpdater *>(controller.updates());
+        if (!updater) {
+            QSKIP("Sparkle restarts outside ManifestUpdater");
+        }
+        controller.settings()->setSetupCompleted(true);
+        controller.settings()->setSpeechProvider(QStringLiteral("codex"));
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [](QObject *parent) {
+                auto *codex = new test::FakeSpeechTranscriber(parent);
+                codex->providerId = QStringLiteral("codex");
+                codex->streamsFinals = true;
+                codex->onStartAttempt = [codex] { codex->emitConnected(); };
+                return codex;
+            });
+        QLocalServer server;
+        QVERIFY(server.listen(QStringLiteral("spchr-u-%1").arg(QUuid::createUuid().toString(QUuid::Id128).left(12))));
+        QTemporaryDir dir;
+
+        QLocalSocket startClient;
+        startClient.connectToServer(server.fullServerName());
+        QVERIFY(server.waitForNewConnection(2000));
+        controller.handleIpcCommand(QStringLiteral("recordStart"), {}, server.nextPendingConnection(),
+                                    {dir.filePath(QStringLiteral("call.md"))});
+        platform->microphoneAnswer(true);
+        QTRY_VERIFY(controller.isRecording());
+
+        // Outside an AppImage the restart opens the release page instead.
+        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
+        QLocalSocket *stopReply = nullptr;
+        bool stopRepliedFirst = false;
+        connect(updater, &UpdateController::openReleasePageRequested, this, [&] {
+            stopRepliedFirst = stopReply && stopReply->state() != QLocalSocket::ConnectedState;
+        });
+        QSignalSpy restartAttempts(updater, &UpdateController::openReleasePageRequested);
+        updater->installAndRestart();
+        QCOMPARE(updater->state(), UpdateController::State::RestartPending);
+        QVERIFY(restartAttempts.isEmpty());
+
+        QLocalSocket stopClient;
+        stopClient.connectToServer(server.fullServerName());
+        QVERIFY(server.waitForNewConnection(2000));
+        stopReply = server.nextPendingConnection();
+        controller.handleIpcCommand(QStringLiteral("recordStop"), {}, stopReply);
+        QTRY_COMPARE(restartAttempts.count(), 1);
+        QVERIFY(stopRepliedFirst);
+        QTRY_VERIFY(stopClient.canReadLine());
+        QVERIFY(QJsonDocument::fromJson(stopClient.readLine()).object().value(QStringLiteral("ok")).toBool());
+    }
+
+    // An update restart asked for mid-dictation waits for it, and a dictation
+    // that ends in an error has nothing left to cut short.
+    void anUpdateRestartWaitsForADictationButNotItsError()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        auto *updater = dynamic_cast<ManifestUpdater *>(controller.updates());
+        if (!updater) {
+            QSKIP("Sparkle restarts outside ManifestUpdater");
+        }
+        controller.settings()->setSetupCompleted(true);
+        emit platform->binder->activated();
+        platform->microphoneAnswer(true);
+        QCOMPARE(controller.session()->state(), DictationState::Starting);
+
+        // Outside an AppImage the restart opens the release page instead.
+        ManifestUpdaterTestAccess::setState(*updater, UpdateController::State::ReadyToRestart);
+        QSignalSpy restartAttempts(updater, &UpdateController::openReleasePageRequested);
+        updater->installAndRestart();
+        QCOMPARE(updater->state(), UpdateController::State::RestartPending);
+
+        auto *audio = controller.findChild<AudioInput *>();
+        QVERIFY(audio);
+        emit audio->failed(QStringLiteral("Test microphone disconnected"));
+        QCOMPARE(controller.session()->state(), DictationState::Error);
+        QCOMPARE(restartAttempts.count(), 1);
     }
 
     void filesOpenedBeforeSetupOpenOnceItCompletes()

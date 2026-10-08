@@ -246,17 +246,24 @@ ApplicationController::ApplicationController(bool popupOnly,
 #else
     m_updates = new AppImageUpdater(m_settings, this);
 #endif
-    // A restart for an update waits out a dictation and a recording.
-    m_updates->setBusyProvider([this] {
+    // A restart for an update waits out a dictation and a recording. A
+    // recording still starting does not hold it back: a start that fails emits
+    // no stop to resume the restart on.
+    m_updates->setRestartBlockerProvider([this] {
+        using RestartBlocker = UpdateController::RestartBlocker;
         const DictationState state = m_session->state();
-        return (state != DictationState::Idle && state != DictationState::Error)
-            || m_recording->isRecording();
+        if (state != DictationState::Idle && state != DictationState::Error) {
+            return RestartBlocker::Dictation;
+        }
+        return m_recording->isRecording() ? RestartBlocker::Recording : RestartBlocker::None;
     });
     connect(m_session, &DictationSession::stateChanged, m_updates, &UpdateController::resumePendingRestart);
     // After the stop replies above are written: recordingChanged(false) comes
     // before them.
     connect(m_recording, &RecordingSession::stopped, m_updates, &UpdateController::resumePendingRestart);
-    m_updateBanner = new UpdateBanner(m_updates, m_session, this);
+    m_updateBanner = new UpdateBanner(m_updates, this);
+    connect(m_session, &DictationSession::stateChanged, m_updateBanner, &UpdateBanner::refreshRestartBlocker);
+    connect(m_recording, &RecordingSession::recordingChanged, m_updateBanner, &UpdateBanner::refreshRestartBlocker);
 
     // A seed log stands in for real history in screenshots and demos, so it
     // is never written; a pinned today makes those screenshots repeatable.

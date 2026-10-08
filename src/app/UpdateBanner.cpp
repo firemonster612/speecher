@@ -2,18 +2,19 @@
 
 #include "core/AppSettings.h"
 #include "core/settings/SettingsSchema.h"
-#include "dictation/DictationSession.h"
 
 namespace speecher {
 
 namespace {
 
 using State = UpdateController::State;
+using RestartBlocker = UpdateController::RestartBlocker;
 
-bool dictating(const DictationSession *session)
+// A dictation types into the Target, so nothing may pull focus from it. A
+// recording only writes a file.
+bool dictating(const UpdateBannerFacts &facts)
 {
-    const DictationState state = session->state();
-    return state != DictationState::Idle && state != DictationState::Error;
+    return facts.restartBlocker == RestartBlocker::Dictation;
 }
 
 // What retrying does from a failed state: reopen the release page when only a
@@ -24,12 +25,26 @@ QString retryCaption(const UpdateBannerFacts &facts)
                                        : QStringLiteral("Try again");
 }
 
-// A restart asked for mid-dictation waits for the session to end, and the
-// caption says so.
+// A restart asked for mid-dictation or mid-recording waits for it to end, and
+// the caption says so.
 QString restartCaption(const UpdateBannerFacts &facts)
 {
-    return facts.dictating ? QStringLiteral("Restart after this dictation")
-                           : QStringLiteral("Restart now");
+    switch (facts.restartBlocker) {
+    case RestartBlocker::None:
+        break;
+    case RestartBlocker::Dictation:
+        return QStringLiteral("Restart after this dictation");
+    case RestartBlocker::Recording:
+        return QStringLiteral("Restart after this recording");
+    }
+    return QStringLiteral("Restart now");
+}
+
+QString restartPendingText(const UpdateBannerFacts &facts)
+{
+    return facts.restartBlocker == RestartBlocker::Recording
+        ? QStringLiteral("Restarting after this recording…")
+        : QStringLiteral("Restarting after this dictation…");
 }
 
 QString failureText(const UpdateBannerFacts &facts)
@@ -75,7 +90,7 @@ UpdateBannerModel updateBannerModel(const UpdateBannerFacts &facts)
                                                 : QStringLiteral("Open release page");
         // Installing mid-dictation is safe: the restart waits for the session
         // to end. A browser opening would take focus from the Target.
-        model.actionEnabled = facts.automaticDownloads || !facts.dictating;
+        model.actionEnabled = facts.automaticDownloads || !dictating(facts);
         model.dismiss = dismiss;
         break;
     case State::Downloading:
@@ -91,7 +106,7 @@ UpdateBannerModel updateBannerModel(const UpdateBannerFacts &facts)
         model.later = QStringLiteral("Later");
         break;
     case State::RestartPending:
-        model.text = QStringLiteral("Restarting after this dictation…");
+        model.text = restartPendingText(facts);
         break;
     case State::Restarting:
         model.text = QStringLiteral("Restarting…");
@@ -102,7 +117,7 @@ UpdateBannerModel updateBannerModel(const UpdateBannerFacts &facts)
         model.text = failureText(facts);
         model.action = retryCaption(facts);
         // A retry or a browser window would pull focus away mid-dictation.
-        model.actionEnabled = !facts.dictating;
+        model.actionEnabled = !dictating(facts);
         model.dismiss = dismiss;
         break;
     }
@@ -134,8 +149,7 @@ UpdateCheckRow updateCheckRow(const UpdateBannerFacts &facts, UpdateChannel chan
         return {restartCaption(facts),
                 facts.error.isEmpty() ? QStringLiteral("Restart to finish updating.") : facts.error};
     case State::RestartPending:
-        return {QStringLiteral("Restarting…"), QStringLiteral("Restarting after this dictation…"),
-                false};
+        return {QStringLiteral("Restarting…"), restartPendingText(facts), false};
     case State::Restarting:
         return {QStringLiteral("Restarting…"), QStringLiteral("Restarting…"), false};
     case State::CheckFailed:
@@ -155,20 +169,21 @@ WhatsNewBannerModel whatsNewBanner(const QString &currentVersion)
             QStringLiteral("Dismiss")};
 }
 
-UpdateBanner::UpdateBanner(UpdateController *updates, DictationSession *session, QObject *parent)
+UpdateBanner::UpdateBanner(UpdateController *updates, QObject *parent)
     : QObject(parent)
     , m_updates(updates)
-    , m_session(session)
+    , m_restartBlocker(updates->restartBlocker())
 {
     connect(updates, &UpdateController::changed, this, &UpdateBanner::changed);
-    // Only the start and end of a dictation change what the banner offers.
-    connect(session, &DictationSession::stateChanged, this,
-            [this, wasDictating = dictating(session)]() mutable {
-                if (dictating(m_session) != wasDictating) {
-                    wasDictating = !wasDictating;
-                    emit changed();
-                }
-            });
+}
+
+void UpdateBanner::refreshRestartBlocker()
+{
+    const RestartBlocker blocker = m_updates->restartBlocker();
+    if (blocker != m_restartBlocker) {
+        m_restartBlocker = blocker;
+        emit changed();
+    }
 }
 
 UpdateBannerFacts UpdateBanner::facts() const
@@ -183,7 +198,7 @@ UpdateBannerFacts UpdateBanner::facts() const
         m_updates->manualInstallRequired(),
         m_updates->stableReplacementAvailable(),
         m_updates->supportsAutomaticDownloads(),
-        dictating(m_session),
+        m_updates->restartBlocker(),
         m_deferredVersion && *m_deferredVersion == m_updates->availableVersion(),
     };
 }

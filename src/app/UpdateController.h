@@ -96,16 +96,22 @@ public:
         m_restoreStateProvider = std::move(provider);
     }
 
-    // Asked whether a restart now would cut short something the user is doing,
-    // such as a dictation or a recording. A restart asked for meanwhile waits
-    // in RestartPending until resumePendingRestart() finds the app idle.
-    void setBusyProvider(std::function<bool()> provider)
+    // What a restart now would cut short. A restart asked for meanwhile waits
+    // in RestartPending until resumePendingRestart() finds nothing in the way.
+    enum class RestartBlocker { None, Dictation, Recording };
+
+    void setRestartBlockerProvider(std::function<RestartBlocker()> provider)
     {
-        m_busyProvider = std::move(provider);
+        m_restartBlockerProvider = std::move(provider);
+    }
+
+    RestartBlocker restartBlocker() const
+    {
+        return m_restartBlockerProvider ? m_restartBlockerProvider() : RestartBlocker::None;
     }
 
 public slots:
-    // Called whenever the busy provider's answer may have changed.
+    // Called whenever restartBlocker()'s answer may have changed.
     void resumePendingRestart()
     {
         if (state() == State::RestartPending && !busy()) {
@@ -131,7 +137,7 @@ protected:
 
     bool busy() const
     {
-        return m_busyProvider && m_busyProvider();
+        return restartBlocker() != RestartBlocker::None;
     }
 
     // Restarts into the installed update, restoring what the user was doing
@@ -140,7 +146,7 @@ protected:
 
 private:
     std::function<QString()> m_restoreStateProvider;
-    std::function<bool()> m_busyProvider;
+    std::function<RestartBlocker()> m_restartBlockerProvider;
 };
 
 } // namespace speecher

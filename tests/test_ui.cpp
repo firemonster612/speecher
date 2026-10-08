@@ -689,6 +689,12 @@ private slots:
             return updateBannerModel(facts);
         };
         const auto plain = [](UpdateBannerFacts &) {};
+        const auto dictating = [](UpdateBannerFacts &f) {
+            f.restartBlocker = UpdateController::RestartBlocker::Dictation;
+        };
+        const auto recording = [](UpdateBannerFacts &f) {
+            f.restartBlocker = UpdateController::RestartBlocker::Recording;
+        };
 
         const UpdateBannerModel available = banner(State::UpdateAvailable, plain);
         QCOMPARE(available.text, QStringLiteral("Speecher 0.2.0 is available"));
@@ -696,7 +702,7 @@ private slots:
         QCOMPARE(available.dismiss, QStringLiteral("Dismiss"));
         QVERIFY(available.later.isEmpty() && available.showInPopup);
         // Installing mid-dictation is safe: the restart waits.
-        QVERIFY(banner(State::UpdateAvailable, [](auto &f) { f.dictating = true; }).actionEnabled);
+        QVERIFY(banner(State::UpdateAvailable, dictating).actionEnabled);
         QCOMPARE(banner(State::UpdateAvailable, [](auto &f) { f.stableReplacement = true; }).text,
                  QStringLiteral("Switch to Stable Release 0.2.0 (replaces this Nightly Build)"));
         QCOMPARE(banner(State::UpdateAvailable, [](auto &f) { f.automaticDownloads = false; }).action,
@@ -712,8 +718,14 @@ private slots:
         QCOMPARE(ready.action, QStringLiteral("Restart now"));
         QCOMPARE(ready.later, QStringLiteral("Later"));
         // Mid-dictation the restart waits for the session, and says so.
-        QCOMPARE(banner(State::ReadyToRestart, [](auto &f) { f.dictating = true; }).action,
+        QCOMPARE(banner(State::ReadyToRestart, dictating).action,
                  QStringLiteral("Restart after this dictation"));
+        QCOMPARE(banner(State::ReadyToRestart, recording).action,
+                 QStringLiteral("Restart after this recording"));
+        QCOMPARE(banner(State::RestartPending, dictating).text,
+                 QStringLiteral("Restarting after this dictation…"));
+        QCOMPARE(banner(State::RestartPending, recording).text,
+                 QStringLiteral("Restarting after this recording…"));
         QVERIFY(!banner(State::ReadyToRestart, [](auto &f) { f.deferred = true; }).visible);
         QVERIFY(!banner(State::RestartPending, [](auto &f) { f.deferred = true; }).visible);
         // Once restarting, the banner explains the exit even after Later.
@@ -729,7 +741,9 @@ private slots:
         QCOMPARE(banner(State::Error, [](auto &f) { f.manualInstallRequired = true; }).action,
                  QStringLiteral("Open release page"));
         // A retry or a browser window would take focus from the Target.
-        QVERIFY(!banner(State::Error, [](auto &f) { f.dictating = true; }).actionEnabled);
+        QVERIFY(!banner(State::Error, dictating).actionEnabled);
+        // A recording only writes a file; nothing it does has focus.
+        QVERIFY(banner(State::Error, recording).actionEnabled);
 
         // An automatic check's failure shows once it keeps failing.
         const auto failedCheck = [&](bool repeated) {
@@ -772,9 +786,14 @@ private slots:
         QCOMPARE(row(State::ReadyToRestart).caption, QStringLiteral("Restart now"));
         UpdateBannerFacts dictatingReady;
         dictatingReady.state = State::ReadyToRestart;
-        dictatingReady.dictating = true;
+        dictatingReady.restartBlocker = UpdateController::RestartBlocker::Dictation;
         QCOMPARE(updateCheckRow(dictatingReady, UpdateChannel::Stable).caption,
                  QStringLiteral("Restart after this dictation"));
+        UpdateBannerFacts recordingPending;
+        recordingPending.state = State::RestartPending;
+        recordingPending.restartBlocker = UpdateController::RestartBlocker::Recording;
+        QCOMPARE(updateCheckRow(recordingPending, UpdateChannel::Stable).help,
+                 QStringLiteral("Restarting after this recording…"));
         QVERIFY(row(State::ReadyToRestart).enabled);
         QCOMPARE(row(State::CheckFailed).caption, QStringLiteral("Try again"));
         QCOMPARE(row(State::Error, true).caption, QStringLiteral("Open release page"));
@@ -905,6 +924,14 @@ private slots:
         facts.version = QStringLiteral("0.3.0");
         facts.bannerVisible = true;
         facts.percent = 42;
+        facts.restartBlocker = UpdateController::RestartBlocker::Recording;
+        facts.state = UpdateController::State::ReadyToRestart;
+        popup.setUpdateBanner(updateBannerModel(facts));
+        grab("banner-ready-recording");
+        facts.state = UpdateController::State::RestartPending;
+        popup.setUpdateBanner(updateBannerModel(facts));
+        grab("banner-pending-recording");
+        facts.restartBlocker = UpdateController::RestartBlocker::None;
         const QList<std::pair<UpdateController::State, const char *>> states{
             {UpdateController::State::UpdateAvailable, "banner-available"},
             {UpdateController::State::Downloading, "banner-downloading"},
