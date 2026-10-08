@@ -1210,6 +1210,7 @@ private slots:
         options.writingProfile = WritingProfile::Email;
         options.destination = TranscriptDestination::None;
         options.json = true;
+        std::istringstream in;
         std::ostringstream out;
         std::ostringstream err;
         const auto text = [&out] {
@@ -1217,13 +1218,13 @@ private slots:
             return QJsonDocument::fromJson(first.toUtf8()).object().value(QStringLiteral("text")).toString();
         };
 
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
         QCOMPARE(text(), QStringLiteral("Anthropic heard it."));
         QCOMPARE(anthropicModel, QStringLiteral("claude-sonnet-5-5"));
 
         options.refinementProviderId = QStringLiteral("openai");
         out.str({});
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
         QCOMPARE(text(), QStringLiteral("Heard it."));
 
         // A profile's speech service this build lacks is passed over for the
@@ -1232,7 +1233,7 @@ private slots:
         stored.refinement.writingProfiles[1].speechProvider = QStringLiteral("local");
         settings.applySnapshot(stored);
         out.str({});
-        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), out, err, false), 0);
+        QCOMPARE(runHeadlessTranscribe({audio}, options, &settings, m_registry.get(), in, out, err, false), 0);
         QCOMPARE(text(), QStringLiteral("Heard it."));
     }
 
