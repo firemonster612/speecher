@@ -458,6 +458,34 @@ typedef NS_ENUM(NSInteger, SpeecherUpdatePreviewState) {
 + (SpeecherWhatsNewBanner *)previewForVersion:(NSString *)version;
 @end
 
+// speecher::PhoneTransfer behind the "Copy settings to your phone" sheet, worded
+// by speecher::phoneTransferText. It listens from creation until stopped or
+// released.
+@interface SpeecherPhoneTransfer : NSObject
+@property (nonatomic, readonly, copy) NSString *title;
+// What to do on the phone; empty when there is no code.
+@property (nonatomic, readonly, copy) NSArray<NSString *> *steps;
+@property (nonatomic, readonly, copy) NSString *includedHeading;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *included;
+// What stays on this Mac; empty when nothing does.
+@property (nonatomic, readonly, copy) NSString *staysHeading;
+@property (nonatomic, readonly, copy) NSArray<NSString *> *stays;
+@property (nonatomic, readonly, copy) NSString *neverIncluded;
+@property (nonatomic, readonly, copy) NSString *status;
+@property (nonatomic, readonly, copy) NSString *close;
+// The code still works: no phone has taken the settings yet.
+@property (nonatomic, readonly) BOOL waiting;
+// Called on the main thread when the state, and so the status, moves.
+@property (nonatomic, copy, nullable) void (^changed)(void);
+// The code at most side points across, at scale pixels a point, every module
+// whole pixels; nil when there is no code. It stays the same once spent.
+- (nullable NSImage *)codeImageWithSide:(CGFloat)side scale:(CGFloat)scale
+    NS_SWIFT_NAME(codeImage(side:scale:));
+// Stops listening now. SwiftUI can hold a dismissed sheet's item for a while,
+// so the sheet's closing calls this rather than waiting for the release.
+- (void)stop;
+@end
+
 // speecher::ErrorFix: what a dictation error offers to fix it.
 typedef NS_ENUM(NSInteger, SpeecherErrorFix) {
     SpeecherErrorFixNone,
@@ -1422,6 +1450,10 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
                             failure:(void (^)(NSString *message))onFailure
     NS_SWIFT_NAME(startMicrophoneMeter(onLevel:failure:));
 - (void)stopMicrophoneMeter;
+
+// Starts listening for the phone with the settings as saved, which on macOS is
+// what the window shows.
+- (SpeecherPhoneTransfer *)startPhoneTransfer;
 
 // The Test microphone row's test (speecher::MicrophoneTest), apart from the
 // meter above, so the setup assistant and the row never share a device. It

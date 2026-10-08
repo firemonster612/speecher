@@ -192,11 +192,15 @@ bool WinFrontEnd::captureMainWindow(const QString &path)
     const QString page = qEnvironmentVariable("SPEECHER_GRAB_PAGE").toLower().section(QLatin1Char(':'), 0, 0);
     // As on Qt and macOS, SPEECHER_GRAB_CLICK=transcribeStart starts the
     // listed files and SPEECHER_GRAB_WAIT_MS lets the batch run first.
-    if (qEnvironmentVariable("SPEECHER_GRAB_CLICK") == QStringLiteral("transcribeStart")) {
+    const QString click = qEnvironmentVariable("SPEECHER_GRAB_CLICK");
+    if (click == QStringLiteral("transcribeStart")) {
         m_native->transcribe->startBatch();
         QEventLoop wait;
         QTimer::singleShot(qEnvironmentVariableIntValue("SPEECHER_GRAB_WAIT_MS"), &wait, &QEventLoop::quit);
         wait.exec();
+    } else if (click == QStringLiteral("copyToPhone")) {
+        // Grabs the dialog over the settings window.
+        actionTriggered(click);
     }
     if (page == QStringLiteral("transcribe-window")) {
         return m_native->transcribeWindowInstance()->capture(path);
@@ -287,6 +291,9 @@ void WinFrontEnd::actionTriggered(const QString &rowId)
         m_controller->clearPendingWhatsNew();
     } else if (rowId == QStringLiteral("openMicrophoneSettings")) {
         win::openMicrophonePrivacySettings();
+    } else if (rowId == QStringLiteral("copyToPhone")) {
+        // Every edit is already committed, so the store holds what is shown.
+        m_native->settingsWindow()->showPhoneTransfer(m_controller->settings()->snapshot());
     }
     // Windows UI Automation has no consent switch, so enableAccessibility is
     // deliberately a no-op.

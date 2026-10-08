@@ -1020,6 +1020,27 @@ private slots:
         window.close();
     }
 
+    // The copyToPhone action opens the dialog, and the transfer listens until
+    // it closes. With SPEECHER_TEST_GRAB_DIR set, also saves the open dialog.
+    void phoneTransferListensWhileItsDialogIsOpen()
+    {
+        if (!nativeUiAvailable()) {
+            QSKIP("WinUI windows require an interactive desktop");
+        }
+        win::SettingsWindow *window = frontEnd->settingsWindowForTest();
+        const auto close = qScopeGuard([window] { window->close(); });
+        window->showPage(QStringLiteral("general"));
+        QTest::qWait(200);
+        frontEnd->actionTriggered(QStringLiteral("copyToPhone"));
+        QVERIFY(window->phoneTransferOpenForTest());
+        if (const QString grabDir = qEnvironmentVariable("SPEECHER_TEST_GRAB_DIR"); !grabDir.isEmpty()) {
+            QTest::qWait(500);
+            QVERIFY(window->capture(grabDir + QStringLiteral("/phone-transfer.png")));
+        }
+        QVERIFY(window->closeDialogForTest());
+        QTRY_VERIFY_WITH_TIMEOUT(!window->phoneTransferOpenForTest(), 2000);
+    }
+
     // The setup assistant's fallback section is optional: it never holds
     // Next, and it goes away with Skip cleanup.
     void setupFallbacksAreOptional()
