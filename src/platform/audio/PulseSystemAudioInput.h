@@ -4,8 +4,6 @@
 
 #include <QByteArray>
 
-#include <atomic>
-
 struct pa_context;
 struct pa_operation;
 struct pa_stream;
@@ -51,8 +49,8 @@ private:
     // Bumped by every stop, so audio and failures the PulseAudio thread queued
     // before it are dropped rather than reaching the next start.
     quint64 m_generation = 0;
-    // Bumped by every new stream. The main thread reads it without the lock.
-    std::atomic<quint64> m_streamGeneration = 0;
+    // Bumped by every new stream.
+    quint64 m_streamGeneration = 0;
 };
 
 } // namespace speecher

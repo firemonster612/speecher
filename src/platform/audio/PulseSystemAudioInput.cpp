@@ -30,6 +30,21 @@ QString pulseError(pa_context *context)
     return QString::fromUtf8(pa_strerror(pa_context_errno(context)));
 }
 
+QString lostConnection(pa_context *context)
+{
+    return QStringLiteral("Lost the connection to the sound server: %1").arg(pulseError(context));
+}
+
+// A stream also fails when the connection under it is lost, which is the
+// error worth reporting then.
+QString captureError(pa_context *context)
+{
+    if (!PA_CONTEXT_IS_GOOD(pa_context_get_state(context))) {
+        return lostConnection(context);
+    }
+    return QStringLiteral("Could not capture system audio: %1").arg(pulseError(context));
+}
+
 } // namespace
 
 PulseSystemAudioInput::PulseSystemAudioInput(QObject *parent)
@@ -68,8 +83,7 @@ bool PulseSystemAudioInput::open(QString *error)
             auto *input = static_cast<PulseSystemAudioInput *>(self);
             pa_threaded_mainloop_signal(input->m_mainloop, 0);
             if (pa_context_get_state(context) == PA_CONTEXT_FAILED) {
-                input->postFailure(
-                    QStringLiteral("Lost the connection to the sound server: %1").arg(pulseError(context)));
+                input->postFailure(lostConnection(context));
             }
         },
         this);
@@ -116,19 +130,23 @@ bool PulseSystemAudioInput::open(QString *error)
         }
         pa_operation_unref(query);
     }
+    if (!PA_CONTEXT_IS_GOOD(pa_context_get_state(m_context))) {
+        *error = lostConnection(m_context);
+        return false;
+    }
     if (m_sinkName.isEmpty()) {
         *error = QStringLiteral("There is no sound output to capture system audio from.");
         return false;
     }
     if (!connectStream(m_sinkName)) {
-        *error = QStringLiteral("Could not capture system audio: %1").arg(pulseError(m_context));
+        *error = captureError(m_context);
         return false;
     }
     // A default output change can replace the stream while this waits.
     for (pa_stream_state_t state;
          (state = m_stream ? pa_stream_get_state(m_stream) : PA_STREAM_FAILED) != PA_STREAM_READY;) {
         if (!PA_STREAM_IS_GOOD(state)) {
-            *error = QStringLiteral("Could not capture system audio: %1").arg(pulseError(m_context));
+            *error = captureError(m_context);
             return false;
         }
         pa_threaded_mainloop_wait(m_mainloop);
@@ -240,7 +258,8 @@ void PulseSystemAudioInput::followDefaultSink(const QByteArray &sinkName)
         return;
     }
     m_sinkName = sinkName;
-    // Until start connects the first stream, it connects to the latest default.
+    // Until start connects the first stream, it connects to the latest default,
+    // and once a stream failure has ended capture there is nothing to replace.
     if (!m_stream) {
         return;
     }
@@ -298,9 +317,20 @@ void PulseSystemAudioInput::postStreamFailure(const QString &message)
     QMetaObject::invokeMethod(
         this,
         [this, message, generation, streamGeneration] {
-            if (streamGeneration == m_streamGeneration) {
-                fail(generation, message);
+            if (generation != m_generation) {
+                return;
             }
+            {
+                // Decided under the lock, and the stream dropped before it is
+                // released, so a default output change cannot start a
+                // replacement that stop() would then tear down.
+                MainloopLocker lock(m_mainloop);
+                if (streamGeneration != m_streamGeneration) {
+                    return;
+                }
+                disconnectStream();
+            }
+            fail(generation, message);
         },
         Qt::QueuedConnection);
 }
