@@ -13,16 +13,39 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTimer>
 
 #include <algorithm>
+#include <atomic>
 #include <istream>
 #include <optional>
 #include <ostream>
+#include <string>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace speecher {
 namespace {
+
+// What the spooled stdin is named: progress shows it and the saved transcript
+// is named after it.
+const QString kSpoolName = QStringLiteral("stdin");
+
+// The spooled file and its folder while a run has them, as native strings
+// built beforehand so removeStdinSpool need not allocate.
+#ifdef Q_OS_WIN
+std::wstring g_spoolFile;
+std::wstring g_spoolFolder;
+#else
+std::string g_spoolFile;
+std::string g_spoolFolder;
+#endif
+std::atomic<bool> g_spooling{false};
 
 bool offers(const QList<ProviderDescriptor> &providers, const QString &id)
 {
@@ -70,9 +93,20 @@ QString unofferedProviderError(const TranscribeOptions &resolved, ProviderRegist
     return {};
 }
 
-// Copies in to a file named stdin in dir, because the decoder cannot probe a
-// pipe. The file has no extension: the decoder probes its content, and the
-// name is what progress shows and the saved transcript is named after.
+void rememberSpool(const QTemporaryDir &dir)
+{
+#ifdef Q_OS_WIN
+    g_spoolFile = QDir::toNativeSeparators(dir.filePath(kSpoolName)).toStdWString();
+    g_spoolFolder = QDir::toNativeSeparators(dir.path()).toStdWString();
+#else
+    g_spoolFile = QFile::encodeName(dir.filePath(kSpoolName)).toStdString();
+    g_spoolFolder = QFile::encodeName(dir.path()).toStdString();
+#endif
+    g_spooling = true;
+}
+
+// Copies in to a file named kSpoolName in dir, because the decoder cannot
+// probe a pipe. The file has no extension: the decoder probes its content.
 // Returns its path, or empty with error set.
 QString spoolStdin(std::istream &in, const QTemporaryDir &dir, QString *error)
 {
@@ -80,7 +114,7 @@ QString spoolStdin(std::istream &in, const QTemporaryDir &dir, QString *error)
         *error = QStringLiteral("Could not read stdin: %1").arg(dir.errorString());
         return {};
     }
-    QFile file(dir.filePath(QStringLiteral("stdin")));
+    QFile file(dir.filePath(kSpoolName));
     if (!file.open(QIODevice::WriteOnly)) {
         *error = QStringLiteral("Could not read stdin: %1").arg(file.errorString());
         return {};
@@ -93,6 +127,11 @@ QString spoolStdin(std::istream &in, const QTemporaryDir &dir, QString *error)
             return {};
         }
         total += in.gcount();
+    }
+    // The last of it is written only now, so a full disk can fail here.
+    if (!file.flush()) {
+        *error = QStringLiteral("Could not read stdin: %1").arg(file.errorString());
+        return {};
     }
     if (in.bad()) {
         *error = QStringLiteral("Could not read stdin");
@@ -112,6 +151,20 @@ void writeJson(std::ostream &out, const QJsonObject &object)
 }
 
 } // namespace
+
+void removeStdinSpool()
+{
+    if (!g_spooling) {
+        return;
+    }
+#ifdef Q_OS_WIN
+    DeleteFileW(g_spoolFile.c_str());
+    RemoveDirectoryW(g_spoolFolder.c_str());
+#else
+    unlink(g_spoolFile.c_str());
+    rmdir(g_spoolFolder.c_str());
+#endif
+}
 
 int runHeadlessTranscribe(const QStringList &files,
                           const HeadlessTranscribeOptions &options,
@@ -149,11 +202,23 @@ int runHeadlessTranscribe(const QStringList &files,
     }
     // Removes the spooled audio on every return.
     std::optional<QTemporaryDir> stdinDir;
+    // Declared after it, so it runs first.
+    const auto forgetSpool = qScopeGuard([] { g_spooling = false; });
     QString stdinPath;
     if (files == QStringList{kStdinFile}) {
         stdinDir.emplace();
+        if (stdinDir->isValid()) {
+            rememberSpool(*stdinDir);
+        }
+        // The length is unknown until stdin ends, so this has no percent.
+        err << (errIsTerminal ? "\r\033[K" : "") << kSpoolName.toStdString() << ": "
+            << transcribePhaseLabel(TranscribePhase::Reading).toStdString() << (errIsTerminal ? "" : "\n")
+            << std::flush;
         QString error;
         stdinPath = spoolStdin(in, *stdinDir, &error);
+        if (errIsTerminal) {
+            err << "\r\033[K";
+        }
         if (stdinPath.isEmpty()) {
             failed = 1;
             return finish(1, error);

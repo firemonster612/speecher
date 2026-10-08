@@ -31,7 +31,11 @@
 #include <QtEndian>
 
 #include <cmath>
+#include <csignal>
 #include <sstream>
+#ifdef Q_OS_UNIX
+#include <sys/resource.h>
+#endif
 
 using namespace speecher;
 using namespace speecher::test;
@@ -1211,10 +1215,15 @@ private slots:
         QVERIFY(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object().value(QStringLiteral("summary")).toBool());
     }
 
-    // `transcribe -` names the piped audio stdin, and fails on empty stdin.
+    // `transcribe -` names the piped audio stdin, fails on empty stdin, and
+    // removes the spooled audio either way.
     void headlessRunReadsAudioFromStdin()
     {
         QTemporaryDir dir;
+        QTemporaryDir spool;
+        const QByteArray savedTmpdir = qgetenv("TMPDIR");
+        qputenv("TMPDIR", QFile::encodeName(spool.path()));
+        const auto restoreTmpdir = qScopeGuard([&] { qputenv("TMPDIR", savedTmpdir); });
         const QString audio = dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         QFile wav(audio);
@@ -1237,16 +1246,58 @@ private slots:
         QCOMPARE(result.value(QStringLiteral("ok")).toBool(), true);
         QCOMPARE(result.value(QStringLiteral("saved")).toString(), dir.filePath(QStringLiteral("stdin-transcribed.txt")));
         QVERIFY2(QString::fromStdString(err.str()).contains(QStringLiteral("stdin: saved ")), err.str().c_str());
+        QVERIFY(QDir(spool.path()).isEmpty());
 
         std::istringstream empty;
         out.str({});
         err.str({});
         QCOMPARE(runHeadlessTranscribe({kStdinFile}, options, &settings, m_registry.get(), empty, out, err, false), 1);
-        QCOMPARE(QString::fromStdString(err.str()), QStringLiteral("No audio on stdin\n"));
+        QCOMPARE(QString::fromStdString(err.str()), QStringLiteral("stdin: Reading the audio\u2026\nNo audio on stdin\n"));
         const QJsonObject summary = QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object();
         QCOMPARE(summary.value(QStringLiteral("failed")).toInt(), 1);
         QCOMPARE(summary.value(QStringLiteral("succeeded")).toInt(), 0);
+        QVERIFY(QDir(spool.path()).isEmpty());
     }
+
+#ifdef Q_OS_UNIX
+    // A disk that fills while stdin is spooled fails the run, rather than
+    // transcribing what fit. A file size limit stands in for the full disk.
+    void headlessRunFailsWhenStdinDoesNotFit()
+    {
+        QTemporaryDir spool;
+        const QByteArray savedTmpdir = qgetenv("TMPDIR");
+        qputenv("TMPDIR", QFile::encodeName(spool.path()));
+        rlimit savedLimit{};
+        QVERIFY(getrlimit(RLIMIT_FSIZE, &savedLimit) == 0);
+        constexpr rlim_t kLimit = 64 * 1024;
+        rlimit limit = savedLimit;
+        limit.rlim_cur = kLimit;
+        QVERIFY(setrlimit(RLIMIT_FSIZE, &limit) == 0);
+        // Over the limit a write fails with EFBIG instead of ending the process.
+        const auto savedXfsz = std::signal(SIGXFSZ, SIG_IGN);
+        const auto restore = qScopeGuard([&] {
+            std::signal(SIGXFSZ, savedXfsz);
+            setrlimit(RLIMIT_FSIZE, &savedLimit);
+            qputenv("TMPDIR", savedTmpdir);
+        });
+        // Fills the limit, then leaves a tail that only the last flush writes.
+        std::istringstream in(std::string(kLimit + 100, 'a'));
+        SettingsStore settings;
+        HeadlessTranscribeOptions options;
+        options.speechProviderId = QStringLiteral("claude");
+        options.refinementProviderId = QStringLiteral("none");
+        options.printTranscripts = true;
+        options.destination = TranscriptDestination::None;
+        std::ostringstream out;
+        std::ostringstream err;
+
+        QCOMPARE(runHeadlessTranscribe({kStdinFile}, options, &settings, m_registry.get(), in, out, err, false), 1);
+        QVERIFY2(QString::fromStdString(err.str()).contains(QStringLiteral("\nCould not read stdin: ")),
+                 err.str().c_str());
+        QVERIFY(out.str().empty());
+        QVERIFY(QDir(spool.path()).isEmpty());
+    }
+#endif
 
     // Subtitles are saved and printed in place of text, and fail a file whose
     // speech provider returned no timings with the window's reason.

@@ -61,6 +61,11 @@ int runHeadlessTranscribe(const QStringList &files,
                           std::ostream &err,
                           bool errIsTerminal);
 
+// Removes the audio a running `transcribe -` has spooled, for a signal or
+// console handler to call before the process ends without unwinding. Safe in
+// a signal handler; does nothing when no run has spooled audio.
+void removeStdinSpool();
+
 // Records once from microphone, null when the user refused microphone access,
 // until stopRequested() turns true, or, with
 // untilSilenceMs, until that long passes without speech once speech was heard.

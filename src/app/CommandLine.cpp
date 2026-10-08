@@ -431,7 +431,8 @@ bool readSharedChoice(const QStringList &arguments,
 }
 
 // Finishes reading `speecher transcribe -`, which always runs headless and
-// has no folder to save beside, so it saves nowhere unless given one. Returns an error message for a usage mistake.
+// has no folder to save beside, so it saves nowhere unless given one. Returns
+// an error message for a usage mistake.
 QString finishStdinTranscribe(const QStringList &files, bool besideGiven, CommandLineDecision *decision)
 {
     HeadlessTranscribeOptions &options = decision->headless;
