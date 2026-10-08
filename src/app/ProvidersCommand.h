@@ -35,10 +35,10 @@ std::optional<QList<ProviderReport>> runningAppProviderReports(
     const std::shared_ptr<const SingleInstancePlatform> &platform, QString *error);
 
 // Prints the running app's reports, or without one judges them in this
-// process: from the saved settings, the downloaded Local Models, the
-// operating system's network state and the CLI Proxy API account files,
-// without asking a server, a keyring or a sign-in refresh. Other sign-ins and
-// whether a Local Runner is running stay unknown then. Returns the exit code.
+// process: from the saved settings, the downloaded Local Models and the
+// operating system's network state, without asking a server, a keyring or a
+// sign-in refresh. Sign-ins and whether a Local Runner is running stay unknown
+// then. Returns the exit code.
 int runProvidersCommand(bool json, const std::shared_ptr<const SingleInstancePlatform> &platform,
                         std::ostream &out, std::ostream &err);
 

@@ -243,7 +243,7 @@ speecher providers
 speecher providers --json | jq '.[] | select(.usable == false)'
 ```
 
-It judges each provider the way the Dictation and Refinement settings do and words a problem as their rows do ("No server URL is set."). While Speecher is running it asks Speecher, which knows the sign-ins it has seen and the Local Runners it has looked for. Otherwise it judges from your settings, the downloaded Local Models, the system's network state and your CLI Proxy API account files. It makes no network calls, reads no keyring and refreshes no sign-in, so a sign-in nothing has checked yet, and whether a Local Runner is running, read as `Unknown` in the table and `null` in JSON. A provider that doesn't sign in has `signsIn` false, `signedIn` `null` and `-` in the table.
+It judges each provider the way the Dictation and Refinement settings do and words a problem as their rows do ("No server URL is set."). While Speecher is running it asks Speecher, which knows the sign-ins it has seen and the Local Runners it has looked for. Otherwise it judges from your settings, the downloaded Local Models and the system's network state. It makes no network calls, reads no keyring and refreshes no sign-in, so a sign-in nothing has checked yet, and whether a Local Runner is running, read as `Unknown` in the table and `null` in JSON. A provider that doesn't sign in has `signsIn` false, `signedIn` `null` and `-` in the table.
 
 ## Uninstall
 

@@ -94,9 +94,16 @@ QString runnerNotRunning(const AppSettings &settings)
                             : QStringLiteral("%1 isn't running").arg(localRunnerName(runner));
 }
 
+// A Local Model not downloaded, or a Local Runner with no cleanup model named.
+QString noModel(ProviderRole role)
+{
+    return role == ProviderRole::Speech ? QStringLiteral("No model downloaded")
+                                        : QStringLiteral("No cleanup model chosen");
+}
+
 // label is the provider's registry label.
-QString problemText(FallbackProblem problem, const AppSettings &settings, const QString &providerId,
-                    const QString &label)
+QString problemText(FallbackProblem problem, ProviderRole role, const AppSettings &settings,
+                    const QString &providerId, const QString &label)
 {
     switch (problem) {
     case FallbackProblem::None:
@@ -106,7 +113,7 @@ QString problemText(FallbackProblem problem, const AppSettings &settings, const 
     case FallbackProblem::SignedOut:
         return QStringLiteral("Not signed in, so it can't stand in yet.");
     case FallbackProblem::NoModel:
-        return QStringLiteral("No model downloaded, so it can't stand in yet.");
+        return noModel(role) + QStringLiteral(", so it can't stand in yet.");
     case FallbackProblem::NoRunner:
         return runnerNotRunning(settings) + QStringLiteral(", so it can't stand in right now.");
     case FallbackProblem::NoServer:
@@ -122,8 +129,8 @@ QString problemText(FallbackProblem problem, const AppSettings &settings, const 
 
 // The primary's reason, "Not signed in to ChatGPT.", which a provider's report
 // gives too. label is the provider's registry label.
-QString primaryProblemText(FallbackProblem problem, const AppSettings &settings, const QString &providerId,
-                           const QString &label)
+QString primaryProblemText(FallbackProblem problem, ProviderRole role, const AppSettings &settings,
+                           const QString &providerId, const QString &label)
 {
     switch (problem) {
     case FallbackProblem::None:
@@ -135,7 +142,7 @@ QString primaryProblemText(FallbackProblem problem, const AppSettings &settings,
     case FallbackProblem::SignedOut:
         return QStringLiteral("Not signed in to %1.").arg(signInName(providerId, label));
     case FallbackProblem::NoModel:
-        return QStringLiteral("No model downloaded.");
+        return noModel(role) + QLatin1Char('.');
     case FallbackProblem::NoRunner:
         return runnerNotRunning(settings) + QLatin1Char('.');
     case FallbackProblem::NoServer:
@@ -160,7 +167,7 @@ ProviderReport providerReport(ProviderRole role, const RowOption &provider, cons
         speech.providerId = provider.id;
         report.problem = spokenLanguageProblem(speech, provider.label);
     } else {
-        report.problem = primaryProblemText(problem, settings, provider.id, provider.label);
+        report.problem = primaryProblemText(problem, role, settings, provider.id, provider.label);
     }
     const bool signInUnseen = report.signsIn && !report.signedIn;
     const bool runnerUnchecked = localRunner && (!facts.runnersChecked || facts.detectingRunners);
@@ -179,7 +186,7 @@ QString unusableReason(ProviderRole role, const QString &id, const AppSettings &
     if (!offers(providers, id)) {
         return QStringLiteral("This build of Speecher can't run it, so it can't stand in.");
     }
-    return problemText(fallbackProblem(role, id, settings, facts), settings, id, labelOf(providers, id));
+    return problemText(fallbackProblem(role, id, settings, facts), role, settings, id, labelOf(providers, id));
 }
 
 } // namespace
@@ -203,6 +210,10 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
     }
     if (providerId == kLocal) {
         const QString runner = settings.refinement.localRunner.runner;
+        // The Local Runner refuses to clean up without a model.
+        if (!runner.isEmpty() && settings.refinement.localRunner.lacksModel()) {
+            return FallbackProblem::NoModel;
+        }
         const bool running = std::any_of(facts.runners.cbegin(), facts.runners.cend(),
                                          [&runner](const RowOption &found) { return found.id == runner; });
         return facts.runnersChecked && !facts.detectingRunners && !running ? FallbackProblem::NoRunner
@@ -243,7 +254,7 @@ QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, co
     if (kind == FallbackProblem::None || kind == FallbackProblem::SpokenLanguage) {
         return {};
     }
-    const QString problem = primaryProblemText(kind, settings, primary, labelOf(providers, primary));
+    const QString problem = primaryProblemText(kind, role, settings, primary, labelOf(providers, primary));
     const QStringList fallbacks = fallbacksOf(settings, role);
     const auto usable = std::find_if(fallbacks.cbegin(), fallbacks.cend(), [&](const QString &id) {
         return unusableReason(role, id, settings, facts, providers).isEmpty();

@@ -6,10 +6,8 @@
 #include "app/ProviderSetup.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/SettingsStore.h"
-#include "providers/CliProxyCredentials.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
-#include "providers/ProviderSignIn.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -81,37 +79,6 @@ void printTable(const QList<ProviderReport> &reports, std::ostream &out)
     }
 }
 
-// Notes the sign-ins the CLI Proxy API account files settle without a
-// keyring, a refresh or a network call: one whose account isn't there is
-// signed out. Every other sign-in is read from a keyring or refreshed on use.
-void noteMissingCliproxyAccounts(SettingsStore &settings, ProviderAvailability &availability)
-{
-    // A remote CLI Proxy API picks its own accounts.
-    if (!settings.cliproxyBaseUrl().isEmpty()) {
-        return;
-    }
-    const ProviderSignIn signIn(settings);
-    for (const QString &providerId : {QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("openai"),
-                                      QStringLiteral("anthropic")}) {
-        // Also the speech provider whose sign-in a refinement provider shares.
-        const QString type = ProviderSignIn::cliproxyAccountType(providerId);
-        if (!signIn.usingCliproxy(type)) {
-            continue;
-        }
-        const QString chosen = signIn.cliproxyAccount(type);
-        const QList<CliProxyAccount> accounts =
-            CliProxyCredentials::listAccounts(signIn.resolvedAccountDirectory(), type);
-        const bool found = chosen.isEmpty() ? !accounts.isEmpty()
-                                            : std::any_of(accounts.cbegin(), accounts.cend(),
-                                                          [&](const CliProxyAccount &account) {
-                                                              return account.fileName == chosen;
-                                                          });
-        if (!found) {
-            availability.noteSignIn(providerId, false);
-        }
-    }
-}
-
 QList<ProviderReport> localProviderReports()
 {
     SettingsStore settings;
@@ -122,7 +89,6 @@ QList<ProviderReport> localProviderReports()
     NetworkReachability reachability;
     reachability.watchSystem();
     ProviderAvailability availability(reachability);
-    noteMissingCliproxyAccounts(settings, availability);
     local.setProviderAvailability(availability);
     return providerReports(settings, local, providers);
 }

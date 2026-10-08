@@ -4,6 +4,7 @@
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
+#include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "core/LearnedCorrection.h"
@@ -32,6 +33,11 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGroupBox>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QPalette>
 #include <QLabel>
 #include <QLayout>
@@ -44,6 +50,7 @@
 #include <QSystemTrayIcon>
 #include <QTemporaryDir>
 #include <QtEndian>
+#include <QUuid>
 
 #ifdef SPEECHER_WITH_KASSISTANT
 #include <KPageWidget>
@@ -2553,6 +2560,34 @@ private slots:
                                     {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")});
 
         QCOMPARE(frontEnd.calls, QStringList({QStringLiteral("showTranscribeFiles /a.wav /b.mp3")}));
+    }
+
+    // The running app answers providers with the sign-ins it has seen.
+    void providersCommandAnswersWithTheSignInsTheAppHasSeen()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        controller.providerAvailability()->noteSignIn(QStringLiteral("codex"), false);
+
+        QLocalServer server;
+        QVERIFY(server.listen(QStringLiteral("spchr-p-%1").arg(QUuid::createUuid().toString(QUuid::Id128).left(12))));
+        QLocalSocket client;
+        client.connectToServer(server.fullServerName());
+        QVERIFY(server.waitForNewConnection(2000));
+        controller.handleIpcCommand(QStringLiteral("providers"), {}, server.nextPendingConnection());
+        QVERIFY(client.waitForReadyRead(2000));
+
+        const QJsonObject answer = QJsonDocument::fromJson(client.readLine()).object();
+        QVERIFY(answer.value(QStringLiteral("ok")).toBool());
+        const QJsonArray reports =
+            QJsonDocument::fromJson(answer.value(QStringLiteral("text")).toString().toUtf8()).array();
+        const auto codex = std::find_if(reports.cbegin(), reports.cend(), [](const QJsonValue &report) {
+            return report[QStringLiteral("id")] == QStringLiteral("codex")
+                && report[QStringLiteral("role")] == QStringLiteral("speech");
+        });
+        QVERIFY(codex != reports.cend());
+        QCOMPARE((*codex)[QStringLiteral("signedIn")], QJsonValue(false));
+        QCOMPARE((*codex)[QStringLiteral("problem")], QJsonValue(QStringLiteral("Not signed in to ChatGPT.")));
     }
 
     void filesOpenedBeforeSetupOpenOnceItCompletes()

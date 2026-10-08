@@ -180,8 +180,7 @@ void LocalRunnerRefiner::refresh(const RefinementSettings &)
 
 RefinementPrepareResult LocalRunnerRefiner::prepare(const RefinementSettings &settings)
 {
-    // llama-server answers with whichever model it loaded.
-    if (settings.localRunner.model.isEmpty() && settings.localRunner.runner != QStringLiteral("llama-server")) {
+    if (settings.localRunner.lacksModel()) {
         return {false, QStringLiteral("Choose a cleanup model for %1.").arg(runnerName(settings.localRunner.runner)),
                 ProviderFailureKind::Unavailable};
     }

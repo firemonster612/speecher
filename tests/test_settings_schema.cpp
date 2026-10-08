@@ -2226,8 +2226,14 @@ private slots:
         settings.speech.endpoint.baseUrl = QStringLiteral("https://api.example.com");
         QCOMPARE(speech(QStringLiteral("endpoint")), FallbackProblem::Offline);
 
-        // A runner is missing only once a look has found it isn't running.
+        // A runner other than llama-server can't clean up without a model.
         settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::NoModel);
+        settings.refinement.localRunner.runner = QStringLiteral("llama-server");
+        QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::None);
+
+        // A runner is missing only once a look has found it isn't running.
+        settings.refinement.localRunner = {QStringLiteral("ollama"), QStringLiteral("gemma4:e4b")};
         QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::None);
         facts.runnersChecked = true;
         QCOMPARE(refinement(QStringLiteral("local")), FallbackProblem::NoRunner);
@@ -2297,7 +2303,7 @@ private slots:
         QCOMPARE(codex.signedIn, std::nullopt);
         QCOMPARE(codex.usable, std::nullopt);
         QVERIFY(codex.problem.isEmpty());
-        settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        settings.refinement.localRunner = {QStringLiteral("ollama"), QStringLiteral("gemma4:e4b")};
         QCOMPARE(report(ProviderRole::Refinement, QStringLiteral("local")).usable, std::nullopt);
         facts.runnersChecked = true;
         const ProviderReport runner = report(ProviderRole::Refinement, QStringLiteral("local"));
@@ -2360,6 +2366,13 @@ private slots:
         QVERIFY(!unchosen.configured);
         QCOMPARE(unchosen.problem, QStringLiteral("No Ollama, LM Studio or llama-server is running."));
         settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        const ProviderReport modelless = reportOf(ProviderRole::Refinement, QStringLiteral("local"), settings, facts);
+        QVERIFY(!modelless.configured);
+        QCOMPARE(modelless.usable, std::optional(false));
+        QCOMPARE(modelless.problem, QStringLiteral("No cleanup model chosen."));
+        QCOMPARE(primaryProviderStatus(ProviderRole::Refinement, settings, facts, refinementChoices()),
+                 QStringLiteral("No cleanup model chosen. Your words are pasted as spoken."));
+        settings.refinement.localRunner.model = QStringLiteral("gemma4:e4b");
         const ProviderReport runner = reportOf(ProviderRole::Refinement, QStringLiteral("local"), settings, facts);
         QVERIFY(runner.configured);
         QCOMPARE(runner.problem, QStringLiteral("Ollama isn't running."));
@@ -2401,6 +2414,9 @@ private slots:
 
         settings.refinement.fallbackProviderIds = {QStringLiteral("anthropic"), QStringLiteral("local")};
         settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        QCOMPARE(refinement->helpValue(settings),
+                 QStringLiteral("Anthropic, then Local Runner. No cleanup model chosen, so it can't stand in yet."));
+        settings.refinement.localRunner.model = QStringLiteral("gemma4:e4b");
         facts.runnersChecked = true;
         QCOMPARE(refinement->helpValue(settings),
                  QStringLiteral("Anthropic, then Local Runner. Ollama isn't running, so it can't stand in right now."));

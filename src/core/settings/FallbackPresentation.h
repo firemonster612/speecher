@@ -44,7 +44,7 @@ struct ProviderReport {
     // Whether it takes a sign-in: Claude, ChatGPT, OpenAI and Anthropic do.
     bool signsIn = false;
     // Holds what it needs from settings: a downloaded model, a server URL, a
-    // chosen Local Runner.
+    // chosen Local Runner and its cleanup model.
     bool configured = false;
     // Empty for a provider that doesn't sign in, and for one whose sign-in
     // nothing has seen; signsIn tells them apart.
