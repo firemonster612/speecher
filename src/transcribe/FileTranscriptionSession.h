@@ -51,7 +51,8 @@ struct TranscribeOptions {
     // arrives, so only speech providers that stream final text take the
     // audio, and Codex does not transcribe it again at the end. Once the
     // provider has connected, a dropped stream reconnects for as long as the
-    // microphone runs.
+    // microphone runs, renewing the sign-in first when it is due or was
+    // turned down.
     bool streamedFinalsOnly = false;
     TranscriptDestination destination = TranscriptDestination::BesideInput;
     QString folder;
@@ -186,6 +187,10 @@ private:
     void markAttemptConnected();
     void waitToReconnect(const QString &reason);
     void reconnect();
+    bool renewSignIn();
+    void handleSignInRenewed(const SpeechPrepareResult &result);
+    void resumeStreaming();
+    SpeechSettings currentSpeechSettings() const;
     void rewindTo(qsizetype position);
     void keepMicrophoneAudioBounded();
     void forgetAudioBefore(qsizetype position);
@@ -235,6 +240,10 @@ private:
     bool m_attemptConnected = false;
     // A stream of the current provider has connected.
     bool m_providerConnected = false;
+    // The preparation running renews a recording's sign-in.
+    bool m_renewingSignIn = false;
+    // The service turned the sign-in down since a stream last connected.
+    bool m_signInRefused = false;
     bool m_inputFinished = false;
     // An attempt is open for the audio; false while a provider prepares.
     bool m_streaming = false;

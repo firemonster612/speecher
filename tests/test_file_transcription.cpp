@@ -1142,20 +1142,20 @@ private slots:
         QCOMPARE(path, m_dir.filePath(QStringLiteral("call.md")));
         m_codex->emitFinalText(QStringLiteral("Said before."));
         m_codex->emitPartialText(QStringLiteral("And then"));
-        m_codex->emitFailure(QStringLiteral("Signed out"), false, QStringLiteral("authentication"),
-                             ProviderFailureKind::Authentication);
+        m_codex->emitFailure(QStringLiteral("Unsupported audio"), false, QStringLiteral("streaming"),
+                             ProviderFailureKind::Other);
         const RecordingStatus status = recording.status();
         QVERIFY(status.recording);
         QCOMPARE(status.path, path);
         QCOMPARE(status.streams.size(), 1);
         QCOMPARE(status.streams.first().speaker, QStringLiteral("me"));
         QCOMPARE(status.streams.first().state, RecordingStream::State::Stopped);
-        QCOMPARE(status.streams.first().problem, QStringLiteral("Signed out"));
+        QCOMPARE(status.streams.first().problem, QStringLiteral("Unsupported audio"));
 
         recording.stop();
         QCOMPARE(stopped.count(), 1);
         QVERIFY(!recording.isRecording());
-        QCOMPARE(stopped.first().first().value<RecordingStatus>().streams.first().problem, QStringLiteral("Signed out"));
+        QCOMPARE(stopped.first().first().value<RecordingStatus>().streams.first().problem, QStringLiteral("Unsupported audio"));
         QCOMPARE(recordedTexts(path), QStringList({QStringLiteral("Said before."), QStringLiteral("And then")}));
     }
 
@@ -1229,6 +1229,59 @@ private slots:
         QCOMPARE(connects, 2);
         QVERIFY(recording.status().streams.first().problem.isEmpty());
         QTRY_VERIFY_WITH_TIMEOUT(m_codex->audioChunks.contains(spoken), 2000);
+    }
+
+    // A recording outlasts its sign-in. The next stream, after a rollover or a
+    // drop, renews it first when the provider says it is due; one the service
+    // turns down unforeseen renews once before the stream counts as stopped.
+    void aRecordingRenewsItsSignInBeforeTheNextStream()
+    {
+        DictationSession::setStableAttemptMs(0);
+        const auto restore = qScopeGuard([] { DictationSession::setStableAttemptMs(10000); });
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
+        });
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        QCOMPARE(m_codex->prepareCalls, 1);
+        // The token the provider holds works once prepare has run more than
+        // this many times. Each stream after the first notes how many it had.
+        int expiredUpTo = 1;
+        QList<int> preparedAtStarts;
+        m_codex->onStartAttempt = [this, &expiredUpTo, &preparedAtStarts] {
+            preparedAtStarts << m_codex->prepareCalls;
+            if (m_codex->prepareCalls > expiredUpTo) {
+                m_codex->emitConnected();
+                return;
+            }
+            m_codex->emitFailure(QStringLiteral("Unauthorized"), false, QStringLiteral("connect"),
+                                 ProviderFailureKind::Authentication);
+        };
+        const auto streamState = [&recording] { return recording.status().streams.first().state; };
+
+        m_codex->refreshRequired = true;
+        m_codex->emitCompletion();
+        QTRY_COMPARE_WITH_TIMEOUT(preparedAtStarts, QList<int>{2}, 5000);
+        QCOMPARE(streamState(), RecordingStream::State::Recording);
+
+        m_codex->refreshRequired = false;
+        expiredUpTo = 2;
+        m_codex->emitFailure(QStringLiteral("Unauthorized"), false, QStringLiteral("streaming"),
+                             ProviderFailureKind::Authentication);
+        QCOMPARE(streamState(), RecordingStream::State::Reconnecting);
+        QTRY_COMPARE_WITH_TIMEOUT(preparedAtStarts, QList<int>({2, 3}), 5000);
+        QCOMPARE(streamState(), RecordingStream::State::Recording);
+
+        // Signed out for good.
+        expiredUpTo = 100;
+        m_codex->emitFailure(QStringLiteral("Unauthorized"), false, QStringLiteral("streaming"),
+                             ProviderFailureKind::Authentication);
+        QTRY_COMPARE_WITH_TIMEOUT(streamState(), RecordingStream::State::Stopped, 5000);
+        QCOMPARE(preparedAtStarts, QList<int>({2, 3, 4}));
+        QCOMPARE(recording.status().streams.first().problem, QStringLiteral("Unauthorized"));
     }
 
     // A dropped stream is cancelled once its partial is written: whatever it

@@ -164,6 +164,10 @@ FileTranscriptionSession::FileTranscriptionSession(SettingsStore *settings,
                 if (result.revision != m_preparationRevision) {
                     return;
                 }
+                if (std::exchange(m_renewingSignIn, false)) {
+                    handleSignInRenewed(result.speech);
+                    return;
+                }
                 m_refinerRefreshed |= result.refinerRefreshAttempted;
                 if (!result.speech.ok) {
                     m_speechIssues.append({ProviderRole::Speech, m_speechChain.at(m_speechIndex), Stage::Prepare,
@@ -531,9 +535,7 @@ void FileTranscriptionSession::beginStreaming()
     m_attemptStartMs = 0;
     m_attemptClock.start();
     const quint64 attemptId = ++m_attemptId;
-    SpeechSettings speech = m_batchSettings.speech;
-    speech.providerId = m_speechChain.at(m_speechIndex);
-    m_transcriber->startAttempt(attemptId, speech);
+    m_transcriber->startAttempt(attemptId, currentSpeechSettings());
     // A provider failing inside startAttempt() has made way for the next, or
     // failed the file: nothing may be sent for this attempt.
     if (attemptId != m_attemptId) {
@@ -632,6 +634,7 @@ void FileTranscriptionSession::markAttemptConnected()
     }
     m_attemptConnected = true;
     m_providerConnected = true;
+    m_signInRefused = false;
     emit speechConnected(m_index);
 }
 
@@ -651,9 +654,7 @@ void FileTranscriptionSession::startNextAttempt()
     m_attemptSentFrom = m_sent;
     m_attemptConnected = false;
     m_attemptClock.start();
-    SpeechSettings speech = m_batchSettings.speech;
-    speech.providerId = m_speechChain.at(m_speechIndex);
-    m_transcriber->startAttempt(++m_attemptId, speech);
+    m_transcriber->startAttempt(++m_attemptId, currentSpeechSettings());
 }
 
 // A recording's dropped stream waits a pause, growing while it keeps failing,
@@ -680,7 +681,49 @@ void FileTranscriptionSession::waitToReconnect(const QString &reason)
     m_reconnectTimer.start(delayMs);
 }
 
+// A recording's next stream, after a drop or a rollover.
 void FileTranscriptionSession::reconnect()
+{
+    m_sendTimer.stop();
+    m_streaming = false;
+    if (renewSignIn()) {
+        return;
+    }
+    resumeStreaming();
+}
+
+// A recording outlasts its sign-in, so the next stream waits for it to renew
+// when the provider says it is due, or when the service turned it down.
+// Returns whether it is renewing.
+bool FileTranscriptionSession::renewSignIn()
+{
+    const SpeechSettings speech = currentSpeechSettings();
+    if (!m_signInRefused && !m_transcriber->requiresRefresh(speech)) {
+        return false;
+    }
+    qInfo() << "recording renews its speech sign-in";
+    // Off the UI thread when the provider offers a job for it, as at the start.
+    std::optional<SpeechPrepareJob> job = m_transcriber->createPrepareJob(speech);
+    const SpeechPrepareResult prepared = job ? SpeechPrepareResult{true, {}} : m_transcriber->prepare(speech);
+    m_renewingSignIn = true;
+    m_preparation->start(++m_preparationRevision, std::move(job), std::nullopt, prepared);
+    return true;
+}
+
+// A renewal that failed fails the stream it was for: one that could not reach
+// the service reconnects later, and one turned down stops it.
+void FileTranscriptionSession::handleSignInRenewed(const SpeechPrepareResult &result)
+{
+    if (result.ok) {
+        resumeStreaming();
+        return;
+    }
+    const bool transient = result.kind == ProviderFailureKind::Network || result.kind == ProviderFailureKind::Timeout
+        || result.kind == ProviderFailureKind::Server || result.kind == ProviderFailureKind::RateLimited;
+    handleSpeechFailure({m_attemptId, result.message, transient, QStringLiteral("connect"), result.kind});
+}
+
+void FileTranscriptionSession::resumeStreaming()
 {
     m_streaming = true;
     startNextAttempt();
@@ -688,6 +731,13 @@ void FileTranscriptionSession::reconnect()
     if (m_streaming && !m_sendTimer.isActive()) {
         m_sendTimer.start();
     }
+}
+
+SpeechSettings FileTranscriptionSession::currentSpeechSettings() const
+{
+    SpeechSettings speech = m_batchSettings.speech;
+    speech.providerId = m_speechChain.at(m_speechIndex);
+    return speech;
 }
 
 void FileTranscriptionSession::handleAttemptCompleted(quint64 attemptId)
@@ -709,6 +759,10 @@ void FileTranscriptionSession::handleAttemptCompleted(quint64 attemptId)
     }
     m_reconnectsLeft = kReconnectsPerFile;
     qInfo() << "file transcription stream ended by the provider; rolling over";
+    if (m_options.streamedFinalsOnly) {
+        reconnect();
+        return;
+    }
     startNextAttempt();
 }
 
@@ -717,10 +771,15 @@ void FileTranscriptionSession::handleSpeechFailure(const SpeechFailure &failure)
     if (failure.attemptId != m_attemptId) {
         return;
     }
-    if (m_options.streamedFinalsOnly && m_providerConnected && failure.retryable
-        && m_microphone == Microphone::Listening) {
-        waitToReconnect(failure.message);
-        return;
+    if (m_options.streamedFinalsOnly && m_providerConnected && m_microphone == Microphone::Listening) {
+        // A sign-in the service turns down may only have expired: the stream
+        // reconnects once with it renewed before that stops it.
+        const bool firstRefusal =
+            failure.kind == ProviderFailureKind::Authentication && !std::exchange(m_signInRefused, true);
+        if (failure.retryable || firstRefusal) {
+            waitToReconnect(failure.message);
+            return;
+        }
     }
     // Nothing reached a service yet: no audio went out, or the file's first
     // attempt never connected and only buffered what it was given, and no
@@ -885,6 +944,8 @@ void FileTranscriptionSession::releaseFileResources()
     m_reconnectTimer.stop();
     m_preparation->cancel();
     ++m_preparationRevision;
+    m_renewingSignIn = false;
+    m_signInRefused = false;
     // Signals from a retired provider must not reach the next file.
     if (m_decoder) {
         disconnect(m_decoder, nullptr, this, nullptr);
