@@ -146,19 +146,39 @@ static bool unredirected(DWORD stream)
     return handle == nullptr || handle == INVALID_HANDLE_VALUE || GetFileType(handle) == FILE_TYPE_UNKNOWN;
 }
 
+// Whether a standard stream's destination is the console this just joined,
+// rather than a file, pipe or NUL the launcher redirected it to. GetConsoleMode
+// succeeds only for a real console handle, so a redirected stream is left with
+// the descriptor the CRT already bound to it.
+static bool destinationIsConsole(DWORD stream)
+{
+    const HANDLE handle = GetStdHandle(stream);
+    if (handle == nullptr || handle == INVALID_HANDLE_VALUE) {
+        return true;
+    }
+    DWORD mode = 0;
+    return GetConsoleMode(handle, &mode) != 0;
+}
+
 // Speecher is a GUI-subsystem program, so a command-line run starts with no
 // console. Borrow the one it was started from, if any, and point stdout and
 // stderr at it unless they already go to a file or pipe. cmd.exe does not
 // wait for a GUI-subsystem program, so its prompt can come back first.
+//
+// A console the launcher hands over is unusable until AttachConsole reconnects
+// it, by which point the CRT has already given up on the descriptors it would
+// have bound to fds 1 and 2, so cout and cerr write nowhere. Reopen them on the
+// console so those descriptors exist again; a stream the launcher redirected to
+// a file or pipe keeps the descriptor the CRT bound at startup.
 static void attachParentConsole()
 {
     if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
         return;
     }
-    if (unredirected(STD_OUTPUT_HANDLE)) {
+    if (destinationIsConsole(STD_OUTPUT_HANDLE)) {
         std::freopen("CONOUT$", "w", stdout);
     }
-    if (unredirected(STD_ERROR_HANDLE)) {
+    if (destinationIsConsole(STD_ERROR_HANDLE)) {
         std::freopen("CONOUT$", "w", stderr);
     }
     std::cout.clear();
@@ -167,11 +187,20 @@ static void attachParentConsole()
 
 // Points a standard stream at NUL. freopen closes the handle the stream had,
 // which the CRT took from the standard handle at startup, and the standard
-// handle is pointed at NUL to match.
+// handle is pointed at NUL to match. A stream the CRT never bound a descriptor
+// to has nothing to hand _get_osfhandle: passing it an invalid descriptor trips
+// the CRT's invalid-parameter handler, which fail-fasts the process, so a
+// failed freopen or an unbound stream stops here instead.
 static void reopenOnNul(FILE *stream, const char *mode, DWORD standardHandle)
 {
-    std::freopen("NUL", mode, stream);
-    SetStdHandle(standardHandle, reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stream))));
+    if (std::freopen("NUL", mode, stream) == nullptr) {
+        return;
+    }
+    const int fd = _fileno(stream);
+    if (fd < 0) {
+        return;
+    }
+    SetStdHandle(standardHandle, reinterpret_cast<HANDLE>(_get_osfhandle(fd)));
 }
 
 // A window or daemon run outlives the console it was started from, and
