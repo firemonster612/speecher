@@ -194,7 +194,11 @@ private slots:
         QTcpSocket phone;
         // A phone that stops reading after the first few bytes.
         phone.setReadBufferSize(4);
-        QObject::connect(&phone, &QTcpSocket::connected, [&] { phone.write(parts.token); });
+        QObject::connect(&phone, &QTcpSocket::connected, [&] {
+            // A small window, so the system cannot take the whole bundle for us.
+            phone.setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 4096);
+            phone.write(parts.token);
+        });
         phone.connectToHost(QHostAddress::LocalHost, parts.port);
         QTRY_VERIFY(phone.bytesAvailable() > 0);
         phone.abort();
@@ -224,7 +228,11 @@ private slots:
 
         QTcpSocket phone;
         phone.setReadBufferSize(4);
-        QObject::connect(&phone, &QTcpSocket::connected, [&] { phone.write(parts.token); });
+        QObject::connect(&phone, &QTcpSocket::connected, [&] {
+            // A small window, so the system cannot take the whole bundle for us.
+            phone.setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, 4096);
+            phone.write(parts.token);
+        });
         phone.connectToHost(QHostAddress::LocalHost, parts.port);
         QTRY_VERIFY(phone.bytesAvailable() > 0);
 

@@ -33,6 +33,7 @@ constexpr int kTokenTimeoutMs = 10'000;
 constexpr int kSendDeadlineMs = 30'000;
 // Connections open at once; only one of them can be the phone.
 constexpr qsizetype kMaxConnections = 8;
+constexpr int kSendBufferBytes = 64 * 1024;
 constexpr int kQuietZoneModules = 4;
 
 QByteArray randomBytes(qsizetype size)
@@ -340,6 +341,9 @@ void PhoneTransfer::serve(QTcpSocket *socket)
         });
         // A phone that stops reading would otherwise hold the send forever.
         QTimer::singleShot(kSendDeadlineMs, socket, &QTcpSocket::abort);
+        // So Sent means the phone took nearly all of it, rather than that the
+        // system queued it: Windows otherwise buffers megabytes on its own.
+        socket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, kSendBufferBytes);
         QByteArray length(4, Qt::Uninitialized);
         qToBigEndian<quint32>(quint32(m_sealed.size()), length.data());
         connect(socket, &QTcpSocket::bytesWritten, this, [this, socket] {
