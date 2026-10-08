@@ -26,25 +26,28 @@ SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint
                                           const QString &prompt,
                                           const QString &spokenLanguage);
 
+// How long the server may send nothing about an upload: a batch server sends
+// nothing while it transcribes, so this allows a long recording on a slow
+// machine.
+constexpr int kSpeechEndpointSilenceMs = 60000;
+
 // Transcription through the speech Custom Endpoint: an OpenAI-style
 // POST {base}{path} with the whole attempt's audio once input finishes.
 // Sends the audio once; a failure fails the attempt (rule A7).
 //
 // A recording cuts the audio into utterances instead: each is posted on its
 // own, after the one before has answered, with the end of the text before it
-// in the prompt, and its text is a final. The quiet between them is not sent,
-// but for a short lead-in. One that fails in a way that may pass is reported
-// and the next still goes; any other failure fails the attempt. No audio is
-// sent twice and none overlaps.
+// in the prompt, and its text, empty when it had no words, is a final. The
+// quiet between them is not sent, but for a short lead-in. One that fails in
+// a way that may pass is reported and the next still goes; any other failure
+// fails the attempt. No audio is sent twice and none overlaps.
 class EndpointSpeechTranscriber final : public SpeechTranscriber {
     Q_OBJECT
 
 public:
-    // A batch server sends nothing while it transcribes, so the inactivity
-    // limit allows a long recording on a slow machine; the deadline caps a
-    // server that keeps trickling.
+    // The deadline caps a server that keeps trickling.
     explicit EndpointSpeechTranscriber(QObject *parent = nullptr,
-                                       int inactivityTimeoutMs = 60000,
+                                       int inactivityTimeoutMs = kSpeechEndpointSilenceMs,
                                        int deadlineMs = 300000);
 
     QString id() const override;

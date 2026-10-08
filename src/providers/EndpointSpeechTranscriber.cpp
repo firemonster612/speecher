@@ -43,6 +43,13 @@ QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
     return message.isEmpty() ? fallback : message;
 }
 
+// OpenAI's 429 for an account out of credit, which waiting does not mend.
+bool isQuotaSpent(const QByteArray &body)
+{
+    return QJsonDocument::fromJson(body).object().value(QStringLiteral("error")).toObject()
+               .value(QStringLiteral("code")).toString() == QStringLiteral("insufficient_quota");
+}
+
 // Whether the first character with a script of its own, past punctuation and
 // digits, is in a script written without spaces between words.
 template <typename Iterator>
@@ -357,11 +364,13 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
             qWarning().noquote() << failure.message << "- keeping the text streamed so far";
         }
         if (m_cutIntoUtterances) {
-            finishUtterance(kept);
+            if (!kept.isEmpty()) {
+                finishUtterance(kept);
+            }
             // A failure that may pass costs this utterance alone. Any other,
-            // such as a refused key or a wrong path, would fail every one, so
-            // it stops the stream.
-            if (!isTransientFailure(failure.kind)) {
+            // such as a refused key, a wrong path or a spent quota, would
+            // fail every one, so it stops the stream.
+            if (!isTransientFailure(failure.kind) || isQuotaSpent(body)) {
                 emit failed(finalizeFailure(attemptId, failure));
                 return;
             }
@@ -390,10 +399,13 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
     emit attemptCompleted(attemptId);
 }
 
+// Every answered utterance is a final, one with no words too, so the caller
+// knows it was answered.
 void EndpointSpeechTranscriber::finishUtterance(const QString &text)
 {
-    if (text.isEmpty()) return;
-    m_heardTail = promptTail(m_heardTail + spacedSegment(m_heardTail, text));
+    if (!text.isEmpty()) {
+        m_heardTail = promptTail(m_heardTail + spacedSegment(m_heardTail, text));
+    }
     emit finalTranscript(m_attemptId, text);
 }
 

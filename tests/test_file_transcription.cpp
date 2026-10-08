@@ -1212,11 +1212,26 @@ private slots:
         QVERIFY(server.requests.isEmpty());
     }
 
-    // An endpoint that fails in a way every utterance would, here a path the
-    // server does not have, stops the stream, and status says why.
+    void aRecordingStopsTheStreamOfAnEndpointThatFailsEveryUtterance_data()
+    {
+        QTest::addColumn<QByteArray>("response");
+        QTest::newRow("a path the server does not have") << QByteArray();
+        QTest::newRow("a refused key")
+            << httpResponse("401 Unauthorized", "application/json", "{\"error\":{\"message\":\"Incorrect API key\"}}");
+        QTest::newRow("a spent quota")
+            << httpResponse("429 Too Many Requests", "application/json",
+                            "{\"error\":{\"message\":\"You exceeded your current quota\",\"code\":\"insufficient_quota\"}}");
+    }
+
+    // An endpoint that fails in a way every utterance would stops the stream,
+    // and status says why until the stop, which says it too.
     void aRecordingStopsTheStreamOfAnEndpointThatFailsEveryUtterance()
     {
+        QFETCH(QByteArray, response);
         FakeServer server;
+        if (!response.isEmpty()) {
+            server.route("POST /v1/audio/transcriptions", response);
+        }
         SettingsStore settings;
         useEndpoint(settings, server);
         QPointer<FakeAudioInput> microphone;
@@ -1224,6 +1239,7 @@ private slots:
             microphone = new FakeAudioInput(parent);
             return microphone.data();
         });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
         QString error;
         QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
 
@@ -1235,6 +1251,47 @@ private slots:
         microphone->pushAudio(microphoneChunk(8000));
         QTest::qWait(1200);
         QCOMPARE(server.requests.size(), 1);
+        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Stopped);
+
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 3000);
+        const RecordingStream stream = stopped.first().first().value<RecordingStatus>().streams.first();
+        QVERIFY2(stream.problem.startsWith(QStringLiteral("Speech endpoint failed: ")), qPrintable(stream.problem));
+        QVERIFY(!recordingStreamProblemText(stream).isEmpty());
+    }
+
+    // A stop waits for the uploads queued behind the one answering, each in
+    // its turn, an answer with no words too.
+    void aRecordingStopWaitsForEachQueuedUpload()
+    {
+        const int stopTimeoutMs = RecordingSession::stopTimeoutMs();
+        RecordingSession::setStopTimeoutMs(1200);
+        const auto restore = qScopeGuard([stopTimeoutMs] { RecordingSession::setStopTimeoutMs(stopTimeoutMs); });
+        FakeServer server;
+        server.answerDelayMs = 800;
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"\"}"));
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"Yes.\"}"));
+        SettingsStore settings;
+        useEndpoint(settings, server);
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+
+        microphone->pushAudio(microphoneChunk(8000));
+        QTRY_COMPARE_WITH_TIMEOUT(server.requests.size(), 1, 3000);
+        microphone->pushAudio(microphoneChunk(8000));
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
+        QCOMPARE(recordingStreamProblemText(stopped.first().first().value<RecordingStatus>().streams.first()),
+                 QString());
+        QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Yes.")});
+        QCOMPARE(server.requests.size(), 2);
     }
 
     // A stop ends the utterance being spoken once the microphone has

@@ -803,9 +803,10 @@ void FileTranscriptionSession::handleSpeechFailure(const SpeechFailure &failure)
     }
     if (m_options.streamedFinalsOnly && m_providerConnected && m_microphone == Microphone::Listening) {
         // A sign-in the service turns down may only have expired: the stream
-        // reconnects once with it renewed before that stops it.
-        const bool firstRefusal =
-            failure.kind == ProviderFailureKind::Authentication && !std::exchange(m_signInRefused, true);
+        // reconnects once with it renewed before that stops it. A provider
+        // with nothing to renew would be turned down again.
+        const bool firstRefusal = failure.kind == ProviderFailureKind::Authentication
+            && m_transcriber->renewsSignIn() && !std::exchange(m_signInRefused, true);
         if (failure.retryable || firstRefusal) {
             waitToReconnect(failure.message);
             return;

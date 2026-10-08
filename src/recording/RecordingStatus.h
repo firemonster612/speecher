@@ -8,8 +8,9 @@
 namespace speecher {
 
 // The longest a recording's stop waits for the speech provider to finish
-// the utterances left.
-constexpr int kLongestRecordingStopMs = 60000;
+// the utterances left, three minutes: a few at the Custom Endpoint's
+// slowest.
+constexpr int kLongestRecordingStopMs = 180000;
 
 // One audio source of a recording and the speaker its lines name.
 struct RecordingStream {

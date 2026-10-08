@@ -201,6 +201,11 @@ public:
         return refreshRequired;
     }
 
+    bool renewsSignIn() const override
+    {
+        return true;
+    }
+
     std::optional<SpeechPrepareJob> createPrepareJob(const SpeechSettings &) override
     {
         if (!backgroundPrepare) {
