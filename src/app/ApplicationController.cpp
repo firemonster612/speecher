@@ -379,6 +379,13 @@ void ApplicationController::startRecording(const QString &path, const QStringLis
                 SingleInstanceIpc::writeResponse(socket, response(false, error));
                 return;
             }
+            // A command line that stopped waiting said the start failed, so
+            // nothing may record behind its back.
+            if (!socket || socket->state() != QLocalSocket::ConnectedState) {
+                qWarning() << "record start's caller left before it answered; discarding the recording";
+                m_recording->discard();
+                return;
+            }
             IpcResponse reply = response();
             reply.recording = m_recording->status();
             if (!m_settings->recordingConsentNoticeShown()) {

@@ -202,6 +202,23 @@ void RecordingSession::stop()
     m_transcription->finishListening();
 }
 
+void RecordingSession::discard()
+{
+    if (m_phase != Phase::Recording) {
+        return;
+    }
+    const QString path = m_transcript.path();
+    m_phase = Phase::Stopping;
+    m_pauseTimer.stop();
+    // Cancelling finishes the transcription, which finishes the recording.
+    if (m_transcription->isRunning()) {
+        m_transcription->cancel();
+    } else {
+        finish();
+    }
+    QFile::remove(path);
+}
+
 // The first connection starts the recording; a later one ends a reconnect.
 void RecordingSession::handleStreamConnected()
 {

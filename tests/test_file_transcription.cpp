@@ -1278,6 +1278,33 @@ private slots:
     }
 #endif
 
+    // A start whose caller stopped waiting is discarded: the recording ends at
+    // once, with its microphone, and leaves no file.
+    void aDiscardedRecordingLeavesNoFile()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        bool microphoneStopped = false;
+        RecordingSession recording(&settings, m_registry.get(), [&microphoneStopped](QObject *parent) {
+            auto *microphone = new FakeAudioInput(parent);
+            microphone->onStop = [&microphoneStopped] { microphoneStopped = true; };
+            return microphone;
+        });
+        QSignalSpy changed(&recording, &RecordingSession::recordingChanged);
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        m_codex->emitFinalText(QStringLiteral("Hello?"));
+
+        recording.discard();
+        QVERIFY(!recording.isRecording());
+        QVERIFY(microphoneStopped);
+        QVERIFY(!QFileInfo::exists(path));
+        QCOMPARE(changed.count(), 2);
+        QCOMPARE(changed.last().first().toBool(), false);
+    }
+
     // A recording outlasts its sign-in. The next stream, after a rollover or a
     // drop, renews it first when the provider says it is due; one the service
     // turns down unforeseen renews once before the stream counts as stopped.

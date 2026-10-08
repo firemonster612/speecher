@@ -75,6 +75,9 @@ public:
     // Stops the microphone; the last utterance is still written before
     // stopped is emitted.
     void stop();
+    // Ends the recording at once and removes its file, for a start whose
+    // caller stopped waiting and so took it for a failure.
+    void discard();
 
 signals:
     void recordingChanged(bool recording);
