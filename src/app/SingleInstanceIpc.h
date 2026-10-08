@@ -2,7 +2,7 @@
 
 #include "app/PlatformComposition.h"
 #include "dictation/DictationTypes.h"
-#include "recording/RecordingSession.h"
+#include "recording/RecordingStatus.h"
 
 #include <QDeadlineTimer>
 #include <QLocalServer>

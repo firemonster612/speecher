@@ -1,6 +1,6 @@
 #include "recording/RecordingPresentation.h"
 
-#include "recording/RecordingSession.h"
+#include "recording/RecordingStatus.h"
 
 #include <QStringList>
 

@@ -558,6 +558,7 @@ set(SPEECHER_APP_SOURCES
   src/app/UpdateBanner.cpp
   src/recording/RecordingPresentation.cpp
   src/recording/RecordingSession.cpp
+  src/recording/RecordingStatus.cpp
   src/transcribe/FileTranscriptionSession.cpp
   src/transcribe/Subtitles.cpp
   src/transcribe/TranscribePresentation.cpp
@@ -585,6 +586,7 @@ set(SPEECHER_APP_HEADERS
   src/app/UpdateController.h
   src/recording/RecordingPresentation.h
   src/recording/RecordingSession.h
+  src/recording/RecordingStatus.h
   src/transcribe/FileTranscriptionSession.h
   src/transcribe/Subtitles.h
   src/transcribe/TranscribePresentation.h
