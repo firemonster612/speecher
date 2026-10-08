@@ -243,9 +243,11 @@ private slots:
 
     void systemAudioCaptureFollowsDefaultOutput()
     {
-        if (!pactl({QStringLiteral("info")})) {
-            QSKIP("No sound server, or no pactl to change its default output");
+        // It moves the real default output, so it never runs on a desktop by accident.
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_PULSE") != QStringLiteral("1")) {
+            QSKIP("Live default-output switching check is opt-in");
         }
+        QVERIFY2(pactl({QStringLiteral("info")}), "No sound server, or no pactl to change its default output");
         NullSinks sinks;
         QVERIFY(sinks.isReady());
         std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
@@ -263,9 +265,11 @@ private slots:
 
     void systemAudioCaptureIgnoresFailureOfReplacedStream()
     {
-        if (!pactl({QStringLiteral("info")})) {
-            QSKIP("No sound server, or no pactl to change its default output");
+        // It moves the real default output, so it never runs on a desktop by accident.
+        if (qEnvironmentVariable("SPEECHER_TEST_LIVE_PULSE") != QStringLiteral("1")) {
+            QSKIP("Live default-output switching check is opt-in");
         }
+        QVERIFY2(pactl({QStringLiteral("info")}), "No sound server, or no pactl to change its default output");
         NullSinks sinks;
         QVERIFY(sinks.isReady());
         std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
