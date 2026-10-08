@@ -1038,11 +1038,14 @@ private slots:
         };
         std::ostringstream json;
         printProviderReports(reports, true, json);
+        // The apostrophe stays out of the raw strings: moc reads one there as
+        // a character literal and loses the slots that follow.
         QCOMPARE(QString::fromStdString(json.str()),
                  QStringLiteral(R"([{"configured":true,"id":"codex","label":"ChatGPT Codex","problem":null,)"
                                 R"("role":"speech","signedIn":null,"signsIn":true,"usable":null},)"
                                 R"({"configured":true,"id":"local","label":"Local Runner",)"
-                                R"("problem":"Ollama isn't running.","role":"refinement","signedIn":null,)"
+                                "\"problem\":\"Ollama isn't running.\","
+                                R"("role":"refinement","signedIn":null,)"
                                 R"("signsIn":false,"usable":false}])"
                                 "\n"));
         std::ostringstream table;
