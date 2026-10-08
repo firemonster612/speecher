@@ -15,7 +15,6 @@ class QTimer;
 
 namespace speecher {
 
-class DictationSession;
 class ManifestUpdaterTestAccess;
 class SettingsStore;
 
@@ -32,7 +31,6 @@ class ManifestUpdater : public UpdateController {
 
 public:
     ManifestUpdater(SettingsStore *settings,
-                    DictationSession *session,
                     QString platformKey,
                     QString downloadKey,
                     QString downloadDescription,
@@ -77,6 +75,7 @@ protected:
                                                    bool *manualInstallRequired) = 0;
     virtual bool installDownload(const QString &path, QString *error) = 0;
     virtual void restartApplication() = 0;
+    void finishRestart() override;
 
 private:
     friend class ManifestUpdaterTestAccess;
@@ -106,10 +105,8 @@ private:
     void finishDownload(QNetworkReply *reply);
     void clearDownload();
     void restartNow();
-    void writeRestoreState();
 
     SettingsStore *m_settings;
-    DictationSession *m_session;
     QNetworkAccessManager *m_network;
     QTimer *m_checkTimer;
     QNetworkReply *m_reply = nullptr;

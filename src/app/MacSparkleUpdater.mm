@@ -1,7 +1,6 @@
 #include "app/MacSparkleUpdater.h"
 
 #include "core/SettingsStore.h"
-#include "dictation/DictationSession.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -16,11 +15,6 @@ namespace {
 
 NSString *const stableFeedUrl = @"https://firemonster612.github.io/speecher/appcast-stable.xml";
 NSString *const nightlyFeedUrl = @"https://firemonster612.github.io/speecher/appcast-nightly.xml";
-
-bool restartSafe(DictationState state)
-{
-    return state == DictationState::Idle || state == DictationState::Error;
-}
 
 } // namespace
 } // namespace speecher
@@ -276,11 +270,9 @@ struct MacSparkleUpdater::Native {
 };
 
 MacSparkleUpdater::MacSparkleUpdater(SettingsStore *settings,
-                                     DictationSession *session,
                                      QObject *parent)
     : UpdateController(parent)
     , m_settings(settings)
-    , m_session(session)
     , m_native(std::make_unique<Native>())
 {
     m_native->delegate = [[SpeecherSparkleDelegate alloc] init];
@@ -307,11 +299,6 @@ MacSparkleUpdater::MacSparkleUpdater(SettingsStore *settings,
             &SettingsStore::updateSettingsChanged,
             this,
             &MacSparkleUpdater::updateSettingsChanged);
-    connect(m_session, &DictationSession::stateChanged, this, [this] {
-        if (m_state == State::RestartPending && restartSafe(m_session->state())) {
-            finishRestart();
-        }
-    });
 }
 
 MacSparkleUpdater::~MacSparkleUpdater()
@@ -519,7 +506,7 @@ void MacSparkleUpdater::restartNow()
         return;
     }
     m_pendingRestoreState = restoreState();
-    if (!restartSafe(m_session->state())) {
+    if (busy()) {
         setState(State::RestartPending);
         return;
     }

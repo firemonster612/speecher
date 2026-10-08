@@ -21,10 +21,8 @@ void setError(QString *error, const QString &message)
 } // namespace
 
 WindowsInstallerUpdater::WindowsInstallerUpdater(SettingsStore *settings,
-                                                 DictationSession *session,
                                                  QObject *parent)
     : ManifestUpdater(settings,
-                      session,
                       QStringLiteral("windows-x86_64"),
                       QStringLiteral("installer"),
                       QStringLiteral("installer"),

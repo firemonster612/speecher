@@ -9,12 +9,11 @@
 
 namespace speecher {
 
-class DictationSession;
 enum class UpdateChannel;
 struct SettingsSchema;
 
-// What the update presentation is derived from: UpdateController's state and
-// the dictation session, read at one moment.
+// What the update presentation is derived from: UpdateController's state, read
+// at one moment.
 struct UpdateBannerFacts {
     UpdateController::State state = UpdateController::State::Idle;
     // availableVersionDisplay(): a stable number, or a nightly's build and commit.
@@ -26,8 +25,8 @@ struct UpdateBannerFacts {
     bool manualInstallRequired = false;
     bool stableReplacement = false;
     bool automaticDownloads = true;
-    // A dictation is under way (anything but idle or error).
-    bool dictating = false;
+    // What a restart now would wait for.
+    UpdateController::RestartBlocker restartBlocker = UpdateController::RestartBlocker::None;
     // "Later" was chosen for the version on offer.
     bool deferred = false;
 };
@@ -82,7 +81,7 @@ class UpdateBanner : public QObject {
     Q_OBJECT
 
 public:
-    UpdateBanner(UpdateController *updates, DictationSession *session, QObject *parent = nullptr);
+    explicit UpdateBanner(UpdateController *updates, QObject *parent = nullptr);
 
     UpdateBannerModel model() const;
     UpdateCheckRow checkRow(UpdateChannel channel) const;
@@ -94,6 +93,9 @@ public slots:
     // A click on the "Check for updates" row: the banner's action where the
     // row offers it, otherwise a check of this channel.
     void runCheckRow(UpdateChannel channel);
+    // Called whenever the updater's restartBlocker() may have changed; only a
+    // change of what a restart waits for changes what the banner offers.
+    void refreshRestartBlocker();
 
 signals:
     void changed();
@@ -102,7 +104,7 @@ private:
     UpdateBannerFacts facts() const;
 
     UpdateController *m_updates;
-    DictationSession *m_session;
+    UpdateController::RestartBlocker m_restartBlocker;
     std::optional<QString> m_deferredVersion;
 };
 
