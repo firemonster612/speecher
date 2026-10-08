@@ -726,6 +726,7 @@ private slots:
                  QStringLiteral("Restarting after this dictation…"));
         QCOMPARE(banner(State::RestartPending, recording).text,
                  QStringLiteral("Restarting after this recording…"));
+        QCOMPARE(banner(State::RestartPending, plain).text, QStringLiteral("Restarting…"));
         QVERIFY(!banner(State::ReadyToRestart, [](auto &f) { f.deferred = true; }).visible);
         QVERIFY(!banner(State::RestartPending, [](auto &f) { f.deferred = true; }).visible);
         // Once restarting, the banner explains the exit even after Later.

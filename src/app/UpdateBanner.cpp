@@ -42,9 +42,15 @@ QString restartCaption(const UpdateBannerFacts &facts)
 
 QString restartPendingText(const UpdateBannerFacts &facts)
 {
-    return facts.restartBlocker == RestartBlocker::Recording
-        ? QStringLiteral("Restarting after this recording…")
-        : QStringLiteral("Restarting after this dictation…");
+    switch (facts.restartBlocker) {
+    case RestartBlocker::None:
+        break;
+    case RestartBlocker::Dictation:
+        return QStringLiteral("Restarting after this dictation…");
+    case RestartBlocker::Recording:
+        return QStringLiteral("Restarting after this recording…");
+    }
+    return QStringLiteral("Restarting…");
 }
 
 QString failureText(const UpdateBannerFacts &facts)
