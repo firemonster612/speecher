@@ -513,6 +513,11 @@ void FileTranscriptionSession::connectTranscriber()
                     m_current.segments.append(segment);
                 }
             });
+    connect(m_transcriber, &SpeechTranscriber::utteranceFailed, this, [this](const SpeechFailure &failure) {
+        if (failure.attemptId == m_attemptId) {
+            emit utteranceFailed(m_index, failure.message);
+        }
+    });
     connect(m_transcriber, &SpeechTranscriber::attemptCompleted,
             this, &FileTranscriptionSession::handleAttemptCompleted);
     connect(m_transcriber, &SpeechTranscriber::failed,

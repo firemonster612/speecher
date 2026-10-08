@@ -1,10 +1,13 @@
 #include "common/test_suites.h"
 #include "common/test_doubles.h"
+#include "common/test_http.h"
 
 #include "app/HeadlessTranscribe.h"
 #include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
+#include "core/settings/SettingsKeys.h"
 #include "dictation/DictationSession.h"
+#include "providers/EndpointSpeechTranscriber.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
 #include "transcribe/FileTranscriptionSession.h"
@@ -1104,6 +1107,52 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(heardAtEnds, QList<qsizetype>({801000, 320 * 3000}), 10000);
     }
 
+    // The Custom Endpoint records too: the pause after each utterance, or
+    // the stop, uploads it and its text is a line. One the server fails is
+    // missing, status says so while the recording goes on, and the next
+    // still goes, with the text before as its prompt.
+    void aRecordingWithTheEndpointUploadsEachUtteranceAndReportsOneThatFailed()
+    {
+        FakeServer server;
+        for (const QByteArray &response :
+             {httpResponse("200 OK", "application/json", "{\"text\":\"Can you look at the retry logic?\"}"),
+              httpResponse("500 Internal Server Error", "application/json", "{\"error\":{\"message\":\"overloaded\"}}"),
+              httpResponse("200 OK", "application/json", "{\"text\":\"It drops the last chunk.\"}")}) {
+            server.route("POST /v1/audio/transcriptions", response);
+        }
+        m_registry->registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")},
+                                           [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("endpoint"));
+        settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, server.origin());
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+
+        microphone->pushAudio(microphoneChunk(8000));
+        QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), QStringList{QStringLiteral("Can you look at the retry logic?")},
+                                  3000);
+        microphone->pushAudio(microphoneChunk(8000));
+        QTRY_VERIFY_WITH_TIMEOUT(!recording.status().streams.first().problem.isEmpty(), 3000);
+        QCOMPARE(recording.status().streams.first().problem,
+                 QStringLiteral("An utterance could not be transcribed: Speech endpoint failed: overloaded"));
+        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Recording);
+
+        microphone->pushAudio(microphoneChunk(8000));
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 3000);
+        QCOMPARE(recordedTexts(path), QStringList({QStringLiteral("Can you look at the retry logic?"),
+                                                   QStringLiteral("It drops the last chunk.")}));
+        QCOMPARE(server.requests.size(), 3);
+        QVERIFY(server.requests.at(2).contains("Can you look at the retry logic?\r\n"));
+    }
+
     // A provider that transcribes only once the audio ends cannot record yet,
     // and a microphone that cannot start leaves no file. A stream that fails
     // part way in a way a reconnect cannot mend stops, with the partial it
@@ -1124,8 +1173,8 @@ private slots:
         QString error;
         const QString refused = m_dir.filePath(QStringLiteral("refused.md"));
         QVERIFY(startRecording(recording, refused, &error).isEmpty());
-        QCOMPARE(error, QStringLiteral("Recording needs Claude Voice or ChatGPT Codex, which stream finished text as "
-                                       "they hear it. Scripted can't record yet."));
+        QCOMPARE(error, QStringLiteral("Recording needs Claude Voice, ChatGPT Codex or the Custom Endpoint. Scripted "
+                                       "can't record yet."));
         QVERIFY(!QFileInfo::exists(refused));
 
         registerStreamingCodex();

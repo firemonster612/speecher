@@ -147,6 +147,9 @@ signals:
     // A recording's stream was down so long that the oldest unsent audio,
     // this much of it, was dropped.
     void microphoneAudioLost(int index, qint64 durationMs);
+    // A recording's utterance the speech provider did not transcribe, or
+    // only in part, for reason; the stream goes on.
+    void utteranceFailed(int index, const QString &reason);
     // Each piece of text that will not change again, in order: a final the
     // provider sent, or the partial a stream left when it ended. A
     // whole-attempt transcript, which replaces them, is not one.

@@ -111,6 +111,8 @@ RecordingSession::RecordingSession(SettingsStore *settings,
             });
     connect(m_transcription, &FileTranscriptionSession::microphoneAudioLost, this,
             [this](int, qint64 durationMs) { m_stream.lostAudioMs += durationMs; });
+    connect(m_transcription, &FileTranscriptionSession::utteranceFailed, this,
+            [this](int, const QString &reason) { m_stream.problem = recordingUtteranceFailedText(reason); });
     connect(m_transcription, &FileTranscriptionSession::fileTextFinalized, this,
             [this](int, const QString &text) { writeLine(text); });
     connect(m_transcription, &FileTranscriptionSession::batchFinished, this,
@@ -150,10 +152,8 @@ void RecordingSession::start(const QString &path,
     }
     const SpeechSettings speech = m_settings->snapshot().speech;
     const SpeechTranscriber *provider = m_providers->speechProvider(speech.providerId);
-    // A batch provider would need the audio cut into chunks at its silences,
-    // which recording does not do yet. Local Models that stream finalize runs
-    // of words rather than utterances, and their tail only in a whole-attempt
-    // transcript, so they say no too.
+    // Local Models finalize runs of words rather than utterances, and their
+    // tail only in a whole-attempt transcript, so they say no.
     if (!provider || !provider->streamsFinalText(speech)) {
         done(recordingSpeechProviderRefusal(m_providers->speechProviderLabel(speech.providerId)));
         return;
@@ -193,7 +193,12 @@ void RecordingSession::stop()
         return;
     }
     m_phase = Phase::Stopping;
-    m_pauseTimer.stop();
+    // The utterance being spoken ends here, as the others did at a pause: a
+    // provider that transcribes utterances does not take the audio after
+    // the last.
+    if (m_pauseTimer.isActive()) {
+        endUtterance();
+    }
     if (!m_transcription->isRunning()) {
         finish();
         return;

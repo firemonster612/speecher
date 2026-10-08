@@ -44,9 +44,10 @@ private:
 // partials are never written, except the one a dropped stream leaves. A line
 // carries the time its text was finalised, as streamed finals come with no
 // timings. The recording ends an utterance itself at a pause or once it runs
-// long, so a provider that finalizes only when asked (Codex) still writes
-// lines while it runs. It starts once the provider's stream connects; a
-// stream that drops after that reconnects until the recording stops.
+// long, and again at a stop, so a provider that finalizes only when asked
+// (Codex) or uploads each utterance on its own (the Custom Endpoint) still
+// writes lines while it runs. It starts once the provider's stream connects;
+// a stream that drops after that reconnects until the recording stops.
 class RecordingSession : public QObject {
     Q_OBJECT
 

@@ -221,7 +221,8 @@ public:
     }
     virtual SpeechPrepareResult prepare(const SpeechSettings &settings) = 0;
     // Whether finalTranscript arrives while the audio still streams, an
-    // utterance at a time, rather than all at the end. A recording needs it.
+    // utterance at a time, by itself or at each endUtterance(), rather than
+    // all at the end. A recording needs it.
     virtual bool streamsFinalText(const SpeechSettings &settings) const
     {
         Q_UNUSED(settings);
@@ -251,6 +252,9 @@ signals:
     void attemptSegments(quint64 attemptId, const QList<speecher::TranscriptSegment> &segments);
     void attemptCompleted(quint64 attemptId);
     void failed(const speecher::SpeechFailure &failure);
+    // Optional: an utterance endUtterance() ended was not transcribed, or
+    // only in part, and the attempt goes on with the next.
+    void utteranceFailed(const speecher::SpeechFailure &failure);
 };
 
 class TranscriptRefiner : public QObject {

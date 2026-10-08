@@ -100,14 +100,19 @@ QString recordingNeedsSetupText()
 
 QString recordingSpeechProviderRefusal(const QString &providerLabel)
 {
-    return QStringLiteral("Recording needs Claude Voice or ChatGPT Codex, which stream finished text as they hear "
-                          "it. %1 can't record yet.")
+    return QStringLiteral("Recording needs Claude Voice, ChatGPT Codex or the Custom Endpoint. %1 can't record "
+                          "yet.")
         .arg(providerLabel);
 }
 
 QString recordingStreamEndedText()
 {
     return QStringLiteral("The speech stream ended.");
+}
+
+QString recordingUtteranceFailedText(const QString &reason)
+{
+    return QStringLiteral("An utterance could not be transcribed: %1").arg(reason);
 }
 
 QString recordingStopTimedOutText()

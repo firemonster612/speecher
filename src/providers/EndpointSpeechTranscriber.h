@@ -29,6 +29,11 @@ SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint
 // Transcription through the speech Custom Endpoint: an OpenAI-style
 // POST {base}{path} with the whole attempt's audio once input finishes.
 // Sends the audio once; a failure fails the attempt (rule A7).
+//
+// A recording ends utterances instead: each is posted on its own, after the
+// one before has answered, with the end of the text before it in the prompt,
+// and its text is a final. One that fails is reported and the next still
+// goes; no audio is sent twice and none overlaps.
 class EndpointSpeechTranscriber final : public SpeechTranscriber {
     Q_OBJECT
 
@@ -44,15 +49,19 @@ public:
     QString label() const override;
     bool requiresRefresh(const SpeechSettings &settings) const override;
     SpeechPrepareResult prepare(const SpeechSettings &settings) override;
+    bool streamsFinalText(const SpeechSettings &settings) const override;
     void startAttempt(quint64 attemptId, const SpeechSettings &settings) override;
     void sendAudio(quint64 attemptId, const QByteArray &pcm) override;
     void finishInput(quint64 attemptId) override;
     void cancelAttempt(quint64 attemptId) override;
+    void endUtterance(quint64 attemptId) override;
 
 private:
+    void postAudio(const QByteArray &pcm, const QString &prompt);
+    void uploadNextUtterance();
     void readStream();
     void finishReply(QNetworkReply *reply, quint64 attemptId);
-    void fail(quint64 attemptId, const ProviderFailure &failure);
+    void finishUtterance(const QString &text);
 
     int m_inactivityTimeoutMs;
     int m_deadlineMs;
@@ -64,10 +73,19 @@ private:
     QNetworkAccessManager m_network;
     QPointer<QNetworkReply> m_reply;
     SpeechEndpointSettings m_endpoint;
-    QString m_prompt;
+    // The key terms, as each upload's prompt starts.
+    QString m_vocabularyPrompt;
     QString m_spokenLanguage;
     quint64 m_attemptId = 0;
+    bool m_inputFinished = false;
     QByteArray m_pcm;
+    // endUtterance() has cut the attempt's audio, so its text comes an
+    // utterance at a time.
+    bool m_inUtterances = false;
+    // Utterances waiting for the one uploading, oldest first.
+    QList<QByteArray> m_utterances;
+    // The end of the text the attempt's utterances have had so far.
+    QString m_heardTail;
     QByteArray m_sseBuffer;
     QString m_streamedText;
     QString m_doneText;

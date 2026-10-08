@@ -19,73 +19,10 @@ using namespace speecher::test;
 
 namespace {
 
-QByteArray httpResponse(const QByteArray &status, const QByteArray &contentType, const QByteArray &body)
-{
-    return "HTTP/1.1 " + status + "\r\nContent-Type: " + contentType + "\r\nContent-Length: "
-        + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
-}
-
 QByteArray json(const QJsonObject &object)
 {
     return QJsonDocument(object).toJson(QJsonDocument::Compact);
 }
-
-// Answers each request with the route's canned response and records the
-// requests it saw. It never blocks the GUI thread: Qt's HTTP thread gets an
-// upload's body from this thread, so a blocking read here stalls the request
-// it is waiting for.
-class FakeServer : public QObject {
-public:
-    FakeServer()
-    {
-        QVERIFY(m_server.listen(QHostAddress::LocalHost));
-        connect(&m_server, &QTcpServer::newConnection, this, [this] {
-            while (QTcpSocket *socket = m_server.nextPendingConnection()) {
-                connect(socket, &QTcpSocket::readyRead, this, [this, socket] {
-                    if (hasWholeRequest(socket)) answer(socket);
-                });
-            }
-        });
-    }
-
-    // Responses for one route are used in order; the last one repeats.
-    void route(const QByteArray &methodAndPath, const QByteArray &response)
-    {
-        m_routes[methodAndPath] << response;
-    }
-
-    QString origin() const { return QStringLiteral("http://127.0.0.1:%1").arg(m_server.serverPort()); }
-
-    QJsonObject jsonBody(int index) const
-    {
-        const QByteArray &request = requests.at(index);
-        return QJsonDocument::fromJson(request.mid(request.indexOf("\r\n\r\n") + 4)).object();
-    }
-
-    QList<QByteArray> requests;
-
-private:
-    void answer(QTcpSocket *socket)
-    {
-        const QByteArray request = socket->readAll();
-        requests << request;
-        const QByteArray line = request.left(request.indexOf("\r\n"));
-        const QByteArray route = line.split(' ').value(0) + ' ' + line.split(' ').value(1);
-        const auto next = [this, &route] {
-            QList<QByteArray> &queued = m_routes[route];
-            return queued.size() > 1 ? queued.takeFirst() : queued.value(0);
-        };
-        const QByteArray response = m_routes.contains(route)
-            ? next()
-            : httpResponse("404 Not Found", "text/plain", "404 page not found for [" + line + "]");
-        socket->write(response);
-        socket->flush();
-        socket->disconnectFromHost();
-    }
-
-    QTcpServer m_server;
-    QHash<QByteArray, QList<QByteArray>> m_routes;
-};
 
 QByteArray sse(const QList<QByteArray> &dataLines)
 {
@@ -432,6 +369,62 @@ private slots:
 
         QTest::qWait(200);
         QCOMPARE(partial.size() + transcript.size() + completed.size() + failed.size(), 0);
+    }
+
+    // A recording's utterances go up one at a time, each once the one before
+    // has answered, with the key terms and then the last 200 characters of
+    // the text before it, from a word's start, as its prompt. Each text is a
+    // final, and the pause after the last utterance is not sent.
+    void speechEndpointTranscribesEachUtteranceInTurnAfterTheTextBefore()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+        EndpointSpeechTranscriber transcriber;
+        QSignalSpy finals(&transcriber, &SpeechTranscriber::finalTranscript);
+        QSignalSpy transcript(&transcriber, &SpeechTranscriber::attemptTranscript);
+        QSignalSpy completed(&transcriber, &SpeechTranscriber::attemptCompleted);
+        SpeechSettings settings;
+        settings.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+        settings.vocabulary = {QStringLiteral("Speecher")};
+        transcriber.startAttempt(1, settings);
+        transcriber.sendAudio(1, QByteArray(640, 'a'));
+        transcriber.endUtterance(1);
+        transcriber.sendAudio(1, QByteArray(640, 'b'));
+        transcriber.endUtterance(1);
+        transcriber.sendAudio(1, QByteArray(640, 'c'));
+        transcriber.finishInput(1);
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
+        QTcpSocket *first = server.nextPendingConnection();
+        const QByteArray firstRequest = readHttpRequest(first, 2000);
+        QVERIFY(firstRequest.contains(QByteArray(640, 'a')));
+        QVERIFY(!firstRequest.contains(QByteArray(640, 'b')));
+        QVERIFY(firstRequest.contains("name=\"prompt\"\r\n\r\nSpeecher\r\n"));
+        QTest::qWait(100);
+        QVERIFY(!server.hasPendingConnections());
+        // 282 characters: the tail starts 200 from the end, part way into a
+        // "word", so at the next.
+        const QString firstText = QStringLiteral("word ").repeated(50) + QStringLiteral("Can you look at the retry logic?");
+        first->write(httpResponse("200 OK", "application/json", json({{QStringLiteral("text"), firstText}})));
+        first->flush();
+
+        QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 2000);
+        QTcpSocket *second = server.nextPendingConnection();
+        const QByteArray secondRequest = readHttpRequest(second, 2000);
+        QVERIFY(secondRequest.contains(QByteArray(640, 'b')));
+        const QByteArray prompt = "name=\"prompt\"\r\n\r\nSpeecher. " + QByteArray("word ").repeated(33)
+            + "Can you look at the retry logic?\r\n";
+        QVERIFY2(secondRequest.contains(prompt), secondRequest.constData());
+        second->write(httpResponse("200 OK", "application/json", "{\"text\":\" It drops the last chunk. \"}"));
+        second->flush();
+
+        QTRY_COMPARE_WITH_TIMEOUT(completed.size(), 1, 2000);
+        QCOMPARE(finals.size(), 2);
+        QCOMPARE(finals.at(0).at(1).toString(), firstText);
+        QCOMPARE(finals.at(1).at(1).toString(), QStringLiteral("It drops the last chunk."));
+        QCOMPARE(transcript.size(), 0);
+        QTest::qWait(100);
+        QVERIFY(!server.hasPendingConnections());
     }
 
     void chatCompletionsSendsThePromptAndStreamsTheReply()

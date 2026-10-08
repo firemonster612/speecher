@@ -27,6 +27,8 @@ QString alreadyRecordingText(const QString &path);
 QString recordingNeedsSetupText();
 QString recordingSpeechProviderRefusal(const QString &providerLabel);
 QString recordingStreamEndedText();
+// A stream's problem once an utterance was not transcribed, for reason.
+QString recordingUtteranceFailedText(const QString &reason);
 QString recordingStopTimedOutText();
 QString recordingFileError(const QString &path, const QString &reason);
 
