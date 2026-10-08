@@ -1129,6 +1129,28 @@ private slots:
         }
     }
 
+    // status --watch keeps asking the running Speecher; --json goes with
+    // either.
+    void statusTakesJsonAndWatch()
+    {
+        const auto parse = [](QStringList options) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("status")} + options, {});
+        };
+        QCOMPARE(parse({}).ipcCommand, QStringLiteral("status"));
+        QVERIFY(!parse({}).json);
+        QVERIFY(parse({QStringLiteral("--json")}).json);
+        const CommandLineDecision watch = parse({QStringLiteral("--watch"), QStringLiteral("--json")});
+        QCOMPARE(watch.mode, LaunchMode::RunCli);
+        QCOMPARE(watch.ipcCommand, QStringLiteral("watchStatus"));
+        QVERIFY(watch.json);
+
+        std::ostringstream usage;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        QCOMPARE(parse({QStringLiteral("--follow")}).exitCode, 2);
+        QVERIFY(QString::fromStdString(usage.str()).startsWith(QStringLiteral("Unknown status option: --follow\n")));
+    }
+
     // A custom tone or level is named by its id without custom_, with - for _.
     void transcribeTakesCustomTonesAndLevels()
     {

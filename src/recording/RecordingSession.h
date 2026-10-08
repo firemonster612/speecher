@@ -81,6 +81,9 @@ public:
 
 signals:
     void recordingChanged(bool recording);
+    // While recording, a stream reconnects, connects again, stops on its own
+    // or loses audio.
+    void streamChanged();
     // The finished recording's last status.
     void stopped(const speecher::RecordingStatus &status);
 

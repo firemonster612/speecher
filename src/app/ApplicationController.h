@@ -110,6 +110,9 @@ public:
     // until the first dictation says something.
     QString lastTranscript() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
+    // status's answer and each line status --watch is written: the dictation
+    // state and the recording.
+    IpcResponse statusResponse() const;
     QString outputSummary() const;
     bool accessibilitySupported() const;
     bool accessibilityEnabled() const;

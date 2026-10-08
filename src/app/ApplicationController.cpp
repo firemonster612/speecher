@@ -275,6 +275,11 @@ ApplicationController::ApplicationController(bool popupOnly,
     });
 
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
+    // Not on each tick of the recording's duration, which every line carries.
+    const auto publishStatus = [this] { m_ipc->publishStatus(statusResponse()); };
+    connect(m_session, &DictationSession::stateChanged, this, publishStatus);
+    connect(m_recording, &RecordingSession::recordingChanged, this, publishStatus);
+    connect(m_recording, &RecordingSession::streamChanged, this, publishStatus);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
     connect(m_pauseShortcutBinder, &GlobalShortcutBinder::activated, m_session, &DictationSession::togglePause);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateSessionShortcuts);
@@ -594,6 +599,13 @@ IpcResponse ApplicationController::response(bool ok, const QString &message) con
 {
     const SessionResponse sessionResponse = m_session->response(ok, message);
     return {sessionResponse.ok, sessionResponse.state, sessionResponse.message};
+}
+
+IpcResponse ApplicationController::statusResponse() const
+{
+    IpcResponse reply = response();
+    reply.recording = m_recording->status();
+    return reply;
 }
 
 QString ApplicationController::outputSummary() const
@@ -1208,7 +1220,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
         m_recordStopReplies.append(socket);
         m_recording->stop();
     } else if (command == QStringLiteral("status")) {
-        SingleInstanceIpc::writeResponse(socket, response());
+        SingleInstanceIpc::writeResponse(socket, statusResponse());
+    } else if (command == QStringLiteral("watchStatus")) {
+        m_ipc->addStatusWatcher(socket, statusResponse());
     } else if (command == QStringLiteral("last")) {
         IpcResponse reply = response(!m_lastTranscript.isEmpty());
         reply.text = m_lastTranscript;

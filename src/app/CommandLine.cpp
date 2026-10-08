@@ -7,12 +7,14 @@
 #include "core/settings/SettingsCodecs.h"
 #include "core/settings/SettingsSchema.h"
 #include "core/settings/SpokenLanguages.h"
+#include "dictation/DictationTypes.h"
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingPresentation.h"
 #include "transcribe/FileTranscriptionSession.h"
 
 #include <QFileInfo>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include <QThread>
 
@@ -125,13 +127,20 @@ constexpr int kRecordStopTimeoutMs = 20000;
 // How long record start waits for the Speecher it started to answer.
 constexpr int kDaemonStartTimeoutMs = 10000;
 constexpr int kDaemonPollMs = 100;
+// How often status --watch looks for a Speecher to start while none runs.
+constexpr int kWatchConnectRetryMs = 2000;
 
 const char kHelp[] = R"(Usage: speecher [command] [options]
 
 Commands (sent to the running Speecher):
   toggle | start | stop    control dictation
   cancel                   throw away the dictation in progress
-  status                   print the dictation state
+  status [--json] [--watch]
+                           print the dictation state; --json prints one
+                           object with the recording as record status --json
+                           has it, or false; --watch prints a line now and on
+                           each change until Ctrl-C, and waits for a Speecher
+                           to start when none runs
   last                     print the last transcript
   vocabulary add [--] <terms...>
                            save the terms to the custom vocabulary
@@ -775,6 +784,107 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
     return {};
 }
 
+// Reads `speecher status`'s options. Returns an error message for a usage
+// mistake.
+QString parseStatusArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    decision->ipcCommand = QStringLiteral("status");
+    for (const QString &argument : arguments) {
+        if (argument == QStringLiteral("--json")) {
+            decision->json = true;
+        } else if (argument == QStringLiteral("--watch")) {
+            decision->ipcCommand = QStringLiteral("watchStatus");
+        } else {
+            return QStringLiteral("Unknown status option: %1").arg(argument);
+        }
+    }
+    return {};
+}
+
+// What status says when no Speecher runs.
+IpcResponse idleStatus()
+{
+    return {true, dictationStateName(DictationState::Idle), {}};
+}
+
+// status --json's object: the dictation state, and the recording's status or
+// false. An instance older than recording sends none, and records nothing.
+QJsonObject statusJson(const IpcResponse &status)
+{
+    const RecordingStatus recording = status.recording.value_or(RecordingStatus());
+    return {{QStringLiteral("state"), status.state},
+            {QStringLiteral("recording"),
+             recording.recording ? QJsonValue(recordingStatusJson(recording)) : QJsonValue(false)}};
+}
+
+QString statusLine(const IpcResponse &status, bool json)
+{
+    return json ? QString::fromUtf8(QJsonDocument(statusJson(status)).toJson(QJsonDocument::Compact))
+                : statusWatchText(status.state, status.recording.value_or(RecordingStatus()));
+}
+
+int printStatusJson(const std::shared_ptr<const SingleInstancePlatform> &platform)
+{
+    IpcResponse response;
+    QString ipcError;
+    const IpcCommandResult result =
+        SingleInstanceIpc::sendCommandDetailed(QStringLiteral("status"), &response, 2500, platform, &ipcError);
+    if (result == IpcCommandResult::Unavailable) {
+        response = idleStatus();
+    } else if (result != IpcCommandResult::Sent) {
+        std::cerr << ipcError.toStdString() << "\n";
+        return 1;
+    }
+    std::cout << statusLine(response, true).toStdString() << "\n";
+    return response.ok ? 0 : 1;
+}
+
+// status --watch: a line for the status now and one for each change, until
+// the running Speecher quits. Before one starts it prints the idle status
+// and keeps looking for one, so a status bar started first picks it up.
+int watchStatus(bool json, const std::shared_ptr<const SingleInstancePlatform> &platform)
+{
+    QString printed;
+    const auto print = [&](const IpcResponse &status) {
+        // A change the line does not show, such as the idle status the
+        // Speecher that just started answers, prints nothing.
+        const QString line = statusLine(status, json);
+        if (line == printed) {
+            return;
+        }
+        printed = line;
+        // Flushed: a status bar reads each line as it comes.
+        std::cout << line.toStdString() << std::endl;
+    };
+    QString refusal;
+    const auto onStatus = [&](const IpcResponse &status) {
+        if (status.ok) {
+            print(status);
+        } else {
+            refusal = status.message;
+        }
+    };
+    QString ipcError;
+    IpcCommandResult result;
+    while ((result = SingleInstanceIpc::watchStatus(onStatus, 2500, platform, &ipcError))
+           == IpcCommandResult::Unavailable) {
+        print(idleStatus());
+        QThread::msleep(kWatchConnectRetryMs);
+    }
+    if (result != IpcCommandResult::Sent) {
+        std::cerr << ipcError.toStdString() << "\n";
+        return 1;
+    }
+    if (refusal == kUnknownIpcCommandMessage) {
+        return reportOlderInstance("doesn't know `status --watch`");
+    }
+    if (!refusal.isEmpty()) {
+        std::cerr << refusal.toStdString() << "\n";
+        return 1;
+    }
+    return 0;
+}
+
 // Prints what went wrong with each stream and with the file on stderr.
 // Returns whether anything did.
 bool printRecordingProblems(const RecordingStatus &status)
@@ -955,6 +1065,15 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
             }
             return decision;
         }
+        if (verb == QStringLiteral("status")) {
+            const QString error = parseStatusArguments(arguments.mid(2), &decision);
+            if (!error.isEmpty()) {
+                std::cerr << error.toStdString() << "\n\n"
+                          << helpText().toStdString();
+                return {LaunchMode::Exit, 2};
+            }
+            return decision;
+        }
         decision.ipcCommand = verb == QStringLiteral("settings")
             ? QStringLiteral("showSettings")
             : verb == QStringLiteral("setup")
@@ -1053,6 +1172,12 @@ int runCliCommand(const CommandLineDecision &decision,
     }
     if (command.startsWith(QStringLiteral("record"))) {
         return runRecordCommand(decision, platform);
+    }
+    if (command == QStringLiteral("watchStatus")) {
+        return watchStatus(decision.json, platform);
+    }
+    if (command == QStringLiteral("status") && decision.json) {
+        return printStatusJson(platform);
     }
     IpcResponse response;
     QString ipcError;
