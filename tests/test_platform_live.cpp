@@ -1,5 +1,11 @@
 #include "common/test_prelude.h"
 
+#include "providers/PcmWav.h"
+
+#include <QScopeGuard>
+
+#include <memory>
+
 using namespace speecher;
 
 
@@ -86,6 +92,57 @@ private slots:
         QCOMPARE(pcm.size() % int(sizeof(qint16)), 0);
         capture.stop();
         QVERIFY(!capture.isActive());
+    }
+
+#ifdef SPEECHER_WITH_PULSE
+    void systemAudioCaptureFailsWithoutSoundServer()
+    {
+        QTemporaryDir dir;
+        const QByteArray previousServer = qgetenv("PULSE_SERVER");
+        qputenv("PULSE_SERVER", "unix:" + QFile::encodeName(dir.filePath(QStringLiteral("missing"))));
+        const auto restoreServer = qScopeGuard([&] {
+            previousServer.isNull() ? qunsetenv("PULSE_SERVER") : qputenv("PULSE_SERVER", previousServer);
+        });
+
+        std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
+        QVERIFY(capture);
+        QString error;
+        QVERIFY(!capture->start(&error));
+        QVERIFY(error.startsWith(QStringLiteral("Could not connect to the sound server")));
+        QVERIFY(!capture->isActive());
+    }
+#endif
+
+    // Records SPEECHER_TEST_LIVE_SYSTEM_AUDIO_SECONDS (default 5) of what the
+    // speakers play to the WAV that SPEECHER_TEST_LIVE_SYSTEM_AUDIO names.
+    void liveSystemAudioCapture()
+    {
+        const QString wavPath = qEnvironmentVariable("SPEECHER_TEST_LIVE_SYSTEM_AUDIO");
+        if (wavPath.isEmpty()) {
+            QSKIP("Live system audio capture is opt-in");
+        }
+        bool secondsSet = false;
+        int seconds = qEnvironmentVariableIntValue("SPEECHER_TEST_LIVE_SYSTEM_AUDIO_SECONDS", &secondsSet);
+        if (!secondsSet) {
+            seconds = 5;
+        }
+
+        std::unique_ptr<AudioInput> capture(platformComposition()->createSystemAudioInput(nullptr));
+        QVERIFY2(capture, "This platform has no system audio capture");
+        QByteArray pcm;
+        connect(capture.get(), &AudioInput::audioChunk, capture.get(), [&](const QByteArray &chunk) { pcm += chunk; });
+        QSignalSpy failed(capture.get(), &AudioInput::failed);
+        QString error;
+        QVERIFY2(capture->start(&error), qPrintable(error));
+        QTest::qWait(seconds * 1000);
+        capture->stop();
+
+        QCOMPARE(failed.count(), 0);
+        QFile wav(wavPath);
+        QVERIFY(wav.open(QIODevice::WriteOnly));
+        wav.write(wavFromPcm16Mono(pcm, 16000));
+        // Allow for the server's buffering at either end.
+        QVERIFY2(pcm.size() >= (seconds - 1) * 16000 * 2, qPrintable(QString::number(pcm.size())));
     }
 
 #ifdef SPEECHER_WITH_WAYLAND

@@ -29,6 +29,7 @@ RUN apt-get update \
         libkf6globalaccel-dev \
         libkf6widgetsaddons-dev \
         liblayershellqtinterface-dev \
+        libpulse-dev \
         libsecret-1-dev \
         libvulkan-dev \
         libwayland-dev \
