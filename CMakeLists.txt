@@ -550,6 +550,8 @@ set(SPEECHER_APP_SOURCES
   src/app/ManifestUpdater.cpp
   src/app/MicrophoneTest.cpp
   src/app/PlatformSelection.cpp
+  src/app/PhoneTransfer.cpp
+  src/app/PhoneTransferPresentation.cpp
   src/app/ProviderSetup.cpp
   src/app/ProvidersCommand.cpp
   src/app/AccessibilityPresentation.cpp
@@ -577,6 +579,8 @@ set(SPEECHER_APP_HEADERS
   src/app/ManifestUpdater.h
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
+  src/app/PhoneTransfer.h
+  src/app/PhoneTransferPresentation.h
   src/app/ProviderSetup.h
   src/app/ProvidersCommand.h
   src/app/AccessibilityPresentation.h
@@ -626,6 +630,7 @@ set(SPEECHER_FRONTEND_QT_SOURCES
   src/frontend/qt/FallbackList.cpp
   src/frontend/qt/LocalModelRows.cpp
   src/frontend/qt/MicrophoneTestRow.cpp
+  src/frontend/qt/PhoneTransferDialog.cpp
   src/frontend/qt/OutputCustomRows.cpp
   src/frontend/qt/ProviderCustomRows.cpp
   src/frontend/qt/QtFrontEnd.cpp
@@ -658,6 +663,7 @@ set(SPEECHER_FRONTEND_QT_HEADERS
   src/frontend/qt/LocalModelRows.h
   src/frontend/qt/MicrophoneTestRow.h
   src/frontend/qt/OutputCustomRows.h
+  src/frontend/qt/PhoneTransferDialog.h
   src/frontend/qt/ProviderCustomRows.h
   src/frontend/qt/QtFrontEnd.h
   src/frontend/qt/QtPopupSurface.h
@@ -1035,6 +1041,27 @@ if(ATSPI_FOUND)
   target_link_libraries(speecher_platform PUBLIC PkgConfig::ATSPI)
 endif()
 
+# The phone transfer's QR code and cipher (docs/adr/0008-phone-transfer-over-the-lan.md).
+# Both are single files; Qt has neither.
+include(FetchContent)
+FetchContent_Declare(qrcodegen
+  URL https://github.com/nayuki/QR-Code-generator/archive/refs/tags/v1.8.0.tar.gz
+  URL_HASH SHA256=2ec0a4d33d6f521c942eeaf473d42d5fe139abcfa57d2beffe10c5cf7d34ae60
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  SOURCE_SUBDIR speecher-adds-this-itself
+)
+FetchContent_Declare(monocypher
+  URL https://github.com/LoupVaillant/Monocypher/archive/refs/tags/4.0.3.tar.gz
+  URL_HASH SHA256=a7cbae546fbdc489bca632c3747e1ceb8ca3d4bd39e2706a0916f28ccd280e50
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  SOURCE_SUBDIR speecher-adds-this-itself
+)
+FetchContent_MakeAvailable(qrcodegen monocypher)
+add_library(speecher_qrcodegen STATIC "${qrcodegen_SOURCE_DIR}/cpp/qrcodegen.cpp")
+target_include_directories(speecher_qrcodegen SYSTEM PUBLIC "${qrcodegen_SOURCE_DIR}/cpp")
+add_library(speecher_monocypher STATIC "${monocypher_SOURCE_DIR}/src/monocypher.c")
+target_include_directories(speecher_monocypher SYSTEM PUBLIC "${monocypher_SOURCE_DIR}/src")
+
 # The application: sessions, permissions and single-instance IPC, with no user
 # interface of its own. Deliberately free of Qt Widgets so that a front end
 # built on something else can drive it; see
@@ -1051,6 +1078,7 @@ target_compile_definitions(speecher_app PUBLIC
 target_link_libraries(speecher_app PUBLIC
   speecher_domain speecher_workflow speecher_providers speecher_platform Qt6::Network
 )
+target_link_libraries(speecher_app PRIVATE speecher_qrcodegen speecher_monocypher)
 if(UNIX)
   target_sources(speecher_app PRIVATE
     src/app/AppImageUpdater.cpp
@@ -1566,6 +1594,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_dictation_session_fallbacks.cpp
     tests/test_refiners.cpp
     tests/test_vocabulary.cpp
+    tests/test_phone_transfer.cpp
     tests/test_insights.cpp
     tests/test_provider_auth.cpp
     tests/test_claude_voice.cpp
@@ -1597,7 +1626,7 @@ if(SPEECHER_BUILD_TESTS)
     SPEECHER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   )
   target_link_libraries(speecher_tests PRIVATE
-    speecher_frontend_qt Qt6::Test
+    speecher_frontend_qt Qt6::Test speecher_monocypher
   )
   if(UNIX AND NOT APPLE)
     target_sources(speecher_tests PRIVATE
@@ -1646,6 +1675,7 @@ if(SPEECHER_BUILD_TESTS)
     dictation_session_fallbacks
     refiners
     vocabulary
+    phone_transfer
     insights
     provider_auth
     claude_voice

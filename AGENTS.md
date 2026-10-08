@@ -56,7 +56,10 @@ a rewrite of the sidebar, the colours and the Dictation page. Do not repeat it.
   button. Beside them, `BusyCircle` paints the spinner that takes pause's
   place while transcribing and refining, an arc of PlaceholderText over a
   faint ring of it, because Qt Widgets has no circular busy indicator; macOS
-  and Windows use their native spinners there.
+  and Windows use their native spinners there. The QR code in "Copy settings
+  to your phone" is black on white in every theme, not palette roles, because
+  scanners read dark-on-light codes most reliably; `qrCodeImage` in
+  `src/app/PhoneTransfer.cpp` draws it for every front end.
 - **Settings pages follow Kirigami Addons FormCard.** Bold header above the
   card, title and small grey description on the left, control on the right,
   inset separators, button rows with a trailing arrow, cards capped at 30

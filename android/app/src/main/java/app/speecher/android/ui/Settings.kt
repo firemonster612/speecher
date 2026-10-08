@@ -153,6 +153,7 @@ fun Settings(
     signInError: String? = null,
     onPasteCode: (String) -> Unit = {},
     onRunSetup: () -> Unit = {},
+    onImportFromComputer: () -> Unit = {},
     updateState: UpdateState = UpdateState.Idle,
     onCheckForUpdates: () -> Unit = {},
     onOpenWhatsNew: () -> Unit = {},
@@ -266,6 +267,15 @@ fun Settings(
             modifier = Modifier.clickable(onClick = onRunSetup),
             colors = rowColors(),
         )
+        ListItem(
+            headlineContent = { Text("Import from computer") },
+            supportingContent = {
+                Text("Scan the code Speecher shows under General on your computer.")
+            },
+            trailingContent = { Chevron() },
+            modifier = Modifier.clickable(onClick = onImportFromComputer),
+            colors = rowColors(),
+        )
 
         UpdatesSection(settings, onChange, updateState, onCheckForUpdates, onOpenWhatsNew)
     }
@@ -303,7 +313,7 @@ fun SettingsPageContent(
     }
 }
 
-private fun count(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
+internal fun count(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
 
 private fun correctionsSummary(settings: SpeecherSettings): String {
     val corrections = settings.learnedCorrections

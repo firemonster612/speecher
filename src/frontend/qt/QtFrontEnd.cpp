@@ -309,6 +309,10 @@ bool QtFrontEnd::captureMainWindow(const QString &path)
     if (!clickGrabButtons(target)) {
         return false;
     }
+    // A click that opened a dialog grabs the dialog.
+    if (QWidget *dialog = QApplication::activeModalWidget(); dialog && dialog != target) {
+        target = dialog;
+    }
     return target->grab().save(path);
 }
 

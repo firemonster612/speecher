@@ -9,6 +9,7 @@
 namespace speecher {
 
 class ApplicationController;
+struct AppSettings;
 class WinFrontEndTests;
 
 namespace win {
@@ -52,6 +53,10 @@ public:
     // Tells the person something in a ContentDialog: what happened as its
     // title, what to do as its body, and a Close button.
     void inform(const QString &title, const QString &text);
+    // "Copy settings to your phone" in a ContentDialog over the window: the
+    // code the Android app scans, what moves and what stays. The transfer
+    // listens while the dialog is open.
+    void showPhoneTransfer(const AppSettings &settings);
 
     // What Action rows run. The window handles whatsNew itself and forwards
     // everything (whatsNew included) here; W4's front end wires the rest.
@@ -84,6 +89,10 @@ private:
     // is none.
     bool expandForTest(const QString &name);
     bool expandedForTest(const QString &name) const;
+    // Whether a phone transfer is listening, which it does while its dialog is open.
+    bool phoneTransferOpenForTest() const;
+    // Closes the open ContentDialog, as its close button does; false when none is open.
+    bool closeDialogForTest();
     struct Native;
     std::unique_ptr<Native> m_native;
 };

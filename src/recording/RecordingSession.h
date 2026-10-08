@@ -83,6 +83,12 @@ public:
 
 signals:
     void recordingChanged(bool recording);
+    // While recording, a stream reconnects, connects again, stops on its
+    // own, misses an utterance or starts losing audio, or the file first
+    // fails to take a line. Not
+    // for more audio lost or more lines missed, which can come with every
+    // microphone chunk or line.
+    void problemChanged();
     // The finished recording's last status.
     void stopped(const speecher::RecordingStatus &status);
 
