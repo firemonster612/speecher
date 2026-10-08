@@ -192,16 +192,6 @@ static void attachParentConsole()
     }
     std::cout.clear();
     std::cerr.clear();
-    // TEMP diagnostics for #239, removed before merge.
-    DWORD errMode = 0;
-    QFile diag(QDir::temp().filePath(QStringLiteral("speecher-condiag.txt")));
-    if (diag.open(QIODevice::Append | QIODevice::Text)) {
-        diag.write(QStringLiteral("out_fd=%1 err_fd=%2 err_console_mode=%3\n")
-                       .arg(_fileno(stdout))
-                       .arg(_fileno(stderr))
-                       .arg(GetConsoleMode(GetStdHandle(STD_ERROR_HANDLE), &errMode) ? 1 : 0)
-                       .toLatin1());
-    }
 }
 
 // A window or daemon run outlives the console it was started from, and
