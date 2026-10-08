@@ -41,11 +41,13 @@ struct ProviderReport {
     ProviderRole role = ProviderRole::Speech;
     // The registry label.
     QString label;
+    // Whether it takes a sign-in: Claude, ChatGPT, OpenAI and Anthropic do.
+    bool signsIn = false;
     // Holds what it needs from settings: a downloaded model, a server URL, a
     // chosen Local Runner.
     bool configured = false;
     // Empty for a provider that doesn't sign in, and for one whose sign-in
-    // nothing has seen.
+    // nothing has seen; signsIn tells them apart.
     std::optional<bool> signedIn;
     // Empty while the verdict turns on what nobody has checked: a sign-in not
     // seen, or whether the Local Runner is running.
@@ -59,6 +61,11 @@ struct ProviderReport {
 QList<ProviderReport> providerReports(const AppSettings &settings, const LiveFacts &facts,
                                       const QList<RowOption> &speechProviders,
                                       const QList<RowOption> &refinementProviders);
+
+// `speecher providers`' table: a row of column captions, then a row of cells
+// per report. A state nobody has checked reads "Unknown", a sign-in a
+// provider doesn't take "-".
+QList<QStringList> providerReportTable(const QList<ProviderReport> &reports);
 
 // Whether a speech fallback is skipped because it can't listen for the
 // Spoken Language, by its own language list or its Local Model's catalog

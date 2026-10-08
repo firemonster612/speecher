@@ -92,6 +92,17 @@ QList<RowOption> refinementChoices()
     return choices;
 }
 
+// A provider's line in `speecher providers`, or an empty report for one the
+// registry doesn't offer.
+ProviderReport reportOf(ProviderRole role, const QString &id, const AppSettings &settings, const LiveFacts &facts)
+{
+    const QList<ProviderReport> reports = providerReports(settings, facts, speechChoices(), refinementChoices());
+    const auto found = std::find_if(reports.cbegin(), reports.cend(), [&](const ProviderReport &report) {
+        return report.role == role && report.id == id;
+    });
+    return found == reports.cend() ? ProviderReport{} : *found;
+}
+
 QStringList ids(const QList<RowOption> &options)
 {
     QStringList ids;
@@ -2271,14 +2282,7 @@ private slots:
         settings.speech.language = QStringLiteral("en");
         settings.refinement.providerId = QStringLiteral("openai");
         LiveFacts facts;
-        const auto report = [&](ProviderRole role, const QString &id) {
-            const QList<ProviderReport> reports =
-                providerReports(settings, facts, speechChoices(), refinementChoices());
-            const auto found = std::find_if(reports.cbegin(), reports.cend(), [&](const ProviderReport &report) {
-                return report.role == role && report.id == id;
-            });
-            return found == reports.cend() ? ProviderReport{} : *found;
-        };
+        const auto report = [&](ProviderRole role, const QString &id) { return reportOf(role, id, settings, facts); };
 
         const QList<ProviderReport> reports = providerReports(settings, facts, speechChoices(), refinementChoices());
         QCOMPARE(reports.size(), 8);
@@ -2289,6 +2293,7 @@ private slots:
         // A sign-in nobody has seen and a runner nobody looked for are unknown.
         ProviderReport codex = report(ProviderRole::Speech, QStringLiteral("codex"));
         QVERIFY(codex.configured);
+        QVERIFY(codex.signsIn);
         QCOMPARE(codex.signedIn, std::nullopt);
         QCOMPARE(codex.usable, std::nullopt);
         QVERIFY(codex.problem.isEmpty());
@@ -2303,6 +2308,7 @@ private slots:
         // What settings must hold.
         const ProviderReport local = report(ProviderRole::Speech, QStringLiteral("local"));
         QVERIFY(!local.configured);
+        QVERIFY(!local.signsIn);
         QCOMPARE(local.signedIn, std::nullopt);
         QCOMPARE(local.usable, std::optional(false));
         QCOMPARE(local.problem, QStringLiteral("No model downloaded."));
@@ -2326,6 +2332,49 @@ private slots:
         const ProviderReport endpoint = report(ProviderRole::Speech, QStringLiteral("endpoint"));
         QVERIFY(endpoint.configured);
         QCOMPARE(endpoint.problem, QStringLiteral("Can't reach Custom Endpoint right now."));
+    }
+
+    // A primary's report gives the problem its row gives, less the row's word
+    // on what happens instead.
+    void aProviderReportWordsAProblemAsThePrimarysRow()
+    {
+        AppSettings settings;
+        settings.speech.language = QStringLiteral("en");
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        LiveFacts facts;
+        // The report's problem, then the row's.
+        const auto speechProblems = [&](const QString &primary) {
+            settings.speech.providerId = primary;
+            return QStringList{reportOf(ProviderRole::Speech, primary, settings, facts).problem,
+                               primaryProviderStatus(ProviderRole::Speech, settings, facts, speechChoices())};
+        };
+        QCOMPARE(speechProblems(QStringLiteral("endpoint")), QStringList(2, QStringLiteral("No server URL is set.")));
+        QCOMPARE(speechProblems(QStringLiteral("local")), QStringList(2, QStringLiteral("No model downloaded.")));
+        facts.reachability = Reachability::Offline;
+        QCOMPARE(speechProblems(QStringLiteral("codex")),
+                 QStringList(2, QStringLiteral("Can't reach ChatGPT right now.")));
+
+        settings.refinement.providerId = QStringLiteral("local");
+        facts.runnersChecked = true;
+        const ProviderReport unchosen = reportOf(ProviderRole::Refinement, QStringLiteral("local"), settings, facts);
+        QVERIFY(!unchosen.configured);
+        QCOMPARE(unchosen.problem, QStringLiteral("No Ollama, LM Studio or llama-server is running."));
+        settings.refinement.localRunner.runner = QStringLiteral("ollama");
+        const ProviderReport runner = reportOf(ProviderRole::Refinement, QStringLiteral("local"), settings, facts);
+        QVERIFY(runner.configured);
+        QCOMPARE(runner.problem, QStringLiteral("Ollama isn't running."));
+        QCOMPARE(primaryProviderStatus(ProviderRole::Refinement, settings, facts, refinementChoices()),
+                 QStringLiteral("Ollama isn't running. Your words are pasted as spoken."));
+
+        // The Spoken Language row's own words, where the primary's row says nothing.
+        facts.downloadedModels = {QStringLiteral("parakeet")};
+        settings.speech.providerId = QStringLiteral("local");
+        settings.speech.language = QStringLiteral("ja");
+        const ProviderReport local = reportOf(ProviderRole::Speech, QStringLiteral("local"), settings, facts);
+        QCOMPARE(local.usable, std::optional(false));
+        QCOMPARE(local.problem,
+                 QStringLiteral("Parakeet 0.6B can't listen for Japanese. Choose another Spoken Language."));
+        QCOMPARE(local.problem, spokenLanguageProblem(settings.speech, QStringLiteral("Local Model")));
     }
 
     // The Fallbacks row adds the first fallback's reason it can't stand in,

@@ -84,6 +84,16 @@ AppSettings ProviderRegistry::withProfileProviders(const AppSettings &settings,
     return resolved;
 }
 
+QList<RowOption> ProviderRegistry::rowOptions(ProviderRole role) const
+{
+    QList<RowOption> options;
+    const QList<ProviderDescriptor> providers = role == ProviderRole::Speech ? speechProviders() : refinementProviders();
+    for (const ProviderDescriptor &provider : providers) {
+        options.append({provider.id, provider.label, provider.summary});
+    }
+    return options;
+}
+
 SpeechTranscriber *ProviderRegistry::speechProvider(const QString &id)
 {
     auto it = m_speech.find(id);

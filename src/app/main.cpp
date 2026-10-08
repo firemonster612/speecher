@@ -448,7 +448,7 @@ int main(int argc, char **argv)
     }
     if (decision.mode == LaunchMode::ListProviders) {
         QCoreApplication app(argc, argv);
-        return runProvidersCommand(decision.json, std::cout);
+        return runProvidersCommand(decision.json, platform, std::cout, std::cerr);
     }
 
 #ifdef SPEECHER_WITH_WINUI

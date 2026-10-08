@@ -152,8 +152,9 @@ Record from the microphone once and print what was said:
 Check which speech and refinement services can work:
   speecher providers [--json]
                            list each provider: configured, signed in and
-                           usable, as Speecher's settings judge them; asks no
-                           server, so a sign-in nothing has seen is unknown
+                           usable, as Speecher's settings judge them; asks the
+                           running Speecher, and asks no server, so a sign-in
+                           nothing has seen is unknown
   --json                   print a JSON array of objects instead of a table
 
 Options:

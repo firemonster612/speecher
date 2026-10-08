@@ -1025,25 +1025,25 @@ private slots:
         }
 
         const QList<ProviderReport> reports{
-            {QStringLiteral("codex"), ProviderRole::Speech, QStringLiteral("ChatGPT Codex"), true},
-            {QStringLiteral("local"), ProviderRole::Refinement, QStringLiteral("Local Runner"), true, std::nullopt,
-             false, QStringLiteral("Ollama isn't running.")},
+            {QStringLiteral("codex"), ProviderRole::Speech, QStringLiteral("ChatGPT Codex"), true, true},
+            {QStringLiteral("local"), ProviderRole::Refinement, QStringLiteral("Local Runner"), false, true,
+             std::nullopt, false, QStringLiteral("Ollama isn't running.")},
         };
         std::ostringstream json;
         printProviderReports(reports, true, json);
         QCOMPARE(QString::fromStdString(json.str()),
                  QStringLiteral(R"([{"configured":true,"id":"codex","label":"ChatGPT Codex","problem":null,)"
-                                R"("role":"speech","signedIn":null,"usable":null},)"
+                                R"("role":"speech","signedIn":null,"signsIn":true,"usable":null},)"
                                 R"({"configured":true,"id":"local","label":"Local Runner",)"
                                 R"("problem":"Ollama isn't running.","role":"refinement","signedIn":null,)"
-                                R"("usable":false}])"
+                                R"("signsIn":false,"usable":false}])"
                                 "\n"));
         std::ostringstream table;
         printProviderReports(reports, false, table);
         QCOMPARE(QString::fromStdString(table.str()),
-                 QStringLiteral("ROLE        ID     NAME           CONFIGURED  SIGNED IN  USABLE   PROBLEM\n"
-                                "speech      codex  ChatGPT Codex  yes         unknown    unknown\n"
-                                "refinement  local  Local Runner   yes         -          no       "
+                 QStringLiteral("Role        ID     Name           Configured  Signed in  Usable   Problem\n"
+                                "Speech      codex  ChatGPT Codex  Yes         Unknown    Unknown\n"
+                                "Refinement  local  Local Runner   Yes         -          No       "
                                 "Ollama isn't running.\n"));
     }
 

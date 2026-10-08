@@ -40,21 +40,6 @@ QStringList fileExtensions(const QString &filter)
     return extensions;
 }
 
-} // namespace
-
-QList<RowOption> providerOptions(ProviderRole role, const ProviderRegistry &registry)
-{
-    QList<RowOption> options;
-    const QList<ProviderDescriptor> providers =
-        role == ProviderRole::Speech ? registry.speechProviders() : registry.refinementProviders();
-    for (const ProviderDescriptor &provider : providers) {
-        options.append({provider.id, provider.label, provider.summary});
-    }
-    return options;
-}
-
-namespace {
-
 // What qtSchemaContext builds for the other two front ends, assembled here
 // because that helper lives in the Qt front end this one must not link.
 SchemaContext winSchemaContext(const PlatformComposition &platform,
@@ -67,7 +52,7 @@ SchemaContext winSchemaContext(const PlatformComposition &platform,
         refiners.append({provider.id, provider.label, provider.supportsScreenshotContext});
     }
     return {
-        providerOptions(ProviderRole::Speech, providers),
+        providers.rowOptions(ProviderRole::Speech),
         refiners,
         [&platform] {
             QList<RowOption> options;
@@ -374,7 +359,7 @@ void SettingsModel::setValue(const QString &rowId, const QVariant &value)
 FallbackListPresentation SettingsModel::fallbackList(ProviderRole role) const
 {
     return fallbackListPresentation(role, m_draft, m_controller->localSetup()->liveFacts(m_draft),
-                                    providerOptions(role, *m_controller->providerRegistry()),
+                                    m_controller->providerRegistry()->rowOptions(role),
                                     FallbackSurface::Settings);
 }
 

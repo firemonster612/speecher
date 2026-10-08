@@ -27,8 +27,8 @@ enum class LaunchMode {
     // `speecher listen`: record from the microphone in this process, print
     // the transcript and quit.
     ListenHeadless,
-    // `speecher providers`: print every provider's state from what this
-    // process knows, and quit.
+    // `speecher providers`: print every provider's state as the running app
+    // or, without one, this process knows it, and quit.
     ListProviders,
 };
 
