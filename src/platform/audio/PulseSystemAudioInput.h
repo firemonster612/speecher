@@ -4,7 +4,10 @@
 
 #include <QByteArray>
 
+#include <atomic>
+
 struct pa_context;
+struct pa_operation;
 struct pa_stream;
 struct pa_threaded_mainloop;
 
@@ -28,20 +31,28 @@ private:
     // Leaves whatever it got as far as for stop() to tear down when it fails.
     bool open(QString *error);
     // These run with the main loop locked.
-    QByteArray defaultSinkName();
+    pa_operation *queryDefaultSink();
     bool connectStream(const QByteArray &sinkName);
     void disconnectStream();
     void followDefaultSink(const QByteArray &sinkName);
     void readStream(pa_stream *stream);
+    // A failure of the connection, or of the stream, which is dropped instead
+    // if the stream has been replaced by the time it reaches the main thread.
     void postFailure(const QString &message);
+    void postStreamFailure(const QString &message);
+    // Runs on the main thread.
+    void fail(quint64 generation, const QString &message);
 
     pa_threaded_mainloop *m_mainloop = nullptr;
     pa_context *m_context = nullptr;
     pa_stream *m_stream = nullptr;
+    // The default output as last reported, whose monitor the stream reads.
     QByteArray m_sinkName;
     // Bumped by every stop, so audio and failures the PulseAudio thread queued
     // before it are dropped rather than reaching the next start.
     quint64 m_generation = 0;
+    // Bumped by every new stream. The main thread reads it without the lock.
+    std::atomic<quint64> m_streamGeneration = 0;
 };
 
 } // namespace speecher

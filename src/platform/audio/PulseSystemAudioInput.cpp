@@ -91,36 +91,14 @@ bool PulseSystemAudioInput::open(QString *error)
         pa_threaded_mainloop_wait(m_mainloop);
     }
 
-    const QByteArray sinkName = defaultSinkName();
-    if (sinkName.isEmpty()) {
-        *error = QStringLiteral("There is no sound output to capture system audio from.");
-        return false;
-    }
-    if (!connectStream(sinkName)) {
-        *error = QStringLiteral("Could not capture system audio: %1").arg(pulseError(m_context));
-        return false;
-    }
-    for (pa_stream_state_t state; (state = pa_stream_get_state(m_stream)) != PA_STREAM_READY;) {
-        if (!PA_STREAM_IS_GOOD(state)) {
-            *error = QStringLiteral("Could not capture system audio: %1").arg(pulseError(m_context));
-            return false;
-        }
-        pa_threaded_mainloop_wait(m_mainloop);
-    }
-
-    // A server change event is the only sign the default output moved.
+    // A server change event is the only sign the default output moved. The
+    // server answers requests in order, so asking for the default output only
+    // after subscribing means a change during start is either in the answer
+    // or reported after it.
     pa_context_set_subscribe_callback(
         m_context,
-        [](pa_context *context, pa_subscription_event_type_t, uint32_t, void *self) {
-            pa_operation *query = pa_context_get_server_info(
-                context,
-                [](pa_context *, const pa_server_info *info, void *self) {
-                    if (info && info->default_sink_name) {
-                        static_cast<PulseSystemAudioInput *>(self)->followDefaultSink(info->default_sink_name);
-                    }
-                },
-                self);
-            if (query) {
+        [](pa_context *, pa_subscription_event_type_t, uint32_t, void *self) {
+            if (pa_operation *query = static_cast<PulseSystemAudioInput *>(self)->queryDefaultSink()) {
                 pa_operation_unref(query);
             }
         },
@@ -131,6 +109,30 @@ bool PulseSystemAudioInput::open(QString *error)
         return false;
     }
     pa_operation_unref(subscription);
+
+    if (pa_operation *query = queryDefaultSink()) {
+        while (pa_operation_get_state(query) == PA_OPERATION_RUNNING) {
+            pa_threaded_mainloop_wait(m_mainloop);
+        }
+        pa_operation_unref(query);
+    }
+    if (m_sinkName.isEmpty()) {
+        *error = QStringLiteral("There is no sound output to capture system audio from.");
+        return false;
+    }
+    if (!connectStream(m_sinkName)) {
+        *error = QStringLiteral("Could not capture system audio: %1").arg(pulseError(m_context));
+        return false;
+    }
+    // A default output change can replace the stream while this waits.
+    for (pa_stream_state_t state;
+         (state = m_stream ? pa_stream_get_state(m_stream) : PA_STREAM_FAILED) != PA_STREAM_READY;) {
+        if (!PA_STREAM_IS_GOOD(state)) {
+            *error = QStringLiteral("Could not capture system audio: %1").arg(pulseError(m_context));
+            return false;
+        }
+        pa_threaded_mainloop_wait(m_mainloop);
+    }
     return true;
 }
 
@@ -158,46 +160,36 @@ bool PulseSystemAudioInput::isActive() const
     return m_mainloop != nullptr;
 }
 
-QByteArray PulseSystemAudioInput::defaultSinkName()
+// Every answer, to start's request or to a change event, goes through
+// followDefaultSink in the order the server sent them.
+pa_operation *PulseSystemAudioInput::queryDefaultSink()
 {
-    struct Query {
-        pa_threaded_mainloop *mainloop;
-        QByteArray sinkName;
-    } query{m_mainloop, {}};
-    pa_operation *operation = pa_context_get_server_info(
+    return pa_context_get_server_info(
         m_context,
-        [](pa_context *, const pa_server_info *info, void *data) {
-            auto *query = static_cast<Query *>(data);
+        [](pa_context *, const pa_server_info *info, void *self) {
+            auto *input = static_cast<PulseSystemAudioInput *>(self);
             if (info && info->default_sink_name) {
-                query->sinkName = info->default_sink_name;
+                input->followDefaultSink(info->default_sink_name);
             }
-            pa_threaded_mainloop_signal(query->mainloop, 0);
+            pa_threaded_mainloop_signal(input->m_mainloop, 0);
         },
-        &query);
-    if (!operation) {
-        return {};
-    }
-    while (pa_operation_get_state(operation) == PA_OPERATION_RUNNING) {
-        pa_threaded_mainloop_wait(m_mainloop);
-    }
-    pa_operation_unref(operation);
-    return query.sinkName;
+        this);
 }
 
 bool PulseSystemAudioInput::connectStream(const QByteArray &sinkName)
 {
+    ++m_streamGeneration;
     m_stream = pa_stream_new(m_context, "System audio", &kSampleSpec, nullptr);
     if (!m_stream) {
         return false;
     }
-    m_sinkName = sinkName;
     pa_stream_set_state_callback(
         m_stream,
         [](pa_stream *stream, void *self) {
             auto *input = static_cast<PulseSystemAudioInput *>(self);
             pa_threaded_mainloop_signal(input->m_mainloop, 0);
             if (pa_stream_get_state(stream) == PA_STREAM_FAILED) {
-                input->postFailure(
+                input->postStreamFailure(
                     QStringLiteral("System audio capture stopped: %1").arg(pulseError(input->m_context)));
             }
         },
@@ -244,12 +236,17 @@ void PulseSystemAudioInput::disconnectStream()
 
 void PulseSystemAudioInput::followDefaultSink(const QByteArray &sinkName)
 {
-    if (!m_stream || sinkName == m_sinkName) {
+    if (sinkName == m_sinkName) {
+        return;
+    }
+    m_sinkName = sinkName;
+    // Until start connects the first stream, it connects to the latest default.
+    if (!m_stream) {
         return;
     }
     disconnectStream();
     if (!connectStream(sinkName)) {
-        postFailure(QStringLiteral("Could not capture system audio: %1").arg(pulseError(m_context)));
+        postStreamFailure(QStringLiteral("Could not capture system audio: %1").arg(pulseError(m_context)));
     }
 }
 
@@ -260,7 +257,7 @@ void PulseSystemAudioInput::readStream(pa_stream *stream)
         const void *data = nullptr;
         size_t size = 0;
         if (pa_stream_peek(stream, &data, &size) < 0) {
-            postFailure(QStringLiteral("Could not read system audio: %1").arg(pulseError(m_context)));
+            postStreamFailure(QStringLiteral("Could not read system audio: %1").arg(pulseError(m_context)));
             return;
         }
         if (size == 0) {
@@ -291,16 +288,30 @@ void PulseSystemAudioInput::readStream(pa_stream *stream)
 void PulseSystemAudioInput::postFailure(const QString &message)
 {
     const quint64 generation = m_generation;
+    QMetaObject::invokeMethod(this, [this, message, generation] { fail(generation, message); }, Qt::QueuedConnection);
+}
+
+void PulseSystemAudioInput::postStreamFailure(const QString &message)
+{
+    const quint64 generation = m_generation;
+    const quint64 streamGeneration = m_streamGeneration;
     QMetaObject::invokeMethod(
         this,
-        [this, message, generation] {
-            if (generation != m_generation) {
-                return;
+        [this, message, generation, streamGeneration] {
+            if (streamGeneration == m_streamGeneration) {
+                fail(generation, message);
             }
-            stop();
-            emit failed(message);
         },
         Qt::QueuedConnection);
+}
+
+void PulseSystemAudioInput::fail(quint64 generation, const QString &message)
+{
+    if (generation != m_generation) {
+        return;
+    }
+    stop();
+    emit failed(message);
 }
 
 } // namespace speecher
