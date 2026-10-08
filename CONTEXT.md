@@ -8,6 +8,10 @@ Speecher turns a short spoken input into text for a chosen desktop target. It ca
 One recording that starts through toggle or push-to-talk and ends after Speecher produces and delivers text.
 _Avoid_: Recording job, transcription run
 
+**Recording**:
+A call recorded into a transcript file, started and stopped with `speecher record`. It streams the microphone to a speech provider and appends a timed line per utterance as it runs, beside any Dictation Session, and nothing is pasted, copied or refined. Distinct from a Dictation Session, which ends by delivering one text.
+_Avoid_: Call session, meeting mode
+
 **Spoken Language**:
 The language the speech service listens for, one setting for every Dictation Session, or Automatic where the service detects it. Distinct from a Writing Profile's output language, which refinement translates into.
 _Avoid_: Dictation language, input language, locale
