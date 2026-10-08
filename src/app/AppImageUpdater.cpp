@@ -65,10 +65,8 @@ bool synchronizePath(const QString &path,
 } // namespace
 
 AppImageUpdater::AppImageUpdater(SettingsStore *settings,
-                                 DictationSession *session,
                                  QObject *parent)
     : ManifestUpdater(settings,
-                      session,
                       QStringLiteral("linux-x86_64"),
                       QStringLiteral("appimage"),
                       QStringLiteral("AppImage"),

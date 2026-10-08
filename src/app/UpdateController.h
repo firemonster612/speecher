@@ -96,7 +96,22 @@ public:
         m_restoreStateProvider = std::move(provider);
     }
 
+    // Asked whether a restart now would cut short something the user is doing,
+    // such as a dictation or a recording. A restart asked for meanwhile waits
+    // in RestartPending until resumePendingRestart() finds the app idle.
+    void setBusyProvider(std::function<bool()> provider)
+    {
+        m_busyProvider = std::move(provider);
+    }
+
 public slots:
+    // Called whenever the busy provider's answer may have changed.
+    void resumePendingRestart()
+    {
+        if (state() == State::RestartPending && !busy()) {
+            finishRestart();
+        }
+    }
     virtual void checkForUpdates(UpdateChannel channel) = 0;
     virtual void updateNow() = 0;
     // One click through the whole tail of the flow: download if needed,
@@ -114,8 +129,18 @@ protected:
         return m_restoreStateProvider ? m_restoreStateProvider() : QString();
     }
 
+    bool busy() const
+    {
+        return m_busyProvider && m_busyProvider();
+    }
+
+    // Restarts into the installed update, restoring what the user was doing
+    // when the restart was asked for.
+    virtual void finishRestart() = 0;
+
 private:
     std::function<QString()> m_restoreStateProvider;
+    std::function<bool()> m_busyProvider;
 };
 
 } // namespace speecher

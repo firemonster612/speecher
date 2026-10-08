@@ -188,30 +188,14 @@ private:
 
 struct UpdateTestContext {
     SettingsStore settings;
-    std::unique_ptr<FakeAudioInput> audio = std::make_unique<FakeAudioInput>();
-    std::unique_ptr<FakeMediaController> media = std::make_unique<FakeMediaController>();
-    std::unique_ptr<FakeDelivery> delivery = std::make_unique<FakeDelivery>();
-    ProviderRegistry providers;
-    FakeSpeechTranscriber *speech = nullptr;
-    std::unique_ptr<DictationSession> session;
 
-    explicit UpdateTestContext(bool withSpeechProvider)
-    {
-        settings.raw().clear();
-        settings.setRefinementProvider(QStringLiteral("none"));
-        if (withSpeechProvider) {
-            registerFakeSpeechProvider(providers, &speech);
-        }
-        session = std::make_unique<DictationSession>(
-            &settings, audio.get(), media.get(), delivery.get(), &providers);
-    }
+    UpdateTestContext() { settings.raw().clear(); }
 };
 
 class TestManifestUpdater final : public ManifestUpdater {
 public:
-    TestManifestUpdater(SettingsStore *settings, DictationSession *session)
+    explicit TestManifestUpdater(SettingsStore *settings)
         : ManifestUpdater(settings,
-                          session,
                           QStringLiteral("linux-x86_64"),
                           QStringLiteral("appimage"),
                           QStringLiteral("AppImage"))
@@ -442,9 +426,9 @@ private slots:
 
     void nightlyChannelChecksOfferTheNewestStableRelease()
     {
-        UpdateTestContext context(true);
+        UpdateTestContext context;
         context.settings.setUpdateChannel(UpdateChannel::Nightly);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        TestManifestUpdater updater(&context.settings);
         const qint64 current = updater.currentBuildNumber();
 
         // The stable release is the newest build, so the Nightly channel's
@@ -488,9 +472,9 @@ private slots:
 
     void nightlyChecksSurviveTheirOwnFeedFailing()
     {
-        UpdateTestContext context(true);
+        UpdateTestContext context;
         context.settings.setUpdateChannel(UpdateChannel::Nightly);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        TestManifestUpdater updater(&context.settings);
         const qint64 current = updater.currentBuildNumber();
 
         // The nightly feed is down, but the stable one holds the newest build:
@@ -523,9 +507,9 @@ private slots:
 
     void singleManifestOverrideFetchesExactlyOnce()
     {
-        UpdateTestContext context(true);
+        UpdateTestContext context;
         context.settings.setUpdateChannel(UpdateChannel::Nightly);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        TestManifestUpdater updater(&context.settings);
 
         // The e2e rigs set only SPEECHER_UPDATE_MANIFEST_URL, which points both
         // channels at one file; the secondary fetch must not run against it.
@@ -546,8 +530,8 @@ private slots:
 
     void updateBannersNameNightlyBuildsPrecisely()
     {
-        UpdateTestContext context(true);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        UpdateTestContext context;
+        TestManifestUpdater updater(&context.settings);
         ManifestUpdaterTestAccess::setAvailableVersion(
             updater, QStringLiteral("0.2.1-nightly.20260921+gabc1234"),
             UpdateChannel::Nightly, 481);
@@ -565,8 +549,8 @@ private slots:
 
     void changingChannelInvalidatesAnAvailableUpdate()
     {
-        UpdateTestContext context(true);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        UpdateTestContext context;
+        TestManifestUpdater updater(&context.settings);
         ManifestUpdaterTestAccess::setAvailableVersion(
             updater, QStringLiteral("0.1.1"), UpdateChannel::Stable);
         ManifestUpdaterTestAccess::setState(updater,
@@ -752,8 +736,8 @@ private slots:
         const QFileDevice::Permissions permissions = QFile::permissions(directory.path());
         QVERIFY(QFile::setPermissions(directory.path(),
                                       QFileDevice::ReadOwner | QFileDevice::ExeOwner));
-        UpdateTestContext context(true);
-        AppImageUpdater updater(&context.settings, context.session.get());
+        UpdateTestContext context;
+        AppImageUpdater updater(&context.settings);
         ManifestUpdaterTestAccess::setAvailableVersion(
             updater, QStringLiteral("0.1.1"), context.settings.updateChannel());
         ManifestUpdaterTestAccess::setState(updater,
@@ -769,36 +753,32 @@ private slots:
     }
 #endif
 
-    void restartPendingAllowsSessionErrorAndRestartsOnIdle()
+    void restartWaitsWhileBusyAndResumesOnceIdle()
     {
-        UpdateTestContext errorContext(false);
-        errorContext.session->startListening();
-        QTRY_COMPARE(errorContext.session->state(), DictationState::Error);
-        TestManifestUpdater errorUpdater(&errorContext.settings, errorContext.session.get());
-        ManifestUpdaterTestAccess::setState(errorUpdater,
-                                            UpdateController::State::ReadyToRestart);
-        ManifestUpdaterTestAccess::restartNow(errorUpdater);
-        QCOMPARE(errorUpdater.state(), UpdateController::State::ReadyToRestart);
-        QCOMPARE(errorUpdater.restartCount, 1);
+        UpdateTestContext context;
+        TestManifestUpdater updater(&context.settings);
+        bool busy = false;
+        updater.setBusyProvider([&busy] { return busy; });
+        ManifestUpdaterTestAccess::setState(updater, UpdateController::State::ReadyToRestart);
+        ManifestUpdaterTestAccess::restartNow(updater);
+        QCOMPARE(updater.restartCount, 1);
 
-        UpdateTestContext pendingContext(true);
-        pendingContext.session->startListening();
-        QCOMPARE(pendingContext.session->state(), DictationState::Starting);
-        TestManifestUpdater pendingUpdater(&pendingContext.settings,
-                                           pendingContext.session.get());
-        ManifestUpdaterTestAccess::setState(pendingUpdater,
-                                            UpdateController::State::ReadyToRestart);
-        ManifestUpdaterTestAccess::restartNow(pendingUpdater);
-        QCOMPARE(pendingUpdater.state(), UpdateController::State::RestartPending);
-        pendingContext.session->stopListening();
-        QCOMPARE(pendingContext.session->state(), DictationState::Idle);
-        QCOMPARE(pendingUpdater.restartCount, 1);
+        busy = true;
+        ManifestUpdaterTestAccess::restartNow(updater);
+        QCOMPARE(updater.state(), UpdateController::State::RestartPending);
+        updater.resumePendingRestart();
+        QCOMPARE(updater.state(), UpdateController::State::RestartPending);
+        QCOMPARE(updater.restartCount, 1);
+
+        busy = false;
+        updater.resumePendingRestart();
+        QCOMPARE(updater.restartCount, 2);
     }
 
     void installAndRestartWritesRestoreStateBeforeRestarting()
     {
-        UpdateTestContext context(true);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        UpdateTestContext context;
+        TestManifestUpdater updater(&context.settings);
         updater.setRestoreStateProvider([] { return QStringLiteral("settings"); });
         ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::ReadyToRestart);
@@ -816,23 +796,19 @@ private slots:
 
         // A restart deferred to the end of a dictation restores what the user
         // was doing when they asked, not the idle state the restart waited for.
-        UpdateTestContext pending(true);
-        TestManifestUpdater pendingUpdater(&pending.settings, pending.session.get());
-        pending.session->startListening();
-        QCOMPARE(pending.session->state(), DictationState::Starting);
-        // Restoring the microphone is deliberately not on offer, so the state
-        // that must survive the wait is the settings window the user had open.
-        pendingUpdater.setRestoreStateProvider([&pending] {
-            const DictationState state = pending.session->state();
-            return state == DictationState::Idle || state == DictationState::Error
-                ? QString()
-                : QStringLiteral("settings");
+        UpdateTestContext pending;
+        TestManifestUpdater pendingUpdater(&pending.settings);
+        bool busy = true;
+        pendingUpdater.setBusyProvider([&busy] { return busy; });
+        pendingUpdater.setRestoreStateProvider([&busy] {
+            return busy ? QStringLiteral("settings") : QString();
         });
         ManifestUpdaterTestAccess::setState(pendingUpdater,
                                             UpdateController::State::ReadyToRestart);
         pendingUpdater.installAndRestart();
         QCOMPARE(pendingUpdater.state(), UpdateController::State::RestartPending);
-        pending.session->stopListening();
+        busy = false;
+        pendingUpdater.resumePendingRestart();
         QCOMPARE(pendingUpdater.restartCount, 1);
         QCOMPARE(pending.settings.updatesRestoreState(), QStringLiteral("settings"));
     }
@@ -845,8 +821,8 @@ private slots:
         const auto restoreUrl = qScopeGuard(
             [] { qunsetenv("SPEECHER_UPDATE_MANIFEST_URL"); });
 
-        UpdateTestContext context(true);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        UpdateTestContext context;
+        TestManifestUpdater updater(&context.settings);
         ManifestUpdaterTestAccess::setState(updater,
                                             UpdateController::State::Error,
                                             QStringLiteral("install failed"));
@@ -946,8 +922,8 @@ private slots:
             previousAppImage.isNull() ? qunsetenv("APPIMAGE")
                                       : qputenv("APPIMAGE", previousAppImage);
         });
-        UpdateTestContext context(true);
-        AppImageUpdater updater(&context.settings, context.session.get());
+        UpdateTestContext context;
+        AppImageUpdater updater(&context.settings);
 
         AppImageUpdaterTestAccess::restartAppImage(updater);
         QLocalServer *firstServer = AppImageUpdaterTestAccess::restartServer(updater);
@@ -963,9 +939,9 @@ private slots:
     {
         constexpr qint64 previousSuccess = 42;
         constexpr int minuteMs = 60 * 1000;
-        UpdateTestContext context(true);
+        UpdateTestContext context;
         context.settings.setUpdatesLastCheckTime(previousSuccess);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        TestManifestUpdater updater(&context.settings);
 
         // Backoff never retries slower than the configured check interval
         // (30 minutes by default).
@@ -981,10 +957,9 @@ private slots:
         }
         QVERIFY(updater.repeatedAutomaticCheckFailure());
 
-        UpdateTestContext invalidContext(true);
+        UpdateTestContext invalidContext;
         invalidContext.settings.setUpdatesLastCheckTime(previousSuccess);
-        TestManifestUpdater invalidUpdater(&invalidContext.settings,
-                                           invalidContext.session.get());
+        TestManifestUpdater invalidUpdater(&invalidContext.settings);
         ManifestUpdaterTestAccess::finishCheck(
             invalidUpdater, new StaticNetworkReply(QByteArrayLiteral("{"),
                                                    QNetworkReply::NoError,
@@ -1011,9 +986,9 @@ private slots:
 
     void noCheckTimerRunsWhileAutomaticChecksAreOff()
     {
-        UpdateTestContext context(true);
+        UpdateTestContext context;
         context.settings.setUpdatesLastCheckTime(0);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        TestManifestUpdater updater(&context.settings);
         context.settings.setAutoCheckUpdates(false);
         QVERIFY(!ManifestUpdaterTestAccess::checkTimerActive(updater));
         context.settings.setAutoCheckUpdates(true);
@@ -1114,8 +1089,8 @@ private slots:
 
     void bannerAndChipVisibilityFollowUpdateState()
     {
-        UpdateTestContext context(true);
-        TestManifestUpdater updater(&context.settings, context.session.get());
+        UpdateTestContext context;
+        TestManifestUpdater updater(&context.settings);
         for (const UpdateController::State state : {UpdateController::State::Idle,
                                                     UpdateController::State::Checking,
                                                     UpdateController::State::CheckFailed,

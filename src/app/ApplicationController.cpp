@@ -240,12 +240,22 @@ ApplicationController::ApplicationController(bool popupOnly,
         }
     });
 #ifdef Q_OS_MACOS
-    m_updates = new MacSparkleUpdater(m_settings, m_session, this);
+    m_updates = new MacSparkleUpdater(m_settings, this);
 #elif defined(Q_OS_WIN)
-    m_updates = new WindowsInstallerUpdater(m_settings, m_session, this);
+    m_updates = new WindowsInstallerUpdater(m_settings, this);
 #else
-    m_updates = new AppImageUpdater(m_settings, m_session, this);
+    m_updates = new AppImageUpdater(m_settings, this);
 #endif
+    // A restart for an update waits out a dictation and a recording.
+    m_updates->setBusyProvider([this] {
+        const DictationState state = m_session->state();
+        return (state != DictationState::Idle && state != DictationState::Error)
+            || m_recording->isRecording();
+    });
+    connect(m_session, &DictationSession::stateChanged, m_updates, &UpdateController::resumePendingRestart);
+    // After the stop replies above are written: recordingChanged(false) comes
+    // before them.
+    connect(m_recording, &RecordingSession::stopped, m_updates, &UpdateController::resumePendingRestart);
     m_updateBanner = new UpdateBanner(m_updates, m_session, this);
 
     // A seed log stands in for real history in screenshots and demos, so it
