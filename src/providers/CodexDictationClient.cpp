@@ -129,7 +129,6 @@ void CodexDictationClient::start(const QUrl &url,
     m_finalUtteranceIds.clear();
     m_sessionStarted = false;
     m_finishRequested = false;
-    m_utteranceEndPending = false;
     m_finalizing = false;
     m_sessionClosed = false;
     m_cancelled = false;
@@ -238,7 +237,11 @@ void CodexDictationClient::sendAudioMessage(const QByteArray &pcm)
 void CodexDictationClient::flushPendingAudio()
 {
     for (const QByteArray &pcm : std::as_const(m_pendingAudio)) {
-        sendAudioMessage(pcm);
+        if (pcm.isEmpty()) {
+            sendAudioFlush();
+        } else {
+            sendAudioMessage(pcm);
+        }
     }
     m_pendingAudio.clear();
 }
@@ -250,7 +253,7 @@ void CodexDictationClient::endUtterance()
         return;
     }
     if (!m_sessionStarted) {
-        m_utteranceEndPending = true;
+        m_pendingAudio.append(QByteArray());
         return;
     }
     sendAudioFlush();
@@ -336,9 +339,6 @@ void CodexDictationClient::handleTextMessage(const QString &message)
             emit connected();
             if (m_finishRequested) {
                 requestFinalization();
-            } else if (m_utteranceEndPending) {
-                m_utteranceEndPending = false;
-                sendAudioFlush();
             }
         }
         return;

@@ -80,12 +80,12 @@ private:
     QTimer m_closeTimer;
     QTimer m_keepAliveTimer;
 #endif
+    // What waits for session.started, in order: audio, and an empty entry for
+    // each endUtterance().
     QList<QByteArray> m_pendingAudio;
     QSet<QString> m_finalUtteranceIds;
     bool m_sessionStarted = false;
     bool m_finishRequested = false;
-    // An endUtterance() before session.started.
-    bool m_utteranceEndPending = false;
     bool m_finalizing = false;
     bool m_sessionClosed = false;
     bool m_cancelled = false;

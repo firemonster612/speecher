@@ -217,8 +217,8 @@ private slots:
     }
 
     // A recording ends each utterance with a flush and keeps the session: no
-    // close, and an idle stream still gets its keep-alive. One asked for
-    // before session.started follows the audio that waited for it.
+    // close, and an idle stream still gets its keep-alive. Ends asked for
+    // before session.started each follow the audio that waited for them.
     void codexEndsAnUtteranceAndKeepsTheSession()
     {
         QWebSocketServer server(QStringLiteral("speecher-test"), QWebSocketServer::NonSecureMode);
@@ -240,20 +240,22 @@ private slots:
         });
 
         const QByteArray speech = QByteArray::fromHex("0102ff00");
-        client.sendAudio(speech);
-        client.endUtterance();
+        for (int utterance = 0; utterance < 2; ++utterance) {
+            client.sendAudio(speech);
+            client.endUtterance();
+        }
         peer->sendTextMessage(QStringLiteral(
             R"({"type":"session.started","sequence_no":1,"session":{"session_id":"s1","status":"active","config":{}}})"));
         QTRY_COMPARE_WITH_TIMEOUT(connected.count(), 1, 1000);
         client.sendAudio(speech);
         client.endUtterance();
-        QTRY_COMPARE_WITH_TIMEOUT(types.size(), 4, 1000);
-        QCOMPARE(types, QStringList({QStringLiteral("audio.append"), QStringLiteral("audio.flush"),
-                                     QStringLiteral("audio.append"), QStringLiteral("audio.flush")}));
+        QTRY_COMPARE_WITH_TIMEOUT(types.size(), 6, 1000);
+        const QStringList utterance{QStringLiteral("audio.append"), QStringLiteral("audio.flush")};
+        QCOMPARE(types, utterance + utterance + utterance);
 
         // Idle after the flush: the keep-alive's silence, and still no close.
-        QTRY_VERIFY_WITH_TIMEOUT(types.size() >= 5, 1000);
-        QCOMPARE(types.at(4), QStringLiteral("audio.append"));
+        QTRY_VERIFY_WITH_TIMEOUT(types.size() >= 7, 1000);
+        QCOMPARE(types.at(6), QStringLiteral("audio.append"));
         QVERIFY(!types.contains(QStringLiteral("session.close")));
     }
 
