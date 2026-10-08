@@ -151,14 +151,14 @@ final class SpeecherMenuBarExtra: NSObject {
                                                                                       recording: model.recording))
         } else if busy.contains(model.dictationState) {
             button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: model.status)
-        } else if model.recording {
-            button.image = NSImage(systemSymbolName: "record.circle",
-                                   accessibilityDescription: model.bridge.trayToolTip(listening: false,
-                                                                                      recording: true))
         } else if model.dictationState == .error || !model.failureNote.isEmpty {
             button.image = NSImage(systemSymbolName: "exclamationmark.triangle",
                                    accessibilityDescription: model.failureNote.isEmpty ? model.status
                                                                                        : model.failureNote)
+        } else if model.recording {
+            button.image = NSImage(systemSymbolName: "record.circle",
+                                   accessibilityDescription: model.bridge.trayToolTip(listening: false,
+                                                                                      recording: true))
         } else {
             // A status item with no image is invisible, so a bundle resource
             // that fails to load must fall back to a symbol, never to nothing.
