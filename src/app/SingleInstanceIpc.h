@@ -90,10 +90,11 @@ public:
                                                 QString *error = nullptr);
     // The watchStatus command, for status --watch: calls onStatus with each
     // status the running instance writes, the current one at once and then
-    // one on every change, until the instance closes the connection. Sent
-    // once it has answered; Unavailable when none is running, NoResponse when
-    // one closes the connection or stays silent before answering.
-    static IpcCommandResult watchStatus(const std::function<void(const IpcResponse &)> &onStatus,
+    // one on every change, until the instance closes the connection or
+    // onStatus returns false. Sent once it has answered; Unavailable when
+    // none is running, NoResponse when one closes the connection or stays
+    // silent before answering.
+    static IpcCommandResult watchStatus(const std::function<bool(const IpcResponse &)> &onStatus,
                                         int timeoutMs = 2500,
                                         std::shared_ptr<const SingleInstancePlatform> platform = {},
                                         QString *error = nullptr);

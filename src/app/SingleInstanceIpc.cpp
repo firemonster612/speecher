@@ -495,7 +495,7 @@ IpcCommandResult SingleInstanceIpc::sendVocabularyTerms(const QStringList &terms
     return sendRequest(request, response, timeoutMs, std::move(platform), error);
 }
 
-IpcCommandResult SingleInstanceIpc::watchStatus(const std::function<void(const IpcResponse &)> &onStatus,
+IpcCommandResult SingleInstanceIpc::watchStatus(const std::function<bool(const IpcResponse &)> &onStatus,
                                                 int timeoutMs,
                                                 std::shared_ptr<const SingleInstancePlatform> platform,
                                                 QString *error)
@@ -524,7 +524,9 @@ IpcCommandResult SingleInstanceIpc::watchStatus(const std::function<void(const I
             }
             buffer.remove(0, newline + 1);
             answered = true;
-            onStatus(status);
+            if (!onStatus(status)) {
+                return IpcCommandResult::Sent;
+            }
         }
     }
     if (!answered) {
@@ -547,8 +549,11 @@ void SingleInstanceIpc::addStatusWatcher(QLocalSocket *socket, const IpcResponse
         return;
     }
     // A watcher has had its answer, so it no longer holds an accept slot,
-    // which every other command needs.
+    // which every other command needs. Nor is anything it sends after
+    // watchStatus a request, so a partial one must not expire it.
     m_acceptedSockets.remove(socket);
+    m_requestBuffers.remove(socket);
+    m_incompleteRequestDeadlines.remove(socket);
     m_statusWatchers.append(socket);
     writeStatus(socket, responseFrame(status));
 }

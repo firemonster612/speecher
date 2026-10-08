@@ -277,9 +277,11 @@ ApplicationController::ApplicationController(bool popupOnly,
     connect(m_ipc, &SingleInstanceIpc::commandReceived, this, &ApplicationController::handleIpcCommand);
     // Not on each tick of the recording's duration, which every line carries.
     const auto publishStatus = [this] { m_ipc->publishStatus(statusResponse()); };
-    connect(m_session, &DictationSession::stateChanged, this, publishStatus);
-    connect(m_recording, &RecordingSession::recordingChanged, this, publishStatus);
-    connect(m_recording, &RecordingSession::problemChanged, this, publishStatus);
+    m_statusPublishers = {
+        connect(m_session, &DictationSession::stateChanged, this, publishStatus),
+        connect(m_recording, &RecordingSession::recordingChanged, this, publishStatus),
+        connect(m_recording, &RecordingSession::problemChanged, this, publishStatus),
+    };
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::stateChanged);
     connect(m_pauseShortcutBinder, &GlobalShortcutBinder::activated, m_session, &DictationSession::togglePause);
     connect(m_session, &DictationSession::stateChanged, this, &ApplicationController::updateSessionShortcuts);
@@ -1249,6 +1251,9 @@ void ApplicationController::handleIpcCommand(const QString &command,
 // points at them. Tear the dependents down first.
 ApplicationController::~ApplicationController()
 {
+    for (const QMetaObject::Connection &publisher : std::as_const(m_statusPublishers)) {
+        disconnect(publisher);
+    }
     delete m_updateBanner;
     m_updateBanner = nullptr;
     delete m_updates;

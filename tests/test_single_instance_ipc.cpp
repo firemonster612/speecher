@@ -911,8 +911,65 @@ private slots:
 
         QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
         QCOMPARE(exitCode, 0);
-        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("idle\nlistening\n"));
+        // Running, it is not idle.
+        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("listening\n"));
         QCOMPARE(QString::fromStdString(err.str()), QString());
+    }
+
+    // A watch whose reader has gone, as `| head -1`'s does, ends with status
+    // 0 at its next line and leaves the Speecher's watcher slot.
+    void statusWatchEndsWhenStdoutFails()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QPointer<QLocalSocket> watcher;
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [&ipc, &watcher](const QString &, const QString &, QLocalSocket *socket) {
+                    watcher = socket;
+                    ipc.addStatusWatcher(socket, {true, QStringLiteral("idle"), {}});
+                });
+        int exitCode = -1;
+        std::unique_ptr<QThread> cli(QThread::create([platform, &exitCode] {
+            // No buffer: every write fails, as one to a closed pipe does.
+            std::streambuf *const stdoutBuffer = std::cout.rdbuf(nullptr);
+            exitCode = runCliCommand(statusDecision(QStringLiteral("watchStatus"), false), platform);
+            std::cout.rdbuf(stdoutBuffer);
+        }));
+        cli->start();
+        QVERIFY(QTest::qWaitFor([&cli] { return cli->isFinished(); }, 5000));
+        QCOMPARE(exitCode, 0);
+        QTRY_VERIFY(!watcher || watcher->state() == QLocalSocket::UnconnectedState);
+    }
+
+    // The start of a request sent with watchStatus is not one, so it does
+    // not expire the watcher as an incomplete request would.
+    void aStatusWatcherKeepsWatchingPastAPartialRequest()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        SingleInstanceIpc ipc(std::make_shared<FakeSingleInstancePlatform>(name));
+        QVERIFY(ipc.listen());
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [&ipc](const QString &, const QString &, QLocalSocket *socket) {
+                    ipc.addStatusWatcher(socket, {true, QStringLiteral("idle"), {}});
+                });
+        QLocalSocket watcher;
+        watcher.connectToServer(name);
+        QVERIFY(watcher.waitForConnected(500));
+        watcher.write(QByteArrayLiteral("{\"command\":\"watchStatus\"}\n{"));
+        watcher.flush();
+        QTRY_VERIFY(watcher.canReadLine());
+        QCOMPARE(stateOfLine(watcher.readLine()), QStringLiteral("idle"));
+
+        // Past the incomplete-request timeout and a sweep.
+        QTest::qWait(3000);
+        QCOMPARE(watcher.state(), QLocalSocket::ConnectedState);
+        ipc.publishStatus({true, QStringLiteral("listening"), {}});
+        QTRY_VERIFY(watcher.canReadLine());
+        QCOMPARE(stateOfLine(watcher.readLine()), QStringLiteral("listening"));
     }
 
     // status --json with no Speecher running prints the idle status.

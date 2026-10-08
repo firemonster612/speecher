@@ -840,11 +840,14 @@ int printStatusJson(const std::shared_ptr<const SingleInstancePlatform> &platfor
 }
 
 // status --watch: a line for the status now and one for each change, until
-// the running Speecher quits. Before one starts it prints the idle status
-// and keeps looking for one, so a status bar started first picks it up.
+// the running Speecher quits or nothing reads the lines any more. Before one
+// starts it prints the idle status and keeps looking for one, so a status bar
+// started first picks it up.
 int watchStatus(bool json, const std::shared_ptr<const SingleInstancePlatform> &platform)
 {
     QString printed;
+    // Whether stdout still takes lines. Qt ignores SIGPIPE, so a reader
+    // that went away, as `| head -1` does, shows only as a failed write.
     const auto print = [&](const IpcResponse &status) {
         // A line the same as the last carries nothing new for a status
         // bar, so it is not printed again: in text a change the line does
@@ -853,30 +856,34 @@ int watchStatus(bool json, const std::shared_ptr<const SingleInstancePlatform> &
         // problem still prints.
         const QString line = statusLine(status, json);
         if (line == printed) {
-            return;
+            return true;
         }
         printed = line;
         // Flushed: a status bar reads each line as it comes.
         std::cout << line.toStdString() << std::endl;
+        return bool(std::cout);
     };
     QString refusal;
     const auto onStatus = [&](const IpcResponse &status) {
-        if (status.ok) {
-            print(status);
-        } else {
+        if (!status.ok) {
             refusal = status.message;
+            return true;
         }
+        return print(status);
     };
     // Until it first answers, a Speecher that takes the connection but
     // writes nothing is starting, quitting or has every slot taken, so it is
-    // tried again as though none ran. Once it has answered, the watch ends
-    // when it closes the connection.
+    // tried again. It runs, so it is not idle: the idle status is printed
+    // only while none runs. Once it has answered, the watch ends when it
+    // closes the connection.
     QString ipcError;
     IpcCommandResult result;
     while ((result = SingleInstanceIpc::watchStatus(onStatus, 2500, platform, &ipcError))
                == IpcCommandResult::Unavailable
            || result == IpcCommandResult::NoResponse) {
-        print(idleStatus());
+        if (result == IpcCommandResult::Unavailable && !print(idleStatus())) {
+            return 0;
+        }
         QThread::msleep(kWatchConnectRetryMs);
     }
     if (result != IpcCommandResult::Sent) {
