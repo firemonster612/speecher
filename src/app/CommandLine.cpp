@@ -107,6 +107,8 @@ Commands (sent to the running Speecher):
   cancel                   throw away the dictation in progress
   status                   print the dictation state
   last                     print the last transcript
+  vocabulary add [--] <terms...>
+                           save the terms to the custom vocabulary
   settings | setup         open settings or the setup assistant
   quit                     quit the running Speecher
 
@@ -589,6 +591,41 @@ QString parseListenArguments(const QStringList &arguments, CommandLineDecision *
     return {};
 }
 
+// Reads `speecher vocabulary`'s arguments. Returns an error message for a
+// usage mistake.
+QString parseVocabularyArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    if (arguments.isEmpty()) {
+        return QStringLiteral("vocabulary needs a command: add");
+    }
+    if (arguments.first().toLower() != QStringLiteral("add")) {
+        return QStringLiteral("Unknown vocabulary command: %1 (expected add)").arg(arguments.first());
+    }
+    QStringList terms;
+    bool optionsEnded = false;
+    for (const QString &argument : arguments.mid(1)) {
+        if (!optionsEnded && argument == QStringLiteral("--")) {
+            optionsEnded = true;
+            continue;
+        }
+        if (!optionsEnded && argument.startsWith(QLatin1Char('-'))) {
+            return QStringLiteral("Unknown vocabulary add option: %1 (put -- before a term that starts with -)")
+                .arg(argument);
+        }
+        if (argument.simplified().isEmpty()) {
+            return QStringLiteral("vocabulary add cannot save a blank term");
+        }
+        terms << argument;
+    }
+    if (terms.isEmpty()) {
+        return QStringLiteral("vocabulary add needs at least one term");
+    }
+    decision->mode = LaunchMode::RunCli;
+    decision->ipcCommand = QStringLiteral("addVocabulary");
+    decision->vocabularyTerms = terms;
+    return {};
+}
+
 int reportOlderInstance(const char *problem)
 {
     std::cerr << "The running Speecher is older and " << problem
@@ -621,30 +658,71 @@ int printLastTranscript(const std::shared_ptr<const SingleInstancePlatform> &pla
     return 0;
 }
 
+// Saves the terms through the running instance, so its settings and its next
+// dictation have them, or straight to the settings when none is running.
+// Names each term the list held already on stderr.
+int addVocabularyTerms(const QStringList &terms, const std::shared_ptr<const SingleInstancePlatform> &platform)
+{
+    IpcResponse response;
+    QString ipcError;
+    const IpcCommandResult ipcResult = SingleInstanceIpc::sendVocabularyTerms(terms, &response, 2500, platform, &ipcError);
+    std::optional<QStringList> held;
+    if (ipcResult == IpcCommandResult::Unavailable) {
+        held = SettingsCodecs::addVocabularyTerms(terms);
+    } else if (ipcResult != IpcCommandResult::Sent) {
+        std::cerr << ipcError.toStdString() << "\n";
+        return 1;
+    } else if (response.message == kUnknownIpcCommandMessage) {
+        return reportOlderInstance("doesn't know `vocabulary add`");
+    } else if (response.ok) {
+        held = response.skippedTerms;
+    }
+    if (!held) {
+        std::cerr << "Could not save the vocabulary to Speecher's settings.\n";
+        return 1;
+    }
+    for (const QString &term : std::as_const(*held)) {
+        std::cerr << "Already in the vocabulary: " << term.toStdString() << "\n";
+    }
+    return 0;
+}
+
 } // namespace
 
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
 {
-    if (arguments.contains(QStringLiteral("--version"))) {
+    // After --, an argument is a term or a file, never one of these.
+    const QStringList options = arguments.mid(0, arguments.indexOf(QStringLiteral("--")));
+    if (options.contains(QStringLiteral("--version"))) {
         std::cout << "speecher " << SPEECHER_VERSION << " (build " << SPEECHER_BUILD_NUMBER << ")\n";
         std::cout << "log " << logPath.toStdString() << "\n";
         return {LaunchMode::Exit};
     }
 
-    if (arguments.contains(QStringLiteral("--help")) || arguments.contains(QStringLiteral("-h"))) {
+    if (options.contains(QStringLiteral("--help")) || options.contains(QStringLiteral("-h"))) {
         std::cout << helpText().toStdString();
         return {LaunchMode::Exit};
     }
 
     CommandLineDecision decision;
     QString optionError;
-    decision.grabPath = requestedOption(arguments, QStringLiteral("--grab"), &optionError);
+    decision.grabPath = requestedOption(options, QStringLiteral("--grab"), &optionError);
     if (!optionError.isEmpty()) {
         std::cerr << optionError.toStdString() << "\n";
         return {LaunchMode::Exit, 2};
     }
 
     const QString verb = arguments.size() >= 2 ? arguments.at(1).trimmed().toLower() : QString();
+    // Before the dictation options below, which vocabulary does not take.
+    if (verb == QStringLiteral("vocabulary")) {
+        const QString error = parseVocabularyArguments(arguments.mid(2), &decision);
+        if (!error.isEmpty()) {
+            std::cerr << error.toStdString() << "\n\n"
+                      << helpText().toStdString();
+            return {LaunchMode::Exit, 2};
+        }
+        return decision;
+    }
     const bool isCliCommand = verb == QStringLiteral("toggle")
         || verb == QStringLiteral("start")
         || verb == QStringLiteral("stop")
@@ -782,6 +860,9 @@ int runCliCommand(const CommandLineDecision &decision,
     const QString &command = decision.ipcCommand;
     if (command == QStringLiteral("last")) {
         return printLastTranscript(platform);
+    }
+    if (command == QStringLiteral("addVocabulary")) {
+        return addVocabularyTerms(decision.vocabularyTerms, platform);
     }
     IpcResponse response;
     QString ipcError;

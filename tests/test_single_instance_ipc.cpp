@@ -2,9 +2,11 @@
 #include "app/CommandLine.h"
 #include "app/ProvidersCommand.h"
 #include "app/SingleInstanceIpc.h"
+#include "core/SettingsStore.h"
 #include "platform/PopupPositioner.h"
 #include "platform/PopupSurface.h"
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QLocalServer>
@@ -469,6 +471,121 @@ private slots:
         QString error;
         QVERIFY(!runningAppProviderReports(std::make_shared<FakeSingleInstancePlatform>(name), &error));
         QVERIFY(error.isEmpty());
+    }
+
+    void vocabularyAddSendsTheTermsToTheRunningInstance_data()
+    {
+        QTest::addColumn<bool>("saved");
+        QTest::addColumn<QString>("message");
+        QTest::addColumn<int>("exitCode");
+        QTest::addColumn<QString>("stderrText");
+        QTest::newRow("one already listed")
+            << true << QString() << 0 << QStringLiteral("Already in the vocabulary: kwin\n");
+        QTest::newRow("save failed")
+            << false << QString() << 1 << QStringLiteral("Could not save the vocabulary to Speecher's settings.\n");
+        QTest::newRow("instance older than vocabulary add")
+            << false << kUnknownIpcCommandMessage << 1
+            << QStringLiteral("The running Speecher is older and doesn't know `vocabulary add`. Quit it with "
+                              "`speecher quit` and run the command again.\n");
+    }
+
+    void vocabularyAddSendsTheTermsToTheRunningInstance()
+    {
+        QFETCH(bool, saved);
+        QFETCH(QString, message);
+        QFETCH(int, exitCode);
+        QFETCH(QString, stderrText);
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QStringList received;
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [&received, saved, message](const QString &, const QString &, QLocalSocket *socket,
+                                            const QStringList &, const QString &, const QString &,
+                                            const QStringList &terms) {
+                    received = terms;
+                    IpcResponse reply{saved, QStringLiteral("idle"), message};
+                    if (saved) {
+                        reply.skippedTerms = {QStringLiteral("kwin")};
+                    }
+                    SingleInstanceIpc::writeResponse(socket, reply);
+                });
+        CommandLineDecision decision;
+        decision.mode = LaunchMode::RunCli;
+        decision.ipcCommand = QStringLiteral("addVocabulary");
+        decision.vocabularyTerms = {QStringLiteral("FileTranscriptionSession"), QStringLiteral("kwin")};
+
+        std::ostringstream out;
+        std::ostringstream err;
+        int addExitCode = -1;
+        {
+            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+            std::streambuf *const stderrBuffer = std::cerr.rdbuf(err.rdbuf());
+            const auto restoreStreams = qScopeGuard([stdoutBuffer, stderrBuffer] {
+                std::cout.rdbuf(stdoutBuffer);
+                std::cerr.rdbuf(stderrBuffer);
+            });
+            QThread *client = QThread::create([&addExitCode, &decision, platform] {
+                addExitCode = runCliCommand(decision, platform);
+            });
+            client->start();
+            QTRY_VERIFY(client->isFinished());
+            delete client;
+        }
+        QCOMPARE(received, decision.vocabularyTerms);
+        QCOMPARE(addExitCode, exitCode);
+        QCOMPARE(QString::fromStdString(out.str()), QString());
+        QCOMPARE(QString::fromStdString(err.str()), stderrText);
+    }
+
+    // With no running instance, vocabulary add saves the terms itself.
+    void vocabularyAddWithoutAnInstanceSavesTheTerms()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setCustomVocabulary({QStringLiteral("KWin")});
+        settings.raw().sync();
+        CommandLineDecision decision;
+        decision.mode = LaunchMode::RunCli;
+        decision.ipcCommand = QStringLiteral("addVocabulary");
+        decision.vocabularyTerms = {QStringLiteral("FileTranscriptionSession"), QStringLiteral("kwin")};
+
+        std::ostringstream err;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(err.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        QCOMPARE(runCliCommand(decision, std::make_shared<FakeSingleInstancePlatform>(uniqueIpcName())), 0);
+        QCOMPARE(QString::fromStdString(err.str()), QStringLiteral("Already in the vocabulary: kwin\n"));
+        settings.raw().sync();
+        QCOMPARE(settings.customVocabulary(),
+                 QStringList({QStringLiteral("FileTranscriptionSession"), QStringLiteral("KWin")}));
+    }
+
+    // A settings file that cannot be written fails the command.
+    void vocabularyAddWithoutAnInstanceReportsAFailedSave()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("Windows keeps the settings in the registry");
+#endif
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().sync();
+        const QString path = settings.raw().fileName();
+        QVERIFY(QFile::remove(path));
+        QVERIFY(QDir().mkdir(path));
+        const auto removeDirectory = qScopeGuard([path] { QDir().rmdir(path); });
+        CommandLineDecision decision;
+        decision.mode = LaunchMode::RunCli;
+        decision.ipcCommand = QStringLiteral("addVocabulary");
+        decision.vocabularyTerms = {QStringLiteral("FileTranscriptionSession")};
+
+        std::ostringstream err;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(err.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        QCOMPARE(runCliCommand(decision, std::make_shared<FakeSingleInstancePlatform>(uniqueIpcName())), 1);
+        QCOMPARE(QString::fromStdString(err.str()),
+                 QStringLiteral("Could not save the vocabulary to Speecher's settings.\n"));
     }
 
     void singleInstanceIpcExpiresIncompleteRequests()

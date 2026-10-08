@@ -171,6 +171,16 @@ struct SettingsWindow::Native {
                 queueLiveRebuild();
             }
         });
+        // `speecher vocabulary add` saves terms through the running app.
+        QObject::connect(controller->settings(), &SettingsStore::vocabularyAdded, &lifetime, [this] {
+            if (!window) {
+                return;
+            }
+            model.syncWithStore();
+            if (currentPane == QStringLiteral("vocabulary")) {
+                queueLiveRebuild();
+            }
+        });
         // A microphone plugged in or taken out changes the Input device row's
         // choices, and whether it has any.
         QObject::connect(new QMediaDevices(&lifetime), &QMediaDevices::audioInputsChanged, &lifetime, [this] {

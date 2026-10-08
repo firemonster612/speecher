@@ -63,6 +63,9 @@ final class AppModel: ObservableObject {
     // Bumped when the settings draft is reloaded (window reopen, setup), so
     // retained collection editors can reload from the fresh snapshot.
     @Published private(set) var draftGeneration = 0
+    // Bumped when `speecher vocabulary add` saved terms, so the Terms table
+    // alone reloads: reloading every table would drop a cell being typed in.
+    @Published private(set) var vocabularyGeneration = 0
     @Published private(set) var shortcut: String
     /// The Cancel and Pause Shortcut rows, by role.
     @Published private(set) var sessionShortcuts: [SpeecherShortcutRole: SessionShortcut]
@@ -230,6 +233,13 @@ final class AppModel: ObservableObject {
         }
         bridge.lastRecordChanged = { [weak self] in
             self?.refreshTranscriptDetail()
+        }
+        // Every edit is committed as it is made, so re-reading loses none.
+        bridge.vocabularyAdded = { [weak self] in
+            guard let self else { return }
+            self.bridge.settingsSchema.reloadDraft()
+            pages = self.bridge.settingsSchema.pages
+            vocabularyGeneration += 1
         }
         // These closures must reach the bridge through self: the bridge owns
         // them, so capturing the local `bridge` would retain it in a cycle and

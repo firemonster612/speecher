@@ -56,6 +56,8 @@ public:
     void setCorrectionLearningEnabled(bool enabled);
     bool recordCorrectionEvidence(const CorrectionEvidence &evidence,
                                   const QString &applicationId);
+    // SettingsCodecs::addVocabularyTerms, announcing the terms it saved.
+    std::optional<QStringList> addVocabularyTerms(const QStringList &terms);
 
     using SettingsCodecs::anthropicAuthMode;
     using SettingsCodecs::autoCheckUpdates;
@@ -210,6 +212,8 @@ signals:
     void audioCaptureSettingsChanged(const AudioCaptureSettings &settings);
     void correctionLearningEnabledChanged(bool enabled);
     void updateSettingsChanged();
+    // After addVocabularyTerms saved terms no settings surface has drawn yet.
+    void vocabularyAdded();
     // The preference is saved whatever the operating system does with it, so
     // a refused or pending registration has to leave this way: the setting
     // reads as on while Speecher will not actually start at login.

@@ -82,6 +82,9 @@ private:
     void removeSpeecher();
 #endif
     void refreshUpdateRows();
+    // Takes in what was saved outside these pages, keeping the draft's edits,
+    // and redraws the pages that show it.
+    void takeStoreChanges(const QStringList &pageIds);
 
     ApplicationController *m_controller;
     bool m_settingsDeletionStarted = false;

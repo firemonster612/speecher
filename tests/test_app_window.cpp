@@ -1495,6 +1495,29 @@ private slots:
         QCOMPARE(draft.learnedCorrections, corrections);
     }
 
+    // `speecher vocabulary add` saves through the running app: the Terms page
+    // shows the term at once, and saving other edits keeps it.
+    void addedVocabularyShowsOnTheTermsPage()
+    {
+        ApplicationController controller(true);
+        controller.settings()->raw().clear();
+        QWidget parent;
+        SettingsPageSet pages(&controller, &parent);
+        pages.load();
+        SchemaSettingsPage *terms = pages.page(QStringLiteral("vocabulary:terms"));
+        QVERIFY(terms);
+
+        controller.handleIpcCommand(QStringLiteral("addVocabulary"), {}, nullptr, {}, {}, {},
+                                    {QStringLiteral("FileTranscriptionSession")});
+
+        AppSettings draft;
+        terms->appendToDraft(draft);
+        QCOMPARE(draft.vocabulary.size(), 1);
+        QCOMPARE(draft.vocabulary.first().term, QStringLiteral("FileTranscriptionSession"));
+        QVERIFY(pages.save(false, false));
+        QCOMPARE(controller.settings()->customVocabulary(), QStringList({QStringLiteral("FileTranscriptionSession")}));
+    }
+
     void localRefreshDoesNotReadUnreadKeyringSecrets()
     {
         ApplicationController controller(true);

@@ -18,6 +18,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 
 #include <algorithm>
 
@@ -408,6 +409,55 @@ void SettingsCodecs::setVocabularyEntries(const QList<VocabularyEntry> &entries)
 void SettingsCodecs::recordVocabularyUsage(const QString &text)
 {
     VocabularySettingsCodec::recordUsage(m_settings, text);
+}
+
+std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList &terms)
+{
+    // Its own QSettings, because one keeps reporting a failed sync forever:
+    // after one failed add, every later one would report a failure too.
+    SettingsCodecs settings;
+    // Two `vocabulary add`s with no app running would each read the list, and
+    // the second to write would drop the first one's terms. Windows keeps the
+    // settings in the registry, so its lock goes in the per-user temp folder.
+    // Not <file>.lock, which QSettings takes for itself while it syncs.
+#ifdef Q_OS_WIN
+    QLockFile lock(QDir::temp().filePath(QStringLiteral("speecher-vocabulary.lock")));
+#else
+    QLockFile lock(settings.m_settings.fileName() + QStringLiteral(".vocabulary.lock"));
+#endif
+    if (!lock.tryLock(5000)) {
+        return std::nullopt;
+    }
+    // Re-reads what another process saved since this one opened the settings.
+    settings.m_settings.sync();
+    const QList<VocabularyEntry> saved = settings.vocabularyEntries();
+    QList<VocabularyEntry> entries = saved;
+    QStringList held;
+    for (const QString &term : terms) {
+        const QString cleaned = term.simplified();
+        // A term limited to some Writing Profiles counts too: adding it again
+        // for every profile would list it twice.
+        const bool listed = std::any_of(entries.cbegin(), entries.cend(), [&cleaned](const VocabularyEntry &entry) {
+            return entry.term.compare(cleaned, Qt::CaseInsensitive) == 0;
+        });
+        if (listed) {
+            held.append(term);
+        } else {
+            entries.append({cleaned});
+        }
+    }
+    if (held.size() == terms.size()) {
+        return held;
+    }
+    settings.setVocabularyEntries(entries);
+    settings.m_settings.sync();
+    if (settings.m_settings.status() != QSettings::NoError) {
+        // Every QSettings on the file shares its unsaved values, so the
+        // running app would show and use terms that were never saved.
+        settings.setVocabularyEntries(saved);
+        return std::nullopt;
+    }
+    return held;
 }
 
 AudioCaptureSettings SettingsCodecs::audioCaptureSettings() const

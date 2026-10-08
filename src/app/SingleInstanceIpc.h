@@ -26,6 +26,8 @@ struct IpcResponse {
     QString spokenLanguage;
     // The last transcript, in reply to the last command.
     QString text;
+    // The terms an addVocabulary request carried that the list held already.
+    QStringList skippedTerms;
 };
 
 // The message an instance answers a command it doesn't know with. Clients
@@ -72,6 +74,12 @@ public:
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
+    // The addVocabulary command, with terms as the request's "terms" array.
+    static IpcCommandResult sendVocabularyTerms(const QStringList &terms,
+                                                IpcResponse *response,
+                                                int timeoutMs = 2500,
+                                                std::shared_ptr<const SingleInstancePlatform> platform = {},
+                                                QString *error = nullptr);
 
 signals:
     void commandReceived(const QString &command,
@@ -79,7 +87,8 @@ signals:
                          QLocalSocket *socket,
                          const QStringList &files,
                          const QString &writingProfile,
-                         const QString &spokenLanguage);
+                         const QString &spokenLanguage,
+                         const QStringList &terms);
 
 public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);

@@ -1026,7 +1026,8 @@ void ApplicationController::handleIpcCommand(const QString &command,
                                              QLocalSocket *socket,
                                              const QStringList &files,
                                              const QString &writingProfile,
-                                             const QString &spokenLanguage)
+                                             const QString &spokenLanguage,
+                                             const QStringList &terms)
 {
     SessionOverrides overrides;
     if (!outputFormat.isEmpty()) {
@@ -1139,6 +1140,11 @@ void ApplicationController::handleIpcCommand(const QString &command,
     } else if (command == QStringLiteral("providers")) {
         IpcResponse reply = response();
         reply.text = QString::fromUtf8(providerReportsJson(providerReports(*m_settings, *m_localSetup, *m_providers)));
+        SingleInstanceIpc::writeResponse(socket, reply);
+    } else if (command == QStringLiteral("addVocabulary")) {
+        const std::optional<QStringList> held = m_settings->addVocabularyTerms(terms);
+        IpcResponse reply = response(held.has_value());
+        reply.skippedTerms = held.value_or(QStringList());
         SingleInstanceIpc::writeResponse(socket, reply);
     } else if (command == QStringLiteral("quit")) {
         SingleInstanceIpc::writeResponse(socket, response());

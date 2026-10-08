@@ -43,6 +43,8 @@ final class CollectionEditor: ObservableObject {
     private var deleted: [(index: Int, record: CollectionRecord)] = []
     private var seeded = false
     private var savedRecords: [[String: Any]] = []
+    private var cellEditing = false
+    private var addedRecordsPending = false
 
     let row: SettingsRowModel
     let model: AppModel
@@ -89,6 +91,25 @@ final class CollectionEditor: ObservableObject {
         // The reloaded records carry new identities, so the old selection
         // points at nothing.
         selection = []
+    }
+
+    /// `speecher vocabulary add` saved records. A cell being typed in holds
+    /// them off until it is done, as reloading would give its record a new
+    /// identity and drop the typing; its save keeps them.
+    func takeAddedRecords() {
+        guard !cellEditing else {
+            addedRecordsPending = true
+            return
+        }
+        reload(from: model.row(row.rowId) ?? row)
+    }
+
+    func cellEditingChanged(_ editing: Bool) {
+        cellEditing = editing
+        if !editing && addedRecordsPending {
+            addedRecordsPending = false
+            takeAddedRecords()
+        }
     }
 
     private func load(from row: SettingsRowModel) {
@@ -272,6 +293,9 @@ struct CollectionRow: View {
         // The window and this view survive close/reopen, so a reopened draft
         // arrives as a generation bump rather than a fresh onAppear.
         .onChange(of: model.draftGeneration) { editor.reload(from: row) }
+        .onChange(of: model.vocabularyGeneration) {
+            if row.rowId == "vocabularyEntries" { editor.takeAddedRecords() }
+        }
         if !row.enabled {
             GateNote(row: row, model: model)
         }
@@ -671,7 +695,7 @@ struct RecordCell: View {
         } else if record.locked || column.kind == .readOnly || !editable {
             Text(RecordField.display(column, record.values[column.columnId]))
         } else {
-            RecordField(column: column, value: value)
+            RecordField(column: column, value: value, editingChanged: editor.cellEditingChanged)
         }
     }
 
@@ -698,6 +722,7 @@ struct RecordField: View {
     var commitsImmediately = false
     /// The sheet's example in an empty field; table cells show none.
     var placeholder = ""
+    var editingChanged: (Bool) -> Void = { _ in }
 
     var body: some View {
         switch column.kind {
@@ -715,7 +740,8 @@ struct RecordField: View {
             .labelsHidden()
         default:
             CellField(text: text, multiline: column.multiline,
-                      commitsImmediately: commitsImmediately, placeholder: placeholder) { value = $0 }
+                      commitsImmediately: commitsImmediately, placeholder: placeholder,
+                      commit: { value = $0 }, editingChanged: editingChanged)
         }
     }
 
@@ -753,6 +779,7 @@ struct CellField: View {
     var commitsImmediately = false
     var placeholder = ""
     let commit: (String) -> Void
+    var editingChanged: (Bool) -> Void = { _ in }
     @State private var edited = ""
     @FocusState private var editing: Bool
 
@@ -773,6 +800,8 @@ struct CellField: View {
             // already landed.
             .onChange(of: editing) {
                 if !editing && !commitsImmediately { commit(edited) }
+                // After the commit, so whatever waited on it reads the saved record.
+                editingChanged(editing)
             }
             .onChange(of: text) { _, stored in
                 if !editing { edited = stored }
