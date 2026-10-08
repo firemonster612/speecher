@@ -112,6 +112,9 @@ private:
     QTimer m_pauseTimer;
     // Audio heard since the open utterance began.
     qsizetype m_utteranceBytes = 0;
+    // Lines the file did not take, and why the first did not.
+    int m_unwrittenLines = 0;
+    QString m_writeError;
 };
 
 } // namespace speecher

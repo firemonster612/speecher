@@ -1231,6 +1231,53 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(m_codex->audioChunks.contains(spoken), 2000);
     }
 
+#ifdef Q_OS_UNIX
+    // Lines the file does not take are counted, with why the first was not,
+    // and nothing the stream does afterwards clears them: the stopped
+    // recording still says so.
+    void aRecordingRemembersTheLinesItCouldNotWrite()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        m_codex->emitFinalText(QStringLiteral("Written."));
+        {
+            // The file can grow no more: writes past its end fail with EFBIG.
+            rlimit savedLimit{};
+            QVERIFY(getrlimit(RLIMIT_FSIZE, &savedLimit) == 0);
+            rlimit limit = savedLimit;
+            limit.rlim_cur = rlim_t(QFileInfo(path).size());
+            QVERIFY(setrlimit(RLIMIT_FSIZE, &limit) == 0);
+            const auto savedXfsz = std::signal(SIGXFSZ, SIG_IGN);
+            const auto restore = qScopeGuard([&] {
+                std::signal(SIGXFSZ, savedXfsz);
+                setrlimit(RLIMIT_FSIZE, &savedLimit);
+            });
+            m_codex->emitFinalText(QStringLiteral("Lost."));
+            m_codex->emitFinalText(QStringLiteral("Lost too."));
+        }
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+                             ProviderFailureKind::Network);
+        QTRY_COMPARE_WITH_TIMEOUT(m_codex->startCalls, 2, 5000);
+        m_codex->emitFinalText(QStringLiteral("Written again."));
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 5000);
+
+        const RecordingStatus last = stopped.first().first().value<RecordingStatus>();
+        QCOMPARE(last.unwrittenLines, 2);
+        QVERIFY2(last.writeError.startsWith(recordingFileError(path, QString())), qPrintable(last.writeError));
+        QVERIFY(last.streams.first().problem.isEmpty());
+        QCOMPARE(recordedTexts(path), QStringList({QStringLiteral("Written."), QStringLiteral("Written again.")}));
+    }
+#endif
+
     // A recording outlasts its sign-in. The next stream, after a rollover or a
     // drop, renews it first when the provider says it is due; one the service
     // turns down unforeseen renews once before the stream counts as stopped.

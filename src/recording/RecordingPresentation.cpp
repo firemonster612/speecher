@@ -65,6 +65,17 @@ QString recordingStreamProblemText(const RecordingStream &stream)
     return problems.join(QLatin1Char('\n'));
 }
 
+QString recordingWriteProblemText(const RecordingStatus &status)
+{
+    if (status.unwrittenLines == 0) {
+        return {};
+    }
+    return QStringLiteral("%1 (%2 %3 missing)")
+        .arg(status.writeError)
+        .arg(status.unwrittenLines)
+        .arg(status.unwrittenLines == 1 ? QStringLiteral("line") : QStringLiteral("lines"));
+}
+
 QString notRecordingText()
 {
     return QStringLiteral("not recording");

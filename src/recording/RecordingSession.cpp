@@ -36,7 +36,8 @@ QString defaultRecordingPath(const QString &dataFolder, const QDateTime &started
 }
 
 // Opened NewOnly, so an existing file is never written to even if one appears
-// between the check and the open.
+// between the check and the open, and Unbuffered, so a line that could not
+// be written is not written after all with the next.
 bool RecordingTranscript::create(const QString &path, QString *error)
 {
     const QFileInfo requested(path);
@@ -52,7 +53,7 @@ bool RecordingTranscript::create(const QString &path, QString *error)
         if (m_file.exists()) {
             continue;
         }
-        if (!m_file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+        if (!m_file.open(QIODevice::WriteOnly | QIODevice::NewOnly | QIODevice::Unbuffered)) {
             *error = recordingFileError(m_file.fileName(), m_file.errorString());
             return false;
         }
@@ -135,7 +136,7 @@ RecordingStatus RecordingSession::status() const
     if (!isRecording()) {
         return {};
     }
-    return {true, m_transcript.path(), m_clock.elapsed(), {m_stream}};
+    return {true, m_transcript.path(), m_clock.elapsed(), {m_stream}, m_unwrittenLines, m_writeError};
 }
 
 void RecordingSession::start(const QString &path,
@@ -168,6 +169,8 @@ void RecordingSession::start(const QString &path,
     options.streamedFinalsOnly = true;
     options.addedVocabulary = vocabulary;
     m_stream = {kMicrophoneSpeaker};
+    m_unwrittenLines = 0;
+    m_writeError.clear();
     m_phase = Phase::Starting;
     m_startDone = std::move(done);
     m_microphone = m_createMicrophone(this);
@@ -247,7 +250,9 @@ void RecordingSession::writeLine(const QString &text)
     QString error;
     if (!m_transcript.append(m_clock.elapsed(), m_stream.speaker, text, &error)) {
         qWarning().noquote() << "recording could not write a line: " + error;
-        m_stream.problem = error;
+        if (m_unwrittenLines++ == 0) {
+            m_writeError = error;
+        }
     }
 }
 

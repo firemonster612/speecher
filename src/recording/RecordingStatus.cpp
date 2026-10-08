@@ -34,10 +34,15 @@ QJsonObject recordingStatusJson(const RecordingStatus &status)
         }
         streams.append(object);
     }
-    return {{QStringLiteral("recording"), true},
-            {QStringLiteral("path"), status.path},
-            {QStringLiteral("durationMs"), status.durationMs},
-            {QStringLiteral("streams"), streams}};
+    QJsonObject object{{QStringLiteral("recording"), true},
+                       {QStringLiteral("path"), status.path},
+                       {QStringLiteral("durationMs"), status.durationMs},
+                       {QStringLiteral("streams"), streams}};
+    if (status.unwrittenLines > 0) {
+        object.insert(QStringLiteral("unwrittenLines"), status.unwrittenLines);
+        object.insert(QStringLiteral("writeError"), status.writeError);
+    }
+    return object;
 }
 
 RecordingStatus recordingStatusFromJson(const QJsonObject &object)
@@ -61,6 +66,8 @@ RecordingStatus recordingStatusFromJson(const QJsonObject &object)
         read.lostAudioMs = stream.value(QStringLiteral("lostAudioMs")).toInteger();
         status.streams.append(read);
     }
+    status.unwrittenLines = object.value(QStringLiteral("unwrittenLines")).toInt();
+    status.writeError = object.value(QStringLiteral("writeError")).toString();
     return status;
 }
 

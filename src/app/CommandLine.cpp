@@ -775,18 +775,20 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
     return {};
 }
 
-// Prints what went wrong with each stream on stderr. Returns whether anything
-// did.
-bool printStreamProblems(const RecordingStatus &status)
+// Prints what went wrong with each stream and with the file on stderr.
+// Returns whether anything did.
+bool printRecordingProblems(const RecordingStatus &status)
 {
-    bool any = false;
+    QStringList problems;
     for (const RecordingStream &stream : status.streams) {
-        if (const QString problem = recordingStreamProblemText(stream); !problem.isEmpty()) {
-            std::cerr << problem.toStdString() << "\n";
-            any = true;
-        }
+        problems << recordingStreamProblemText(stream);
     }
-    return any;
+    problems << recordingWriteProblemText(status);
+    problems.removeAll(QString());
+    for (const QString &problem : std::as_const(problems)) {
+        std::cerr << problem.toStdString() << "\n";
+    }
+    return !problems.isEmpty();
 }
 
 // record status's output: exit status 1 when nothing is recording.
@@ -795,7 +797,7 @@ int printRecordingStatus(const RecordingStatus &status, bool json)
     std::cout << (json ? QJsonDocument(recordingStatusJson(status)).toJson(QJsonDocument::Compact).toStdString()
                        : recordingStatusText(status).toStdString())
               << "\n";
-    printStreamProblems(status);
+    printRecordingProblems(status);
     return status.recording ? 0 : 1;
 }
 
@@ -857,7 +859,7 @@ int runRecordCommand(const CommandLineDecision &decision,
     }
     // A stopped recording that missed something is still where it is, but
     // incomplete.
-    const bool incomplete = printStreamProblems(status);
+    const bool incomplete = printRecordingProblems(status);
     std::cout << status.path.toStdString() << "\n";
     return incomplete ? 1 : 0;
 }

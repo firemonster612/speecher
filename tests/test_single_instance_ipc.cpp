@@ -340,9 +340,12 @@ private slots:
         const RecordingStatus reconnecting{
             true, QStringLiteral("/tmp/call.md"), 3723000,
             {{QStringLiteral("me"), RecordingStream::State::Reconnecting, QStringLiteral("Connection reset"), 2000}}};
-        const RecordingStatus stoppedIncomplete{
-            true, QStringLiteral("/tmp/call.md"), 3723000,
-            {{QStringLiteral("me"), RecordingStream::State::Stopped, QStringLiteral("Server error")}}};
+        const RecordingStatus stoppedIncomplete{true,
+                                                QStringLiteral("/tmp/call.md"),
+                                                3723000,
+                                                {{QStringLiteral("me"), RecordingStream::State::Stopped}},
+                                                2,
+                                                QStringLiteral("Could not write /tmp/call.md: No space left on device")};
         connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
                 [&](const QString &command, const QString &, QLocalSocket *socket) {
                     IpcResponse reply{true, QStringLiteral("idle"), {}};
@@ -408,11 +411,14 @@ private slots:
                                 "The me stream was down so long that the oldest 00:00:02 of audio waiting for it "
                                 "was dropped.\n"));
 
-        // A recording that missed something still prints its file, says what
-        // it missed, and fails.
+        // A recording whose file missed lines still prints the file, says
+        // what it missed, and fails.
         QCOMPARE(run(QStringLiteral("recordStop"), false), 1);
         QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("/tmp/call.md\n"));
-        QCOMPARE(QString::fromStdString(err.str()), QStringLiteral("The me stream stopped: Server error\n"));
+        QCOMPARE(QString::fromStdString(err.str()),
+                 QStringLiteral("Could not write /tmp/call.md: No space left on device (2 lines missing)\n"));
+        QCOMPARE(recordingStatusFromJson(recordingStatusJson(stoppedIncomplete)).writeError,
+                 stoppedIncomplete.writeError);
     }
 
     void theCommandLineFailsWhenTheInstanceIgnoresTheProfile_data()

@@ -13,8 +13,7 @@ struct RecordingStream {
 
     QString speaker;
     State state = State::Recording;
-    // Why the stream stopped or is reconnecting, or why its last line could
-    // not be written.
+    // Why the stream stopped or is reconnecting.
     QString problem;
     // Audio dropped while the stream was down, oldest first, past what a
     // recording keeps for it.
@@ -26,6 +25,10 @@ struct RecordingStatus {
     QString path;
     qint64 durationMs = 0;
     QList<RecordingStream> streams;
+    // Lines that could not be written to the file, and why the first could
+    // not. Nothing clears them while the recording runs.
+    int unwrittenLines = 0;
+    QString writeError;
 };
 
 // How status and its JSON name a stream's state.
