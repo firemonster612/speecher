@@ -262,7 +262,7 @@ speecher record status                 # path, duration and streams; --json for 
 speecher record stop                   # writes the last utterance, then prints the path
 ```
 
-Speecher's data folder is `~/.local/share/io.github.firemonster612/speecher` on Linux. An existing file is never overwritten: the recording goes to `call-2.md` and so on instead. Files are kept until you delete them. The tray icon and its tooltip show that a recording is running. The first `record start` prints a reminder that recording other people may need their consent.
+Speecher's data folder is `~/.local/share/io.github.firemonster612/speecher` on Linux. An existing file is never overwritten: the recording goes to `call-2.md` and so on instead. Files are kept until you delete them. `--vocab-file <path>` adds the file's terms to the custom vocabulary for this recording only, read the same way as for `transcribe`; an unreadable file is a usage error (exit 2). The tray icon and its tooltip show that a recording is running. The first `record start` prints a reminder that recording other people may need their consent.
 
 Recording needs a speech provider that streams text as it hears it: Claude Voice, ChatGPT Codex, or a Local Model that streams. Custom Endpoints can't record yet. If the speech stream stops, for example when the provider refuses a second session while you dictate, the recording stays open and `record status` says why, on stdout and stderr, until you stop it. `record status` exits with 1 when nothing is recording. Only the microphone is recorded for now; `--mic-only` is accepted and changes nothing.
 

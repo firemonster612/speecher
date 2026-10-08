@@ -945,7 +945,7 @@ private slots:
         QSignalSpy stopped(&recording, &RecordingSession::stopped);
 
         QString error;
-        const QString path = recording.start(QString(), m_dir.path(), &error);
+        const QString path = recording.start(QString(), {}, m_dir.path(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
         QVERIFY(path.startsWith(m_dir.filePath(QStringLiteral("recordings/"))));
         QVERIFY(recording.isRecording());
@@ -978,6 +978,26 @@ private slots:
                                                    QStringLiteral("Bye.")}));
     }
 
+    // record start --vocab-file's terms reach the speech provider ahead of the
+    // saved ones, for this recording only.
+    void aRecordingAddsItsTermsToTheVocabulary()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setVocabularyEntries({{QStringLiteral("Speecher")}});
+        const QList<VocabularyEntry> saved = settings.vocabularyEntries();
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
+        });
+        QString error;
+        QVERIFY2(!recording.start(QString(), {QStringLiteral("readSharedChoice")}, m_dir.path(), &error).isEmpty(),
+                 qPrintable(error));
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
+        QCOMPARE(m_codex->lastVocabulary, QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher")}));
+        QCOMPARE(settings.vocabularyEntries(), saved);
+    }
+
     // A provider that finalizes only when asked, as Codex does, still writes
     // each utterance while the recording runs: a pause after speech ends it,
     // once, and quiet audio does not start another.
@@ -992,7 +1012,7 @@ private slots:
             return microphone.data();
         });
         QString error;
-        const QString path = recording.start(QString(), m_dir.path(), &error);
+        const QString path = recording.start(QString(), {}, m_dir.path(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         const QStringList utterances{QStringLiteral("Can you look at the retry logic?"),
@@ -1027,7 +1047,7 @@ private slots:
             return microphone.data();
         });
         QString error;
-        const QString path = recording.start(QString(), m_dir.path(), &error);
+        const QString path = recording.start(QString(), {}, m_dir.path(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         // Seconds of audio the provider had when asked each time.
@@ -1066,7 +1086,7 @@ private slots:
         });
         QSignalSpy stopped(&recording, &RecordingSession::stopped);
         QString error;
-        QVERIFY(recording.start(QString(), m_dir.filePath(QStringLiteral("refused")), &error).isEmpty());
+        QVERIFY(recording.start(QString(), {}, m_dir.filePath(QStringLiteral("refused")), &error).isEmpty());
         QCOMPARE(error, QStringLiteral("Recording needs a speech provider that streams text as it hears it, such as "
                                        "Claude Voice or ChatGPT Codex. Scripted does not."));
         QVERIFY(!QFileInfo::exists(m_dir.filePath(QStringLiteral("refused"))));
@@ -1075,13 +1095,13 @@ private slots:
         settings.setSpeechProvider(QStringLiteral("codex"));
         microphoneStarts = false;
         const QString deaf = m_dir.filePath(QStringLiteral("deaf.md"));
-        QVERIFY(recording.start(deaf, m_dir.path(), &error).isEmpty());
+        QVERIFY(recording.start(deaf, {}, m_dir.path(), &error).isEmpty());
         QCOMPARE(error, QStringLiteral("No microphone was found."));
         QVERIFY(!QFileInfo::exists(deaf));
         QVERIFY(!recording.isRecording());
 
         microphoneStarts = true;
-        const QString path = recording.start(m_dir.filePath(QStringLiteral("call.md")), m_dir.path(), &error);
+        const QString path = recording.start(m_dir.filePath(QStringLiteral("call.md")), {}, m_dir.path(), &error);
         QCOMPARE(path, m_dir.filePath(QStringLiteral("call.md")));
         QTRY_VERIFY_WITH_TIMEOUT(m_codex->startCalls == 1, 10000);
         m_codex->emitFinalText(QStringLiteral("Said before."));

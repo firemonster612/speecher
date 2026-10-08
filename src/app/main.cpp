@@ -615,7 +615,7 @@ int main(int argc, char **argv)
         }
 #else
         if (!daemon
-            && SingleInstanceIpc::sendCommandDetailed(showCommand, SessionOverrides(), decision.transcribeFiles, &response)
+            && SingleInstanceIpc::sendCommandDetailed(showCommand, SessionOverrides(), decision.transcribeFiles, {}, &response)
                 == IpcCommandResult::Sent) {
             return answered();
         }

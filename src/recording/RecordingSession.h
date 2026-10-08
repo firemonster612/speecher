@@ -80,10 +80,10 @@ public:
     bool isRecording() const;
     RecordingStatus status() const;
     // Records into path, or the default file in dataFolder when path is
-    // empty. Returns the file it writes, or empty with error set: already
+    // empty, with vocabulary added to the custom vocabulary. Returns the file it writes, or empty with error set: already
     // recording, a speech provider that does not stream final text, or a file
     // that cannot be created.
-    QString start(const QString &path, const QString &dataFolder, QString *error);
+    QString start(const QString &path, const QStringList &vocabulary, const QString &dataFolder, QString *error);
     // Stops the microphone; the last utterance is still written before
     // stopped is emitted.
     void stop();

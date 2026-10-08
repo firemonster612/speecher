@@ -37,7 +37,8 @@ struct CommandLineDecision {
     int exitCode = 0;
     // RunCli: the IPC command to send.
     QString ipcCommand;
-    // RunCli's addVocabulary: the terms to save.
+    // RunCli's addVocabulary: the terms to save. record start: --vocab-file's
+    // terms, for that recording only.
     QStringList vocabularyTerms;
     // --format and --profile, for toggle, start and a daemon's --start-listening.
     SessionOverrides sessionOverrides;

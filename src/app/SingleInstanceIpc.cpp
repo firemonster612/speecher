@@ -363,12 +363,13 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
-    return sendCommandDetailed(command, overrides, {}, response, timeoutMs, std::move(platform), error);
+    return sendCommandDetailed(command, overrides, {}, {}, response, timeoutMs, std::move(platform), error);
 }
 
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         const SessionOverrides &overrides,
                                                         const QStringList &files,
+                                                        const QStringList &terms,
                                                         IpcResponse *response,
                                                         int timeoutMs,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
@@ -386,6 +387,9 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
     }
     if (!files.isEmpty()) {
         request.insert(QStringLiteral("files"), QJsonArray::fromStringList(files));
+    }
+    if (!terms.isEmpty()) {
+        request.insert(QStringLiteral("terms"), QJsonArray::fromStringList(terms));
     }
     return sendRequest(request, response, timeoutMs, std::move(platform), error);
 }

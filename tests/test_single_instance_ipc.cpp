@@ -287,7 +287,7 @@ private slots:
 
         QThread *client = QThread::create([platform, files] {
             SingleInstanceIpc::sendCommandDetailed(
-                QStringLiteral("transcribe"), SessionOverrides(), files, nullptr, 2000, platform);
+                QStringLiteral("transcribe"), SessionOverrides(), files, {}, nullptr, 2000, platform);
         });
         client->start();
         QTRY_COMPARE(commands.count(), 1);
@@ -327,7 +327,7 @@ private slots:
         QCOMPARE(commands.first().at(5).toString(), QStringLiteral("de"));
     }
 
-    // record start hands over its file; every record command's answer
+    // record start hands over its file and terms; every record command's answer
     // carries the recording, which record status prints.
     void recordCommandsCarryTheRecordingBothWays()
     {
@@ -349,13 +349,15 @@ private slots:
         IpcResponse response;
         QThread *client = QThread::create([platform, &response] {
             SingleInstanceIpc::sendCommandDetailed(QStringLiteral("recordStart"), SessionOverrides(),
-                                                   {QStringLiteral("/tmp/call.md")}, &response, 2000, platform);
+                                                   {QStringLiteral("/tmp/call.md")},
+                                                   {QStringLiteral("readSharedChoice")}, &response, 2000, platform);
         });
         client->start();
         QTRY_VERIFY(client->isFinished());
         delete client;
         QCOMPARE(commands.first().at(0).toString(), QStringLiteral("recordStart"));
         QCOMPARE(commands.first().at(3).toStringList(), QStringList{QStringLiteral("/tmp/call.md")});
+        QCOMPARE(commands.first().at(6).toStringList(), QStringList{QStringLiteral("readSharedChoice")});
         QVERIFY(response.recording && !response.recording->recording);
 
         CommandLineDecision decision;

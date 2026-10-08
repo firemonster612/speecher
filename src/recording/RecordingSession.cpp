@@ -161,7 +161,10 @@ RecordingStatus RecordingSession::status() const
     return {true, m_transcript.path(), m_clock.elapsed(), {m_stream}};
 }
 
-QString RecordingSession::start(const QString &path, const QString &dataFolder, QString *error)
+QString RecordingSession::start(const QString &path,
+                                const QStringList &vocabulary,
+                                const QString &dataFolder,
+                                QString *error)
 {
     if (m_recording) {
         *error = alreadyRecordingText(m_transcript.path());
@@ -182,6 +185,7 @@ QString RecordingSession::start(const QString &path, const QString &dataFolder, 
     TranscribeOptions options;
     options.speechProviderId = speech.providerId;
     options.streamedFinalsOnly = true;
+    options.addedVocabulary = vocabulary;
     m_stream = {kMicrophoneSpeaker, true, {}};
     m_recording = true;
     m_stopping = false;

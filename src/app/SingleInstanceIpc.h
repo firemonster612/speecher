@@ -70,10 +70,12 @@ public:
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
     // files rides along as the request's "files" array: the transcribe
-    // command's files, or the file recordStart writes.
+    // command's files, or the file recordStart writes. terms is the "terms"
+    // array: recordStart's terms for the recording's custom vocabulary.
     static IpcCommandResult sendCommandDetailed(const QString &command,
                                                 const SessionOverrides &overrides,
                                                 const QStringList &files,
+                                                const QStringList &terms,
                                                 IpcResponse *response,
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},

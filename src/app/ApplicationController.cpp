@@ -362,19 +362,19 @@ bool ApplicationController::isRecording() const
 }
 
 // macOS may ask for the microphone first, so the reply waits for its answer.
-void ApplicationController::startRecording(const QString &path, QLocalSocket *socket)
+void ApplicationController::startRecording(const QString &path, const QStringList &vocabulary, QLocalSocket *socket)
 {
     if (!ensureSetupCompleted()) {
         SingleInstanceIpc::writeResponse(socket, response(false, recordingNeedsSetupText()));
         return;
     }
-    m_platform->requestMicrophoneAccess(this, [this, path, socket = QPointer(socket)](bool granted) {
+    m_platform->requestMicrophoneAccess(this, [this, path, vocabulary, socket = QPointer(socket)](bool granted) {
         if (!granted) {
             SingleInstanceIpc::writeResponse(socket, response(false, microphoneAccessOffText()));
             return;
         }
         QString error;
-        if (m_recording->start(path, dataFolder(), &error).isEmpty()) {
+        if (m_recording->start(path, vocabulary, dataFolder(), &error).isEmpty()) {
             SingleInstanceIpc::writeResponse(socket, response(false, error));
             return;
         }
@@ -1186,7 +1186,7 @@ void ApplicationController::handleIpcCommand(const QString &command,
         m_updates->installAndRestart();
 #endif
     } else if (command == QStringLiteral("recordStart")) {
-        startRecording(files.value(0), socket);
+        startRecording(files.value(0), terms, socket);
     } else if (command == QStringLiteral("recordStatus")) {
         IpcResponse reply = response();
         reply.recording = m_recording->status();

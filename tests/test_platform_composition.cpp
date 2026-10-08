@@ -1078,7 +1078,7 @@ private slots:
     }
 
     // record's subcommands go to the running Speecher; --to is made absolute
-    // here, where the shell's directory is known.
+    // and --vocab-file read here, where the shell's directory is known.
     void recordIsSentToTheRunningSpeecher()
     {
         const auto parse = [](QStringList arguments) {
@@ -1091,6 +1091,14 @@ private slots:
         QCOMPARE(start.ipcCommand, QStringLiteral("recordStart"));
         QCOMPARE(start.recordPath, QDir::current().absoluteFilePath(QStringLiteral("call.md")));
         QCOMPARE(parse({QStringLiteral("start")}).recordPath, QString());
+        QTemporaryDir dir;
+        const QString vocabulary = dir.filePath(QStringLiteral("terms.txt"));
+        QFile vocabularyFile(vocabulary);
+        QVERIFY(vocabularyFile.open(QIODevice::WriteOnly));
+        vocabularyFile.write("readSharedChoice\n# a comment\nSpeecher CLI\n");
+        vocabularyFile.close();
+        QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--vocab-file"), vocabulary}).vocabularyTerms,
+                 QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
         const CommandLineDecision status = parse({QStringLiteral("status"), QStringLiteral("--json")});
         QCOMPARE(status.ipcCommand, QStringLiteral("recordStatus"));
         QVERIFY(status.json);
@@ -1104,6 +1112,10 @@ private slots:
                                            QStringList{QStringLiteral("start"), QStringLiteral("--to")},
                                            QStringList{QStringLiteral("start"), QStringLiteral("--to"), QDir::tempPath()},
                                            QStringList{QStringLiteral("start"), QStringLiteral("--json")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--vocab-file")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--vocab-file"),
+                                                       dir.filePath(QStringLiteral("missing.txt"))},
+                                           QStringList{QStringLiteral("status"), QStringLiteral("--vocab-file"), vocabulary},
                                            QStringList{QStringLiteral("stop"), QStringLiteral("--to"), QStringLiteral("a.md")},
                                            QStringList{QStringLiteral("status"), QStringLiteral("--profile"),
                                                        QStringLiteral("ai-coding")}}) {

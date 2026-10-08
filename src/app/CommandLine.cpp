@@ -179,12 +179,14 @@ Check which speech and refinement services can work:
   --json                   print a JSON array of objects instead of a table
 
 Record a call into a file, in the running Speecher (started if needed):
-  speecher record start [--to <file>] [--mic-only]
+  speecher record start [--to <file>] [--mic-only] [--vocab-file <path>]
                            record the microphone and print the file's path;
                            each utterance is appended as one line,
                            "[hh:mm:ss] me: text" (default file: recordings/
                            <yyyy-mm-dd-hhmm>.md in Speecher's data folder)
   --mic-only               record the microphone alone, the only source so far
+  --vocab-file <path>      add the file's terms to the custom vocabulary for
+                           this recording, as transcribe does
   speecher record status [--json]
                            print the file, duration and streams; exit status
                            1 when not recording
@@ -398,6 +400,21 @@ std::optional<QString> takeValue(const QStringList &arguments, qsizetype &index)
     return std::nullopt;
 }
 
+// Adds the terms in --vocab-file's file to terms. Returns an error message
+// when the option has no file or the file cannot be read.
+QString addVocabularyFile(const std::optional<QString> &path, QStringList *terms)
+{
+    if (!path) {
+        return QStringLiteral("--vocab-file requires a value");
+    }
+    const std::optional<QStringList> read = readVocabularyFile(*path);
+    if (!read) {
+        return QStringLiteral("Cannot read vocabulary file %1").arg(*path);
+    }
+    *terms += *read;
+    return {};
+}
+
 // Reads one of the choices transcribe and listen share, the one at index,
 // into options, moving index past its value. Returns false for an option that
 // is not one of them; sets error for a usage mistake.
@@ -454,14 +471,7 @@ bool readSharedChoice(const QStringList &arguments,
     } else if (argument == QStringLiteral("--tone")) {
         choice(toneNames(), &options.tone);
     } else if (argument == QStringLiteral("--vocab-file")) {
-        const std::optional<QString> given = value();
-        if (!given) {
-            *error = QStringLiteral("--vocab-file requires a value");
-        } else if (const std::optional<QStringList> terms = readVocabularyFile(*given)) {
-            options.addedVocabulary += *terms;
-        } else {
-            *error = QStringLiteral("Cannot read vocabulary file %1").arg(*given);
-        }
+        *error = addVocabularyFile(value(), &options.addedVocabulary);
     } else {
         return false;
     }
@@ -736,6 +746,11 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
             }
             decision->recordPath = QFileInfo(*path).absoluteFilePath();
         } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--mic-only")) {
+        } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--vocab-file")) {
+            if (const QString error = addVocabularyFile(takeValue(arguments, index), &decision->vocabularyTerms);
+                !error.isEmpty()) {
+                return error;
+            }
         } else if (subcommand == QStringLiteral("status") && argument == QStringLiteral("--json")) {
             decision->json = true;
         } else {
@@ -771,7 +786,8 @@ int runRecordCommand(const CommandLineDecision &decision,
     IpcResponse response;
     QString ipcError;
     const auto send = [&] {
-        return SingleInstanceIpc::sendCommandDetailed(command, {}, files, &response, timeoutMs, platform, &ipcError);
+        return SingleInstanceIpc::sendCommandDetailed(
+            command, {}, files, decision.vocabularyTerms, &response, timeoutMs, platform, &ipcError);
     };
     IpcCommandResult result = send();
     if (result == IpcCommandResult::Unavailable && start) {

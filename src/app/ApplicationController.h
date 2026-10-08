@@ -230,7 +230,7 @@ private:
     void updateSessionShortcuts();
     void dropPendingStart();
     void setLaunchAtLoginAccepted(bool accepted);
-    void startRecording(const QString &path, QLocalSocket *socket);
+    void startRecording(const QString &path, const QStringList &vocabulary, QLocalSocket *socket);
 
     bool m_popupOnly = false;
     std::shared_ptr<const PlatformComposition> m_platform;
