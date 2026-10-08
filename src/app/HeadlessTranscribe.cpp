@@ -24,6 +24,8 @@
 #include <ostream>
 #include <string>
 #ifdef Q_OS_WIN
+#include <fcntl.h>
+#include <io.h>
 #include <windows.h>
 #else
 #include <unistd.h>
@@ -105,6 +107,34 @@ void rememberSpool(const QTemporaryDir &dir)
     g_spooling = true;
 }
 
+// Opens file to write. On Windows it is shared for deletion, so
+// removeStdinSpool can delete it while stdin is still being read. Returns why
+// it could not, or empty.
+QString openSpool(QFile &file)
+{
+#ifdef Q_OS_WIN
+    const HANDLE handle =
+        CreateFileW(reinterpret_cast<const wchar_t *>(QDir::toNativeSeparators(file.fileName()).utf16()),
+                    GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW,
+                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return qt_error_string(int(GetLastError()));
+    }
+    const int descriptor = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_WRONLY | _O_BINARY);
+    if (descriptor == -1) {
+        CloseHandle(handle);
+        return QStringLiteral("Could not open the temporary file");
+    }
+    if (!file.open(descriptor, QIODevice::WriteOnly, QFileDevice::AutoCloseHandle)) {
+        _close(descriptor);
+        return file.errorString();
+    }
+    return {};
+#else
+    return file.open(QIODevice::WriteOnly) ? QString() : file.errorString();
+#endif
+}
+
 // Copies in to a file named kSpoolName in dir, because the decoder cannot
 // probe a pipe. The file has no extension: the decoder probes its content.
 // Returns its path, or empty with error set.
@@ -114,9 +144,10 @@ QString spoolStdin(std::istream &in, const QTemporaryDir &dir, QString *error)
         *error = QStringLiteral("Could not read stdin: %1").arg(dir.errorString());
         return {};
     }
-    QFile file(dir.filePath(kSpoolName));
-    if (!file.open(QIODevice::WriteOnly)) {
-        *error = QStringLiteral("Could not read stdin: %1").arg(file.errorString());
+    const QString path = dir.filePath(kSpoolName);
+    QFile file(path);
+    if (const QString reason = openSpool(file); !reason.isEmpty()) {
+        *error = QStringLiteral("Could not read stdin: %1").arg(reason);
         return {};
     }
     char buffer[64 * 1024];
@@ -141,7 +172,7 @@ QString spoolStdin(std::istream &in, const QTemporaryDir &dir, QString *error)
         *error = QStringLiteral("No audio on stdin");
         return {};
     }
-    return file.fileName();
+    return path;
 }
 
 void writeJson(std::ostream &out, const QJsonObject &object)
@@ -158,6 +189,9 @@ void removeStdinSpool()
         return;
     }
 #ifdef Q_OS_WIN
+    // Best effort: while decoding, FFmpeg holds the file without sharing it
+    // for deletion, and a file only marked deleted can keep the folder until
+    // the process ends.
     DeleteFileW(g_spoolFile.c_str());
     RemoveDirectoryW(g_spoolFolder.c_str());
 #else
@@ -245,6 +279,8 @@ int runHeadlessTranscribe(const QStringList &files,
     ForwardProgress shownProgress;
     int lastPercent = -1;
     QString name;
+    // A log has stdin's Reading line already, from the spooling.
+    const bool readingLogged = !stdinPath.isEmpty() && !errIsTerminal;
     // A new phase always gets a line; within one, a terminal gets every
     // percent and a log every tenth.
     const auto showProgress = [&](bool newPhase) {
@@ -271,6 +307,10 @@ int runHeadlessTranscribe(const QStringList &files,
         name = QFileInfo(path).fileName();
         fractionSent = 0.0;
         shownProgress = {};
+        if (readingLogged) {
+            phaseClock.start();
+            return;
+        }
         setPhase(TranscribePhase::Reading);
     });
     QObject::connect(&session, &FileTranscriptionSession::fileDecoded, &loop,

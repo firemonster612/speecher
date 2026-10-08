@@ -193,11 +193,13 @@ static bool stderrIsTerminal()
 #endif
 
 #ifdef Q_OS_WIN
-// Whether stdin is a console, which `transcribe -` would only wait on.
+// Whether stdin is a console, which `transcribe -` would only wait on. A
+// GUI-subsystem program is not handed the console as its stdin, so an unset
+// one is the console too.
 static bool stdinIsTerminal()
 {
     DWORD mode = 0;
-    return GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mode);
+    return unredirected(STD_INPUT_HANDLE) || GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mode);
 }
 
 static BOOL WINAPI removeStdinSpoolOnConsoleEvent(DWORD)
@@ -229,13 +231,14 @@ static void removeStdinSpoolAndEnd(int signal)
 #endif
 
 // A signal ends `transcribe -` without unwinding, so these remove the spooled
-// audio first.
+// audio first; SIGPIPE covers a reader that quit early, as `| true` does. On
+// Windows a console event's removal is best effort, see removeStdinSpool.
 static void installStdinSpoolRemoval()
 {
 #ifdef Q_OS_WIN
     SetConsoleCtrlHandler(removeStdinSpoolOnConsoleEvent, TRUE);
 #else
-    for (const int signal : {SIGINT, SIGTERM, SIGHUP}) {
+    for (const int signal : {SIGINT, SIGTERM, SIGHUP, SIGPIPE}) {
         handleUnlessIgnored(signal, removeStdinSpoolAndEnd);
     }
 #endif

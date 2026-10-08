@@ -10,6 +10,7 @@
 #include "transcribe/TranscribePresentation.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QElapsedTimer>
 #include <QMediaFormat>
 #include <QMimeDatabase>
@@ -32,6 +33,7 @@
 
 #include <cmath>
 #include <csignal>
+#include <optional>
 #include <sstream>
 #ifdef Q_OS_UNIX
 #include <sys/resource.h>
@@ -236,6 +238,59 @@ QStringList sorted(QStringList list)
     list.sort();
     return list;
 }
+
+// Points the temporary folder at folder until the returned guard ends: Unix
+// reads TMPDIR, Windows TEMP and TMP.
+auto redirectTemporaryFolder(const QString &folder)
+{
+    const QList<QByteArray> names{"TMPDIR", "TEMP", "TMP"};
+    QList<std::optional<QByteArray>> saved;
+    for (const QByteArray &name : names) {
+        saved << (qEnvironmentVariableIsSet(name.constData()) ? std::optional(qgetenv(name.constData()))
+                                                               : std::nullopt);
+        qputenv(name.constData(), QFile::encodeName(QDir::toNativeSeparators(folder)));
+    }
+    return qScopeGuard([names, saved] {
+        for (qsizetype index = 0; index < names.size(); ++index) {
+            if (saved.at(index)) {
+                qputenv(names.at(index).constData(), *saved.at(index));
+            } else {
+                qunsetenv(names.at(index).constData());
+            }
+        }
+    });
+}
+
+// Stdin that, when first read, records the names of the files under folder,
+// where a run spooling it has created its file by then.
+class SpoolRecordingInput final : public std::stringbuf {
+public:
+    SpoolRecordingInput(const std::string &data, const QString &folder)
+        : std::stringbuf(data)
+        , m_folder(folder)
+    {
+    }
+
+    QStringList spooled() const { return m_spooled.value_or(QStringList()); }
+
+protected:
+    std::streamsize xsgetn(char *buffer, std::streamsize count) override
+    {
+        if (!m_spooled) {
+            m_spooled.emplace();
+            QDirIterator files(m_folder, QDir::Files, QDirIterator::Subdirectories);
+            while (files.hasNext()) {
+                files.next();
+                *m_spooled << files.fileName();
+            }
+        }
+        return std::stringbuf::xsgetn(buffer, count);
+    }
+
+private:
+    QString m_folder;
+    std::optional<QStringList> m_spooled;
+};
 
 class FileTranscriptionTests : public QObject {
     Q_OBJECT
@@ -1221,14 +1276,13 @@ private slots:
     {
         QTemporaryDir dir;
         QTemporaryDir spool;
-        const QByteArray savedTmpdir = qgetenv("TMPDIR");
-        qputenv("TMPDIR", QFile::encodeName(spool.path()));
-        const auto restoreTmpdir = qScopeGuard([&] { qputenv("TMPDIR", savedTmpdir); });
+        const auto restoreTemporaryFolder = redirectTemporaryFolder(spool.path());
         const QString audio = dir.filePath(QStringLiteral("memo.wav"));
         writeWav(audio);
         QFile wav(audio);
         QVERIFY(wav.open(QIODevice::ReadOnly));
-        std::istringstream in(wav.readAll().toStdString());
+        SpoolRecordingInput audioInput(wav.readAll().toStdString(), spool.path());
+        std::istream in(&audioInput);
         SettingsStore settings;
         HeadlessTranscribeOptions options;
         options.speechProviderId = QStringLiteral("claude");
@@ -1246,9 +1300,13 @@ private slots:
         QCOMPARE(result.value(QStringLiteral("ok")).toBool(), true);
         QCOMPARE(result.value(QStringLiteral("saved")).toString(), dir.filePath(QStringLiteral("stdin-transcribed.txt")));
         QVERIFY2(QString::fromStdString(err.str()).contains(QStringLiteral("stdin: saved ")), err.str().c_str());
+        // A log says once that stdin is being read.
+        QCOMPARE(QString::fromStdString(err.str()).count(QStringLiteral("stdin: Reading")), 1);
+        QCOMPARE(audioInput.spooled(), QStringList{QStringLiteral("stdin")});
         QVERIFY(QDir(spool.path()).isEmpty());
 
-        std::istringstream empty;
+        SpoolRecordingInput emptyInput({}, spool.path());
+        std::istream empty(&emptyInput);
         out.str({});
         err.str({});
         QCOMPARE(runHeadlessTranscribe({kStdinFile}, options, &settings, m_registry.get(), empty, out, err, false), 1);
@@ -1256,6 +1314,7 @@ private slots:
         const QJsonObject summary = QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object();
         QCOMPARE(summary.value(QStringLiteral("failed")).toInt(), 1);
         QCOMPARE(summary.value(QStringLiteral("succeeded")).toInt(), 0);
+        QCOMPARE(emptyInput.spooled(), QStringList{QStringLiteral("stdin")});
         QVERIFY(QDir(spool.path()).isEmpty());
     }
 
@@ -1265,8 +1324,7 @@ private slots:
     void headlessRunFailsWhenStdinDoesNotFit()
     {
         QTemporaryDir spool;
-        const QByteArray savedTmpdir = qgetenv("TMPDIR");
-        qputenv("TMPDIR", QFile::encodeName(spool.path()));
+        const auto restoreTemporaryFolder = redirectTemporaryFolder(spool.path());
         rlimit savedLimit{};
         QVERIFY(getrlimit(RLIMIT_FSIZE, &savedLimit) == 0);
         constexpr rlim_t kLimit = 64 * 1024;
@@ -1278,10 +1336,10 @@ private slots:
         const auto restore = qScopeGuard([&] {
             std::signal(SIGXFSZ, savedXfsz);
             setrlimit(RLIMIT_FSIZE, &savedLimit);
-            qputenv("TMPDIR", savedTmpdir);
         });
         // Fills the limit, then leaves a tail that only the last flush writes.
-        std::istringstream in(std::string(kLimit + 100, 'a'));
+        SpoolRecordingInput tooLong(std::string(kLimit + 100, 'a'), spool.path());
+        std::istream in(&tooLong);
         SettingsStore settings;
         HeadlessTranscribeOptions options;
         options.speechProviderId = QStringLiteral("claude");
@@ -1295,6 +1353,7 @@ private slots:
         QVERIFY2(QString::fromStdString(err.str()).contains(QStringLiteral("\nCould not read stdin: ")),
                  err.str().c_str());
         QVERIFY(out.str().empty());
+        QCOMPARE(tooLong.spooled(), QStringList{QStringLiteral("stdin")});
         QVERIFY(QDir(spool.path()).isEmpty());
     }
 #endif
