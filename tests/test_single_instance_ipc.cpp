@@ -9,6 +9,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QScopeGuard>
@@ -22,6 +25,9 @@
 #include <QSemaphore>
 #include <functional>
 #endif
+
+#include <iostream>
+#include <sstream>
 
 using namespace speecher;
 
@@ -281,7 +287,7 @@ private slots:
 
         QThread *client = QThread::create([platform, files] {
             SingleInstanceIpc::sendCommandDetailed(
-                QStringLiteral("transcribe"), SessionOverrides(), files, nullptr, 2000, platform);
+                QStringLiteral("transcribe"), SessionOverrides(), files, {}, nullptr, 2000, platform);
         });
         client->start();
         QTRY_COMPARE(commands.count(), 1);
@@ -319,6 +325,105 @@ private slots:
         QCOMPARE(commands.first().at(1).toString(), QStringLiteral("html"));
         QCOMPARE(commands.first().at(4).toString(), QStringLiteral("ai_coding"));
         QCOMPARE(commands.first().at(5).toString(), QStringLiteral("de"));
+    }
+
+    // record start hands over its file and terms; every record command's answer
+    // carries the recording, which record status prints.
+    void recordCommandsCarryTheRecordingBothWays()
+    {
+        const QString name = uniqueIpcName();
+        QLocalServer::removeServer(name);
+        const auto platform = std::make_shared<FakeSingleInstancePlatform>(name);
+        SingleInstanceIpc ipc(platform);
+        QVERIFY(ipc.listen());
+        QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
+        const RecordingStatus reconnecting{
+            true, QStringLiteral("/tmp/call.md"), 3723000,
+            {{QStringLiteral("me"), RecordingStream::State::Reconnecting, QStringLiteral("Connection reset"), 2000}}};
+        const RecordingStatus stoppedIncomplete{true,
+                                                QStringLiteral("/tmp/call.md"),
+                                                3723000,
+                                                {{QStringLiteral("me"), RecordingStream::State::Stopped}},
+                                                2,
+                                                QStringLiteral("Could not write /tmp/call.md: No space left on device")};
+        connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
+                [&](const QString &command, const QString &, QLocalSocket *socket) {
+                    IpcResponse reply{true, QStringLiteral("idle"), {}};
+                    reply.recording = command == QStringLiteral("recordStatus") ? reconnecting
+                        : command == QStringLiteral("recordStop")               ? stoppedIncomplete
+                                                                                : RecordingStatus();
+                    SingleInstanceIpc::writeResponse(socket, reply);
+                });
+
+        IpcResponse response;
+        QThread *client = QThread::create([platform, &response] {
+            SingleInstanceIpc::sendCommandDetailed(QStringLiteral("recordStart"), SessionOverrides(),
+                                                   {QStringLiteral("/tmp/call.md")},
+                                                   {QStringLiteral("readSharedChoice")}, &response, 2000, platform);
+        });
+        client->start();
+        QTRY_VERIFY(client->isFinished());
+        delete client;
+        QCOMPARE(commands.first().at(0).toString(), QStringLiteral("recordStart"));
+        QCOMPARE(commands.first().at(3).toStringList(), QStringList{QStringLiteral("/tmp/call.md")});
+        QCOMPARE(commands.first().at(6).toStringList(), QStringList{QStringLiteral("readSharedChoice")});
+        QVERIFY(response.recording && !response.recording->recording);
+
+        std::ostringstream out;
+        std::ostringstream err;
+        // Runs a record command as the command line does; returns its exit
+        // status, with what it printed in out and err.
+        const auto run = [&](const QString &command, bool json) {
+            CommandLineDecision decision;
+            decision.mode = LaunchMode::RunCli;
+            decision.ipcCommand = command;
+            decision.json = json;
+            out.str({});
+            err.str({});
+            int exitCode = -1;
+            QThread *runner = QThread::create([&] {
+                std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+                std::streambuf *const stderrBuffer = std::cerr.rdbuf(err.rdbuf());
+                exitCode = runCliCommand(decision, platform);
+                std::cout.rdbuf(stdoutBuffer);
+                std::cerr.rdbuf(stderrBuffer);
+            });
+            runner->start();
+            // The instance answers on this thread, so wait with its events.
+            QTest::qWaitFor([runner] { return runner->isFinished(); }, 5000);
+            runner->wait();
+            delete runner;
+            return exitCode;
+        };
+        QCOMPARE(run(QStringLiteral("recordStatus"), true), 0);
+        QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
+                 QJsonObject({{QStringLiteral("recording"), true},
+                              {QStringLiteral("path"), QStringLiteral("/tmp/call.md")},
+                              {QStringLiteral("durationMs"), 3723000},
+                              {QStringLiteral("streams"),
+                               QJsonArray{QJsonObject{{QStringLiteral("speaker"), QStringLiteral("me")},
+                                                      {QStringLiteral("state"), QStringLiteral("reconnecting")},
+                                                      {QStringLiteral("problem"), QStringLiteral("Connection reset")},
+                                                      {QStringLiteral("lostAudioMs"), 2000}}}}}));
+        // The problem goes to stderr too, for a script that reads only stdout.
+        QCOMPARE(QString::fromStdString(err.str()),
+                 QStringLiteral("The microphone stream is reconnecting: Connection reset\n"
+                                "The microphone stream was down so long that the oldest 00:00:02 of audio waiting for it "
+                                "was dropped.\n"));
+
+        QCOMPARE(run(QStringLiteral("recordStatus"), false), 0);
+        QCOMPARE(QString::fromStdString(out.str()),
+                 QStringLiteral("path: /tmp/call.md\nduration: 01:02:03\n"
+                                "microphone: reconnecting, Connection reset, lost 00:00:02 of audio\n"));
+
+        // A recording whose file missed lines still prints the file, says
+        // what it missed, and fails.
+        QCOMPARE(run(QStringLiteral("recordStop"), false), 1);
+        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("/tmp/call.md\n"));
+        QCOMPARE(QString::fromStdString(err.str()),
+                 QStringLiteral("Could not write /tmp/call.md: No space left on device (2 lines missing)\n"));
+        QCOMPARE(recordingStatusFromJson(recordingStatusJson(stoppedIncomplete)).writeError,
+                 stoppedIncomplete.writeError);
     }
 
     void theCommandLineFailsWhenTheInstanceIgnoresTheProfile_data()

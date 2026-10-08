@@ -24,6 +24,8 @@
 #include "dictation/DictationSession.h"
 #include "providers/LocalModelStore.h"
 #include "providers/ProviderRegistry.h"
+#include "recording/RecordingPresentation.h"
+#include "recording/RecordingSession.h"
 #include "platform/CancelKeyGrab.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
@@ -31,6 +33,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QEventLoop>
+#include <QLocalSocket>
 #include <QStandardPaths>
 #ifdef SPEECHER_E2E_HOOKS
 #include <QMetaEnum>
@@ -62,6 +65,18 @@ constexpr int accessibilityPollMs = 5000;
 #endif
 // How long after launch opened files still replace the default main window.
 constexpr int defaultMainWindowGraceMs = 3000;
+
+QString microphoneAccessOffText()
+{
+    return QStringLiteral("Microphone access is off. Allow Speecher under Privacy & Security > "
+                          "Microphone, then try again.");
+}
+
+// Where recordings, insights and Local Models are kept.
+QString dataFolder()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+}
 
 } // namespace
 
@@ -213,6 +228,17 @@ ApplicationController::ApplicationController(bool popupOnly,
             [this] { m_session->setReachability(m_reachability->reachability()); });
     connect(m_session, &DictationSession::providerSignInObserved, m_availability, &ProviderAvailability::noteSignIn);
     m_fileTranscription = new FileTranscriptionSession(m_settings, m_providers, this);
+    m_recording = new RecordingSession(
+        m_settings, m_providers,
+        [this](QObject *parent) { return m_platform->createAudioInput(m_settings, parent); }, this);
+    connect(m_recording, &RecordingSession::recordingChanged, this, &ApplicationController::recordingChanged);
+    connect(m_recording, &RecordingSession::stopped, this, [this](const RecordingStatus &status) {
+        IpcResponse reply = response();
+        reply.recording = status;
+        for (const QPointer<QLocalSocket> &socket : std::exchange(m_recordStopReplies, {})) {
+            SingleInstanceIpc::writeResponse(socket, reply);
+        }
+    });
 #ifdef Q_OS_MACOS
     m_updates = new MacSparkleUpdater(m_settings, m_session, this);
 #elif defined(Q_OS_WIN)
@@ -226,8 +252,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     // is never written; a pinned today makes those screenshots repeatable.
     const QString insightsSeed = qEnvironmentVariable("SPEECHER_INSIGHTS_SEED");
     m_insightsLog = insightsSeed.isEmpty()
-        ? new InsightsLog(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
-                              + QStringLiteral("/insights.jsonl"),
+        ? new InsightsLog(dataFolder() + QStringLiteral("/insights.jsonl"),
                           InsightsLog::Access::ReadWrite,
                           this)
         : new InsightsLog(insightsSeed, InsightsLog::Access::ReadOnly, this);
@@ -329,6 +354,47 @@ QString ApplicationController::fileTranscriptionRefusal() const
         : (state != DictationState::Idle && state != DictationState::Error) || m_microphoneStartPending
             ? QStringLiteral("Finish the dictation in progress, then transcribe the files.")
             : QString();
+}
+
+bool ApplicationController::isRecording() const
+{
+    return m_recording->isRecording();
+}
+
+// macOS may ask for the microphone first, and the provider's stream must
+// connect, so the reply waits for both.
+void ApplicationController::startRecording(const QString &path, const QStringList &vocabulary, QLocalSocket *socket)
+{
+    if (!ensureSetupCompleted()) {
+        SingleInstanceIpc::writeResponse(socket, response(false, recordingNeedsSetupText()));
+        return;
+    }
+    m_platform->requestMicrophoneAccess(this, [this, path, vocabulary, socket = QPointer(socket)](bool granted) {
+        if (!granted) {
+            SingleInstanceIpc::writeResponse(socket, response(false, microphoneAccessOffText()));
+            return;
+        }
+        m_recording->start(path, vocabulary, dataFolder(), [this, socket](const QString &error) {
+            if (!error.isEmpty()) {
+                SingleInstanceIpc::writeResponse(socket, response(false, error));
+                return;
+            }
+            // A command line that stopped waiting said the start failed, so
+            // nothing may record behind its back.
+            if (!socket || socket->state() != QLocalSocket::ConnectedState) {
+                qWarning() << "record start's caller left before it answered; discarding the recording";
+                m_recording->discard();
+                return;
+            }
+            IpcResponse reply = response();
+            reply.recording = m_recording->status();
+            if (!m_settings->recordingConsentNoticeShown()) {
+                m_settings->setRecordingConsentNoticeShown(true);
+                reply.message = recordingConsentNotice();
+            }
+            SingleInstanceIpc::writeResponse(socket, reply);
+        });
+    });
 }
 
 bool ApplicationController::startFileTranscription(const QStringList &paths,
@@ -795,10 +861,7 @@ void ApplicationController::startWithMicrophone(std::function<void()> start)
         if (granted) {
             start();
         } else if (m_frontEnd) {
-            m_frontEnd->showDictationError(
-                QStringLiteral("Microphone access is off. Allow Speecher under Privacy & Security > "
-                               "Microphone, then try again."),
-                {ErrorFix::MicrophonePermission});
+            m_frontEnd->showDictationError(microphoneAccessOffText(), {ErrorFix::MicrophonePermission});
         }
     });
 }
@@ -1131,6 +1194,19 @@ void ApplicationController::handleIpcCommand(const QString &command,
         SingleInstanceIpc::writeResponse(socket, response());
         m_updates->installAndRestart();
 #endif
+    } else if (command == QStringLiteral("recordStart")) {
+        startRecording(files.value(0), terms, socket);
+    } else if (command == QStringLiteral("recordStatus")) {
+        IpcResponse reply = response();
+        reply.recording = m_recording->status();
+        SingleInstanceIpc::writeResponse(socket, reply);
+    } else if (command == QStringLiteral("recordStop")) {
+        if (!m_recording->isRecording()) {
+            SingleInstanceIpc::writeResponse(socket, response(false, notRecordingText()));
+            return;
+        }
+        m_recordStopReplies.append(socket);
+        m_recording->stop();
     } else if (command == QStringLiteral("status")) {
         SingleInstanceIpc::writeResponse(socket, response());
     } else if (command == QStringLiteral("last")) {
@@ -1163,6 +1239,8 @@ ApplicationController::~ApplicationController()
     m_updateBanner = nullptr;
     delete m_updates;
     m_updates = nullptr;
+    delete m_recording;
+    m_recording = nullptr;
     delete m_fileTranscription;
     m_fileTranscription = nullptr;
     delete m_session;

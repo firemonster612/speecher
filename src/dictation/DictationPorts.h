@@ -220,12 +220,26 @@ public:
         return std::nullopt;
     }
     virtual SpeechPrepareResult prepare(const SpeechSettings &settings) = 0;
+    // Whether finalTranscript arrives while the audio still streams, an
+    // utterance at a time, rather than all at the end. A recording needs it.
+    virtual bool streamsFinalText(const SpeechSettings &settings) const
+    {
+        Q_UNUSED(settings);
+        return false;
+    }
     virtual void startAttempt(quint64 attemptId, const SpeechSettings &settings) = 0;
     virtual void sendAudio(quint64 attemptId, const QByteArray &pcm) = 0;
     virtual void finishInput(quint64 attemptId) = 0;
     virtual void cancelAttempt(quint64 attemptId) = 0;
+    // Finalizes the utterance heard so far while the stream carries on, for a
+    // provider that does not end one at a silence by itself. Providers that do
+    // ignore it.
+    virtual void endUtterance(quint64 attemptId) { Q_UNUSED(attemptId) }
 
 signals:
+    // Optional: the service accepted the attempt's stream, so audio sent from
+    // here on reaches it. Text from the attempt implies it.
+    void attemptConnected(quint64 attemptId);
     void partialTranscript(quint64 attemptId, const QString &text);
     void finalTranscript(quint64 attemptId, const QString &text);
     // Optional: a whole-attempt transcript that supersedes the accumulated

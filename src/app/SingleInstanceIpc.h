@@ -2,6 +2,7 @@
 
 #include "app/PlatformComposition.h"
 #include "dictation/DictationTypes.h"
+#include "recording/RecordingStatus.h"
 
 #include <QDeadlineTimer>
 #include <QLocalServer>
@@ -28,6 +29,8 @@ struct IpcResponse {
     QString text;
     // The terms an addVocabulary request carried that the list held already.
     QStringList skippedTerms;
+    // The record commands' answer: the recording now, or the one stopped.
+    std::optional<RecordingStatus> recording;
 };
 
 // The message an instance answers a command it doesn't know with. Clients
@@ -66,10 +69,13 @@ public:
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
-    // files rides along as the request's "files" array (the transcribe command).
+    // files rides along as the request's "files" array: the transcribe
+    // command's files, or the file recordStart writes. terms is the "terms"
+    // array: recordStart's terms for the recording's custom vocabulary.
     static IpcCommandResult sendCommandDetailed(const QString &command,
                                                 const SessionOverrides &overrides,
                                                 const QStringList &files,
+                                                const QStringList &terms,
                                                 IpcResponse *response,
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},

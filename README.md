@@ -247,6 +247,25 @@ speecher providers --json | jq '.[] | select(.usable == false)'
 
 It judges each provider the way the Dictation and Refinement settings do and words a problem as their rows do ("No server URL is set."). While Speecher is running it asks Speecher, which knows the sign-ins it has seen and the Local Runners it has looked for. Otherwise it judges from your settings, the downloaded Local Models and the system's network state. It makes no network calls, reads no keyring and refreshes no sign-in, so a sign-in nothing has checked yet, and whether a Local Runner is running, read as `Unknown` in the table and `null` in JSON. A provider that doesn't sign in has `signsIn` false, `signedIn` `null` and `-` in the table.
 
+### Recording a call
+
+`speecher record start` records the microphone into a transcript file that a coding agent can follow with `tail -f`, and prints the file's path. The recording runs in the Speecher app, which `record start` starts when it isn't running; dictation keeps working meanwhile. Each utterance is appended as one line once you pause, or after 25 seconds of unbroken speech, and the provider has finished its text. The time is when that text was finished, counted from the start of the recording:
+
+```
+[00:12:09] me: Yes, I'll check it today.
+```
+
+```sh
+speecher record start                  # recordings/<yyyy-mm-dd-hhmm>.md in Speecher's data folder
+speecher record start --to call.md     # or this file
+speecher record status                 # path, duration and streams; --json for one object
+speecher record stop                   # writes the last utterance, then prints the path
+```
+
+Speecher's data folder is `~/.local/share/io.github.firemonster612/speecher` on Linux. An existing file is never overwritten: the recording goes to `call-2.md` and so on instead. Files are kept until you delete them. `--vocab-file <path>` adds the file's terms to the custom vocabulary for this recording only, read the same way as for `transcribe`; an unreadable file is a usage error (exit 2). The tray icon and its tooltip show that a recording is running. The first `record start` prints a reminder that recording other people may need their consent.
+
+Recording needs Claude Voice or ChatGPT Codex, which stream finished text as they hear it; Local Models and Custom Endpoints can't record yet. `record start` prints the path once the provider is connected. When it can't connect, for example when you are signed out or offline, or the provider refuses a second session while you dictate, `record start` says why, leaves no file and exits with 1. If the stream drops later, Speecher reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds, for as long as the recording runs, and `record status` says it is reconnecting. What you say meanwhile is sent once the stream is back, up to the last 10 minutes of it. The words the provider was still working on when the stream dropped are written as a line as they stood, since it will never finish them. Before each new stream Speecher renews the sign-in when it is due, and once more when the provider turns it down. A failure a reconnect can't mend, such as being signed out, stops the stream: the recording stays open and `record status` says why, on stdout and stderr, until you stop it. `record stop` still prints the path when the recording missed something, such as lines it could not write to the file, says what on stderr, and exits with 1. `record status` exits with 1 when nothing is recording. Only the microphone is recorded for now; `--mic-only` is accepted and changes nothing.
+
 ## Uninstall
 
 Remove Speecher's shortcut in your desktop's keyboard settings. If you added an AppImage to the app menu, delete `~/.local/bin/speecher`, `~/.local/share/applications/io.github.firemonster612.speecher.desktop`, and `~/.local/share/icons/hicolor/scalable/apps/io.github.firemonster612.speecher.svg`.

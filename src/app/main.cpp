@@ -595,7 +595,7 @@ int main(int argc, char **argv)
         if (!daemon) {
             AllowSetForegroundWindow(ASFW_ANY);
             auto result = SingleInstanceIpc::sendCommandDetailed(
-                showCommand, SessionOverrides(), decision.transcribeFiles, &response);
+                showCommand, SessionOverrides(), decision.transcribeFiles, {}, &response);
             // The startup claim can precede the winning instance's pipe listener.
             if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
                 QDeadlineTimer deadline(750);
@@ -606,7 +606,7 @@ int main(int argc, char **argv)
                         break;
                     }
                     result = SingleInstanceIpc::sendCommandDetailed(
-                        showCommand, SessionOverrides(), decision.transcribeFiles, &response, int(remaining));
+                        showCommand, SessionOverrides(), decision.transcribeFiles, {}, &response, int(remaining));
                 }
             }
             if (result == IpcCommandResult::Sent) {
@@ -615,7 +615,7 @@ int main(int argc, char **argv)
         }
 #else
         if (!daemon
-            && SingleInstanceIpc::sendCommandDetailed(showCommand, SessionOverrides(), decision.transcribeFiles, &response)
+            && SingleInstanceIpc::sendCommandDetailed(showCommand, SessionOverrides(), decision.transcribeFiles, {}, &response)
                 == IpcCommandResult::Sent) {
             return answered();
         }

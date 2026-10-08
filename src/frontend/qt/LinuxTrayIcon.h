@@ -40,6 +40,7 @@ signals:
 private:
     void applyState(const QString &stateName);
 
+    ApplicationController *m_controller;
     QMenu m_menu;
     TrayStatusPanel m_panel;
     QSystemTrayIcon *m_tray;

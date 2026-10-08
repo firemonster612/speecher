@@ -47,6 +47,13 @@ struct TranscribeOptions {
     QString writingProfile = WritingProfile::Other;
     // Replaces the Spoken Language setting for this batch.
     std::optional<QString> spokenLanguage;
+    // A recording's: each final the provider streams is the transcript as it
+    // arrives, so only speech providers that stream final text take the
+    // audio, and Codex does not transcribe it again at the end. Once the
+    // provider has connected, a dropped stream reconnects for as long as the
+    // microphone runs, renewing the sign-in first when it is due or was
+    // turned down.
+    bool streamedFinalsOnly = false;
     TranscriptDestination destination = TranscriptDestination::BesideInput;
     QString folder;
 };
@@ -119,6 +126,9 @@ public:
     bool startListening(AudioInput *input, const TranscribeOptions &options);
     // Stops the microphone; what it heard is still transcribed and refined.
     void finishListening();
+    // Has the speech provider finalize the utterance the microphone has heard,
+    // once that audio has gone to it; see SpeechTranscriber::endUtterance.
+    void endUtterance();
     // Stops the current file, skips the rest and still emits batchFinished.
     void cancel();
 
@@ -129,6 +139,18 @@ signals:
     void fileDecoded(int index, const QVector<float> &peaks, qint64 durationMs);
     void fileProgress(int index, qreal fractionOfAudioSent);
     void filePartialText(int index, const QString &text);
+    // The speech provider accepted a stream of the file's audio: the first,
+    // and each one a recording reconnects.
+    void speechConnected(int index);
+    // A recording's stream dropped, for reason; it reconnects after a pause.
+    void speechReconnecting(int index, const QString &reason);
+    // A recording's stream was down so long that the oldest unsent audio,
+    // this much of it, was dropped.
+    void microphoneAudioLost(int index, qint64 durationMs);
+    // Each piece of text that will not change again, in order: a final the
+    // provider sent, or the partial a stream left when it ended. A
+    // whole-attempt transcript, which replaces them, is not one.
+    void fileTextFinalized(int index, const QString &text);
     void fileRefining(int index);
     void fileFinished(int index, const speecher::TranscribeFileResult &result);
     // Every file that finished or failed; a cancelled one is left out.
@@ -160,12 +182,29 @@ private:
     void failFile(const QString &message);
     void finishFile();
     void releaseFileResources();
+    void commitFinal(const QString &text);
+    void commitPartial();
+    void markAttemptConnected();
+    void waitToReconnect(const QString &reason);
+    void reconnect();
+    bool renewSignIn();
+    void handleSignInRenewed(const SpeechPrepareResult &result);
+    void resumeStreaming();
+    SpeechSettings currentSpeechSettings() const;
+    void rewindTo(qsizetype position);
+    void keepMicrophoneAudioBounded();
+    void forgetAudioBefore(qsizetype position);
+    void endUtteranceOnceSent();
 
     SettingsStore *m_settings;
     ProviderRegistry *m_providers;
     StartupPreparationRunner *m_preparation;
     TranscriptState *m_transcript;
     QTimer m_sendTimer;
+    // Runs while a recording waits to reconnect a dropped stream.
+    QTimer m_reconnectTimer;
+    // Which of the growing pauses before a reconnect comes next.
+    int m_reconnectDelayIndex = 0;
     QStringList m_paths;
     TranscribeOptions m_options;
     // The user's settings with this batch's choices applied.
@@ -182,7 +221,29 @@ private:
     QPointer<SpeechTranscriber> m_transcriber;
     QPointer<TranscriptRefiner> m_refiner;
     QByteArray m_pcm;
+    // Microphone audio dropped from the front of m_pcm once a connected stream
+    // took it, or once too much waited, so a long recording does not keep
+    // all it heard.
+    qsizetype m_pcmDropped = 0;
+    // Bytes sent, counted from the start of the input.
     qsizetype m_sent = 0;
+    // Where each endUtterance() falls in the input, kept until that audio is
+    // dropped, so a stream that takes the audio again gets them again.
+    QList<qsizetype> m_utteranceEnds;
+    // The first of m_utteranceEnds the current stream has not been sent.
+    qsizetype m_nextUtteranceEnd = 0;
+    // m_sent when the current attempt began: what it was sent is sent again
+    // if it fails before it connects.
+    qsizetype m_attemptSentFrom = 0;
+    // The current attempt's stream connected or sent text, so the audio
+    // before m_sent reached the service.
+    bool m_attemptConnected = false;
+    // A stream of the current provider has connected.
+    bool m_providerConnected = false;
+    // The preparation running renews a recording's sign-in.
+    bool m_renewingSignIn = false;
+    // The service turned the sign-in down since a stream last connected.
+    bool m_signInRefused = false;
     bool m_inputFinished = false;
     // An attempt is open for the audio; false while a provider prepares.
     bool m_streaming = false;

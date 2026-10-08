@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var status: String
     @Published private(set) var dictationState: SpeecherDictationState
     @Published private(set) var listening: Bool
+    @Published private(set) var recording: Bool
     @Published private(set) var toggleLabel: String
     @Published private(set) var toggleEnabled: Bool
     /// The buttons either side of the waveform, and whether the menu bar
@@ -168,6 +169,7 @@ final class AppModel: ObservableObject {
         status = bridge.statusLabel
         dictationState = bridge.dictationState
         listening = bridge.listening
+        recording = bridge.recording
         toggleLabel = bridge.toggleLabel
         toggleEnabled = bridge.toggleEnabled
         pauseVisible = bridge.pauseVisible
@@ -197,6 +199,7 @@ final class AppModel: ObservableObject {
             failureNote = self.bridge.failureNote
             if failureNote.isEmpty, dictationState != .error { failureFix = nil }
             listening = self.bridge.listening
+            recording = self.bridge.recording
             toggleLabel = self.bridge.toggleLabel
             toggleEnabled = self.bridge.toggleEnabled
             pauseVisible = self.bridge.pauseVisible

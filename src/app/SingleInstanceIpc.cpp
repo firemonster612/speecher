@@ -110,6 +110,9 @@ IpcCommandResult sendRequest(const QJsonObject &request,
             response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
             response->text = object.value(QStringLiteral("text")).toString();
             response->skippedTerms = stringList(object.value(QStringLiteral("skippedTerms")));
+            if (object.contains(QStringLiteral("recording"))) {
+                response->recording = recordingStatusFromJson(object.value(QStringLiteral("recording")).toObject());
+            }
         }
         return IpcCommandResult::Sent;
     }
@@ -360,12 +363,13 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
-    return sendCommandDetailed(command, overrides, {}, response, timeoutMs, std::move(platform), error);
+    return sendCommandDetailed(command, overrides, {}, {}, response, timeoutMs, std::move(platform), error);
 }
 
 IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         const SessionOverrides &overrides,
                                                         const QStringList &files,
+                                                        const QStringList &terms,
                                                         IpcResponse *response,
                                                         int timeoutMs,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
@@ -383,6 +387,9 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
     }
     if (!files.isEmpty()) {
         request.insert(QStringLiteral("files"), QJsonArray::fromStringList(files));
+    }
+    if (!terms.isEmpty()) {
+        request.insert(QStringLiteral("terms"), QJsonArray::fromStringList(terms));
     }
     return sendRequest(request, response, timeoutMs, std::move(platform), error);
 }
@@ -422,6 +429,9 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
     }
     if (!response.skippedTerms.isEmpty()) {
         object.insert(QStringLiteral("skippedTerms"), QJsonArray::fromStringList(response.skippedTerms));
+    }
+    if (response.recording) {
+        object.insert(QStringLiteral("recording"), recordingStatusJson(*response.recording));
     }
     QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     responseBytes.append('\n');

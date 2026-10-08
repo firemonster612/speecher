@@ -8,10 +8,13 @@
 #include "core/settings/SettingsSchema.h"
 #include "core/settings/SpokenLanguages.h"
 #include "providers/ProviderRegistry.h"
+#include "recording/RecordingPresentation.h"
 #include "transcribe/FileTranscriptionSession.h"
 
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QProcess>
+#include <QThread>
 
 #include <iostream>
 
@@ -64,25 +67,39 @@ QString requestedOption(const QStringList &arguments, const QString &name, QStri
     return {};
 }
 
+// Starts a Speecher that outlives this command. Its standard streams go to the
+// null device: holding this command's would keep a caller's
+// `path=$(speecher record start)` waiting until that Speecher quits.
+bool startDetachedSpeecher(const SingleInstancePlatform *platform, const QStringList &arguments)
+{
+    QProcess process;
+    process.setProgram(platform->detachedExecutablePath());
+    process.setArguments(arguments);
+    process.setStandardInputFile(QProcess::nullDevice());
+    process.setStandardOutputFile(QProcess::nullDevice());
+    process.setStandardErrorFile(QProcess::nullDevice());
+    return process.startDetached();
+}
+
 bool startDetachedListening(const SingleInstancePlatform *platform, const QStringList &overrideArguments)
 {
-    return QProcess::startDetached(platform->detachedExecutablePath(),
-                                   QStringList{QStringLiteral("--daemon"), QStringLiteral("--start-listening")}
-                                       + overrideArguments);
+    return startDetachedSpeecher(
+        platform, QStringList{QStringLiteral("--daemon"), QStringLiteral("--start-listening")} + overrideArguments);
+}
+
+bool startDetachedDaemon(const SingleInstancePlatform *platform)
+{
+    return startDetachedSpeecher(platform, {QStringLiteral("--daemon")});
 }
 
 bool startDetachedSettings(const SingleInstancePlatform *platform)
 {
-    return QProcess::startDetached(
-        platform->detachedExecutablePath(),
-        {QStringLiteral("--daemon"), QStringLiteral("--show-settings")});
+    return startDetachedSpeecher(platform, {QStringLiteral("--daemon"), QStringLiteral("--show-settings")});
 }
 
 bool startDetachedSetup(const SingleInstancePlatform *platform)
 {
-    return QProcess::startDetached(
-        platform->detachedExecutablePath(),
-        {QStringLiteral("--daemon"), QStringLiteral("--show-setup")});
+    return startDetachedSpeecher(platform, {QStringLiteral("--daemon"), QStringLiteral("--show-setup")});
 }
 
 QStringList absolutePaths(const QStringList &paths)
@@ -99,6 +116,15 @@ QStringList absolutePaths(const QStringList &paths)
 constexpr double kDefaultUntilSilenceSeconds = 2;
 constexpr double kMinUntilSilenceSeconds = 0.1;
 constexpr int kMaxUntilSilenceSeconds = 3600;
+
+// record start may wait for macOS to ask about the microphone and for the
+// speech provider to connect, and record stop for the provider's last
+// utterance.
+constexpr int kRecordStartTimeoutMs = 60000;
+constexpr int kRecordStopTimeoutMs = 20000;
+// How long record start waits for the Speecher it started to answer.
+constexpr int kDaemonStartTimeoutMs = 10000;
+constexpr int kDaemonPollMs = 100;
 
 const char kHelp[] = R"(Usage: speecher [command] [options]
 
@@ -161,6 +187,24 @@ Check which speech and refinement services can work:
                            running Speecher, and asks no server, so a sign-in
                            nothing has seen is unknown
   --json                   print a JSON array of objects instead of a table
+
+Record a call into a file, in the running Speecher (started if needed):
+  speecher record start [--to <file>] [--mic-only] [--vocab-file <path>]
+                           record the microphone and print the file's path
+                           once the speech provider is connected, or exit
+                           with status 1 and no file; each utterance is
+                           appended as one line,
+                           "[hh:mm:ss] me: text" (default file: recordings/
+                           <yyyy-mm-dd-hhmm>.md in Speecher's data folder)
+  --mic-only               record the microphone alone, the only source so far
+  --vocab-file <path>      add the file's terms to the custom vocabulary for
+                           this recording, as transcribe does
+  speecher record status [--json]
+                           print the file, duration and streams; exit status
+                           1 when not recording
+  speecher record stop     write the last utterance, then print the file;
+                           exit status 1 when the recording missed something,
+                           which it says on stderr
 
 Options:
   --format plain|html      output format for toggle and start
@@ -370,6 +414,21 @@ std::optional<QString> takeValue(const QStringList &arguments, qsizetype &index)
     return std::nullopt;
 }
 
+// Adds the terms in --vocab-file's file to terms. Returns an error message
+// when the option has no file or the file cannot be read.
+QString addVocabularyFile(const std::optional<QString> &path, QStringList *terms)
+{
+    if (!path) {
+        return QStringLiteral("--vocab-file requires a value");
+    }
+    const std::optional<QStringList> read = readVocabularyFile(*path);
+    if (!read) {
+        return QStringLiteral("Cannot read vocabulary file %1").arg(*path);
+    }
+    *terms += *read;
+    return {};
+}
+
 // Reads one of the choices transcribe and listen share, the one at index,
 // into options, moving index past its value. Returns false for an option that
 // is not one of them; sets error for a usage mistake.
@@ -426,14 +485,7 @@ bool readSharedChoice(const QStringList &arguments,
     } else if (argument == QStringLiteral("--tone")) {
         choice(toneNames(), &options.tone);
     } else if (argument == QStringLiteral("--vocab-file")) {
-        const std::optional<QString> given = value();
-        if (!given) {
-            *error = QStringLiteral("--vocab-file requires a value");
-        } else if (const std::optional<QStringList> terms = readVocabularyFile(*given)) {
-            options.addedVocabulary += *terms;
-        } else {
-            *error = QStringLiteral("Cannot read vocabulary file %1").arg(*given);
-        }
+        *error = addVocabularyFile(value(), &options.addedVocabulary);
     } else {
         return false;
     }
@@ -687,6 +739,131 @@ int addVocabularyTerms(const QStringList &terms, const std::shared_ptr<const Sin
     return 0;
 }
 
+// Reads `speecher record`'s subcommand and options. Returns an error message
+// for a usage mistake.
+QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    const QString subcommand = arguments.value(0).toLower();
+    if (subcommand != QStringLiteral("start") && subcommand != QStringLiteral("status")
+        && subcommand != QStringLiteral("stop")) {
+        return QStringLiteral("record needs start, status or stop");
+    }
+    for (qsizetype index = 1; index < arguments.size(); ++index) {
+        const QString argument = arguments.at(index);
+        if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--to")) {
+            const std::optional<QString> path = takeValue(arguments, index);
+            if (!path || path->isEmpty()) {
+                return QStringLiteral("--to requires a file");
+            }
+            if (QFileInfo(*path).isDir()) {
+                return QStringLiteral("--to needs a file, not a folder: %1").arg(*path);
+            }
+            decision->recordPath = QFileInfo(*path).absoluteFilePath();
+        } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--mic-only")) {
+        } else if (subcommand == QStringLiteral("start") && argument == QStringLiteral("--vocab-file")) {
+            if (const QString error = addVocabularyFile(takeValue(arguments, index), &decision->vocabularyTerms);
+                !error.isEmpty()) {
+                return error;
+            }
+        } else if (subcommand == QStringLiteral("status") && argument == QStringLiteral("--json")) {
+            decision->json = true;
+        } else {
+            return QStringLiteral("Unknown record %1 option: %2").arg(subcommand, argument);
+        }
+    }
+    decision->ipcCommand = QStringLiteral("record") + subcommand.at(0).toUpper() + subcommand.mid(1);
+    return {};
+}
+
+// Prints what went wrong with each stream and with the file on stderr.
+// Returns whether anything did.
+bool printRecordingProblems(const RecordingStatus &status)
+{
+    QStringList problems;
+    for (const RecordingStream &stream : status.streams) {
+        problems << recordingStreamProblemText(stream);
+    }
+    problems << recordingWriteProblemText(status);
+    problems.removeAll(QString());
+    for (const QString &problem : std::as_const(problems)) {
+        std::cerr << problem.toStdString() << "\n";
+    }
+    return !problems.isEmpty();
+}
+
+// record status's output: exit status 1 when nothing is recording.
+int printRecordingStatus(const RecordingStatus &status, bool json)
+{
+    std::cout << (json ? QJsonDocument(recordingStatusJson(status)).toJson(QJsonDocument::Compact).toStdString()
+                       : recordingStatusText(status).toStdString())
+              << "\n";
+    printRecordingProblems(status);
+    return status.recording ? 0 : 1;
+}
+
+// The record commands, which print what the recording says rather than the
+// dictation state. record start starts Speecher when none is running and
+// waits for it to answer, since only it knows the file it writes.
+int runRecordCommand(const CommandLineDecision &decision,
+                     const std::shared_ptr<const SingleInstancePlatform> &platform)
+{
+    const QString &command = decision.ipcCommand;
+    const bool start = command == QStringLiteral("recordStart");
+    const int timeoutMs = start ? kRecordStartTimeoutMs
+        : command == QStringLiteral("recordStop") ? kRecordStopTimeoutMs
+                                                  : 2500;
+    const QStringList files = decision.recordPath.isEmpty() ? QStringList() : QStringList{decision.recordPath};
+    IpcResponse response;
+    QString ipcError;
+    const auto send = [&] {
+        return SingleInstanceIpc::sendCommandDetailed(
+            command, {}, files, decision.vocabularyTerms, &response, timeoutMs, platform, &ipcError);
+    };
+    IpcCommandResult result = send();
+    if (result == IpcCommandResult::Unavailable && start) {
+        if (!startDetachedDaemon(platform.get())) {
+            std::cerr << "Could not start speecher daemon\n";
+            return 1;
+        }
+        QDeadlineTimer deadline(kDaemonStartTimeoutMs);
+        while (result == IpcCommandResult::Unavailable && !deadline.hasExpired()) {
+            QThread::msleep(kDaemonPollMs);
+            result = send();
+        }
+    }
+    if (result == IpcCommandResult::Unavailable) {
+        if (command == QStringLiteral("recordStatus")) {
+            return printRecordingStatus({}, decision.json);
+        }
+        std::cerr << (start ? QStringLiteral("Speecher did not start") : notRecordingText()).toStdString() << "\n";
+        return 1;
+    }
+    if (result != IpcCommandResult::Sent) {
+        std::cerr << ipcError.toStdString() << "\n";
+        return 1;
+    }
+    if (!response.ok) {
+        if (response.message == kUnknownIpcCommandMessage) {
+            return reportOlderInstance("cannot record");
+        }
+        std::cerr << response.message.toStdString() << "\n";
+        return 1;
+    }
+    const RecordingStatus status = response.recording.value_or(RecordingStatus());
+    if (command == QStringLiteral("recordStatus")) {
+        return printRecordingStatus(status, decision.json);
+    }
+    // record start's message is the consent notice, on the first one ever.
+    if (!response.message.isEmpty()) {
+        std::cerr << response.message.toStdString() << "\n";
+    }
+    // A stopped recording that missed something is still where it is, but
+    // incomplete.
+    const bool incomplete = printRecordingProblems(status);
+    std::cout << status.path.toStdString() << "\n";
+    return incomplete ? 1 : 0;
+}
+
 } // namespace
 
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
@@ -732,6 +909,7 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
         || verb == QStringLiteral("settings")
         || verb == QStringLiteral("setup")
         || verb == QStringLiteral("grab")
+        || verb == QStringLiteral("record")
         || verb == QStringLiteral("quit");
     decision.startListening = arguments.contains(QStringLiteral("--start-listening"));
     decision.showSettings = arguments.contains(QStringLiteral("--show-settings"));
@@ -768,6 +946,15 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
             }
         }
         decision.mode = LaunchMode::RunCli;
+        if (verb == QStringLiteral("record")) {
+            const QString error = parseRecordArguments(arguments.mid(2), &decision);
+            if (!error.isEmpty()) {
+                std::cerr << error.toStdString() << "\n\n"
+                          << helpText().toStdString();
+                return {LaunchMode::Exit, 2};
+            }
+            return decision;
+        }
         decision.ipcCommand = verb == QStringLiteral("settings")
             ? QStringLiteral("showSettings")
             : verb == QStringLiteral("setup")
@@ -863,6 +1050,9 @@ int runCliCommand(const CommandLineDecision &decision,
     }
     if (command == QStringLiteral("addVocabulary")) {
         return addVocabularyTerms(decision.vocabularyTerms, platform);
+    }
+    if (command.startsWith(QStringLiteral("record"))) {
+        return runRecordCommand(decision, platform);
     }
     IpcResponse response;
     QString ipcError;

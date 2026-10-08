@@ -1,4 +1,5 @@
 #include "common/test_suites.h"
+#include "common/test_doubles.h"
 
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
@@ -15,6 +16,7 @@
 #include "platform/mac/MacMediaController.h"
 #include "app/LocalSetup.h"
 #include "providers/LocalModelStore.h"
+#include "providers/ProviderRegistry.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "platform/SingleKeyShortcutBinder.h"
 #ifdef Q_OS_LINUX
@@ -218,7 +220,7 @@ public:
 
     AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const override
     {
-        return m_delegate->createAudioInput(settings, parent);
+        return audioInputs ? audioInputs(parent) : m_delegate->createAudioInput(settings, parent);
     }
 
     void requestMicrophoneAccess(QObject *, std::function<void(bool)> completed) const override
@@ -296,6 +298,8 @@ public:
     mutable QString launchAtLoginError;
 
     mutable std::function<void(bool)> microphoneAnswer;
+    // Makes the microphones instead of the platform, when set.
+    std::function<AudioInput *(QObject *parent)> audioInputs;
     mutable FakeGlobalShortcutBinder *binder = nullptr;
     mutable FakeGlobalShortcutBinder *cancelBinder = nullptr;
     mutable FakeGlobalShortcutBinder *pauseBinder = nullptr;
@@ -1075,6 +1079,54 @@ private slots:
                                 "Speech      codex  ChatGPT Codex  Yes         Unknown    Unknown\n"
                                 "Refinement  local  Local Runner   Yes         -          No       "
                                 "Ollama isn't running.\n"));
+    }
+
+    // record's subcommands go to the running Speecher; --to is made absolute
+    // and --vocab-file read here, where the shell's directory is known.
+    void recordIsSentToTheRunningSpeecher()
+    {
+        const auto parse = [](QStringList arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("record")} + arguments, {});
+        };
+
+        const CommandLineDecision start =
+            parse({QStringLiteral("start"), QStringLiteral("--to"), QStringLiteral("call.md"), QStringLiteral("--mic-only")});
+        QCOMPARE(start.mode, LaunchMode::RunCli);
+        QCOMPARE(start.ipcCommand, QStringLiteral("recordStart"));
+        QCOMPARE(start.recordPath, QDir::current().absoluteFilePath(QStringLiteral("call.md")));
+        QCOMPARE(parse({QStringLiteral("start")}).recordPath, QString());
+        QTemporaryDir dir;
+        const QString vocabulary = dir.filePath(QStringLiteral("terms.txt"));
+        QFile vocabularyFile(vocabulary);
+        QVERIFY(vocabularyFile.open(QIODevice::WriteOnly));
+        vocabularyFile.write("readSharedChoice\n# a comment\nSpeecher CLI\n");
+        vocabularyFile.close();
+        QCOMPARE(parse({QStringLiteral("start"), QStringLiteral("--vocab-file"), vocabulary}).vocabularyTerms,
+                 QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
+        const CommandLineDecision status = parse({QStringLiteral("status"), QStringLiteral("--json")});
+        QCOMPARE(status.ipcCommand, QStringLiteral("recordStatus"));
+        QVERIFY(status.json);
+        QCOMPARE(parse({QStringLiteral("stop")}).ipcCommand, QStringLiteral("recordStop"));
+
+        std::ostringstream usage;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        for (const QStringList &mistake : {QStringList{},
+                                           QStringList{QStringLiteral("pause")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--to")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--to"), QDir::tempPath()},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--json")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--vocab-file")},
+                                           QStringList{QStringLiteral("start"), QStringLiteral("--vocab-file"),
+                                                       dir.filePath(QStringLiteral("missing.txt"))},
+                                           QStringList{QStringLiteral("status"), QStringLiteral("--vocab-file"), vocabulary},
+                                           QStringList{QStringLiteral("stop"), QStringLiteral("--to"), QStringLiteral("a.md")},
+                                           QStringList{QStringLiteral("status"), QStringLiteral("--profile"),
+                                                       QStringLiteral("ai-coding")}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
     }
 
     // A custom tone or level is named by its id without custom_, with - for _.
@@ -2651,6 +2703,37 @@ private slots:
         QVERIFY(codex != reports.cend());
         QCOMPARE((*codex)[QStringLiteral("signedIn")], QJsonValue(false));
         QCOMPARE((*codex)[QStringLiteral("problem")], QJsonValue(QStringLiteral("Not signed in to ChatGPT.")));
+    }
+
+    // A record start whose command line stopped waiting, and so reported a
+    // failure, leaves nothing recording and no file once the stream connects.
+    void aRecordStartNoOneWaitsForIsDiscarded()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->audioInputs = [](QObject *parent) { return new test::FakeAudioInput(parent); };
+        ApplicationController controller(true, platform);
+        controller.settings()->setSetupCompleted(true);
+        controller.settings()->setSpeechProvider(QStringLiteral("codex"));
+        bool connected = false;
+        controller.providerRegistry()->registerSpeechProvider(
+            {QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")}, [&connected](QObject *parent) {
+                auto *codex = new test::FakeSpeechTranscriber(parent);
+                codex->providerId = QStringLiteral("codex");
+                codex->streamsFinals = true;
+                codex->onStartAttempt = [codex, &connected] {
+                    codex->emitConnected();
+                    connected = true;
+                };
+                return codex;
+            });
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("call.md"));
+
+        controller.handleIpcCommand(QStringLiteral("recordStart"), {}, nullptr, {path});
+        platform->microphoneAnswer(true);
+        QTRY_VERIFY(connected);
+        QVERIFY(!controller.isRecording());
+        QVERIFY(!QFileInfo::exists(path));
     }
 
     void filesOpenedBeforeSetupOpenOnceItCompletes()

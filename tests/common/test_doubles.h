@@ -228,6 +228,11 @@ public:
         return prepareResult;
     }
 
+    bool streamsFinalText(const SpeechSettings &) const override
+    {
+        return streamsFinals;
+    }
+
     void startAttempt(quint64 attemptId, const SpeechSettings &settings) override
     {
         ++startCalls;
@@ -263,6 +268,18 @@ public:
         }
     }
 
+    void endUtterance(quint64 attemptId) override
+    {
+        if (attemptId == currentAttemptId && onEndUtterance) {
+            onEndUtterance();
+        }
+    }
+
+    void emitConnected()
+    {
+        emit attemptConnected(currentAttemptId);
+    }
+
     void emitPartialText(const QString &text)
     {
         emit partialTranscript(currentAttemptId, text);
@@ -296,10 +313,13 @@ public:
     bool backgroundPrepare = false;
     unsigned long backgroundPrepareDelayMs = 0;
     SpeechPrepareResult prepareResult{true, {}};
+    bool streamsFinals = false;
     // Runs inside startAttempt(), as a provider that fails at once would.
     std::function<void()> onStartAttempt;
     // Runs inside cancelAttempt(), as a provider that emits while it stops.
     std::function<void(quint64)> onCancelAttempt;
+    // Runs inside endUtterance(), as a provider that finalizes when asked.
+    std::function<void()> onEndUtterance;
     int backgroundPrepareCalls = 0;
     int prepareCalls = 0;
     int startCalls = 0;

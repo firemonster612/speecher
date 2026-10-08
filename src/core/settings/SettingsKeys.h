@@ -112,6 +112,7 @@ inline const QString UpdatesDismissedVersion = QStringLiteral("updates/dismissed
 inline const QString UpdatesLastRunVersion = QStringLiteral("updates/lastRunVersion");
 inline const QString UpdatesLastRunBuildNumber = QStringLiteral("updates/lastRunBuildNumber");
 inline const QString UpdatesPendingWhatsNewVersion = QStringLiteral("updates/pendingWhatsNewVersion");
+inline const QString RecordingConsentNoticeShown = QStringLiteral("recording/consentNoticeShown");
 inline const QString IdentityMigrationVersion = QStringLiteral("migration/identityVersion");
 inline const QString RefinementModelMigrationVersion = QStringLiteral("migration/refinementModelVersion");
 inline const QString ClaudeCredentialsPath = QStringLiteral("claude/credentialsPath");

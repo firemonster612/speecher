@@ -14,21 +14,28 @@ namespace speecher {
 
 namespace {
 
-QIcon trayIcon(bool listening)
+QIcon trayIcon(bool listening, bool recording)
 {
     // The app icon lands in hicolor once Speecher is installed; a themed
     // microphone stands in until then, and says "listening" while the
-    // microphone is open (the AppImage bundles breeze as the fallback theme,
-    // so both names resolve there too).
+    // microphone is open, and the theme's record icon says a recording runs
+    // (the AppImage bundles breeze as the fallback theme, so these names
+    // resolve there too).
     const QIcon microphone = QIcon::fromTheme(QStringLiteral("audio-input-microphone"));
-    return listening ? microphone
-                     : QIcon::fromTheme(QStringLiteral("io.github.firemonster612.speecher"), microphone);
+    if (listening) {
+        return microphone;
+    }
+    if (recording) {
+        return QIcon::fromTheme(QStringLiteral("media-record"), microphone);
+    }
+    return QIcon::fromTheme(QStringLiteral("io.github.firemonster612.speecher"), microphone);
 }
 
 } // namespace
 
 LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
     : QObject(parent)
+    , m_controller(controller)
     , m_panel(controller)
     , m_tray(new QSystemTrayIcon(this))
 {
@@ -45,6 +52,8 @@ LinuxTrayIcon::LinuxTrayIcon(ApplicationController *controller, QObject *parent)
 
     connect(controller, &ApplicationController::stateChanged,
             this, &LinuxTrayIcon::applyState);
+    connect(controller, &ApplicationController::recordingChanged, this,
+            [this, controller] { applyState(controller->stateName()); });
     connect(m_tray, &QSystemTrayIcon::activated,
             this, [this, controller](QSystemTrayIcon::ActivationReason reason) {
                 if (reason == QSystemTrayIcon::Trigger) {
@@ -83,11 +92,12 @@ void LinuxTrayIcon::showMessage(const QString &title, const QString &message, st
 void LinuxTrayIcon::applyState(const QString &stateName)
 {
     const bool listening = dictationListeningPresentation(stateName);
+    const bool recording = m_controller->isRecording();
     const DictationToggleAction toggle = dictationToggleAction(stateName);
     m_toggleAction->setText(toggle.label);
     m_toggleAction->setEnabled(toggle.enabled);
-    m_tray->setToolTip(trayToolTip(listening));
-    m_tray->setIcon(trayIcon(listening));
+    m_tray->setToolTip(trayToolTip(listening, recording));
+    m_tray->setIcon(trayIcon(listening, recording));
 }
 
 } // namespace speecher
