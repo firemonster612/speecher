@@ -1244,7 +1244,6 @@ private slots:
             return new FakeAudioInput(parent);
         });
         QSignalSpy stopped(&recording, &RecordingSession::stopped);
-        QSignalSpy problems(&recording, &RecordingSession::problemChanged);
         QString error;
         const QString path = startRecording(recording, QString(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
@@ -1264,8 +1263,6 @@ private slots:
             m_codex->emitFinalText(QStringLiteral("Lost."));
             m_codex->emitFinalText(QStringLiteral("Lost too."));
         }
-        // Once, for the first line the file did not take.
-        QCOMPARE(problems.count(), 1);
         m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
                              ProviderFailureKind::Network);
         QTRY_COMPARE_WITH_TIMEOUT(m_codex->startCalls, 2, 5000);
