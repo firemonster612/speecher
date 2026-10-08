@@ -21,6 +21,9 @@ constexpr int sampleRateHz = 16000;
 // How much of the text before an utterance its prompt carries: about a
 // sentence, well inside the 224 tokens Whisper reads of a prompt.
 constexpr qsizetype promptTailChars = 200;
+// How much of the quiet before an utterance goes up with it, 300 ms, so a
+// first sound softer than what counts as voice is not cut.
+constexpr qsizetype leadInBytes = sampleRateHz * 2 * 3 / 10;
 
 QHttpPart formField(const QString &name, const QByteArray &value)
 {
@@ -184,7 +187,8 @@ void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSett
     m_vocabularyPrompt = VocabularyLimit::limited(settings.vocabulary).join(QStringLiteral(", "));
     m_inputFinished = false;
     m_pcm.clear();
-    m_inUtterances = false;
+    m_cutIntoUtterances = settings.cutIntoUtterances;
+    m_utteranceOpen = false;
     m_utterances.clear();
     m_heardTail.clear();
     // There is no stream to open: the audio waits here for the upload, so
@@ -194,8 +198,12 @@ void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSett
 
 void EndpointSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &pcm)
 {
-    if (attemptId == m_attemptId && !m_inputFinished) {
-        m_pcm += pcm;
+    if (attemptId != m_attemptId || m_inputFinished) {
+        return;
+    }
+    m_pcm += pcm;
+    if (m_cutIntoUtterances && !m_utteranceOpen && m_pcm.size() > leadInBytes) {
+        m_pcm.remove(0, m_pcm.size() - leadInBytes);
     }
 }
 
@@ -205,13 +213,13 @@ void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
         return;
     }
     m_inputFinished = true;
-    if (m_inUtterances) {
-        // The caller ended the utterance being spoken, so what follows the
-        // last is quiet, and a batch model writes words into silence: it is
-        // not sent.
+    if (m_cutIntoUtterances) {
+        // An utterance still open goes up; the quiet outside one never does,
+        // as a batch model writes words into silence.
+        closeUtterance();
         m_pcm.clear();
         if (!m_reply) {
-            emit attemptCompleted(attemptId);
+            uploadNextUtterance();
         }
         return;
     }
@@ -222,15 +230,29 @@ void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
     postAudio(std::exchange(m_pcm, {}), m_vocabularyPrompt);
 }
 
+void EndpointSpeechTranscriber::beginUtterance(quint64 attemptId)
+{
+    if (attemptId == m_attemptId && m_cutIntoUtterances && !m_inputFinished) {
+        m_utteranceOpen = true;
+    }
+}
+
 void EndpointSpeechTranscriber::endUtterance(quint64 attemptId)
 {
-    if (attemptId != m_attemptId || m_inputFinished || m_pcm.isEmpty()) {
+    if (attemptId != m_attemptId || !m_utteranceOpen) {
         return;
     }
-    m_inUtterances = true;
-    m_utterances.append(std::exchange(m_pcm, {}));
+    closeUtterance();
     if (!m_reply) {
         uploadNextUtterance();
+    }
+}
+
+// The open utterance waits for its upload.
+void EndpointSpeechTranscriber::closeUtterance()
+{
+    if (std::exchange(m_utteranceOpen, false) && !m_pcm.isEmpty()) {
+        m_utterances.append(std::exchange(m_pcm, {}));
     }
 }
 
@@ -334,8 +356,15 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
         if (!kept.isEmpty()) {
             qWarning().noquote() << failure.message << "- keeping the text streamed so far";
         }
-        if (m_inUtterances) {
+        if (m_cutIntoUtterances) {
             finishUtterance(kept);
+            // A failure that may pass costs this utterance alone. Any other,
+            // such as a refused key or a wrong path, would fail every one, so
+            // it stops the stream.
+            if (!isTransientFailure(failure.kind)) {
+                emit failed(finalizeFailure(attemptId, failure));
+                return;
+            }
             emit utteranceFailed(finalizeFailure(attemptId, failure));
             uploadNextUtterance();
             return;
@@ -350,7 +379,7 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
         ? (m_doneText.isEmpty() ? m_streamedText : m_doneText)
         : QJsonDocument::fromJson(body).object().value(QStringLiteral("text")).toString();
     const QString trimmed = text.trimmed();
-    if (m_inUtterances) {
+    if (m_cutIntoUtterances) {
         finishUtterance(trimmed);
         uploadNextUtterance();
         return;

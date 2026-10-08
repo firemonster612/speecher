@@ -30,10 +30,12 @@ SpeechEndpointUpload speechEndpointUpload(const SpeechEndpointSettings &endpoint
 // POST {base}{path} with the whole attempt's audio once input finishes.
 // Sends the audio once; a failure fails the attempt (rule A7).
 //
-// A recording ends utterances instead: each is posted on its own, after the
-// one before has answered, with the end of the text before it in the prompt,
-// and its text is a final. One that fails is reported and the next still
-// goes; no audio is sent twice and none overlaps.
+// A recording cuts the audio into utterances instead: each is posted on its
+// own, after the one before has answered, with the end of the text before it
+// in the prompt, and its text is a final. The quiet between them is not sent,
+// but for a short lead-in. One that fails in a way that may pass is reported
+// and the next still goes; any other failure fails the attempt. No audio is
+// sent twice and none overlaps.
 class EndpointSpeechTranscriber final : public SpeechTranscriber {
     Q_OBJECT
 
@@ -55,9 +57,11 @@ public:
     void finishInput(quint64 attemptId) override;
     void cancelAttempt(quint64 attemptId) override;
     void endUtterance(quint64 attemptId) override;
+    void beginUtterance(quint64 attemptId) override;
 
 private:
     void postAudio(const QByteArray &pcm, const QString &prompt);
+    void closeUtterance();
     void uploadNextUtterance();
     void readStream();
     void finishReply(QNetworkReply *reply, quint64 attemptId);
@@ -78,10 +82,13 @@ private:
     QString m_spokenLanguage;
     quint64 m_attemptId = 0;
     bool m_inputFinished = false;
+    // The open utterance's audio, or outside one the lead-in for the next.
     QByteArray m_pcm;
-    // endUtterance() has cut the attempt's audio, so its text comes an
-    // utterance at a time.
-    bool m_inUtterances = false;
+    // The caller marks the attempt's utterances, so its text comes an
+    // utterance at a time; see SpeechSettings::cutIntoUtterances.
+    bool m_cutIntoUtterances = false;
+    // Between beginUtterance() and endUtterance().
+    bool m_utteranceOpen = false;
     // Utterances waiting for the one uploading, oldest first.
     QList<QByteArray> m_utterances;
     // The end of the text the attempt's utterances have had so far.

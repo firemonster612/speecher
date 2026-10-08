@@ -3,6 +3,7 @@
 #include "recording/RecordingStatus.h"
 
 #include <QDateTime>
+#include <QDeadlineTimer>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QObject>
@@ -91,6 +92,7 @@ private:
     void handleStreamConnected();
     void trackUtterance(const QByteArray &pcm);
     void endUtterance();
+    void extendStop();
     void writeLine(const QString &text);
     void handleTranscriptionFinished(const QList<TranscribeFileResult> &results);
     void abandon(const QString &error);
@@ -109,6 +111,8 @@ private:
     Phase m_phase = Phase::Off;
     // Ends a stop the provider never finishes.
     QTimer m_stopDeadline;
+    // When a stop gives up on the provider, however much it still answers.
+    QDeadlineTimer m_stopLimit;
     // Skip silence's threshold, which says what audio is speech.
     int m_voiceThreshold = 0;
     // Runs from the latest speech until a pause ends the utterance; while it

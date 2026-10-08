@@ -374,7 +374,7 @@ private slots:
     // A recording's utterances go up one at a time, each once the one before
     // has answered, with the key terms and then the last 200 characters of
     // the text before it, from a word's start, as its prompt. Each text is a
-    // final, and the pause after the last utterance is not sent.
+    // final, and the quiet outside the utterances is not sent.
     void speechEndpointTranscribesEachUtteranceInTurnAfterTheTextBefore()
     {
         QTcpServer server;
@@ -386,9 +386,12 @@ private slots:
         SpeechSettings settings;
         settings.endpoint.baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
         settings.vocabulary = {QStringLiteral("Speecher")};
+        settings.cutIntoUtterances = true;
         transcriber.startAttempt(1, settings);
+        transcriber.beginUtterance(1);
         transcriber.sendAudio(1, QByteArray(640, 'a'));
         transcriber.endUtterance(1);
+        transcriber.beginUtterance(1);
         transcriber.sendAudio(1, QByteArray(640, 'b'));
         transcriber.endUtterance(1);
         transcriber.sendAudio(1, QByteArray(640, 'c'));

@@ -236,6 +236,10 @@ public:
     // provider that does not end one at a silence by itself. Providers that do
     // ignore it.
     virtual void endUtterance(quint64 attemptId) { Q_UNUSED(attemptId) }
+    // With SpeechSettings::cutIntoUtterances, the audio from here on is the
+    // next utterance, and what came since the last ended was quiet. Providers
+    // that take the quiet too ignore it.
+    virtual void beginUtterance(quint64 attemptId) { Q_UNUSED(attemptId) }
 
 signals:
     // Optional: the service accepted the attempt's stream, so audio sent from

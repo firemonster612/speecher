@@ -140,6 +140,14 @@ QByteArray microphoneChunk(qint16 level)
     return chunk;
 }
 
+// How much audio an upload to the Custom Endpoint carries: its WAV's data
+// size.
+qsizetype uploadedAudioBytes(const QByteArray &request)
+{
+    const qsizetype data = request.indexOf("data", request.indexOf("WAVE"));
+    return qFromLittleEndian<quint32>(request.constData() + data + 4);
+}
+
 qsizetype byteCount(const QList<QByteArray> &chunks)
 {
     qsizetype bytes = 0;
@@ -1120,11 +1128,8 @@ private slots:
               httpResponse("200 OK", "application/json", "{\"text\":\"It drops the last chunk.\"}")}) {
             server.route("POST /v1/audio/transcriptions", response);
         }
-        m_registry->registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")},
-                                           [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
         SettingsStore settings;
-        settings.setSpeechProvider(QStringLiteral("endpoint"));
-        settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, server.origin());
+        useEndpoint(settings, server);
         QPointer<FakeAudioInput> microphone;
         RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
             microphone = new FakeAudioInput(parent);
@@ -1151,6 +1156,113 @@ private slots:
                                                    QStringLiteral("It drops the last chunk.")}));
         QCOMPARE(server.requests.size(), 3);
         QVERIFY(server.requests.at(2).contains("Can you look at the retry logic?\r\n"));
+    }
+
+    // The quiet before an utterance is not uploaded, but for a 300 ms
+    // lead-in.
+    void aRecordingWithTheEndpointUploadsOnlyTheSpeechAfterALongQuiet()
+    {
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"Yes.\"}"));
+        SettingsStore settings;
+        useEndpoint(settings, server);
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+
+        // Ten seconds of quiet, then "yes".
+        for (int i = 0; i < 100; ++i) {
+            microphone->pushAudio(microphoneChunk(0));
+        }
+        microphone->pushAudio(microphoneChunk(8000));
+        QTRY_COMPARE_WITH_TIMEOUT(recordedTexts(path), QStringList{QStringLiteral("Yes.")}, 5000);
+        QCOMPARE(server.requests.size(), 1);
+        QCOMPARE(uploadedAudioBytes(server.requests.first()), 9600 + microphoneChunk(8000).size());
+    }
+
+    // A recording that hears no speech uploads nothing and stops with
+    // nothing missed.
+    void aSilentRecordingWithTheEndpointUploadsNothing()
+    {
+        FakeServer server;
+        SettingsStore settings;
+        useEndpoint(settings, server);
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+
+        for (int i = 0; i < 20; ++i) {
+            microphone->pushAudio(microphoneChunk(0));
+        }
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 3000);
+        const RecordingStatus status = stopped.first().first().value<RecordingStatus>();
+        QCOMPARE(recordingStreamProblemText(status.streams.first()), QString());
+        QCOMPARE(recordingWriteProblemText(status), QString());
+        QVERIFY(server.requests.isEmpty());
+    }
+
+    // An endpoint that fails in a way every utterance would, here a path the
+    // server does not have, stops the stream, and status says why.
+    void aRecordingStopsTheStreamOfAnEndpointThatFailsEveryUtterance()
+    {
+        FakeServer server;
+        SettingsStore settings;
+        useEndpoint(settings, server);
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+
+        microphone->pushAudio(microphoneChunk(8000));
+        QTRY_COMPARE_WITH_TIMEOUT(recording.status().streams.first().state, RecordingStream::State::Stopped, 3000);
+        QVERIFY2(recording.status().streams.first().problem.startsWith(QStringLiteral("Speech endpoint failed: ")),
+                 qPrintable(recording.status().streams.first().problem));
+        QVERIFY(recording.isRecording());
+        microphone->pushAudio(microphoneChunk(8000));
+        QTest::qWait(1200);
+        QCOMPARE(server.requests.size(), 1);
+    }
+
+    // A stop ends the utterance being spoken once the microphone has
+    // delivered its post-roll, so the upload carries it.
+    void aRecordingStopUploadsTheMicrophonesPostRoll()
+    {
+        FakeServer server;
+        server.route("POST /v1/audio/transcriptions", httpResponse("200 OK", "application/json", "{\"text\":\"Yes.\"}"));
+        SettingsStore settings;
+        useEndpoint(settings, server);
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+
+        const QByteArray postRoll = microphoneChunk(1234);
+        microphone->pushAudio(microphoneChunk(8000));
+        microphone->onStop = [&] { microphone->pushAudio(postRoll); };
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 3000);
+        QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Yes.")});
+        QCOMPARE(server.requests.size(), 1);
+        QVERIFY(server.requests.first().contains(microphoneChunk(8000) + postRoll));
     }
 
     // A provider that transcribes only once the audio ends cannot record yet,
@@ -2215,6 +2327,15 @@ private:
                                                m_codex = codex;
                                                return codex;
                                            });
+    }
+
+    // The Custom Endpoint at server as settings' speech provider.
+    void useEndpoint(SettingsStore &settings, const FakeServer &server)
+    {
+        m_registry->registerSpeechProvider({QStringLiteral("endpoint"), QStringLiteral("Custom Endpoint")},
+                                           [](QObject *parent) { return new EndpointSpeechTranscriber(parent); });
+        settings.setSpeechProvider(QStringLiteral("endpoint"));
+        settings.raw().setValue(SettingsKeys::SpeechEndpointBaseUrl, server.origin());
     }
 
     // Starts recording into path, or the default file in m_dir, and waits for

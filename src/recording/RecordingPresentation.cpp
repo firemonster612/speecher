@@ -117,7 +117,7 @@ QString recordingUtteranceFailedText(const QString &reason)
 
 QString recordingStopTimedOutText()
 {
-    return QStringLiteral("The speech provider did not finish the last utterance in time, so it is missing.");
+    return QStringLiteral("The speech provider did not finish in time, so the end of the recording is missing.");
 }
 
 QString recordingFileError(const QString &path, const QString &reason)

@@ -220,6 +220,10 @@ struct SpeechSettings {
     // transcript does; dictation leaves it off, because asking a model for
     // timings slows it and can change the text it returns.
     bool timedSegments = false;
+    // Never stored. A recording sets it: it marks where each utterance
+    // begins and ends (see SpeechTranscriber::beginUtterance), and the audio
+    // outside them is quiet.
+    bool cutIntoUtterances = false;
 };
 
 struct AudioCaptureSettings {
