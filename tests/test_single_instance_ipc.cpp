@@ -746,14 +746,16 @@ private slots:
                     }
                 });
 
+        // Each connects once the one before has its answer. Nine connecting
+        // at once would all be unanswered together, and Windows accepts
+        // them in one go, so the cap turns the ninth away (status --watch
+        // tries again) before any becomes a watcher.
         QLocalSocket watchers[9];
         for (QLocalSocket &watcher : watchers) {
             watcher.connectToServer(name);
             QVERIFY(watcher.waitForConnected(500));
             watcher.write(QByteArrayLiteral("{\"command\":\"watchStatus\"}\n"));
             watcher.flush();
-        }
-        for (QLocalSocket &watcher : watchers) {
             QTRY_VERIFY(watcher.canReadLine());
             QCOMPARE(stateOfLine(watcher.readLine()), QStringLiteral("idle"));
         }
