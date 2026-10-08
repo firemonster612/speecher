@@ -17,6 +17,7 @@
 #include <QtEndian>
 
 #include <algorithm>
+#include <memory>
 
 namespace speecher {
 
@@ -33,7 +34,7 @@ constexpr int kTokenTimeoutMs = 10'000;
 constexpr int kSendDeadlineMs = 30'000;
 // Connections open at once; only one of them can be the phone.
 constexpr qsizetype kMaxConnections = 8;
-constexpr int kSendBufferBytes = 64 * 1024;
+constexpr qsizetype kSendChunkBytes = 64 * 1024;
 constexpr int kQuietZoneModules = 4;
 
 QByteArray randomBytes(qsizetype size)
@@ -341,20 +342,35 @@ void PhoneTransfer::serve(QTcpSocket *socket)
         });
         // A phone that stops reading would otherwise hold the send forever.
         QTimer::singleShot(kSendDeadlineMs, socket, &QTcpSocket::abort);
-        // So Sent means the phone took nearly all of it, rather than that the
-        // system queued it: Windows otherwise buffers megabytes on its own.
-        socket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, kSendBufferBytes);
+        // So Sent means the phone took nearly all of it rather than that the
+        // system queued it, a chunk goes out only once the last has left Qt.
+        // Windows takes any single write whole, however large, and otherwise
+        // grows its buffer to megabytes.
+        socket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption,
+                                int(kSendChunkBytes));
         QByteArray length(4, Qt::Uninitialized);
         qToBigEndian<quint32>(quint32(m_sealed.size()), length.data());
-        connect(socket, &QTcpSocket::bytesWritten, this, [this, socket] {
-            if (socket->bytesToWrite() == 0) {
-                // Before disconnecting, which would otherwise read as an
-                // interruption.
-                setState(PhoneTransferState::Sent);
-                socket->disconnectFromHost();
+        const QByteArray payload = length + m_sealed;
+        auto sent = std::make_shared<qsizetype>(0);
+        const auto writeNext = [socket, payload, sent] {
+            const QByteArray chunk = payload.mid(*sent, kSendChunkBytes);
+            *sent += chunk.size();
+            socket->write(chunk);
+        };
+        connect(socket, &QTcpSocket::bytesWritten, this, [this, socket, payload, sent, writeNext] {
+            if (socket->bytesToWrite() > 0) {
+                return;
             }
+            if (*sent < payload.size()) {
+                writeNext();
+                return;
+            }
+            // Before disconnecting, which would otherwise read as an
+            // interruption.
+            setState(PhoneTransferState::Sent);
+            socket->disconnectFromHost();
         });
-        socket->write(length + m_sealed);
+        writeNext();
     });
 }
 
