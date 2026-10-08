@@ -737,6 +737,13 @@ void openRecordDialog(QWidget *parent,
     // What must hold before OK takes the record, rechecked as fields change.
     QList<std::function<bool()>> checks;
     const auto recheck = std::make_shared<std::function<void()>>();
+    // The record as the fields hold it now, and what asks the fields whose
+    // options or note depend on it again; both are complete once every field
+    // exists. A field's change calls refresh.
+    const auto currentRecord = std::make_shared<std::function<QVariantMap()>>();
+    QList<std::function<void()>> optionRefreshers;
+    QList<std::function<void()>> noteRefreshers;
+    const auto refresh = std::make_shared<std::function<void()>>([] {});
     QWidget *firstText = nullptr;
     // A field with help gets it underneath, in one widget with the field: a
     // wrapped label as a row of its own is sized too narrow and clipped.
@@ -774,6 +781,7 @@ void openRecordDialog(QWidget *parent,
         if (column.kind == ColumnKind::Toggle) {
             auto *box = new QCheckBox(column.title, dialog);
             box->setChecked(value.toBool());
+            QObject::connect(box, &QCheckBox::toggled, dialog, [refresh] { (*refresh)(); });
             addField(column, box);
             readers.append([box, id = column.id](QVariantMap &record) {
                 record.insert(id, box->isChecked());
@@ -781,14 +789,17 @@ void openRecordDialog(QWidget *parent,
             field = box;
         } else if (column.kind == ColumnKind::Choice) {
             auto *combo = new QComboBox(dialog);
-            const QList<RowOption> options = column.options(appSettings);
-            for (const RowOption &option : options) {
-                combo->addItem(option.label, option.id);
-            }
+            const auto options = std::make_shared<QList<RowOption>>(
+                column.recordOptions ? column.recordOptions(appSettings, original) : column.options(appSettings));
+            settings::setOptions(combo, *options);
             settings::selectData(combo, value.toString());
-            // What the chosen option does, under it, where the options say.
-            if (std::any_of(options.cbegin(), options.cend(),
-                            [](const RowOption &option) { return !option.help.isEmpty(); })) {
+            QObject::connect(combo, &QComboBox::currentIndexChanged, dialog, [refresh] { (*refresh)(); });
+            QWidget *shown = combo;
+            // What the chosen option does, or what the record makes of it,
+            // under it, where the column says either.
+            if (column.recordNote || !column.help.isEmpty()
+                || std::any_of(options->cbegin(), options->cend(),
+                               [](const RowOption &option) { return !option.help.isEmpty(); })) {
                 // The help takes the field's width; the combo keeps its own.
                 auto *choice = new QWidget(dialog);
                 choice->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -800,16 +811,28 @@ void openRecordDialog(QWidget *parent,
                 help->setWordWrap(true);
                 help->setForegroundRole(QPalette::PlaceholderText);
                 help->setFont(settings::smallFont(help->font()));
-                const auto showHelp = [combo, help, options] {
-                    help->setText(options.value(combo->currentIndex()).help);
-                };
-                showHelp();
-                QObject::connect(combo, &QComboBox::currentIndexChanged, help, showHelp);
+                noteRefreshers.append([help, currentRecord, column, appSettings] {
+                    const FieldNote note = shownFieldNote(column, appSettings, (*currentRecord)());
+                    help->setText(note.text);
+                    help->setVisible(!note.text.isEmpty());
+                    settings::setDescriptionTone(help, note.caution, help->palette());
+                });
                 choiceLayout->addWidget(combo, 0, Qt::AlignLeft);
                 choiceLayout->addWidget(help);
-                form->addRow(column.title, choice);
-            } else {
-                addField(column, combo);
+                shown = choice;
+            }
+            form->addRow(column.title, shown);
+            if (column.recordOptions) {
+                // A field with nothing to offer for this record is hidden.
+                form->setRowVisible(shown, !options->isEmpty());
+                optionRefreshers.append([combo, shown, form, options, currentRecord, column, appSettings] {
+                    const QString picked = combo->currentData().toString();
+                    *options = column.recordOptions(appSettings, (*currentRecord)());
+                    const QSignalBlocker blocker(combo);
+                    settings::setOptions(combo, *options);
+                    settings::selectData(combo, picked);
+                    form->setRowVisible(shown, !options->isEmpty());
+                });
             }
             readers.append([combo, id = column.id](QVariantMap &record) {
                 record.insert(id, combo->currentData().toString());
@@ -874,6 +897,7 @@ void openRecordDialog(QWidget *parent,
         } else if (column.kind == ColumnKind::Text) {
             auto *edit = new QLineEdit(value.toString(), dialog);
             edit->setPlaceholderText(column.placeholder);
+            QObject::connect(edit, &QLineEdit::textChanged, dialog, [refresh] { (*refresh)(); });
             addField(column, edit);
             readers.append([edit, id = column.id](QVariantMap &record) {
                 record.insert(id, edit->text().trimmed());
@@ -886,6 +910,23 @@ void openRecordDialog(QWidget *parent,
         if (!firstText && column.kind == ColumnKind::Text) {
             firstText = field;
         }
+    }
+
+    *currentRecord = [readers, original] {
+        QVariantMap record = original;
+        for (const auto &read : readers) {
+            read(record);
+        }
+        return record;
+    };
+    // Options first: a field whose choice they reset changes what the notes say.
+    *refresh = [refreshers = optionRefreshers + noteRefreshers] {
+        for (const auto &refreshField : refreshers) {
+            refreshField();
+        }
+    };
+    for (const auto &showNote : std::as_const(noteRefreshers)) {
+        showNote();
     }
 
     auto *problems = new InlineMessage(dialog);

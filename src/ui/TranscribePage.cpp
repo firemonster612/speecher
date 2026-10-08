@@ -279,6 +279,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
 
     QFrame *speechCard = addCard(setup, transcribeText(TranscribeText::TranscriptionSection), m_setup);
     m_speech = new QComboBox(speechCard);
+    m_speech->setObjectName(QStringLiteral("transcribeSpeech"));
     for (const ProviderDescriptor &provider : m_controller->providerRegistry()->speechProviders()) {
         m_speech->addItem(provider.label, provider.id);
         m_speech->setItemData(m_speech->count() - 1, provider.summary, Qt::ToolTipRole);
@@ -300,6 +301,7 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     QFrame *refineCard = addCard(setup, transcribeText(TranscribeText::RefinementSection), m_setup);
     QFormLayout *refineForm = settings::cardFormLayout(refineCard);
     m_refiner = new QComboBox(refineCard);
+    m_refiner->setObjectName(QStringLiteral("transcribeRefiner"));
     m_refiner->addItem(transcribeText(TranscribeText::NoRefiner), QStringLiteral("none"));
     for (const ProviderDescriptor &provider : m_controller->providerRegistry()->refinementProviders()) {
         m_refiner->addItem(provider.label, provider.id);
@@ -319,8 +321,10 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
     connect(m_refinerModelRow, &QPushButton::clicked, this,
             [this] { emit pageRequested(QStringLiteral("refinement")); });
 
-    // The profile comes first: it sets the cleanup level and tone below it.
+    // The profile comes first: it sets the cleanup level and tone below it,
+    // and the services when it picks its own.
     m_profile = new QComboBox(refineCard);
+    m_profile->setObjectName(QStringLiteral("transcribeProfile"));
     QFrame *profileRow = settings::makeRow(transcribeText(TranscribeText::WritingProfile),
                                            transcribeText(TranscribeText::WritingProfileHelp),
                                            m_profile, refineCard);
@@ -336,7 +340,9 @@ TranscribePage::TranscribePage(ApplicationController *controller, QWidget *paren
                                         transcribeText(TranscribeText::ToneHelp),
                                         m_tone, refineCard);
     settings::addCardRow(refineForm, toneRow, refineCard);
-    m_refinementDependents = {profileRow, cleanupRow, toneRow};
+    // The profile stays open without a refiner: it may pick one, and its
+    // speech service and terms apply either way.
+    m_refinementDependents = {cleanupRow, toneRow};
     connect(m_refiner, &QComboBox::currentIndexChanged, this, &TranscribePage::refreshRefinementRows);
     connect(m_profile, &QComboBox::currentIndexChanged, this, &TranscribePage::applyWritingProfile);
     for (QComboBox *combo : {m_profile, m_cleanup, m_tone}) {
@@ -678,7 +684,7 @@ void TranscribePage::showChoices(const AppSettings &settings)
     };
     QList<RowOption> profiles = writingProfileChoices(settings.refinement.writingProfiles);
     for (RowOption &profile : profiles) {
-        profile.help = writingProfileChoiceSummary(settings, profile.id);
+        profile.help = writingProfileChoiceSummary(settings, profile.id, m_controller->providerRegistry()->labels());
     }
     const bool keptProfile = refill(m_profile, profiles);
     const bool keptCleanup = refill(m_cleanup, cleanupStrengths(settings.refinement.customCleanupLevels));
@@ -694,11 +700,27 @@ void TranscribePage::showChoices(const AppSettings &settings)
     }
 }
 
-// A profile brings its own cleanup strength and tone, as it does for dictation.
+// A profile brings its own services, cleanup strength and tone, as it does
+// for dictation.
 void TranscribePage::applyWritingProfile()
 {
+    applyProfileServices();
     applyProfileCleanup();
     applyProfileTone();
+    refreshRefinementRows();
+}
+
+void TranscribePage::applyProfileServices()
+{
+    const AppSettings resolved = profileSettings();
+    settings::selectData(m_speech, resolved.speech.providerId);
+    settings::selectData(m_refiner, resolved.refinement.providerId);
+}
+
+AppSettings TranscribePage::profileSettings() const
+{
+    const AppSettings settings = m_controller->settings()->snapshot();
+    return m_controller->providerRegistry()->withProfileProviders(settings, pickedProfile(settings.refinement));
 }
 
 WritingProfileSettings TranscribePage::pickedProfile(const RefinementSettings &refinement) const
@@ -725,7 +747,8 @@ void TranscribePage::applyProfileTone()
 void TranscribePage::refreshRefinementRows()
 {
     const QString provider = m_refiner->currentData().toString();
-    const QString model = refinementModel(provider, m_controller->settings()->snapshot().refinement);
+    // The profile's model where the profile picked this provider.
+    const QString model = refinementModel(provider, profileSettings().refinement);
     auto *modelLabel = m_refinerModelRow->findChild<QLabel *>(QStringLiteral("rowDescription"));
     modelLabel->setText(model);
     modelLabel->setVisible(!model.isEmpty());
@@ -1036,7 +1059,7 @@ void TranscribePage::exportAll()
     for (const TranscribeFileResult &result : m_model->results()) {
         QString error;
         if (!result.failed()) {
-            saveTranscript(result.path, folder, shownTranscript(result, showingRaw()), &error);
+            saveTranscript(result.path, folder, shownTranscript(result, showingRaw()), TranscriptFormat::Text, &error);
         }
         if (!error.isEmpty()) {
             errors << error;

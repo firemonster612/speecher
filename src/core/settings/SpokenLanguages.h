@@ -33,6 +33,14 @@ bool listensForSpokenLanguage(const SpeechSettings &speech);
 // Speecher never switches the language itself.
 QString spokenLanguageProblem(const SpeechSettings &speech, const QString &serviceLabel);
 
+// Empty while a Writing Profile's own speech service listens for the stored
+// Spoken Language; otherwise the sentence that says the profile uses
+// `instead`, the Dictation page's service, naming the profile's service by
+// serviceLabel, or a Local Model by its own name.
+QString profileSpokenLanguageProblem(const SpeechSettings &profileSpeech,
+                                     const QString &serviceLabel,
+                                     const QString &instead);
+
 // A code some service or Local Model offers, or kAutomaticSpokenLanguage:
 // what `--language` accepts.
 bool isKnownSpokenLanguage(const QString &language);

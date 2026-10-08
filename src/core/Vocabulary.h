@@ -5,6 +5,8 @@
 #include <QByteArray>
 #include <QList>
 
+#include <optional>
+
 namespace speecher {
 
 // Trims, deduplicates case-insensitively, and orders by send priority: key
@@ -21,17 +23,24 @@ bool vocabularyEntryApplies(const VocabularyEntry &entry, const QString &writing
 bool vocabularyTermExcluded(const QList<VocabularyEntry> &entries,
                             const QString &term,
                             const QString &writingProfile);
-// The terms a speech request carries under the Writing Profile: the key terms
-// that apply to it, then the enabled Learned Corrections for terms the list
-// does not hold, within the caps. An
-// empty profile takes every entry, for a request made before one is known.
+// The terms a speech request carries under the Writing Profile:
+// `leadingTerms` in their order, then the key terms that apply to it, then
+// the enabled Learned Corrections for terms the list does not hold, each term
+// once and within the caps. An empty profile takes every entry, for a request
+// made before one is known.
 QStringList speechVocabulary(const QList<VocabularyEntry> &entries,
                              const QList<LearnedCorrection> &corrections,
-                             const QString &writingProfile);
+                             const QString &writingProfile,
+                             const QStringList &leadingTerms = {});
 // The entry's profiles without the ones `profiles` no longer holds. One left
 // with none applies to every profile, as a recognition rule whose profile was
 // deleted loses it.
 QStringList offeredVocabularyProfiles(const QStringList &ids,
                                       const QList<WritingProfileSettings> &profiles);
+// The terms in a vocabulary file, one per line, skipping blank lines and ones
+// starting with #.
+QStringList parseVocabularyFile(const QByteArray &text);
+// parseVocabularyFile for the file at `path`. Nothing when it cannot be read.
+std::optional<QStringList> readVocabularyFile(const QString &path);
 
 } // namespace speecher

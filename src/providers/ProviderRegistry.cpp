@@ -1,5 +1,7 @@
 #include "providers/ProviderRegistry.h"
 
+#include "core/WritingProfileProviders.h"
+
 #include <algorithm>
 
 namespace speecher {
@@ -63,6 +65,33 @@ QString ProviderRegistry::refinementProviderLabel(const QString &id) const
 {
     const auto entry = m_refinement.constFind(id);
     return entry == m_refinement.cend() ? id : entry->descriptor.label;
+}
+
+ProviderLabels ProviderRegistry::labels() const
+{
+    return [this](ProviderRole role, const QString &id) {
+        return role == ProviderRole::Speech ? speechProviderLabel(id) : refinementProviderLabel(id);
+    };
+}
+
+AppSettings ProviderRegistry::withProfileProviders(const AppSettings &settings,
+                                                  const WritingProfileSettings &profile) const
+{
+    AppSettings resolved = withWritingProfileProviders(settings, profile);
+    if (!m_speech.contains(resolved.speech.providerId)) {
+        resolved.speech = settings.speech;
+    }
+    return resolved;
+}
+
+QList<RowOption> ProviderRegistry::rowOptions(ProviderRole role) const
+{
+    QList<RowOption> options;
+    const QList<ProviderDescriptor> providers = role == ProviderRole::Speech ? speechProviders() : refinementProviders();
+    for (const ProviderDescriptor &provider : providers) {
+        options.append({provider.id, provider.label, provider.summary});
+    }
+    return options;
 }
 
 SpeechTranscriber *ProviderRegistry::speechProvider(const QString &id)

@@ -14,6 +14,7 @@
 #include "core/BindingProcessor.h"
 #include "core/Vocabulary.h"
 #include "core/VocabularyLimit.h"
+#include "core/WritingProfileProviders.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -197,12 +198,36 @@ bool refinementOn(const AppSettings &settings, const Capabilities &)
     return settings.refinement.providerId != QStringLiteral("none");
 }
 
-// Refinement provider "None" means no refinement runs, so every setting that
-// only shapes a refinement request does nothing. Grey those rows out rather
-// than letting them read as live choices.
+// Every provider a dictation may run for the role: the page's chain, then
+// the ones Writing Profiles pick, which run ahead of it.
+QStringList providersInUse(ProviderRole role, const AppSettings &settings)
+{
+    const bool speech = role == ProviderRole::Speech;
+    QStringList ids = speech
+        ? providerChain(role, settings.speech.providerId, settings.speech.fallbackProviderIds)
+        : providerChain(role, settings.refinement.providerId, settings.refinement.fallbackProviderIds);
+    for (const WritingProfileSettings &profile : settings.refinement.writingProfiles) {
+        const QString &id = speech ? profile.speechProvider : profile.refinementProvider;
+        if (isChainProviderId(role, id) && !ids.contains(id)) {
+            ids.append(id);
+        }
+    }
+    return ids;
+}
+
+// Whether any dictation refines: the Refinement page's provider, or one a
+// Writing Profile picks while the page says None.
+bool refinementRuns(const AppSettings &settings, const Capabilities &)
+{
+    return !providersInUse(ProviderRole::Refinement, settings).isEmpty();
+}
+
+// With no refinement anywhere, every setting that only shapes a refinement
+// request does nothing. Grey those rows out rather than letting them read as
+// live choices.
 void gateOnRefinementProvider(SettingsRow &row)
 {
-    addGate(row, refinementOn, QStringLiteral("Refinement is off."));
+    addGate(row, refinementRuns, QStringLiteral("Refinement is off."));
 }
 
 // The categories the Output page offers a paste rule for. A rule stored for any
@@ -473,10 +498,10 @@ SettingsRow textRow(QString id, QString label, QString help, Getter get, Setter 
     return row;
 }
 
-bool offersProvider(const QList<RowOption> &providers, const QString &id)
+bool offersOption(const QList<RowOption> &options, const QString &id)
 {
-    return std::any_of(providers.cbegin(), providers.cend(),
-                       [&id](const RowOption &provider) { return provider.id == id; });
+    return std::any_of(options.cbegin(), options.cend(),
+                       [&id](const RowOption &option) { return option.id == id; });
 }
 
 LiveFacts liveFacts(const SchemaContext &context)
@@ -494,28 +519,20 @@ HardwareProfile thisComputer(const SchemaContext &context)
     return context.hardware ? context.hardware() : HardwareProfile{};
 }
 
-QStringList speechChain(const AppSettings &settings)
-{
-    return providerChain(ProviderRole::Speech, settings.speech.providerId, settings.speech.fallbackProviderIds);
-}
-
-QStringList refinementChain(const AppSettings &settings)
-{
-    return providerChain(ProviderRole::Refinement, settings.refinement.providerId,
-                         settings.refinement.fallbackProviderIds);
-}
-
-// A provider's own rows sit in its card and show while it is anywhere in the
-// chain, as the primary or a fallback, since either may run.
-Gate whileInSpeechChain(const QString &id)
-{
-    return [id](const AppSettings &settings, const Capabilities &) { return speechChain(settings).contains(id); };
-}
-
-Gate whileInRefinementChain(const QString &id)
+// A provider's own rows sit in its card and show while a dictation may run
+// it: anywhere in the chain, as the primary or a fallback, or picked by a
+// Writing Profile.
+Gate whileSpeechProviderInUse(const QString &id)
 {
     return [id](const AppSettings &settings, const Capabilities &) {
-        return refinementChain(settings).contains(id);
+        return providersInUse(ProviderRole::Speech, settings).contains(id);
+    };
+}
+
+Gate whileRefinementProviderInUse(const QString &id)
+{
+    return [id](const AppSettings &settings, const Capabilities &) {
+        return providersInUse(ProviderRole::Refinement, settings).contains(id);
     };
 }
 
@@ -717,9 +734,15 @@ QList<SettingsRow> speechEndpointRows(const std::function<LiveFacts(const AppSet
         return namedOptions(facts(settings).speechEndpointModels);
     };
     for (SettingsRow &row : rows) {
-        row.visible = whileInSpeechChain(QStringLiteral("endpoint"));
+        row.visible = whileSpeechProviderInUse(QStringLiteral("endpoint"));
     }
     return rows;
+}
+
+// Under a choice of downloaded Local Models.
+QString downloadedLocalModelsHelp()
+{
+    return QStringLiteral("Downloaded models. Get others on the %1 page.").arg(paneTitle(QStringLiteral("localModels")));
 }
 
 // The Local Model dictation uses, in its card. It is the
@@ -731,8 +754,7 @@ QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts,
     SettingsRow model = choiceRow(
         QStringLiteral("speechLocalModel"),
         QStringLiteral("Model"),
-        QStringLiteral("Downloaded models. Get others on the %1 page.")
-            .arg(paneTitle(QStringLiteral("localModels"))),
+        downloadedLocalModelsHelp(),
         [facts](const AppSettings &settings) {
             QList<RowOption> options;
             for (const QString &id : facts().downloadedModels) {
@@ -766,7 +788,7 @@ QList<SettingsRow> speechLocalModelRows(const std::function<LiveFacts()> &facts,
 
     // A build without local speech may still hold a Local Model fallback; it
     // has no Local models page to send anyone to.
-    const auto inChain = whileInSpeechChain(QStringLiteral("local"));
+    const auto inChain = whileSpeechProviderInUse(QStringLiteral("local"));
     const Gate whileLocal = [inChain, offered](const AppSettings &settings, const Capabilities &capabilities) {
         return offered && inChain(settings, capabilities);
     };
@@ -829,7 +851,7 @@ QList<SettingsRow> localRunnerRows(const std::function<LiveFacts()> &facts)
 
     QList<SettingsRow> rows{std::move(runner), std::move(model), std::move(detect)};
     for (SettingsRow &row : rows) {
-        row.visible = whileInRefinementChain(QStringLiteral("local"));
+        row.visible = whileRefinementProviderInUse(QStringLiteral("local"));
     }
     return rows;
 }
@@ -882,7 +904,7 @@ QList<SettingsRow> refinementEndpointRows(const std::function<LiveFacts(const Ap
         return namedOptions(facts(settings).refinementEndpointModels);
     };
     for (SettingsRow &row : rows) {
-        row.visible = whileInRefinementChain(QStringLiteral("endpoint"));
+        row.visible = whileRefinementProviderInUse(QStringLiteral("endpoint"));
     }
     return rows;
 }
@@ -1476,7 +1498,7 @@ SettingsPage audioPage(const SchemaContext &context)
         "the live pass misheard. It uses one extra ChatGPT request. Dictations longer than "
         "about a minute and a half keep the live transcript.");
     finalRetranscribe.sinceVersion = QStringLiteral("0.1.6");
-    finalRetranscribe.visible = whileInSpeechChain(QStringLiteral("codex"));
+    finalRetranscribe.visible = whileSpeechProviderInUse(QStringLiteral("codex"));
 
     SettingsRow device = choiceRow(
         QStringLiteral("audioDevice"),
@@ -1563,7 +1585,7 @@ SettingsPage audioPage(const SchemaContext &context)
             {QStringLiteral("Fallbacks"), QString(), {fallbackListRow(ProviderRole::Speech)}},
             {QStringLiteral("Local Model"),
              QString(),
-             speechLocalModelRows(facts, offersProvider(context.speechProviders, QStringLiteral("local")))},
+             speechLocalModelRows(facts, offersOption(context.speechProviders, QStringLiteral("local")))},
             {QStringLiteral("Custom Endpoint"),
              QString(),
              speechEndpointRows([context](const AppSettings &draft) {
@@ -1824,7 +1846,7 @@ SettingsPage refinementPage(const SchemaContext &context)
         QStringLiteral("Lets cleanup fit what you are writing."),
         [](const AppSettings &settings) { return settings.refinement.useTargetContext; },
         [](AppSettings &settings, bool value) { settings.refinement.useTargetContext = value; });
-    targetContext.visible = refinementOn;
+    targetContext.visible = refinementRuns;
     gateOnTargetAccessibility(targetContext,
                               accessibilityGateHelp(QStringLiteral("send the app's text")));
 
@@ -1840,17 +1862,17 @@ SettingsPage refinementPage(const SchemaContext &context)
         screenshotHelp,
         [](const AppSettings &settings) { return settings.refinement.includeScreenshotContext; },
         [](AppSettings &settings, bool value) { settings.refinement.includeScreenshotContext = value; });
-    screenshots.visible = refinementOn;
+    screenshots.visible = refinementRuns;
     screenshots.disabledHelp = QStringLiteral("Only OpenAI and Anthropic refinement can use screenshots.");
-    // Any provider in the chain that reads screenshots gets one; the rest
-    // clean up without it, which a mixed chain's help says.
+    // Any provider in use that reads screenshots gets one; the rest clean up
+    // without it, which a mixed set's help says.
     screenshots.enabled = [screenshotReaders](const AppSettings &settings, const Capabilities &) {
-        const QStringList chain = refinementChain(settings);
+        const QStringList chain = providersInUse(ProviderRole::Refinement, settings);
         return std::any_of(chain.cbegin(), chain.cend(),
                            [&screenshotReaders](const QString &id) { return screenshotReaders.contains(id); });
     };
     screenshots.helpValue = [screenshotReaders, screenshotHelp, readers](const AppSettings &settings) {
-        const QStringList chain = refinementChain(settings);
+        const QStringList chain = providersInUse(ProviderRole::Refinement, settings);
         const auto reads = [&screenshotReaders](const QString &id) { return screenshotReaders.contains(id); };
         if (std::all_of(chain.cbegin(), chain.cend(), reads) || std::none_of(chain.cbegin(), chain.cend(), reads)) {
             return screenshotHelp;
@@ -1913,23 +1935,24 @@ SettingsPage writingProfilesPage(const SchemaContext &context)
         [](AppSettings &settings, const QString &value) {
             settings.refinement.defaultWritingProfile = value;
         });
-    gateOnRefinementProvider(fallbackProfile);
 
+    // Neither is gated on the Refinement page: a profile may pick a speech
+    // service, or refine while the page says None.
     SettingsRow profileBehavior;
     profileBehavior.id = QStringLiteral("writingProfileBehavior");
     profileBehavior.label = QStringLiteral("Profile behavior");
     profileBehavior.help = QStringLiteral(
         "Choose a Cleanup Level, a Tone and optional instructions for each profile. An output "
-        "language translates what you say, with at least Light cleanup.");
+        "language translates what you say, with at least Light cleanup. A profile can also pick its own "
+        "speech service and refinement provider.");
     profileBehavior.kind = RowKind::Custom;
-    profileBehavior.collection = writingProfileGrid();
+    profileBehavior.collection = writingProfileGrid(context);
     profileBehavior.value = [](const AppSettings &settings) {
         return QVariant::fromValue(settings.refinement.writingProfiles);
     };
     profileBehavior.apply = [](AppSettings &settings, const QVariant &value) {
         settings.refinement.writingProfiles = withCustomProfileIds(value.value<QList<WritingProfileSettings>>());
     };
-    gateOnRefinementProvider(profileBehavior);
 
     // The dialog's title names it, so the field needs no label of its own.
     SettingsRow additionalInstructions = textRow(
@@ -3043,7 +3066,7 @@ QList<SettingsSection> providerModelSections()
                                needle = account.cautionWhenModelContains,
                                provider = account.providerId](const AppSettings &settings,
                                                               const Capabilities &) {
-                return refinementChain(settings).contains(provider)
+                return providersInUse(ProviderRole::Refinement, settings).contains(provider)
                     && (settings.refinement.*field).toCaseFolded().contains(needle);
             };
             accountRows.append(std::move(caution));
@@ -3061,7 +3084,7 @@ QList<SettingsSection> providerModelSections()
         accountRows.append(account.speed);
         for (SettingsRow &row : accountRows) {
             if (!row.visible) {
-                row.visible = whileInRefinementChain(account.providerId);
+                row.visible = whileRefinementProviderInUse(account.providerId);
             }
         }
         sections.append({account.sectionTitle, QString(), accountRows});
@@ -3082,7 +3105,7 @@ bool cliproxyAccountsInUse(const AppSettings &settings, const Capabilities &)
 bool cliproxyServerRowVisible(const AppSettings &settings, const Capabilities &capabilities)
 {
     return cliproxyAccountsInUse(settings, capabilities)
-        || (refinementChain(settings).contains(QStringLiteral("endpoint"))
+        || (providersInUse(ProviderRole::Refinement, settings).contains(QStringLiteral("endpoint"))
             && settings.refinement.endpoint.preset == QStringLiteral("cliproxy"));
 }
 
@@ -3833,7 +3856,7 @@ SettingsSchema buildSettingsSchema(const SchemaContext &context)
     // Local models exists where this build runs speech models, which is when
     // the registry offers the local speech provider.
     const QString localModels = QStringLiteral("localModels");
-    const bool localSpeech = offersProvider(context.speechProviders, QStringLiteral("local"));
+    const bool localSpeech = offersOption(context.speechProviders, QStringLiteral("local"));
     if (localSpeech) {
         pages.insert(4, localModelsPage(context));
     } else {
@@ -3939,6 +3962,25 @@ QString customChoiceId(const QString &name, const QStringList &taken)
     return id;
 }
 
+FieldNote shownFieldNote(const CollectionColumn &column, const AppSettings &settings, const QVariantMap &record)
+{
+    if (column.recordNote) {
+        if (FieldNote note = column.recordNote(settings, record); !note.text.isEmpty()) {
+            return note;
+        }
+    }
+    const QList<RowOption> options = column.recordOptions ? column.recordOptions(settings, record)
+        : column.options                                  ? column.options(settings)
+                                                          : QList<RowOption>();
+    const QString chosen = record.value(column.id).toString();
+    const auto option = std::find_if(options.cbegin(), options.cend(),
+                                     [&chosen](const RowOption &option) { return option.id == chosen; });
+    if (option != options.cend() && !option->help.isEmpty()) {
+        return {option->help};
+    }
+    return {column.help};
+}
+
 QString choiceSetText(const CollectionColumn &column, const QStringList &ids, const AppSettings &settings)
 {
     QStringList labels;
@@ -3998,7 +4040,78 @@ QString writingProfileDeletionNotice(const AppSettings &settings, const QString 
     return notice.join(QLatin1Char(' '));
 }
 
-QString writingProfileChoiceSummary(const AppSettings &settings, const QString &profileId)
+namespace {
+
+QString optionLabel(const QList<RowOption> &options, const QString &id)
+{
+    const auto found = std::find_if(options.cbegin(), options.cend(),
+                                    [&id](const RowOption &option) { return option.id == id; });
+    return found == options.cend() ? id : found->label;
+}
+
+QList<RowOption> refinementProviderOptions(const SchemaContext &context)
+{
+    QList<RowOption> options;
+    for (const RefinementProvider &provider : context.refinementProviders) {
+        options.append({provider.id, provider.label});
+    }
+    return options;
+}
+
+} // namespace
+
+ProviderLabels providerLabels(const SchemaContext &context)
+{
+    return [speech = context.speechProviders, refinement = refinementProviderOptions(context)](
+               ProviderRole role, const QString &id) {
+        return optionLabel(role == ProviderRole::Speech ? speech : refinement, id);
+    };
+}
+
+namespace {
+
+// The models a profile may pick for a refinement provider: its card's
+// suggestions under Refinement.
+QList<RowOption> refinementModelSuggestions(const QString &providerId)
+{
+    for (const ProviderAccount &account : providerAccounts()) {
+        if (account.providerId == providerId) {
+            return account.models;
+        }
+    }
+    return {};
+}
+
+QString localModelName(const QString &id)
+{
+    const LocalModel *model = findLocalModel(id);
+    return model ? model->name : id;
+}
+
+// A profile's own speech service or refinement provider as its summary names
+// it, with the model it picked: "Local Model Moonshine Small". Empty while it
+// uses the page's choice.
+QString profileServiceName(ProviderRole role, const WritingProfileSettings &profile, const ProviderLabels &labels)
+{
+    const bool speech = role == ProviderRole::Speech;
+    const QString &provider = speech ? profile.speechProvider : profile.refinementProvider;
+    const QString &model = speech ? profile.speechModel : profile.refinementModel;
+    if (provider.isEmpty()) {
+        return {};
+    }
+    const QString name = labels(role, provider);
+    if (model.isEmpty()) {
+        return name;
+    }
+    return name + QLatin1Char(' ')
+        + (speech ? localModelName(model) : optionLabel(refinementModelSuggestions(provider), model));
+}
+
+} // namespace
+
+QString writingProfileChoiceSummary(const AppSettings &settings,
+                                    const QString &profileId,
+                                    const ProviderLabels &labels)
 {
     const RefinementSettings &refinement = settings.refinement;
     const WritingProfileSettings profile = writingProfileSettingsFor(refinement.writingProfiles, profileId);
@@ -4010,14 +4123,21 @@ QString writingProfileChoiceSummary(const AppSettings &settings, const QString &
     };
     const QString language = profile.outputLanguage.trimmed();
     const QString refinedLevel = refinedCleanupLevel(level, language);
+    const QString speech = profileServiceName(ProviderRole::Speech, profile, labels);
     // A profile set to None without an output language is not refined, so its
-    // tone and instructions do nothing.
+    // tone, instructions and refinement provider do nothing.
     if (refinedLevel == QStringLiteral("none")) {
-        return QStringLiteral("No cleanup.");
+        return speech.isEmpty() ? QStringLiteral("No cleanup.") : QStringLiteral("No cleanup, %1.").arg(speech);
     }
-    QString summary = QStringLiteral("%1 cleanup, ").arg(label(cleanupStrengths(refinement.customCleanupLevels), refinedLevel))
-        + (tone == QStringLiteral("none") ? QStringLiteral("no tone.")
-                                          : QStringLiteral("%1 tone.").arg(label(writingTones(refinement.customTones), tone)));
+    QStringList choices{
+        QStringLiteral("%1 cleanup").arg(label(cleanupStrengths(refinement.customCleanupLevels), refinedLevel)),
+        tone == QStringLiteral("none") ? QStringLiteral("no tone")
+                                       : QStringLiteral("%1 tone").arg(label(writingTones(refinement.customTones), tone)),
+        speech,
+        profileServiceName(ProviderRole::Refinement, profile, labels),
+    };
+    choices.removeAll(QString());
+    QString summary = choices.join(QStringLiteral(", ")) + QLatin1Char('.');
     if (!profile.instructions.trimmed().isEmpty()) {
         summary += QStringLiteral(" Has its own instructions.");
     }
@@ -4051,7 +4171,7 @@ QString appDisplayName(const QString &match)
 
 } // namespace
 
-QString writingProfileSummary(const AppSettings &settings, const QString &profileId)
+QString writingProfileSummary(const AppSettings &settings, const QString &profileId, const ProviderLabels &labels)
 {
     // The person's rules come first, as they do when Speecher picks a profile.
     QStringList apps;
@@ -4065,7 +4185,7 @@ QString writingProfileSummary(const AppSettings &settings, const QString &profil
             apps.append(name);
         }
     }
-    QStringList sentences{writingProfileChoiceSummary(settings, profileId)};
+    QStringList sentences{writingProfileChoiceSummary(settings, profileId, labels)};
     if (apps.size() == 1) {
         sentences << QStringLiteral("Used in %1.").arg(apps.first());
     } else if (apps.size() == 2) {
@@ -4086,18 +4206,166 @@ QString writingProfileDeletionTitle()
     return QStringLiteral("Delete profile");
 }
 
-CollectionDescriptor writingProfileGrid()
+CollectionDescriptor writingProfileGrid(const SchemaContext &context)
 {
     const QString kProfileIdKey = QStringLiteral("profileId");
     const QString kCleanupColumn = QStringLiteral("cleanup");
     const QString kToneColumn = QStringLiteral("tone");
     const QString kInstructionsColumn = QStringLiteral("instructions");
     const QString kOutputLanguageColumn = QStringLiteral("outputLanguage");
+    const QString kSpeechColumn = QStringLiteral("profileSpeech");
+    const QString kSpeechModelColumn = QStringLiteral("profileSpeechModel");
+    const QString kRefinementColumn = QStringLiteral("profileRefinement");
+    const QString kRefinementModelColumn = QStringLiteral("profileRefinementModel");
+    const ProviderLabels labels = providerLabels(context);
+    const QList<RowOption> speechProviders = context.speechProviders;
+    const QList<RowOption> refinementProviders = refinementProviderOptions(context);
+    const QString dictation = paneTitle(QStringLiteral("dictation"));
+    const QString refinementPane = paneTitle(QStringLiteral("refinement"));
+
+    // Empty picks the page's choice, which the first option names.
+    CollectionColumn speech{kSpeechColumn, QStringLiteral("Speech"), ColumnKind::Choice,
+                            [labels, speechProviders, dictation](const AppSettings &settings) {
+                                QList<RowOption> options{
+                                    {QString(),
+                                     QStringLiteral("Default (%1)").arg(labels(ProviderRole::Speech, settings.speech.providerId)),
+                                     QStringLiteral("Set under %1, with its fallbacks.").arg(dictation)}};
+                                for (const RowOption &provider : speechProviders) {
+                                    options.append({provider.id, provider.label,
+                                                    QStringLiteral("Falls back to the services under %1.").arg(dictation)});
+                                }
+                                return options;
+                            }};
+    // A provider the profile names but this build lacks stays, disabled, so
+    // saving an unrelated edit keeps it.
+    const auto keepingStored = [](const CollectionColumn &column) {
+        return [options = column.options, id = column.id](const AppSettings &settings, const QVariantMap &record) {
+            QList<RowOption> offered = options(settings);
+            const QString stored = record.value(id).toString();
+            if (!stored.isEmpty() && !offersOption(offered, stored)) {
+                offered.append({stored, providerNotInBuildLabel(), QString(), false});
+            }
+            return offered;
+        };
+    };
+    speech.recordOptions = keepingStored(speech);
+    // What the profile's own speech service can't listen for, said where its
+    // last field is: under Model for a Local Model.
+    const auto speechCaution = [=](const AppSettings &settings, const QVariantMap &record) -> FieldNote {
+        WritingProfileSettings profile;
+        profile.speechProvider = record.value(kSpeechColumn).toString();
+        profile.speechModel = record.value(kSpeechModelColumn).toString();
+        const std::optional<SpeechSettings> chosen = profileSpeechSettings(settings.speech, profile);
+        if (!chosen) {
+            return {};
+        }
+        const QString problem = profileSpokenLanguageProblem(*chosen, labels(ProviderRole::Speech, chosen->providerId),
+                                                             labels(ProviderRole::Speech, settings.speech.providerId));
+        return {problem, !problem.isEmpty()};
+    };
+    speech.recordNote = [=](const AppSettings &settings, const QVariantMap &record) {
+        return profilePicksSpeechModel(record.value(kSpeechColumn).toString()) ? FieldNote{}
+                                                                              : speechCaution(settings, record);
+    };
+    CollectionColumn speechModel{kSpeechModelColumn, QStringLiteral("Model"), ColumnKind::Choice};
+    speechModel.help = downloadedLocalModelsHelp();
+    speechModel.recordOptions = [=](const AppSettings &settings, const QVariantMap &record) {
+        QList<RowOption> options;
+        if (!profilePicksSpeechModel(record.value(kSpeechColumn).toString())) {
+            return options;
+        }
+        options.append({QString(), QStringLiteral("Default (%1)").arg(localModelName(settings.speech.local.modelId))});
+        for (const QString &id : liveFacts(context).downloadedModels) {
+            if (const LocalModel *model = findLocalModel(id)) {
+                options.append({model->id, model->name});
+            }
+        }
+        const QString saved = record.value(kSpeechModelColumn).toString();
+        if (!saved.isEmpty() && !offersOption(options, saved)) {
+            options.append({saved, QStringLiteral("%1 (not downloaded)").arg(localModelName(saved)), QString(), false});
+        }
+        return options;
+    };
+    speechModel.recordNote = speechCaution;
+
+    CollectionColumn refinement{
+        kRefinementColumn, QStringLiteral("Refinement"), ColumnKind::Choice,
+        [labels, refinementProviders, refinementPane](const AppSettings &settings) {
+            const QString page = settings.refinement.providerId == QStringLiteral("none")
+                ? QStringLiteral("None")
+                : labels(ProviderRole::Refinement, settings.refinement.providerId);
+            QList<RowOption> options{{QString(), QStringLiteral("Default (%1)").arg(page),
+                                      QStringLiteral("Set under %1, with its fallbacks.").arg(refinementPane)}};
+            for (const RowOption &provider : refinementProviders) {
+                options.append({provider.id, provider.label,
+                                QStringLiteral("Falls back to the providers under %1.").arg(refinementPane)});
+            }
+            return options;
+        }};
+    refinement.recordOptions = keepingStored(refinement);
+    // Cleanup None already means no refinement, so the profile picks no None
+    // of its own here.
+    refinement.recordNote = [=](const AppSettings &, const QVariantMap &record) -> FieldNote {
+        if (refinedCleanupLevel(record.value(kCleanupColumn).toString(), record.value(kOutputLanguageColumn).toString())
+            != QStringLiteral("none")) {
+            return {};
+        }
+        return {QStringLiteral("Cleanup None skips refinement for this profile.")};
+    };
+    // Whether the record still holds the provider and model its profile was
+    // saved with: a model no list offers, such as one a later release stopped
+    // suggesting, is kept until the person changes it.
+    const auto savedPair = [=](const AppSettings &settings, const QVariantMap &record, ProviderRole role) {
+        const WritingProfileSettings saved =
+            writingProfileSettingsFor(settings.refinement.writingProfiles, record.value(kProfileIdKey).toString());
+        const bool speech = role == ProviderRole::Speech;
+        const QString model = record.value(speech ? kSpeechModelColumn : kRefinementModelColumn).toString();
+        return !model.isEmpty()
+            && record.value(speech ? kSpeechColumn : kRefinementColumn).toString()
+            == (speech ? saved.speechProvider : saved.refinementProvider)
+            && model == (speech ? saved.speechModel : saved.refinementModel);
+    };
+    CollectionColumn refinementModel{kRefinementModelColumn, QStringLiteral("Model"), ColumnKind::Choice};
+    refinementModel.recordOptions = [=](const AppSettings &settings, const QVariantMap &record) {
+        const QString provider = record.value(kRefinementColumn).toString();
+        QList<RowOption> options;
+        if (!profilePicksRefinementModel(provider)) {
+            return options;
+        }
+        const QList<RowOption> suggestions = refinementModelSuggestions(provider);
+        const QString page = provider == QStringLiteral("openai") ? settings.refinement.openAiModel
+                                                                  : settings.refinement.anthropicModel;
+        options.append({QString(), QStringLiteral("Default (%1)").arg(optionLabel(suggestions, page))});
+        options += suggestions;
+        const QString saved = record.value(kRefinementModelColumn).toString();
+        if (!offersOption(options, saved) && savedPair(settings, record, ProviderRole::Refinement)) {
+            options.append({saved, saved});
+        }
+        return options;
+    };
+    // The caution the provider's card gives its model, such as Haiku's.
+    refinementModel.recordNote = [=](const AppSettings &settings, const QVariantMap &record) -> FieldNote {
+        const QString provider = record.value(kRefinementColumn).toString();
+        for (const ProviderAccount &account : providerAccounts()) {
+            const QString picked = record.value(kRefinementModelColumn).toString();
+            const QString model = picked.isEmpty() ? settings.refinement.*account.model : picked;
+            if (account.providerId == provider && !account.cautionWhenModelContains.isEmpty()
+                && model.toCaseFolded().contains(account.cautionWhenModelContains)) {
+                return {account.caution, true};
+            }
+        }
+        return {QStringLiteral("Thinking and speed are %1's settings under %2.")
+                    .arg(labels(ProviderRole::Refinement, provider), refinementPane)};
+    };
     CollectionColumn instructions{kInstructionsColumn, QStringLiteral("Instructions"), ColumnKind::Text, {}, true};
     instructions.multiline = true;
     instructions.placeholder = QStringLiteral("Keep it short and sign off with my first name.");
     CollectionColumn outputLanguage{kOutputLanguageColumn, QStringLiteral("Output language"), ColumnKind::Text};
     outputLanguage.placeholder = QStringLiteral("Same as spoken");
+    // Under the cleanup and tone, where a profile's fields are a row of pickers.
+    for (CollectionColumn *service : {&speech, &speechModel, &refinement, &refinementModel}) {
+        service->ownLine = true;
+    }
     CollectionDescriptor grid;
     grid.identityColumn = kProfileIdKey;
     grid.columns = {
@@ -4117,6 +4385,10 @@ CollectionDescriptor writingProfileGrid()
         // After the instructions: a record dialog takes its first one-line
         // text field for the record's name and requires it.
         outputLanguage,
+        speech,
+        speechModel,
+        refinement,
+        refinementModel,
     };
     // The built-ins always exist, so the stored list only says what each of
     // them was set to; the custom profiles follow in stored order.
@@ -4130,7 +4402,11 @@ CollectionDescriptor writingProfileGrid()
                             {kCleanupColumn, chosen.cleanupStrength},
                             {kToneColumn, chosen.tone},
                             {kOutputLanguageColumn, chosen.outputLanguage},
-                            {kInstructionsColumn, chosen.instructions}});
+                            {kInstructionsColumn, chosen.instructions},
+                            {kSpeechColumn, chosen.speechProvider},
+                            {kSpeechModelColumn, chosen.speechModel},
+                            {kRefinementColumn, chosen.refinementProvider},
+                            {kRefinementModelColumn, chosen.refinementModel}});
         }
         return records;
     };
@@ -4140,12 +4416,27 @@ CollectionDescriptor writingProfileGrid()
         QList<WritingProfileSettings> profiles;
         for (const QVariantMap &record : records) {
             const QString id = record.value(kProfileIdKey).toString();
-            profiles.append({id,
-                             record.value(kCleanupColumn).toString(),
-                             record.value(kToneColumn).toString(),
-                             record.value(kInstructionsColumn).toString(),
-                             isBuiltInWritingProfile(id) ? QString() : record.value(kProfileColumn).toString(),
-                             record.value(kOutputLanguageColumn).toString().trimmed()});
+            WritingProfileSettings profile{id,
+                                           record.value(kCleanupColumn).toString(),
+                                           record.value(kToneColumn).toString(),
+                                           record.value(kInstructionsColumn).toString(),
+                                           isBuiltInWritingProfile(id) ? QString() : record.value(kProfileColumn).toString(),
+                                           record.value(kOutputLanguageColumn).toString().trimmed()};
+            // A model goes only with a provider that offers it, or that it was
+            // saved with: one left from the provider picked before is dropped.
+            profile.speechProvider = record.value(kSpeechColumn).toString();
+            const QString speechModel = record.value(kSpeechModelColumn).toString();
+            if (profilePicksSpeechModel(profile.speechProvider)
+                && (findLocalModel(speechModel) || savedPair(settings, record, ProviderRole::Speech))) {
+                profile.speechModel = speechModel;
+            }
+            profile.refinementProvider = record.value(kRefinementColumn).toString();
+            const QString refinementModel = record.value(kRefinementModelColumn).toString();
+            if (offersOption(refinementModelSuggestions(profile.refinementProvider), refinementModel)
+                || savedPair(settings, record, ProviderRole::Refinement)) {
+                profile.refinementModel = refinementModel;
+            }
+            profiles.append(profile);
         }
         settings.refinement.writingProfiles = withCustomProfileIds(profiles);
     };
@@ -4153,7 +4444,14 @@ CollectionDescriptor writingProfileGrid()
                         {kCleanupColumn, QStringLiteral("balanced")},
                         {kToneColumn, QStringLiteral("none")},
                         {kOutputLanguageColumn, QString()},
-                        {kInstructionsColumn, QString()}};
+                        {kInstructionsColumn, QString()},
+                        {kSpeechColumn, QString()},
+                        {kSpeechModelColumn, QString()},
+                        {kRefinementColumn, QString()},
+                        {kRefinementModelColumn, QString()}};
+    grid.recordSummary = [labels](const AppSettings &settings, const QString &id) {
+        return writingProfileSummary(settings, id, labels);
+    };
     grid.lockedRecordCount = [] { return int(defaultWritingProfileSettings().size()); };
     grid.addLabel = QStringLiteral("Add profile");
     grid.addDialogTitle = QStringLiteral("New profile");

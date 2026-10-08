@@ -184,6 +184,9 @@ QString batchSummary(const QList<TranscribeFileResult> &results,
                      const QHash<QString, qint64> &durationsMs,
                      const TranscribeOptions &options,
                      const TranscribeBatchLabels &labels);
+// Why a speech provider's transcripts cannot be subtitles: it returned no
+// timings.
+QString subtitlesNeedTimings(const QString &speechProvider);
 // The line under the results summary that says where subtitles come from, or
 // why there are none; empty when no transcript finished.
 QString subtitlesNote(const QList<TranscribeFileResult> &results, const TranscribeBatchLabels &labels);

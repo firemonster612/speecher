@@ -273,6 +273,10 @@ struct LocalRunnerSettings {
     QString runner;
     QString model;
 
+    // Every runner but llama-server, which answers with whichever model it
+    // loaded, needs a model named.
+    bool lacksModel() const { return model.isEmpty() && runner != QStringLiteral("llama-server"); }
+
     bool operator==(const LocalRunnerSettings &other) const = default;
 };
 
@@ -374,6 +378,9 @@ struct AppSettings {
     QList<BindingRule> bindings;
     QList<VocabularyEntry> vocabulary;
     QList<LearnedCorrection> learnedCorrections;
+    // Terms one run adds, such as --vocab-file's, in order. They lead the
+    // speech request and refinement whatever the saved list says. Never saved.
+    QStringList sessionVocabulary;
     bool correctionLearningEnabled = true;
     bool insightsEnabled = true;
 };

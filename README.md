@@ -200,10 +200,12 @@ open build/speecher.app     # macOS
 ./build/speecher start
 ./build/speecher stop
 ./build/speecher status
+./build/speecher last
+./build/speecher vocabulary add FileTranscriptionSession "Speecher CLI"
 ./build/speecher --version
 ```
 
-The four CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`.
+These CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`. `last` prints the running app's last transcript, the text the tray panel and Home show, which helps when a paste landed in the wrong window. It is kept in memory only, so it prints nothing and exits with status 1 when there is no transcript yet or no running app. `vocabulary add <terms...>` saves the terms to the custom vocabulary, where Settings > Vocabulary and the next dictation have them without a restart. A term already in the list, in any case, is skipped and named on stderr. Put `--` before terms that start with `-`, as in `vocabulary add -- -fsanitize`. With no running app it saves them to the settings directly. It exits with status 0 when every term was added or already there, 1 when the settings could not be saved, and 2 for a usage mistake.
 
 On Windows, `speecher` in Command Prompt or PowerShell runs `speecher.com`, a console launcher that waits for `speecher.exe` and returns its exit status; see [docs/windows.md](docs/windows.md#installing) for how it works.
 
@@ -216,9 +218,11 @@ speecher transcribe --headless memo.wav                  # settings' choices, sa
 speecher transcribe --refine none --stdout *.m4a         # raw speech, printed too
 speecher transcribe --profile email --output ~/notes talk.mp3
 speecher transcribe --json --output none a.wav b.wav     # one JSON object per file, then a summary
+speecher transcribe --model local --srt talk.mp3         # talk-transcribed.srt subtitles
+ffmpeg -i talk.mp4 -f wav - | speecher transcribe --stdout -   # audio from stdin
 ```
 
-`--model` picks the speech provider, `--refine` the refinement provider (or `none`), `--cleanup` the cleanup level (`none`, `light`, `medium`, `high`), `--profile` a writing profile whose saved cleanup and tone seed the run, `--tone` a tone, and `--language` the Spoken Language (a code such as `de`, or `auto`). `--no-vocabulary` skips custom vocabulary, `--raw` prints and saves the unrefined transcript. Unset choices come from your settings. The exit status is 0 when every file was transcribed and saved, 1 when any failed or could not be saved, and 2 for a usage error. `speecher --help` lists every option. The run reads the same settings and sign-in stores as a running Speecher, the way the Codex and Claude CLIs share theirs, so a token it refreshes is the one the app uses next.
+`--model` picks the speech provider, `--refine` the refinement provider (or `none`), `--cleanup` the cleanup level (`none`, `light`, `medium`, `high`), `--profile` a writing profile whose saved cleanup and tone seed the run, `--tone` a tone, and `--language` the Spoken Language (a code such as `de`, or `auto`). `--no-vocabulary` skips custom vocabulary, and `--vocab-file <path>` adds the file's terms to it for this run only, one per line, skipping blank lines and lines starting with `#`, so a coding agent can pass identifiers from the repo it works in. They go to the speech service and to refinement ahead of your saved terms, in the file's order, as many as each takes, even with `--no-vocabulary`. Your settings are not changed. `--raw` prints and saves the unrefined transcript. `--srt` or `--vtt` saves and prints SRT or WebVTT subtitles instead of text, the same file the Transcribe window's Export writes, and with `--json` each object's `text` holds the subtitles. Subtitles come from the raw transcript and need timings, which only Local models return; with any other speech provider each file fails. Unset choices come from your settings. `-` as the only file reads the audio from stdin, so `ffmpeg` or `sox` can pipe it in; the audio is spooled to a temporary file that is removed when the run ends, even when a signal interrupts it; on Windows, removal when the run is interrupted is best effort and can leave the file in the temporary folder. Stdin must be a pipe or file, not a terminal. It always runs without a window, needs `--stdout`, `--json` or `--output <folder>`, and is named `stdin` in progress and saved as `stdin-transcribed.txt`; with `--json` its `file` is `-`. Empty stdin fails the run with status 1. The exit status is 0 when every file was transcribed and saved, 1 when any failed or could not be saved, and 2 for a usage error. `speecher --help` lists every option. The run reads the same settings and sign-in stores as a running Speecher, the way the Codex and Claude CLIs share theirs, so a token it refreshes is the one the app uses next.
 
 On Linux, Speecher uses one window with a KDE-style sidebar, searchable settings pages, and dictation controls; `speecher settings` opens it on General settings. On macOS, Speecher is a menu bar app: dictation lives in the menu bar item and a floating panel, and settings open in a native window from the menu bar, the Dock, or ⌘,.
 On Windows, Speecher uses a WinUI 3 settings window, a notification-area icon,
@@ -234,7 +238,18 @@ speecher listen --until-silence 2 --refine none   # no refinement
 speecher listen --json --profile ai-coding        # one JSON object with the text
 ```
 
-It takes the same `--model`, `--refine`, `--cleanup`, `--profile`, `--tone`, `--language`, `--no-vocabulary`, `--raw` and `--json` choices as `transcribe`, with unset ones from your settings. Like `transcribe`, it runs in the calling process with its own microphone and provider connections, so it works while Speecher is running and even while it is dictating. Silence is judged by the Skip silence threshold in your microphone settings. The exit status is 0 when a transcript was printed, 1 when it failed or heard no speech, and 2 for a usage error.
+It takes the same `--model`, `--refine`, `--cleanup`, `--profile`, `--tone`, `--language`, `--no-vocabulary`, `--vocab-file`, `--raw` and `--json` choices as `transcribe`, with unset ones from your settings. Like `transcribe`, it runs in the calling process with its own microphone and provider connections, so it works while Speecher is running and even while it is dictating. Silence is judged by the Skip silence threshold in your microphone settings. The exit status is 0 when a transcript was printed, 1 when it failed or heard no speech, and 2 for a usage error.
+
+### Checking providers
+
+`speecher providers` lists every speech and refinement provider this build offers, with whether it is configured, signed in and usable, so a script or agent can check before calling `listen`. `--json` prints a JSON array of objects with `id`, `role`, `label`, `signsIn`, `configured`, `signedIn`, `usable` and `problem`.
+
+```sh
+speecher providers
+speecher providers --json | jq '.[] | select(.usable == false)'
+```
+
+It judges each provider the way the Dictation and Refinement settings do and words a problem as their rows do ("No server URL is set."). While Speecher is running it asks Speecher, which knows the sign-ins it has seen and the Local Runners it has looked for. Otherwise it judges from your settings, the downloaded Local Models and the system's network state. It makes no network calls, reads no keyring and refreshes no sign-in, so a sign-in nothing has checked yet, and whether a Local Runner is running, read as `Unknown` in the table and `null` in JSON. A provider that doesn't sign in has `signsIn` false, `signedIn` `null` and `-` in the table.
 
 ## Uninstall
 

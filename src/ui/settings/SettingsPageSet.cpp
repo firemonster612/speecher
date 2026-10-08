@@ -240,25 +240,34 @@ SettingsPageSet::SettingsPageSet(ApplicationController *controller,
     // verdicts, runners, model lists.
     connect(controller->localSetup(), &LocalSetup::changed, this, [this] {
         // LocalSetup writes Speed Test results and the model in use itself.
-        const auto current = m_controller->settings()->dictationSnapshot();
-        m_draft = mergeSettingsDraft(m_schema, m_loaded, m_draft, current);
-        m_loaded = current;
         // The subpages too: the Fallbacks lists show what can stand in now.
         QStringList live{QStringLiteral("dictation"), QStringLiteral("refinement"), QStringLiteral("localModels")};
         for (const SettingsSubpage &subpage : std::as_const(m_schema.subpages)) {
             live.append(subpage.id);
         }
-        for (const QString &id : std::as_const(live)) {
-            if (SchemaSettingsPage *shown = page(id)) {
-                const QSignalBlocker blocker(shown);
-                shown->load(m_draft);
-            }
-        }
+        takeStoreChanges(live);
+    });
+    // `speecher vocabulary add` saves terms through the running app.
+    connect(controller->settings(), &SettingsStore::vocabularyAdded, this, [this] {
+        takeStoreChanges({QStringLiteral("vocabulary:terms")});
     });
     updateAccessibilityState(controller->accessibilitySupported(),
                              controller->accessibilityEnabled(),
                              controller->accessibilityPersistent());
     refreshUpdateRows();
+}
+
+void SettingsPageSet::takeStoreChanges(const QStringList &pageIds)
+{
+    const auto current = m_controller->settings()->dictationSnapshot();
+    m_draft = mergeSettingsDraft(m_schema, m_loaded, m_draft, current);
+    m_loaded = current;
+    for (const QString &id : pageIds) {
+        if (SchemaSettingsPage *shown = page(id)) {
+            const QSignalBlocker blocker(shown);
+            shown->load(m_draft);
+        }
+    }
 }
 
 void SettingsPageSet::addPage(const QString &id,

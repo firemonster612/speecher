@@ -18,6 +18,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 
 #include <algorithm>
 
@@ -71,6 +72,35 @@ QString defaultRefinementProvider()
         return QStringLiteral("anthropic");
     }
     return QStringLiteral("openai");
+}
+
+QString profileKey(ProviderRole role, const char *field)
+{
+    return QLatin1String(role == ProviderRole::Speech ? "speech" : "refinement") + QLatin1String(field);
+}
+
+// A Writing Profile's own provider for a role and its model. An id no chain
+// can hold reads as the page's choice, and a model as the provider's own
+// without a provider of the profile's to go with.
+void readProfileProvider(const QJsonObject &object, ProviderRole role, QString &provider, QString &model)
+{
+    provider = object.value(profileKey(role, "Provider")).toString();
+    if (!isChainProviderId(role, provider)) {
+        provider.clear();
+        return;
+    }
+    model = object.value(profileKey(role, "Model")).toString().trimmed();
+}
+
+void writeProfileProvider(QJsonObject &object, ProviderRole role, const QString &provider, const QString &model)
+{
+    if (!isChainProviderId(role, provider)) {
+        return;
+    }
+    object.insert(profileKey(role, "Provider"), provider);
+    if (!model.trimmed().isEmpty()) {
+        object.insert(profileKey(role, "Model"), model.trimmed());
+    }
 }
 
 } // namespace
@@ -381,6 +411,55 @@ void SettingsCodecs::recordVocabularyUsage(const QString &text)
     VocabularySettingsCodec::recordUsage(m_settings, text);
 }
 
+std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList &terms)
+{
+    // Its own QSettings, because one keeps reporting a failed sync forever:
+    // after one failed add, every later one would report a failure too.
+    SettingsCodecs settings;
+    // Two `vocabulary add`s with no app running would each read the list, and
+    // the second to write would drop the first one's terms. Windows keeps the
+    // settings in the registry, so its lock goes in the per-user temp folder.
+    // Not <file>.lock, which QSettings takes for itself while it syncs.
+#ifdef Q_OS_WIN
+    QLockFile lock(QDir::temp().filePath(QStringLiteral("speecher-vocabulary.lock")));
+#else
+    QLockFile lock(settings.m_settings.fileName() + QStringLiteral(".vocabulary.lock"));
+#endif
+    if (!lock.tryLock(5000)) {
+        return std::nullopt;
+    }
+    // Re-reads what another process saved since this one opened the settings.
+    settings.m_settings.sync();
+    const QList<VocabularyEntry> saved = settings.vocabularyEntries();
+    QList<VocabularyEntry> entries = saved;
+    QStringList held;
+    for (const QString &term : terms) {
+        const QString cleaned = term.simplified();
+        // A term limited to some Writing Profiles counts too: adding it again
+        // for every profile would list it twice.
+        const bool listed = std::any_of(entries.cbegin(), entries.cend(), [&cleaned](const VocabularyEntry &entry) {
+            return entry.term.compare(cleaned, Qt::CaseInsensitive) == 0;
+        });
+        if (listed) {
+            held.append(term);
+        } else {
+            entries.append({cleaned});
+        }
+    }
+    if (held.size() == terms.size()) {
+        return held;
+    }
+    settings.setVocabularyEntries(entries);
+    settings.m_settings.sync();
+    if (settings.m_settings.status() != QSettings::NoError) {
+        // Every QSettings on the file shares its unsaved values, so the
+        // running app would show and use terms that were never saved.
+        settings.setVocabularyEntries(saved);
+        return std::nullopt;
+    }
+    return held;
+}
+
 AudioCaptureSettings SettingsCodecs::audioCaptureSettings() const
 {
     return normalizedAudioCaptureSettings({
@@ -686,6 +765,10 @@ QList<WritingProfileSettings> SettingsCodecs::writingProfileSettings() const
             object.value(QStringLiteral("name")).toString(),
             object.value(QStringLiteral("outputLanguage")).toString(),
         });
+        readProfileProvider(object, ProviderRole::Speech, settings.last().speechProvider,
+                            settings.last().speechModel);
+        readProfileProvider(object, ProviderRole::Refinement, settings.last().refinementProvider,
+                            settings.last().refinementModel);
     }
     bool hasAiCoding = false;
     for (const WritingProfileSettings &entry : settings) {
@@ -730,6 +813,9 @@ void SettingsCodecs::setWritingProfileSettings(const QList<WritingProfileSetting
         if (!settings.outputLanguage.isEmpty()) {
             object.insert(QStringLiteral("outputLanguage"), settings.outputLanguage);
         }
+        writeProfileProvider(object, ProviderRole::Speech, settings.speechProvider, settings.speechModel);
+        writeProfileProvider(object, ProviderRole::Refinement, settings.refinementProvider,
+                             settings.refinementModel);
         array.append(object);
     }
     m_settings.setValue(SettingsKeys::WritingProfiles,

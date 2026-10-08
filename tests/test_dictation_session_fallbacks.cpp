@@ -170,6 +170,82 @@ private slots:
         QTEST(outcome.fix.pageId, "fixPage");
     }
 
+    // The target's Writing Profile picks its own services: they start ahead
+    // of the pages' choice, with the models it picked, while a dictation
+    // into any other app keeps the pages' choice.
+    void aWritingProfilesOwnServicesLeadTheChains()
+    {
+        ChainRig rig({QStringLiteral("claude")}, {QStringLiteral("none")});
+        registerFakeSpeechProvider(rig.registry, &rig.speech[QStringLiteral("local")], QStringLiteral("local"),
+                                   QStringLiteral("Local Model"));
+        rig.registry.speechProvider(QStringLiteral("local"));
+        registerFakeRefiner(rig.registry, &rig.refiners[QStringLiteral("anthropic")], QStringLiteral("anthropic"),
+                            QStringLiteral("Anthropic"));
+        rig.registry.refinementProvider(QStringLiteral("anthropic"));
+        AppSettings draft = rig.settings.snapshot();
+        draft.appRecognitionRules = {{QStringLiteral("kate"), std::nullopt, WritingProfile::Email}};
+        WritingProfileSettings &email = draft.refinement.writingProfiles[1];
+        email.speechProvider = QStringLiteral("local");
+        email.speechModel = QStringLiteral("moonshine-small");
+        email.refinementProvider = QStringLiteral("anthropic");
+        email.refinementModel = QStringLiteral("claude-sonnet-5-5");
+        rig.settings.applySnapshot(draft);
+
+        rig.target.target.applicationId = QStringLiteral("org.kde.kate");
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("claude")]->startCalls, 0);
+        QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
+        QCOMPARE(rig.speech[QStringLiteral("local")]->lastLocalModel, QStringLiteral("moonshine-small"));
+        rig.speech[QStringLiteral("local")]->emitFinalText(QStringLiteral("spoken words"));
+        rig.session->stopListening();
+        FakeRefiner *anthropic = rig.refiners[QStringLiteral("anthropic")];
+        QTRY_COMPARE(anthropic->refineCalls, 1);
+        QCOMPARE(anthropic->lastAnthropicModel, QStringLiteral("claude-sonnet-5-5"));
+        anthropic->emitCompletedText(QStringLiteral("Spoken words."));
+        QTRY_COMPARE(rig.session->state(), DictationState::Idle);
+
+        rig.target.target.applicationId = QStringLiteral("org.kde.dolphin");
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("claude")]->startCalls, 1);
+        QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 1);
+    }
+
+    // A profile's Local Model that can't hear the Spoken Language is passed
+    // over before it is asked, and the Dictation page's service runs.
+    void aProfilesServiceThatCantHearTheLanguageIsPassedOver()
+    {
+        ChainRig rig({QStringLiteral("claude")});
+        registerFakeSpeechProvider(rig.registry, &rig.speech[QStringLiteral("local")], QStringLiteral("local"),
+                                   QStringLiteral("Local Model"));
+        rig.registry.speechProvider(QStringLiteral("local"));
+        rig.settings.setSpokenLanguage(QStringLiteral("ja"));
+        AppSettings draft = rig.settings.snapshot();
+        draft.refinement.defaultWritingProfile = WritingProfile::Personal;
+        draft.refinement.writingProfiles[2].speechProvider = QStringLiteral("local");
+        draft.refinement.writingProfiles[2].speechModel = QStringLiteral("parakeet");
+        rig.settings.applySnapshot(draft);
+
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("local")]->prepareCalls, 0);
+        QCOMPARE(rig.speech[QStringLiteral("local")]->startCalls, 0);
+        QCOMPARE(rig.speech[QStringLiteral("claude")]->startCalls, 1);
+        QCOMPARE(rig.speech[QStringLiteral("claude")]->lastLanguage, QStringLiteral("ja"));
+    }
+
+    // A profile's service this build lacks is passed over for the Dictation
+    // page's, rather than stopping the dictation.
+    void aProfilesServiceThisBuildLacksIsPassedOver()
+    {
+        ChainRig rig({QStringLiteral("claude")});
+        AppSettings draft = rig.settings.snapshot();
+        draft.refinement.defaultWritingProfile = WritingProfile::Personal;
+        draft.refinement.writingProfiles[2].speechProvider = QStringLiteral("codex");
+        rig.settings.applySnapshot(draft);
+
+        rig.listen();
+        QCOMPARE(rig.speech[QStringLiteral("claude")]->startCalls, 1);
+    }
+
     // At start each provider is tried in turn, off the GUI thread when it
     // has a job for it, and the microphone opens once, for the one that
     // prepared.

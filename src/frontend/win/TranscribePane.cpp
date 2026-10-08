@@ -348,16 +348,27 @@ void TranscribePane::seedOptions()
     m_startError.clear();
 }
 
-// A profile brings its own cleanup strength and tone, as it does for dictation.
+// A profile brings its own services, cleanup strength and tone, as it does
+// for dictation.
 void TranscribePane::applyWritingProfile()
 {
-    const RefinementSettings refinement = m_controller->settings()->snapshot().refinement;
+    const AppSettings resolved = profileSettings();
+    m_speech = resolved.speech.providerId;
+    m_refiner = resolved.refinement.providerId;
+    const RefinementSettings &refinement = resolved.refinement;
     const WritingProfileSettings profile =
         writingProfileSettingsFor(refinement.writingProfiles, writingProfileFromName(m_profile));
     // A stored strength this build does not know falls back to the middle one.
     m_cleanup = offeredCleanupLevel(refinedCleanupLevel(profile.cleanupStrength, profile.outputLanguage),
                                     refinement.customCleanupLevels);
     m_tone = profile.tone;
+}
+
+AppSettings TranscribePane::profileSettings() const
+{
+    const AppSettings settings = m_controller->settings()->snapshot();
+    return m_controller->providerRegistry()->withProfileProviders(
+        settings, writingProfileSettingsFor(settings.refinement.writingProfiles, writingProfileFromName(m_profile)));
 }
 
 TranscribeOptions TranscribePane::options() const
@@ -516,13 +527,14 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
                                  stateToggle(vocabulary), true));
     card(transcribeText(TranscribeText::TranscriptionSection), speech);
 
-    // Refinement: the model is read-only here; cleanup, profile and tone only
-    // matter with a provider chosen.
+    // Refinement: the model is read-only here; cleanup and tone only matter
+    // with a provider chosen. The profile may pick one, so it stays open.
     QList<RowOption> refinerOptions{{QStringLiteral("none"), transcribeText(TranscribeText::NoRefiner)}};
     for (const ProviderDescriptor &provider : registry->refinementProviders()) {
         refinerOptions.append({provider.id, provider.label});
     }
-    const QString model = refinementModel(m_refiner, m_controller->settings()->snapshot().refinement);
+    // The profile's model where the profile picked this provider.
+    const QString model = refinementModel(m_refiner, profileSettings().refinement);
     const bool refining = m_refiner != QStringLiteral("none");
     StackPanel refine;
     refine.Children().Append(row(transcribeText(TranscribeText::Refiner),
@@ -568,7 +580,7 @@ void TranscribePane::appendSetup(const StackPanel &column, PaneHost &host)
                                                   rebuild();
                                               }
                                           }),
-                                 true, refining));
+                                 true));
     refine.Children().Append(row(transcribeText(TranscribeText::Cleanup),
                                  transcribeText(TranscribeText::CleanupHelp),
                                  selectorBar(cleanupStrengths(refinement.customCleanupLevels), m_cleanup,
@@ -1094,7 +1106,8 @@ winrt::fire_and_forget TranscribePane::exportAll(PaneHost &host)
         for (const TranscribeFileResult &result : std::as_const(m_results)) {
             QString error;
             if (!result.failed()) {
-                saveTranscript(result.path, qs(folder.Path()), shownTranscript(result, m_showRaw), &error);
+                saveTranscript(result.path, qs(folder.Path()), shownTranscript(result, m_showRaw),
+                               TranscriptFormat::Text, &error);
             }
             if (!error.isEmpty()) {
                 errors << error;

@@ -108,13 +108,18 @@ void probeAudioDuration(const QString &path, QObject *receiver, std::function<vo
 // renames over whatever took the name meanwhile. A write that fails part way
 // removes the file instead, so no truncated transcript is left to mistake for
 // a whole one.
-QString saveTranscript(const QString &audioPath, const QString &folder, const QString &text, QString *error)
+QString saveTranscript(const QString &audioPath,
+                       const QString &folder,
+                       const QString &text,
+                       TranscriptFormat format,
+                       QString *error)
 {
     const QString stem = QFileInfo(audioPath).completeBaseName() + QStringLiteral("-transcribed");
+    const QString extension = transcriptFileExtension(format);
     const QDir dir(folder);
     for (int copy = 1;; ++copy) {
-        const QString name = copy == 1 ? stem + QStringLiteral(".txt")
-                                       : QStringLiteral("%1 (%2).txt").arg(stem).arg(copy);
+        const QString name = copy == 1 ? QStringLiteral("%1.%2").arg(stem, extension)
+                                       : QStringLiteral("%1 (%2).%3").arg(stem).arg(copy).arg(extension);
         QFile file(dir.filePath(name));
         if (file.exists()) {
             continue;
@@ -221,25 +226,36 @@ void FileTranscriptionSession::beginBatch(const QStringList &paths, const Transc
     m_paths = paths;
     m_options = options;
     m_batchSettings = m_settings->snapshot();
+    if (options.spokenLanguage) {
+        m_batchSettings.speech.language = *options.spokenLanguage;
+    }
+    // The page's providers start at the profile's. Kept, they run as the
+    // profile has them, with its model and ahead of the saved chain; one the
+    // page or command line changed runs as the settings have it.
+    const AppSettings profiled = m_providers->withProfileProviders(
+        m_batchSettings, writingProfileSettingsFor(m_batchSettings.refinement.writingProfiles,
+                                                   writingProfileFromName(options.writingProfile)));
+    if (profiled.speech.providerId == options.speechProviderId) {
+        m_batchSettings.speech = profiled.speech;
+    }
+    if (profiled.refinement.providerId == options.refinementProviderId) {
+        m_batchSettings.refinement = profiled.refinement;
+    }
     m_batchSettings.speech.providerId = options.speechProviderId;
-    // The page's provider leads the saved fallbacks.
     m_speechChain = providerChain(ProviderRole::Speech, options.speechProviderId,
                                   m_batchSettings.speech.fallbackProviderIds);
     m_batchSettings.refinement.providerId = options.refinementProviderId;
     m_batchSettings.speech.timedSegments = true;
-    if (options.spokenLanguage) {
-        m_batchSettings.speech.language = *options.spokenLanguage;
-    }
     // The page's profile stands in for the one a target would have implied,
     // for the terms that apply as for everything else.
     m_batchSettings.refinement.sessionWritingProfile = writingProfileFromName(options.writingProfile);
-    m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, Target{});
     if (!options.applyVocabulary) {
-        m_batchSettings.speech.vocabulary.clear();
         m_batchSettings.vocabulary.clear();
         m_batchSettings.learnedCorrections.clear();
         m_batchSettings.bindings.clear();
     }
+    m_batchSettings.sessionVocabulary = options.addedVocabulary;
+    m_batchSettings.speech.vocabulary = TranscriptPipeline::speechVocabulary(m_batchSettings, Target{});
     m_results.clear();
     m_running = true;
     m_index = -1;
@@ -654,7 +670,7 @@ void FileTranscriptionSession::completeFile(const QString &text)
         : m_options.folder;
     if (m_options.destination != TranscriptDestination::None) {
         QString error;
-        m_current.savedPath = saveTranscript(m_current.path, folder, text, &error);
+        m_current.savedPath = saveTranscript(m_current.path, folder, text, TranscriptFormat::Text, &error);
         if (!error.isEmpty()) {
             m_current.error = error;
         }

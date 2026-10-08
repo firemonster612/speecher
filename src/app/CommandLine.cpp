@@ -3,6 +3,7 @@
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
 #include "app/SingleInstanceIpc.h"
+#include "core/Vocabulary.h"
 #include "core/settings/SettingsCodecs.h"
 #include "core/settings/SettingsSchema.h"
 #include "core/settings/SpokenLanguages.h"
@@ -105,6 +106,9 @@ Commands (sent to the running Speecher):
   toggle | start | stop    control dictation
   cancel                   throw away the dictation in progress
   status                   print the dictation state
+  last                     print the last transcript
+  vocabulary add [--] <terms...>
+                           save the terms to the custom vocabulary
   settings | setup         open settings or the setup assistant
   quit                     quit the running Speecher
 
@@ -117,15 +121,24 @@ Transcribe without a window, printing the results:
                            below also implies it
   --model <id>             speech provider: %1
   --no-vocabulary          skip the custom vocabulary and corrections
+  --vocab-file <path>      add the file's terms, one per line, to the custom
+                           vocabulary for this run, even with
+                           --no-vocabulary; # starts a comment line
   --refine <id|none>       refinement provider: %2, none
   --cleanup <level>        %3
-  --profile <name>         writing profile; seeds cleanup and tone: %4
+  --profile <name>         writing profile; seeds its services, cleanup and
+                           tone: %4
   --tone <name>            %5
   --language <code>        spoken language: a code such as de, or auto
   --output <beside|none|DIR>
                            where to save <name>-transcribed.txt (default beside)
+  -                        as the only file, read the audio from stdin; needs
+                           --stdout, --json or --output DIR, and saves as
+                           stdin-transcribed.txt
   --stdout                 also print each transcript
   --raw                    print and save the raw transcript, not the refined one
+  --srt | --vtt            save and print SRT or WebVTT subtitles instead, from
+                           the raw transcript; only local models give timings
   --json                   print one JSON object per file, then a summary
   Exit status: 0 all files transcribed, 1 some failed, 2 usage error.
 
@@ -135,10 +148,19 @@ Record from the microphone once and print what was said:
                            also stop after this much silence once speech has
                            started (default 2); Ctrl-C, and Enter at a
                            terminal, always stop, keeping what was said
-  Takes --model, --no-vocabulary, --refine, --cleanup, --profile, --tone,
-  --language, --raw and --json as transcribe does; --json prints one object.
+  Takes --model, --no-vocabulary, --vocab-file, --refine, --cleanup,
+  --profile, --tone, --language, --raw and --json as transcribe does; --json
+  prints one object.
   Exit status: 0 transcript printed, 1 failed or heard no speech, 2 usage
   error.
+
+Check which speech and refinement services can work:
+  speecher providers [--json]
+                           list each provider: configured, signed in and
+                           usable, as Speecher's settings judge them; asks the
+                           running Speecher, and asks no server, so a sign-in
+                           nothing has seen is unknown
+  --json                   print a JSON array of objects instead of a table
 
 Options:
   --format plain|html      output format for toggle and start
@@ -403,10 +425,42 @@ bool readSharedChoice(const QStringList &arguments,
         }
     } else if (argument == QStringLiteral("--tone")) {
         choice(toneNames(), &options.tone);
+    } else if (argument == QStringLiteral("--vocab-file")) {
+        const std::optional<QString> given = value();
+        if (!given) {
+            *error = QStringLiteral("--vocab-file requires a value");
+        } else if (const std::optional<QStringList> terms = readVocabularyFile(*given)) {
+            options.addedVocabulary += *terms;
+        } else {
+            *error = QStringLiteral("Cannot read vocabulary file %1").arg(*given);
+        }
     } else {
         return false;
     }
     return true;
+}
+
+// Finishes reading `speecher transcribe -`, which always runs headless and
+// has no folder to save beside, so it saves nowhere unless given one. Returns
+// an error message for a usage mistake.
+QString finishStdinTranscribe(const QStringList &files, bool besideGiven, CommandLineDecision *decision)
+{
+    HeadlessTranscribeOptions &options = decision->headless;
+    if (files.size() > 1) {
+        return QStringLiteral("- reads stdin and must be the only file");
+    }
+    if (besideGiven) {
+        return QStringLiteral("--output beside cannot be used with -, which has no folder");
+    }
+    if (options.destination == TranscriptDestination::BesideInput) {
+        options.destination = TranscriptDestination::None;
+    }
+    if (!options.printTranscripts && !options.json && options.destination != TranscriptDestination::Folder) {
+        return QStringLiteral("transcribe - needs --stdout, --json or --output <folder>");
+    }
+    decision->transcribeFiles = files;
+    decision->mode = LaunchMode::TranscribeHeadless;
+    return {};
 }
 
 // Reads `speecher transcribe`'s arguments. Returns an error message for a
@@ -415,11 +469,12 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
 {
     HeadlessTranscribeOptions &options = decision->headless;
     bool headless = false;
+    bool besideGiven = false;
     QStringList files;
     bool optionsEnded = false;
     for (qsizetype index = 0; index < arguments.size(); ++index) {
         const QString argument = arguments.at(index);
-        if (optionsEnded || !argument.startsWith(QLatin1Char('-'))) {
+        if (optionsEnded || !argument.startsWith(QLatin1Char('-')) || argument == kStdinFile) {
             files << argument;
             continue;
         }
@@ -442,8 +497,16 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
         } else if (argument == QStringLiteral("--headless")) {
         } else if (argument == QStringLiteral("--stdout")) {
             options.printTranscripts = true;
+        } else if (argument == QStringLiteral("--srt") || argument == QStringLiteral("--vtt")) {
+            const TranscriptFormat format =
+                argument == QStringLiteral("--srt") ? TranscriptFormat::Srt : TranscriptFormat::WebVtt;
+            if (options.format != TranscriptFormat::Text && options.format != format) {
+                error = QStringLiteral("--srt and --vtt cannot be used together");
+            }
+            options.format = format;
         } else if (argument == QStringLiteral("--output")) {
             const std::optional<QString> given = value();
+            besideGiven = given && given->toLower() == QStringLiteral("beside");
             if (!given) {
                 error = QStringLiteral("--output requires beside, none or a folder");
             } else if (given->toLower() == QStringLiteral("beside")) {
@@ -465,8 +528,15 @@ QString parseTranscribeArguments(const QStringList &arguments, CommandLineDecisi
             return error;
         }
     }
+    if (options.raw && options.format != TranscriptFormat::Text) {
+        return QStringLiteral("--raw cannot be used with --srt or --vtt, whose subtitles always come from the raw "
+                              "transcript");
+    }
     if (files.isEmpty()) {
         return QStringLiteral("transcribe needs at least one audio file");
+    }
+    if (files.contains(kStdinFile)) {
+        return finishStdinTranscribe(files, besideGiven, decision);
     }
     decision->transcribeFiles = absolutePaths(files);
     if (!headless) {
@@ -521,35 +591,144 @@ QString parseListenArguments(const QStringList &arguments, CommandLineDecision *
     return {};
 }
 
+// Reads `speecher vocabulary`'s arguments. Returns an error message for a
+// usage mistake.
+QString parseVocabularyArguments(const QStringList &arguments, CommandLineDecision *decision)
+{
+    if (arguments.isEmpty()) {
+        return QStringLiteral("vocabulary needs a command: add");
+    }
+    if (arguments.first().toLower() != QStringLiteral("add")) {
+        return QStringLiteral("Unknown vocabulary command: %1 (expected add)").arg(arguments.first());
+    }
+    QStringList terms;
+    bool optionsEnded = false;
+    for (const QString &argument : arguments.mid(1)) {
+        if (!optionsEnded && argument == QStringLiteral("--")) {
+            optionsEnded = true;
+            continue;
+        }
+        if (!optionsEnded && argument.startsWith(QLatin1Char('-'))) {
+            return QStringLiteral("Unknown vocabulary add option: %1 (put -- before a term that starts with -)")
+                .arg(argument);
+        }
+        if (argument.simplified().isEmpty()) {
+            return QStringLiteral("vocabulary add cannot save a blank term");
+        }
+        terms << argument;
+    }
+    if (terms.isEmpty()) {
+        return QStringLiteral("vocabulary add needs at least one term");
+    }
+    decision->mode = LaunchMode::RunCli;
+    decision->ipcCommand = QStringLiteral("addVocabulary");
+    decision->vocabularyTerms = terms;
+    return {};
+}
+
+int reportOlderInstance(const char *problem)
+{
+    std::cerr << "The running Speecher is older and " << problem
+              << ". Quit it with `speecher quit` and run the command again.\n";
+    return 1;
+}
+
+// Prints the running instance's last transcript, or nothing when it has none
+// or there is no running instance.
+int printLastTranscript(const std::shared_ptr<const SingleInstancePlatform> &platform)
+{
+    IpcResponse response;
+    QString ipcError;
+    const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(
+        QStringLiteral("last"), &response, 2500, platform, &ipcError);
+    if (ipcResult == IpcCommandResult::Unavailable) {
+        return 1;
+    }
+    if (ipcResult != IpcCommandResult::Sent) {
+        std::cerr << ipcError.toStdString() << "\n";
+        return 1;
+    }
+    if (response.message == kUnknownIpcCommandMessage) {
+        return reportOlderInstance("doesn't know `last`");
+    }
+    if (response.text.isEmpty()) {
+        return 1;
+    }
+    std::cout << response.text.toStdString() << "\n";
+    return 0;
+}
+
+// Saves the terms through the running instance, so its settings and its next
+// dictation have them, or straight to the settings when none is running.
+// Names each term the list held already on stderr.
+int addVocabularyTerms(const QStringList &terms, const std::shared_ptr<const SingleInstancePlatform> &platform)
+{
+    IpcResponse response;
+    QString ipcError;
+    const IpcCommandResult ipcResult = SingleInstanceIpc::sendVocabularyTerms(terms, &response, 2500, platform, &ipcError);
+    std::optional<QStringList> held;
+    if (ipcResult == IpcCommandResult::Unavailable) {
+        held = SettingsCodecs::addVocabularyTerms(terms);
+    } else if (ipcResult != IpcCommandResult::Sent) {
+        std::cerr << ipcError.toStdString() << "\n";
+        return 1;
+    } else if (response.message == kUnknownIpcCommandMessage) {
+        return reportOlderInstance("doesn't know `vocabulary add`");
+    } else if (response.ok) {
+        held = response.skippedTerms;
+    }
+    if (!held) {
+        std::cerr << "Could not save the vocabulary to Speecher's settings.\n";
+        return 1;
+    }
+    for (const QString &term : std::as_const(*held)) {
+        std::cerr << "Already in the vocabulary: " << term.toStdString() << "\n";
+    }
+    return 0;
+}
+
 } // namespace
 
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
 {
-    if (arguments.contains(QStringLiteral("--version"))) {
+    // After --, an argument is a term or a file, never one of these.
+    const QStringList options = arguments.mid(0, arguments.indexOf(QStringLiteral("--")));
+    if (options.contains(QStringLiteral("--version"))) {
         std::cout << "speecher " << SPEECHER_VERSION << " (build " << SPEECHER_BUILD_NUMBER << ")\n";
         std::cout << "log " << logPath.toStdString() << "\n";
         return {LaunchMode::Exit};
     }
 
-    if (arguments.contains(QStringLiteral("--help")) || arguments.contains(QStringLiteral("-h"))) {
+    if (options.contains(QStringLiteral("--help")) || options.contains(QStringLiteral("-h"))) {
         std::cout << helpText().toStdString();
         return {LaunchMode::Exit};
     }
 
     CommandLineDecision decision;
     QString optionError;
-    decision.grabPath = requestedOption(arguments, QStringLiteral("--grab"), &optionError);
+    decision.grabPath = requestedOption(options, QStringLiteral("--grab"), &optionError);
     if (!optionError.isEmpty()) {
         std::cerr << optionError.toStdString() << "\n";
         return {LaunchMode::Exit, 2};
     }
 
     const QString verb = arguments.size() >= 2 ? arguments.at(1).trimmed().toLower() : QString();
+    // Before the dictation options below, which vocabulary does not take.
+    if (verb == QStringLiteral("vocabulary")) {
+        const QString error = parseVocabularyArguments(arguments.mid(2), &decision);
+        if (!error.isEmpty()) {
+            std::cerr << error.toStdString() << "\n\n"
+                      << helpText().toStdString();
+            return {LaunchMode::Exit, 2};
+        }
+        return decision;
+    }
     const bool isCliCommand = verb == QStringLiteral("toggle")
         || verb == QStringLiteral("start")
         || verb == QStringLiteral("stop")
         || verb == QStringLiteral("cancel")
         || verb == QStringLiteral("status")
+        || verb == QStringLiteral("last")
         || verb == QStringLiteral("settings")
         || verb == QStringLiteral("setup")
         || verb == QStringLiteral("grab")
@@ -618,6 +797,17 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
             return {LaunchMode::Exit, 2};
         }
         return decision;
+    } else if (verb == QStringLiteral("providers")) {
+        for (const QString &argument : arguments.mid(2)) {
+            if (argument != QStringLiteral("--json")) {
+                std::cerr << "Unknown providers option: " << argument.toStdString() << "\n\n"
+                          << helpText().toStdString();
+                return {LaunchMode::Exit, 2};
+            }
+            decision.json = true;
+        }
+        decision.mode = LaunchMode::ListProviders;
+        return decision;
     } else {
         QStringList files;
         for (const QString &argument : arguments.mid(1)) {
@@ -668,6 +858,12 @@ int runCliCommand(const CommandLineDecision &decision,
                   const std::shared_ptr<const SingleInstancePlatform> &platform)
 {
     const QString &command = decision.ipcCommand;
+    if (command == QStringLiteral("last")) {
+        return printLastTranscript(platform);
+    }
+    if (command == QStringLiteral("addVocabulary")) {
+        return addVocabularyTerms(decision.vocabularyTerms, platform);
+    }
     IpcResponse response;
     QString ipcError;
     const IpcCommandResult ipcResult = SingleInstanceIpc::sendCommandDetailed(command,
@@ -681,9 +877,7 @@ int runCliCommand(const CommandLineDecision &decision,
         const bool ignoredProfile = overrides.writingProfile && response.writingProfile != *overrides.writingProfile;
         const bool ignoredLanguage = overrides.spokenLanguage && response.spokenLanguage != *overrides.spokenLanguage;
         if (response.ok && (ignoredProfile || ignoredLanguage)) {
-            std::cerr << "The running Speecher is older and ignored " << (ignoredProfile ? "--profile" : "--language")
-                      << ". Quit it with `speecher quit` and run the command again.\n";
-            return 1;
+            return reportOlderInstance(ignoredProfile ? "ignored --profile" : "ignored --language");
         }
         std::cout << response.state.toStdString() << "\n";
         return response.ok ? 0 : 1;

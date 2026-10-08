@@ -2082,7 +2082,7 @@ struct SetupWindow::Native {
         LocalSetup *local = controller->localSetup();
         const SetupFallbackPresentation section =
             setupFallbackPresentation(role, controller->settings()->snapshot(), local->liveFacts(),
-                                      win::providerOptions(role, *controller->providerRegistry()),
+                                      controller->providerRegistry()->rowOptions(role),
                                       local->setupFallbackOffer(role));
         const QStringList drawn = drawnText(section);
         if (fallbacksDrawn == drawn) {

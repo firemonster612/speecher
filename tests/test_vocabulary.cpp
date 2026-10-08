@@ -3,6 +3,10 @@
 #include "core/VocabularyLimit.h"
 #include "core/SettingsStore.h"
 
+#include <QFile>
+#include <QScopeGuard>
+#include <QSignalSpy>
+
 using namespace speecher;
 
 namespace {
@@ -157,6 +161,70 @@ private slots:
         const QList<VocabularyEntry> imported = parseVocabularyCsv(csv, &error);
         QVERIFY2(error.isEmpty(), qPrintable(error));
         QCOMPARE(imported.size(), 150);
+    }
+
+    void vocabularyFileHoldsOneTermPerLine()
+    {
+        QCOMPARE(parseVocabularyFile("readSharedChoice\n\n# a comment\n  Speecher   CLI  \r\n"),
+                 QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
+#ifdef Q_OS_LINUX
+        // It opens but cannot be read.
+        QCOMPARE(readVocabularyFile(QStringLiteral("/proc/self/mem")), std::nullopt);
+#endif
+    }
+
+    void addingTermsSkipsTheOnesAlreadyListed()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        VocabularyEntry limited{QStringLiteral("pnpm")};
+        limited.profiles = {QStringLiteral("work")};
+        settings.setVocabularyEntries({{QStringLiteral("KWin"), QStringLiteral("csv"), false, 3, 10}, limited});
+        QSignalSpy added(&settings, &SettingsStore::vocabularyAdded);
+
+        // A term limited to some Writing Profiles is already listed.
+        QCOMPARE(settings.addVocabularyTerms({QStringLiteral("kwin"), QStringLiteral("  File   Session "),
+                                              QStringLiteral("file session"), QStringLiteral("PNPM")}),
+                 QStringList({QStringLiteral("kwin"), QStringLiteral("file session"), QStringLiteral("PNPM")}));
+        QCOMPARE(added.count(), 1);
+        const QList<VocabularyEntry> entries = settings.vocabularyEntries();
+        QCOMPARE(vocabularyTermsOf(entries),
+                 QStringList({QStringLiteral("KWin"), QStringLiteral("File Session"), QStringLiteral("pnpm")}));
+        QCOMPARE(entries.first().source, QStringLiteral("csv"));
+        QCOMPARE(entries.first().frequency, 3);
+        QCOMPARE(entries.at(1).source, QStringLiteral("manual"));
+        QVERIFY(entries.at(1).keyTerm);
+        QCOMPARE(entries.last().profiles, limited.profiles);
+
+        QCOMPARE(settings.addVocabularyTerms({QStringLiteral("KWIN")}), QStringList({QStringLiteral("KWIN")}));
+        QCOMPARE(added.count(), 1);
+    }
+
+    // A failed save leaves the vocabulary as it was and does not fail the next add.
+    void addingTermsAfterAFailedSave()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("The registry has no file to make read-only.");
+#endif
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.setVocabularyEntries({{QStringLiteral("KWin")}});
+        settings.raw().sync();
+        QSignalSpy added(&settings, &SettingsStore::vocabularyAdded);
+        QFile file(settings.raw().fileName());
+        const QFile::Permissions permissions = file.permissions();
+        const auto restorePermissions = qScopeGuard([&file, permissions] { file.setPermissions(permissions); });
+        QVERIFY(file.setPermissions(QFile::ReadOwner));
+
+        QCOMPARE(settings.addVocabularyTerms({QStringLiteral("pnpm")}), std::nullopt);
+        QCOMPARE(vocabularyTermsOf(settings.vocabularyEntries()), QStringList({QStringLiteral("KWin")}));
+        QCOMPARE(added.count(), 0);
+
+        QVERIFY(file.setPermissions(permissions));
+        QCOMPARE(settings.addVocabularyTerms({QStringLiteral("pnpm")}), QStringList());
+        QCOMPARE(vocabularyTermsOf(settings.vocabularyEntries()),
+                 QStringList({QStringLiteral("KWin"), QStringLiteral("pnpm")}));
+        QCOMPARE(added.count(), 1);
     }
 
     void vocabularyMetadataPersistsImportsDeduplicatesAndTracksUsage()

@@ -70,6 +70,8 @@ private:
     void rebuild();
     void seedOptions();
     void applyWritingProfile();
+    // The settings with the picked profile's own services leading.
+    AppSettings profileSettings() const;
     TranscribeOptions options() const;
     void retry(int index);
     void backToSetup();

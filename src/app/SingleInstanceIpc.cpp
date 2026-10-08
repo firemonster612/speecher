@@ -26,6 +26,15 @@ constexpr int maximumAcceptedSockets = 8;
 constexpr int incompleteRequestTimeoutMs = 2000;
 constexpr int expirySweepIntervalMs = 500;
 
+QStringList stringList(const QJsonValue &array)
+{
+    QStringList strings;
+    for (const QJsonValue &value : array.toArray()) {
+        strings << value.toString();
+    }
+    return strings;
+}
+
 bool canConnectToServer(const QString &name, int timeoutMs)
 {
     QLocalSocket socket;
@@ -43,6 +52,68 @@ bool canConnectToServer(const QString &name, int timeoutMs)
 QString activeInstanceMessage(const QString &name)
 {
     return QStringLiteral("Another Speecher instance is already running on %1").arg(name);
+}
+
+IpcCommandResult sendRequest(const QJsonObject &request,
+                             IpcResponse *response,
+                             int timeoutMs,
+                             std::shared_ptr<const SingleInstancePlatform> platform,
+                             QString *error)
+{
+    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : platformComposition();
+    for (const QString &candidate : resolved->ipcConnectCandidates()) {
+        QLocalSocket socket;
+        socket.connectToServer(candidate);
+        if (!socket.waitForConnected(timeoutMs)) {
+            continue;
+        }
+        QByteArray requestBytes = QJsonDocument(request).toJson(QJsonDocument::Compact);
+        requestBytes.append('\n');
+        if (socket.write(requestBytes) != requestBytes.size()) {
+            if (error) {
+                *error = QStringLiteral("Could not write command to running Speecher instance");
+            }
+            return IpcCommandResult::NoResponse;
+        }
+        socket.flush();
+        QDeadlineTimer deadline(timeoutMs);
+        QByteArray responseBytes;
+        while (!responseBytes.contains('\n') && deadline.remainingTime() > 0) {
+            if (socket.bytesAvailable() == 0
+                && !socket.waitForReadyRead(deadline.remainingTime())) {
+                break;
+            }
+            responseBytes.append(socket.readAll());
+        }
+        if (responseBytes.isEmpty()) {
+            if (error) {
+                *error = QStringLiteral("Running Speecher instance did not respond");
+            }
+            return IpcCommandResult::NoResponse;
+        }
+        QJsonParseError parseError;
+        const qsizetype newline = responseBytes.indexOf('\n');
+        const QByteArray frame = newline >= 0 ? responseBytes.left(newline) : responseBytes;
+        const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+            if (error) {
+                *error = QStringLiteral("Running Speecher instance returned an invalid IPC response");
+            }
+            return IpcCommandResult::InvalidResponse;
+        }
+        const QJsonObject object = document.object();
+        if (response) {
+            response->ok = object.value(QStringLiteral("ok")).toBool();
+            response->state = object.value(QStringLiteral("state")).toString();
+            response->message = object.value(QStringLiteral("message")).toString();
+            response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
+            response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
+            response->text = object.value(QStringLiteral("text")).toString();
+            response->skippedTerms = stringList(object.value(QStringLiteral("skippedTerms")));
+        }
+        return IpcCommandResult::Sent;
+    }
+    return IpcCommandResult::Unavailable;
 }
 
 } // namespace
@@ -132,16 +203,13 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                         continue;
                     }
                     const QJsonObject object = document.object();
-                    QStringList files;
-                    for (const QJsonValue &file : object.value(QStringLiteral("files")).toArray()) {
-                        files << file.toString();
-                    }
                     emit commandReceived(object.value(QStringLiteral("command")).toString(),
                                          object.value(QStringLiteral("outputFormat")).toString(),
                                          socket,
-                                         files,
+                                         stringList(object.value(QStringLiteral("files"))),
                                          object.value(QStringLiteral("writingProfile")).toString(),
-                                         object.value(QStringLiteral("spokenLanguage")).toString());
+                                         object.value(QStringLiteral("spokenLanguage")).toString(),
+                                         stringList(object.value(QStringLiteral("terms"))));
                 }
                 m_socketsInCommand.remove(socket);
                 if (m_socketsPendingDelete.remove(socket)) {
@@ -303,71 +371,31 @@ IpcCommandResult SingleInstanceIpc::sendCommandDetailed(const QString &command,
                                                         std::shared_ptr<const SingleInstancePlatform> platform,
                                                         QString *error)
 {
-    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : platformComposition();
-    for (const QString &candidate : resolved->ipcConnectCandidates()) {
-        QLocalSocket socket;
-        socket.connectToServer(candidate);
-        if (!socket.waitForConnected(timeoutMs)) {
-            continue;
-        }
-        QJsonObject request{{QStringLiteral("command"), command}};
-        if (overrides.outputFormat) {
-            request.insert(QStringLiteral("outputFormat"), outputFormatName(*overrides.outputFormat));
-        }
-        if (overrides.writingProfile) {
-            request.insert(QStringLiteral("writingProfile"), *overrides.writingProfile);
-        }
-        if (overrides.spokenLanguage) {
-            request.insert(QStringLiteral("spokenLanguage"), *overrides.spokenLanguage);
-        }
-        if (!files.isEmpty()) {
-            request.insert(QStringLiteral("files"), QJsonArray::fromStringList(files));
-        }
-        QByteArray requestBytes = QJsonDocument(request).toJson(QJsonDocument::Compact);
-        requestBytes.append('\n');
-        if (socket.write(requestBytes) != requestBytes.size()) {
-            if (error) {
-                *error = QStringLiteral("Could not write command to running Speecher instance");
-            }
-            return IpcCommandResult::NoResponse;
-        }
-        socket.flush();
-        QDeadlineTimer deadline(timeoutMs);
-        QByteArray responseBytes;
-        while (!responseBytes.contains('\n') && deadline.remainingTime() > 0) {
-            if (socket.bytesAvailable() == 0
-                && !socket.waitForReadyRead(deadline.remainingTime())) {
-                break;
-            }
-            responseBytes.append(socket.readAll());
-        }
-        if (responseBytes.isEmpty()) {
-            if (error) {
-                *error = QStringLiteral("Running Speecher instance did not respond");
-            }
-            return IpcCommandResult::NoResponse;
-        }
-        QJsonParseError parseError;
-        const qsizetype newline = responseBytes.indexOf('\n');
-        const QByteArray frame = newline >= 0 ? responseBytes.left(newline) : responseBytes;
-        const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
-        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-            if (error) {
-                *error = QStringLiteral("Running Speecher instance returned an invalid IPC response");
-            }
-            return IpcCommandResult::InvalidResponse;
-        }
-        const QJsonObject object = document.object();
-        if (response) {
-            response->ok = object.value(QStringLiteral("ok")).toBool();
-            response->state = object.value(QStringLiteral("state")).toString();
-            response->message = object.value(QStringLiteral("message")).toString();
-            response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
-            response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
-        }
-        return IpcCommandResult::Sent;
+    QJsonObject request{{QStringLiteral("command"), command}};
+    if (overrides.outputFormat) {
+        request.insert(QStringLiteral("outputFormat"), outputFormatName(*overrides.outputFormat));
     }
-    return IpcCommandResult::Unavailable;
+    if (overrides.writingProfile) {
+        request.insert(QStringLiteral("writingProfile"), *overrides.writingProfile);
+    }
+    if (overrides.spokenLanguage) {
+        request.insert(QStringLiteral("spokenLanguage"), *overrides.spokenLanguage);
+    }
+    if (!files.isEmpty()) {
+        request.insert(QStringLiteral("files"), QJsonArray::fromStringList(files));
+    }
+    return sendRequest(request, response, timeoutMs, std::move(platform), error);
+}
+
+IpcCommandResult SingleInstanceIpc::sendVocabularyTerms(const QStringList &terms,
+                                                        IpcResponse *response,
+                                                        int timeoutMs,
+                                                        std::shared_ptr<const SingleInstancePlatform> platform,
+                                                        QString *error)
+{
+    const QJsonObject request{{QStringLiteral("command"), QStringLiteral("addVocabulary")},
+                              {QStringLiteral("terms"), QJsonArray::fromStringList(terms)}};
+    return sendRequest(request, response, timeoutMs, std::move(platform), error);
 }
 
 void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &response)
@@ -388,6 +416,12 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
     }
     if (!response.spokenLanguage.isEmpty()) {
         object.insert(QStringLiteral("spokenLanguage"), response.spokenLanguage);
+    }
+    if (!response.text.isEmpty()) {
+        object.insert(QStringLiteral("text"), response.text);
+    }
+    if (!response.skippedTerms.isEmpty()) {
+        object.insert(QStringLiteral("skippedTerms"), QJsonArray::fromStringList(response.skippedTerms));
     }
     QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
     responseBytes.append('\n');

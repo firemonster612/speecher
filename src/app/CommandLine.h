@@ -27,6 +27,9 @@ enum class LaunchMode {
     // `speecher listen`: record from the microphone in this process, print
     // the transcript and quit.
     ListenHeadless,
+    // `speecher providers`: print every provider's state as the running app
+    // or, without one, this process knows it, and quit.
+    ListProviders,
 };
 
 struct CommandLineDecision {
@@ -34,6 +37,8 @@ struct CommandLineDecision {
     int exitCode = 0;
     // RunCli: the IPC command to send.
     QString ipcCommand;
+    // RunCli's addVocabulary: the terms to save.
+    QStringList vocabularyTerms;
     // --format and --profile, for toggle, start and a daemon's --start-listening.
     SessionOverrides sessionOverrides;
     bool startListening = false;
@@ -49,6 +54,8 @@ struct CommandLineDecision {
     HeadlessTranscribeOptions headless;
     // ListenHeadless: stop after this long without speech once there was some.
     std::optional<int> untilSilenceMs;
+    // ListProviders: a JSON array instead of a table.
+    bool json = false;
 };
 
 // Decides what the process is for, before any GUI type is constructed, so that

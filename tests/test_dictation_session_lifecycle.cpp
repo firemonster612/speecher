@@ -740,9 +740,9 @@ private slots:
         }
     }
 
-    // The saved language is one Claude Voice lacks: the popup says so and
-    // offers the Dictation page, and nothing reaches the service. --language
-    // replaces it for one session.
+    // The saved language is one Claude Voice lacks: once the target settles
+    // which service runs, the popup says so and offers the Dictation page,
+    // and nothing reaches the service. --language replaces it for one session.
     void aSpokenLanguageTheServiceLacksStopsTheDictation()
     {
         SettingsStore settings;
@@ -759,7 +759,7 @@ private slots:
         QSignalSpy message(&session, &DictationSession::popupErrorRequested);
 
         session.startListening();
-        QCOMPARE(int(session.state()), int(DictationState::Error));
+        QTRY_COMPARE(int(session.state()), int(DictationState::Error));
         QCOMPARE(message.count(), 1);
         QCOMPARE(message.first().first().toString(),
                  QStringLiteral("Fake Speech can't listen for Welsh. Choose another Spoken Language."));
@@ -1038,6 +1038,10 @@ private slots:
             FakeRefiner *refiner = nullptr;
             registerFakeSpeechProvider(registry, &speech);
             registerFakeRefiner(registry, &refiner);
+            // Made now: a session canceled while starting never got as far
+            // as asking for them, and the late events below still need them.
+            registry.speechProvider(QStringLiteral("claude"));
+            registry.refinementProvider(QStringLiteral("openai"));
             DictationSession session(&settings, audio.get(), media.get(), delivery.get(), &registry);
             QSignalSpy recorded(&session, &DictationSession::dictationRecorded);
             QSignalSpy message(&session, &DictationSession::popupMessageRequested);

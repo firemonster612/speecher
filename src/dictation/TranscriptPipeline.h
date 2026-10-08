@@ -27,8 +27,11 @@ struct TranscriptPipelineResult {
 class TranscriptPipeline {
 public:
     // The terms the speech request carries for a dictation into the target:
-    // those for its Writing Profile, then the Learned Corrections.
+    // the session's, those for its Writing Profile, then the Learned
+    // Corrections.
     static QStringList speechVocabulary(const AppSettings &settings, const Target &target);
+    // The Writing Profile a dictation into the target runs under.
+    static WritingProfileSettings writingProfile(const AppSettings &settings, const Target &target);
     static RefinementSettings effectiveRefinementSettings(const AppSettings &settings,
                                                           const Target &target);
     static TranscriptPipelineResult prepare(const QString &rawTranscript,

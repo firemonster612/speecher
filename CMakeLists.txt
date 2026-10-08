@@ -274,6 +274,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/VocabularyLimit.cpp
   src/core/Vocabulary.cpp
   src/core/WordPreview.cpp
+  src/core/WritingProfileProviders.cpp
   src/dictation/DictationTypes.cpp
   src/dictation/PopupPresentation.cpp
 )
@@ -311,6 +312,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/VocabularyLimit.h
   src/core/Vocabulary.h
   src/core/WordPreview.h
+  src/core/WritingProfileProviders.h
   src/dictation/DictationTypes.h
   src/dictation/PopupGeometry.h
   src/dictation/PopupPresentation.h
@@ -549,6 +551,7 @@ set(SPEECHER_APP_SOURCES
   src/app/MicrophoneTest.cpp
   src/app/PlatformSelection.cpp
   src/app/ProviderSetup.cpp
+  src/app/ProvidersCommand.cpp
   src/app/AccessibilityPresentation.cpp
   src/app/SetupSteps.cpp
   src/app/SingleInstanceIpc.cpp
@@ -572,6 +575,7 @@ set(SPEECHER_APP_HEADERS
   src/app/ShortcutSuspendingDelivery.h
   src/app/PlatformComposition.h
   src/app/ProviderSetup.h
+  src/app/ProvidersCommand.h
   src/app/AccessibilityPresentation.h
   src/app/SetupSteps.h
   src/app/SingleInstanceIpc.h

@@ -57,9 +57,6 @@ QString popupErrorActionLabel(const PopupErrorAction &action);
 // sign-in, Local models for a model on this computer, Dictation for a server.
 PopupErrorAction speechSetupAction(const QString &providerId);
 
-// A provider's registry label, by role and id.
-using ProviderLabels = std::function<QString(ProviderRole role, const QString &providerId)>;
-
 // What the popup says once a Dictation Session delivered: the receipt
 // ("Input sent"), then a note on the fallbacks that did the work and why, in
 // one line. Exactly the receipt and speech warning of a session without a

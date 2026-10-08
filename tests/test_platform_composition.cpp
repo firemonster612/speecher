@@ -4,6 +4,8 @@
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
 #include "app/PlatformComposition.h"
+#include "app/ProviderAvailability.h"
+#include "app/ProvidersCommand.h"
 #include "app/ShortcutSuspendingDelivery.h"
 #include "core/LearnedCorrection.h"
 #include "core/SettingsStore.h"
@@ -31,6 +33,11 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGroupBox>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLocalServer>
+#include <QLocalSocket>
 #include <QPalette>
 #include <QLabel>
 #include <QLayout>
@@ -43,6 +50,7 @@
 #include <QSystemTrayIcon>
 #include <QTemporaryDir>
 #include <QtEndian>
+#include <QUuid>
 
 #ifdef SPEECHER_WITH_KASSISTANT
 #include <KPageWidget>
@@ -896,6 +904,8 @@ private slots:
         QCOMPARE(parse({}).mode, LaunchMode::RunGui);
         QCOMPARE(parse({QStringLiteral("--grab"), QStringLiteral("shot.png")}).mode, LaunchMode::RunGui);
 
+        QCOMPARE(parse({QStringLiteral("--srt")}).headless.format, TranscriptFormat::Srt);
+        QCOMPARE(parse({QStringLiteral("--vtt"), QStringLiteral("--vtt")}).headless.format, TranscriptFormat::WebVtt);
         QCOMPARE(parse({QStringLiteral("--output"), QStringLiteral("NONE")}).headless.destination,
                  TranscriptDestination::None);
         QCOMPARE(parse({QStringLiteral("--cleanup"), QStringLiteral("Medium")}).headless.cleanupStrength,
@@ -912,10 +922,32 @@ private slots:
         QCOMPARE(ended.mode, LaunchMode::TranscribeHeadless);
         QCOMPARE(ended.transcribeFiles, QStringList{dashed});
 
+        // - reads stdin, always headless, saving nowhere unless given a folder.
+        const auto parseStdin = [](QStringList options) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("transcribe")} + options, {});
+        };
+        const CommandLineDecision piped = parseStdin({QStringLiteral("--stdout"), QStringLiteral("-")});
+        QCOMPARE(piped.mode, LaunchMode::TranscribeHeadless);
+        QCOMPARE(piped.transcribeFiles, QStringList{QStringLiteral("-")});
+        QCOMPARE(piped.headless.destination, TranscriptDestination::None);
+        QCOMPARE(parseStdin({QStringLiteral("--output"), dir.path(), QStringLiteral("-")}).headless.destination,
+                 TranscriptDestination::Folder);
+        for (const QStringList &mistake : {QStringList{QStringLiteral("-")},
+                                           QStringList{QStringLiteral("--headless"), QStringLiteral("-")},
+                                           QStringList{QStringLiteral("--stdout"), QStringLiteral("--output"),
+                                                       QStringLiteral("beside"), QStringLiteral("-")},
+                                           QStringList{QStringLiteral("--output"), QStringLiteral("none"),
+                                                       QStringLiteral("-")},
+                                           QStringList{QStringLiteral("--stdout"), QStringLiteral("-"), audio}}) {
+            QCOMPARE(parseStdin(mistake).exitCode, 2);
+        }
+
         for (const QStringList &mistake : {QStringList{QStringLiteral("--cleanup"), QStringLiteral("extreme")},
                                            QStringList{QStringLiteral("--frobnicate")},
                                            QStringList{QStringLiteral("-x")},
                                            QStringList{QStringLiteral("--daemon")},
+                                           QStringList{QStringLiteral("--srt"), QStringLiteral("--vtt")},
+                                           QStringList{QStringLiteral("--vtt"), QStringLiteral("--raw")},
                                            QStringList{QStringLiteral("--output"), dir.filePath(QStringLiteral("nowhere"))}}) {
             const CommandLineDecision refused = parse(mistake);
             QCOMPARE(refused.mode, LaunchMode::Exit);
@@ -957,6 +989,19 @@ private slots:
 
         QCOMPARE(parse({}).mode, LaunchMode::ListenHeadless);
         QCOMPARE(parse({}).untilSilenceMs, std::nullopt);
+
+        QTemporaryDir dir;
+        const QString vocabulary = dir.filePath(QStringLiteral("terms.txt"));
+        QFile vocabularyFile(vocabulary);
+        QVERIFY(vocabularyFile.open(QIODevice::WriteOnly));
+        vocabularyFile.write("readSharedChoice\nSpeecher CLI\n");
+        vocabularyFile.close();
+        QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary}).headless.addedVocabulary,
+                 QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
+        QCOMPARE(parse({QStringLiteral("--vocab-file"), vocabulary, QStringLiteral("--vocab-file"), vocabulary})
+                     .headless.addedVocabulary,
+                 QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI"),
+                              QStringLiteral("readSharedChoice"), QStringLiteral("Speecher CLI")}));
         QCOMPARE(parse({QStringLiteral("--until-silence")}).untilSilenceMs, std::optional(2000));
         QCOMPARE(parse({QStringLiteral("--until-silence"), QStringLiteral("--no-vocabulary")}).untilSilenceMs,
                  std::optional(2000));
@@ -969,6 +1014,8 @@ private slots:
                                            QStringList{QStringLiteral("--stdout")},
                                            QStringList{QStringLiteral("--output"), QStringLiteral("none")},
                                            QStringList{QStringLiteral("memo.wav")},
+                                           QStringList{QStringLiteral("--vocab-file")},
+                                           QStringList{QStringLiteral("--vocab-file"), dir.filePath(QStringLiteral("missing.txt"))},
                                            QStringList{QStringLiteral("--cleanup"), QStringLiteral("extreme")}}) {
             const CommandLineDecision refused = parse(mistake);
             QCOMPARE(refused.mode, LaunchMode::Exit);
@@ -983,6 +1030,51 @@ private slots:
         QVERIFY2(QString::fromStdString(usage.str())
                      .startsWith(QStringLiteral("--until-silence takes seconds from 0.1 to 3600, not -1\n")),
                  usage.str().c_str());
+    }
+
+    // providers takes --json and nothing else. Its table and its JSON say
+    // unknown, or null, for what nobody has checked.
+    void providersPrintsATableOrJson()
+    {
+        const auto parse = [](QStringList options) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("providers")} + options,
+                                    {});
+        };
+        QCOMPARE(parse({}).mode, LaunchMode::ListProviders);
+        QVERIFY(!parse({}).json);
+        QVERIFY(parse({QStringLiteral("--json")}).json);
+        {
+            std::ostringstream usage;
+            std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+            const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+            QCOMPARE(parse({QStringLiteral("--table")}).exitCode, 2);
+            QVERIFY(QString::fromStdString(usage.str()).startsWith(QStringLiteral("Unknown providers option: --table\n")));
+        }
+
+        const QList<ProviderReport> reports{
+            {QStringLiteral("codex"), ProviderRole::Speech, QStringLiteral("ChatGPT Codex"), true, true},
+            {QStringLiteral("local"), ProviderRole::Refinement, QStringLiteral("Local Runner"), false, true,
+             std::nullopt, false, QStringLiteral("Ollama isn't running.")},
+        };
+        std::ostringstream json;
+        printProviderReports(reports, true, json);
+        // The apostrophe stays out of the raw strings: moc reads one there as
+        // a character literal and loses the slots that follow.
+        QCOMPARE(QString::fromStdString(json.str()),
+                 QStringLiteral(R"([{"configured":true,"id":"codex","label":"ChatGPT Codex","problem":null,)"
+                                R"("role":"speech","signedIn":null,"signsIn":true,"usable":null},)"
+                                R"({"configured":true,"id":"local","label":"Local Runner",)"
+                                "\"problem\":\"Ollama isn't running.\","
+                                R"("role":"refinement","signedIn":null,)"
+                                R"("signsIn":false,"usable":false}])"
+                                "\n"));
+        std::ostringstream table;
+        printProviderReports(reports, false, table);
+        QCOMPARE(QString::fromStdString(table.str()),
+                 QStringLiteral("Role        ID     Name           Configured  Signed in  Usable   Problem\n"
+                                "Speech      codex  ChatGPT Codex  Yes         Unknown    Unknown\n"
+                                "Refinement  local  Local Runner   Yes         -          No       "
+                                "Ollama isn't running.\n"));
     }
 
     // A custom tone or level is named by its id without custom_, with - for _.
@@ -1113,6 +1205,46 @@ private slots:
             QCOMPARE(refused.exitCode, 2);
         }
         settings.raw().clear();
+    }
+
+    // Every argument after `vocabulary add` is a term; none is a dictation option.
+    void vocabularyAddIsAClientCommand()
+    {
+        const auto parse = [](QStringList arguments) {
+            return parseCommandLine(QStringList{QStringLiteral("speecher"), QStringLiteral("vocabulary")} + arguments,
+                                    {});
+        };
+        const CommandLineDecision decision =
+            parse({QStringLiteral("add"), QStringLiteral("FileTranscriptionSession"), QStringLiteral("Speecher CLI")});
+        QCOMPARE(decision.mode, LaunchMode::RunCli);
+        QCOMPARE(decision.ipcCommand, QStringLiteral("addVocabulary"));
+        QCOMPARE(decision.vocabularyTerms,
+                 QStringList({QStringLiteral("FileTranscriptionSession"), QStringLiteral("Speecher CLI")}));
+        QCOMPARE(parse({QStringLiteral("add"), QStringLiteral("--"), QStringLiteral("-fsanitize")}).vocabularyTerms,
+                 QStringList({QStringLiteral("-fsanitize")}));
+        // Not even the options every command takes.
+        for (const QString &term : {QStringLiteral("--version"), QStringLiteral("--help"), QStringLiteral("-h"),
+                                    QStringLiteral("--grab")}) {
+            const CommandLineDecision escaped = parse({QStringLiteral("add"), QStringLiteral("--"), term});
+            QCOMPARE(escaped.mode, LaunchMode::RunCli);
+            QCOMPARE(escaped.vocabularyTerms, QStringList({term}));
+        }
+
+        std::ostringstream usage;
+        std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());
+        const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
+        for (const QStringList &mistake : {QStringList{},
+                                           QStringList{QStringLiteral("list")},
+                                           QStringList{QStringLiteral("add")},
+                                           QStringList{QStringLiteral("add"), QStringLiteral(" ")},
+                                           QStringList{QStringLiteral("add"), QStringLiteral("--")},
+                                           QStringList{QStringLiteral("add"), QStringLiteral("-fsanitize")},
+                                           QStringList{QStringLiteral("add"), QStringLiteral("KWin"),
+                                                       QStringLiteral("--profile"), QStringLiteral("ai-coding")}}) {
+            const CommandLineDecision refused = parse(mistake);
+            QCOMPARE(refused.mode, LaunchMode::Exit);
+            QCOMPARE(refused.exitCode, 2);
+        }
     }
 
     void quitIsAClientCommand()
@@ -2491,6 +2623,34 @@ private slots:
                                     {QStringLiteral("/a.wav"), QStringLiteral("/b.mp3")});
 
         QCOMPARE(frontEnd.calls, QStringList({QStringLiteral("showTranscribeFiles /a.wav /b.mp3")}));
+    }
+
+    // The running app answers providers with the sign-ins it has seen.
+    void providersCommandAnswersWithTheSignInsTheAppHasSeen()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        ApplicationController controller(true, platform);
+        controller.providerAvailability()->noteSignIn(QStringLiteral("codex"), false);
+
+        QLocalServer server;
+        QVERIFY(server.listen(QStringLiteral("spchr-p-%1").arg(QUuid::createUuid().toString(QUuid::Id128).left(12))));
+        QLocalSocket client;
+        client.connectToServer(server.fullServerName());
+        QVERIFY(server.waitForNewConnection(2000));
+        controller.handleIpcCommand(QStringLiteral("providers"), {}, server.nextPendingConnection());
+        QVERIFY(client.waitForReadyRead(2000));
+
+        const QJsonObject answer = QJsonDocument::fromJson(client.readLine()).object();
+        QVERIFY(answer.value(QStringLiteral("ok")).toBool());
+        const QJsonArray reports =
+            QJsonDocument::fromJson(answer.value(QStringLiteral("text")).toString().toUtf8()).array();
+        const auto codex = std::find_if(reports.cbegin(), reports.cend(), [](const QJsonValue &report) {
+            return report[QStringLiteral("id")] == QStringLiteral("codex")
+                && report[QStringLiteral("role")] == QStringLiteral("speech");
+        });
+        QVERIFY(codex != reports.cend());
+        QCOMPARE((*codex)[QStringLiteral("signedIn")], QJsonValue(false));
+        QCOMPARE((*codex)[QStringLiteral("problem")], QJsonValue(QStringLiteral("Not signed in to ChatGPT.")));
     }
 
     void filesOpenedBeforeSetupOpenOnceItCompletes()

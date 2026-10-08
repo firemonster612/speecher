@@ -62,6 +62,14 @@ struct WritingProfileSettings {
     // The language refinement writes in, by name, such as "Spanish". Empty
     // writes in the language that was spoken.
     QString outputLanguage;
+    // The speech service and refinement provider this profile uses ahead of
+    // the Dictation and Refinement pages' chains, by provider id; empty uses
+    // theirs. A model goes with its provider (see WritingProfileProviders.h);
+    // empty uses the provider's own.
+    QString speechProvider;
+    QString speechModel;
+    QString refinementProvider;
+    QString refinementModel;
 
     bool operator==(const WritingProfileSettings &other) const = default;
 };

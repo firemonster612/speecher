@@ -331,6 +331,15 @@ void SettingsStore::setCorrectionLearningEnabled(bool enabled)
     emit correctionLearningEnabledChanged(enabled);
 }
 
+std::optional<QStringList> SettingsStore::addVocabularyTerms(const QStringList &terms)
+{
+    const std::optional<QStringList> held = SettingsCodecs::addVocabularyTerms(terms);
+    if (held && held->size() < terms.size()) {
+        emit vocabularyAdded();
+    }
+    return held;
+}
+
 bool SettingsStore::recordCorrectionEvidence(const CorrectionEvidence &evidence,
                                              const QString &applicationId)
 {

@@ -36,40 +36,6 @@ namespace speecher {
 
 namespace {
 
-bool offersExactly(const QComboBox *combo, const QList<RowOption> &options)
-{
-    if (combo->count() != options.size()) {
-        return false;
-    }
-    for (int index = 0; index < combo->count(); ++index) {
-        if (combo->itemData(index).toString() != options.at(index).id
-            || combo->itemText(index) != options.at(index).label) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// Rebuilding a combo resets its selection, so leave one that already offers the
-// same choices alone: the caller selects the value straight after.
-void setOptions(QComboBox *combo, const QList<RowOption> &options)
-{
-    if (!offersExactly(combo, options)) {
-        const QSignalBlocker blocker(combo);
-        combo->clear();
-        for (const RowOption &option : options) {
-            combo->addItem(option.label, option.id);
-        }
-    }
-    // Which choices are open can change while the choices stay the same, as
-    // Ultrafast does with the OpenAI model.
-    for (int index = 0; index < options.size(); ++index) {
-        const RowOption &option = options.at(index);
-        settings::setComboItemEnabled(combo, index, option.enabled,
-                                      option.enabled ? QString() : option.help);
-    }
-}
-
 QList<RefinementProvider> refinementProviders(const QList<ProviderDescriptor> &providers)
 {
     QList<RefinementProvider> refiners;
@@ -111,22 +77,12 @@ QString gateNoticeKey(const SettingsRow &descriptor)
 
 } // namespace
 
-QList<RowOption> providerOptions(const QList<ProviderDescriptor> &providers)
-{
-    QList<RowOption> options;
-    options.reserve(providers.size());
-    for (const ProviderDescriptor &provider : providers) {
-        options.append({provider.id, provider.label, provider.summary});
-    }
-    return options;
-}
-
 SchemaContext qtSchemaContext(const PlatformComposition &platform,
                               const ProviderRegistry &providers,
                               const QString &lastSeenVersion)
 {
     return {
-        providerOptions(providers.speechProviders()),
+        providers.rowOptions(ProviderRole::Speech),
         refinementProviders(providers.refinementProviders()),
         [&platform] {
             return settings::audioInputDeviceOptions(platform.availableAudioInputDevices());
@@ -717,7 +673,7 @@ void SchemaSettingsPage::applyRow(const Row &row, const AppSettings &settings)
     const auto &choices = row.descriptor.options ? row.descriptor.options : row.descriptor.suggestions;
     // A Custom row fills its own widget, which need not be a combo box.
     if (choices && row.descriptor.kind != RowKind::Custom) {
-        setOptions(qobject_cast<QComboBox *>(row.control), choices(settings));
+        settings::setOptions(qobject_cast<QComboBox *>(row.control), choices(settings));
     }
     // First, so a row whose choices come from the settings offers them
     // before its value is chosen among them.

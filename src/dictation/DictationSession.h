@@ -126,6 +126,7 @@ private:
     void setState(DictationState state, const QString &message = {}, const PopupErrorAction &fix = {});
     using Stage = ProviderAttemptIssue::Stage;
     void continueStartupAfterPopup(quint64 generation);
+    bool selectProviders();
     void prepareSpeechProvider();
     void finishStartupPreparation(const StartupPreparationResult &result);
     void finishSpeechPreparation(const StartupPreparationResult &result);

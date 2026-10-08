@@ -9,16 +9,45 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QScopeGuard>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <algorithm>
+#include <atomic>
+#include <istream>
+#include <optional>
 #include <ostream>
+#include <string>
+#ifdef Q_OS_WIN
+#include <fcntl.h>
+#include <io.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace speecher {
 namespace {
+
+// What the spooled stdin is named: progress shows it and the saved transcript
+// is named after it.
+const QString kSpoolName = QStringLiteral("stdin");
+
+// The spooled file and its folder while a run has them, as native strings
+// built beforehand so removeStdinSpool need not allocate.
+#ifdef Q_OS_WIN
+std::wstring g_spoolFile;
+std::wstring g_spoolFolder;
+#else
+std::string g_spoolFile;
+std::string g_spoolFolder;
+#endif
+std::atomic<bool> g_spooling{false};
 
 bool offers(const QList<ProviderDescriptor> &providers, const QString &id)
 {
@@ -27,16 +56,23 @@ bool offers(const QList<ProviderDescriptor> &providers, const QString &id)
 }
 
 // The same seeding as the Transcribe page: the user's settings, with the
-// profile's cleanup and tone underneath anything given explicitly.
-TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options, const AppSettings &settings)
+// profile's services, cleanup and tone underneath anything given explicitly.
+TranscribeOptions resolveOptions(const HeadlessTranscribeOptions &options,
+                                 AppSettings settings,
+                                 const ProviderRegistry &providers)
 {
     TranscribeOptions resolved;
-    resolved.speechProviderId = options.speechProviderId.value_or(settings.speech.providerId);
-    resolved.applyVocabulary = options.applyVocabulary;
-    resolved.refinementProviderId = options.refinementProviderId.value_or(settings.refinement.providerId);
     resolved.writingProfile = options.writingProfile.value_or(settings.refinement.defaultWritingProfile);
     const WritingProfileSettings profile = writingProfileSettingsFor(
         settings.refinement.writingProfiles, writingProfileFromName(resolved.writingProfile));
+    if (options.spokenLanguage) {
+        settings.speech.language = *options.spokenLanguage;
+    }
+    settings = providers.withProfileProviders(settings, profile);
+    resolved.speechProviderId = options.speechProviderId.value_or(settings.speech.providerId);
+    resolved.applyVocabulary = options.applyVocabulary;
+    resolved.addedVocabulary = options.addedVocabulary;
+    resolved.refinementProviderId = options.refinementProviderId.value_or(settings.refinement.providerId);
     resolved.cleanupStrength = options.cleanupStrength.value_or(profile.cleanupStrength);
     resolved.tone = options.tone.value_or(profile.tone);
     resolved.spokenLanguage = options.spokenLanguage;
@@ -59,6 +95,86 @@ QString unofferedProviderError(const TranscribeOptions &resolved, ProviderRegist
     return {};
 }
 
+void rememberSpool(const QTemporaryDir &dir)
+{
+#ifdef Q_OS_WIN
+    g_spoolFile = QDir::toNativeSeparators(dir.filePath(kSpoolName)).toStdWString();
+    g_spoolFolder = QDir::toNativeSeparators(dir.path()).toStdWString();
+#else
+    g_spoolFile = QFile::encodeName(dir.filePath(kSpoolName)).toStdString();
+    g_spoolFolder = QFile::encodeName(dir.path()).toStdString();
+#endif
+    g_spooling = true;
+}
+
+// Opens file to write. On Windows it is shared for deletion, so
+// removeStdinSpool can delete it while stdin is still being read. Returns why
+// it could not, or empty.
+QString openSpool(QFile &file)
+{
+#ifdef Q_OS_WIN
+    const HANDLE handle =
+        CreateFileW(reinterpret_cast<const wchar_t *>(QDir::toNativeSeparators(file.fileName()).utf16()),
+                    GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW,
+                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return qt_error_string(int(GetLastError()));
+    }
+    const int descriptor = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_WRONLY | _O_BINARY);
+    if (descriptor == -1) {
+        CloseHandle(handle);
+        return QStringLiteral("Could not open the temporary file");
+    }
+    if (!file.open(descriptor, QIODevice::WriteOnly, QFileDevice::AutoCloseHandle)) {
+        _close(descriptor);
+        return file.errorString();
+    }
+    return {};
+#else
+    return file.open(QIODevice::WriteOnly) ? QString() : file.errorString();
+#endif
+}
+
+// Copies in to a file named kSpoolName in dir, because the decoder cannot
+// probe a pipe. The file has no extension: the decoder probes its content.
+// Returns its path, or empty with error set.
+QString spoolStdin(std::istream &in, const QTemporaryDir &dir, QString *error)
+{
+    if (!dir.isValid()) {
+        *error = QStringLiteral("Could not read stdin: %1").arg(dir.errorString());
+        return {};
+    }
+    const QString path = dir.filePath(kSpoolName);
+    QFile file(path);
+    if (const QString reason = openSpool(file); !reason.isEmpty()) {
+        *error = QStringLiteral("Could not read stdin: %1").arg(reason);
+        return {};
+    }
+    char buffer[64 * 1024];
+    qint64 total = 0;
+    while (in.read(buffer, sizeof buffer) || in.gcount() > 0) {
+        if (file.write(buffer, in.gcount()) != in.gcount()) {
+            *error = QStringLiteral("Could not read stdin: %1").arg(file.errorString());
+            return {};
+        }
+        total += in.gcount();
+    }
+    // The last of it is written only now, so a full disk can fail here.
+    if (!file.flush()) {
+        *error = QStringLiteral("Could not read stdin: %1").arg(file.errorString());
+        return {};
+    }
+    if (in.bad()) {
+        *error = QStringLiteral("Could not read stdin");
+        return {};
+    }
+    if (total == 0) {
+        *error = QStringLiteral("No audio on stdin");
+        return {};
+    }
+    return path;
+}
+
 void writeJson(std::ostream &out, const QJsonObject &object)
 {
     out << QJsonDocument(object).toJson(QJsonDocument::Compact).toStdString() << '\n';
@@ -67,10 +183,28 @@ void writeJson(std::ostream &out, const QJsonObject &object)
 
 } // namespace
 
+void removeStdinSpool()
+{
+    if (!g_spooling) {
+        return;
+    }
+#ifdef Q_OS_WIN
+    // Best effort: while decoding, FFmpeg holds the file without sharing it
+    // for deletion, and a file only marked deleted can keep the folder until
+    // the process ends.
+    DeleteFileW(g_spoolFile.c_str());
+    RemoveDirectoryW(g_spoolFolder.c_str());
+#else
+    unlink(g_spoolFile.c_str());
+    rmdir(g_spoolFolder.c_str());
+#endif
+}
+
 int runHeadlessTranscribe(const QStringList &files,
                           const HeadlessTranscribeOptions &options,
                           SettingsStore *settings,
                           ProviderRegistry *providers,
+                          std::istream &in,
                           std::ostream &out,
                           std::ostream &err,
                           bool errIsTerminal)
@@ -96,15 +230,46 @@ int runHeadlessTranscribe(const QStringList &files,
     if (files.isEmpty()) {
         return finish(2, QStringLiteral("No audio files to transcribe"));
     }
-    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot());
+    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot(), *providers);
     if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
         return finish(2, error);
     }
-    const bool refines = refinesTranscripts(resolved, settings->snapshot().refinement);
+    // Removes the spooled audio on every return.
+    std::optional<QTemporaryDir> stdinDir;
+    // Declared after it, so it runs first.
+    const auto forgetSpool = qScopeGuard([] { g_spooling = false; });
+    QString stdinPath;
+    if (files == QStringList{kStdinFile}) {
+        stdinDir.emplace();
+        if (stdinDir->isValid()) {
+            rememberSpool(*stdinDir);
+        }
+        // The length is unknown until stdin ends, so this has no percent.
+        err << (errIsTerminal ? "\r\033[K" : "") << kSpoolName.toStdString() << ": "
+            << transcribePhaseLabel(TranscribePhase::Reading).toStdString() << (errIsTerminal ? "" : "\n")
+            << std::flush;
+        QString error;
+        stdinPath = spoolStdin(in, *stdinDir, &error);
+        if (errIsTerminal) {
+            err << "\r\033[K";
+        }
+        if (stdinPath.isEmpty()) {
+            failed = 1;
+            return finish(1, error);
+        }
+    }
+    const QStringList inputs = stdinPath.isEmpty() ? files : QStringList{stdinPath};
     // Saving happens here rather than in the session, so --raw can save what
     // it prints.
     TranscribeOptions sessionOptions = resolved;
     sessionOptions.destination = TranscriptDestination::None;
+    // Subtitles come from the timed Raw Transcript, so refining would be a
+    // call whose text nobody sees.
+    if (options.format != TranscriptFormat::Text) {
+        sessionOptions.refinementProviderId = QStringLiteral("none");
+    }
+    const bool refines = refinesTranscripts(sessionOptions, settings->snapshot().refinement);
+    const QString speechProvider = batchLabels(resolved, *providers, settings->snapshot().refinement).speech;
 
     FileTranscriptionSession session(settings, providers);
     QEventLoop loop;
@@ -114,6 +279,8 @@ int runHeadlessTranscribe(const QStringList &files,
     ForwardProgress shownProgress;
     int lastPercent = -1;
     QString name;
+    // A log has stdin's Reading line already, from the spooling.
+    const bool readingLogged = !stdinPath.isEmpty() && !errIsTerminal;
     // A new phase always gets a line; within one, a terminal gets every
     // percent and a log every tenth.
     const auto showProgress = [&](bool newPhase) {
@@ -140,6 +307,10 @@ int runHeadlessTranscribe(const QStringList &files,
         name = QFileInfo(path).fileName();
         fractionSent = 0.0;
         shownProgress = {};
+        if (readingLogged) {
+            phaseClock.start();
+            return;
+        }
         setPhase(TranscribePhase::Reading);
     });
     QObject::connect(&session, &FileTranscriptionSession::fileDecoded, &loop,
@@ -160,16 +331,24 @@ int runHeadlessTranscribe(const QStringList &files,
                          if (errIsTerminal) {
                              err << "\r\033[K";
                          }
-                         const QString text = shownTranscript(result, options.raw);
+                         // Without timings there are no subtitles, so the file
+                         // fails; its JSON still carries the text, as a failed
+                         // file's does.
+                         const bool exportable = canExportAs(result, options.format);
+                         if (!result.failed() && !exportable) {
+                             result.error = subtitlesNeedTimings(speechProvider);
+                         }
+                         const QString text = exportable ? exportedTranscript(result, options.format, options.raw)
+                                                         : shownTranscript(result, options.raw);
                          // A transcript that was asked to be saved and was not
                          // fails the file, though it still prints.
-                         bool ok = !result.failed();
+                         bool ok = exportable;
                          if (ok && resolved.destination != TranscriptDestination::None) {
                              const QString folder = resolved.destination == TranscriptDestination::Folder
                                  ? resolved.folder
                                  : QFileInfo(result.path).absolutePath();
                              QString error;
-                             result.savedPath = saveTranscript(result.path, folder, text, &error);
+                             result.savedPath = saveTranscript(result.path, folder, text, options.format, &error);
                              if (!error.isEmpty()) {
                                  result.error = error;
                                  ok = false;
@@ -190,7 +369,8 @@ int runHeadlessTranscribe(const QStringList &files,
                          }
                          err.flush();
                          if (options.json) {
-                             QJsonObject object{{QStringLiteral("file"), result.path},
+                             QJsonObject object{{QStringLiteral("file"),
+                                                 result.path == stdinPath ? kStdinFile : result.path},
                                                 {QStringLiteral("ok"), ok},
                                                 {QStringLiteral("text"), text}};
                              if (!result.savedPath.isEmpty()) {
@@ -200,7 +380,7 @@ int runHeadlessTranscribe(const QStringList &files,
                                  object.insert(QStringLiteral("error"), result.error);
                              }
                              writeJson(out, object);
-                         } else if (options.printTranscripts && !result.failed()) {
+                         } else if (options.printTranscripts && exportable) {
                              if (files.size() > 1) {
                                  out << "# " << name.toStdString() << "\n\n";
                              }
@@ -223,7 +403,7 @@ int runHeadlessTranscribe(const QStringList &files,
     tick.start();
     // The session is this run's own and the files are there, so a refusal
     // would mean a batch already under way.
-    if (!session.start(files, sessionOptions)) {
+    if (!session.start(inputs, sessionOptions)) {
         return finish(1, QStringLiteral("Could not start: a transcription is already running"));
     }
     if (session.isRunning()) {
@@ -259,7 +439,7 @@ int runHeadlessListen(const HeadlessTranscribeOptions &options,
         }
         return exitCode;
     };
-    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot());
+    const TranscribeOptions resolved = resolveOptions(options, settings->snapshot(), *providers);
     if (const QString error = unofferedProviderError(resolved, providers); !error.isEmpty()) {
         return finish(2, {}, error);
     }

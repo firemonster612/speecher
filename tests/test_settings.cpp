@@ -1,5 +1,7 @@
 #include "common/test_prelude.h"
 #include "core/ProviderChain.h"
+#include "core/WritingProfileProviders.h"
+#include "core/settings/SpokenLanguages.h"
 #include "core/settings/SettingsKeys.h"
 #include <QProcess>
 #ifdef SPEECHER_WITH_QKEYCHAIN
@@ -759,6 +761,121 @@ private slots:
         QCOMPARE(loaded.refinement.additionalInstructions, QStringLiteral("Spell it Speecher."));
         QCOMPARE(loaded.refinement.customSystemPromptEnabled, true);
         QCOMPARE(loaded.refinement.customSystemPrompt, QStringLiteral("Clean up my dictation."));
+    }
+
+    // A profile's own services survive a save and a reload; one this build
+    // can't name reads as the pages' choice, and a profile on the pages'
+    // choice stores nothing new.
+    void profileProvidersRoundTrip()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        settings.raw().setValue(
+            QStringLiteral("refinement/writingProfiles"),
+            QByteArray(R"([{"profile":"work","cleanupStrength":"balanced","tone":"none","speechProvider":"bogus",)"
+                       R"("speechModel":"parakeet","refinementProvider":"none"}])"));
+        AppSettings draft = settings.snapshot();
+        const auto profile = [](const AppSettings &loaded, const QString &id) {
+            return writingProfileSettingsFor(loaded.refinement.writingProfiles, id);
+        };
+        QCOMPARE(profile(draft, WritingProfile::Work).speechProvider, QString());
+        QCOMPARE(profile(draft, WritingProfile::Work).speechModel, QString());
+        QCOMPARE(profile(draft, WritingProfile::Work).refinementProvider, QString());
+
+        draft.refinement.writingProfiles[1].refinementProvider = QStringLiteral("anthropic");
+        draft.refinement.writingProfiles[1].refinementModel = QStringLiteral("claude-sonnet-5-5");
+        draft.refinement.writingProfiles[3].speechProvider = QStringLiteral("local");
+        draft.refinement.writingProfiles[3].speechModel = QStringLiteral("moonshine-small");
+        settings.applySnapshot(draft);
+
+        const AppSettings loaded = SettingsStore().snapshot();
+        QCOMPARE(profile(loaded, WritingProfile::Email).refinementProvider, QStringLiteral("anthropic"));
+        QCOMPARE(profile(loaded, WritingProfile::Email).refinementModel, QStringLiteral("claude-sonnet-5-5"));
+        QCOMPARE(profile(loaded, WritingProfile::Email).speechProvider, QString());
+        QCOMPARE(profile(loaded, WritingProfile::AiCoding).speechProvider, QStringLiteral("local"));
+        QCOMPARE(profile(loaded, WritingProfile::AiCoding).speechModel, QStringLiteral("moonshine-small"));
+        const QByteArray stored = settings.raw().value(QStringLiteral("refinement/writingProfiles")).toByteArray();
+        QVERIFY(stored.contains(R"("profile":"work","tone":"none"})"));
+        settings.raw().clear();
+    }
+
+    // The profile's service goes first, then the page's whole chain without
+    // it; its model rides along, and the
+    // page's choice stays where the profile has none.
+    void profileProvidersLeadThePagesChains()
+    {
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("claude");
+        settings.speech.fallbackProviderIds = {QStringLiteral("local"), QStringLiteral("codex")};
+        settings.speech.local.modelId = QStringLiteral("parakeet");
+        settings.refinement.providerId = QStringLiteral("openai");
+        settings.refinement.fallbackProviderIds = {QStringLiteral("local")};
+        settings.refinement.anthropicModel = QStringLiteral("claude-opus-5-5");
+
+        WritingProfileSettings profile;
+        AppSettings resolved = withWritingProfileProviders(settings, profile);
+        QCOMPARE(resolved.speech.providerId, QStringLiteral("claude"));
+        QCOMPARE(resolved.speech.fallbackProviderIds, (QStringList{QStringLiteral("local"), QStringLiteral("codex")}));
+        QCOMPARE(resolved.refinement.providerId, QStringLiteral("openai"));
+
+        profile.speechProvider = QStringLiteral("local");
+        profile.speechModel = QStringLiteral("moonshine-small");
+        profile.refinementProvider = QStringLiteral("anthropic");
+        profile.refinementModel = QStringLiteral("claude-sonnet-5-5");
+        resolved = withWritingProfileProviders(settings, profile);
+        QCOMPARE(resolved.speech.providerId, QStringLiteral("local"));
+        QCOMPARE(resolved.speech.local.modelId, QStringLiteral("moonshine-small"));
+        QCOMPARE(resolved.speech.fallbackProviderIds, (QStringList{QStringLiteral("claude"), QStringLiteral("codex")}));
+        QCOMPARE(resolved.refinement.providerId, QStringLiteral("anthropic"));
+        QCOMPARE(resolved.refinement.anthropicModel, QStringLiteral("claude-sonnet-5-5"));
+        QCOMPARE(resolved.refinement.openAiModel, settings.refinement.openAiModel);
+        QCOMPARE(resolved.refinement.fallbackProviderIds,
+                 (QStringList{QStringLiteral("openai"), QStringLiteral("local")}));
+
+        // The page's whole chain follows, even a full one: the profile's
+        // service makes it one longer rather than dropping the last.
+        settings.speech.fallbackProviderIds = {QStringLiteral("codex"), QStringLiteral("endpoint")};
+        settings.refinement.fallbackProviderIds = {QStringLiteral("local"), QStringLiteral("endpoint")};
+        resolved = withWritingProfileProviders(settings, profile);
+        QCOMPARE(resolved.speech.fallbackProviderIds,
+                 (QStringList{QStringLiteral("claude"), QStringLiteral("codex"), QStringLiteral("endpoint")}));
+        QCOMPARE(providerChain(ProviderRole::Speech, resolved.speech.providerId, resolved.speech.fallbackProviderIds),
+                 (QStringList{QStringLiteral("local"), QStringLiteral("claude"), QStringLiteral("codex"),
+                              QStringLiteral("endpoint")}));
+        QCOMPARE(resolved.refinement.fallbackProviderIds,
+                 (QStringList{QStringLiteral("openai"), QStringLiteral("local"), QStringLiteral("endpoint")}));
+
+        // A profile can refine while the Refinement page says None.
+        settings.refinement.providerId = QStringLiteral("none");
+        settings.refinement.fallbackProviderIds.clear();
+        resolved = withWritingProfileProviders(settings, profile);
+        QCOMPARE(resolved.refinement.providerId, QStringLiteral("anthropic"));
+        QCOMPARE(resolved.refinement.fallbackProviderIds, QStringList());
+    }
+
+    // A profile's Local Model that can't hear the Spoken Language is passed
+    // over, and the dialog says which service runs instead.
+    void profileSpeechThatCantHearTheLanguageIsPassedOver()
+    {
+        AppSettings settings;
+        settings.speech.providerId = QStringLiteral("claude");
+        settings.speech.language = QStringLiteral("ja");
+        WritingProfileSettings profile;
+        profile.speechProvider = QStringLiteral("local");
+        profile.speechModel = QStringLiteral("parakeet");
+
+        AppSettings resolved = withWritingProfileProviders(settings, profile);
+        QCOMPARE(resolved.speech.providerId, QStringLiteral("claude"));
+        QCOMPARE(resolved.speech.local.modelId, settings.speech.local.modelId);
+        QCOMPARE(profileSpokenLanguageProblem(*profileSpeechSettings(settings.speech, profile),
+                                              QStringLiteral("Local Model"), QStringLiteral("Claude Voice")),
+                 QStringLiteral("Parakeet 0.6B doesn't listen for Japanese, your Spoken Language, so this profile "
+                                "uses Claude Voice."));
+
+        profile.speechModel = QStringLiteral("qwen3-asr");
+        resolved = withWritingProfileProviders(settings, profile);
+        QCOMPARE(resolved.speech.providerId, QStringLiteral("local"));
+        QCOMPARE(resolved.speech.local.modelId, QStringLiteral("qwen3-asr"));
     }
 
     // A profile keeps a custom tone or level that still exists, and falls back

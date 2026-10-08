@@ -7,6 +7,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <optional>
+
 namespace speecher {
 
 // Why a fallback can't stand in right now, judged only from what the app
@@ -32,6 +34,39 @@ FallbackProblem fallbackProblem(ProviderRole role, const QString &providerId, co
 QString primaryProviderStatus(ProviderRole role, const AppSettings &settings, const LiveFacts &facts,
                               const QList<RowOption> &providers);
 
+// One provider as `speecher providers` reports it, judged by fallbackProblem()
+// from the same facts and worded as the primary's row words it.
+struct ProviderReport {
+    QString id;
+    ProviderRole role = ProviderRole::Speech;
+    // The registry label.
+    QString label;
+    // Whether it takes a sign-in: Claude, ChatGPT, OpenAI and Anthropic do.
+    bool signsIn = false;
+    // Holds what it needs from settings: a downloaded model, a server URL, a
+    // chosen Local Runner and its cleanup model.
+    bool configured = false;
+    // Empty for a provider that doesn't sign in, and for one whose sign-in
+    // nothing has seen; signsIn tells them apart.
+    std::optional<bool> signedIn;
+    // Empty while the verdict turns on what nobody has checked: a sign-in not
+    // seen, or whether the Local Runner is running.
+    std::optional<bool> usable;
+    // "Not signed in to ChatGPT."; empty while nothing known stops it.
+    QString problem;
+};
+
+// Every provider `speechProviders` and `refinementProviders` hold, speech
+// first, in their order.
+QList<ProviderReport> providerReports(const AppSettings &settings, const LiveFacts &facts,
+                                      const QList<RowOption> &speechProviders,
+                                      const QList<RowOption> &refinementProviders);
+
+// `speecher providers`' table: a row of column captions, then a row of cells
+// per report. A state nobody has checked reads "Unknown", a sign-in a
+// provider doesn't take "-".
+QList<QStringList> providerReportTable(const QList<ProviderReport> &reports);
+
 // Whether a speech fallback is skipped because it can't listen for the
 // Spoken Language, by its own language list or its Local Model's catalog
 // entry (listensForSpokenLanguage). A missing model is not skipped here; it
@@ -49,6 +84,9 @@ bool providerSignsIn(const QString &providerId);
 // The account a provider signs in to, as a person knows it: "ChatGPT" for
 // ChatGPT Codex. label is the provider's registry label.
 QString signInName(const QString &providerId, const QString &label);
+
+// What a provider a setting names but this build lacks is called.
+QString providerNotInBuildLabel();
 
 // Where a fallback list is edited. Setup offers no speech Custom Endpoint
 // fallback: the Transcription step shows the endpoint's fields only while it

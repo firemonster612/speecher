@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/AppSettings.h"
+#include "core/ProviderChain.h"
 #include "core/ShortcutBinding.h"
 #include "core/settings/ProviderRatings.h"
 
@@ -60,6 +61,13 @@ struct IconCell {
     QString tooltip;
 };
 
+// What a field says under it where a record is added or edited. A caution
+// is shown as one.
+struct FieldNote {
+    QString text;
+    bool caution = false;
+};
+
 // One typed column of a collection. A record's value for the column lives under
 // `id` in the record, so a key no column names is metadata the editor carries
 // but never shows.
@@ -104,7 +112,26 @@ struct CollectionColumn {
     // which terms fit in what the speech service takes, so a front end asks
     // again with its current records each time it redraws them.
     std::function<QList<IconCell>(const QList<QVariantMap> &, const AppSettings &)> icons;
+    // Choice columns only, in place of options where a record is added or
+    // edited: options that depend on the record's other fields, such as the
+    // models of the provider it picked. Asked again whenever a field
+    // changes; with none, the field is hidden. A column with these and no
+    // options is edited only record by record, never in a table.
+    std::function<QList<RowOption>(const AppSettings &, const QVariantMap &record)> recordOptions;
+    // Where a record is added or edited, what the field says under it when
+    // that depends on the record; empty text leaves the help. Asked again
+    // whenever a field changes. shownFieldNote() is what to show.
+    std::function<FieldNote(const AppSettings &, const QVariantMap &record)> recordNote;
+    // Where records are edited as rows of pickers rather than in a dialog
+    // (the macOS and Windows Writing Profiles), a field that takes a titled
+    // line of its own under the row's pickers, such as a profile's speech
+    // service.
+    bool ownLine = false;
 };
+
+// What a field says under it for a record: its recordNote, else the chosen
+// option's help, else the column's help.
+FieldNote shownFieldNote(const CollectionColumn &column, const AppSettings &settings, const QVariantMap &record);
 
 // What a ChoiceSet cell says for a record's ids: their options' labels, in the
 // options' order, or the column's everyLabel when none is an option.
@@ -161,6 +188,9 @@ struct CollectionDescriptor {
     // because both of today's two undo its own edit history.
     QList<RowOption> actions;
     int minimumHeight = 0;
+    // Where records are listed as rows rather than a table, the line under
+    // each record's name, by the record's identityColumn value.
+    std::function<QString(const AppSettings &, const QString &id)> recordSummary;
 };
 
 struct NumberRange {
@@ -548,13 +578,19 @@ QString offeredCleanupLevel(const QString &id, const QList<CustomCleanupLevel> &
 QString customChoiceId(const QString &name, const QStringList &taken);
 // The built-in profiles, then the custom ones `profiles` holds.
 QList<RowOption> writingProfileChoices(const QList<WritingProfileSettings> &profiles);
-// What a profile does, in a sentence or two: its cleanup and tone, and
-// whether it adds instructions of its own. "Medium cleanup, no tone."
-QString writingProfileChoiceSummary(const AppSettings &settings, const QString &profileId);
+// What each provider is called: the registry's labels a SchemaContext
+// carries, which a profile's summary names its own services by.
+ProviderLabels providerLabels(const SchemaContext &context);
+// What a profile does, in a sentence or two: its cleanup and tone, the
+// services it picks over the pages' choice, and whether it adds instructions
+// of its own. "High cleanup, formal tone, Anthropic Claude Opus 5.5."
+QString writingProfileChoiceSummary(const AppSettings &settings,
+                                    const QString &profileId,
+                                    const ProviderLabels &labels);
 // The same, then where Speecher uses it: the apps the recognition rules map
 // to it, and whether it is the fallback. The profile's row on the Writing
 // Profiles page reads this.
-QString writingProfileSummary(const AppSettings &settings, const QString &profileId);
+QString writingProfileSummary(const AppSettings &settings, const QString &profileId, const ProviderLabels &labels);
 // Each named profile without an id, one just added, gets customChoiceId of
 // its name.
 QList<WritingProfileSettings> withCustomProfileIds(QList<WritingProfileSettings> profiles);
@@ -565,7 +601,7 @@ QString writingProfileDeletionNotice(const AppSettings &settings, const QString 
 // The title of the confirmation that notice goes in; its confirming button is
 // the grid's deleteLabel.
 QString writingProfileDeletionTitle();
-CollectionDescriptor writingProfileGrid();
+CollectionDescriptor writingProfileGrid(const SchemaContext &context);
 QList<RowOption> authModeOptions(const QString &rowId);
 
 // Apply only edits since the loaded snapshot, keeping newer store values.
