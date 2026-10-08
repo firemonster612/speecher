@@ -668,7 +668,7 @@ int addVocabularyTerms(const QStringList &terms, const std::shared_ptr<const Sin
     const IpcCommandResult ipcResult = SingleInstanceIpc::sendVocabularyTerms(terms, &response, 2500, platform, &ipcError);
     std::optional<QStringList> held;
     if (ipcResult == IpcCommandResult::Unavailable) {
-        held = SettingsCodecs().addVocabularyTerms(terms);
+        held = SettingsCodecs::addVocabularyTerms(terms);
     } else if (ipcResult != IpcCommandResult::Sent) {
         std::cerr << ipcError.toStdString() << "\n";
         return 1;
@@ -691,20 +691,22 @@ int addVocabularyTerms(const QStringList &terms, const std::shared_ptr<const Sin
 
 CommandLineDecision parseCommandLine(const QStringList &arguments, const QString &logPath)
 {
-    if (arguments.contains(QStringLiteral("--version"))) {
+    // After --, an argument is a term or a file, never one of these.
+    const QStringList options = arguments.mid(0, arguments.indexOf(QStringLiteral("--")));
+    if (options.contains(QStringLiteral("--version"))) {
         std::cout << "speecher " << SPEECHER_VERSION << " (build " << SPEECHER_BUILD_NUMBER << ")\n";
         std::cout << "log " << logPath.toStdString() << "\n";
         return {LaunchMode::Exit};
     }
 
-    if (arguments.contains(QStringLiteral("--help")) || arguments.contains(QStringLiteral("-h"))) {
+    if (options.contains(QStringLiteral("--help")) || options.contains(QStringLiteral("-h"))) {
         std::cout << helpText().toStdString();
         return {LaunchMode::Exit};
     }
 
     CommandLineDecision decision;
     QString optionError;
-    decision.grabPath = requestedOption(arguments, QStringLiteral("--grab"), &optionError);
+    decision.grabPath = requestedOption(options, QStringLiteral("--grab"), &optionError);
     if (!optionError.isEmpty()) {
         std::cerr << optionError.toStdString() << "\n";
         return {LaunchMode::Exit, 2};

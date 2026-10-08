@@ -6,7 +6,6 @@
 #include <QDeadlineTimer>
 #include <QLocalServer>
 #include <QHash>
-#include <QJsonObject>
 #include <QObject>
 #include <QSet>
 #include <QTimer>
@@ -95,12 +94,6 @@ public slots:
     static void writeResponse(QLocalSocket *socket, const IpcResponse &response);
 
 private:
-    static IpcCommandResult sendRequest(const QJsonObject &request,
-                                        IpcResponse *response,
-                                        int timeoutMs,
-                                        std::shared_ptr<const SingleInstancePlatform> platform,
-                                        QString *error);
-
     std::shared_ptr<const SingleInstancePlatform> m_platform;
     QLocalServer m_server;
 #ifdef Q_OS_WIN

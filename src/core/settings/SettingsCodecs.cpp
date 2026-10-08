@@ -413,6 +413,9 @@ void SettingsCodecs::recordVocabularyUsage(const QString &text)
 
 std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList &terms)
 {
+    // Its own QSettings, because one keeps reporting a failed sync forever:
+    // after one failed add, every later one would report a failure too.
+    SettingsCodecs settings;
     // Two `vocabulary add`s with no app running would each read the list, and
     // the second to write would drop the first one's terms. Windows keeps the
     // settings in the registry, so its lock goes in the per-user temp folder.
@@ -420,14 +423,15 @@ std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList 
 #ifdef Q_OS_WIN
     QLockFile lock(QDir::temp().filePath(QStringLiteral("speecher-vocabulary.lock")));
 #else
-    QLockFile lock(m_settings.fileName() + QStringLiteral(".vocabulary.lock"));
+    QLockFile lock(settings.m_settings.fileName() + QStringLiteral(".vocabulary.lock"));
 #endif
     if (!lock.tryLock(5000)) {
         return std::nullopt;
     }
     // Re-reads what another process saved since this one opened the settings.
-    m_settings.sync();
-    QList<VocabularyEntry> entries = vocabularyEntries();
+    settings.m_settings.sync();
+    const QList<VocabularyEntry> saved = settings.vocabularyEntries();
+    QList<VocabularyEntry> entries = saved;
     QStringList held;
     for (const QString &term : terms) {
         const QString cleaned = term.simplified();
@@ -442,11 +446,15 @@ std::optional<QStringList> SettingsCodecs::addVocabularyTerms(const QStringList 
             entries.append({cleaned});
         }
     }
-    if (held.size() < terms.size()) {
-        setVocabularyEntries(entries);
+    if (held.size() == terms.size()) {
+        return held;
     }
-    m_settings.sync();
-    if (m_settings.status() != QSettings::NoError) {
+    settings.setVocabularyEntries(entries);
+    settings.m_settings.sync();
+    if (settings.m_settings.status() != QSettings::NoError) {
+        // Every QSettings on the file shares its unsaved values, so the
+        // running app would show and use terms that were never saved.
+        settings.setVocabularyEntries(saved);
         return std::nullopt;
     }
     return held;

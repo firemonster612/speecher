@@ -1222,6 +1222,13 @@ private slots:
                  QStringList({QStringLiteral("FileTranscriptionSession"), QStringLiteral("Speecher CLI")}));
         QCOMPARE(parse({QStringLiteral("add"), QStringLiteral("--"), QStringLiteral("-fsanitize")}).vocabularyTerms,
                  QStringList({QStringLiteral("-fsanitize")}));
+        // Not even the options every command takes.
+        for (const QString &term : {QStringLiteral("--version"), QStringLiteral("--help"), QStringLiteral("-h"),
+                                    QStringLiteral("--grab")}) {
+            const CommandLineDecision escaped = parse({QStringLiteral("add"), QStringLiteral("--"), term});
+            QCOMPARE(escaped.mode, LaunchMode::RunCli);
+            QCOMPARE(escaped.vocabularyTerms, QStringList({term}));
+        }
 
         std::ostringstream usage;
         std::streambuf *const stderrBuffer = std::cerr.rdbuf(usage.rdbuf());

@@ -54,6 +54,68 @@ QString activeInstanceMessage(const QString &name)
     return QStringLiteral("Another Speecher instance is already running on %1").arg(name);
 }
 
+IpcCommandResult sendRequest(const QJsonObject &request,
+                             IpcResponse *response,
+                             int timeoutMs,
+                             std::shared_ptr<const SingleInstancePlatform> platform,
+                             QString *error)
+{
+    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : platformComposition();
+    for (const QString &candidate : resolved->ipcConnectCandidates()) {
+        QLocalSocket socket;
+        socket.connectToServer(candidate);
+        if (!socket.waitForConnected(timeoutMs)) {
+            continue;
+        }
+        QByteArray requestBytes = QJsonDocument(request).toJson(QJsonDocument::Compact);
+        requestBytes.append('\n');
+        if (socket.write(requestBytes) != requestBytes.size()) {
+            if (error) {
+                *error = QStringLiteral("Could not write command to running Speecher instance");
+            }
+            return IpcCommandResult::NoResponse;
+        }
+        socket.flush();
+        QDeadlineTimer deadline(timeoutMs);
+        QByteArray responseBytes;
+        while (!responseBytes.contains('\n') && deadline.remainingTime() > 0) {
+            if (socket.bytesAvailable() == 0
+                && !socket.waitForReadyRead(deadline.remainingTime())) {
+                break;
+            }
+            responseBytes.append(socket.readAll());
+        }
+        if (responseBytes.isEmpty()) {
+            if (error) {
+                *error = QStringLiteral("Running Speecher instance did not respond");
+            }
+            return IpcCommandResult::NoResponse;
+        }
+        QJsonParseError parseError;
+        const qsizetype newline = responseBytes.indexOf('\n');
+        const QByteArray frame = newline >= 0 ? responseBytes.left(newline) : responseBytes;
+        const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+            if (error) {
+                *error = QStringLiteral("Running Speecher instance returned an invalid IPC response");
+            }
+            return IpcCommandResult::InvalidResponse;
+        }
+        const QJsonObject object = document.object();
+        if (response) {
+            response->ok = object.value(QStringLiteral("ok")).toBool();
+            response->state = object.value(QStringLiteral("state")).toString();
+            response->message = object.value(QStringLiteral("message")).toString();
+            response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
+            response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
+            response->text = object.value(QStringLiteral("text")).toString();
+            response->skippedTerms = stringList(object.value(QStringLiteral("skippedTerms")));
+        }
+        return IpcCommandResult::Sent;
+    }
+    return IpcCommandResult::Unavailable;
+}
+
 } // namespace
 
 SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatform> platform, QObject *parent)
@@ -334,68 +396,6 @@ IpcCommandResult SingleInstanceIpc::sendVocabularyTerms(const QStringList &terms
     const QJsonObject request{{QStringLiteral("command"), QStringLiteral("addVocabulary")},
                               {QStringLiteral("terms"), QJsonArray::fromStringList(terms)}};
     return sendRequest(request, response, timeoutMs, std::move(platform), error);
-}
-
-IpcCommandResult SingleInstanceIpc::sendRequest(const QJsonObject &request,
-                                                IpcResponse *response,
-                                                int timeoutMs,
-                                                std::shared_ptr<const SingleInstancePlatform> platform,
-                                                QString *error)
-{
-    const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : platformComposition();
-    for (const QString &candidate : resolved->ipcConnectCandidates()) {
-        QLocalSocket socket;
-        socket.connectToServer(candidate);
-        if (!socket.waitForConnected(timeoutMs)) {
-            continue;
-        }
-        QByteArray requestBytes = QJsonDocument(request).toJson(QJsonDocument::Compact);
-        requestBytes.append('\n');
-        if (socket.write(requestBytes) != requestBytes.size()) {
-            if (error) {
-                *error = QStringLiteral("Could not write command to running Speecher instance");
-            }
-            return IpcCommandResult::NoResponse;
-        }
-        socket.flush();
-        QDeadlineTimer deadline(timeoutMs);
-        QByteArray responseBytes;
-        while (!responseBytes.contains('\n') && deadline.remainingTime() > 0) {
-            if (socket.bytesAvailable() == 0
-                && !socket.waitForReadyRead(deadline.remainingTime())) {
-                break;
-            }
-            responseBytes.append(socket.readAll());
-        }
-        if (responseBytes.isEmpty()) {
-            if (error) {
-                *error = QStringLiteral("Running Speecher instance did not respond");
-            }
-            return IpcCommandResult::NoResponse;
-        }
-        QJsonParseError parseError;
-        const qsizetype newline = responseBytes.indexOf('\n');
-        const QByteArray frame = newline >= 0 ? responseBytes.left(newline) : responseBytes;
-        const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
-        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-            if (error) {
-                *error = QStringLiteral("Running Speecher instance returned an invalid IPC response");
-            }
-            return IpcCommandResult::InvalidResponse;
-        }
-        const QJsonObject object = document.object();
-        if (response) {
-            response->ok = object.value(QStringLiteral("ok")).toBool();
-            response->state = object.value(QStringLiteral("state")).toString();
-            response->message = object.value(QStringLiteral("message")).toString();
-            response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
-            response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
-            response->text = object.value(QStringLiteral("text")).toString();
-            response->skippedTerms = stringList(object.value(QStringLiteral("skippedTerms")));
-        }
-        return IpcCommandResult::Sent;
-    }
-    return IpcCommandResult::Unavailable;
 }
 
 void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &response)
