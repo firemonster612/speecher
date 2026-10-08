@@ -137,6 +137,15 @@ QByteArray microphoneChunk(qint16 level)
     return chunk;
 }
 
+qsizetype byteCount(const QList<QByteArray> &chunks)
+{
+    qsizetype bytes = 0;
+    for (const QByteArray &chunk : chunks) {
+        bytes += chunk.size();
+    }
+    return bytes;
+}
+
 QString readFile(const QString &path)
 {
     QFile file(path);
@@ -1054,11 +1063,7 @@ private slots:
         // Seconds of audio the provider had when asked each time.
         QList<qsizetype> heardAtEnds;
         m_codex->onEndUtterance = [&] {
-            qsizetype heard = 0;
-            for (const QByteArray &chunk : std::as_const(m_codex->audioChunks)) {
-                heard += chunk.size();
-            }
-            heardAtEnds << heard / (16000 * 2);
+            heardAtEnds << byteCount(m_codex->audioChunks) / (16000 * 2);
             m_codex->emitFinalText(QStringLiteral("Part %1.").arg(heardAtEnds.size()));
         };
 
@@ -1071,10 +1076,39 @@ private slots:
         QCOMPARE(heardAtEnds, QList<qsizetype>({25, 30}));
     }
 
+    // An utterance's end reaches the provider right after its last audio,
+    // even when the audio waiting to be sent does not split there.
+    void aRecordingEndsAnUtteranceRightAfterItsAudio()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        // Bytes the provider had when asked each time.
+        QList<qsizetype> heardAtEnds;
+        m_codex->onEndUtterance = [&] { heardAtEnds << byteCount(m_codex->audioChunks); };
+
+        // 3,000-byte pieces: the 25 s limit ends the utterance after the
+        // 267th, at 801,000 bytes, part way through a 3,200-byte send; the
+        // pause after the last ends the next.
+        const QByteArray piece = microphoneChunk(8000).left(3000);
+        for (int i = 0; i < 320; ++i) {
+            microphone->pushAudio(piece);
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(heardAtEnds, QList<qsizetype>({801000, 320 * 3000}), 10000);
+    }
+
     // A provider that transcribes only once the audio ends cannot record yet,
     // and a microphone that cannot start leaves no file. A stream that fails
-    // part way in a way a reconnect cannot mend stops, the recording says why
-    // until it is stopped, and the stopped recording still says it.
+    // part way in a way a reconnect cannot mend stops, with the partial it
+    // left written; the recording says why until it is stopped, and the
+    // stopped recording still says it.
     void aRecordingRefusesWhatCannotRecordAndReportsAStoppedStream()
     {
         SettingsStore settings;
@@ -1107,6 +1141,7 @@ private slots:
         const QString path = startRecording(recording, m_dir.filePath(QStringLiteral("call.md")), &error);
         QCOMPARE(path, m_dir.filePath(QStringLiteral("call.md")));
         m_codex->emitFinalText(QStringLiteral("Said before."));
+        m_codex->emitPartialText(QStringLiteral("And then"));
         m_codex->emitFailure(QStringLiteral("Signed out"), false, QStringLiteral("authentication"),
                              ProviderFailureKind::Authentication);
         const RecordingStatus status = recording.status();
@@ -1121,7 +1156,7 @@ private slots:
         QCOMPARE(stopped.count(), 1);
         QVERIFY(!recording.isRecording());
         QCOMPARE(stopped.first().first().value<RecordingStatus>().streams.first().problem, QStringLiteral("Signed out"));
-        QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Said before.")});
+        QCOMPARE(recordedTexts(path), QStringList({QStringLiteral("Said before."), QStringLiteral("And then")}));
     }
 
     // The start answers only once a stream is up: when no provider connects
@@ -1194,6 +1229,31 @@ private slots:
         QCOMPARE(connects, 2);
         QVERIFY(recording.status().streams.first().problem.isEmpty());
         QTRY_VERIFY_WITH_TIMEOUT(m_codex->audioChunks.contains(spoken), 2000);
+    }
+
+    // A dropped stream is cancelled once its partial is written: whatever it
+    // still sends while the recording waits to reconnect is not written.
+    void aRecordingWritesNothingMoreFromADroppedStream()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
+        });
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        m_codex->emitPartialText(QStringLiteral("Before the drop"));
+        const quint64 dropped = m_codex->currentAttemptId;
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+                             ProviderFailureKind::Network);
+        QVERIFY(m_codex->cancelledAttempts.contains(dropped));
+        m_codex->emitFinalText(QStringLiteral("Before the drop."));
+        m_codex->emitPartialText(QStringLiteral("Stale"));
+
+        QTRY_COMPARE_WITH_TIMEOUT(m_codex->startCalls, 2, 5000);
+        QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Before the drop")});
     }
 
     // Utterance ends the first provider passed before it failed to connect

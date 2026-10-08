@@ -556,7 +556,12 @@ void FileTranscriptionSession::sendNextChunk()
         m_transcriber->finishInput(m_attemptId);
         return;
     }
-    const QByteArray chunk = m_pcm.mid(m_sent - m_pcmDropped, kChunkBytes);
+    // A send stops at the next utterance end, which follows it at once.
+    qsizetype chunkBytes = kChunkBytes;
+    if (m_nextUtteranceEnd < m_utteranceEnds.size()) {
+        chunkBytes = std::min(chunkBytes, m_utteranceEnds.at(m_nextUtteranceEnd) - m_sent);
+    }
+    const QByteArray chunk = m_pcm.mid(m_sent - m_pcmDropped, chunkBytes);
     m_sent += chunk.size();
     const quint64 attemptId = m_attemptId;
     m_transcriber->sendAudio(attemptId, chunk);
@@ -564,6 +569,7 @@ void FileTranscriptionSession::sendNextChunk()
     if (attemptId != m_attemptId) {
         return;
     }
+    endUtteranceOnceSent();
     emit fileProgress(m_index, qreal(m_sent) / qreal(m_pcmDropped + m_pcm.size()));
     // Once a stream has connected, no other provider takes the input from its
     // start (see handleSpeechFailure) and its next stream picks up at the next
@@ -653,12 +659,14 @@ void FileTranscriptionSession::startNextAttempt()
 // A recording's dropped stream waits a pause, growing while it keeps failing,
 // before it reconnects; the microphone's audio waits with it, and a stream
 // that never connected has its audio sent again. The partial it left is
-// written now, as the provider will never finish it.
+// written now, as the provider will never finish it, and the stream is
+// cancelled, as a final it still sent would repeat that partial.
 void FileTranscriptionSession::waitToReconnect(const QString &reason)
 {
     m_sendTimer.stop();
     m_streaming = false;
     commitPartial();
+    m_transcriber->cancelAttempt(m_attemptId++);
     if (!m_attemptConnected) {
         rewindTo(m_attemptSentFrom);
     }
@@ -834,6 +842,8 @@ void FileTranscriptionSession::completeFile(const QString &text)
 void FileTranscriptionSession::failFile(const QString &message)
 {
     qWarning().noquote() << "file transcription failed path=" + m_current.path << "message=" + message;
+    // The provider will never finish the partial now.
+    commitPartial();
     m_current.raw = m_transcript->text();
     m_current.error = message;
     finishFile();
