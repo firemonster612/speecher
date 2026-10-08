@@ -67,30 +67,39 @@ QString requestedOption(const QStringList &arguments, const QString &name, QStri
     return {};
 }
 
+// Starts a Speecher that outlives this command. Its standard streams go to the
+// null device: holding this command's would keep a caller's
+// `path=$(speecher record start)` waiting until that Speecher quits.
+bool startDetachedSpeecher(const SingleInstancePlatform *platform, const QStringList &arguments)
+{
+    QProcess process;
+    process.setProgram(platform->detachedExecutablePath());
+    process.setArguments(arguments);
+    process.setStandardInputFile(QProcess::nullDevice());
+    process.setStandardOutputFile(QProcess::nullDevice());
+    process.setStandardErrorFile(QProcess::nullDevice());
+    return process.startDetached();
+}
+
 bool startDetachedListening(const SingleInstancePlatform *platform, const QStringList &overrideArguments)
 {
-    return QProcess::startDetached(platform->detachedExecutablePath(),
-                                   QStringList{QStringLiteral("--daemon"), QStringLiteral("--start-listening")}
-                                       + overrideArguments);
+    return startDetachedSpeecher(
+        platform, QStringList{QStringLiteral("--daemon"), QStringLiteral("--start-listening")} + overrideArguments);
 }
 
 bool startDetachedDaemon(const SingleInstancePlatform *platform)
 {
-    return QProcess::startDetached(platform->detachedExecutablePath(), {QStringLiteral("--daemon")});
+    return startDetachedSpeecher(platform, {QStringLiteral("--daemon")});
 }
 
 bool startDetachedSettings(const SingleInstancePlatform *platform)
 {
-    return QProcess::startDetached(
-        platform->detachedExecutablePath(),
-        {QStringLiteral("--daemon"), QStringLiteral("--show-settings")});
+    return startDetachedSpeecher(platform, {QStringLiteral("--daemon"), QStringLiteral("--show-settings")});
 }
 
 bool startDetachedSetup(const SingleInstancePlatform *platform)
 {
-    return QProcess::startDetached(
-        platform->detachedExecutablePath(),
-        {QStringLiteral("--daemon"), QStringLiteral("--show-setup")});
+    return startDetachedSpeecher(platform, {QStringLiteral("--daemon"), QStringLiteral("--show-setup")});
 }
 
 QStringList absolutePaths(const QStringList &paths)
