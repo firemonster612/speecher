@@ -117,8 +117,9 @@ constexpr double kDefaultUntilSilenceSeconds = 2;
 constexpr double kMinUntilSilenceSeconds = 0.1;
 constexpr int kMaxUntilSilenceSeconds = 3600;
 
-// record start may wait for macOS to ask about the microphone, and record stop
-// for the provider's last utterance.
+// record start may wait for macOS to ask about the microphone and for the
+// speech provider to connect, and record stop for the provider's last
+// utterance.
 constexpr int kRecordStartTimeoutMs = 60000;
 constexpr int kRecordStopTimeoutMs = 20000;
 // How long record start waits for the Speecher it started to answer.
@@ -189,8 +190,10 @@ Check which speech and refinement services can work:
 
 Record a call into a file, in the running Speecher (started if needed):
   speecher record start [--to <file>] [--mic-only] [--vocab-file <path>]
-                           record the microphone and print the file's path;
-                           each utterance is appended as one line,
+                           record the microphone and print the file's path
+                           once the speech provider is connected, or exit
+                           with status 1 and no file; each utterance is
+                           appended as one line,
                            "[hh:mm:ss] me: text" (default file: recordings/
                            <yyyy-mm-dd-hhmm>.md in Speecher's data folder)
   --mic-only               record the microphone alone, the only source so far
@@ -199,7 +202,9 @@ Record a call into a file, in the running Speecher (started if needed):
   speecher record status [--json]
                            print the file, duration and streams; exit status
                            1 when not recording
-  speecher record stop     write the last utterance, then print the file
+  speecher record stop     write the last utterance, then print the file;
+                           exit status 1 when the recording missed something,
+                           which it says on stderr
 
 Options:
   --format plain|html      output format for toggle and start
@@ -770,14 +775,28 @@ QString parseRecordArguments(const QStringList &arguments, CommandLineDecision *
     return {};
 }
 
-// Prints each stream's problem on err.
-void printStreamProblems(const RecordingStatus &status, std::ostream &err)
+// Prints what went wrong with each stream on stderr. Returns whether anything
+// did.
+bool printStreamProblems(const RecordingStatus &status)
 {
+    bool any = false;
     for (const RecordingStream &stream : status.streams) {
         if (const QString problem = recordingStreamProblemText(stream); !problem.isEmpty()) {
-            err << problem.toStdString() << "\n";
+            std::cerr << problem.toStdString() << "\n";
+            any = true;
         }
     }
+    return any;
+}
+
+// record status's output: exit status 1 when nothing is recording.
+int printRecordingStatus(const RecordingStatus &status, bool json)
+{
+    std::cout << (json ? QJsonDocument(recordingStatusJson(status)).toJson(QJsonDocument::Compact).toStdString()
+                       : recordingStatusText(status).toStdString())
+              << "\n";
+    printStreamProblems(status);
+    return status.recording ? 0 : 1;
 }
 
 // The record commands, which print what the recording says rather than the
@@ -812,14 +831,9 @@ int runRecordCommand(const CommandLineDecision &decision,
     }
     if (result == IpcCommandResult::Unavailable) {
         if (command == QStringLiteral("recordStatus")) {
-            std::cout << (decision.json
-                              ? QJsonDocument(recordingStatusJson({})).toJson(QJsonDocument::Compact).toStdString()
-                              : notRecordingText().toStdString())
-                      << "\n";
-        } else {
-            std::cerr << (start ? QStringLiteral("Speecher did not start") : notRecordingText()).toStdString()
-                      << "\n";
+            return printRecordingStatus({}, decision.json);
         }
+        std::cerr << (start ? QStringLiteral("Speecher did not start") : notRecordingText()).toStdString() << "\n";
         return 1;
     }
     if (result != IpcCommandResult::Sent) {
@@ -835,20 +849,17 @@ int runRecordCommand(const CommandLineDecision &decision,
     }
     const RecordingStatus status = response.recording.value_or(RecordingStatus());
     if (command == QStringLiteral("recordStatus")) {
-        std::cout << (decision.json
-                          ? QJsonDocument(recordingStatusJson(status)).toJson(QJsonDocument::Compact).toStdString()
-                          : recordingStatusText(status).toStdString())
-                  << "\n";
-        printStreamProblems(status, std::cerr);
-        return status.recording ? 0 : 1;
+        return printRecordingStatus(status, decision.json);
     }
     // record start's message is the consent notice, on the first one ever.
     if (!response.message.isEmpty()) {
         std::cerr << response.message.toStdString() << "\n";
     }
-    printStreamProblems(status, std::cerr);
+    // A stopped recording that missed something is still where it is, but
+    // incomplete.
+    const bool incomplete = printStreamProblems(status);
     std::cout << status.path.toStdString() << "\n";
-    return 0;
+    return incomplete ? 1 : 0;
 }
 
 } // namespace

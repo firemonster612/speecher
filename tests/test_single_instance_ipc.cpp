@@ -337,12 +337,18 @@ private slots:
         SingleInstanceIpc ipc(platform);
         QVERIFY(ipc.listen());
         QSignalSpy commands(&ipc, &SingleInstanceIpc::commandReceived);
-        const RecordingStatus recording{true, QStringLiteral("/tmp/call.md"), 3723000,
-                                        {{QStringLiteral("me"), false, QStringLiteral("Server error")}}};
+        const RecordingStatus reconnecting{
+            true, QStringLiteral("/tmp/call.md"), 3723000,
+            {{QStringLiteral("me"), RecordingStream::State::Reconnecting, QStringLiteral("Connection reset"), 2000}}};
+        const RecordingStatus stoppedIncomplete{
+            true, QStringLiteral("/tmp/call.md"), 3723000,
+            {{QStringLiteral("me"), RecordingStream::State::Stopped, QStringLiteral("Server error")}}};
         connect(&ipc, &SingleInstanceIpc::commandReceived, &ipc,
-                [recording](const QString &command, const QString &, QLocalSocket *socket) {
+                [&](const QString &command, const QString &, QLocalSocket *socket) {
                     IpcResponse reply{true, QStringLiteral("idle"), {}};
-                    reply.recording = command == QStringLiteral("recordStatus") ? recording : RecordingStatus();
+                    reply.recording = command == QStringLiteral("recordStatus") ? reconnecting
+                        : command == QStringLiteral("recordStop")               ? stoppedIncomplete
+                                                                                : RecordingStatus();
                     SingleInstanceIpc::writeResponse(socket, reply);
                 });
 
@@ -360,33 +366,52 @@ private slots:
         QCOMPARE(commands.first().at(6).toStringList(), QStringList{QStringLiteral("readSharedChoice")});
         QVERIFY(response.recording && !response.recording->recording);
 
-        CommandLineDecision decision;
-        decision.mode = LaunchMode::RunCli;
-        decision.ipcCommand = QStringLiteral("recordStatus");
-        decision.json = true;
         std::ostringstream out;
         std::ostringstream err;
-        int exitCode = -1;
-        client = QThread::create([&] {
-            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
-            std::streambuf *const stderrBuffer = std::cerr.rdbuf(err.rdbuf());
-            exitCode = runCliCommand(decision, platform);
-            std::cout.rdbuf(stdoutBuffer);
-            std::cerr.rdbuf(stderrBuffer);
-        });
-        client->start();
-        QTRY_VERIFY(client->isFinished());
-        delete client;
-        QCOMPARE(exitCode, 0);
+        // Runs a record command as the command line does; returns its exit
+        // status, with what it printed in out and err.
+        const auto run = [&](const QString &command, bool json) {
+            CommandLineDecision decision;
+            decision.mode = LaunchMode::RunCli;
+            decision.ipcCommand = command;
+            decision.json = json;
+            out.str({});
+            err.str({});
+            int exitCode = -1;
+            QThread *runner = QThread::create([&] {
+                std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+                std::streambuf *const stderrBuffer = std::cerr.rdbuf(err.rdbuf());
+                exitCode = runCliCommand(decision, platform);
+                std::cout.rdbuf(stdoutBuffer);
+                std::cerr.rdbuf(stderrBuffer);
+            });
+            runner->start();
+            // The instance answers on this thread, so wait with its events.
+            QTest::qWaitFor([runner] { return runner->isFinished(); }, 5000);
+            runner->wait();
+            delete runner;
+            return exitCode;
+        };
+        QCOMPARE(run(QStringLiteral("recordStatus"), true), 0);
         QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(out.str())).object(),
                  QJsonObject({{QStringLiteral("recording"), true},
                               {QStringLiteral("path"), QStringLiteral("/tmp/call.md")},
                               {QStringLiteral("durationMs"), 3723000},
                               {QStringLiteral("streams"),
                                QJsonArray{QJsonObject{{QStringLiteral("speaker"), QStringLiteral("me")},
-                                                      {QStringLiteral("state"), QStringLiteral("stopped")},
-                                                      {QStringLiteral("problem"), QStringLiteral("Server error")}}}}}));
+                                                      {QStringLiteral("state"), QStringLiteral("reconnecting")},
+                                                      {QStringLiteral("problem"), QStringLiteral("Connection reset")},
+                                                      {QStringLiteral("lostAudioMs"), 2000}}}}}));
         // The problem goes to stderr too, for a script that reads only stdout.
+        QCOMPARE(QString::fromStdString(err.str()),
+                 QStringLiteral("The me stream is reconnecting: Connection reset\n"
+                                "The me stream was down so long that the oldest 00:00:02 of audio waiting for it "
+                                "was dropped.\n"));
+
+        // A recording that missed something still prints its file, says what
+        // it missed, and fails.
+        QCOMPARE(run(QStringLiteral("recordStop"), false), 1);
+        QCOMPARE(QString::fromStdString(out.str()), QStringLiteral("/tmp/call.md\n"));
         QCOMPARE(QString::fromStdString(err.str()), QStringLiteral("The me stream stopped: Server error\n"));
     }
 

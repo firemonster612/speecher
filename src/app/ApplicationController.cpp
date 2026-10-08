@@ -361,7 +361,8 @@ bool ApplicationController::isRecording() const
     return m_recording->isRecording();
 }
 
-// macOS may ask for the microphone first, so the reply waits for its answer.
+// macOS may ask for the microphone first, and the provider's stream must
+// connect, so the reply waits for both.
 void ApplicationController::startRecording(const QString &path, const QStringList &vocabulary, QLocalSocket *socket)
 {
     if (!ensureSetupCompleted()) {
@@ -373,18 +374,19 @@ void ApplicationController::startRecording(const QString &path, const QStringLis
             SingleInstanceIpc::writeResponse(socket, response(false, microphoneAccessOffText()));
             return;
         }
-        QString error;
-        if (m_recording->start(path, vocabulary, dataFolder(), &error).isEmpty()) {
-            SingleInstanceIpc::writeResponse(socket, response(false, error));
-            return;
-        }
-        IpcResponse reply = response();
-        reply.recording = m_recording->status();
-        if (!m_settings->recordingConsentNoticeShown()) {
-            m_settings->setRecordingConsentNoticeShown(true);
-            reply.message = recordingConsentNotice();
-        }
-        SingleInstanceIpc::writeResponse(socket, reply);
+        m_recording->start(path, vocabulary, dataFolder(), [this, socket](const QString &error) {
+            if (!error.isEmpty()) {
+                SingleInstanceIpc::writeResponse(socket, response(false, error));
+                return;
+            }
+            IpcResponse reply = response();
+            reply.recording = m_recording->status();
+            if (!m_settings->recordingConsentNoticeShown()) {
+                m_settings->setRecordingConsentNoticeShown(true);
+                reply.message = recordingConsentNotice();
+            }
+            SingleInstanceIpc::writeResponse(socket, reply);
+        });
     });
 }
 

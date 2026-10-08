@@ -237,6 +237,9 @@ public:
     virtual void endUtterance(quint64 attemptId) { Q_UNUSED(attemptId) }
 
 signals:
+    // Optional: the service accepted the attempt's stream, so audio sent from
+    // here on reaches it. Text from the attempt implies it.
+    void attemptConnected(quint64 attemptId);
     void partialTranscript(quint64 attemptId, const QString &text);
     void finalTranscript(quint64 attemptId, const QString &text);
     // Optional: a whole-attempt transcript that supersedes the accumulated

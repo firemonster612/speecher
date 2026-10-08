@@ -29,21 +29,40 @@ QString recordingStatusText(const RecordingStatus &status)
     QStringList lines{QStringLiteral("path: %1").arg(status.path),
                       QStringLiteral("duration: %1").arg(recordingClock(status.durationMs))};
     for (const RecordingStream &stream : status.streams) {
-        const QString state = stream.running ? QStringLiteral("recording") : QStringLiteral("stopped");
-        lines << (stream.problem.isEmpty() ? QStringLiteral("%1: microphone, %2").arg(stream.speaker, state)
-                                           : QStringLiteral("%1: microphone, %2, %3")
-                                                 .arg(stream.speaker, state, stream.problem));
+        QStringList parts{QStringLiteral("microphone"), recordingStreamStateName(stream.state)};
+        if (!stream.problem.isEmpty()) {
+            parts << stream.problem;
+        }
+        if (stream.lostAudioMs > 0) {
+            parts << QStringLiteral("lost %1 of audio").arg(recordingClock(stream.lostAudioMs));
+        }
+        lines << QStringLiteral("%1: %2").arg(stream.speaker, parts.join(QStringLiteral(", ")));
     }
     return lines.join(QLatin1Char('\n'));
 }
 
 QString recordingStreamProblemText(const RecordingStream &stream)
 {
-    if (stream.problem.isEmpty()) {
-        return {};
+    QStringList problems;
+    if (!stream.problem.isEmpty()) {
+        switch (stream.state) {
+        case RecordingStream::State::Recording:
+            problems << QStringLiteral("The %1 stream has a problem: %2").arg(stream.speaker, stream.problem);
+            break;
+        case RecordingStream::State::Reconnecting:
+            problems << QStringLiteral("The %1 stream is reconnecting: %2").arg(stream.speaker, stream.problem);
+            break;
+        case RecordingStream::State::Stopped:
+            problems << QStringLiteral("The %1 stream stopped: %2").arg(stream.speaker, stream.problem);
+            break;
+        }
     }
-    return stream.running ? QStringLiteral("The %1 stream has a problem: %2").arg(stream.speaker, stream.problem)
-                          : QStringLiteral("The %1 stream stopped: %2").arg(stream.speaker, stream.problem);
+    if (stream.lostAudioMs > 0) {
+        problems << QStringLiteral("The %1 stream was down so long that the oldest %2 of audio waiting for it was "
+                                   "dropped.")
+                        .arg(stream.speaker, recordingClock(stream.lostAudioMs));
+    }
+    return problems.join(QLatin1Char('\n'));
 }
 
 QString notRecordingText()
@@ -61,16 +80,21 @@ QString recordingNeedsSetupText()
     return QStringLiteral("Finish setting up Speecher, then start the recording.");
 }
 
-QString batchSpeechProviderRefusal(const QString &providerLabel)
+QString recordingSpeechProviderRefusal(const QString &providerLabel)
 {
-    return QStringLiteral("Recording needs a speech provider that streams text as it hears it, such as Claude Voice "
-                          "or ChatGPT Codex. %1 does not.")
+    return QStringLiteral("Recording needs Claude Voice or ChatGPT Codex, which stream finished text as they hear "
+                          "it. %1 can't record yet.")
         .arg(providerLabel);
 }
 
 QString recordingStreamEndedText()
 {
     return QStringLiteral("The speech stream ended.");
+}
+
+QString recordingStopTimedOutText()
+{
+    return QStringLiteral("The speech provider did not finish the last utterance in time, so it is missing.");
 }
 
 QString recordingFileError(const QString &path, const QString &reason)

@@ -5,6 +5,7 @@
 #include "core/SettingsStore.h"
 #include "core/VocabularyLimit.h"
 #include "dictation/DictationSession.h"
+#include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
 #include "transcribe/FileTranscriptionSession.h"
 #include "transcribe/Subtitles.h"
@@ -945,7 +946,7 @@ private slots:
         QSignalSpy stopped(&recording, &RecordingSession::stopped);
 
         QString error;
-        const QString path = recording.start(QString(), {}, m_dir.path(), &error);
+        const QString path = startRecording(recording, QString(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
         QVERIFY(path.startsWith(m_dir.filePath(QStringLiteral("recordings/"))));
         QVERIFY(recording.isRecording());
@@ -991,7 +992,7 @@ private slots:
             return new FakeAudioInput(parent);
         });
         QString error;
-        QVERIFY2(!recording.start(QString(), {QStringLiteral("readSharedChoice")}, m_dir.path(), &error).isEmpty(),
+        QVERIFY2(!startRecording(recording, QString(), &error, {QStringLiteral("readSharedChoice")}).isEmpty(),
                  qPrintable(error));
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         QCOMPARE(m_codex->lastVocabulary, QStringList({QStringLiteral("readSharedChoice"), QStringLiteral("Speecher")}));
@@ -1012,7 +1013,7 @@ private slots:
             return microphone.data();
         });
         QString error;
-        const QString path = recording.start(QString(), {}, m_dir.path(), &error);
+        const QString path = startRecording(recording, QString(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         const QStringList utterances{QStringLiteral("Can you look at the retry logic?"),
@@ -1047,7 +1048,7 @@ private slots:
             return microphone.data();
         });
         QString error;
-        const QString path = recording.start(QString(), {}, m_dir.path(), &error);
+        const QString path = startRecording(recording, QString(), &error);
         QVERIFY2(!path.isEmpty(), qPrintable(error));
         QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
         // Seconds of audio the provider had when asked each time.
@@ -1072,7 +1073,8 @@ private slots:
 
     // A provider that transcribes only once the audio ends cannot record yet,
     // and a microphone that cannot start leaves no file. A stream that fails
-    // part way stops, and the recording says why until it is stopped.
+    // part way in a way a reconnect cannot mend stops, the recording says why
+    // until it is stopped, and the stopped recording still says it.
     void aRecordingRefusesWhatCannotRecordAndReportsAStoppedStream()
     {
         SettingsStore settings;
@@ -1086,39 +1088,219 @@ private slots:
         });
         QSignalSpy stopped(&recording, &RecordingSession::stopped);
         QString error;
-        QVERIFY(recording.start(QString(), {}, m_dir.filePath(QStringLiteral("refused")), &error).isEmpty());
-        QCOMPARE(error, QStringLiteral("Recording needs a speech provider that streams text as it hears it, such as "
-                                       "Claude Voice or ChatGPT Codex. Scripted does not."));
-        QVERIFY(!QFileInfo::exists(m_dir.filePath(QStringLiteral("refused"))));
+        const QString refused = m_dir.filePath(QStringLiteral("refused.md"));
+        QVERIFY(startRecording(recording, refused, &error).isEmpty());
+        QCOMPARE(error, QStringLiteral("Recording needs Claude Voice or ChatGPT Codex, which stream finished text as "
+                                       "they hear it. Scripted can't record yet."));
+        QVERIFY(!QFileInfo::exists(refused));
 
         registerStreamingCodex();
         settings.setSpeechProvider(QStringLiteral("codex"));
         microphoneStarts = false;
         const QString deaf = m_dir.filePath(QStringLiteral("deaf.md"));
-        QVERIFY(recording.start(deaf, {}, m_dir.path(), &error).isEmpty());
+        QVERIFY(startRecording(recording, deaf, &error).isEmpty());
         QCOMPARE(error, QStringLiteral("No microphone was found."));
         QVERIFY(!QFileInfo::exists(deaf));
         QVERIFY(!recording.isRecording());
 
         microphoneStarts = true;
-        const QString path = recording.start(m_dir.filePath(QStringLiteral("call.md")), {}, m_dir.path(), &error);
+        const QString path = startRecording(recording, m_dir.filePath(QStringLiteral("call.md")), &error);
         QCOMPARE(path, m_dir.filePath(QStringLiteral("call.md")));
-        QTRY_VERIFY_WITH_TIMEOUT(m_codex->startCalls == 1, 10000);
         m_codex->emitFinalText(QStringLiteral("Said before."));
-        m_codex->emitFailure(QStringLiteral("Server error"), false, QStringLiteral("streaming"),
-                           ProviderFailureKind::Server);
+        m_codex->emitFailure(QStringLiteral("Signed out"), false, QStringLiteral("authentication"),
+                             ProviderFailureKind::Authentication);
         const RecordingStatus status = recording.status();
         QVERIFY(status.recording);
         QCOMPARE(status.path, path);
         QCOMPARE(status.streams.size(), 1);
         QCOMPARE(status.streams.first().speaker, QStringLiteral("me"));
-        QVERIFY(!status.streams.first().running);
-        QCOMPARE(status.streams.first().problem, QStringLiteral("Server error"));
+        QCOMPARE(status.streams.first().state, RecordingStream::State::Stopped);
+        QCOMPARE(status.streams.first().problem, QStringLiteral("Signed out"));
 
         recording.stop();
         QCOMPARE(stopped.count(), 1);
         QVERIFY(!recording.isRecording());
+        QCOMPARE(stopped.first().first().value<RecordingStatus>().streams.first().problem, QStringLiteral("Signed out"));
         QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Said before.")});
+    }
+
+    // The start answers only once a stream is up: when no provider connects
+    // (signed out, offline, a second session refused), it fails with the
+    // reason and leaves no file.
+    void aRecordingThatNeverConnectsFailsToStart()
+    {
+        registerStreamingCodex(false);
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        RecordingSession recording(&settings, m_registry.get(), [](QObject *parent) {
+            return new FakeAudioInput(parent);
+        });
+        const QString path = m_dir.filePath(QStringLiteral("never.md"));
+        std::optional<QString> outcome;
+        recording.start(path, {}, m_dir.path(), [&outcome](const QString &error) { outcome = error; });
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
+        QVERIFY(QFileInfo::exists(path));
+        QVERIFY(!outcome);
+        QVERIFY(!recording.isRecording());
+
+        m_codex->emitFailure(QStringLiteral("Too many sessions"), true, QStringLiteral("connect"),
+                             ProviderFailureKind::Network);
+        QCOMPARE(outcome, std::optional<QString>(QStringLiteral("Too many sessions")));
+        QVERIFY(!QFileInfo::exists(path));
+        QVERIFY(!recording.isRecording());
+    }
+
+    // A stream that drops keeps reconnecting, after growing pauses, for as
+    // long as the microphone runs, even through failed connects. status says
+    // it is reconnecting, the partial it left is written, and the words
+    // spoken meanwhile go to the stream that returns.
+    void aRecordingReconnectsADroppedStreamAndSendsWhatWaited()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QString error;
+        const QString path = startRecording(recording, QString(), &error);
+        QVERIFY2(!path.isEmpty(), qPrintable(error));
+        m_codex->emitPartialText(QStringLiteral("Before the drop"));
+
+        // A connect fails while the network is still down; the next gets
+        // through.
+        int connects = 0;
+        m_codex->onStartAttempt = [this, &connects] {
+            if (++connects < 2) {
+                m_codex->emitFailure(QStringLiteral("Host unreachable"), true, QStringLiteral("connect"),
+                                     ProviderFailureKind::Network);
+                return;
+            }
+            m_codex->emitConnected();
+        };
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+                             ProviderFailureKind::Network);
+        QCOMPARE(recording.status().streams.first().state, RecordingStream::State::Reconnecting);
+        QCOMPARE(recording.status().streams.first().problem, QStringLiteral("Connection reset"));
+        QCOMPARE(recordedTexts(path), QStringList{QStringLiteral("Before the drop")});
+        m_codex->audioChunks.clear();
+        const QByteArray spoken = microphoneChunk(1234);
+        microphone->pushAudio(spoken);
+
+        QTRY_COMPARE_WITH_TIMEOUT(recording.status().streams.first().state, RecordingStream::State::Recording,
+                                  10000);
+        QCOMPARE(connects, 2);
+        QVERIFY(recording.status().streams.first().problem.isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex->audioChunks.contains(spoken), 2000);
+    }
+
+    // Utterance ends the first provider passed before it failed to connect
+    // reach the fallback that takes the audio from its start.
+    void aRecordingFallbackGetsTheUtteranceEndsAgain()
+    {
+        registerStreamingCodex(false);
+        QPointer<FakeSpeechTranscriber> claude;
+        int ends = 0;
+        m_registry->registerSpeechProvider({QStringLiteral("claude"), QStringLiteral("Claude Voice")},
+                                           [&claude, &ends](QObject *parent) {
+                                               claude = new FakeSpeechTranscriber(parent);
+                                               claude->streamsFinals = true;
+                                               claude->onEndUtterance = [&ends] { ++ends; };
+                                               return claude.data();
+                                           });
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        settings.setSpeechFallbackProviders({QStringLiteral("claude")});
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        std::optional<QString> outcome;
+        recording.start(QString(), {}, m_dir.path(), [&outcome](const QString &error) { outcome = error; });
+        QTRY_VERIFY_WITH_TIMEOUT(m_codex && m_codex->startCalls == 1, 10000);
+        // Two utterances go to Codex while it connects, each ended by the
+        // pause after it.
+        for (int utterance = 0; utterance < 2; ++utterance) {
+            microphone->pushAudio(microphoneChunk(8000));
+            QTest::qWait(1000);
+        }
+        QCOMPARE(m_codex->audioChunks.size(), 2);
+        m_codex->emitFailure(QStringLiteral("Timed out"), true, QStringLiteral("connect"),
+                             ProviderFailureKind::Timeout);
+
+        QTRY_VERIFY_WITH_TIMEOUT(claude && claude->startCalls == 1, 10000);
+        claude->emitConnected();
+        QTRY_COMPARE_WITH_TIMEOUT(ends, 2, 10000);
+        QCOMPARE(claude->audioChunks.size(), 2);
+        QCOMPARE(outcome, std::optional<QString>(QString()));
+    }
+
+    // A stop while the stream is down tries once more at once for the audio
+    // that waits; when that fails, the stopped recording says why.
+    void aRecordingStoppedWhileDownSaysWhatItMissed()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QSignalSpy stopped(&recording, &RecordingSession::stopped);
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        m_codex->onStartAttempt = [this] {
+            m_codex->emitFailure(QStringLiteral("Host unreachable"), true, QStringLiteral("connect"),
+                                 ProviderFailureKind::Network);
+        };
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+                             ProviderFailureKind::Network);
+        microphone->pushAudio(microphoneChunk(8000));
+        const int startsBefore = m_codex->startCalls;
+
+        recording.stop();
+        QTRY_COMPARE_WITH_TIMEOUT(stopped.count(), 1, 2000);
+        QCOMPARE(m_codex->startCalls, startsBefore + 1);
+        const RecordingStream stream = stopped.first().first().value<RecordingStatus>().streams.first();
+        QCOMPARE(stream.state, RecordingStream::State::Stopped);
+        QCOMPARE(stream.problem, QStringLiteral("Host unreachable"));
+    }
+
+    // While a stream is down, at most ten minutes of audio wait for it; the
+    // oldest goes first, and status says how much.
+    void aRecordingKeepsTenMinutesOfAudioWhileDown()
+    {
+        registerStreamingCodex();
+        SettingsStore settings;
+        settings.setSpeechProvider(QStringLiteral("codex"));
+        QPointer<FakeAudioInput> microphone;
+        RecordingSession recording(&settings, m_registry.get(), [&](QObject *parent) {
+            microphone = new FakeAudioInput(parent);
+            return microphone.data();
+        });
+        QString error;
+        QVERIFY2(!startRecording(recording, QString(), &error).isEmpty(), qPrintable(error));
+        m_codex->emitFailure(QStringLiteral("Connection reset"), true, QStringLiteral("streaming"),
+                             ProviderFailureKind::Network);
+        // 2 seconds, then 10 minutes, all before the reconnect.
+        microphone->pushAudio(QByteArray(2 * 32000, '\1'));
+        const QByteArray minute(60 * 32000, '\0');
+        for (int i = 0; i < 10; ++i) {
+            microphone->pushAudio(minute);
+        }
+        QCOMPARE(recording.status().streams.first().lostAudioMs, 2000);
+
+        // The stream that returns starts at the newest ten minutes.
+        m_codex->audioChunks.clear();
+        QTRY_VERIFY_WITH_TIMEOUT(!m_codex->audioChunks.isEmpty(), 5000);
+        QCOMPARE(m_codex->audioChunks.first(), QByteArray(3200, '\0'));
+        QCOMPARE(recordingStreamProblemText(recording.status().streams.first()),
+                 QStringLiteral("The me stream was down so long that the oldest 00:00:02 of audio waiting for it was "
+                                "dropped."));
     }
 
     void numbersASaveThatWouldOverwrite()
@@ -1781,17 +1963,39 @@ private:
         return options;
     }
 
-    // A provider that streams finals as Codex does; m_codex is the latest
-    // instance, the one a session's attempts go to.
-    void registerStreamingCodex()
+    // A provider that streams finals as Codex does and, with connects,
+    // connects each attempt at once; m_codex is the latest instance, the one
+    // a session's attempts go to.
+    void registerStreamingCodex(bool connects = true)
     {
         m_registry->registerSpeechProvider({QStringLiteral("codex"), QStringLiteral("ChatGPT Codex")},
-                                           [this](QObject *parent) {
-                                               m_codex = new FakeSpeechTranscriber(parent);
-                                               m_codex->providerId = QStringLiteral("codex");
-                                               m_codex->streamsFinals = true;
-                                               return m_codex.data();
+                                           [this, connects](QObject *parent) {
+                                               auto *codex = new FakeSpeechTranscriber(parent);
+                                               codex->providerId = QStringLiteral("codex");
+                                               codex->streamsFinals = true;
+                                               if (connects) {
+                                                   codex->onStartAttempt = [codex] { codex->emitConnected(); };
+                                               }
+                                               m_codex = codex;
+                                               return codex;
                                            });
+    }
+
+    // Starts recording into path, or the default file in m_dir, and waits for
+    // the start's outcome. Returns the file, or empty with error set.
+    QString startRecording(RecordingSession &recording,
+                           const QString &path,
+                           QString *error,
+                           const QStringList &vocabulary = {})
+    {
+        std::optional<QString> outcome;
+        recording.start(path, vocabulary, m_dir.path(), [&outcome](const QString &failure) { outcome = failure; });
+        if (!QTest::qWaitFor([&outcome] { return outcome.has_value(); }, 10000)) {
+            *error = QStringLiteral("the start never finished");
+            return {};
+        }
+        *error = *outcome;
+        return error->isEmpty() ? recording.status().path : QString();
     }
 
     QTemporaryDir m_dir;

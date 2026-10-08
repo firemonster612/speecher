@@ -275,6 +275,11 @@ public:
         }
     }
 
+    void emitConnected()
+    {
+        emit attemptConnected(currentAttemptId);
+    }
+
     void emitPartialText(const QString &text)
     {
         emit partialTranscript(currentAttemptId, text);

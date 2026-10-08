@@ -15,14 +15,16 @@ QString recordingConsentNotice();
 
 // What `record status` prints: the file, how long it has run and each stream.
 QString recordingStatusText(const RecordingStatus &status);
-// A stream's problem, for stderr; empty when it has none.
+// What went wrong with a stream, a line each, for stderr: why it stopped or
+// reconnects, and audio it lost. Empty when nothing did.
 QString recordingStreamProblemText(const RecordingStream &stream);
 
 QString notRecordingText();
 QString alreadyRecordingText(const QString &path);
 QString recordingNeedsSetupText();
-QString batchSpeechProviderRefusal(const QString &providerLabel);
+QString recordingSpeechProviderRefusal(const QString &providerLabel);
 QString recordingStreamEndedText();
+QString recordingStopTimedOutText();
 QString recordingFileError(const QString &path, const QString &reason);
 
 } // namespace speecher

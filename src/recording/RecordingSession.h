@@ -40,10 +40,16 @@ private:
 
 // One audio source of a recording and the speaker its lines name.
 struct RecordingStream {
+    enum class State { Recording, Reconnecting, Stopped };
+
     QString speaker;
-    bool running = false;
-    // Why the stream stopped, or why its last line could not be written.
+    State state = State::Recording;
+    // Why the stream stopped or is reconnecting, or why its last line could
+    // not be written.
     QString problem;
+    // Audio dropped while the stream was down, oldest first, past what a
+    // recording keeps for it.
+    qint64 lostAudioMs = 0;
 };
 
 struct RecordingStatus {
@@ -53,6 +59,9 @@ struct RecordingStatus {
     QList<RecordingStream> streams;
 };
 
+// How status and its JSON name a stream's state.
+QString recordingStreamStateName(RecordingStream::State state);
+
 // How `record status --json` and the IPC response carry a status.
 QJsonObject recordingStatusJson(const RecordingStatus &status);
 RecordingStatus recordingStatusFromJson(const QJsonObject &object);
@@ -60,15 +69,19 @@ RecordingStatus recordingStatusFromJson(const QJsonObject &object);
 // Records the microphone into a transcript file until stop(), with its own
 // microphone input and providers, beside any dictation. Each final text the
 // speech provider streams becomes a line, timed from the recording's start;
-// partials are never written. A line carries the time its text was
-// finalised, as streamed finals come with no timings. The recording ends an
-// utterance itself at a pause or once it runs long, so a provider that
-// finalizes only when asked (Codex) still writes lines while it runs.
+// partials are never written, except the one a dropped stream leaves. A line
+// carries the time its text was finalised, as streamed finals come with no
+// timings. The recording ends an utterance itself at a pause or once it runs
+// long, so a provider that finalizes only when asked (Codex) still writes
+// lines while it runs. It starts once the provider's stream connects; a
+// stream that drops after that reconnects until the recording stops.
 class RecordingSession : public QObject {
     Q_OBJECT
 
 public:
     using MicrophoneFactory = std::function<AudioInput *(QObject *parent)>;
+    // Takes why a recording could not start, or nothing once it runs.
+    using StartDone = std::function<void(const QString &error)>;
 
     RecordingSession(SettingsStore *settings,
                      ProviderRegistry *providers,
@@ -76,14 +89,17 @@ public:
                      QObject *parent = nullptr);
     ~RecordingSession() override;
 
-    // From start() until stopped is emitted.
+    // From the start's done until stopped is emitted.
     bool isRecording() const;
     RecordingStatus status() const;
-    // Records into path, or the default file in dataFolder when path is
-    // empty, with vocabulary added to the custom vocabulary. Returns the file it writes, or empty with error set: already
-    // recording, a speech provider that does not stream final text, or a file
-    // that cannot be created.
-    QString start(const QString &path, const QStringList &vocabulary, const QString &dataFolder, QString *error);
+    // Starts recording into path, or the default file in dataFolder when path
+    // is empty, with vocabulary added to the custom vocabulary. Calls done
+    // once, perhaps before returning: when the provider's stream connects and
+    // the recording runs, or with why it cannot (already recording or
+    // starting, a speech provider that does not stream final text, a file
+    // that cannot be created, a microphone that cannot start, no provider
+    // that connects), in which case no file is left.
+    void start(const QString &path, const QStringList &vocabulary, const QString &dataFolder, StartDone done);
     // Stops the microphone; the last utterance is still written before
     // stopped is emitted.
     void stop();
@@ -94,22 +110,27 @@ signals:
     void stopped(const speecher::RecordingStatus &status);
 
 private:
+    enum class Phase { Off, Starting, Recording, Stopping };
+
+    void handleStreamConnected();
     void trackUtterance(const QByteArray &pcm);
     void endUtterance();
     void writeLine(const QString &text);
     void handleTranscriptionFinished(const QList<TranscribeFileResult> &results);
+    void abandon(const QString &error);
     void finish();
 
     SettingsStore *m_settings;
     ProviderRegistry *m_providers;
     MicrophoneFactory m_createMicrophone;
+    // The pending start's done.
+    StartDone m_startDone;
     FileTranscriptionSession *m_transcription;
     QPointer<AudioInput> m_microphone;
     RecordingTranscript m_transcript;
     QElapsedTimer m_clock;
     RecordingStream m_stream;
-    bool m_recording = false;
-    bool m_stopping = false;
+    Phase m_phase = Phase::Off;
     // Ends a stop the provider never finishes.
     QTimer m_stopDeadline;
     // Skip silence's threshold, which says what audio is speech.
