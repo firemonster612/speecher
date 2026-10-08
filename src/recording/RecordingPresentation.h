@@ -21,10 +21,6 @@ QString recordingStreamProblemText(const RecordingStream &stream);
 // The lines the file is missing and why, for stderr. Empty when it has them
 // all.
 QString recordingWriteProblemText(const RecordingStatus &status);
-// A line of `status --watch`: the dictation state, or while recording its
-// duration and each stream that is not recording, after the dictation state
-// unless that is idle.
-QString statusWatchText(const QString &dictationState, const RecordingStatus &recording);
 
 QString notRecordingText();
 QString alreadyRecordingText(const QString &path);

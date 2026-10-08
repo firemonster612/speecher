@@ -1,6 +1,5 @@
 #include "recording/RecordingPresentation.h"
 
-#include "dictation/DictationTypes.h"
 #include "recording/RecordingStatus.h"
 
 #include <QStringList>
@@ -82,24 +81,6 @@ QString recordingWriteProblemText(const RecordingStatus &status)
         .arg(status.writeError)
         .arg(status.unwrittenLines)
         .arg(status.unwrittenLines == 1 ? QStringLiteral("line") : QStringLiteral("lines"));
-}
-
-QString statusWatchText(const QString &dictationState, const RecordingStatus &recording)
-{
-    if (!recording.recording) {
-        return dictationState;
-    }
-    QStringList parts;
-    if (dictationState != dictationStateName(DictationState::Idle)) {
-        parts << dictationState;
-    }
-    parts << QStringLiteral("recording %1").arg(recordingClock(recording.durationMs));
-    for (const RecordingStream &stream : recording.streams) {
-        if (stream.state != RecordingStream::State::Recording) {
-            parts << QStringLiteral("%1 %2").arg(kMicrophoneSource, recordingStreamStateName(stream.state));
-        }
-    }
-    return parts.join(QStringLiteral(", "));
 }
 
 QString notRecordingText()

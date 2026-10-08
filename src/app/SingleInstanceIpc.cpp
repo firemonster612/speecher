@@ -25,10 +25,6 @@ constexpr qsizetype maximumRequestBytes = 64 * 1024;
 constexpr int maximumAcceptedSockets = 8;
 constexpr int incompleteRequestTimeoutMs = 2000;
 constexpr int expirySweepIntervalMs = 500;
-constexpr int maximumStatusWatchers = 32;
-// A watcher that stops reading is dropped once this much waits for it,
-// rather than buffered for without end.
-constexpr qint64 maximumStatusBacklogBytes = 256 * 1024;
 
 QStringList stringList(const QJsonValue &array)
 {
@@ -58,19 +54,17 @@ QString activeInstanceMessage(const QString &name)
     return QStringLiteral("Another Speecher instance is already running on %1").arg(name);
 }
 
-// Connects socket to the running instance and writes request to it.
-// Unavailable when no instance accepts the connection.
-IpcCommandResult connectAndWrite(QLocalSocket &socket,
-                                 const QJsonObject &request,
-                                 int timeoutMs,
-                                 std::shared_ptr<const SingleInstancePlatform> platform,
-                                 QString *error)
+IpcCommandResult sendRequest(const QJsonObject &request,
+                             IpcResponse *response,
+                             int timeoutMs,
+                             std::shared_ptr<const SingleInstancePlatform> platform,
+                             QString *error)
 {
     const std::shared_ptr<const SingleInstancePlatform> resolved = platform ? std::move(platform) : platformComposition();
     for (const QString &candidate : resolved->ipcConnectCandidates()) {
+        QLocalSocket socket;
         socket.connectToServer(candidate);
         if (!socket.waitForConnected(timeoutMs)) {
-            socket.abort();
             continue;
         }
         QByteArray requestBytes = QJsonDocument(request).toJson(QJsonDocument::Compact);
@@ -82,121 +76,47 @@ IpcCommandResult connectAndWrite(QLocalSocket &socket,
             return IpcCommandResult::NoResponse;
         }
         socket.flush();
+        QDeadlineTimer deadline(timeoutMs);
+        QByteArray responseBytes;
+        while (!responseBytes.contains('\n') && deadline.remainingTime() > 0) {
+            if (socket.bytesAvailable() == 0
+                && !socket.waitForReadyRead(deadline.remainingTime())) {
+                break;
+            }
+            responseBytes.append(socket.readAll());
+        }
+        if (responseBytes.isEmpty()) {
+            if (error) {
+                *error = QStringLiteral("Running Speecher instance did not respond");
+            }
+            return IpcCommandResult::NoResponse;
+        }
+        QJsonParseError parseError;
+        const qsizetype newline = responseBytes.indexOf('\n');
+        const QByteArray frame = newline >= 0 ? responseBytes.left(newline) : responseBytes;
+        const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+            if (error) {
+                *error = QStringLiteral("Running Speecher instance returned an invalid IPC response");
+            }
+            return IpcCommandResult::InvalidResponse;
+        }
+        const QJsonObject object = document.object();
+        if (response) {
+            response->ok = object.value(QStringLiteral("ok")).toBool();
+            response->state = object.value(QStringLiteral("state")).toString();
+            response->message = object.value(QStringLiteral("message")).toString();
+            response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
+            response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
+            response->text = object.value(QStringLiteral("text")).toString();
+            response->skippedTerms = stringList(object.value(QStringLiteral("skippedTerms")));
+            if (object.contains(QStringLiteral("recording"))) {
+                response->recording = recordingStatusFromJson(object.value(QStringLiteral("recording")).toObject());
+            }
+        }
         return IpcCommandResult::Sent;
     }
     return IpcCommandResult::Unavailable;
-}
-
-// Reads one response frame into response. False when it is not a JSON object.
-bool readResponse(const QByteArray &frame, IpcResponse *response)
-{
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
-    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-        return false;
-    }
-    const QJsonObject object = document.object();
-    if (response) {
-        response->ok = object.value(QStringLiteral("ok")).toBool();
-        response->state = object.value(QStringLiteral("state")).toString();
-        response->message = object.value(QStringLiteral("message")).toString();
-        response->writingProfile = object.value(QStringLiteral("writingProfile")).toString();
-        response->spokenLanguage = object.value(QStringLiteral("spokenLanguage")).toString();
-        response->text = object.value(QStringLiteral("text")).toString();
-        response->skippedTerms = stringList(object.value(QStringLiteral("skippedTerms")));
-        if (object.contains(QStringLiteral("recording"))) {
-            response->recording = recordingStatusFromJson(object.value(QStringLiteral("recording")).toObject());
-        }
-    }
-    return true;
-}
-
-QString invalidResponseMessage()
-{
-    return QStringLiteral("Running Speecher instance returned an invalid IPC response");
-}
-
-QString noResponseMessage()
-{
-    return QStringLiteral("Running Speecher instance did not respond");
-}
-
-IpcCommandResult sendRequest(const QJsonObject &request,
-                             IpcResponse *response,
-                             int timeoutMs,
-                             std::shared_ptr<const SingleInstancePlatform> platform,
-                             QString *error)
-{
-    QLocalSocket socket;
-    const IpcCommandResult connected = connectAndWrite(socket, request, timeoutMs, std::move(platform), error);
-    if (connected != IpcCommandResult::Sent) {
-        return connected;
-    }
-    QDeadlineTimer deadline(timeoutMs);
-    QByteArray responseBytes;
-    while (!responseBytes.contains('\n') && deadline.remainingTime() > 0) {
-        if (socket.bytesAvailable() == 0
-            && !socket.waitForReadyRead(deadline.remainingTime())) {
-            break;
-        }
-        responseBytes.append(socket.readAll());
-    }
-    if (responseBytes.isEmpty()) {
-        if (error) {
-            *error = noResponseMessage();
-        }
-        return IpcCommandResult::NoResponse;
-    }
-    const qsizetype newline = responseBytes.indexOf('\n');
-    if (!readResponse(newline >= 0 ? responseBytes.left(newline) : responseBytes, response)) {
-        if (error) {
-            *error = invalidResponseMessage();
-        }
-        return IpcCommandResult::InvalidResponse;
-    }
-    return IpcCommandResult::Sent;
-}
-
-QByteArray responseFrame(const IpcResponse &response)
-{
-    QJsonObject object{
-        {QStringLiteral("ok"), response.ok},
-        {QStringLiteral("state"), response.state},
-        {QStringLiteral("message"), response.message.isEmpty() ? QJsonValue() : QJsonValue(response.message)},
-    };
-    if (!response.writingProfile.isEmpty()) {
-        object.insert(QStringLiteral("writingProfile"), response.writingProfile);
-    }
-    if (!response.spokenLanguage.isEmpty()) {
-        object.insert(QStringLiteral("spokenLanguage"), response.spokenLanguage);
-    }
-    if (!response.text.isEmpty()) {
-        object.insert(QStringLiteral("text"), response.text);
-    }
-    if (!response.skippedTerms.isEmpty()) {
-        object.insert(QStringLiteral("skippedTerms"), QJsonArray::fromStringList(response.skippedTerms));
-    }
-    if (response.recording) {
-        object.insert(QStringLiteral("recording"), recordingStatusJson(*response.recording));
-    }
-    QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
-    responseBytes.append('\n');
-    return responseBytes;
-}
-
-// Writes a status watcher its next line without waiting on it: one that has
-// left more than the backlog unread is dropped.
-void writeStatus(QLocalSocket *socket, const QByteArray &frame)
-{
-    if (socket->state() != QLocalSocket::ConnectedState) {
-        return;
-    }
-    if (socket->bytesToWrite() + frame.size() > maximumStatusBacklogBytes) {
-        socket->abort();
-        return;
-    }
-    socket->write(frame);
-    socket->flush();
 }
 
 } // namespace
@@ -236,13 +156,6 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                 socket, QDeadlineTimer(incompleteRequestTimeoutMs));
             m_expirySweep.start();
             connect(socket, &QLocalSocket::readyRead, this, [this, socket] {
-                // A watcher has asked all it may: another watchStatus would
-                // write it every line twice, and any other command's answer
-                // would end its watch.
-                if (m_statusWatchers.contains(socket)) {
-                    socket->readAll();
-                    return;
-                }
                 // Collect complete frames before emitting: a commandReceived slot can
                 // disconnect the socket, whose disconnected handler removes the buffer
                 // this loop would otherwise still reference.
@@ -287,9 +200,6 @@ SingleInstanceIpc::SingleInstanceIpc(std::shared_ptr<const SingleInstancePlatfor
                 // Hold deletion off until every frame is handled.
                 m_socketsInCommand.insert(socket);
                 for (const QByteArray &frame : frames) {
-                    if (m_statusWatchers.contains(socket)) {
-                        break;
-                    }
                     QJsonParseError parseError;
                     const QJsonDocument document = QJsonDocument::fromJson(frame, &parseError);
                     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
@@ -495,81 +405,6 @@ IpcCommandResult SingleInstanceIpc::sendVocabularyTerms(const QStringList &terms
     return sendRequest(request, response, timeoutMs, std::move(platform), error);
 }
 
-IpcCommandResult SingleInstanceIpc::watchStatus(const std::function<bool(const IpcResponse &)> &onStatus,
-                                                int timeoutMs,
-                                                std::shared_ptr<const SingleInstancePlatform> platform,
-                                                QString *error)
-{
-    QLocalSocket socket;
-    const IpcCommandResult connected = connectAndWrite(
-        socket, {{QStringLiteral("command"), QStringLiteral("watchStatus")}}, timeoutMs, std::move(platform), error);
-    if (connected != IpcCommandResult::Sent) {
-        return connected;
-    }
-    // The first status is due at once. The next comes whenever something
-    // changes, so it is waited for as long as the instance runs.
-    QByteArray buffer;
-    bool answered = false;
-    bool open = true;
-    while (open) {
-        open = socket.waitForReadyRead(answered ? -1 : timeoutMs);
-        buffer.append(socket.readAll());
-        for (qsizetype newline = buffer.indexOf('\n'); newline >= 0; newline = buffer.indexOf('\n')) {
-            IpcResponse status;
-            if (!readResponse(buffer.left(newline), &status)) {
-                if (error) {
-                    *error = invalidResponseMessage();
-                }
-                return IpcCommandResult::InvalidResponse;
-            }
-            buffer.remove(0, newline + 1);
-            answered = true;
-            if (!onStatus(status)) {
-                return IpcCommandResult::Sent;
-            }
-        }
-    }
-    if (!answered) {
-        if (error) {
-            *error = noResponseMessage();
-        }
-        return IpcCommandResult::NoResponse;
-    }
-    return IpcCommandResult::Sent;
-}
-
-void SingleInstanceIpc::addStatusWatcher(QLocalSocket *socket, const IpcResponse &status)
-{
-    if (!socket || socket->state() != QLocalSocket::ConnectedState) {
-        return;
-    }
-    m_statusWatchers.removeAll(nullptr);
-    if (m_statusWatchers.size() >= maximumStatusWatchers) {
-        writeResponse(socket, {false, status.state, QStringLiteral("Too many status watchers are connected")});
-        return;
-    }
-    // A watcher has had its answer, so it no longer holds an accept slot,
-    // which every other command needs. Nor is anything it sends after
-    // watchStatus a request, so a partial one must not expire it.
-    m_acceptedSockets.remove(socket);
-    m_requestBuffers.remove(socket);
-    m_incompleteRequestDeadlines.remove(socket);
-    m_statusWatchers.append(socket);
-    writeStatus(socket, responseFrame(status));
-}
-
-void SingleInstanceIpc::publishStatus(const IpcResponse &status)
-{
-    const QByteArray frame = responseFrame(status);
-    // Copied: dropping a watcher runs its disconnected handler, which can
-    // delete it and null its entry.
-    for (const QPointer<QLocalSocket> &socket : QList(m_statusWatchers)) {
-        if (socket) {
-            writeStatus(socket, frame);
-        }
-    }
-}
-
 void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &response)
 {
     // A client that disconnects right after sending can deliver its command
@@ -578,7 +413,29 @@ void SingleInstanceIpc::writeResponse(QLocalSocket *socket, const IpcResponse &r
     if (!socket || socket->state() != QLocalSocket::ConnectedState) {
         return;
     }
-    socket->write(responseFrame(response));
+    QJsonObject object{
+        {QStringLiteral("ok"), response.ok},
+        {QStringLiteral("state"), response.state},
+        {QStringLiteral("message"), response.message.isEmpty() ? QJsonValue() : QJsonValue(response.message)},
+    };
+    if (!response.writingProfile.isEmpty()) {
+        object.insert(QStringLiteral("writingProfile"), response.writingProfile);
+    }
+    if (!response.spokenLanguage.isEmpty()) {
+        object.insert(QStringLiteral("spokenLanguage"), response.spokenLanguage);
+    }
+    if (!response.text.isEmpty()) {
+        object.insert(QStringLiteral("text"), response.text);
+    }
+    if (!response.skippedTerms.isEmpty()) {
+        object.insert(QStringLiteral("skippedTerms"), QJsonArray::fromStringList(response.skippedTerms));
+    }
+    if (response.recording) {
+        object.insert(QStringLiteral("recording"), recordingStatusJson(*response.recording));
+    }
+    QByteArray responseBytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
+    responseBytes.append('\n');
+    socket->write(responseBytes);
     socket->flush();
     socket->disconnectFromServer();
 }
