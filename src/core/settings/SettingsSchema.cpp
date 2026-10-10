@@ -1312,6 +1312,17 @@ SettingsPage generalPage(const SchemaContext &context)
         return settings.ui.transcriptionPreviewEnabled || settings.ui.refinementPreviewEnabled;
     };
 
+    // Editing selected text by voice needs refinement, so without it this
+    // does nothing.
+    SettingsRow selectionEditReview = toggleRow(
+        QStringLiteral("selectionEditReviewEnabled"),
+        QStringLiteral("Review edits to selected text"),
+        QStringLiteral("Shows what will change and waits for Replace."),
+        [](const AppSettings &settings) { return settings.ui.selectionEditReviewEnabled; },
+        [](AppSettings &settings, bool value) { settings.ui.selectionEditReviewEnabled = value; });
+    selectionEditReview.sinceVersion = QStringLiteral("0.2.1");
+    gateOnRefinementProvider(selectionEditReview);
+
     SettingsPage page{
         QStringLiteral("general"),
         {
@@ -1351,6 +1362,7 @@ SettingsPage generalPage(const SchemaContext &context)
                            [](const AppSettings &settings) { return settings.ui.refinementPreviewEnabled; },
                            [](AppSettings &settings, bool value) { settings.ui.refinementPreviewEnabled = value; }),
                  std::move(previewWords),
+                 std::move(selectionEditReview),
                  numberRow(QStringLiteral("completionStatusDuration"),
                            QStringLiteral("Show the result for"),
                            QStringLiteral("How long the popup shows where the text went, or that the dictation was canceled."),

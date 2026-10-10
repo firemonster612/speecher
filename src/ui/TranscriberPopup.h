@@ -3,6 +3,7 @@
 #include "frontend/qt/QtPopupSurface.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"
+#include "dictation/SelectionEditPresentation.h"
 
 #include <QLabel>
 #include <QWidget>
@@ -14,6 +15,7 @@ class QHBoxLayout;
 class QHideEvent;
 class QIcon;
 class QProgressBar;
+class QScrollArea;
 class QPushButton;
 class QPropertyAnimation;
 class QPaintEvent;
@@ -55,6 +57,11 @@ public slots:
     // something to do, an explicitly labelled button ("Install and restart").
     void setUpdateBanner(const UpdateBannerModel &banner);
     void setWhatsNewBanner(const WhatsNewBannerModel &banner, bool visible);
+    // A selection edit as a card in place of the capsule, until
+    // hideSelectionEditReview. While a follow-up is dictated the card stays
+    // above the capsule, dimmed and without its buttons.
+    void showSelectionEditReview(const SelectionEditReview &review);
+    void hideSelectionEditReview();
 
 signals:
     void errorDismissed();
@@ -68,6 +75,9 @@ signals:
     // The buttons beside the waveform.
     void pauseToggled();
     void cancelRequested();
+    // The review's buttons.
+    void keepOriginalRequested();
+    void replaceSelectionRequested();
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -95,6 +105,9 @@ private:
     void showWrappedLine(const QString &message, const QIcon &icon, const QString &actionLabel, bool countdown);
     // An error holds the capsule; its Dismiss chip shows exactly then.
     bool errorShown() const;
+    void buildReviewCard();
+    // Fills the card with the review, folded or whole.
+    void applyReview();
 
     QVBoxLayout *m_layout = nullptr;
     QFrame *m_previewPill = nullptr;
@@ -114,6 +127,18 @@ private:
     // The preview lost words from its front, so its start fades.
     bool m_previewCut = false;
     DictationState m_sessionState = DictationState::Idle;
+    QFrame *m_reviewCard = nullptr;
+    QLabel *m_reviewInstruction = nullptr;
+    QScrollArea *m_reviewScroll = nullptr;
+    QLabel *m_reviewText = nullptr;
+    QLabel *m_reviewSummary = nullptr;
+    QWidget *m_reviewFooter = nullptr;
+    QGraphicsOpacityEffect *m_reviewDim = nullptr;
+    QPushButton *m_reviewKeep = nullptr;
+    QPushButton *m_reviewReplace = nullptr;
+    SelectionEditReview m_review;
+    // Show all: the whole edit instead of the folded one.
+    bool m_reviewWhole = false;
     QFrame *m_updateBanner = nullptr;
     QLabel *m_updateBannerText = nullptr;
     QLabel *m_updateBannerIcon = nullptr;

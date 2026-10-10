@@ -8,7 +8,7 @@
 #include "platform/RoutingShortcutBinder.h"
 #include "platform/audio/E2EAudioInput.h"
 #include "platform/audio/QtAudioInput.h"
-#include "platform/mac/MacCancelKeyGrab.h"
+#include "platform/mac/MacSessionKeyGrab.h"
 #include "platform/mac/MacGlobalShortcutBinder.h"
 #include "platform/mac/MacMediaController.h"
 #include "platform/mac/MacSingleKeyShortcutBinder.h"
@@ -196,9 +196,9 @@ GlobalShortcutBinder *MacComposition::createGlobalShortcutBinder(GlobalShortcutR
     return new RoutingShortcutBinder(combination, new MacSingleKeyShortcutBinder(action), parent);
 }
 
-CancelKeyGrab *MacComposition::createCancelKeyGrab(QObject *parent) const
+SessionKeyGrab *MacComposition::createSessionKeyGrab(QObject *parent) const
 {
-    return new MacCancelKeyGrab(parent);
+    return new MacSessionKeyGrab(parent);
 }
 
 AccessibilityState MacComposition::accessibilityState() const

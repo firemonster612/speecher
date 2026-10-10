@@ -94,6 +94,8 @@ struct UiSettings {
     int previewWords = 7;
     bool transcriptionPreviewEnabled = true;
     bool refinementPreviewEnabled = true;
+    // A selection edit waits for Replace before it replaces the selection.
+    bool selectionEditReviewEnabled = true;
     QString theme = QStringLiteral("system");
     bool pauseMediaDuringTranscription = true;
     bool soundsEnabled = false;

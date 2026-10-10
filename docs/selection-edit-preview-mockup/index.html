@@ -1,0 +1,364 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Previewing a selection edit in the dictation popup
+  before it replaces the selection: layout A of the three first shown (inline
+  diff in the popup; the others were a one-line summary and a separate review
+  panel). Open this file in a browser and pick a scenario at the top. Replace
+  and Keep original act on the mock editor. The Global Shortcut chip in the
+  card stands in for pressing it: it dictates a follow-up instruction, which
+  applies to the current revision. Colours are Breeze Dark palette roles: Base, Button, Text,
+  PlaceholderText, Highlight, and the colour scheme's PositiveText and
+  NegativeText, each tinted a fifth over Base as Badge does. Sizes follow
+  src/ui/TranscriberPopup.cpp (10 pt text, 520 px wrap width for errors).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speecher: selection edit preview (mockup)</title>
+<style>
+  :root {
+    --desk: #232129;
+    --window: #202326;
+    --base: #1b1e20;
+    --button: #292c30;
+    --button-hover: #3a3d40;
+    --ring: #545659;
+    --text: #fcfcfc;
+    --ph: #a1a9b1;
+    --highlight: #3daee9;
+    --positive: #27ae60;
+    --negative: #da4453;
+    --ins-bg: color-mix(in srgb, var(--positive) 20%, var(--base));
+    --del-bg: color-mix(in srgb, var(--negative) 20%, var(--base));
+    --hair: drop-shadow(0 0 .5px rgba(130, 136, 142, .95));
+    --popup-font: "Noto Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 var(--font-sans, var(--popup-font)); color: var(--foreground, #eee); background: var(--background, #16151a); }
+  main { max-width: 760px; margin: 0 auto; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  .bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 0 0 18px; }
+  .seg { display: inline-flex; border: 1px solid var(--border, #444); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: none; padding: 5px 12px; font-size: 13px; }
+  .seg button + button { border-left: 1px solid var(--border, #444); }
+  .seg button[aria-pressed="true"] { background: var(--accent, #3daee9); color: var(--accent-foreground, #fff); }
+  .bar label { font-size: 13px; color: var(--muted-foreground, #aaa); display: inline-flex; gap: 6px; align-items: center; }
+
+  section { margin: 0 0 28px; }
+  h2 { font-size: 15px; margin: 0 0 2px; }
+  section > p { margin: 0 0 10px; font-size: 13px; color: var(--muted-foreground, #aaa); }
+
+  /* ------------------------------------------------------------ desktop */
+  .desk {
+    background: var(--desk); border-radius: 10px; padding: 18px 18px 22px;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    font-family: var(--popup-font); color: var(--text);
+  }
+  .editor { width: 100%; background: var(--window); border-radius: 6px; box-shadow: 0 0 0 1px #34373b; overflow: hidden; }
+  .editor .title { font-size: 12px; color: var(--ph); padding: 5px 12px; background: #2a2e32; display: flex; justify-content: space-between; }
+  .editor .title button { border: 0; background: none; color: var(--ph); font-size: 12px; padding: 0; }
+  .editor .doc { padding: 10px 14px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+  .editor mark { background: color-mix(in srgb, var(--highlight) 45%, transparent); color: inherit; border-radius: 2px; }
+  .editor .fresh { background: color-mix(in srgb, var(--positive) 22%, transparent); border-radius: 2px; transition: background 1.2s; }
+  .editor .fresh.done { background: transparent; }
+
+  /* -------------------------------------------------------- popup parts */
+  .pop { font-size: 13.33px; line-height: 19px; filter: var(--hair); }
+  .card { background: var(--base); border-radius: 18px; padding: 12px 18px 12px; width: min(100%, 556px); }
+  .instr { color: var(--ph); font-size: 12px; margin: 0 0 6px; }
+  .diff { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .diff.scroll { max-height: 228px; overflow-y: auto; padding-right: 6px; }
+  ins, del { text-decoration-thickness: 1px; border-radius: 3px; padding: 0 2px; }
+  ins { text-decoration: none; background: var(--ins-bg); color: color-mix(in srgb, var(--positive) 35%, var(--text)); }
+  del { background: var(--del-bg); color: color-mix(in srgb, var(--negative) 30%, var(--ph)); }
+  .gap { color: var(--ph); }
+  .foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .foot .sum { flex: 1; color: var(--ph); font-size: 12px; }
+  .link { border: 0; background: none; padding: 0; color: var(--highlight); font-size: 12px; }
+  .pb {
+    border: 1px solid var(--ring); background: var(--button); border-radius: 5px;
+    padding: 3px 10px; font-size: 13px; display: inline-flex; gap: 7px; align-items: center;
+  }
+  .pb:hover { background: var(--button-hover); }
+  .pb.default { border-color: var(--highlight); }
+  kbd { font: 11px var(--popup-font); color: var(--ph); }
+
+  .cb {
+    width: 34px; height: 34px; flex: none; border: 0; padding: 0; border-radius: 50%;
+    display: grid; place-items: center; background: var(--button); box-shadow: inset 0 0 0 .5px var(--ring); color: var(--text);
+  }
+  .cb:hover { background: var(--button-hover); }
+  .cb svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+
+  .receipt { background: var(--base); border-radius: 999px; padding: 12px 22px; display: inline-flex; gap: 8px; align-items: center; }
+  .receipt svg { width: 16px; height: 16px; fill: none; stroke: var(--positive); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .receipt.copied svg { stroke: var(--ph); }
+  .kbd { border: 1px solid var(--ring); background: var(--button); border-radius: 4px; padding: 0 5px; font-size: 11px; line-height: 16px; color: var(--text); }
+  .card.busy .diff { opacity: .5; }
+  .live { color: var(--text); font-size: 13.33px; }
+  .row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; }
+  .bars { display: flex; align-items: center; gap: 3.2px; height: 26px; }
+  .bars i { width: 3.2px; height: 26px; border-radius: 2px; background: var(--text); animation: wave .9s ease-in-out infinite alternate; transform-origin: center; }
+  @keyframes wave { from { transform: scaleY(.15); } to { transform: scaleY(.9); } }
+  .spin { width: 34px; height: 34px; display: grid; place-items: center; color: var(--ph); }
+  .spin svg { width: 62%; height: 62%; animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .shim { background: linear-gradient(90deg, var(--ph) 38%, var(--text) 50%, var(--ph) 62%); background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shim 1.7s linear infinite; }
+  @keyframes shim { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  .gone { font-size: 12px; color: var(--ph); height: 48px; display: grid; place-items: center; }
+</style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <div class="seg" id="scenarios"></div>
+    <label><input type="checkbox" id="moved"> Selection changes before you decide</label>
+  </div>
+  <section>
+    <h2>A. Inline diff in the popup, with voice follow-ups</h2>
+    <p>The capsule grows into a card, as an error's does. A long selection folds to the changed stretches; when most words changed it shows the revised text alone. Pressing the Global Shortcut dictates a follow-up: the footer turns into today's listening row, then Refining, and the card returns with the diff against the original selection. Esc while following up drops the follow-up and keeps the previous revision. Click the shortcut chip to try it.</p>
+    <div class="desk"></div>
+  </section>
+</main>
+
+<script>
+const SCENARIOS = {
+  small: {
+    label: "One-word fix",
+    app: "Mail: Re: standup",
+    instruction: "swap the two days",
+    before: "Morning all,\n\n",
+    original: "Can we move the standup to Wednesday? Half the team is out on Thursday and I'd rather not run it with three people.",
+    revised: "Can we move the standup to Thursday? Half the team is out on Wednesday and I'd rather not run it with three people.",
+    after: "\n\nThanks,\nSam",
+    followUp: {
+      instruction: "actually make it Friday",
+      revised: "Can we move the standup to Friday? Half the team is out on Wednesday and I'd rather not run it with three people.",
+    },
+  },
+  long: {
+    label: "Long paragraph",
+    app: "Mail: Re: 2.4 release notes",
+    instruction: "fix the grammar and use British spelling",
+    before: "",
+    original: "Thanks for the update on the release. I looked through the notes and their are a couple of things I want to flag before we ship. First, the color picker on the settings page still dosen't remember the last value, which is going to annoy anyone who customizes their theme. Second, the onboarding flow asks for the microphone twice on some machines; I think its because we request access in the wizard and again when the popup first opens. Neither of these are blockers on there own, but together they make the first five minutes feel unpolished. Could we organize a quick call tomorrow to decide which one to fix first? I'm free most of the afternoon, and I can bring the logs from the two machines where I saw the double prompt. Also, the changelog mentions the new vocabulary context field but doesn't explain where to find it, so we should probably add a sentence about that too.",
+    revised: "Thanks for the update on the release. I looked through the notes and there are a couple of things I want to flag before we ship. First, the colour picker on the settings page still doesn't remember the last value, which is going to annoy anyone who customises their theme. Second, the onboarding flow asks for the microphone twice on some machines; I think it's because we request access in the wizard and again when the popup first opens. Neither of these is a blocker on its own, but together they make the first five minutes feel unpolished. Could we organise a quick call tomorrow to decide which one to fix first? I'm free most of the afternoon, and I can bring the logs from the two machines where I saw the double prompt. Also, the changelog mentions the new vocabulary context field but doesn't explain where to find it, so we should probably add a sentence about that too.",
+    after: "\n\nPriya",
+    followUp: {
+      instruction: "keep the American spelling, just fix the grammar",
+      revised: "Thanks for the update on the release. I looked through the notes and there are a couple of things I want to flag before we ship. First, the color picker on the settings page still doesn't remember the last value, which is going to annoy anyone who customizes their theme. Second, the onboarding flow asks for the microphone twice on some machines; I think it's because we request access in the wizard and again when the popup first opens. Neither of these is a blocker on its own, but together they make the first five minutes feel unpolished. Could we organize a quick call tomorrow to decide which one to fix first? I'm free most of the afternoon, and I can bring the logs from the two machines where I saw the double prompt. Also, the changelog mentions the new vocabulary context field but doesn't explain where to find it, so we should probably add a sentence about that too.",
+    },
+  },
+  rewrite: {
+    label: "Full rewrite",
+    app: "Slack: #eng-builds",
+    instruction: "make this more formal",
+    before: "",
+    original: "hey so the build is broken again lol, pretty sure it's the thing Marco merged last night. can someone look at it before standup? I'd do it but I'm stuck in interviews till 2",
+    revised: "Good morning. The build is failing again, most likely because of the change Marco merged last night. Could someone investigate before the stand-up? I would look into it myself, but I am in interviews until 2 p.m.",
+    after: "",
+    followUp: {
+      instruction: "a bit less stiff, keep the contractions",
+      revised: "Morning. The build's failing again, probably because of the change Marco merged last night. Could someone take a look before stand-up? I'd do it myself, but I'm in interviews until 2.",
+    },
+  },
+};
+
+// ------------------------------------------------------------------ diff
+const words = (text) => text.match(/\S+\s*/g) || [];
+
+// Word-level LCS, comparing words without their trailing space.
+function diff(a, b) {
+  const x = words(a), y = words(b);
+  const key = (w) => w.trimEnd();
+  const n = x.length, m = y.length;
+  const lcs = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      lcs[i][j] = key(x[i]) === key(y[j]) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+  const ops = [];
+  const push = (t, s) => (ops.length && ops.at(-1).t === t ? (ops.at(-1).s += s) : ops.push({ t, s }));
+  let i = 0, j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && key(x[i]) === key(y[j])) { push("eq", y[j]); i++; j++; }
+    else if (j < m && (i === n || lcs[i][j + 1] >= lcs[i + 1][j])) push("ins", y[j++]);
+    else push("del", x[i++]);
+  }
+  // A deletion always reads before the insertion that replaces it.
+  for (let k = 0; k + 1 < ops.length; k++)
+    if (ops[k].t === "ins" && ops[k + 1].t === "del") [ops[k], ops[k + 1]] = [ops[k + 1], ops[k]];
+  return ops;
+}
+
+function analyse(s) {
+  const ops = diff(s.original, s.revised);
+  const changes = ops.filter((o, k) => o.t !== "eq" && (k === 0 || ops[k - 1].t === "eq")).length;
+  const kept = ops.filter((o) => o.t === "eq").reduce((n, o) => n + words(o.s).length, 0);
+  const rewritten = kept / words(s.revised).length < 0.4;
+  return { ops, changes, rewritten };
+}
+
+const esc = (t) => t.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+// The space after a changed word stays outside its mark, so marks don't run together.
+function mark(tag, s) {
+  const body = s.trimEnd();
+  return `<${tag}>${esc(body)}</${tag}>${esc(s.slice(body.length))}`;
+}
+const opHtml = (o) => (o.t === "eq" ? esc(o.s) : mark(o.t, o.s));
+
+// Changed stretches with CONTEXT words either side; the rest becomes "…".
+const CONTEXT = 6;
+function folded(ops) {
+  const out = [];
+  ops.forEach((o, k) => {
+    if (o.t !== "eq") return out.push(opHtml(o));
+    const w = words(o.s);
+    const first = k === 0, last = k === ops.length - 1;
+    const head = first ? 0 : CONTEXT, tail = last ? 0 : CONTEXT;
+    if (w.length <= head + tail + 3) return out.push(esc(o.s));
+    out.push(esc(w.slice(0, head).join("")), '<span class="gap">… </span>', esc(w.slice(w.length - tail).join("")));
+  });
+  return out.join("");
+}
+const foldable = (a) => !a.rewritten && words(a.ops.map((o) => o.s).join("")).length > 60;
+const changesText = (a) => (a.rewritten ? "Rewritten" : a.changes === 1 ? "1 change" : `${a.changes} changes`);
+
+// -------------------------------------------------------------- pieces
+const ICON = {
+  x: '<svg viewBox="0 0 16 16"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>',
+  pause: '<svg viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9"/></svg>',
+};
+const circle = (icon, act, title) => `<button class="cb" data-act="${act}" title="${title}">${ICON[icon]}</button>`;
+const SHORTCUT = "Meta+Space";
+const shortcutKey = (title) => `<button class="kbd" data-act="shortcut" title="${title}">${SHORTCUT}</button>`;
+const bars = () => `<span class="bars">${Array.from({ length: 15 }, (_, k) => `<i style="animation-delay:${(k * 137) % 900}ms"></i>`).join("")}</span>`;
+const SPINNER = '<span class="spin"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-opacity=".22" stroke-width="2.4"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="16 100"/></svg></span>';
+
+// view: "original", "revised", "changes" (the whole diff) or "folded".
+function body(s, a, view) {
+  if (view === "original") return esc(s.original);
+  if (view === "revised") return esc(a.revised);
+  if (view === "folded") return folded(a.ops);
+  return a.ops.map(opHtml).join("");
+}
+
+// The selection as it stands after each round: the first instruction, then
+// any follow-ups, each applied to the previous revision. The diff is always
+// against the original selection.
+function round(s, n) {
+  const revised = n ? s.followUp.revised : s.revised;
+  return { ...analyse({ original: s.original, revised }), revised, instructions: [s.instruction, ...(n ? [s.followUp.instruction] : [])] };
+}
+
+function renderCard(s, ui) {
+  const a = round(s, ui.round || 0);
+  const busy = ui.phase === "listening" || ui.phase === "refining";
+  const view = a.rewritten ? "revised" : foldable(a) && !ui.expanded ? "folded" : "changes";
+  const said = ui.phase === "listening"
+    ? `<span class="live">${esc(ui.heard || "")}</span>`
+    : a.instructions.map((i) => `“${esc(i)}”`).join(" then ");
+  const foot = ui.phase === "listening"
+    ? `<div class="row">${circle("pause", "noop", "Pause")}${bars()}${circle("x", "cancel-follow-up", "Cancel (Esc)")}</div>`
+    : ui.phase === "refining"
+      ? `<div class="row">${SPINNER}<span class="shim">Refining</span>${circle("x", "cancel-follow-up", "Cancel (Esc)")}</div>`
+      : `<div class="foot">
+          <span class="sum">${changesText(a)}${foldable(a) ? ` · <button class="link" data-act="expand">${ui.expanded ? "Show less" : "Show all"}</button>` : ""}
+            <br>${shortcutKey("The Global Shortcut")} to ask for more</span>
+          <button class="pb" data-act="keep">Keep original <kbd>Esc</kbd></button>
+          <button class="pb default" data-act="replace">Replace <kbd>Enter ↵</kbd></button>
+        </div>`;
+  return `<div class="pop card${busy ? " busy" : ""}">
+    <div class="instr">${said}</div>
+    <div class="diff${ui.expanded ? " scroll" : ""}">${body(s, a, view)}</div>
+    ${foot}</div>`;
+}
+
+const RECEIPT = {
+  replace: '<div class="pop receipt"><svg viewBox="0 0 16 16"><path d="M2.8 8.6l3.4 3.3 7-7.6"/></svg>Selection replaced</div>',
+  copied: '<div class="pop receipt copied"><svg viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="9" rx="1.5"/><path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H10"/></svg>The selection changed, so the edit was copied</div>',
+  keep: '<div class="gone">Popup closed; the selection is untouched</div>',
+};
+
+// ------------------------------------------------------------------ app
+let scenario = new URLSearchParams(location.search).get("scenario") || "small";
+let ui = {};
+let timers = [];
+const $ = (sel, root = document) => root.querySelector(sel);
+const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+const stopTimers = () => { timers.forEach(clearTimeout); timers = []; };
+
+function editorHtml(s) {
+  // With "selection changes" on, the person clicked away: nothing is selected.
+  const revised = round(s, ui.round || 0).revised;
+  const sel = moved.checked
+    ? esc(s.original)
+    : ui.outcome === "replace"
+      ? `<span class="fresh">${esc(revised)}</span>`
+      : `<mark>${esc(s.original)}</mark>`;
+  return `<div class="editor"><div class="title"><span>${esc(s.app)}</span><button data-act="reset">Reset</button></div>
+    <div class="doc">${esc(s.before)}${sel}${esc(s.after)}</div></div>`;
+}
+
+function draw() {
+  const s = SCENARIOS[scenario];
+  $("#scenarios").innerHTML = Object.entries(SCENARIOS)
+    .map(([k, v]) => `<button data-s="${k}" aria-pressed="${k === scenario}">${v.label}</button>`).join("");
+  const desk = $(".desk");
+  const popup = ui.outcome === "replace" && moved.checked ? RECEIPT.copied : ui.outcome ? RECEIPT[ui.outcome] : renderCard(s, ui);
+  desk.innerHTML = editorHtml(s) + popup;
+  requestAnimationFrame(() => desk.querySelector(".fresh")?.classList.add("done"));
+}
+
+// The follow-up's words arrive as the live preview does, then refinement runs.
+function listen(s) {
+  ui.phase = "listening";
+  ui.heard = "";
+  s.followUp.instruction.split(" ").forEach((w, k, all) =>
+    later(260 * (k + 1), () => {
+      ui.heard += (k ? " " : "") + w;
+      draw();
+      if (k === all.length - 1) later(900, () => refine());
+    }));
+  draw();
+}
+function refine() {
+  stopTimers();
+  ui.phase = "refining";
+  draw();
+  later(1400, () => { ui.phase = null; ui.round = 1; draw(); });
+}
+
+$(".desk").onclick = (e) => {
+  const t = e.target.closest("[data-act]");
+  if (!t) return;
+  const s = SCENARIOS[scenario];
+  const act = t.dataset.act;
+  if (act === "expand") ui.expanded = !ui.expanded;
+  else if (act === "reset") { stopTimers(); ui = {}; }
+  else if (act === "shortcut") return listen(s);
+  else if (act === "cancel-follow-up") { stopTimers(); ui.phase = null; }
+  else if (act !== "noop") ui.outcome = act;
+  draw();
+};
+
+const moved = $("#moved");
+moved.onchange = () => { stopTimers(); ui = {}; draw(); };
+$("#scenarios").onclick = (e) => {
+  const b = e.target.closest("[data-s]");
+  if (!b) return;
+  scenario = b.dataset.s;
+  stopTimers();
+  ui = {};
+  draw();
+};
+// ?state=listening|refining|followed opens the card in that state, for screenshots.
+const start = new URLSearchParams(location.search).get("state");
+const s0 = SCENARIOS[scenario];
+if (start === "listening") Object.assign(ui, { phase: "listening", heard: s0.followUp.instruction.split(" ").slice(0, 3).join(" ") });
+if (start === "refining") Object.assign(ui, { phase: "refining" });
+if (start === "followed") Object.assign(ui, { round: 1 });
+draw();
+</script>
+</body>
+</html>

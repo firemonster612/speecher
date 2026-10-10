@@ -51,6 +51,10 @@ private slots:
         QVERIFY(!dictationToggleAction(QStringLiteral("stopping")).enabled);
         QVERIFY(!dictationToggleAction(QStringLiteral("delivering")).enabled);
         QVERIFY(dictationToggleAction(QStringLiteral("error")).enabled);
+        QCOMPARE(dictationStatusLabel(QStringLiteral("reviewing")),
+                 QStringLiteral("Review the edit in the popup"));
+        QCOMPARE(dictationToggleAction(QStringLiteral("reviewing")).label, QStringLiteral("Ask for more changes"));
+        QVERIFY(dictationToggleAction(QStringLiteral("reviewing")).enabled);
     }
 
     // The session shortcuts hold their keys only while their action applies:
@@ -67,6 +71,73 @@ private slots:
         }
         QVERIFY(!dictationPausable(QStringLiteral("Idle")));
         QVERIFY(!dictationCancelable(QStringLiteral("Idle")));
+        // Cancel keeps the original while an edit is reviewed, from the
+        // review's own buttons rather than the popup's cancel circle.
+        QVERIFY(dictationCancelable(QStringLiteral("Reviewing")));
+        QVERIFY(!dictationPausable(QStringLiteral("Reviewing")));
+        const SessionControls review = sessionControls(QStringLiteral("reviewing"));
+        QVERIFY(!review.cancelVisible && !review.pauseVisible && !review.busyVisible);
+    }
+
+    void sessionKeysAreTakenOnlyWhileTheyAct_data()
+    {
+        QTest::addColumn<QString>("state");
+        QTest::addColumn<bool>("reviewUp");
+        QTest::addColumn<bool>("escapeCancelsDictation");
+        QTest::addColumn<QString>("cancelShortcut");
+        QTest::addColumn<QString>("pauseShortcut");
+        QTest::addColumn<bool>("suspended");
+        QTest::addColumn<bool>("escape");
+        QTest::addColumn<bool>("enter");
+        const QString none;
+        const QString escape = QStringLiteral("Esc");
+        // Windows and macOS: Escape cancels from Starting through Refining.
+        QTest::newRow("listening, Windows and macOS") << "listening" << false << true << none << none << false << true << false;
+        QTest::newRow("idle") << "idle" << false << true << none << none << false << false << false;
+        QTest::newRow("delivering") << "delivering" << false << true << none << none << false << false << false;
+        QTest::newRow("Cancel Shortcut is Escape") << "listening" << false << true << escape << none << false << false << false;
+        QTest::newRow("Pause Shortcut is Escape") << "listening" << false << true << none << escape << false << false << false;
+        // Linux takes nothing while dictating.
+        QTest::newRow("listening, Linux") << "listening" << false << false << none << none << false << false << false;
+        // Waiting for review, every platform: Escape keeps and Enter replaces.
+        QTest::newRow("reviewing, Linux") << "reviewing" << true << false << none << none << false << true << true;
+        QTest::newRow("reviewing, Pause Shortcut is Escape") << "reviewing" << true << true << none << escape << false << true << true;
+        QTest::newRow("reviewing, Cancel Shortcut is Escape") << "reviewing" << true << false << escape << none << false << false << true;
+        QTest::newRow("reviewing, suspended") << "reviewing" << true << true << none << none << true << false << false;
+        // Dictating a follow-up, every platform: Escape keeps the review
+        // rather than reaching the Target; Enter is free for the dictation.
+        QTest::newRow("following up, Linux") << "listening" << true << false << none << none << false << true << false;
+        QTest::newRow("following up, Pause Shortcut is Escape") << "listening" << true << false << none << escape << false << false << false;
+        QTest::newRow("following up, refining, Pause Shortcut is Escape") << "refining" << true << false << none << escape << false << true << false;
+    }
+
+    void sessionKeysAreTakenOnlyWhileTheyAct()
+    {
+        QFETCH(QString, state);
+        QFETCH(bool, reviewUp);
+        QFETCH(bool, escapeCancelsDictation);
+        QFETCH(QString, cancelShortcut);
+        QFETCH(QString, pauseShortcut);
+        QFETCH(bool, suspended);
+        QFETCH(bool, escape);
+        QFETCH(bool, enter);
+        const auto binding = [](const QString &keys) {
+            return keys.isEmpty() ? ShortcutBinding() : ShortcutBinding(QKeySequence(keys));
+        };
+        QCOMPARE(sessionKeysWanted(state, reviewUp, escapeCancelsDictation, binding(cancelShortcut),
+                                   binding(pauseShortcut), suspended),
+                 (SessionKeys{escape, enter}));
+    }
+
+    // The review names only the keys that work: Escape where it is held, or
+    // else the Cancel Shortcut; Enter where it is held.
+    void reviewNamesTheKeysHeld()
+    {
+        QCOMPARE(reviewKeysFor(true, true, QString(), QStringLiteral("Meta+Space")),
+                 (ReviewKeys{escapeKeyName(), enterKeyName(), QStringLiteral("Meta+Space")}));
+        QCOMPARE(reviewKeysFor(false, false, QStringLiteral("Meta+C"), QString()),
+                 (ReviewKeys{QStringLiteral("Meta+C"), QString(), QString()}));
+        QCOMPARE(reviewKeysFor(false, false, QString(), QString()), ReviewKeys());
     }
 
     void popupErrorsStayLongEnoughToRead()
@@ -843,7 +914,10 @@ private slots:
         refiner->autoComplete = true;
         refiner->autoCompleteText = QStringLiteral("THE RELEASE IS TOMORROW, EVERYONE, BE READY!");
         session.stopListening();
-        QTRY_COMPARE_WITH_TIMEOUT(delivery->calls, 1, 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(int(session.state()), int(DictationState::Reviewing), 1000);
+        QCOMPARE(recorded.count(), 0);
+        session.replaceSelection();
+        QCOMPARE(delivery->calls, 1);
 
         QCOMPARE(recorded.count(), 1);
         QCOMPARE(recorded.first().first().value<DictationRecord>().words, 3);

@@ -72,6 +72,7 @@
 #include <utility>
 
 using namespace speecher;
+using namespace speecher::test;
 
 namespace {
 
@@ -242,6 +243,10 @@ public:
 
     TargetProvider *createTargetProvider(QObject *parent) const override
     {
+        if (fakeTarget) {
+            target = new FakeTargetProvider(parent);
+            return target;
+        }
         return m_delegate->createTargetProvider(parent);
     }
 
@@ -305,6 +310,10 @@ public:
     mutable QString launchAtLoginError;
     // Set, the app listens here instead of where the running Speecher does.
     QString ipcName;
+    // A fake Target, set before the controller is built, for tests that edit
+    // a selection.
+    bool fakeTarget = false;
+    mutable FakeTargetProvider *target = nullptr;
 
     mutable std::function<void(bool)> microphoneAnswer;
     // Makes the microphones instead of the platform, when set.
@@ -550,6 +559,54 @@ private slots:
         if (!grantBeforeRelease) platform->microphoneAnswer(true);
         QCOMPARE(controller.session()->state(), hold ? DictationState::Idle : DictationState::Starting);
         controller.stopListening();
+    }
+
+    // While a selection edit waits for review, holding the Global Shortcut in
+    // push-to-talk mode dictates a follow-up once the hold delay passes.
+    void pushToTalkDictatesAFollowUpToAReview()
+    {
+        const auto platform = std::make_shared<FakePlatformComposition>(platformComposition());
+        platform->fakeTarget = true;
+        platform->audioInputs = [](QObject *parent) { return new FakeAudioInput(parent); };
+        ApplicationController controller(true, platform);
+        SettingsStore *settings = controller.settings();
+        const bool setupCompleted = settings->setupCompleted();
+        const ShortcutActivationMode mode = settings->shortcutActivationMode();
+        const QString refinementProvider = settings->refinementProvider();
+        const auto restore = qScopeGuard([&] {
+            settings->setSetupCompleted(setupCompleted);
+            settings->setShortcutActivationMode(mode);
+            settings->setRefinementProvider(refinementProvider);
+        });
+        settings->setSetupCompleted(true);
+        settings->setShortcutActivationMode(ShortcutActivationMode::PushToTalk);
+        settings->setRefinementProvider(QStringLiteral("openai"));
+        FakeSpeechTranscriber *speech = nullptr;
+        FakeRefiner *refiner = nullptr;
+        registerFakeSpeechProvider(*controller.providerRegistry(), &speech);
+        registerFakeRefiner(*controller.providerRegistry(), &refiner);
+        platform->target->target.applicationId = QStringLiteral("org.kde.kate");
+        platform->target->target.selectedText = QStringLiteral("Wednesday");
+        platform->target->target.selectionStart = 0;
+        platform->target->target.selectionEnd = 9;
+        DictationSession *session = controller.session();
+        session->startListening();
+        QTRY_COMPARE(session->state(), DictationState::Listening);
+        speech->emitFinalText(QStringLiteral("make it Thursday"));
+        session->stopListening();
+        QTRY_COMPARE(refiner->refineCalls, 1);
+        refiner->emitCompletedText(QStringLiteral("Thursday"));
+        QCOMPARE(session->state(), DictationState::Reviewing);
+
+        emit platform->binder->activated();
+        QTRY_VERIFY(platform->microphoneAnswer);
+        platform->microphoneAnswer(true);
+        QTRY_COMPARE(session->state(), DictationState::Listening);
+        // Released with nothing said, the follow-up leaves the review as it was.
+        emit platform->binder->deactivated();
+        QTRY_COMPARE(session->state(), DictationState::Reviewing);
+        controller.cancel();
+        QCOMPARE(session->state(), DictationState::Idle);
     }
 
     void dictationAndFileTranscriptionExcludeEachOther()

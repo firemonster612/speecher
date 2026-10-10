@@ -252,6 +252,11 @@ private final class ReopenApplicationDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc public var dictationOutcomeFixFrame: CGRect { panel.outcomeFixFrame }
 
+    /// Where a selection edit's review card was laid out; empty while none
+    /// shows.
+    @MainActor
+    @objc public var dictationReviewFrame: CGRect { panel.reviewFrame }
+
     @MainActor
     @objc public var whatsNewOfferVisible: Bool { model.whatsNewPending }
 

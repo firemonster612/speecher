@@ -5,6 +5,7 @@
 #include "dictation/DictationPorts.h"
 #include "dictation/DictationTypes.h"
 #include "dictation/PopupPresentation.h"
+#include "dictation/SelectionEditPresentation.h"
 #include "dictation/StartupPreparationRunner.h"
 #include "dictation/TranscriptPipeline.h"
 
@@ -51,6 +52,8 @@ public:
     // can still say it; empty once the next session starts.
     QString lastFailure() const;
     QString lastTranscript() const;
+    // A selection edit is under review, a follow-up to it dictated or not.
+    bool reviewUp() const;
     SessionResponse response(bool ok = true, const QString &message = {}) const;
     void toggleWith(const SessionOverrides &overrides);
     void startListeningWith(const SessionOverrides &overrides);
@@ -58,8 +61,15 @@ public:
     // Whether the system says it can reach the internet. Only an outcome's
     // wording uses it: every provider in a chain is still tried.
     void setReachability(Reachability reachability);
+    // The keys that keep and replace while a selection edit is reviewed, as
+    // the review names them. The controller sets them whenever it takes or
+    // lets go of keys; a review on screen is shown again with the new ones.
+    void setReviewKeys(const ReviewKeys &keys);
 
 public slots:
+    // While an edit is reviewed, toggle() and startListening() dictate a
+    // follow-up instruction, which edits the revision under review;
+    // cancelled or failed, it leaves the review as it was.
     void toggle();
     void startListening();
     void stopListening();
@@ -69,9 +79,13 @@ public slots:
     void cancelForShutdown();
     // Throws the session away from Starting through Refining: nothing is
     // pasted, copied or recorded, and the popup says "Canceled" for a moment.
+    // While a selection edit is reviewed it keeps the original, silently.
     // Dismisses an error; does nothing while idle or delivering, when the text
     // is already out.
     void cancel();
+    // Ends a review by putting the edit in place of the selection, or on the
+    // clipboard when the selection is no longer the one it was made from.
+    void replaceSelection();
     // Pause turns the microphone off and lets the speech provider finish the
     // words already spoken; they stay in the transcript. Resume listens on in
     // a fresh speech attempt. Stop while paused delivers what was said.
@@ -115,6 +129,10 @@ signals:
                                PopupOutcome outcome,
                                const speecher::PopupErrorAction &fix = {});
     void popupErrorRequested(const QString &message, const speecher::PopupErrorAction &fix);
+    // A selection edit to show against the selection, again with each
+    // change, until popupSelectionEditReviewEnded.
+    void popupSelectionEditReviewRequested(const speecher::SelectionEditReview &review);
+    void popupSelectionEditReviewEnded();
     // What a session learned about a provider's sign-in: present when it
     // prepared, missing or turned down when it failed for that.
     void providerSignInObserved(const QString &providerId, bool signedIn);
@@ -163,6 +181,13 @@ private:
     void retireRefiner();
     void deliverWithoutRefinement();
     void failSelectionEdit(const QString &message);
+    void reviewSelectionEdit(const QString &revised);
+    void startFollowUp();
+    void returnToReview();
+    void enterReview();
+    void endReview();
+    void emitReview();
+    bool selectionUnchanged();
     void handleSpeechFailure(const SpeechFailure &failure);
     void endSpeechAfterFailure(const SpeechFailure &failure);
     void rollOverSpeechAttempt();
@@ -184,7 +209,10 @@ private:
     void updateListening();
     void refillReconnectsIfAttemptWasStable();
     bool attemptWasStable() const;
-    void deliverFinal(const QString &text);
+    // note follows the receipt, such as why an edit went to the clipboard.
+    // spokenWords is what Insights records for a reviewed edit, whose
+    // instructions are the words spoken; otherwise the text's own.
+    void deliverFinal(const QString &text, const QString &note = {}, std::optional<int> spokenWords = {});
     void discard();
     void clearScreenshotContext();
     void resumePausedMedia();
@@ -219,6 +247,26 @@ private:
     QString m_lastFailure;
     QString m_speechWarning;
     QString m_lastTranscript;
+    // The selection edit under review: its revision, what was said for it,
+    // and the session it came from, which a follow-up dictates on top of and
+    // goes back to when it comes to nothing.
+    struct Review {
+        QString edit;
+        QStringList instructions;
+        Target target;
+        AppSettings settings;
+        TranscriptPipelineResult pipeline;
+        // What the receipt reports for this revision.
+        QString speechWarning;
+        ProviderHistory providerHistory;
+        // What Insights records for it, across every instruction.
+        int spokenWords = 0;
+        int listeningMs = 0;
+    };
+    std::optional<Review> m_review;
+    // A follow-up instruction for m_review is being dictated.
+    bool m_followingUp = false;
+    ReviewKeys m_reviewKeys;
     TranscriptPipelineResult m_transcriptPipeline;
     quint64 m_generation = 0;
     quint64 m_audioGeneration = 0;

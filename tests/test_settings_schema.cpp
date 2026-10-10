@@ -367,16 +367,20 @@ private slots:
         const auto &page = schema.page(QStringLiteral("general"));
         const auto &transcription = rowById(page, QStringLiteral("transcriptionPreviewEnabled"));
         const auto &refinement = rowById(page, QStringLiteral("refinementPreviewEnabled"));
+        const auto &review = rowById(page, QStringLiteral("selectionEditReviewEnabled"));
         const AppSettings loaded = store.snapshot();
         QVERIFY(transcription.value(loaded).toBool());
         QVERIFY(refinement.value(loaded).toBool());
+        QVERIFY(review.value(loaded).toBool());
         AppSettings edited = loaded;
         transcription.apply(edited, false);
         refinement.apply(edited, false);
+        review.apply(edited, false);
         store.applySnapshot(mergeSettingsDraft(schema, loaded, edited, store.snapshot()));
         const AppSettings saved = SettingsStore().snapshot();
         QVERIFY(!transcription.value(saved).toBool());
         QVERIFY(!refinement.value(saved).toBool());
+        QVERIFY(!review.value(saved).toBool());
     }
 
     void insightsSettingPersistsThroughSchemaDraft()

@@ -3,6 +3,7 @@
 #include "core/OutputFormat.h"
 #include "core/ProviderChain.h"
 #include "core/ProviderFailure.h"
+#include "core/ShortcutBinding.h"
 
 #include <QList>
 #include <QString>
@@ -32,6 +33,9 @@ enum class DictationState {
     Refining,
     Delivering,
     Error,
+    // A selection edit waits for Replace or Keep original. Last, so the
+    // macOS bridge's mirror of these values keeps the ones before it.
+    Reviewing,
 };
 
 QString dictationStateName(DictationState state);
@@ -39,8 +43,9 @@ QString dictationStateLabel(DictationState state, const QString &message = {});
 
 // What a Start/Stop control presents for a session state name, matching
 // what toggle() would actually do (DictationSession::toggleSession): it stops
-// starting and listening, cancels a refinement, and does nothing during
-// stopping and delivering, when it is disabled and names the state instead.
+// starting and listening, cancels a refinement, dictates a follow-up to an
+// edit under review, and does nothing during stopping and delivering, when
+// it is disabled and names the state instead.
 struct DictationToggleAction {
     QString label;
     bool enabled = true;
@@ -66,10 +71,34 @@ QString dictationShortcutHint(const QString &shortcut);
 bool dictationListeningPresentation(const QString &stateName);
 
 // Whether a session state name is one a cancel would throw away, Starting
-// through Refining: trays offer Cancel then, and Windows and macOS take Escape.
+// through Refining, or Reviewing, where cancel keeps the original selection:
+// trays offer Cancel then, and Windows and macOS take Escape.
 bool dictationCancelable(const QString &stateName);
 // Whether pause or resume applies: Listening or Paused.
 bool dictationPausable(const QString &stateName);
+
+// Which of Escape and Enter a session wants taken from the desktop.
+struct SessionKeys {
+    bool escape = false;
+    bool enter = false;
+
+    bool operator==(const SessionKeys &other) const = default;
+};
+// Escape cancels a cancelable session where the platform takes it for the
+// whole session, unless the Cancel or Pause Shortcut is Escape: both cannot
+// hold it at once. While a selection edit is up for review, a follow-up to it
+// dictated or not, Escape is taken on every platform, since there it keeps
+// the review rather than reaching the Target and its selection; only a
+// Cancel Shortcut of Escape, which does the same, leaves it be, and a Pause
+// Shortcut of Escape while the follow-up can be paused. Enter
+// replaces while the edit waits. Nothing is taken while the session
+// shortcuts are suspended, as while one is being recorded.
+SessionKeys sessionKeysWanted(const QString &stateName,
+                              bool reviewUp,
+                              bool escapeCancelsDictation,
+                              const ShortcutBinding &cancelShortcut,
+                              const ShortcutBinding &pauseShortcut,
+                              bool suspended);
 // The trays' Cancel item.
 QString cancelDictationCaption();
 

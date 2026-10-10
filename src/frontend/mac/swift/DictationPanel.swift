@@ -188,6 +188,23 @@ final class DictationPanelState: ObservableObject {
     @Published var updateActionEnabled = true
     /// The what's-new banner's message, empty once hidden or dismissed.
     @Published var whatsNewMessage = ""
+    /// A selection edit waiting for Keep original or Replace, as a card in
+    /// the pill's place, or above it while a follow-up is dictated; nil once
+    /// the session ends the review.
+    @Published var review: SpeecherSelectionEditReview?
+    /// Show all: the whole edit rather than the folded one.
+    @Published var reviewWhole = false
+    /// The card's width, and the edit's height up to its line limit and the
+    /// whole card's, as SwiftUI lays them out at that width.
+    @Published var reviewWidth: CGFloat = 0
+    @Published var reviewEditHeight: CGFloat = 0
+    @Published var reviewHeight: CGFloat = 0
+    /// Test seam: where the card was laid out, in the window's coordinates;
+    /// empty while not showing.
+    var reviewFrame = CGRect.zero
+
+    /// The pill shows unless a review stands alone in its place.
+    var showsPill: Bool { review?.following ?? true }
 
     var presentation: (symbol: String, label: String, finished: Bool) {
         if !problem.isEmpty {
@@ -355,7 +372,10 @@ struct DictationPanelView: View {
     let openWhatsNew: () -> Void
     let dismissWhatsNew: () -> Void
     var togglePause: () -> Void = {}
+    /// Also the review's Keep original, which is the same cancel.
     var cancelSession: () -> Void = {}
+    var replaceSelection: () -> Void = {}
+    var toggleWholeEdit: () -> Void = {}
     var whatsNew = SpeecherWhatsNewBanner.preview(forVersion: "")
 
     var body: some View {
@@ -375,9 +395,26 @@ struct DictationPanelView: View {
                             actionEnabled: state.updateActionEnabled,
                             action: installUpdate)
             }
-            pill
+            // The card, and the capsule under it while a follow-up is dictated.
+            if let review = state.review {
+                reviewCard(review)
+            }
+            if state.showsPill {
+                pill
+            }
         }
         .frame(maxHeight: .infinity, alignment: .bottom)
+    }
+
+    /// The review in the plain rounded outline a problem takes.
+    private func reviewCard(_ review: SpeecherSelectionEditReview) -> some View {
+        ReviewCard(review: review, whole: state.reviewWhole, editHeight: state.reviewEditHeight,
+                   keepOriginal: cancelSession, replaceSelection: replaceSelection,
+                   toggleWhole: toggleWholeEdit)
+            .frame(width: state.reviewWidth, height: state.reviewHeight)
+            .background(DictationPanelBackground(shape: PanelContour(shoulder: 0, lobeWidth: 0),
+                                                 cornerRadius: min(capsuleCornerRadius, state.reviewHeight / 2)))
+            .reportingFrame { state.reviewFrame = $0 }
     }
 
     private var pill: some View {
@@ -519,6 +556,148 @@ struct DictationPanelView: View {
 
     /// The phase in words, for the screen reader that can't see the symbol.
     private var phaseLabel: String { state.presentation.label }
+}
+
+/// Added words over a fifth of the system's green and removed ones over a
+/// fifth of its red, mixed over whatever the panel's material shows, as the
+/// Qt popup tints them over its Base.
+private let editTintOpacity = 0.2
+
+private extension SpeecherSelectionEditReview {
+    /// The edit as the card shows it: folded, until Show all asks for the
+    /// whole of it.
+    func shownRuns(whole: Bool) -> [SpeecherEditRun] {
+        folded.isEmpty || whole ? runs : folded
+    }
+}
+
+/// The edit with each run marked by its kind and the spaces after it left
+/// unmarked: added words tinted green; removed ones struck through in the
+/// secondary colour and tinted red; left-out words a secondary ellipsis.
+private func editText(_ runs: [SpeecherEditRun]) -> AttributedString {
+    var edit = AttributedString()
+    for run in runs {
+        var marked = AttributedString(run.text)
+        switch run.kind {
+        case .added:
+            marked.swiftUI.backgroundColor = Color(nsColor: .systemGreen).opacity(editTintOpacity)
+        case .removed:
+            marked.swiftUI.foregroundColor = .secondary
+            marked.swiftUI.strikethroughStyle = .single
+            marked.swiftUI.backgroundColor = Color(nsColor: .systemRed).opacity(editTintOpacity)
+        case .omitted:
+            marked.swiftUI.foregroundColor = .secondary
+        case .kept:
+            break
+        @unknown default:
+            break
+        }
+        edit += marked
+        edit += AttributedString(run.trailing)
+    }
+    return edit
+}
+
+/// The marked edit, wrapping at the width it is given.
+private struct ReviewEdit: View {
+    let runs: [SpeecherEditRun]
+
+    var body: some View {
+        Text(editText(runs))
+            .font(popupFont)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A selection edit waiting for the person, as the Qt popup's card shows it:
+/// what was said, the edit marked against the selection, and its summary
+/// beside Keep original and Replace; while a follow-up is dictated, the edit
+/// alone, dimmed. Value driven, so the panel can measure it at the card's
+/// width before it sizes the window.
+private struct ReviewCard: View {
+    let review: SpeecherSelectionEditReview
+    let whole: Bool
+    /// Past its line limit the edit scrolls inside this height.
+    let editHeight: CGFloat
+    var keepOriginal: () -> Void = {}
+    var replaceSelection: () -> Void = {}
+    var toggleWhole: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PopupGeometry.reviewSpacing) {
+            if !review.instruction.isEmpty {
+                Text(review.instruction)
+                    .font(popupFont)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ScrollView(.vertical) {
+                ReviewEdit(runs: review.shownRuns(whole: whole))
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: editHeight)
+            .opacity(review.following ? PopupGeometry.followUpEditOpacity : 1)
+            // A follow-up decides what happens next, so the buttons wait.
+            if !review.following {
+                footer
+            }
+        }
+        .padding(.horizontal, PopupGeometry.previewSideMargin)
+        .padding(.vertical, PopupGeometry.reviewVerticalMargin)
+    }
+
+    /// The summary, Show all and how to ask for more on the left; Keep
+    /// original and Replace on the right.
+    private var footer: some View {
+        HStack(alignment: .bottom, spacing: PopupGeometry.reviewSpacing) {
+            VStack(alignment: .leading) {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text(review.folded.isEmpty ? review.summary : review.summary + " · ")
+                        .foregroundStyle(.secondary)
+                    if !review.folded.isEmpty {
+                        Button(whole ? SpeecherBridge.showChangesOnlyCaption : SpeecherBridge.showWholeEditCaption,
+                               action: toggleWhole)
+                            .buttonStyle(.link)
+                    }
+                }
+                .lineLimit(1)
+                if !review.followUpHint.isEmpty {
+                    Text(review.followUpHint)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .font(popupFont)
+            Spacer(minLength: 0)
+            keyedButton(SpeecherBridge.keepOriginalCaption, key: review.keepKey, action: keepOriginal)
+            let replace = keyedButton(SpeecherBridge.replaceSelectionCaption, key: review.replaceKey,
+                                      action: replaceSelection)
+            // Where Return replaces, Replace takes the default button's
+            // emphasis, in the prominent style the panel's banners give
+            // their action. Return itself arrives through the session's key
+            // grab, since the panel never becomes key.
+            if review.replaceKey.isEmpty {
+                replace
+            } else {
+                replace.buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    /// A button that names the key doing what a click does, after its caption
+    /// in the secondary colour; the panel never becomes key, so a click
+    /// leaves the Target focused.
+    private func keyedButton(_ caption: String, key: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(caption)
+                if !key.isEmpty {
+                    Text(key).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityLabel(caption)
+    }
 }
 
 /// The Linux waveform's dots, adaptive level and one-second travelling crest,
@@ -741,6 +920,8 @@ final class SpeecherDictationPanel {
             },
             togglePause: { [weak self] in self?.model.togglePause() },
             cancelSession: { [weak self] in self?.bridge.cancel() },
+            replaceSelection: { [weak self] in self?.bridge.replaceSelection() },
+            toggleWholeEdit: { [weak self] in self?.toggleWholeEdit() },
             whatsNew: model.whatsNewBanner))
         wire()
         installE2ECaptureSeam()
@@ -834,6 +1015,27 @@ final class SpeecherDictationPanel {
             self?.state.sessionState = .listening
             self?.state.status = SpeecherBridge.statusLabel(for: .listening)
             self?.syncFrameHeight()
+        }
+        bridge.popupSelectionEditReviewRequested = { [weak self] review in
+            guard let self else { return }
+            // A new review starts folded; the same one, followed up, keeps
+            // its view.
+            if state.review == nil {
+                state.reviewWhole = false
+            }
+            // The card alone takes the pill's place; while a follow-up is
+            // dictated the pill's live words stay.
+            if !review.following {
+                state.preview = ""
+            }
+            state.review = review
+            measureReview()
+            syncFrameHeight()
+        }
+        bridge.popupSelectionEditReviewEnded = { [weak self] in
+            guard let self else { return }
+            state.review = nil
+            syncFrameHeight()
         }
         bridge.popupErrorRequested = { [weak self] message, fix in
             self?.model.noteFailure(fix: fix)
@@ -951,7 +1153,14 @@ final class SpeecherDictationPanel {
     var statusFrame: CGRect { state.statusFrame }
     var cancelFrame: CGRect { state.cancelFrame }
     var outcomeFixFrame: CGRect { state.outcomeFixFrame }
+    var reviewFrame: CGRect { state.reviewFrame }
     var level: NSWindow.Level { panel.level }
+
+    private func toggleWholeEdit() {
+        state.reviewWhole.toggle()
+        measureReview()
+        syncFrameHeight()
+    }
 
     private func setPreview(_ preview: String) {
         guard !frozen, state.phase == .live else { return }
@@ -1045,7 +1254,6 @@ final class SpeecherDictationPanel {
             + (state.whatsNewMessage.isEmpty ? 0 : 1)
         let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
         let screenArea = (panel.screen ?? NSScreen.main)?.visibleFrame
-        let availableWidth = screenArea?.width ?? maximumPreviewBarWidth + screenEdgeMargin
         // A problem wraps at the width every platform shares, and the capsule
         // grows taller rather than wider.
         let wrapWidth = SpeecherBridge.popupErrorWrapWidth
@@ -1091,10 +1299,21 @@ final class SpeecherDictationPanel {
                 : max(PopupGeometry.pillMinimumWidth, state.lobeWidth)
         }
         state.pillWidth = min(contentWidth, maximumWidth)
-        let height = state.height + CGFloat(banners) * (bannerHeight + bannerSpacing)
+        // The card is measured as it arrives; only a new screen width asks
+        // again, not every streamed word of a follow-up.
+        if state.review != nil, state.reviewWidth != reviewCardWidth {
+            measureReview()
+        }
+        // The card, the pill, or the card with the pill under it.
+        let stack: CGFloat = state.review == nil ? state.height
+            : state.showsPill ? state.reviewHeight + bannerSpacing + state.height
+            : state.reviewHeight
+        let height = stack + CGFloat(banners) * (bannerHeight + bannerSpacing)
         // Each banner is one line sized to its message and buttons, so the
         // window is as wide as the widest, within the screen.
-        let width = min(max(state.pillWidth, bannerWidth(font: font)),
+        let width = min(max(state.showsPill ? state.pillWidth : 0,
+                            state.review == nil ? 0 : state.reviewWidth,
+                            bannerWidth(font: font)),
                         availableWidth - screenEdgeMargin)
         var frame = panel.frame
         guard abs(frame.width - width) >= 1 || abs(frame.height - height) >= 1 else { return }
@@ -1103,6 +1322,38 @@ final class SpeecherDictationPanel {
         frame.origin.x = (screenArea?.midX ?? frame.midX) - width / 2
         frame.size = NSSize(width: width, height: height)
         panel.setFrame(frame, display: true)
+    }
+
+    /// The width the screen leaves the panel.
+    private var availableWidth: CGFloat {
+        (panel.screen ?? NSScreen.main)?.visibleFrame.width ?? maximumPreviewBarWidth + screenEdgeMargin
+    }
+
+    /// A review is as wide as a problem's text and the preview's margins,
+    /// within the screen.
+    private var reviewCardWidth: CGFloat {
+        min(SpeecherBridge.popupErrorWrapWidth + 2 * PopupGeometry.previewSideMargin,
+            availableWidth - screenEdgeMargin)
+    }
+
+    /// The review's heights at the card's width, as SwiftUI lays the card
+    /// out: the edit's own up to its line limit, then the card around it.
+    private func measureReview() {
+        guard let review = state.review else { return }
+        let width = reviewCardWidth
+        state.reviewWidth = width
+        let edit = ReviewEdit(runs: review.shownRuns(whole: state.reviewWhole))
+        state.reviewEditHeight = min(fittingHeight(edit, width: width - 2 * PopupGeometry.previewSideMargin),
+                                     state.lineHeight * CGFloat(PopupGeometry.reviewMaxLines))
+        state.reviewHeight = fittingHeight(ReviewCard(review: review, whole: state.reviewWhole,
+                                                      editHeight: state.reviewEditHeight),
+                                           width: width)
+    }
+
+    /// The height SwiftUI gives a view at this width.
+    private func fittingHeight(_ view: some View, width: CGFloat) -> CGFloat {
+        ceil(NSHostingController(rootView: view)
+            .sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height)
     }
 
     /// The widest banner showing: its message in the callout font, the

@@ -283,6 +283,7 @@ set(SPEECHER_DOMAIN_SOURCES
   src/core/WritingProfileProviders.cpp
   src/dictation/DictationTypes.cpp
   src/dictation/PopupPresentation.cpp
+  src/dictation/SelectionEditPresentation.cpp
 )
 
 set(SPEECHER_DOMAIN_HEADERS
@@ -323,6 +324,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/dictation/DictationTypes.h
   src/dictation/PopupGeometry.h
   src/dictation/PopupPresentation.h
+  src/dictation/SelectionEditPresentation.h
 )
 
 set(SPEECHER_WORKFLOW_SOURCES
@@ -429,7 +431,7 @@ set(SPEECHER_PLATFORM_HEADERS
   src/output/QtClipboardDelivery.h
   src/output/TextDelivery.h
   src/platform/AccessibilityState.h
-  src/platform/CancelKeyGrab.h
+  src/platform/SessionKeyGrab.h
   src/platform/CorrectionDiff.h
   src/platform/FallbackPopupPositioner.h
   src/platform/GlobalShortcutBinder.h
@@ -457,6 +459,7 @@ set(SPEECHER_PLATFORM_LINUX_SOURCES
   src/platform/AtSpiTargetProvider.cpp
   src/platform/KGlobalAccelShortcutBinder.cpp
   src/platform/KWinActiveWindow.cpp
+  src/platform/LinuxSessionKeyGrab.cpp
   src/platform/KeywatchSetup.cpp
   src/platform/KeywatchShortcutBinder.cpp
   src/platform/LinuxDesktopIntegration.cpp
@@ -483,6 +486,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
   src/platform/AtSpiTargetProvider.h
   src/platform/KGlobalAccelShortcutBinder.h
   src/platform/KWinActiveWindow.h
+  src/platform/LinuxSessionKeyGrab.h
   src/platform/KeywatchSetup.h
   src/platform/KeywatchShortcutBinder.h
   src/platform/LinuxDesktopIntegration.h
@@ -501,7 +505,7 @@ set(SPEECHER_PLATFORM_LINUX_HEADERS
 
 set(SPEECHER_PLATFORM_MAC_SOURCES
   src/output/mac/MacPasteDelivery.mm
-  src/platform/mac/MacCancelKeyGrab.mm
+  src/platform/mac/MacSessionKeyGrab.mm
   src/platform/mac/MacCorrectionObserver.mm
   src/platform/mac/MacGlobalShortcutBinder.mm
   src/platform/mac/MacKeyCode.mm
@@ -515,7 +519,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
 
 set(SPEECHER_PLATFORM_MAC_HEADERS
   src/output/mac/MacPasteDelivery.h
-  src/platform/mac/MacCancelKeyGrab.h
+  src/platform/mac/MacSessionKeyGrab.h
   src/platform/mac/MacCorrectionObserver.h
   src/platform/mac/MacGlobalShortcutBinder.h
   src/platform/mac/MacKeyCode.h
@@ -528,7 +532,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
 
 set(SPEECHER_PLATFORM_WIN_SOURCES
   src/output/win/WinPasteDelivery.cpp
-  src/platform/win/WinCancelKeyGrab.cpp
+  src/platform/win/WinSessionKeyGrab.cpp
   src/platform/win/WinCaptureInput.cpp
   src/platform/win/WinCommunicationsAudioInput.cpp
   src/platform/win/WinCorrectionObserver.cpp
@@ -542,7 +546,7 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
 )
 set(SPEECHER_PLATFORM_WIN_HEADERS
   src/output/win/WinPasteDelivery.h
-  src/platform/win/WinCancelKeyGrab.h
+  src/platform/win/WinSessionKeyGrab.h
   src/platform/win/WinCaptureInput.h
   src/platform/win/WinCommunicationsAudioInput.h
   src/platform/win/WinCorrectionObserver.h

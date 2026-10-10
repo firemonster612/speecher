@@ -13,6 +13,7 @@ QString dictationStateName(DictationState state)
     case DictationState::Refining: return QStringLiteral("refining");
     case DictationState::Delivering: return QStringLiteral("delivering");
     case DictationState::Error: return QStringLiteral("error");
+    case DictationState::Reviewing: return QStringLiteral("reviewing");
     }
     return QStringLiteral("error");
 }
@@ -26,6 +27,10 @@ DictationToggleAction dictationToggleAction(const QString &stateName)
     }
     if (lowered == QStringLiteral("refining")) {
         return {QStringLiteral("Cancel refinement"), true};
+    }
+    // As the Global Shortcut does then: a follow-up instruction.
+    if (lowered == QStringLiteral("reviewing")) {
+        return {QStringLiteral("Ask for more changes"), true};
     }
     // Nothing to do while the text is on its way, so the control says why.
     if (lowered == QStringLiteral("stopping") || lowered == QStringLiteral("delivering")) {
@@ -56,6 +61,9 @@ QString dictationStatusLabel(const QString &stateName, const QString &message)
     if (lowered == QStringLiteral("delivering")) {
         return message.isEmpty() ? QStringLiteral("Delivering…") : message;
     }
+    if (lowered == QStringLiteral("reviewing")) {
+        return QStringLiteral("Review the edit in the popup");
+    }
     if (lowered == QStringLiteral("error")) {
         return message.isEmpty() ? QStringLiteral("Dictation failed") : message;
     }
@@ -85,13 +93,31 @@ bool dictationCancelable(const QString &stateName)
     const QString lowered = stateName.toLower();
     return lowered == QStringLiteral("starting") || lowered == QStringLiteral("listening")
         || lowered == QStringLiteral("paused") || lowered == QStringLiteral("stopping")
-        || lowered == QStringLiteral("refining");
+        || lowered == QStringLiteral("refining") || lowered == QStringLiteral("reviewing");
 }
 
 bool dictationPausable(const QString &stateName)
 {
     const QString lowered = stateName.toLower();
     return lowered == QStringLiteral("listening") || lowered == QStringLiteral("paused");
+}
+
+SessionKeys sessionKeysWanted(const QString &stateName,
+                              bool reviewUp,
+                              bool escapeCancelsDictation,
+                              const ShortcutBinding &cancelShortcut,
+                              const ShortcutBinding &pauseShortcut,
+                              bool suspended)
+{
+    if (suspended) {
+        return {};
+    }
+    const ShortcutBinding escape{QKeySequence(Qt::Key_Escape)};
+    const bool waiting = stateName.toLower() == QStringLiteral("reviewing");
+    const bool cancels = dictationCancelable(stateName) && escapeCancelsDictation && pauseShortcut != escape;
+    // A Pause Shortcut of Escape holds it while a follow-up can be paused.
+    const bool keepsReview = reviewUp && !(dictationPausable(stateName) && pauseShortcut == escape);
+    return {cancelShortcut != escape && (keepsReview || cancels), waiting};
 }
 
 QString cancelDictationCaption()
@@ -105,7 +131,8 @@ SessionControls sessionControls(const QString &stateName)
     const bool paused = lowered == QStringLiteral("paused");
     const bool listening = lowered == QStringLiteral("listening");
     const bool pauseVisible = lowered == QStringLiteral("starting") || listening || paused;
-    const bool cancelVisible = dictationCancelable(lowered);
+    // A review has buttons of its own.
+    const bool cancelVisible = dictationCancelable(lowered) && lowered != QStringLiteral("reviewing");
     return {pauseVisible, listening || paused, paused, cancelVisible,
             cancelVisible && !pauseVisible};
 }

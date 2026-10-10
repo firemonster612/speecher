@@ -144,6 +144,10 @@ struct Target {
     AppCategory category = AppCategory::Unknown;
     bool accessible = false;
     bool secure = false;
+    // The control can be typed into. Selected text in a page or a terminal's
+    // output is no selection to edit; a platform that cannot tell leaves it
+    // set.
+    bool editable = true;
     bool terminalHost = false;
     bool aiCodingToolActive = false;
     // The compositor named this the active window when accessibility could not

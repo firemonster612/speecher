@@ -61,11 +61,11 @@ A local Vocabulary Entry inferred from a user's edit shortly after insertion.
 _Avoid_: Training sample, correction history
 
 **Global Shortcut**:
-The system-wide key combination that toggles a Dictation Session from anywhere on the desktop.
+The system-wide key combination that toggles a Dictation Session from anywhere on the desktop. While a selection edit waits for review, it dictates a follow-up instruction that changes the edit instead.
 _Avoid_: Hotkey, global hotkey, keybinding
 
 **Cancel Shortcut**:
-An optional Global Shortcut that cancels the Dictation Session in progress: nothing is pasted, copied or recorded, and the tray keeps the words heard so far to copy. Unbound until the user sets one. It acts only during a session, so where the desktop lets Speecher take a key just for the session (Windows, macOS, Plasma, X11) it may be a bare key such as C or Escape. On Windows and macOS, Escape also cancels while a session is active, unless Escape is the Cancel or Pause Shortcut.
+An optional Global Shortcut that cancels the Dictation Session in progress: nothing is pasted, copied or recorded, and the tray keeps the words heard so far to copy. Unbound until the user sets one. It acts only during a session, so where the desktop lets Speecher take a key just for the session (Windows, macOS, Plasma, X11) it may be a bare key such as C or Escape. On Windows and macOS, Escape also cancels while a session is active, unless Escape is the Cancel or Pause Shortcut. While a selection edit waits for review, the Cancel Shortcut and Escape keep the original selection and Enter replaces it; Plasma and X11 take Escape and Enter for the review as well. While a follow-up instruction is dictated, they drop the follow-up and keep the review.
 _Avoid_: Abort key, escape shortcut
 
 **Pause Shortcut**:

@@ -85,6 +85,44 @@ std::optional<int> rangeOffset(IUIAutomationTextRange *document,
     return offset;
 }
 
+// Whether the selected text is read-only, from the text pattern: what a
+// control without a value pattern, such as a read-only rich text box, says
+// about itself. The selection is what Replace would change, so a protected
+// stretch inside an editable document counts too, as does a selection only
+// partly read-only, since Replace would run into that part. Nothing when
+// there is no selection or the control doesn't say.
+std::optional<bool> selectionReadOnly(IUIAutomation *automation, IUIAutomationElement *element)
+{
+    ComPtr<IUIAutomationTextPattern> textPattern;
+    ComPtr<IUIAutomationTextRangeArray> selections;
+    ComPtr<IUIAutomationTextRange> selection;
+    int count = 0;
+    if (FAILED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&textPattern))) || !textPattern
+        || FAILED(textPattern->GetSelection(&selections)) || !selections
+        || FAILED(selections->get_Length(&count)) || count < 1
+        || FAILED(selections->GetElement(0, &selection)) || !selection) {
+        return std::nullopt;
+    }
+    VARIANT value;
+    VariantInit(&value);
+    if (FAILED(selection->GetAttributeValue(UIA_IsReadOnlyAttributeId, &value))) {
+        return std::nullopt;
+    }
+    std::optional<bool> readOnly;
+    if (value.vt == VT_BOOL) {
+        readOnly = value.boolVal != VARIANT_FALSE;
+    } else if (value.vt == VT_UNKNOWN) {
+        // UI Automation's reserved values are singletons, compared by identity.
+        ComPtr<IUnknown> mixed;
+        if (SUCCEEDED(automation->get_ReservedMixedAttributeValue(&mixed)) && mixed
+            && value.punkVal == mixed.Get()) {
+            readOnly = true;
+        }
+    }
+    VariantClear(&value);
+    return readOnly;
+}
+
 std::optional<QPair<int, int>> selectionOffsets(IUIAutomationElement *element)
 {
     ComPtr<IUIAutomationTextPattern> textPattern;
@@ -252,6 +290,18 @@ Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
             if (SUCCEEDED(focused->get_CurrentIsPassword(&password))) {
                 target.secure = password;
             }
+            // Read-only only when the control says so, through its value
+            // pattern or else its text: a document such as Word's offers no
+            // value pattern and is still typed into.
+            ComPtr<IUIAutomationValuePattern> valuePattern;
+            BOOL readOnly = FALSE;
+            if (SUCCEEDED(focused->GetCurrentPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&valuePattern)))
+                && valuePattern && SUCCEEDED(valuePattern->get_CurrentIsReadOnly(&readOnly))) {
+                target.editable = !readOnly;
+            } else if (const std::optional<bool> readOnlySelection =
+                           selectionReadOnly(m_native->automation.Get(), focused.Get())) {
+                target.editable = !*readOnlySelection;
+            }
 
             if (!target.secure) {
                 const QString value = currentText(focused.Get());
@@ -278,6 +328,11 @@ Target WinTargetProvider::capture(const QList<AppRecognitionRule> &recognitionRu
     }
 
     target.terminalHost = terminalExecutables().contains(target.applicationId);
+    // A terminal shows output, and a paste there goes in at the prompt
+    // rather than over the selection, so its text is never edited.
+    if (target.terminalHost) {
+        target.editable = false;
+    }
     target.category = classifyTarget(target, recognitionRules);
     if (target.terminalHost && target.category == AppCategory::General) {
         target.category = AppCategory::Terminal;

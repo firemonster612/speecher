@@ -167,6 +167,7 @@ bool Target::hasIdentity() const
 bool Target::hasSelection() const
 {
     return !secure
+        && editable
         && selectionStart >= 0
         && selectionEnd > selectionStart
         && !selectedText.isEmpty();

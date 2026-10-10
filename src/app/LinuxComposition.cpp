@@ -8,6 +8,7 @@
 #include "platform/KGlobalAccelShortcutBinder.h"
 #include "platform/KeywatchShortcutBinder.h"
 #include "platform/LinuxDesktopIntegration.h"
+#include "platform/LinuxSessionKeyGrab.h"
 #include "platform/MediaPauseController.h"
 #include "platform/PortalGlobalShortcutBinder.h"
 #include "platform/RoutingShortcutBinder.h"
@@ -214,6 +215,11 @@ GlobalShortcutBinder *createSingleKeyBinder(const GlobalShortcutAction &action)
 }
 
 } // namespace
+
+SessionKeyGrab *LinuxComposition::createSessionKeyGrab(QObject *parent) const
+{
+    return new LinuxSessionKeyGrab(parent);
+}
 
 GlobalShortcutBinder *LinuxComposition::createGlobalShortcutBinder(GlobalShortcutRole role,
                                                                    QObject *parent) const

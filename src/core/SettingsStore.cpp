@@ -229,6 +229,7 @@ void SettingsStore::applySnapshot(const AppSettings &draft)
     setSoundsEnabled(draft.ui.soundsEnabled);
     setTranscriptionPreviewEnabled(draft.ui.transcriptionPreviewEnabled);
     setRefinementPreviewEnabled(draft.ui.refinementPreviewEnabled);
+    setSelectionEditReviewEnabled(draft.ui.selectionEditReviewEnabled);
     setPreviewWords(draft.ui.previewWords);
     setSpeechProvider(draft.speech.providerId);
     setSpeechFallbackProviders(draft.speech.fallbackProviderIds);

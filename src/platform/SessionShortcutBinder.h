@@ -22,6 +22,11 @@ public:
     void setArmed(bool armed) override;
     void suspend() override;
     QString resume() override;
+    // Holds these keys while armed and not suspended, without storing them:
+    // for a key Speecher picks itself rather than one the person bound.
+    void holdWhileArmed(const ShortcutBinding &keys);
+    // Whether the keys are taken now.
+    bool holding() const;
 
 protected:
     // Takes the keys from the desktop; false when another app holds them.

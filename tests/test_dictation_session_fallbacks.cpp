@@ -959,6 +959,10 @@ private slots:
         } else {
             local->emitCompletedText(QString());
         }
+        if (!delivered.isEmpty()) {
+            QCOMPARE(rig.session->state(), DictationState::Reviewing);
+            rig.session->replaceSelection();
+        }
         QCOMPARE(rig.delivery.calls, delivered.isEmpty() ? 0 : 1);
         if (!delivered.isEmpty()) {
             QCOMPARE(rig.delivery.lastText, delivered);

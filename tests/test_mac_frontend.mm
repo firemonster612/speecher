@@ -7,6 +7,8 @@
 #include "core/SettingsStore.h"
 #include "core/settings/SettingsKeys.h"
 #include "core/settings/SettingsSchema.h"
+#include "dictation/DictationTypes.h"
+#include "dictation/SelectionEditPresentation.h"
 #include "frontend/mac/MacFrontEnd.h"
 #include "frontend/mac/SpeecherBridge.h"
 #include "platform/mac/MacGlobalShortcutBinder.h"
@@ -118,11 +120,14 @@ id axAttribute(id element, CFStringRef attribute)
 
 // The first button under element, depth first, whose name as VoiceOver reads
 // it starts with caption: a row button's name runs on into its description.
+// A link-style button may read as a link, a role AppKit's headers do not
+// name.
 id axButton(id element, NSString *caption)
 {
     NSString *description = axAttribute(element, kAXDescriptionAttribute);
     NSString *name = description.length > 0 ? description : axAttribute(element, kAXTitleAttribute);
-    if ([axAttribute(element, kAXRoleAttribute) isEqual:(__bridge NSString *)kAXButtonRole]
+    NSString *role = axAttribute(element, kAXRoleAttribute);
+    if (([role isEqual:(__bridge NSString *)kAXButtonRole] || [role isEqual:@"AXLink"])
         && [name hasPrefix:caption]) {
         return element;
     }
@@ -207,6 +212,22 @@ NSWindow *dictationPanel()
         }
     }
     return nil;
+}
+
+// With SPEECHER_UPDATE_PREVIEW_DIR set, the panel as it is now lands there as
+// mac-<name>.png, which CI uploads with the update previews.
+void capturePanelPreview(NSWindow *panel, const QString &name)
+{
+    const QString directory = qEnvironmentVariable("SPEECHER_UPDATE_PREVIEW_DIR");
+    if (directory.isEmpty()) {
+        return;
+    }
+    QDir().mkpath(directory);
+    NSView *view = panel.contentView;
+    NSBitmapImageRep *bitmap = [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+    [view cacheDisplayInRect:view.bounds toBitmapImageRep:bitmap];
+    [[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+        writeToFile:(directory + "/mac-" + name + ".png").toNSString() atomically:YES];
 }
 
 // A test's mac UI over a bridge to its controller. Declared after the
@@ -569,6 +590,249 @@ private slots:
         QVERIFY(!ui.dictationPanelVisible);
         QVERIFY(ui.settingsWindowVisible);
         QCOMPARE(QString::fromNSString(ui.settingsPane), QStringLiteral("accounts"));
+    }
+
+    // The bridge carries a review as core words and marks it, run for run.
+    void selectionEditReviewCrossesTheBridgeWhole()
+    {
+        SelectionEditReview core = selectionEditReview(
+            QStringLiteral("Can we move the standup to Wednesday?"),
+            QStringLiteral("Can we move the standup to Thursday?"),
+            {QStringLiteral("make it Thursday"), QStringLiteral("actually make it Friday")},
+            {escapeKeyName(), enterKeyName(), QStringLiteral("⌥Space")});
+        core.following = true;
+        SpeecherSelectionEditReview *review = [SpeecherSelectionEditReview reviewWithCore:core];
+        QCOMPARE(QString::fromNSString(review.instruction), core.instruction);
+        QCOMPARE(QString::fromNSString(review.summary), core.summary);
+        QCOMPARE(QString::fromNSString(review.keepKey), escapeKeyName());
+        QCOMPARE(QString::fromNSString(review.replaceKey), enterKeyName());
+        QVERIFY(!core.followUpHint.isEmpty());
+        QCOMPARE(QString::fromNSString(review.followUpHint), core.followUpHint);
+        QVERIFY(review.following);
+        QCOMPARE(review.folded.count, NSUInteger(0));
+        QCOMPARE(review.runs.count, NSUInteger(core.runs.size()));
+        for (qsizetype index = 0; index < core.runs.size(); ++index) {
+            SpeecherEditRun *run = review.runs[NSUInteger(index)];
+            QCOMPARE(int(run.kind), int(core.runs[index].kind));
+            QCOMPARE(QString::fromNSString(run.text), core.runs[index].text);
+            QCOMPARE(QString::fromNSString(run.trailing), core.runs[index].trailing);
+        }
+        // The card has its own buttons, so the pill's go.
+        QCOMPARE(QString::fromNSString([SpeecherBridge statusLabelFor:SpeecherDictationStateReviewing]),
+                 dictationStatusLabel(QStringLiteral("reviewing")));
+        SpeecherSessionControls *controls = [SpeecherBridge sessionControlsFor:SpeecherDictationStateReviewing];
+        QVERIFY(!controls.pauseVisible && !controls.cancelVisible && !controls.busyVisible);
+    }
+
+    // A selection edit takes the pill's place as a card as wide as a
+    // problem's text, folded until Show all, and goes when the session ends
+    // the review, not when its state changes. With SPEECHER_UPDATE_PREVIEW_DIR
+    // set, the Qt popup's review states land there as mac-review-*.png.
+    void selectionEditReviewTakesThePillsPlace()
+    {
+        ApplicationController controller(false);
+        NativeUi native(controller);
+        SpeecherBridge *bridge = native.bridge;
+        bridge.popupStatusChanged(@"Refining", SpeecherDictationStateRefining);
+        bridge.popupShowRequested(76);
+        settle();
+        NSWindow *panel = dictationPanel();
+        QVERIFY(panel);
+        const NSRect pill = panel.frame;
+        const auto capture = [&](const QString &name) { capturePanelPreview(panel, name); };
+        QVERIFY(bridge.popupSelectionEditReviewRequested);
+        const auto showReview = [&](const QString &original, const QString &revised,
+                                    const QStringList &instructions, const ReviewKeys &keys) {
+            bridge.popupStatusChanged([SpeecherBridge statusLabelFor:SpeecherDictationStateReviewing],
+                                      SpeecherDictationStateReviewing);
+            bridge.popupSelectionEditReviewRequested([SpeecherSelectionEditReview
+                reviewWithCore:selectionEditReview(original, revised, instructions, keys)]);
+            settle();
+        };
+        const ReviewKeys keys{escapeKeyName(), enterKeyName()};
+
+        showReview(QStringLiteral("Can we move the standup to Wednesday? Half the team is out on Thursday and "
+                                  "I'd rather not run it with three people."),
+                   QStringLiteral("Can we move the standup to Thursday? Half the team is out on Wednesday and "
+                                  "I'd rather not run it with three people."),
+                   {QStringLiteral("swap the two days")}, keys);
+        capture("review-small");
+        QVERIFY(qAbs(panel.frame.size.width
+                     - (SpeecherBridge.popupErrorWrapWidth + 2 * SpeecherPopupGeometry.previewSideMargin))
+                <= 1);
+        QVERIFY(panel.frame.size.height > pill.size.height);
+        // The card grows upward from where the pill sat.
+        QCOMPARE(panel.frame.origin.y, pill.origin.y);
+        QVERIFY2(AXIsProcessTrusted(), "reaching the card's buttons as VoiceOver does needs the Accessibility grant");
+        QVERIFY(axButtonOnScreen(SpeecherBridge.keepOriginalCaption));
+        QVERIFY(axButtonOnScreen(SpeecherBridge.replaceSelectionCaption));
+        QVERIFY(!axButtonOnScreen(SpeecherBridge.showWholeEditCaption));
+        qInfo().noquote() << "Review card's accessibility tree:\n" << accessibilityTree(panel.contentView);
+        const CGFloat shortEdit = panel.frame.size.height;
+
+        const QString notes = QStringLiteral(
+            "Thanks for the update on the release. I looked through the notes and %1 are a couple of things I "
+            "want to flag before we ship. First, the %2 picker on the settings page still %3 remember the last "
+            "value, which is going to annoy anyone who customizes their theme. Second, the onboarding flow asks "
+            "for the microphone twice on some machines; I think %4 because we request access in the wizard and "
+            "again when the popup first opens. Neither of these %5 on %6 own, but together they make the first "
+            "five minutes feel unpolished. Could we organize a quick call tomorrow to decide which one to fix "
+            "first? I'm free most of the afternoon, and I can bring the logs from the two machines where I saw "
+            "the double prompt.");
+        showReview(notes.arg(QStringLiteral("their"), QStringLiteral("color"), QStringLiteral("dosen't"),
+                             QStringLiteral("its"), QStringLiteral("are blockers"), QStringLiteral("there")),
+                   notes.arg(QStringLiteral("there"), QStringLiteral("colour"), QStringLiteral("doesn't"),
+                             QStringLiteral("it's"), QStringLiteral("is a blocker"), QStringLiteral("its")),
+                   {QStringLiteral("fix the grammar")}, keys);
+        capture("review-folded");
+        const CGFloat folded = panel.frame.size.height;
+        QVERIFY(folded > shortEdit);
+        id showAll = axButtonOnScreen(SpeecherBridge.showWholeEditCaption);
+        QVERIFY(showAll);
+        QVERIFY(axPress(showAll));
+        settle();
+        capture("review-whole");
+        QVERIFY(panel.frame.size.height > folded);
+        QVERIFY(axButtonOnScreen(SpeecherBridge.showChangesOnlyCaption));
+        QCOMPARE(panel.frame.origin.y, pill.origin.y);
+
+        showReview(QStringLiteral("hey so the build is broken again lol, pretty sure it's the thing Marco merged "
+                                  "last night. can someone look at it before standup?"),
+                   QStringLiteral("Good morning. The build is failing again, most likely because of the change "
+                                  "Marco merged last night. Could someone investigate before the stand-up?"),
+                   {QStringLiteral("make this more formal")}, {escapeKeyName(), QString()});
+        capture("review-rewrite");
+        QVERIFY(!axButtonOnScreen(SpeecherBridge.showWholeEditCaption));
+
+        // A state change leaves the card up; the end of the review takes it
+        // away, and the receipt is the pill's.
+        bridge.popupStatusChanged([SpeecherBridge statusLabelFor:SpeecherDictationStateDelivering],
+                                  SpeecherDictationStateDelivering);
+        settle();
+        QVERIFY(axButtonOnScreen(SpeecherBridge.keepOriginalCaption));
+        QVERIFY(bridge.popupSelectionEditReviewEnded);
+        bridge.popupSelectionEditReviewEnded();
+        settle();
+        QVERIFY(!axButtonOnScreen(SpeecherBridge.keepOriginalCaption));
+        QVERIFY(NSIsEmptyRect(native.ui.dictationReviewFrame));
+        SpeecherErrorAction *noFix = [[SpeecherErrorAction alloc] initWithFix:SpeecherErrorFixNone pageId:@""];
+        bridge.popupMessageRequested((QStringLiteral("Copied • ") + selectionChangedNote()).toNSString(),
+                                     SpeecherPopupOutcomeCopied, noFix);
+        settle();
+        capture("receipt-selection-changed");
+        QCOMPARE(panel.frame.size.height, SpeecherPopupGeometry.pillHeight);
+    }
+
+    // While a follow-up is dictated the card stays, dimmed and without its
+    // buttons, and the dictation pill works under it as in any dictation;
+    // the new edit brings the card back alone. Show all holds until the card
+    // goes. Captured as mac-review-hint, mac-review-following and
+    // mac-review-following-refining.
+    void selectionEditReviewStaysOverAFollowUp()
+    {
+        ApplicationController controller(false);
+        NativeUi native(controller);
+        SpeecherBridge *bridge = native.bridge;
+        SpeecherMacUI *ui = native.ui;
+        bridge.popupStatusChanged(@"Refining", SpeecherDictationStateRefining);
+        bridge.popupShowRequested(77);
+        settle();
+        NSWindow *panel = dictationPanel();
+        QVERIFY(panel);
+        const NSRect pill = panel.frame;
+        const auto capture = [&](const QString &name) { capturePanelPreview(panel, name); };
+        const auto showReview = [&](const SelectionEditReview &review) {
+            bridge.popupSelectionEditReviewRequested([SpeecherSelectionEditReview reviewWithCore:review]);
+            settle();
+        };
+        const auto enterReviewing = [&] {
+            bridge.popupStatusChanged([SpeecherBridge statusLabelFor:SpeecherDictationStateReviewing],
+                                      SpeecherDictationStateReviewing);
+        };
+        QVERIFY2(AXIsProcessTrusted(), "reaching the card's buttons as VoiceOver does needs the Accessibility grant");
+
+        SelectionEditReview review = selectionEditReview(
+            QStringLiteral("Can we move the standup to Wednesday? Half the team is out on Thursday and "
+                           "I'd rather not run it with three people."),
+            QStringLiteral("Can we move the standup to Thursday? Half the team is out on Wednesday and "
+                           "I'd rather not run it with three people."),
+            {QStringLiteral("swap the two days")}, {escapeKeyName(), enterKeyName(), QStringLiteral("⌥Space")});
+        enterReviewing();
+        showReview(review);
+        capture("review-hint");
+        const CGFloat alone = panel.frame.size.height;
+        QVERIFY(axButtonOnScreen(SpeecherBridge.keepOriginalCaption));
+
+        // The follow-up starts as any dictation does, the review first.
+        review.following = true;
+        showReview(review);
+        bridge.popupShowRequested(78);
+        bridge.popupStatusChanged([SpeecherBridge statusLabelFor:SpeecherDictationStateListening],
+                                  SpeecherDictationStateListening);
+        bridge.popupListeningIndicatorRequested();
+        bridge.popupPreviewChanged(@"actually make it Friday");
+        settle();
+        capture("review-following");
+        QVERIFY(!axButtonOnScreen(SpeecherBridge.keepOriginalCaption));
+        QVERIFY(axButtonOnScreen(SpeecherBridge.cancelCaption));
+        const NSRect card = ui.dictationReviewFrame;
+        const NSRect cancel = ui.dictationCancelFrame;
+        QVERIFY2(!NSIsEmptyRect(card) && !NSIsEmptyRect(cancel),
+                 qPrintable(QStringLiteral("card %1, cancel %2")
+                     .arg(QString::fromNSString(NSStringFromRect(card)),
+                          QString::fromNSString(NSStringFromRect(cancel)))));
+        // The pill sits under the card; the frames run top down.
+        QVERIFY(NSMinY(cancel) >= NSMaxY(card));
+        QCOMPARE(panel.frame.origin.y, pill.origin.y);
+
+        bridge.popupStatusChanged([SpeecherBridge statusLabelFor:SpeecherDictationStateRefining],
+                                  SpeecherDictationStateRefining);
+        bridge.popupRefiningChanged(true);
+        settle();
+        capture("review-following-refining");
+        QVERIFY(!NSIsEmptyRect(ui.dictationReviewFrame));
+        QVERIFY(!NSIsEmptyRect(ui.dictationBusyFrame));
+
+        // The new edit: the card alone again, with no end of the review between.
+        bridge.popupRefiningChanged(false);
+        review.following = false;
+        enterReviewing();
+        showReview(review);
+        QVERIFY(axButtonOnScreen(SpeecherBridge.keepOriginalCaption));
+        QVERIFY(NSIsEmptyRect(ui.dictationCancelFrame));
+        QVERIFY(qAbs(panel.frame.size.height - alone) <= 1);
+
+        // Show all holds through a follow-up, and a review after the card
+        // went starts folded.
+        const QString notes = QStringLiteral(
+            "Thanks for the update on the release. I looked through the notes and %1 are a couple of things I "
+            "want to flag before we ship. First, the %2 picker on the settings page still %3 remember the last "
+            "value, which is going to annoy anyone who customizes their theme. Second, the onboarding flow asks "
+            "for the microphone twice on some machines; I think %4 because we request access in the wizard and "
+            "again when the popup first opens. Neither of these %5 on %6 own, but together they make the first "
+            "five minutes feel unpolished.");
+        SelectionEditReview folded = selectionEditReview(
+            notes.arg(QStringLiteral("their"), QStringLiteral("color"), QStringLiteral("dosen't"),
+                      QStringLiteral("its"), QStringLiteral("are blockers"), QStringLiteral("there")),
+            notes.arg(QStringLiteral("there"), QStringLiteral("colour"), QStringLiteral("doesn't"),
+                      QStringLiteral("it's"), QStringLiteral("is a blocker"), QStringLiteral("its")),
+            {QStringLiteral("fix the grammar")}, {escapeKeyName(), enterKeyName()});
+        QVERIFY(!folded.folded.isEmpty());
+        showReview(folded);
+        id showAll = axButtonOnScreen(SpeecherBridge.showWholeEditCaption);
+        QVERIFY(showAll);
+        QVERIFY(axPress(showAll));
+        settle();
+        folded.following = true;
+        showReview(folded);
+        folded.following = false;
+        showReview(folded);
+        QVERIFY(axButtonOnScreen(SpeecherBridge.showChangesOnlyCaption));
+        bridge.popupSelectionEditReviewEnded();
+        settle();
+        QVERIFY(NSIsEmptyRect(ui.dictationReviewFrame));
+        showReview(folded);
+        QVERIFY(axButtonOnScreen(SpeecherBridge.showWholeEditCaption));
     }
 
     // The Fallbacks row opens its subpage with the parent still selected, its

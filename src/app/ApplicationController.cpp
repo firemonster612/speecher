@@ -26,7 +26,7 @@
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingPresentation.h"
 #include "recording/RecordingSession.h"
-#include "platform/CancelKeyGrab.h"
+#include "platform/SessionKeyGrab.h"
 #include "platform/GlobalShortcutBinder.h"
 #include "transcribe/FileTranscriptionSession.h"
 
@@ -93,7 +93,7 @@ ApplicationController::ApplicationController(bool popupOnly,
     , m_shortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Dictation, this))
     , m_cancelShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Cancel, this))
     , m_pauseShortcutBinder(m_platform->createGlobalShortcutBinder(GlobalShortcutRole::Pause, this))
-    , m_cancelKeyGrab(m_platform->createCancelKeyGrab(this))
+    , m_sessionKeyGrab(m_platform->createSessionKeyGrab(this))
     , m_ipc(new SingleInstanceIpc(m_platform, this))
     , m_pushToTalkStart(new QTimer(this))
 {
@@ -177,8 +177,14 @@ ApplicationController::ApplicationController(bool popupOnly,
                     emit globalShortcutRegistrationFinished(bound, detail, role);
                 });
     }
-    if (m_cancelKeyGrab) {
-        connect(m_cancelKeyGrab, &CancelKeyGrab::pressed, this, &ApplicationController::cancel);
+    if (m_sessionKeyGrab) {
+        connect(m_sessionKeyGrab, &SessionKeyGrab::pressed, this, [this](SessionKeyGrab::Key key) {
+            if (key == SessionKeyGrab::Key::Enter) {
+                m_session->replaceSelection();
+            } else {
+                cancel();
+            }
+        });
     }
     m_secrets->migrateSettingsFallbacks();
     m_secrets->prefetch();
@@ -767,24 +773,28 @@ QString ApplicationController::resumeGlobalShortcut(GlobalShortcutRole *failedRo
 }
 
 // The Cancel and Pause Shortcuts hold their keys only while their action
-// applies, and Escape is the built-in cancel key only while neither of them
-// is Escape: both cannot hold it at once.
+// applies; sessionKeysWanted decides Escape and Enter.
 void ApplicationController::updateSessionShortcuts()
 {
     if (!m_session) {
         return;
     }
     const QString state = m_session->stateName();
-    const bool cancelable = dictationCancelable(state);
-    const bool pausable = dictationPausable(state);
-    if (m_cancelKeyGrab) {
-        const ShortcutBinding escape{QKeySequence(Qt::Key_Escape)};
-        m_cancelKeyGrab->setGrabbed(m_shortcutSuspensions == 0 && cancelable
-                                    && globalShortcut(GlobalShortcutRole::Cancel) != escape
-                                    && globalShortcut(GlobalShortcutRole::Pause) != escape);
+    const ShortcutBinding cancelShortcut = globalShortcut(GlobalShortcutRole::Cancel);
+    const SessionKeys wanted = sessionKeysWanted(state, m_session->reviewUp(), m_platform->escapeCancelsDictation(),
+                                                 cancelShortcut,
+                                                 globalShortcut(GlobalShortcutRole::Pause),
+                                                 m_shortcutSuspensions > 0);
+    bool escapeHeld = false;
+    bool enterHeld = false;
+    if (m_sessionKeyGrab) {
+        escapeHeld = m_sessionKeyGrab->setGrabbed(SessionKeyGrab::Key::Escape, wanted.escape);
+        enterHeld = m_sessionKeyGrab->setGrabbed(SessionKeyGrab::Key::Enter, wanted.enter);
     }
-    m_cancelShortcutBinder->setArmed(cancelable);
-    m_pauseShortcutBinder->setArmed(pausable);
+    m_cancelShortcutBinder->setArmed(dictationCancelable(state));
+    m_pauseShortcutBinder->setArmed(dictationPausable(state));
+    m_session->setReviewKeys(reviewKeysFor(escapeHeld, enterHeld, cancelShortcut.displayText(),
+                                           globalShortcutDisplay()));
 }
 
 void ApplicationController::registerGlobalShortcut(GlobalShortcutRole role)
