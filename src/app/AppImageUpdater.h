@@ -9,7 +9,6 @@ class QLocalServer;
 namespace speecher {
 
 class AppImageUpdaterTestAccess;
-class DictationSession;
 class SettingsStore;
 
 struct AppImageFileIdentity {
@@ -25,7 +24,6 @@ class AppImageUpdater final : public ManifestUpdater {
 
 public:
     AppImageUpdater(SettingsStore *settings,
-                    DictationSession *session,
                     QObject *parent = nullptr);
 
     bool isAppImage() const override;
