@@ -16,6 +16,9 @@
 #include "platform/PortalScreenshotContextProvider.h"
 #include "platform/WaylandLayerShell.h"
 #include "platform/atspi/AtSpiAccess.h"
+#ifdef SPEECHER_WITH_PULSE
+#include "platform/audio/PulseSystemAudioInput.h"
+#endif
 #include "platform/audio/QtAudioInput.h"
 #include "platform/audio/WavFileAudioInput.h"
 
@@ -99,6 +102,16 @@ AudioInput *LinuxComposition::createAudioInput(SettingsStore *settings, QObject 
                      input,
                      &QtAudioInput::applySettings);
     return input;
+}
+
+AudioInput *LinuxComposition::createSystemAudioInput(QObject *parent) const
+{
+#ifdef SPEECHER_WITH_PULSE
+    return new PulseSystemAudioInput(parent);
+#else
+    Q_UNUSED(parent);
+    return nullptr;
+#endif
 }
 
 MediaController *LinuxComposition::createMediaController(QObject *parent) const

@@ -23,6 +23,21 @@ function Start-Speecher([string]$Argument) {
     return $Process
 }
 
+# Quits the background app through the launcher, which waits for the quit
+# command and hands back its status. A native command's status is also the
+# step's exit status if nothing runs after it, so it is checked here.
+function Stop-BackgroundApp {
+    & (Join-Path $InstallDir "speecher.com") quit | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "speecher.com quit exited with $LASTEXITCODE"
+    }
+}
+
+# How many entries of the user's Path name the install folder.
+function Get-PathEntryCount {
+    @([Environment]::GetEnvironmentVariable("Path", "User") -split ";" | Where-Object { $_ -eq $InstallDir }).Count
+}
+
 try {
     $Arguments = @(
         "/VERYSILENT",
@@ -37,7 +52,7 @@ try {
     }
 
     $Exe = Join-Path $InstallDir "speecher.exe"
-    foreach ($Required in "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll") {
+    foreach ($Required in "speecher.com", "Qt6WebSockets.dll", "Qt6Multimedia.dll", "platforms\qoffscreen.dll", "transcribe.dll", "ggml-cpu-x64.dll", "ggml-vulkan.dll", "multimedia\ffmpegmediaplugin.dll", "networkinformation\qnetworklistmanager.dll") {
         if (-not (Test-Path (Join-Path $InstallDir $Required))) {
             throw "Installed application is missing $Required"
         }
@@ -59,7 +74,7 @@ try {
     if (-not $VcRuntime) {
         throw "No Visual C++ runtime DLLs found under VCToolsRedistDir '$env:VCToolsRedistDir'"
     }
-    $Missing = foreach ($Binary in Get-ChildItem $InstallDir -Recurse -Include *.exe, *.dll) {
+    $Missing = foreach ($Binary in Get-ChildItem $InstallDir -Recurse -Include *.exe, *.com, *.dll) {
         $Dump = (& dumpbin /nologo /dependents $Binary.FullName) -join "`n"
         if ($LASTEXITCODE -ne 0) {
             throw "dumpbin failed on $($Binary.FullName) with exit code $LASTEXITCODE"
@@ -98,6 +113,22 @@ try {
         }
     }
 
+    # The console launcher waits for speecher.exe and hands back its output
+    # and exit status; a usage error exits with 2.
+    $Launcher = Join-Path $InstallDir "speecher.com"
+    $Status = & $Launcher status
+    if ($LASTEXITCODE -ne 0 -or $Status -ne "idle") {
+        throw "speecher.com status printed '$Status' and exited with $LASTEXITCODE"
+    }
+    & $Launcher status --format html 2>$null
+    if ($LASTEXITCODE -ne 2) {
+        throw "speecher.com returned $LASTEXITCODE for a usage error rather than 2"
+    }
+    if ((Get-PathEntryCount) -ne 1) {
+        throw "The installer did not put $InstallDir on the user's Path"
+    }
+    Write-Output "speecher.com returned speecher.exe's output and exit status"
+
     # Launch with only system directories on PATH to prove the install is
     # self-contained. WinUI 3 cannot render into the offscreen QPA platform
     # (it needs a real HWND), so this opens the settings window on the runner's
@@ -118,6 +149,51 @@ try {
     Write-Output "Installed application launched and stayed alive without Qt on PATH"
     $App | Stop-Process -Force
     $App.WaitForExit()
+
+    # A run that goes on in the background releases the launcher, so the
+    # prompt comes back while Speecher keeps running.
+    $LauncherRun = Start-Process $Launcher -ArgumentList "--daemon" -PassThru
+    $null = $LauncherRun.Handle # keeps ExitCode readable after it exits
+    if (-not $LauncherRun.WaitForExit(10000)) {
+        $LauncherRun | Stop-Process -Force
+        throw "speecher.com --daemon was still waiting after 10 seconds"
+    }
+    if ($LauncherRun.ExitCode -ne 0) {
+        throw "speecher.com --daemon exited with $($LauncherRun.ExitCode)"
+    }
+    # The launcher's console host is its child too, so match by name.
+    $Child = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($LauncherRun.Id) AND Name = 'speecher.exe'"
+    $App = if ($Child) { Get-Process -Id $Child.ProcessId -ErrorAction SilentlyContinue }
+    if (-not $App) {
+        throw "speecher.com --daemon returned but speecher.exe is no longer running"
+    }
+    Stop-BackgroundApp
+    if (-not $App.WaitForExit(10000)) {
+        throw "speecher.exe quit did not stop the background app the launcher started"
+    }
+    Write-Output "speecher.com stopped waiting once the background app was running"
+
+    # Capturing that run's output returns too: the background app lets go of
+    # the pipe rather than holding it until it quits.
+    $Capture = Start-Job { $Out = & $using:Launcher --daemon; $LASTEXITCODE }
+    $Returned = Wait-Job $Capture -Timeout 10
+    $App = Get-Process speecher -ErrorAction SilentlyContinue | Where-Object Path -eq $Exe
+    if (-not $Returned) {
+        $Capture | Stop-Job
+        throw "Capturing the output of speecher.com --daemon was still waiting after 10 seconds"
+    }
+    $CaptureExit = Receive-Job $Capture
+    if ($CaptureExit -ne 0) {
+        throw "speecher.com --daemon exited with $CaptureExit when its output was captured"
+    }
+    if (-not $App) {
+        throw "speecher.com --daemon returned its captured output but speecher.exe is not running"
+    }
+    Stop-BackgroundApp
+    if (-not $App.WaitForExit(10000)) {
+        throw "speecher.exe quit did not stop the background app started with captured output"
+    }
+    Write-Output "Capturing speecher.com --daemon's output returned while the background app ran"
 
     # Restart Manager closing the running app without forcing, the way Setup
     # does when it replaces files in use. Only the tray window answers it;
@@ -170,6 +246,9 @@ public static class RestartManager {
         throw "Setup could not close the running application"
     }
     Write-Output "Setup closed the running application"
+    if ((Get-PathEntryCount) -ne 1) {
+        throw "Reinstalling left $(Get-PathEntryCount) entries for $InstallDir on the user's Path"
+    }
 
     # Uninstalling under the running app must quit it rather than leave its
     # locked files, and the folder, behind. The empty folders stand in for
@@ -189,6 +268,9 @@ public static class RestartManager {
         throw "Uninstall left files behind:`n$((Get-ChildItem $InstallDir -Recurse -Force).FullName -join "`n")"
     }
     Write-Output "Uninstall quit the running application and removed its folder"
+    if ((Get-PathEntryCount) -ne 0) {
+        throw "Uninstall left $InstallDir on the user's Path"
+    }
 
     # A folder this install did not create that still holds a file stays.
     $Install = Start-Process $InstallerPath -ArgumentList $Arguments -Wait -PassThru

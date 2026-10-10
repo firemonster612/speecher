@@ -3,6 +3,7 @@
 #include "recording/RecordingStatus.h"
 
 #include <QDateTime>
+#include <QDeadlineTimer>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QObject>
@@ -44,9 +45,10 @@ private:
 // partials are never written, except the one a dropped stream leaves. A line
 // carries the time its text was finalised, as streamed finals come with no
 // timings. The recording ends an utterance itself at a pause or once it runs
-// long, so a provider that finalizes only when asked (Codex) still writes
-// lines while it runs. It starts once the provider's stream connects; a
-// stream that drops after that reconnects until the recording stops.
+// long, and again at a stop, so a provider that finalizes only when asked
+// (Codex) or uploads each utterance on its own (the Custom Endpoint) still
+// writes lines while it runs. It starts once the provider's stream connects;
+// a stream that drops after that reconnects until the recording stops.
 class RecordingSession : public QObject {
     Q_OBJECT
 
@@ -81,8 +83,9 @@ public:
 
 signals:
     void recordingChanged(bool recording);
-    // While recording, a stream reconnects, connects again, stops on its own
-    // or starts losing audio, or the file first fails to take a line. Not
+    // While recording, a stream reconnects, connects again, stops on its
+    // own, misses an utterance or starts losing audio, or the file first
+    // fails to take a line. Not
     // for more audio lost or more lines missed, which can come with every
     // microphone chunk or line.
     void problemChanged();
@@ -95,6 +98,7 @@ private:
     void handleStreamConnected();
     void trackUtterance(const QByteArray &pcm);
     void endUtterance();
+    void extendStop();
     void writeLine(const QString &text);
     void handleTranscriptionFinished(const QList<TranscribeFileResult> &results);
     void abandon(const QString &error);
@@ -113,6 +117,11 @@ private:
     Phase m_phase = Phase::Off;
     // Ends a stop the provider never finishes.
     QTimer m_stopDeadline;
+    // When a stop gives up on the provider, however much it still answers.
+    QDeadlineTimer m_stopLimit;
+    // How long a stop waits for each utterance left, as long as the provider
+    // may take to answer one.
+    int m_utteranceAnswerTimeoutMs = 0;
     // Skip silence's threshold, which says what audio is speech.
     int m_voiceThreshold = 0;
     // Runs from the latest speech until a pause ends the utterance; while it

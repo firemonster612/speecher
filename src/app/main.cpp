@@ -63,6 +63,7 @@
 #include <fcntl.h>
 #include <io.h>
 #include <windows.h>
+#include "helpers/ConsoleLauncher.h"
 #else
 #include <termios.h>
 #include <unistd.h>
@@ -147,30 +148,76 @@ static bool unredirected(DWORD stream)
     return handle == nullptr || handle == INVALID_HANDLE_VALUE || GetFileType(handle) == FILE_TYPE_UNKNOWN;
 }
 
+// Whether the CRT bound no handle to a standard stream at startup. It binds
+// one to a file, pipe or NUL, but not to an unset standard handle or a console
+// handle this process could not use yet, and marks those -2: the stream's
+// descriptor, or the handle behind it.
+static bool unbound(FILE *stream)
+{
+    const int fd = _fileno(stream);
+    return fd < 0 || _get_osfhandle(fd) < 0;
+}
+
+// Reopens a standard stream on path and points the standard handle at the new
+// handle to match, for code that asks for the standard handle rather than
+// writing the stream. freopen closes the handle the stream had, if any.
+static void reopen(FILE *stream, const char *path, const char *mode, DWORD standardHandle)
+{
+    if (std::freopen(path, mode, stream) == nullptr) {
+        return;
+    }
+    SetStdHandle(standardHandle, reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stream))));
+}
+
 // Speecher is a GUI-subsystem program, so a command-line run starts with no
 // console. Borrow the one it was started from, if any, and point stdout and
 // stderr at it unless they already go to a file or pipe. cmd.exe does not
 // wait for a GUI-subsystem program, so its prompt can come back first.
+//
+// A console handle the launcher hands over is unusable until AttachConsole
+// reconnects it, by which point the CRT has already left those streams
+// unbound, so cout and cerr write nowhere. Reopen them on the console. They
+// are opened for reading too, since GetConsoleMode, which stderrIsTerminal
+// asks, needs read access.
 static void attachParentConsole()
 {
     if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
         return;
     }
-    if (unredirected(STD_OUTPUT_HANDLE)) {
-        std::freopen("CONOUT$", "w", stdout);
+    if (unbound(stdout)) {
+        reopen(stdout, "CONOUT$", "w+", STD_OUTPUT_HANDLE);
     }
-    if (unredirected(STD_ERROR_HANDLE)) {
-        std::freopen("CONOUT$", "w", stderr);
+    if (unbound(stderr)) {
+        reopen(stderr, "CONOUT$", "w+", STD_ERROR_HANDLE);
     }
     std::cout.clear();
     std::cerr.clear();
 }
 
 // A window or daemon run outlives the console it was started from, and
-// closing that console ends every process attached to it.
+// closing that console ends every process attached to it. It also lets go of
+// the standard handles it was given: a caller reading a redirected stdout,
+// such as `$out = speecher --daemon`, waits until every writer closes the
+// pipe. speecher.com, if that is what started this, stops waiting for it, but
+// only once this has left the console: a shell that exits with the launcher
+// closes it.
+//
+// The streams move to NUL before FreeConsole, so none of them is left, even
+// briefly, writing to a console this process has left.
 static void detachParentConsole()
 {
+    reopen(stdin, "NUL", "r", STD_INPUT_HANDLE);
+    reopen(stdout, "NUL", "w", STD_OUTPUT_HANDLE);
+    reopen(stderr, "NUL", "w", STD_ERROR_HANDLE);
     FreeConsole();
+    std::cout.clear();
+    std::cerr.clear();
+    const HANDLE launcherWait = OpenEventW(EVENT_MODIFY_STATE, FALSE,
+                                           consoleDetachedEventName(GetCurrentProcessId()).c_str());
+    if (launcherWait) {
+        SetEvent(launcherWait);
+        CloseHandle(launcherWait);
+    }
 }
 
 // Whether stderr is a console that takes the escape codes that rewrite the
@@ -715,11 +762,14 @@ int main(int argc, char **argv)
             });
         }
     }
+    // A grab ends by itself, so it keeps the console and the launcher waits
+    // for its exit status.
     if (!decision.grabPath.isEmpty()) {
         QTimer::singleShot(600, &controller, [&controller, &app, &decision] {
             app.exit(controller.grabMainWindow(decision.grabPath) ? 0 : 1);
         });
+    } else {
+        detachParentConsole();
     }
-    detachParentConsole();
     return app.exec();
 }

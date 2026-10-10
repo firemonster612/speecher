@@ -220,8 +220,16 @@ public:
         return std::nullopt;
     }
     virtual SpeechPrepareResult prepare(const SpeechSettings &settings) = 0;
+    // Whether prepare() renews a sign-in that expires, so one the service
+    // turned down may be taken once it has run again. A key from Settings
+    // is not renewed.
+    virtual bool renewsSignIn() const { return false; }
+    // How long the provider may take to answer an utterance once it has all
+    // of it; a recording's stop waits that long for each one left.
+    virtual int utteranceAnswerTimeoutMs() const { return 15000; }
     // Whether finalTranscript arrives while the audio still streams, an
-    // utterance at a time, rather than all at the end. A recording needs it.
+    // utterance at a time, by itself or at each endUtterance(), rather than
+    // all at the end. A recording needs it.
     virtual bool streamsFinalText(const SpeechSettings &settings) const
     {
         Q_UNUSED(settings);
@@ -235,6 +243,10 @@ public:
     // provider that does not end one at a silence by itself. Providers that do
     // ignore it.
     virtual void endUtterance(quint64 attemptId) { Q_UNUSED(attemptId) }
+    // With SpeechSettings::cutIntoUtterances, the audio from here on is the
+    // next utterance, and what came since the last ended was quiet. Providers
+    // that take the quiet too ignore it.
+    virtual void beginUtterance(quint64 attemptId) { Q_UNUSED(attemptId) }
 
 signals:
     // Optional: the service accepted the attempt's stream, so audio sent from
@@ -251,6 +263,9 @@ signals:
     void attemptSegments(quint64 attemptId, const QList<speecher::TranscriptSegment> &segments);
     void attemptCompleted(quint64 attemptId);
     void failed(const speecher::SpeechFailure &failure);
+    // Optional: an utterance endUtterance() ended was not transcribed, or
+    // only in part, and the attempt goes on with the next.
+    void utteranceFailed(const speecher::SpeechFailure &failure);
 };
 
 class TranscriptRefiner : public QObject {

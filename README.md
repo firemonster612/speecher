@@ -14,17 +14,20 @@ Sign in to at least one transcription service: Claude Code for Claude Voice, or 
 
 ```sh
 # Arch
-sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard at-spi2-core kglobalaccel kwidgetsaddons kcolorscheme
+sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard at-spi2-core kglobalaccel kwidgetsaddons kcolorscheme libpulse
 
 # Debian
-sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard libatspi2.0-dev libkf6globalaccel-dev libkf6widgetsaddons-dev libkf6colorscheme-dev
+sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard libatspi2.0-dev libkf6globalaccel-dev libkf6widgetsaddons-dev libkf6colorscheme-dev libpulse-dev
 
 # Fedora
-sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel kf6-kglobalaccel-devel kf6-kwidgetsaddons-devel kf6-kcolorscheme-devel
+sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel kf6-kglobalaccel-devel kf6-kwidgetsaddons-devel kf6-kcolorscheme-devel pulseaudio-libs-devel
 
 # macOS
 brew install cmake ninja pkgconf qt qtkeychain
 ```
+
+On Linux the libpulse development package enables system audio capture; a
+build without it leaves system audio out.
 
 On Windows 11, install the MSVC 2022 build tools and Qt 6.8.3, then follow
 [`docs/windows.md`](docs/windows.md). Windows release builds install from
@@ -84,7 +87,9 @@ Microsoft Defender SmartScreen warning after a browser download. Choose
 **More info > Run anyway** after checking that the file came from the Speecher
 GitHub release. The installer is per-user and needs no administrator access.
 Speecher downloads later installers in-app, verifies their SHA-256 values, and
-runs them silently after the active Dictation Session finishes.
+runs them silently after the active Dictation Session finishes. The installer also
+adds its folder to your user Path, so `speecher` works in a new Command Prompt or
+PowerShell window; uninstalling takes it off again.
 
 The default Update Channel is Stable Release. Nightly Builds are republished from every push to `master`, not on a nightly schedule. Switch channels in **Settings > General > Updates**.
 
@@ -206,6 +211,8 @@ open build/speecher.app     # macOS
 
 These CLI commands contact the running app through a per-user socket (on macOS the binary lives at `build/speecher.app/Contents/MacOS/speecher`; **Install command line tool…** in the menu bar panel puts a `speecher` command in `/usr/local/bin`, see [docs/macos.md](docs/macos.md#the-speecher-command)). `toggle` switches recording on or off, `start` only starts it, `stop` only stops it, and `status` prints the current state. If `toggle` or `start` can't find a running instance, it starts a popup-only background process and begins listening. Calling `stop` or `status` without a running instance prints `idle`. `status --json` prints one object, `{"state": "idle", "recording": false}`, where `recording` is the object `record status --json` prints while a recording runs. `status --watch` is for status bars such as Waybar, tmux and SketchyBar: it prints a line at once and another whenever the dictation state changes or a recording starts, stops, or has a stream reconnect or stop, until Ctrl-C ends it with status 0. A line is the state, such as `idle` or `listening`, or while recording `recording 00:12:03`, after the state unless that is idle, and the duration is the recording's at that change. With `--json` each line is the object `status --json` prints. Started before Speecher, it prints `idle` and looks for Speecher every 2 seconds; when Speecher quits, it exits with status 0. A Speecher too old for `--watch` makes it say so and exit with 1. `last` prints the running app's last transcript, the text the tray panel and Home show, which helps when a paste landed in the wrong window. It is kept in memory only, so it prints nothing and exits with status 1 when there is no transcript yet or no running app. `vocabulary add <terms...>` saves the terms to the custom vocabulary, where Settings > Vocabulary and the next dictation have them without a restart. A term already in the list, in any case, is skipped and named on stderr. Put `--` before terms that start with `-`, as in `vocabulary add -- -fsanitize`. With no running app it saves them to the settings directly. It exits with status 0 when every term was added or already there, 1 when the settings could not be saved, and 2 for a usage mistake.
 
+On Windows, `speecher` in Command Prompt or PowerShell runs `speecher.com`, a console launcher that waits for `speecher.exe` and returns its exit status; see [docs/windows.md](docs/windows.md#installing) for how it works.
+
 ### Transcribing audio files
 
 `speecher transcribe memo.wav` (or opening an audio file with Speecher from a file manager) opens a small Transcribe window with the file listed. Any option below runs it without a window instead: the files are transcribed in the calling process, progress goes to stderr, and each transcript is saved as `<name>-transcribed.txt` next to its audio file. It uses its own provider connections, so it never interrupts a running Speecher's dictation.
@@ -265,7 +272,9 @@ speecher record stop                   # writes the last utterance, then prints 
 
 Speecher's data folder is `~/.local/share/io.github.firemonster612/speecher` on Linux. An existing file is never overwritten: the recording goes to `call-2.md` and so on instead. Files are kept until you delete them. `--vocab-file <path>` adds the file's terms to the custom vocabulary for this recording only, read the same way as for `transcribe`; an unreadable file is a usage error (exit 2). The tray icon and its tooltip show that a recording is running. The first `record start` prints a reminder that recording other people may need their consent.
 
-Recording needs Claude Voice or ChatGPT Codex, which stream finished text as they hear it; Local Models and Custom Endpoints can't record yet. `record start` prints the path once the provider is connected. When it can't connect, for example when you are signed out or offline, or the provider refuses a second session while you dictate, `record start` says why, leaves no file and exits with 1. If the stream drops later, Speecher reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds, for as long as the recording runs, and `record status` says it is reconnecting. What you say meanwhile is sent once the stream is back, up to the last 10 minutes of it. The words the provider was still working on when the stream dropped are written as a line as they stood, since it will never finish them. Before each new stream Speecher renews the sign-in when it is due, and once more when the provider turns it down. A failure a reconnect can't mend, such as being signed out, stops the stream: the recording stays open and `record status` says why, on stdout and stderr, until you stop it. `record stop` still prints the path when the recording missed something, such as lines it could not write to the file, says what on stderr, and exits with 1. `record status` exits with 1 when nothing is recording. Only the microphone is recorded for now; `--mic-only` is accepted and changes nothing.
+Recording needs Claude Voice, ChatGPT Codex or a Custom Endpoint; Local Models can't record yet. `record start` prints the path once the provider is connected. When it can't connect, for example when you are signed out or offline, or the provider refuses a second session while you dictate, `record start` says why, leaves no file and exits with 1. If the stream drops later, Speecher reconnects after 1, 2, 5 and 10 seconds, then every 30 seconds, for as long as the recording runs, and `record status` says it is reconnecting. What you say meanwhile is sent once the stream is back, up to the last 10 minutes of it. The words the provider was still working on when the stream dropped are written as a line as they stood, since it will never finish them. Before each new stream Speecher renews the sign-in when it is due, and once more when the provider turns it down. A failure a reconnect can't mend, such as being signed out, stops the stream: the recording stays open and `record status` says why, on stdout and stderr, until you stop it. `record stop` still prints the path when the recording missed something, such as lines it could not write to the file, says what on stderr, and exits with 1. `record status` exits with 1 when nothing is recording. Only the microphone is recorded for now; `--mic-only` is accepted and changes nothing.
+
+A Custom Endpoint has no stream to connect, so `record start` prints the path at once. Each utterance is uploaded on its own when it ends, after the one before has been transcribed, with your vocabulary and the end of the text before it as the prompt. The quiet between utterances is not uploaded, except the 300 ms before each, so a recording that hears no speech uploads nothing. An utterance the endpoint fails to transcribe because it is down, slow or busy is missing from the file: `record status` says so, the recording goes on with the next, and `record stop` exits with 1. Any other failure, such as a refused key, a wrong path or an account out of quota, would fail every utterance, so it stops the stream at once, with no retry, as there is no sign-in to renew: `record status` says why and `record stop` exits with 1. With a Custom Endpoint, `record stop` waits up to 65 seconds for each utterance still to be transcribed, rather than the 15 seconds other providers get, as a slow server may say nothing for a minute while it works, and three minutes in all.
 
 ## Uninstall
 

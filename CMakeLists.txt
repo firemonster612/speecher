@@ -187,6 +187,8 @@ if(SPEECHER_RELEASE_BUILD)
   # The X11 single-key watcher reads raw key events through XInput2.
   pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
   pkg_check_modules(XI REQUIRED IMPORTED_TARGET xi)
+  # System audio capture reads the default output's monitor source.
+  pkg_check_modules(PULSE REQUIRED IMPORTED_TARGET libpulse)
   pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
 else()
   find_package(PkgConfig QUIET)
@@ -198,6 +200,7 @@ if(PkgConfig_FOUND AND NOT SPEECHER_RELEASE_BUILD)
   # still builds, minus the XInput2 single-key backend.
   pkg_check_modules(X11 QUIET IMPORTED_TARGET x11)
   pkg_check_modules(XI QUIET IMPORTED_TARGET xi)
+  pkg_check_modules(PULSE QUIET IMPORTED_TARGET libpulse)
   pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
 endif()
 if(SPEECHER_RELEASE_BUILD)
@@ -1011,6 +1014,15 @@ if(UNIX AND NOT APPLE)
     target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_X11=1)
     target_link_libraries(speecher_platform PUBLIC PkgConfig::X11 PkgConfig::XI)
   endif()
+  # libpulse: system audio capture, only where the dev files exist.
+  if(PULSE_FOUND)
+    target_sources(speecher_platform PRIVATE
+      src/platform/audio/PulseSystemAudioInput.cpp
+      src/platform/audio/PulseSystemAudioInput.h
+    )
+    target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_PULSE=1)
+    target_link_libraries(speecher_platform PUBLIC PkgConfig::PULSE)
+  endif()
 endif()
 if(APPLE)
   target_sources(speecher_platform PRIVATE
@@ -1273,6 +1285,15 @@ if(WIN32)
 endif()
 if(TARGET speecher_frontend_win)
   set_target_properties(speecher PROPERTIES WIN32_EXECUTABLE TRUE)
+  # The console launcher for the command line, which cmd and PowerShell wait
+  # for. Plain Win32, no Qt. The installer ships it as speecher.com.
+  add_executable(speecher-console src/helpers/ConsoleLauncher.cpp)
+  target_include_directories(speecher-console PRIVATE src)
+  set_target_properties(speecher-console PROPERTIES
+    AUTOMOC OFF
+    AUTORCC OFF
+    AUTOUIC OFF
+  )
   add_custom_command(TARGET speecher POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       "${SPEECHER_WASDK_BOOTSTRAP_DLL}" "$<TARGET_FILE_DIR:speecher>"
@@ -1518,6 +1539,7 @@ message(STATUS "  LayerShellQt: ${LayerShellQt_FOUND}")
 message(STATUS "  Qt WebSockets: ${Qt6WebSockets_FOUND}")
 message(STATUS "  QtKeychain: ${Qt6Keychain_FOUND}")
 message(STATUS "  AT-SPI: ${ATSPI_FOUND}")
+message(STATUS "  libpulse (system audio): ${PULSE_FOUND}")
 message(STATUS "  Wayland helper: ${WAYLAND_CLIENT_FOUND}/${WAYLAND_SCANNER_EXECUTABLE}")
 
 include(GNUInstallDirs)
