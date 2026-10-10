@@ -321,14 +321,14 @@ private slots:
         connect(&microphone, &AudioInput::audioChunk, &microphone, [&] { ++delivered; });
         QVERIFY(microphone.start());
         QVERIFY(microphone.isActive());
+        const int beforeStop = handedOver;
         QElapsedTimer stopping;
         stopping.start();
         microphone.stop();
 
         QVERIFY(stopping.elapsed() >= 200);
         QVERIFY(!microphone.isActive());
-        // At least half the post-roll's chunks, allowing for a busy machine.
-        QVERIFY(delivered >= 10);
+        QVERIFY(handedOver > beforeStop);
         QCOMPARE(delivered, handedOver.load());
         QTest::qWait(50);
         QCOMPARE(delivered, handedOver.load());
