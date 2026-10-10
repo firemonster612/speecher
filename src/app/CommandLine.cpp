@@ -2,6 +2,7 @@
 
 #include "app/PlatformComposition.h"
 #include "app/ProviderSetup.h"
+#include "app/ShellCompletions.h"
 #include "app/SingleInstanceIpc.h"
 #include "core/Vocabulary.h"
 #include "core/settings/SettingsCodecs.h"
@@ -218,6 +219,12 @@ Record a call into a file, in the running Speecher (started if needed):
                            exit status 1 when the recording missed something,
                            which it says on stderr
 
+Complete speecher's commands and options in a shell:
+  speecher completions bash|zsh|fish
+                           print the shell's completion script; it asks
+                           speecher for the profile, tone and cleanup names
+                           each time it completes them
+
 Options:
   --format plain|html      output format for toggle and start
   --profile <name>         writing profile for toggle and start: %4
@@ -303,22 +310,36 @@ QString writingProfileNames(const QList<RowOption> &profiles)
     return names.join(QStringLiteral(", "));
 }
 
-// The id of the Writing Profile a command-line value names: a profile's
-// current name in any case, or that name with - between words. Failing that,
-// an exact id, which is how a command hands the profile to the daemon it
-// starts. Sets error when the value names no profile or more than one.
-std::optional<QString> writingProfileNamed(const QString &value, QString *error)
+// A profile's name as the command line gives it: its words joined by -, so
+// no shell splits it. --profile takes this or the name itself, in any case.
+QString writingProfileCliName(const QString &label)
 {
-    const QList<RowOption> profiles = writingProfiles();
+    return label.simplified().replace(QLatin1Char(' '), QLatin1Char('-'));
+}
+
+// The profiles a command-line value names by their current name, in any case,
+// or that name with - between words.
+QList<RowOption> writingProfilesNamed(const QList<RowOption> &profiles, const QString &value)
+{
     const QString wanted = value.trimmed().toLower();
     QList<RowOption> matches;
     for (const RowOption &profile : profiles) {
         const QString name = profile.label.simplified().toLower();
-        if (!name.isEmpty()
-            && (wanted == name || wanted == QString(name).replace(QLatin1Char(' '), QLatin1Char('-')))) {
+        if (!name.isEmpty() && (wanted == name || wanted == writingProfileCliName(name))) {
             matches << profile;
         }
     }
+    return matches;
+}
+
+// The id of the Writing Profile a command-line value names: a profile's name,
+// as writingProfilesNamed matches it. Failing that, an exact id, which is how
+// a command hands the profile to the daemon it starts. Sets error when the
+// value names no profile or more than one.
+std::optional<QString> writingProfileNamed(const QString &value, QString *error)
+{
+    const QList<RowOption> profiles = writingProfiles();
+    const QList<RowOption> matches = writingProfilesNamed(profiles, value);
     if (matches.size() == 1) {
         return matches.first().id;
     }
@@ -342,6 +363,28 @@ std::optional<QString> writingProfileNamed(const QString &value, QString *error)
     return std::nullopt;
 }
 
+// The name `completions --list profiles` offers for each profile, one that
+// --profile takes for it alone: its command-line name, or its id where
+// another profile has that name too or the name starts with -, as --help,
+// --version and --grab do, which the command line reads before --profile.
+QStringList writingProfileCompletions()
+{
+    const QList<RowOption> profiles = writingProfiles();
+    QStringList names;
+    for (const RowOption &profile : profiles) {
+        const QString name = writingProfileCliName(profile.label);
+        if (name.isEmpty()) {
+            continue;
+        }
+        if (!name.startsWith(QLatin1Char('-')) && writingProfilesNamed(profiles, name).size() == 1) {
+            names << name;
+        } else if (writingProfilesNamed(profiles, profile.id).isEmpty()) {
+            names << profile.id;
+        }
+    }
+    return names;
+}
+
 // Lists the providers from the registry the app builds; registering creates
 // no provider, so this is cheap and needs no credentials.
 QString helpText()
@@ -355,6 +398,60 @@ QString helpText()
              cliNames(cleanupNames()).join(separator),
              writingProfileNames(writingProfiles()),
              cliNames(toneNames()).join(separator));
+}
+
+// The choices a completion script carries, from the same registry as --help.
+CompletionChoices completionChoices()
+{
+    ProviderRegistry registry;
+    registerProviders(registry, nullptr, nullptr);
+    return {providerIds(registry.speechProviders()), providerIds(registry.refinementProviders()),
+            knownSpokenLanguages()};
+}
+
+// The names `completions --list` prints for one of the lists a completion
+// script reads while completing, or nothing for another list.
+std::optional<QStringList> completionList(const QString &list)
+{
+    if (list == kCompletionProfiles) {
+        return writingProfileCompletions();
+    }
+    if (list == kCompletionTones) {
+        return cliNames(toneNames());
+    }
+    if (list == kCompletionCleanupLevels) {
+        return cliNames(cleanupNames());
+    }
+    return std::nullopt;
+}
+
+// `speecher completions <shell>` prints the shell's completion script, and
+// `completions --list <list>`, which those scripts run, one name a line.
+// Reads the settings without starting Speecher, so completing stays quick.
+CommandLineDecision printCompletions(const QStringList &arguments)
+{
+    if (arguments.size() == 1 && kCompletionShells.contains(arguments.first())) {
+        std::cout << completionScript(arguments.first(), completionChoices()).toStdString();
+        return {LaunchMode::Exit};
+    }
+    const std::optional<QStringList> names = arguments.size() == 2 && arguments.first() == QStringLiteral("--list")
+        ? completionList(arguments.last())
+        : std::nullopt;
+    if (names) {
+        for (const QString &name : *names) {
+            std::cout << name.toStdString() << "\n";
+        }
+        return {LaunchMode::Exit};
+    }
+    const QString shells = kCompletionShells.mid(0, kCompletionShells.size() - 1).join(QStringLiteral(", "))
+        + QStringLiteral(" or ") + kCompletionShells.last();
+    std::cerr << (arguments.isEmpty() ? QStringLiteral("completions needs a shell: %1").arg(shells)
+                                      : QStringLiteral("Unknown completions argument: %1 (expected %2)")
+                                            .arg(arguments.join(QLatin1Char(' ')), shells))
+                     .toStdString()
+              << "\n\n"
+              << helpText().toStdString();
+    return {LaunchMode::Exit, 2};
 }
 
 // The stored id for a command-line name, or nothing for a name not offered.
@@ -1024,6 +1121,9 @@ CommandLineDecision parseCommandLine(const QStringList &arguments, const QString
     }
 
     const QString verb = arguments.size() >= 2 ? arguments.at(1).trimmed().toLower() : QString();
+    if (verb == QStringLiteral("completions")) {
+        return printCompletions(arguments.mid(2));
+    }
     // Before the dictation options below, which vocabulary does not take.
     if (verb == QStringLiteral("vocabulary")) {
         const QString error = parseVocabularyArguments(arguments.mid(2), &decision);

@@ -148,18 +148,20 @@ QString profileSpokenLanguageProblem(const SpeechSettings &profileSpeech,
         .arg(service, englishName(profileSpeech.language), instead);
 }
 
+QStringList knownSpokenLanguages()
+{
+    QStringList languages = withAutomatic(claudeVoiceLanguages + codexLanguages);
+    for (const LocalModel &model : localModelCatalog()) {
+        languages += model.languages;
+    }
+    languages.removeDuplicates();
+    languages.sort();
+    return languages;
+}
+
 bool isKnownSpokenLanguage(const QString &language)
 {
-    if (language == QLatin1String(kAutomaticSpokenLanguage) || claudeVoiceLanguages.contains(language)
-        || codexLanguages.contains(language)) {
-        return true;
-    }
-    for (const LocalModel &model : localModelCatalog()) {
-        if (model.languages.contains(language)) {
-            return true;
-        }
-    }
-    return false;
+    return knownSpokenLanguages().contains(language);
 }
 
 } // namespace speecher
