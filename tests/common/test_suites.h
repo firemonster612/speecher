@@ -81,6 +81,7 @@ int runProviderAuthTests(int argc, char **argv);
 int runClaudeVoiceTests(int argc, char **argv);
 int runCodexDictationTests(int argc, char **argv);
 int runAudioPcmConverterTests(int argc, char **argv);
+int runEchoCancellerTests(int argc, char **argv);
 int runLocalModelsTests(int argc, char **argv);
 int runCustomEndpointsTests(int argc, char **argv);
 int runFileTranscriptionTests(int argc, char **argv);

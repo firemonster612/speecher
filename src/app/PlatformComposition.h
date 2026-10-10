@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/EchoCanceller.h"
 #include "dictation/DictationPorts.h"
 #include "platform/AccessibilityState.h"
 
@@ -35,6 +36,14 @@ public:
     virtual AudioInput *createSystemAudioInput(QObject *parent) const
     {
         Q_UNUSED(parent);
+        return nullptr;
+    }
+    // Takes system audio out of the microphone's for a Recording. None and no
+    // warning where the system's own echo cancellation does it; none with
+    // why in warning where Speecher's cannot start.
+    virtual std::unique_ptr<EchoCanceller> createEchoCanceller(QString *warning) const
+    {
+        Q_UNUSED(warning);
         return nullptr;
     }
     // Complete on the caller's thread, and never after context is destroyed.

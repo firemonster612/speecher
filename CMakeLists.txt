@@ -189,6 +189,8 @@ if(SPEECHER_RELEASE_BUILD)
   pkg_check_modules(XI REQUIRED IMPORTED_TARGET xi)
   # System audio capture reads the default output's monitor source.
   pkg_check_modules(PULSE REQUIRED IMPORTED_TARGET libpulse)
+  # Echo cancellation takes system audio out of a Recording's microphone.
+  pkg_check_modules(WEBRTC_APM REQUIRED IMPORTED_TARGET webrtc-audio-processing-1)
   pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
 else()
   find_package(PkgConfig QUIET)
@@ -201,6 +203,7 @@ if(PkgConfig_FOUND AND NOT SPEECHER_RELEASE_BUILD)
   pkg_check_modules(X11 QUIET IMPORTED_TARGET x11)
   pkg_check_modules(XI QUIET IMPORTED_TARGET xi)
   pkg_check_modules(PULSE QUIET IMPORTED_TARGET libpulse)
+  pkg_check_modules(WEBRTC_APM QUIET IMPORTED_TARGET webrtc-audio-processing-1)
   pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
 endif()
 if(SPEECHER_RELEASE_BUILD)
@@ -290,6 +293,7 @@ set(SPEECHER_DOMAIN_HEADERS
   src/core/CleanupModelCatalog.h
   src/core/CliToolDiscovery.h
   src/core/DictationRecord.h
+  src/core/EchoCanceller.h
   src/core/InsightsExport.h
   src/core/InsightsLog.h
   src/core/InsightsSummary.h
@@ -1019,6 +1023,16 @@ if(UNIX AND NOT APPLE)
     target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_PULSE=1)
     target_link_libraries(speecher_platform PUBLIC PkgConfig::PULSE)
   endif()
+  # webrtc-audio-processing 1.x: echo cancellation, only where the dev files
+  # exist.
+  if(WEBRTC_APM_FOUND)
+    target_sources(speecher_platform PRIVATE
+      src/platform/audio/WebRtcEchoCanceller.cpp
+      src/platform/audio/WebRtcEchoCanceller.h
+    )
+    target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_WEBRTC_AEC=1)
+    target_link_libraries(speecher_platform PUBLIC PkgConfig::WEBRTC_APM)
+  endif()
 endif()
 if(APPLE)
   target_sources(speecher_platform PRIVATE
@@ -1536,6 +1550,7 @@ message(STATUS "  Qt WebSockets: ${Qt6WebSockets_FOUND}")
 message(STATUS "  QtKeychain: ${Qt6Keychain_FOUND}")
 message(STATUS "  AT-SPI: ${ATSPI_FOUND}")
 message(STATUS "  libpulse (system audio): ${PULSE_FOUND}")
+message(STATUS "  webrtc-audio-processing-1 (echo cancellation): ${WEBRTC_APM_FOUND}")
 message(STATUS "  Wayland helper: ${WAYLAND_CLIENT_FOUND}/${WAYLAND_SCANNER_EXECUTABLE}")
 
 include(GNUInstallDirs)
@@ -1593,6 +1608,11 @@ if(UNIX AND NOT APPLE)
   if(SPEECHER_WITH_LOCAL_SPEECH)
     install(FILES "${SPEECHER_LOCAL_SPEECH_NOTICES}" DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
   endif()
+  # webrtc-audio-processing is BSD-3-Clause with permissive third-party
+  # parts; its Debian copyright file ships beside the binaries it links into.
+  if(WEBRTC_APM_FOUND)
+    install(FILES packaging/webrtc-audio-processing-licenses.txt DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/speecher")
+  endif()
   install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/post-install.cmake")
 endif()
 
@@ -1622,6 +1642,7 @@ if(SPEECHER_BUILD_TESTS)
     tests/test_claude_voice.cpp
     tests/test_codex_dictation.cpp
     tests/test_audio_pcm_converter.cpp
+    tests/test_echo_canceller.cpp
     tests/test_local_models.cpp
     tests/test_custom_endpoints.cpp
     tests/test_file_transcription.cpp
@@ -1703,6 +1724,7 @@ if(SPEECHER_BUILD_TESTS)
     claude_voice
     codex_dictation
     audio_pcm_converter
+    echo_canceller
     local_models
     custom_endpoints
     file_transcription

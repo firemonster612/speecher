@@ -163,6 +163,7 @@ int main(int argc, char **argv)
     if (selected("claude_voice")) result |= runClaudeVoiceTests(argc, argv);
     if (selected("codex_dictation")) result |= runCodexDictationTests(argc, argv);
     if (selected("audio_pcm_converter")) result |= runAudioPcmConverterTests(argc, argv);
+    if (selected("echo_canceller")) result |= runEchoCancellerTests(argc, argv);
     if (selected("local_models")) result |= runLocalModelsTests(argc, argv);
     if (selected("custom_endpoints")) result |= runCustomEndpointsTests(argc, argv);
     if (selected("file_transcription")) result |= runFileTranscriptionTests(argc, argv);
