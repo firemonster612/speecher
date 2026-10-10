@@ -127,6 +127,16 @@ void SettingsCodecs::setSetupCompleted(bool value)
     m_settings.setValue(SettingsKeys::SetupCompleted, value);
 }
 
+bool SettingsCodecs::recordingConsentNoticeShown() const
+{
+    return value(SettingsKeys::RecordingConsentNoticeShown, false).toBool();
+}
+
+void SettingsCodecs::setRecordingConsentNoticeShown(bool value)
+{
+    m_settings.setValue(SettingsKeys::RecordingConsentNoticeShown, value);
+}
+
 bool SettingsCodecs::launchAtLogin() const
 {
 #if defined(Q_OS_MACOS) || defined(Q_OS_WIN)

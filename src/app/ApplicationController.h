@@ -7,6 +7,7 @@
 #include <QDate>
 #include <QElapsedTimer>
 #include <QObject>
+#include <QPointer>
 
 #include "app/SingleInstanceIpc.h"
 #include "core/DictationRecord.h"
@@ -31,6 +32,7 @@ class LocalSetup;
 class NetworkReachability;
 class ProviderAvailability;
 class ProviderRegistry;
+class RecordingSession;
 class SecretStore;
 class SettingsStore;
 class UpdateBanner;
@@ -57,6 +59,9 @@ public:
     FileTranscriptionSession *fileTranscription() const;
     // Why a batch cannot start now, or empty when it can.
     QString fileTranscriptionRefusal() const;
+    // A recording, which `speecher record` starts and stops, runs beside
+    // dictation and file transcription with a microphone input of its own.
+    bool isRecording() const;
     bool startFileTranscription(const QStringList &paths,
                                 const TranscribeOptions &options,
                                 QString *error = nullptr);
@@ -105,6 +110,9 @@ public:
     // until the first dictation says something.
     QString lastTranscript() const;
     IpcResponse response(bool ok = true, const QString &message = {}) const;
+    // status's answer and each line status --watch is written: the dictation
+    // state and the recording.
+    IpcResponse statusResponse() const;
     QString outputSummary() const;
     bool accessibilitySupported() const;
     bool accessibilityEnabled() const;
@@ -197,6 +205,7 @@ signals:
     void transcriptDelivered(const QString &text);
     void lastTranscriptChanged(const QString &text);
     void lastRecordChanged();
+    void recordingChanged(bool recording);
     void audioLevelChanged(float level);
     void accessibilityStateChanged(bool supported, bool enabled, bool persistent);
     void globalShortcutChanged();
@@ -224,6 +233,7 @@ private:
     void updateSessionShortcuts();
     void dropPendingStart();
     void setLaunchAtLoginAccepted(bool accepted);
+    void startRecording(const QString &path, const QStringList &vocabulary, QLocalSocket *socket);
 
     bool m_popupOnly = false;
     std::shared_ptr<const PlatformComposition> m_platform;
@@ -238,6 +248,12 @@ private:
     AudioInput *m_audio = nullptr;
     DictationSession *m_session = nullptr;
     FileTranscriptionSession *m_fileTranscription = nullptr;
+    RecordingSession *m_recording = nullptr;
+    // record stop's clients, answered once the last utterance is written.
+    QList<QPointer<QLocalSocket>> m_recordStopReplies;
+    // Write status watchers each change. Cut first on teardown, which
+    // deletes the recording before the session.
+    QList<QMetaObject::Connection> m_statusPublishers;
     // Files opened before setup was complete.
     QStringList m_pendingTranscribeFiles;
     bool m_filesOpened = false;

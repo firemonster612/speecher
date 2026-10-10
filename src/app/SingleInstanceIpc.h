@@ -2,14 +2,17 @@
 
 #include "app/PlatformComposition.h"
 #include "dictation/DictationTypes.h"
+#include "recording/RecordingStatus.h"
 
 #include <QDeadlineTimer>
 #include <QLocalServer>
 #include <QHash>
 #include <QObject>
+#include <QPointer>
 #include <QSet>
 #include <QTimer>
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -28,6 +31,8 @@ struct IpcResponse {
     QString text;
     // The terms an addVocabulary request carried that the list held already.
     QStringList skippedTerms;
+    // The record commands' answer: the recording now, or the one stopped.
+    std::optional<RecordingStatus> recording;
 };
 
 // The message an instance answers a command it doesn't know with. Clients
@@ -66,10 +71,13 @@ public:
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
-    // files rides along as the request's "files" array (the transcribe command).
+    // files rides along as the request's "files" array: the transcribe
+    // command's files, or the file recordStart writes. terms is the "terms"
+    // array: recordStart's terms for the recording's custom vocabulary.
     static IpcCommandResult sendCommandDetailed(const QString &command,
                                                 const SessionOverrides &overrides,
                                                 const QStringList &files,
+                                                const QStringList &terms,
                                                 IpcResponse *response,
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
@@ -80,6 +88,21 @@ public:
                                                 int timeoutMs = 2500,
                                                 std::shared_ptr<const SingleInstancePlatform> platform = {},
                                                 QString *error = nullptr);
+    // The watchStatus command, for status --watch: calls onStatus with each
+    // status the running instance writes, the current one at once and then
+    // one on every change, until the instance closes the connection or
+    // onStatus returns false. Sent once it has answered; Unavailable when
+    // none is running, NoResponse when one closes the connection or stays
+    // silent before answering.
+    static IpcCommandResult watchStatus(const std::function<bool(const IpcResponse &)> &onStatus,
+                                        int timeoutMs = 2500,
+                                        std::shared_ptr<const SingleInstancePlatform> platform = {},
+                                        QString *error = nullptr);
+
+    // Keeps socket open as a status watcher: writes it status now and every
+    // status publishStatus is given, until it disconnects.
+    void addStatusWatcher(QLocalSocket *socket, const IpcResponse &status);
+    void publishStatus(const IpcResponse &status);
 
 signals:
     void commandReceived(const QString &command,
@@ -113,6 +136,10 @@ private:
     QSet<QLocalSocket *> m_acceptedSockets;
     QHash<QLocalSocket *, QDeadlineTimer> m_incompleteRequestDeadlines;
     QTimer m_expirySweep;
+    // Watchers hold their socket open for as long as they watch, so they are
+    // capped apart from the accepted sockets. Held by QPointer, so one that
+    // goes away needs no bookkeeping.
+    QList<QPointer<QLocalSocket>> m_statusWatchers;
 };
 
 } // namespace speecher

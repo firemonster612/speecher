@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var status: String
     @Published private(set) var dictationState: SpeecherDictationState
     @Published private(set) var listening: Bool
+    @Published private(set) var recording: Bool
     @Published private(set) var toggleLabel: String
     @Published private(set) var toggleEnabled: Bool
     /// The buttons either side of the waveform, and whether the menu bar
@@ -131,6 +132,11 @@ final class AppModel: ObservableObject {
     @Published var confirmingClearInsights = false
     /// Deleting the history failed, and the alert saying so is up.
     @Published var clearInsightsFailed = false
+    /// The transfer the "Copy settings to your phone" sheet shows while it is
+    /// up. Replacing or clearing it stops the old one, which closes its port.
+    @Published var phoneTransfer: SpeecherPhoneTransfer? {
+        didSet { if oldValue !== phoneTransfer { oldValue?.stop() } }
+    }
     /// The view an alternatives pane should switch to when it next shows,
     /// by view id; the pane clears it once it has.
     @Published var requestedView: String? = nil
@@ -168,6 +174,7 @@ final class AppModel: ObservableObject {
         status = bridge.statusLabel
         dictationState = bridge.dictationState
         listening = bridge.listening
+        recording = bridge.recording
         toggleLabel = bridge.toggleLabel
         toggleEnabled = bridge.toggleEnabled
         pauseVisible = bridge.pauseVisible
@@ -197,6 +204,7 @@ final class AppModel: ObservableObject {
             failureNote = self.bridge.failureNote
             if failureNote.isEmpty, dictationState != .error { failureFix = nil }
             listening = self.bridge.listening
+            recording = self.bridge.recording
             toggleLabel = self.bridge.toggleLabel
             toggleEnabled = self.bridge.toggleEnabled
             pauseVisible = self.bridge.pauseVisible
@@ -486,6 +494,11 @@ final class AppModel: ObservableObject {
         // SwiftUI dialog on the settings window (RootView).
         if rowId == "clearInsights" {
             confirmingClearInsights = true
+            return
+        }
+        // A SwiftUI sheet on the settings window too (RootView).
+        if rowId == "copyToPhone" {
+            phoneTransfer = bridge.startPhoneTransfer()
             return
         }
         if rowId == "resetCustomSystemPrompt" {

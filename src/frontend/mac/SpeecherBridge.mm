@@ -3,6 +3,8 @@
 #include "app/ApplicationController.h"
 #include "app/LocalSetup.h"
 #include "app/MicrophoneTest.h"
+#include "app/PhoneTransfer.h"
+#include "app/PhoneTransferPresentation.h"
 #include "app/AccessibilityPresentation.h"
 #include "app/SetupSteps.h"
 #include "app/PlatformComposition.h"
@@ -715,6 +717,74 @@ static SpeecherTranscriptResult *bridgedTranscriptResult(const speecher::Transcr
 + (SpeecherWhatsNewBanner *)previewForVersion:(NSString *)version
 {
     return [self bannerWithModel:speecher::whatsNewBanner(QString::fromNSString(version))];
+}
+
+@end
+
+@interface SpeecherPhoneTransfer ()
+- (instancetype)initWithSettings:(const AppSettings &)settings;
+@end
+
+@implementation SpeecherPhoneTransfer {
+    AppSettings _settings;
+    std::unique_ptr<speecher::PhoneTransfer> _transfer;
+    // Kept once link() empties, so the spent code still shows.
+    QString _link;
+    speecher::PhoneTransferText _text;
+}
+
+- (instancetype)initWithSettings:(const AppSettings &)settings
+{
+    self = [super init];
+    if (!self) {
+        return nil;
+    }
+    _settings = settings;
+    _transfer = std::make_unique<speecher::PhoneTransfer>(settings);
+    _link = _transfer->link();
+    _text = speecher::phoneTransferText(settings, _transfer->state());
+    __weak SpeecherPhoneTransfer *weakSelf = self;
+    QObject::connect(_transfer.get(), &speecher::PhoneTransfer::stateChanged, _transfer.get(),
+                     [weakSelf] { [weakSelf stateChanged]; });
+    return self;
+}
+
+- (void)stateChanged
+{
+    _text = speecher::phoneTransferText(_settings, _transfer->state());
+    if (self.changed) {
+        self.changed();
+    }
+}
+
+- (NSString *)title { return _text.title.toNSString(); }
+- (NSArray<NSString *> *)steps { return bridgedStrings(_text.steps); }
+- (NSString *)includedHeading { return _text.includedHeading.toNSString(); }
+- (NSArray<NSString *> *)included { return bridgedStrings(_text.included); }
+- (NSString *)staysHeading { return _text.staysHeading.toNSString(); }
+- (NSArray<NSString *> *)stays { return bridgedStrings(_text.stays); }
+- (NSString *)neverIncluded { return _text.neverIncluded.toNSString(); }
+- (NSString *)status { return _text.status.toNSString(); }
+- (NSString *)close { return _text.close.toNSString(); }
+- (BOOL)waiting { return _transfer && _transfer->state() == speecher::PhoneTransferState::Waiting; }
+
+- (void)stop
+{
+    _transfer.reset();
+}
+
+- (NSImage *)codeImageWithSide:(CGFloat)side scale:(CGFloat)scale
+{
+    if (_link.isEmpty()) {
+        return nil;
+    }
+    const QImage code = speecher::qrCodeImage(_link, int(side * scale));
+    CGImageRef image = code.toCGImage();
+    NSImage *result = [[NSImage alloc] initWithCGImage:image
+                                                  size:NSMakeSize(code.width() / scale,
+                                                                  code.height() / scale)];
+    CGImageRelease(image);
+    return result;
 }
 
 @end
@@ -2170,6 +2240,15 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
                              bridge.statusChanged(status.toNSString());
                          }
                      });
+    QObject::connect(controller,
+                     &ApplicationController::recordingChanged,
+                     &_state->lifetime,
+                     [weakSelf, controller] {
+                         SpeecherBridge *bridge = weakSelf;
+                         if (bridge.statusChanged) {
+                             bridge.statusChanged(controller->statusLabel().toNSString());
+                         }
+                     });
     _state->microphoneTest = new speecher::MicrophoneTest(*controller, &_state->lifetime);
     QObject::connect(_state->microphoneTest,
                      &speecher::MicrophoneTest::changed,
@@ -2770,9 +2849,14 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
     return speecher::accessibilityNoticeText(false, compact).toNSString();
 }
 
-- (NSString *)trayToolTip:(BOOL)listening
+- (BOOL)recording
 {
-    return speecher::trayToolTip(listening).toNSString();
+    return _state->controller->isRecording();
+}
+
+- (NSString *)trayToolTip:(BOOL)listening recording:(BOOL)recording
+{
+    return speecher::trayToolTip(listening, recording).toNSString();
 }
 
 - (NSString *)traySettingsCaption
@@ -3659,6 +3743,11 @@ static speecher::ProviderSignIn &ensureSetupSignIn(BridgeState *state)
 - (void)setSetupCliproxyDirectory:(NSString *)directory
 {
     ensureSetupSignIn(_state).setAccountDirectory(QString::fromNSString(directory).trimmed());
+}
+
+- (SpeecherPhoneTransfer *)startPhoneTransfer
+{
+    return [[SpeecherPhoneTransfer alloc] initWithSettings:_state->controller->settings()->snapshot()];
 }
 
 - (void)startMicrophoneMeterOnLevel:(void (^)(float level))onLevel

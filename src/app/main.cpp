@@ -420,6 +420,33 @@ static bool installListenStopHandlers()
     return true;
 }
 
+// Ctrl-C is how `status --watch` is meant to end, so it ends with status 0.
+// Every line it printed is flushed already.
+#ifdef Q_OS_WIN
+static BOOL WINAPI endWatchOnCtrlC(DWORD event)
+{
+    if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT) {
+        return FALSE;
+    }
+    std::_Exit(0);
+}
+#else
+static void endWatchOnSigint(int)
+{
+    std::_Exit(0);
+}
+#endif
+
+static void installWatchEndOnCtrlC()
+{
+#ifdef Q_OS_WIN
+    SetConsoleCtrlHandler(nullptr, FALSE);
+    SetConsoleCtrlHandler(endWatchOnCtrlC, TRUE);
+#else
+    std::signal(SIGINT, endWatchOnSigint);
+#endif
+}
+
 // macOS may ask the first time, and answers once the event loop runs.
 static bool microphoneAccessGranted(const PlatformComposition &platform, QObject *context)
 {
@@ -516,6 +543,9 @@ int main(int argc, char **argv)
     if (decision.mode == LaunchMode::RunCli) {
         // No QApplication: talking to a running instance must not need a display.
         QCoreApplication app(argc, argv);
+        if (decision.ipcCommand == QStringLiteral("watchStatus")) {
+            installWatchEndOnCtrlC();
+        }
         return runCliCommand(decision, platform);
     }
     if (decision.mode == LaunchMode::TranscribeHeadless) {
@@ -642,7 +672,7 @@ int main(int argc, char **argv)
         if (!daemon) {
             AllowSetForegroundWindow(ASFW_ANY);
             auto result = SingleInstanceIpc::sendCommandDetailed(
-                showCommand, SessionOverrides(), decision.transcribeFiles, &response);
+                showCommand, SessionOverrides(), decision.transcribeFiles, {}, &response);
             // The startup claim can precede the winning instance's pipe listener.
             if (ipcError.startsWith(QStringLiteral("Another Speecher instance"))) {
                 QDeadlineTimer deadline(750);
@@ -653,7 +683,7 @@ int main(int argc, char **argv)
                         break;
                     }
                     result = SingleInstanceIpc::sendCommandDetailed(
-                        showCommand, SessionOverrides(), decision.transcribeFiles, &response, int(remaining));
+                        showCommand, SessionOverrides(), decision.transcribeFiles, {}, &response, int(remaining));
                 }
             }
             if (result == IpcCommandResult::Sent) {
@@ -662,7 +692,7 @@ int main(int argc, char **argv)
         }
 #else
         if (!daemon
-            && SingleInstanceIpc::sendCommandDetailed(showCommand, SessionOverrides(), decision.transcribeFiles, &response)
+            && SingleInstanceIpc::sendCommandDetailed(showCommand, SessionOverrides(), decision.transcribeFiles, {}, &response)
                 == IpcCommandResult::Sent) {
             return answered();
         }

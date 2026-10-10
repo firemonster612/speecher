@@ -125,8 +125,14 @@ QString cancelCaption()
     return QStringLiteral("Cancel");
 }
 
-QString trayToolTip(bool listening)
+QString trayToolTip(bool listening, bool recording)
 {
+    if (listening && recording) {
+        return QStringLiteral("Speecher is listening and recording");
+    }
+    if (recording) {
+        return QStringLiteral("Speecher is recording");
+    }
     return listening ? QStringLiteral("Speecher is listening") : QStringLiteral("Speecher");
 }
 

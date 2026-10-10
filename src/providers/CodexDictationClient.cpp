@@ -237,9 +237,34 @@ void CodexDictationClient::sendAudioMessage(const QByteArray &pcm)
 void CodexDictationClient::flushPendingAudio()
 {
     for (const QByteArray &pcm : std::as_const(m_pendingAudio)) {
-        sendAudioMessage(pcm);
+        if (pcm.isEmpty()) {
+            sendAudioFlush();
+        } else {
+            sendAudioMessage(pcm);
+        }
     }
     m_pendingAudio.clear();
+}
+
+void CodexDictationClient::endUtterance()
+{
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    if (m_finishRequested || m_finalizing || m_sessionClosed || m_cancelled || m_failureEmitted) {
+        return;
+    }
+    if (!m_sessionStarted) {
+        m_pendingAudio.append(QByteArray());
+        return;
+    }
+    sendAudioFlush();
+#endif
+}
+
+void CodexDictationClient::sendAudioFlush()
+{
+#ifdef SPEECHER_WITH_QT_WEBSOCKETS
+    m_socket.sendTextMessage(QStringLiteral("{\"type\":\"audio.flush\",\"reason\":\"client\"}"));
+#endif
 }
 
 void CodexDictationClient::stop()
@@ -263,7 +288,7 @@ void CodexDictationClient::requestFinalization()
     }
     flushPendingAudio();
     m_finalizing = true;
-    m_socket.sendTextMessage(QStringLiteral("{\"type\":\"audio.flush\",\"reason\":\"client\"}"));
+    sendAudioFlush();
     m_socket.sendTextMessage(QStringLiteral("{\"type\":\"session.close\"}"));
     m_closeTimer.start();
 #endif

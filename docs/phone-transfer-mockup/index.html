@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Copy settings to the phone mockup</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px system-ui, sans-serif; background: var(--background, #d9d9d6); color: var(--foreground, #1c1b18); }
+  .note { color: var(--muted-foreground, #4a4943) !important; }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0; align-items: center; }
+  .bar b { font-weight: 600; margin-right: 4px; }
+  .bar button { border: 1px solid #b9b8b2; background: #f4f4f2; border-radius: 14px; padding: 4px 11px; font: inherit; font-size: 13px; cursor: pointer; color: #333; }
+  .bar button[aria-pressed="true"] { background: #1c1b18; color: #fff; border-color: #1c1b18; }
+  .fit { transform-origin: 0 0; }
+  .stage { display: flex; gap: 28px; align-items: flex-start; width: 1312px; padding: 18px 0; }
+  .desk { display: none; } .desk.active { display: block; }
+  .note { font-size: 13px; color: #4a4943; max-width: 900px; margin: 0; line-height: 1.45; }
+
+  /* fake QR */
+  .qr { width: 196px; height: 196px; background: #fff; padding: 14px; flex: none; }
+  .qr svg { width: 100%; height: 100%; display: block; }
+  .qr.dim svg { opacity: .12; }
+
+  /* ---------- KDE Plasma / Breeze ---------- */
+  .kde { position: relative; width: 900px; height: 600px; display: grid; grid-template-columns: 200px 1fr; grid-template-rows: 48px 1fr;
+    font: 13.3px "Noto Sans", "Open Sans", sans-serif; color: #232629; background: #eff0f1; border: 1px solid #b0b3b6; border-radius: 6px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.18); }
+  .kde .search { background: #dee0e2; border-bottom: 1px solid #c4c6c8; padding: 8px; }
+  .kde .search div { height: 31px; background: #fff; border: 1px solid #bcbebf; border-radius: 3px; padding: 6px 10px; color: #7f8c8d; }
+  .kde .title { background: #dee0e2; border-bottom: 1px solid #c4c6c8; padding: 13px 8px; font-size: 17px; font-weight: 600; border-left: 1px solid #c4c6c8; }
+  .kde .side { background: #fff; border-right: 1px solid #c4c6c8; padding: 14px 12px; }
+  .kde .side div { padding: 7px 26px; border-radius: 3px; margin-bottom: 4px; }
+  .kde .side .sel { background: #3daee9; color: #fff; }
+  .kde .side .grp { font-weight: 600; padding: 10px 6px 4px; }
+  .kde .content { overflow: hidden; padding: 8px 0; }
+  .kde .col { width: 620px; margin: 0 auto; }
+  .kde h3 { font-size: 13.3px; margin: 8px 17px 10px; }
+  .kde .card { background: #fff; border: 1px solid #d1d3d5; border-radius: 4px; padding: 0 17px; margin-bottom: 16px; }
+  .kde .row { display: flex; align-items: center; justify-content: space-between; min-height: 58px; border-bottom: 1px solid #e3e5e7; gap: 16px; }
+  .kde .row:last-child { border-bottom: 0; }
+  .kde .row small { display: block; color: #7f8c8d; font-size: 12.3px; margin-top: 2px; max-width: 400px; }
+  .kde .row.new { outline: 2px dashed #f67400; outline-offset: -1px; border-radius: 2px; }
+  .kde .btn { height: 31px; border: 1px solid #bcbebf; border-radius: 3px; background: #fcfcfc; padding: 0 9px; display: inline-flex; align-items: center; white-space: nowrap; cursor: pointer; }
+  .kde .btn:hover { border-color: #3daee9; }
+  .kde .combo { height: 31px; border: 1px solid #bcbebf; border-radius: 3px; background: #fcfcfc; padding: 0 28px 0 8px; display: inline-flex; align-items: center; }
+  .kde .check { width: 16px; height: 16px; border: 1px solid #3daee9; border-radius: 3px; background: #fff; display: inline-block; }
+  .kde .scrim { position: absolute; inset: 0; background: rgba(35,38,41,.35); display: flex; align-items: center; justify-content: center; }
+  .kde .dlg { width: 620px; background: #eff0f1; border: 1px solid #9a9c9e; border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.35); overflow: hidden; }
+  .kde .dlg .tb { height: 34px; background: #dee0e2; border-bottom: 1px solid #c4c6c8; display: flex; align-items: center; justify-content: center; font-weight: 600; position: relative; }
+  .kde .dlg .tb i { position: absolute; right: 10px; top: 9px; width: 16px; height: 16px; border-radius: 50%; background: #c4c6c8; }
+  .kde .dlg .body { display: flex; gap: 20px; padding: 18px 18px 6px; }
+  .kde .dlg .qr { outline: 1px solid #d1d3d5; }
+  .kde .dlg ol { margin: 0 0 12px; padding-left: 20px; line-height: 1.6; }
+  .kde .dlg .grpbox { border: 1px solid #c4c6c8; border-radius: 3px; padding: 8px 10px 6px; position: relative; margin-top: 14px; }
+  .kde .dlg .grpbox span { position: absolute; top: -9px; left: 8px; background: #eff0f1; padding: 0 4px; }
+  .kde .dlg ul { margin: 2px 0; padding-left: 18px; line-height: 1.5; }
+  .kde .dlg .grey { color: #7f8c8d; font-size: 12.3px; }
+  .kde .dlg .status { padding: 6px 18px 0; display: flex; gap: 8px; align-items: center; min-height: 28px; }
+  .kde .dlg .foot { display: flex; justify-content: flex-end; padding: 12px 18px 14px; }
+
+  /* ---------- macOS ---------- */
+  .mac { position: relative; width: 860px; height: 600px; display: grid; grid-template-columns: 200px 1fr; font: 13px -apple-system, "SF Pro Text", "Inter", "Helvetica Neue", sans-serif; color: #1d1d1f;
+    border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 .5px rgba(0,0,0,.25), 0 18px 50px rgba(0,0,0,.25); background: #ececec; }
+  .mac .side { background: #e3e3e6; padding: 14px 10px; border-right: .5px solid #c9c9cc; }
+  .mac .lights { display: flex; gap: 8px; margin: 2px 0 20px 8px; }
+  .mac .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+  .mac .lights i:nth-child(2) { background: #febc2e; } .mac .lights i:nth-child(3) { background: #28c840; }
+  .mac .side div { padding: 5px 10px; border-radius: 6px; }
+  .mac .side .sel { background: #0a64d8; color: #fff; }
+  .mac .hdr { height: 52px; padding: 16px 20px; font-weight: 700; font-size: 15px; }
+  .mac .col { width: 560px; margin: 0 auto; }
+  .mac h3 { font-size: 13px; font-weight: 700; margin: 14px 10px 7px; }
+  .mac .group { background: #f6f6f6; border: .5px solid #d8d8d8; border-radius: 10px; padding: 0 10px; }
+  .mac .row { display: flex; align-items: center; justify-content: space-between; min-height: 40px; border-bottom: .5px solid #dcdcdc; gap: 12px; padding: 6px 0; }
+  .mac .row:last-child { border-bottom: 0; }
+  .mac .row small { display: block; color: #86868b; font-size: 11px; margin-top: 1px; max-width: 380px; }
+  .mac .row.new { outline: 2px dashed #f67400; outline-offset: -1px; }
+  .mac .btn { height: 22px; padding: 0 10px; background: #fff; border-radius: 6px; box-shadow: 0 0 0 .5px rgba(0,0,0,.18), 0 .5px 1.5px rgba(0,0,0,.15); display: inline-flex; align-items: center; white-space: nowrap; cursor: pointer; }
+  .mac .btn.def { background: #0a64d8; color: #fff; }
+  .mac .switch { width: 26px; height: 15px; border-radius: 8px; background: #0a64d8; }
+  .mac .sheet { position: absolute; left: 200px; right: 0; top: 0; bottom: 0; background: rgba(0,0,0,.08); display: flex; justify-content: center; align-items: flex-start; }
+  .mac .sheet .s { width: 560px; margin-top: 26px; background: #f2f2f2; border-radius: 12px; box-shadow: 0 0 0 .5px rgba(0,0,0,.25), 0 18px 50px rgba(0,0,0,.3); padding: 18px; }
+  .mac .sheet h2 { font-size: 13px; margin: 0 0 12px; }
+  .mac .sheet .body { display: flex; gap: 18px; }
+  .mac .sheet ol { margin: 0 0 10px; padding-left: 18px; line-height: 1.6; }
+  .mac .sheet ul { margin: 2px 0 8px; padding-left: 16px; line-height: 1.5; }
+  .mac .sheet .grey { color: #86868b; font-size: 11px; }
+  .mac .sheet .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+
+  /* ---------- Windows 11 ---------- */
+  .win { position: relative; width: 900px; height: 600px; display: grid; grid-template-columns: 220px 1fr; font: 14px "Segoe UI Variable Text", "Segoe UI", "Inter", sans-serif; color: #1b1b1b;
+    background: #f3f3f3; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0,0,0,.12), 0 18px 50px rgba(0,0,0,.22); }
+  .win .side { padding: 14px 8px; }
+  .win .side .app { font-size: 12px; padding: 0 12px 22px; }
+  .win .side div.item { padding: 8px 14px; border-radius: 4px; margin-bottom: 2px; }
+  .win .side .sel { background: #eaeaea; box-shadow: inset 3px 0 0 #005fb8; }
+  .win .main { overflow: hidden; padding: 18px 30px 30px 12px; }
+  .win h1 { font: 600 28px "Segoe UI Variable Display", "Segoe UI", "Inter", sans-serif; margin: 6px 0 16px; }
+  .win h3 { font-size: 14px; font-weight: 600; margin: 14px 0 8px; }
+  .win .card { background: #fbfbfb; border: 1px solid #e5e5e5; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; min-height: 64px; padding: 0 18px; margin-bottom: 3px; gap: 16px; }
+  .win .card small { display: block; color: #5e5e5e; font-size: 12px; max-width: 420px; }
+  .win .card.new { outline: 2px dashed #f67400; outline-offset: -1px; }
+  .win .btn { height: 32px; background: #fff; border: 1px solid #e5e5e5; border-bottom-color: #c4c4c4; border-radius: 4px; padding: 0 14px; display: inline-flex; align-items: center; white-space: nowrap; cursor: pointer; }
+  .win .btn.acc { background: #005fb8; color: #fff; border-color: #005fb8; }
+  .win .smoke { position: absolute; inset: 0; background: rgba(0,0,0,.3); display: flex; align-items: center; justify-content: center; }
+  .win .cd { width: 600px; background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px rgba(0,0,0,.1), 0 24px 60px rgba(0,0,0,.3); overflow: hidden; }
+  .win .cd .in { padding: 22px 24px 8px; }
+  .win .cd h2 { font: 600 20px "Segoe UI Variable Display", "Segoe UI", sans-serif; margin: 0 0 14px; }
+  .win .cd .body { display: flex; gap: 18px; }
+  .win .cd ol { margin: 0 0 10px; padding-left: 20px; line-height: 1.6; }
+  .win .cd ul { margin: 2px 0 8px; padding-left: 18px; line-height: 1.5; }
+  .win .cd .grey { color: #5e5e5e; font-size: 12px; }
+  .win .cd .foot { background: #f3f3f3; border-top: 1px solid #e5e5e5; padding: 18px 24px; display: flex; justify-content: flex-end; margin-top: 12px; }
+
+  /* ---------- Android (Material 3, Speecher fallback scheme) ---------- */
+  .droid { width: 380px; height: 780px; border-radius: 40px; background: #111; padding: 10px; box-shadow: 0 18px 50px rgba(0,0,0,.3); flex: none; }
+  .droid .screen { width: 100%; height: 100%; border-radius: 31px; overflow: hidden; background: #faf9f4; position: relative; font: 16px "Roboto", "Google Sans", "Inter", sans-serif; color: #1c1b18; display: flex; flex-direction: column; }
+  .droid .status { height: 34px; padding: 10px 24px; font-size: 13px; display: flex; justify-content: space-between; flex: none; }
+  .droid .appbar { height: 64px; display: flex; align-items: center; gap: 22px; padding: 0 18px; font-size: 22px; flex: none; }
+  .droid .scroll { flex: 1; overflow: auto; }
+  .droid .sec { font-size: 14px; font-weight: 500; color: #1f1f1f; padding: 18px 16px 6px; }
+  .droid .item { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px 10px 16px; min-height: 56px; gap: 12px; }
+  .droid .item small { display: block; font-size: 14px; color: #5f5c53; }
+  .droid .item.new { outline: 2px dashed #f67400; outline-offset: -3px; border-radius: 6px; cursor: pointer; }
+  .droid .chev::after { content: "\203A"; font-size: 24px; color: #5f5c53; }
+  .droid .tag { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 8px; background: #e6e3d8; color: #3b3a33; white-space: nowrap; }
+  .droid .tag.up { background: #ffdbc9; }
+  .droid .tag.add { background: #d8e7c9; }
+  .droid .card { margin: 12px 16px; background: #f0eee6; border-radius: 12px; padding: 14px 16px; font-size: 14px; color: #3b3a33; line-height: 1.4; }
+  .droid .bottom { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px 18px; flex: none; }
+  .droid .tbtn { padding: 10px 16px; font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 20px; }
+  .droid .fbtn { padding: 10px 24px; font-size: 14px; font-weight: 500; background: #5c5b4f; color: #fff; border-radius: 20px; cursor: pointer; }
+  .droid .cam { flex: 1; background: radial-gradient(circle at 50% 45%, #4a4a44, #1b1b18 70%); position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
+  .droid .cam .top { position: absolute; top: 46px; left: 0; right: 0; text-align: center; font-size: 15px; }
+  .droid .cam .top small { display: block; font-size: 12px; opacity: .7; margin-top: 3px; }
+  .droid .cam .frame { width: 230px; height: 230px; border-radius: 18px; box-shadow: 0 0 0 999px rgba(0,0,0,.45); position: relative; cursor: pointer; }
+  .droid .cam .frame::before { content: ""; position: absolute; inset: -3px; border: 3px solid #fff; border-radius: 20px; clip-path: polygon(0 0,30% 0,30% 3px,3px 3px,3px 30%,0 30%,0 70%,3px 70%,3px calc(100% - 3px),30% calc(100% - 3px),30% 100%,70% 100%,70% calc(100% - 3px),calc(100% - 3px) calc(100% - 3px),calc(100% - 3px) 70%,100% 70%,100% 30%,calc(100% - 3px) 30%,calc(100% - 3px) 3px,70% 3px,70% 0,100% 0,100% 100%,0 100%); }
+  .droid .cam .frame .qr { width: 150px; height: 150px; padding: 8px; margin: 40px; transform: rotate(-6deg); opacity: .85; }
+  .droid .cam .x { position: absolute; top: 44px; left: 18px; font-size: 22px; }
+  .droid .cam .gps { position: absolute; bottom: 26px; font-size: 11px; opacity: .6; }
+  .droid .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 0 32px; text-align: center; }
+  .droid .spinner { width: 44px; height: 44px; border-radius: 50%; border: 4px solid #e6e3d8; border-top-color: #5c5b4f; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .droid .big { font-size: 22px; }
+  .droid .sub { font-size: 14px; color: #5f5c53; line-height: 1.45; }
+  .droid .snack { position: absolute; left: 12px; right: 12px; bottom: 16px; background: #31302b; color: #f4f1e8; border-radius: 4px; padding: 14px 16px; font-size: 14px; }
+  .droid .err { color: #ba1a1a; }
+</style>
+</head>
+<body>
+<div class="bar" id="platforms"><b>Desktop</b>
+  <button data-p="kde" aria-pressed="true">Linux (KDE Plasma)</button>
+  <button data-p="mac">macOS</button>
+  <button data-p="win">Windows</button>
+</div>
+<div class="bar" id="steps"><b>Step</b>
+  <button data-s="settings">1 Settings</button>
+  <button data-s="code">2 Code shown</button>
+  <button data-s="scan">3 Phone scans</button>
+  <button data-s="fetch">4 Fetching</button>
+  <button data-s="preview">5 Preview</button>
+  <button data-s="done">6 Imported</button>
+  <button data-s="error">Can't reach computer</button>
+</div>
+<p class="note">Dashed outline marks what is new. Click the highlighted rows and buttons to walk the flow. The QR is drawn black on white in every theme, the one place the desktop would not use palette roles, because scanners read dark-on-light codes most reliably.</p>
+
+<div id="fitbox"><div id="fit" class="fit">
+<div class="stage">
+  <!-- KDE -->
+  <section class="desk active" id="kde"><div class="kde">
+    <div class="search"><div>Search settings…</div></div>
+    <div class="title">General</div>
+    <div class="side">
+      <div>Home</div><div>Transcribe</div><div class="sel">General</div><div>Accounts</div>
+      <div class="grp">Speech</div><div>Dictation</div><div>Local models</div>
+      <div class="grp">Text</div><div>Refinement</div><div>Writing Profiles</div><div>Vocabulary</div><div>Output</div>
+    </div>
+    <div class="content"><div class="col">
+      <h3>App</h3>
+      <div class="card">
+        <div class="row"><span>Theme</span><span class="combo">System</span></div>
+        <div class="row"><span>Launch at login</span><span class="check"></span></div>
+        <div class="row"><span>Setup assistant<small>Go through the first-run steps again.</small></span><span class="btn">Run setup assistant</span></div>
+        <div class="row new"><span>Copy settings to your phone<small>Scan a code with Speecher for Android to bring over your vocabulary, snippets and Writing Profiles.</small></span><span class="btn" data-go="code">Show code</span></div>
+      </div>
+      <h3>Insights</h3>
+      <div class="card"><div class="row"><span>Keep insights about your dictation<small>Word counts, times and app names, never text or audio. Stays on this computer.</small></span><span class="check"></span></div></div>
+    </div></div>
+    <div class="scrim dlgwrap"><div class="dlg">
+      <div class="tb">Copy settings to your phone<i></i></div>
+      <div class="body">
+        <div class="qr"></div>
+        <div>
+          <ol><li>Open Speecher on your phone.</li><li>Go to Settings, then Import from computer.</li><li>Scan this code.</li></ol>
+          <div class="grpbox"><span>Included</span><ul class="incl"></ul></div>
+          <div class="grpbox"><span>Stays on this computer</span><ul class="stays"></ul></div>
+          <div class="grey" style="margin-top:8px">Never included: accounts, sign-ins and API keys.</div>
+        </div>
+      </div>
+      <div class="status st"></div>
+      <div class="foot"><span class="btn" data-go="settings">Close</span></div>
+    </div></div>
+  </div></section>
+
+  <!-- macOS -->
+  <section class="desk" id="mac"><div class="mac">
+    <div class="side">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div>Home</div><div>Transcribe</div><div class="sel">General</div><div>Accounts</div><div>Dictation</div><div>Local models</div><div>Refinement</div><div>Writing Profiles</div><div>Vocabulary</div><div>Output</div>
+    </div>
+    <div><div class="hdr">General</div>
+      <div class="col"><h3>App</h3><div class="group">
+        <div class="row"><span>Launch at login</span><span class="switch"></span></div>
+        <div class="row"><span>Setup assistant<small>Go through the first-run steps again.</small></span><span class="btn">Run setup assistant</span></div>
+        <div class="row new"><span>Copy settings to your phone<small>Scan a code with Speecher for Android to bring over your vocabulary, snippets and Writing Profiles.</small></span><span class="btn" data-go="code">Show code</span></div>
+      </div></div>
+    </div>
+    <div class="sheet dlgwrap"><div class="s">
+      <h2>Copy settings to your phone</h2>
+      <div class="body"><div class="qr"></div><div>
+        <ol><li>Open Speecher on your phone.</li><li>Go to Settings, then Import from computer.</li><li>Scan this code.</li></ol>
+        <b>Included</b><ul class="incl"></ul>
+        <b>Stays on this Mac</b><ul class="stays"></ul>
+        <div class="grey">Never included: accounts, sign-ins and API keys.</div>
+      </div></div>
+      <div class="foot"><span class="st grey"></span><span class="btn def" data-go="settings">Done</span></div>
+    </div></div>
+  </div></section>
+
+  <!-- Windows -->
+  <section class="desk" id="win"><div class="win">
+    <div class="side"><div class="app">Speecher</div>
+      <div class="item">Home</div><div class="item">Transcribe</div><div class="item sel">General</div><div class="item">Accounts</div><div class="item">Dictation</div><div class="item">Local models</div><div class="item">Refinement</div><div class="item">Writing Profiles</div><div class="item">Vocabulary</div><div class="item">Output</div>
+    </div>
+    <div class="main"><h1>General</h1><h3>App</h3>
+      <div class="card"><span>Launch at login</span><span>On</span></div>
+      <div class="card"><span>Setup assistant<small>Go through the first-run steps again.</small></span><span class="btn">Run setup assistant</span></div>
+      <div class="card new"><span>Copy settings to your phone<small>Scan a code with Speecher for Android to bring over your vocabulary, snippets and Writing Profiles.</small></span><span class="btn" data-go="code">Show code</span></div>
+    </div>
+    <div class="smoke dlgwrap"><div class="cd"><div class="in">
+      <h2>Copy settings to your phone</h2>
+      <div class="body"><div class="qr"></div><div>
+        <ol><li>Open Speecher on your phone.</li><li>Go to Settings, then Import from computer.</li><li>Scan this code.</li></ol>
+        <b>Included</b><ul class="incl"></ul>
+        <b>Stays on this PC</b><ul class="stays"></ul>
+        <div class="grey">Never included: accounts, sign-ins and API keys.</div>
+        <div class="st grey" style="margin-top:8px"></div>
+      </div></div></div>
+      <div class="foot"><span class="btn" data-go="settings">Close</span></div>
+    </div></div>
+  </div></section>
+
+  <!-- Android -->
+  <div class="droid"><div class="screen" id="phone"></div></div>
+</div>
+</div></div>
+
+<script>
+// A fake QR: three finder patterns, timing lines and seeded noise. Not scannable.
+function fakeQr() {
+  const n = 33, cells = [];
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const finder = (x, y) => { for (let i = 0; i < 7; i++) for (let j = 0; j < 7; j++) {
+    const edge = i === 0 || i === 6 || j === 0 || j === 6, core = i > 1 && i < 5 && j > 1 && j < 5;
+    if (edge || core) cells.push([x + i, y + j]); } };
+  const inFinder = (x, y) => (x < 8 && y < 8) || (x > n - 9 && y < 8) || (x < 8 && y > n - 9);
+  finder(0, 0); finder(n - 7, 0); finder(0, n - 7);
+  for (let x = 0; x < n; x++) for (let y = 0; y < n; y++) {
+    if (inFinder(x, y)) continue;
+    if (y === 6 || x === 6) { if ((x + y) % 2 === 0) cells.push([x, y]); continue; }
+    if (rnd() < .48) cells.push([x, y]);
+  }
+  return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><path d="${cells.map(([x, y]) => `M${x} ${y}h1v1h-1z`).join("")}"/></svg>`;
+}
+const QR = fakeQr();
+document.querySelectorAll(".qr").forEach(q => q.innerHTML = QR);
+
+const INCLUDED = ["214 vocabulary terms, with their context and profiles", "18 replacements and snippets",
+  "Writing Profiles: 5 built-in, 2 of your own", "3 custom tones, 1 custom cleanup level", "Additional instructions"];
+const STAYS = ["12 learned corrections", "4 per-app profile overrides", "Paste rules"];
+document.querySelectorAll(".incl").forEach(u => u.innerHTML = INCLUDED.map(t => `<li>${t}</li>`).join(""));
+document.querySelectorAll(".stays").forEach(u => u.innerHTML = STAYS.map(t => `<li>${t}</li>`).join(""));
+
+const DESK_STATUS = {
+  code: "Waiting for your phone… This code works once, while this window is open.",
+  scan: "Waiting for your phone… This code works once, while this window is open.",
+  fetch: "Sending to your phone…",
+  preview: "Sent to your phone. Finish the import there.",
+  done: "Sent to your phone. Finish the import there.",
+  error: "Waiting for your phone… This code works once, while this window is open.",
+};
+
+const PHONE = {
+  settings: () => `
+    <div class="status"><span>9:41</span><span>&#9679; &#9679; &#9646;</span></div>
+    <div class="appbar"><span>&#8592;</span>Settings</div>
+    <div class="scroll">
+      <div class="sec">Dictation</div>
+      <div class="item"><span>Vocabulary<small>32 words</small></span><span class="chev"></span></div>
+      <div class="item"><span>Replacements and snippets<small>4 replacements</small></span><span class="chev"></span></div>
+      <div class="sec">Advanced</div>
+      <div class="item"><span>Writing Profiles<small>6 profiles</small></span><span class="chev"></span></div>
+      <div class="item"><span>Tones<small>Built-in tones only</small></span><span class="chev"></span></div>
+      <div class="sec">App</div>
+      <div class="item"><span>Setup assistant<small>Go through the first-run steps again.</small></span><span class="chev"></span></div>
+      <div class="item new" data-go="scan"><span>Import from computer<small>Scan the code Speecher shows under General on your computer.</small></span><span class="chev"></span></div>
+    </div>`,
+  // Google's code scanner draws this screen; Speecher only starts it.
+  scan: () => `
+    <div class="cam">
+      <span class="x">&#10005;</span>
+      <div class="top">Scan a QR code<small>Point at the code on your computer</small></div>
+      <div class="frame" data-go="fetch"><div class="qr">${QR}</div></div>
+      <div class="gps">Google code scanner, drawn by Play services</div>
+    </div>`,
+  fetch: () => `
+    <div class="status"><span>9:41</span><span>&#9679; &#9679; &#9646;</span></div>
+    <div class="appbar"><span>&#8592;</span>Import from computer</div>
+    <div class="center" data-go="preview"><div class="spinner"></div><div class="sub">Getting your settings from <b>enzo-thinkpad</b>…</div></div>`,
+  preview: () => `
+    <div class="status"><span>9:41</span><span>&#9679; &#9679; &#9646;</span></div>
+    <div class="appbar"><span>&#8592;</span>Import from computer</div>
+    <div class="scroll">
+      <div class="card">From <b>enzo-thinkpad</b>. Nothing on this phone is deleted. Where both have the same item, the computer's version replaces the phone's.</div>
+      <div class="sec">Vocabulary</div>
+      <div class="item"><span>214 terms<small>Kubernetes, Aoife Byrne, Grafana, PR and 210 more</small></span><span class="tag add">190 new</span></div>
+      <div class="item"><span>Already on this phone<small>6 get the computer's context or profiles</small></span><span class="tag up">6 updated</span></div>
+      <div class="sec">Replacements and snippets</div>
+      <div class="item"><span>18 replacements<small>email sign off, my address, shrug and 15 more</small></span><span class="tag add">16 new</span></div>
+      <div class="sec">Writing Profiles</div>
+      <div class="item"><span>Standup, Legal<small>Your own profiles, with their tones and levels</small></span><span class="tag add">2 new</span></div>
+      <div class="item"><span>Work, Email<small>Different instructions on the computer</small></span><span class="tag up">2 updated</span></div>
+      <div class="item"><span>Additional instructions<small>"Use British spelling. Keep sentences short…"</small></span><span class="tag up">Replaces</span></div>
+    </div>
+    <div class="bottom"><span class="tbtn" data-go="settings">Cancel</span><span class="fbtn" data-go="done">Import</span></div>`,
+  done: () => PHONE.settings().replace("32 words", "222 words").replace("4 replacements", "20 replacements").replace("6 profiles", "8 profiles").replace("Built-in tones only", "3 custom tones")
+    + `<div class="snack">Imported from enzo-thinkpad</div>`,
+  error: () => `
+    <div class="status"><span>9:41</span><span>&#9679; &#9679; &#9646;</span></div>
+    <div class="appbar"><span>&#8592;</span>Import from computer</div>
+    <div class="center"><div class="big err">Couldn't reach your computer</div>
+      <div class="sub">Your phone and computer need to be on the same Wi-Fi network, and the code works only while it is open on the computer.</div>
+      <span class="fbtn" data-go="scan">Scan again</span></div>`,
+};
+PHONE.code = PHONE.settings;
+
+// #win/preview opens on a platform and step.
+const [hashPlatform, hashStep] = location.hash.slice(1).split("/");
+let step = PHONE[hashStep] ? hashStep : "code";
+function render() {
+  document.querySelectorAll("#steps button").forEach(b => b.setAttribute("aria-pressed", b.dataset.s === step));
+  document.getElementById("phone").innerHTML = PHONE[step]();
+  const open = step !== "settings";
+  document.querySelectorAll(".dlgwrap").forEach(d => d.style.display = open ? "" : "none");
+  document.querySelectorAll(".st").forEach(s => s.textContent = DESK_STATUS[step] || "");
+  document.querySelectorAll(".desk .qr").forEach(q => q.classList.toggle("dim", step === "preview" || step === "done" || step === "fetch"));
+}
+document.addEventListener("click", e => {
+  const go = e.target.closest("[data-go]"); if (go) { step = go.dataset.go; render(); return; }
+  const s = e.target.closest("#steps button"); if (s) { step = s.dataset.s; render(); return; }
+  const p = e.target.closest("#platforms button");
+  if (p) {
+    document.querySelectorAll("#platforms button").forEach(b => b.setAttribute("aria-pressed", b === p));
+    document.querySelectorAll(".desk").forEach(d => d.classList.toggle("active", d.id === p.dataset.p));
+  }
+});
+// Scale the 1312px stage to the page width.
+function fit() {
+  const f = document.getElementById("fit"), scale = Math.min(1, document.documentElement.clientWidth / 1312);
+  f.style.transform = `scale(${scale})`; f.style.width = 1312 + "px";
+  document.getElementById("fitbox").style.height = f.scrollHeight * scale + "px";
+}
+addEventListener("resize", fit);
+if (hashPlatform) document.querySelector(`#platforms button[data-p="${hashPlatform}"]`)?.click();
+render(); fit();
+</script>
+</body>
+</html>

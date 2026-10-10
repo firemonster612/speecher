@@ -98,6 +98,11 @@ void ClaudeSpeechTranscriber::createClient(quint64 attemptId,
     m_attemptId = attemptId;
     m_client = new ClaudeVoiceClient(this);
     ClaudeVoiceClient *client = m_client;
+    connect(client, &ClaudeVoiceClient::connected, this, [this, client, attemptId] {
+        if (m_client == client && m_attemptId == attemptId) {
+            emit attemptConnected(attemptId);
+        }
+    });
     connect(client, &ClaudeVoiceClient::partialTranscript, this, [this, client, attemptId](const QString &text) {
         if (m_client == client && m_attemptId == attemptId) {
             emit partialTranscript(attemptId, text);

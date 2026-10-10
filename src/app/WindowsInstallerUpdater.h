@@ -4,7 +4,6 @@
 
 namespace speecher {
 
-class DictationSession;
 class SettingsStore;
 
 class WindowsInstallerUpdater final : public ManifestUpdater {
@@ -12,7 +11,6 @@ class WindowsInstallerUpdater final : public ManifestUpdater {
 
 public:
     WindowsInstallerUpdater(SettingsStore *settings,
-                            DictationSession *session,
                             QObject *parent = nullptr);
 
     bool isAppImage() const override;

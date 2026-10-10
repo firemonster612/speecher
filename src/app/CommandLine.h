@@ -37,7 +37,8 @@ struct CommandLineDecision {
     int exitCode = 0;
     // RunCli: the IPC command to send.
     QString ipcCommand;
-    // RunCli's addVocabulary: the terms to save.
+    // RunCli's addVocabulary: the terms to save. record start: --vocab-file's
+    // terms, for that recording only.
     QStringList vocabularyTerms;
     // --format and --profile, for toggle, start and a daemon's --start-listening.
     SessionOverrides sessionOverrides;
@@ -54,8 +55,12 @@ struct CommandLineDecision {
     HeadlessTranscribeOptions headless;
     // ListenHeadless: stop after this long without speech once there was some.
     std::optional<int> untilSilenceMs;
-    // ListProviders: a JSON array instead of a table.
+    // ListProviders: a JSON array instead of a table. RunCli's record status
+    // and status: one JSON object, and status --watch one a line.
     bool json = false;
+    // RunCli's record start: the absolute path of --to, or empty for the
+    // default file.
+    QString recordPath;
 };
 
 // Decides what the process is for, before any GUI type is constructed, so that

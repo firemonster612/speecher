@@ -58,7 +58,8 @@ bool systemUsesLightTheme()
     return value != 0;
 }
 
-HICON createListeningIcon(bool lightTaskbar)
+// A Segoe Fluent Icons glyph in the taskbar's text colour.
+HICON createGlyphIcon(char16_t glyph, bool lightTaskbar)
 {
     constexpr int size = 32;
     QImage image(size, size, QImage::Format_ARGB32_Premultiplied);
@@ -68,7 +69,7 @@ HICON createListeningIcon(bool lightTaskbar)
     font.setPixelSize(24);
     painter.setFont(font);
     painter.setPen(lightTaskbar ? Qt::black : Qt::white);
-    painter.drawText(image.rect(), Qt::AlignCenter, QString::fromUtf16(u"\uE720"));
+    painter.drawText(image.rect(), Qt::AlignCenter, QString(QChar(glyph)));
     painter.end();
 
     BITMAPV5HEADER header{};
@@ -131,6 +132,11 @@ struct TrayIcon::Native {
                              listening = dictationListeningPresentation(state);
                              updateIcon();
                          });
+        QObject::connect(controller, &ApplicationController::recordingChanged, q,
+                         [this](bool isRecording) {
+                             recording = isRecording;
+                             updateIcon();
+                         });
     }
 
     ~Native()
@@ -178,7 +184,7 @@ struct TrayIcon::Native {
 
     void copyToolTip(NOTIFYICONDATAW &data) const
     {
-        const std::wstring tip = trayToolTip(listening).toStdWString();
+        const std::wstring tip = trayToolTip(listening, recording).toStdWString();
         StringCchCopyW(data.szTip, ARRAYSIZE(data.szTip), tip.c_str());
     }
 
@@ -186,8 +192,9 @@ struct TrayIcon::Native {
     {
         releaseIcon();
         const bool lightTaskbar = systemUsesLightTheme();
-        if (listening) {
-            currentIcon = createListeningIcon(lightTaskbar);
+        // Microphone while listening, Record while only a recording runs.
+        if (listening || recording) {
+            currentIcon = createGlyphIcon(listening ? u'\uE720' : u'\uE7C8', lightTaskbar);
             ownsCurrentIcon = currentIcon != nullptr;
             if (currentIcon) {
                 return currentIcon;
@@ -337,6 +344,7 @@ struct TrayIcon::Native {
     UINT taskbarCreated = 0;
     bool ownsCurrentIcon = false;
     bool listening = false;
+    bool recording = false;
     QString stateName;
 };
 
