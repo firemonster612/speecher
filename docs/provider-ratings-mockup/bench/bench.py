@@ -103,7 +103,7 @@ def request(provider, transcript):
     if api == "anthropic":
         body = {"model": model, "max_tokens": 4096, "stream": True,
                 "system": SYSTEM, "messages": [{"role": "user", "content": user}]}
-        if "haiku-4" not in model:  # as modelSupportsAdaptiveEffort
+        if "haiku-4" not in model:  # Haiku 4.5 is the only listed model without them
             body |= {"thinking": {"type": "adaptive", "display": "omitted"}, "output_config": {"effort": "low"}}
         return stream(f"{PROXY}/v1/messages", body, {**auth, "anthropic-version": "2023-06-01"})
     return stream(f"{OLLAMA}/chat/completions", {

@@ -5758,5 +5758,581 @@
    true
   ],
   "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "correction",
+  "run": 0,
+  "first_s": 0.8933795299963094,
+  "total_s": 1.2430136949988082,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "scratch",
+  "run": 0,
+  "first_s": 1.0439979960065102,
+  "total_s": 1.2801183990086429,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "technical",
+  "run": 0,
+  "first_s": 1.0231154820066877,
+  "total_s": 1.4453286190109793,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force` and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "list",
+  "run": 0,
+  "first_s": 1.3888125770026818,
+  "total_s": 1.991585796000436,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "question",
+  "run": 0,
+  "first_s": 0.9658507630083477,
+  "total_s": 1.2846934990084264,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "numbers",
+  "run": 0,
+  "first_s": 0.9505289369990351,
+  "total_s": 1.2290294760023244,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "repeat",
+  "run": 0,
+  "first_s": 1.3392192669998622,
+  "total_s": 1.6017793350038119,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "subtle",
+  "run": 0,
+  "first_s": 0.9173516619921429,
+  "total_s": 1.2872213019873016,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "restart",
+  "run": 0,
+  "first_s": 1.5872611460072221,
+  "total_s": 2.86611703899689,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "count",
+  "run": 0,
+  "first_s": 1.4640745970100397,
+  "total_s": 1.7376156190002803,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "instruction",
+  "run": 0,
+  "first_s": 0.91606952699658,
+  "total_s": 1.2056576769973617,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card"
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "paragraph",
+  "run": 0,
+  "first_s": 0.9168819890037412,
+  "total_s": 1.2676962340046884,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "filename",
+  "run": 0,
+  "first_s": 0.8105015570035903,
+  "total_s": 1.1610482510004658,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "selftalk",
+  "run": 0,
+  "first_s": 1.3386425869975938,
+  "total_s": 1.600232466997113,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "email",
+  "run": 0,
+  "first_s": 1.247371778008528,
+  "total_s": 1.700867253006436,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "correction",
+  "run": 1,
+  "first_s": 1.2462504249997437,
+  "total_s": 1.5955870429897914,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "scratch",
+  "run": 1,
+  "first_s": 1.2734051840088796,
+  "total_s": 1.5098056530114263,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM"
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "technical",
+  "run": 1,
+  "first_s": 1.4390600019978592,
+  "total_s": 2.0390470379934413,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "list",
+  "run": 1,
+  "first_s": 1.060532820993103,
+  "total_s": 1.5290686850057682,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "question",
+  "run": 1,
+  "first_s": 1.3551609069982078,
+  "total_s": 1.759822890002397,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "numbers",
+  "run": 1,
+  "first_s": 1.359746186004486,
+  "total_s": 1.7287482590036234,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "repeat",
+  "run": 1,
+  "first_s": 1.4104389810090652,
+  "total_s": 1.639839159004623,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "subtle",
+  "run": 1,
+  "first_s": 0.9129258489992935,
+  "total_s": 1.2540621499938425,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "restart",
+  "run": 1,
+  "first_s": 1.161568088005879,
+  "total_s": 1.3812567550048698,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "count",
+  "run": 1,
+  "first_s": 1.407234130994766,
+  "total_s": 1.6951907360053156,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "instruction",
+  "run": 1,
+  "first_s": 1.4123209480021615,
+  "total_s": 1.809001368994359,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card"
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "paragraph",
+  "run": 1,
+  "first_s": 1.056210799011751,
+  "total_s": 1.4227871390030487,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "filename",
+  "run": 1,
+  "first_s": 0.9024771440017503,
+  "total_s": 1.2203858549910365,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "selftalk",
+  "run": 1,
+  "first_s": 1.174928948006709,
+  "total_s": 1.364787378013716,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "email",
+  "run": 1,
+  "first_s": 0.9115706930024317,
+  "total_s": 1.3453566300013335,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "correction",
+  "run": 2,
+  "first_s": 1.619541719002882,
+  "total_s": 1.9785620059992652,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hey, so I was thinking maybe we could push the meeting to Friday because I've got that dentist thing."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "scratch",
+  "run": 2,
+  "first_s": 0.8947601189865964,
+  "total_s": 1.1942062469897792,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Send the report to Maria by 5 PM."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "technical",
+  "run": 2,
+  "first_s": 0.9319378049985971,
+  "total_s": 1.3488615670066793,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Run the deploy script with `--force`, and then check the logs at `/var/log/speecher.log`."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "list",
+  "run": 2,
+  "first_s": 1.033282844000496,
+  "total_s": 1.6089071830065222,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "For the release, we need three things:\n\n1. Update the changelog.\n2. Bump the version number in `CMakeLists.txt`.\n3. Tag the commit and push it."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "question",
+  "run": 2,
+  "first_s": 0.7670468750002328,
+  "total_s": 1.1231183400086593,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Can you tell me what the capital of France is? I need it for the quiz tomorrow."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "numbers",
+  "run": 2,
+  "first_s": 1.6904043929971522,
+  "total_s": 2.3353759809979238,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "The total was $2,345, and it's due on March 3rd."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "repeat",
+  "run": 2,
+  "first_s": 0.9636888859968167,
+  "total_s": 1.2100024909886997,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "I think we should probably move the launch back a week."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "subtle",
+  "run": 2,
+  "first_s": 0.9363077049929416,
+  "total_s": 1.2664568929903908,
+  "passed": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "text": "Let's meet at the cafe on Main Street at 4:30, and bring the slides."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "restart",
+  "run": 2,
+  "first_s": 0.9965173929958837,
+  "total_s": 1.1583969700004673,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "We need to submit the budget by Friday."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "count",
+  "run": 2,
+  "first_s": 1.2764844600023935,
+  "total_s": 1.4871942550089443,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Order four boxes of printer paper for the office"
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "instruction",
+  "run": 2,
+  "first_s": 0.8957606499898247,
+  "total_s": 1.1818411129934248,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Write a short poem about cats for my daughter's birthday card"
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "paragraph",
+  "run": 2,
+  "first_s": 0.943270976000349,
+  "total_s": 1.2773349969938863,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Dear team,\n\nThe server will be down tonight from 10 to midnight.\n\nPlease save your work."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "filename",
+  "run": 2,
+  "first_s": 1.0702771659998689,
+  "total_s": 1.439208443989628,
+  "passed": [
+   true,
+   true
+  ],
+  "text": "Open the file `docs/README.md` and fix the typo in the second heading."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "selftalk",
+  "run": 2,
+  "first_s": 1.014094832004048,
+  "total_s": 1.2272577130061109,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Tell him the contract looks fine to me."
+ },
+ {
+  "provider": "openai:gpt-5.5",
+  "sample": "email",
+  "run": 2,
+  "first_s": 0.8048070980003104,
+  "total_s": 1.3379640920029487,
+  "passed": [
+   true,
+   true,
+   true
+  ],
+  "text": "Hi Sarah, just following up on the invoice from last month. We haven't received payment yet. Could you check with accounting when it might go out? Thanks."
  }
 ]

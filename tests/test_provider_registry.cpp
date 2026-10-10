@@ -215,7 +215,8 @@ private slots:
                  QStringList({QStringLiteral("Quality 9/10"), QStringLiteral("Speed 8/10")}));
         QCOMPARE(ratingTexts(ProviderRole::Refinement, QStringLiteral("openai"), {}, chosen),
                  QStringList({QStringLiteral("Quality 9.5/10"), QStringLiteral("Speed 7/10")}));
-        chosen.refinement.openAiModel = QStringLiteral("gpt-7-test");
+        // The GPT-5.4 models need an API key, which the benchmark had none of.
+        chosen.refinement.openAiModel = QStringLiteral("gpt-5.4");
         QVERIFY(!providerRating(ProviderRole::Refinement, QStringLiteral("openai"), {}, chosen));
     }
 

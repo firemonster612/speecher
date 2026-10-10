@@ -22,11 +22,13 @@ constexpr double claudeWordErrorRate = 6.59;
 constexpr double claudeWaitSeconds = 0.07;
 
 // Refinement services, from the benchmark in docs/provider-ratings-mockup/bench,
-// run 2026-10-10 on each model the Model rows list, at its provider's default
-// settings: OpenAI at effort none (low for GPT-6.1 Sol, which refuses none) on
-// the Fast tier; Anthropic at effort low at standard speed, since its fast
-// mode needs usage credits a subscription lacks and the app falls back. Checks
-// passed, then the median wait in seconds.
+// run 2026-10-10 on each model the Model rows list that a ChatGPT or Claude
+// sign-in reaches, at its provider's default settings: OpenAI at effort none
+// (low for GPT-6.1 Sol, which refuses none) on the Fast tier; Anthropic with
+// adaptive thinking at effort low where the model takes it, at standard
+// speed, since its fast mode needs usage credits a subscription lacks and the
+// app falls back. The GPT-5.4 models need an API key, so they have no rating.
+// Checks passed, then the median wait in seconds.
 struct MeasuredRefinementModel {
     const char *id;
     int checksPassed;
@@ -38,6 +40,7 @@ constexpr MeasuredRefinementModel measuredRefinementModels[] = {
     {"gpt-6-astra", 120, 1.65},
     {"gpt-5.6-luna", 120, 1.53},
     {"gpt-5.6-terra", 123, 1.62},
+    {"gpt-5.5", 123, 1.38},
     {"claude-opus-5-5", 121, 1.41},
     {"claude-opus-5", 123, 1.94},
     {"claude-sonnet-5-5", 123, 1.23},
@@ -154,10 +157,11 @@ std::optional<ProviderRating> refinementRating(const QString &providerId, const 
                                                const RefinementSettings &refinement)
 {
     if (const std::optional<RowOption> model = refinementServiceModel(providerId, refinement)) {
-        const auto measured = std::ranges::find_if(measuredRefinementModels, [&model](const auto &measured) {
-            return model->id == QLatin1String(measured.id);
-        });
-        if (measured == std::ranges::end(measuredRefinementModels)) {
+        const auto measured = std::find_if(std::cbegin(measuredRefinementModels), std::cend(measuredRefinementModels),
+                                           [&model](const MeasuredRefinementModel &entry) {
+                                               return model->id == QLatin1String(entry.id);
+                                           });
+        if (measured == std::cend(measuredRefinementModels)) {
             return std::nullopt;
         }
         return ProviderRating{refinementBars(measured->checksPassed, measured->waitSeconds), {}};
