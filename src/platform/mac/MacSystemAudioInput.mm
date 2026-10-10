@@ -1,12 +1,15 @@
 #include "platform/mac/MacSystemAudioInput.h"
 
 #include "platform/audio/LoopbackPcm.h"
+#include "platform/audio/LoopbackReopen.h"
 
 #include <QMetaObject>
 #include <QScopeGuard>
+#include <QTimer>
 
 #include <cstring>
 
+#import <CoreGraphics/CoreGraphics.h>
 #import <CoreMedia/CoreMedia.h>
 #import <Foundation/Foundation.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
@@ -32,6 +35,36 @@ QString errorText(NSError *error)
 qint64 msBetween(CMTime from, CMTime to)
 {
     return qint64(CMTimeGetSeconds(CMTimeSubtract(to, from)) * 1000);
+}
+
+qint64 hostClockMs()
+{
+    return qint64(CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock())) * 1000);
+}
+
+// The display to capture alongside: the main one, with the menu bar, when
+// ScreenCaptureKit lists it.
+SCDisplay *mainDisplay(SCShareableContent *content)
+{
+    for (SCDisplay *display in content.displays) {
+        if (display.displayID == CGMainDisplayID()) {
+            return display;
+        }
+    }
+    return content.displays.firstObject;
+}
+
+// Waits for ScreenCaptureKit to stop stream, when there is one.
+void stopCapture(SCStream *stream)
+{
+    if (!stream) {
+        return;
+    }
+    dispatch_semaphore_t stopped = dispatch_semaphore_create(0);
+    [stream stopCaptureWithCompletionHandler:^(NSError *) {
+        dispatch_semaphore_signal(stopped);
+    }];
+    waitForReply(stopped);
 }
 
 } // namespace
@@ -92,11 +125,25 @@ public:
         m_heard = false;
     }
 
+    // A stream that stopped for anything but the permission or the user, such
+    // as its display going away, is opened again while the timeline carries
+    // on.
     void stopped(NSError *error)
     {
-        fail(isScreenRecordingDenied((__bridge CFErrorRef)error)
-                 ? m_permissionDenied
-                 : QStringLiteral("System audio capture stopped: %1").arg(errorText(error)));
+        if (!m_input) {
+            return;
+        }
+        if (isScreenRecordingDenied((__bridge CFErrorRef)error)) {
+            fail(m_permissionDenied);
+            return;
+        }
+        if ([error.domain isEqualToString:SCStreamErrorDomain] && error.code == SCStreamErrorUserStopped) {
+            fail(QStringLiteral("System audio capture stopped: %1").arg(errorText(error)));
+            return;
+        }
+        MacSystemAudioInput *input = m_input;
+        const quint64 generation = m_generation;
+        QMetaObject::invokeMethod(input, [input, generation] { input->reopen(generation); }, Qt::QueuedConnection);
     }
 
     void detach() { m_input = nullptr; }
@@ -194,6 +241,15 @@ struct MacSystemAudioInput::Stream {
     SpeecherSystemAudioOutput *output;
     SCStream *stream = nil;
     dispatch_source_t poll = nil;
+    LoopbackReopen reopen;
+};
+
+struct MacSystemAudioInput::StreamStart {
+    bool started = false;
+    // Why it did not: there is no display to capture alongside, or what
+    // ScreenCaptureKit said, nil when it did not answer.
+    bool noDisplay = false;
+    NSError *error = nil;
 };
 
 SampleBufferPcm pcmForSampleBuffer(CMSampleBufferRef buffer)
@@ -305,73 +361,18 @@ bool MacSystemAudioInput::start(QString *error)
 
 QString MacSystemAudioInput::open()
 {
-    const auto captureError = [this](NSError *error) {
-        return isScreenRecordingDenied((__bridge CFErrorRef)error)
-            ? m_permissionDenied
-            : QStringLiteral("Could not capture system audio: %1").arg(errorText(error));
-    };
-
-    // Asks for the permission the first time, and fails while it is off.
-    __block SCShareableContent *content = nil;
-    __block NSError *contentError = nil;
-    dispatch_semaphore_t answered = dispatch_semaphore_create(0);
-    [SCShareableContent getShareableContentExcludingDesktopWindows:YES
-                                               onScreenWindowsOnly:YES
-                                                 completionHandler:^(SCShareableContent *shareable, NSError *error) {
-                                                     content = shareable;
-                                                     contentError = error;
-                                                     dispatch_semaphore_signal(answered);
-                                                 }];
-    // A handler that answers after the wait gave up still writes, so what it
-    // wrote is read only once it has answered.
-    if (!waitForReply(answered)) {
-        return captureError(nil);
-    }
-    if (!content) {
-        return captureError(contentError);
-    }
-    SCDisplay *display = content.displays.firstObject;
-    if (!display) {
-        return QStringLiteral("Could not capture system audio: macOS captures it only alongside a display, and there "
-                              "is none.");
-    }
-
-    SCStreamConfiguration *configuration = [[SCStreamConfiguration alloc] init];
-    configuration.capturesAudio = YES;
-    configuration.excludesCurrentProcessAudio = YES;
-    configuration.sampleRate = 16000;
-    configuration.channelCount = 1;
-    configuration.width = 2;
-    configuration.height = 2;
-    configuration.minimumFrameInterval = CMTimeMake(1, 1);
-    configuration.showsCursor = NO;
-
     auto queue = dispatch_queue_create("io.github.firemonster612.speecher.system-audio", DISPATCH_QUEUE_SERIAL);
     auto reader = std::make_shared<SystemAudioReader>(this, m_generation, m_permissionDenied);
     m_stream.reset(new Stream{queue, reader, [[SpeecherSystemAudioOutput alloc] initWithReader:reader queue:queue]});
-    SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:display excludingWindows:@[]];
-    SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:configuration delegate:m_stream->output];
-    NSError *outputError = nil;
-    if (![stream addStreamOutput:m_stream->output type:SCStreamOutputTypeAudio sampleHandlerQueue:queue error:&outputError]
-        || ![stream addStreamOutput:m_stream->output
-                               type:SCStreamOutputTypeScreen
-                 sampleHandlerQueue:queue
-                              error:&outputError]) {
-        return captureError(outputError);
+    const StreamStart start = startStream();
+    if (start.noDisplay) {
+        return QStringLiteral("Could not capture system audio: macOS captures it only alongside a display, and there "
+                              "is none.");
     }
-
-    __block NSError *startError = nil;
-    dispatch_semaphore_t started = dispatch_semaphore_create(0);
-    m_stream->stream = stream;
-    [stream startCaptureWithCompletionHandler:^(NSError *error) {
-        startError = error;
-        dispatch_semaphore_signal(started);
-    }];
-    if (!waitForReply(started)) {
-        return captureError(nil);
-    }
-    if (startError) {
-        return captureError(startError);
+    if (!start.started) {
+        return isScreenRecordingDenied((__bridge CFErrorRef)start.error)
+            ? m_permissionDenied
+            : QStringLiteral("Could not capture system audio: %1").arg(errorText(start.error));
     }
 
     // Polled as well, because nothing arrives while nothing plays, and the
@@ -387,6 +388,97 @@ QString MacSystemAudioInput::open()
     return {};
 }
 
+MacSystemAudioInput::StreamStart MacSystemAudioInput::startStream()
+{
+    // Asks for the permission the first time, and fails while it is off.
+    __block SCShareableContent *content = nil;
+    __block NSError *contentError = nil;
+    dispatch_semaphore_t answered = dispatch_semaphore_create(0);
+    [SCShareableContent getShareableContentExcludingDesktopWindows:YES
+                                               onScreenWindowsOnly:YES
+                                                 completionHandler:^(SCShareableContent *shareable, NSError *error) {
+                                                     content = shareable;
+                                                     contentError = error;
+                                                     dispatch_semaphore_signal(answered);
+                                                 }];
+    // A handler that answers after the wait gave up still writes, so what it
+    // wrote is read only once it has answered.
+    if (!waitForReply(answered)) {
+        return {};
+    }
+    if (!content) {
+        return {.error = contentError};
+    }
+    SCDisplay *display = mainDisplay(content);
+    if (!display) {
+        return {.noDisplay = true};
+    }
+
+    SCStreamConfiguration *configuration = [[SCStreamConfiguration alloc] init];
+    configuration.capturesAudio = YES;
+    configuration.excludesCurrentProcessAudio = YES;
+    configuration.sampleRate = 16000;
+    configuration.channelCount = 1;
+    configuration.width = 2;
+    configuration.height = 2;
+    configuration.minimumFrameInterval = CMTimeMake(1, 1);
+    configuration.showsCursor = NO;
+
+    SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:display excludingWindows:@[]];
+    SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:configuration delegate:m_stream->output];
+    NSError *outputError = nil;
+    if (![stream addStreamOutput:m_stream->output
+                            type:SCStreamOutputTypeAudio
+              sampleHandlerQueue:m_stream->queue
+                           error:&outputError]
+        || ![stream addStreamOutput:m_stream->output
+                               type:SCStreamOutputTypeScreen
+                 sampleHandlerQueue:m_stream->queue
+                              error:&outputError]) {
+        return {.error = outputError};
+    }
+
+    __block NSError *startError = nil;
+    dispatch_semaphore_t started = dispatch_semaphore_create(0);
+    // Kept before it starts, so a start that answers late is still stopped.
+    m_stream->stream = stream;
+    [stream startCaptureWithCompletionHandler:^(NSError *error) {
+        startError = error;
+        dispatch_semaphore_signal(started);
+    }];
+    if (!waitForReply(started)) {
+        return {};
+    }
+    if (startError) {
+        return {.error = startError};
+    }
+    return {.started = true};
+}
+
+void MacSystemAudioInput::reopen(quint64 generation)
+{
+    if (generation != m_generation) {
+        return;
+    }
+    stopCapture(m_stream->stream);
+    m_stream->stream = nil;
+    const StreamStart start = startStream();
+    if (start.started) {
+        m_stream->reopen.restart();
+        return;
+    }
+    if (isScreenRecordingDenied((__bridge CFErrorRef)start.error)) {
+        fail(generation, m_permissionDenied);
+        return;
+    }
+    const auto refusal = start.noDisplay ? LoopbackReopen::Refusal::NoOutput : LoopbackReopen::Refusal::Failed;
+    if (m_stream->reopen.retries(refusal, hostClockMs())) {
+        QTimer::singleShot(kLoopbackPollMs, this, [this, generation] { reopen(generation); });
+        return;
+    }
+    fail(generation, QStringLiteral("System audio capture stopped: %1").arg(errorText(start.error)));
+}
+
 void MacSystemAudioInput::stop()
 {
     if (!m_stream) {
@@ -394,13 +486,7 @@ void MacSystemAudioInput::stop()
     }
     const std::unique_ptr<Stream> stream = std::move(m_stream);
     ++m_generation;
-    if (stream->stream) {
-        dispatch_semaphore_t stopped = dispatch_semaphore_create(0);
-        [stream->stream stopCaptureWithCompletionHandler:^(NSError *) {
-            dispatch_semaphore_signal(stopped);
-        }];
-        waitForReply(stopped);
-    }
+    stopCapture(stream->stream);
     // Once this has run on the capture queue, nothing there reaches this
     // input again.
     const std::shared_ptr<SystemAudioReader> reader = stream->reader;

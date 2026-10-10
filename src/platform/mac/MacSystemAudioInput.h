@@ -30,7 +30,10 @@ bool isScreenRecordingDenied(CFErrorRef error);
 // captures audio only alongside a display, so the stream also takes the
 // smallest, slowest video it allows and drops it. It delivers nothing while
 // nothing plays, so a poll on the capture queue fills that stretch with
-// silence, which keeps the stream in step with the clock.
+// silence, which keeps the stream in step with the clock. A stream that
+// stops for anything but the permission or the user, such as when its display
+// is unplugged, is opened again on the main display and the timeline carries
+// on, as long as LoopbackReopen allows.
 class MacSystemAudioInput final : public AudioInput {
 public:
     // permissionDenied is what start() and failed say when Screen & System
@@ -47,6 +50,12 @@ private:
 
     // Leaves whatever it got as far as for stop() to tear down when it fails.
     QString open();
+    // Opens a ScreenCaptureKit stream into m_stream, on the main display.
+    struct StreamStart;
+    StreamStart startStream();
+    // Runs on the main thread after the stream stopped, and again a poll later
+    // while a new one refuses.
+    void reopen(quint64 generation);
     // Runs on the main thread.
     void fail(quint64 generation, const QString &message);
 
