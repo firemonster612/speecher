@@ -55,6 +55,14 @@ inline bool permitsProviderFallback(ProviderFailureKind kind)
     return false;
 }
 
+// Whether a failure of this kind may pass by itself, so the same request
+// can go through later.
+inline bool isTransientFailure(ProviderFailureKind kind)
+{
+    return kind == ProviderFailureKind::Network || kind == ProviderFailureKind::Timeout
+        || kind == ProviderFailureKind::Server || kind == ProviderFailureKind::RateLimited;
+}
+
 } // namespace speecher
 
 Q_DECLARE_METATYPE(speecher::ProviderFailure)

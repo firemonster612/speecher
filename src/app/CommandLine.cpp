@@ -10,6 +10,7 @@
 #include "dictation/DictationTypes.h"
 #include "providers/ProviderRegistry.h"
 #include "recording/RecordingPresentation.h"
+#include "recording/RecordingStatus.h"
 #include "transcribe/FileTranscriptionSession.h"
 
 #include <QFileInfo>
@@ -121,9 +122,9 @@ constexpr int kMaxUntilSilenceSeconds = 3600;
 
 // record start may wait for macOS to ask about the microphone and for the
 // speech provider to connect, and record stop for the provider's last
-// utterance.
+// utterances, with time to spare for the answer.
 constexpr int kRecordStartTimeoutMs = 60000;
-constexpr int kRecordStopTimeoutMs = 20000;
+constexpr int kRecordStopTimeoutMs = kLongestRecordingStopMs + 5000;
 // How long record start waits for the Speecher it started to answer.
 constexpr int kDaemonStartTimeoutMs = 10000;
 constexpr int kDaemonPollMs = 100;

@@ -52,7 +52,7 @@ struct TranscribeOptions {
     // audio, and Codex does not transcribe it again at the end. Once the
     // provider has connected, a dropped stream reconnects for as long as the
     // microphone runs, renewing the sign-in first when it is due or was
-    // turned down.
+    // turned down. The caller marks where each utterance begins and ends.
     bool streamedFinalsOnly = false;
     TranscriptDestination destination = TranscriptDestination::BesideInput;
     QString folder;
@@ -126,11 +126,19 @@ public:
     bool startListening(AudioInput *input, const TranscribeOptions &options);
     // Stops the microphone; what it heard is still transcribed and refined.
     void finishListening();
+    // Has the speech provider begin an utterance with the last voicedBytes
+    // the microphone heard, once the audio before has gone to it; see
+    // SpeechTranscriber::beginUtterance.
+    void beginUtterance(qsizetype voicedBytes);
     // Has the speech provider finalize the utterance the microphone has heard,
     // once that audio has gone to it; see SpeechTranscriber::endUtterance.
+    // The microphone may have stopped, until its audio has all been sent.
     void endUtterance();
     // Stops the current file, skips the rest and still emits batchFinished.
     void cancel();
+    // How long the current speech provider may take to answer an utterance,
+    // while running; see SpeechTranscriber::utteranceAnswerTimeoutMs.
+    int utteranceAnswerTimeoutMs() const;
 
 signals:
     void batchStarted(int count);
@@ -147,6 +155,9 @@ signals:
     // A recording's stream was down so long that the oldest unsent audio,
     // this much of it, was dropped.
     void microphoneAudioLost(int index, qint64 durationMs);
+    // A recording's utterance the speech provider did not transcribe, or
+    // only in part, for reason; the stream goes on.
+    void utteranceFailed(int index, const QString &reason);
     // Each piece of text that will not change again, in order: a final the
     // provider sent, or the partial a stream left when it ended. A
     // whole-attempt transcript, which replaces them, is not one.
@@ -194,7 +205,7 @@ private:
     void rewindTo(qsizetype position);
     void keepMicrophoneAudioBounded();
     void forgetAudioBefore(qsizetype position);
-    void endUtteranceOnceSent();
+    void markUtterancesOnceSent();
 
     SettingsStore *m_settings;
     ProviderRegistry *m_providers;
@@ -227,11 +238,17 @@ private:
     qsizetype m_pcmDropped = 0;
     // Bytes sent, counted from the start of the input.
     qsizetype m_sent = 0;
-    // Where each endUtterance() falls in the input, kept until that audio is
-    // dropped, so a stream that takes the audio again gets them again.
-    QList<qsizetype> m_utteranceEnds;
-    // The first of m_utteranceEnds the current stream has not been sent.
-    qsizetype m_nextUtteranceEnd = 0;
+    // Where an utterance begins or ends in the input.
+    struct UtteranceMark {
+        qsizetype position;
+        bool begins;
+    };
+    // Each beginUtterance() and endUtterance(), in order, kept until that
+    // audio is dropped, so a stream that takes the audio again gets them
+    // again.
+    QList<UtteranceMark> m_utteranceMarks;
+    // The first of m_utteranceMarks the current stream has not been sent.
+    qsizetype m_nextUtteranceMark = 0;
     // m_sent when the current attempt began: what it was sent is sent again
     // if it fails before it connects.
     qsizetype m_attemptSentFrom = 0;

@@ -18,6 +18,15 @@ namespace speecher {
 namespace {
 
 constexpr int sampleRateHz = 16000;
+// How much of the text before an utterance its prompt carries: about a
+// sentence, well inside the 224 tokens Whisper reads of a prompt.
+constexpr qsizetype promptTailChars = 200;
+// How much of the quiet before an utterance goes up with it, 300 ms, so a
+// first sound softer than what counts as voice is not cut.
+constexpr qsizetype leadInBytes = sampleRateHz * 2 * 3 / 10;
+// How long an utterance's upload may take, before the server's silence while
+// it transcribes.
+constexpr int uploadAllowanceMs = 5000;
 
 QHttpPart formField(const QString &name, const QByteArray &value)
 {
@@ -35,6 +44,13 @@ QString endpointErrorMessage(const QByteArray &body, const QString &fallback)
     const QString message = error.isObject() ? error.toObject().value(QStringLiteral("message")).toString()
                                              : error.isString() ? error.toString() : object.value(QStringLiteral("message")).toString();
     return message.isEmpty() ? fallback : message;
+}
+
+// OpenAI's 429 for an account out of credit, which waiting does not mend.
+bool isQuotaSpent(const QByteArray &body)
+{
+    return QJsonDocument::fromJson(body).object().value(QStringLiteral("error")).toObject()
+               .value(QStringLiteral("code")).toString() == QStringLiteral("insufficient_quota");
 }
 
 // Whether the first character with a script of its own, past punctuation and
@@ -68,6 +84,21 @@ QString spacedSegment(const QString &text, const QString &segment)
         return segment;
     }
     return QLatin1Char(' ') + segment;
+}
+
+SpeechFailure finalizeFailure(quint64 attemptId, const ProviderFailure &failure)
+{
+    return {attemptId, failure.message, false, QStringLiteral("finalize"), failure.kind, failure.httpStatus};
+}
+
+// The last promptTailChars of text, from the start of a word where it has
+// spaces.
+QString promptTail(const QString &text)
+{
+    if (text.size() <= promptTailChars) return text;
+    const QString tail = text.right(promptTailChars);
+    const qsizetype space = tail.indexOf(QLatin1Char(' '));
+    return space < 0 ? tail : tail.mid(space + 1);
 }
 
 } // namespace
@@ -151,6 +182,16 @@ SpeechPrepareResult EndpointSpeechTranscriber::prepare(const SpeechSettings &set
     return {true, {}};
 }
 
+bool EndpointSpeechTranscriber::streamsFinalText(const SpeechSettings &) const
+{
+    return true;
+}
+
+int EndpointSpeechTranscriber::utteranceAnswerTimeoutMs() const
+{
+    return uploadAllowanceMs + m_inactivityTimeoutMs;
+}
+
 void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSettings &settings)
 {
     cancelAttempt(m_attemptId);
@@ -158,27 +199,98 @@ void EndpointSpeechTranscriber::startAttempt(quint64 attemptId, const SpeechSett
     m_endpoint = settings.endpoint;
     m_spokenLanguage = settings.language;
     // The terms Claude Voice would get, in the same priority order.
-    m_prompt = VocabularyLimit::limited(settings.vocabulary).join(QStringLiteral(", "));
+    m_vocabularyPrompt = VocabularyLimit::limited(settings.vocabulary).join(QStringLiteral(", "));
+    m_inputFinished = false;
     m_pcm.clear();
+    m_cutIntoUtterances = settings.cutIntoUtterances;
+    m_utteranceOpen = false;
+    m_utterances.clear();
+    m_heardTail.clear();
+    // There is no stream to open: the audio waits here for the upload, so
+    // all of it reaches the server.
+    emit attemptConnected(attemptId);
 }
 
 void EndpointSpeechTranscriber::sendAudio(quint64 attemptId, const QByteArray &pcm)
 {
-    if (attemptId == m_attemptId && !m_reply) {
-        m_pcm += pcm;
+    if (attemptId != m_attemptId || m_inputFinished) {
+        return;
+    }
+    m_pcm += pcm;
+    if (m_cutIntoUtterances && !m_utteranceOpen && m_pcm.size() > leadInBytes) {
+        m_pcm.remove(0, m_pcm.size() - leadInBytes);
     }
 }
 
 void EndpointSpeechTranscriber::finishInput(quint64 attemptId)
 {
-    if (attemptId != m_attemptId || m_reply) {
+    if (attemptId != m_attemptId || m_inputFinished) {
+        return;
+    }
+    m_inputFinished = true;
+    if (m_cutIntoUtterances) {
+        // An utterance still open goes up; the quiet outside one never does,
+        // as a batch model writes words into silence.
+        closeUtterance();
+        m_pcm.clear();
+        if (!m_reply) {
+            uploadNextUtterance();
+        }
         return;
     }
     if (m_pcm.isEmpty()) {
         emit attemptCompleted(attemptId);
         return;
     }
-    const SpeechEndpointUpload upload = speechEndpointUpload(m_endpoint, std::exchange(m_pcm, {}), m_prompt, m_spokenLanguage);
+    postAudio(std::exchange(m_pcm, {}), m_vocabularyPrompt);
+}
+
+void EndpointSpeechTranscriber::beginUtterance(quint64 attemptId)
+{
+    if (attemptId == m_attemptId && m_cutIntoUtterances && !m_inputFinished) {
+        m_utteranceOpen = true;
+    }
+}
+
+void EndpointSpeechTranscriber::endUtterance(quint64 attemptId)
+{
+    if (attemptId != m_attemptId || !m_utteranceOpen) {
+        return;
+    }
+    closeUtterance();
+    if (!m_reply) {
+        uploadNextUtterance();
+    }
+}
+
+// The open utterance waits for its upload.
+void EndpointSpeechTranscriber::closeUtterance()
+{
+    if (std::exchange(m_utteranceOpen, false) && !m_pcm.isEmpty()) {
+        m_utterances.append(std::exchange(m_pcm, {}));
+    }
+}
+
+// One upload at a time, so each prompt has the text before it and the
+// finals come in order.
+void EndpointSpeechTranscriber::uploadNextUtterance()
+{
+    if (m_utterances.isEmpty()) {
+        if (m_inputFinished) {
+            emit attemptCompleted(m_attemptId);
+        }
+        return;
+    }
+    // Whisper reads the end of a prompt, so the text before comes last.
+    QStringList prompt{m_vocabularyPrompt, m_heardTail};
+    prompt.removeAll(QString());
+    postAudio(m_utterances.takeFirst(), prompt.join(QStringLiteral(". ")));
+}
+
+void EndpointSpeechTranscriber::postAudio(const QByteArray &pcm, const QString &prompt)
+{
+    const quint64 attemptId = m_attemptId;
+    const SpeechEndpointUpload upload = speechEndpointUpload(m_endpoint, pcm, prompt, m_spokenLanguage);
     m_sseBuffer.clear();
     m_streamedText.clear();
     m_doneText.clear();
@@ -255,26 +367,54 @@ void EndpointSpeechTranscriber::finishReply(QNetworkReply *reply, quint64 attemp
             : replyFailure(*reply, prefix + endpointErrorMessage(body, reply->errorString()));
         // Text the stream already produced is the dictation, cut short; the
         // audio is not sent again (rule A7), so keep what arrived.
-        if (m_streaming && !m_streamedText.trimmed().isEmpty()) {
+        const QString kept = m_streaming ? m_streamedText.trimmed() : QString();
+        if (!kept.isEmpty()) {
             qWarning().noquote() << failure.message << "- keeping the text streamed so far";
-            emit attemptTranscript(attemptId, m_streamedText.trimmed());
         }
-        fail(attemptId, failure);
+        if (m_cutIntoUtterances) {
+            if (!kept.isEmpty()) {
+                finishUtterance(kept);
+            }
+            // A failure that may pass costs this utterance alone. Any other,
+            // such as a refused key, a wrong path or a spent quota, would
+            // fail every one, so it stops the stream.
+            if (!isTransientFailure(failure.kind) || isQuotaSpent(body)) {
+                emit failed(finalizeFailure(attemptId, failure));
+                return;
+            }
+            emit utteranceFailed(finalizeFailure(attemptId, failure));
+            uploadNextUtterance();
+            return;
+        }
+        if (!kept.isEmpty()) {
+            emit attemptTranscript(attemptId, kept);
+        }
+        emit failed(finalizeFailure(attemptId, failure));
         return;
     }
     const QString text = m_streaming
         ? (m_doneText.isEmpty() ? m_streamedText : m_doneText)
         : QJsonDocument::fromJson(body).object().value(QStringLiteral("text")).toString();
     const QString trimmed = text.trimmed();
+    if (m_cutIntoUtterances) {
+        finishUtterance(trimmed);
+        uploadNextUtterance();
+        return;
+    }
     if (!trimmed.isEmpty()) {
         emit attemptTranscript(attemptId, trimmed);
     }
     emit attemptCompleted(attemptId);
 }
 
-void EndpointSpeechTranscriber::fail(quint64 attemptId, const ProviderFailure &failure)
+// Every answered utterance is a final, one with no words too, so the caller
+// knows it was answered.
+void EndpointSpeechTranscriber::finishUtterance(const QString &text)
 {
-    emit failed({attemptId, failure.message, false, QStringLiteral("finalize"), failure.kind, failure.httpStatus});
+    if (!text.isEmpty()) {
+        m_heardTail = promptTail(m_heardTail + spacedSegment(m_heardTail, text));
+    }
+    emit finalTranscript(m_attemptId, text);
 }
 
 void EndpointSpeechTranscriber::cancelAttempt(quint64 attemptId)
@@ -283,6 +423,7 @@ void EndpointSpeechTranscriber::cancelAttempt(quint64 attemptId)
         return;
     }
     m_pcm.clear();
+    m_utterances.clear();
     m_inactivityTimer.stop();
     m_deadlineTimer.stop();
     if (QNetworkReply *reply = m_reply) {

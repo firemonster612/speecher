@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QFileInfo>
 
+#include <algorithm>
 #include <utility>
 
 namespace speecher {
@@ -18,8 +19,6 @@ namespace {
 
 // Who the microphone's lines name; system audio's will be "them".
 const QString kMicrophoneSpeaker = QStringLiteral("me");
-// How long a stop waits for the provider to finish the last utterance.
-constexpr int kStopTimeoutMs = 15000;
 // A pause this long after speech ends the utterance.
 constexpr int kUtterancePauseMs = 800;
 // Speech that runs this long without a pause is ended anyway, under Codex's
@@ -94,7 +93,6 @@ RecordingSession::RecordingSession(SettingsStore *settings,
 {
     qRegisterMetaType<RecordingStatus>();
     m_stopDeadline.setSingleShot(true);
-    m_stopDeadline.setInterval(kStopTimeoutMs);
     connect(&m_stopDeadline, &QTimer::timeout, this, [this] {
         m_stream.problem = recordingStopTimedOutText();
         m_transcription->cancel();
@@ -117,8 +115,15 @@ RecordingSession::RecordingSession(SettingsStore *settings,
             emit problemChanged();
         }
     });
-    connect(m_transcription, &FileTranscriptionSession::fileTextFinalized, this,
-            [this](int, const QString &text) { writeLine(text); });
+    connect(m_transcription, &FileTranscriptionSession::utteranceFailed, this, [this](int, const QString &reason) {
+        m_stream.problem = recordingUtteranceFailedText(reason);
+        emit problemChanged();
+        extendStop();
+    });
+    connect(m_transcription, &FileTranscriptionSession::fileTextFinalized, this, [this](int, const QString &text) {
+        writeLine(text);
+        extendStop();
+    });
     connect(m_transcription, &FileTranscriptionSession::batchFinished, this,
             &RecordingSession::handleTranscriptionFinished);
 }
@@ -156,10 +161,8 @@ void RecordingSession::start(const QString &path,
     }
     const SpeechSettings speech = m_settings->snapshot().speech;
     const SpeechTranscriber *provider = m_providers->speechProvider(speech.providerId);
-    // A batch provider would need the audio cut into chunks at its silences,
-    // which recording does not do yet. Local Models that stream finalize runs
-    // of words rather than utterances, and their tail only in a whole-attempt
-    // transcript, so they say no too.
+    // Local Models finalize runs of words rather than utterances, and their
+    // tail only in a whole-attempt transcript, so they say no.
     if (!provider || !provider->streamsFinalText(speech)) {
         done(recordingSpeechProviderRefusal(m_providers->speechProviderLabel(speech.providerId)));
         return;
@@ -199,13 +202,22 @@ void RecordingSession::stop()
         return;
     }
     m_phase = Phase::Stopping;
+    const bool speaking = m_pauseTimer.isActive();
     m_pauseTimer.stop();
     if (!m_transcription->isRunning()) {
         finish();
         return;
     }
-    m_stopDeadline.start();
+    m_stopLimit.setRemainingTime(kLongestRecordingStopMs);
+    m_utteranceAnswerTimeoutMs = m_transcription->utteranceAnswerTimeoutMs();
+    m_stopDeadline.start(m_utteranceAnswerTimeoutMs);
     m_transcription->finishListening();
+    // The utterance being spoken ends here, as the others did at a pause,
+    // once the microphone has delivered its post-roll: a provider that
+    // transcribes utterances does not take the audio after the last.
+    if (speaking) {
+        endUtterance();
+    }
 }
 
 void RecordingSession::discard()
@@ -241,13 +253,17 @@ void RecordingSession::handleStreamConnected()
 }
 
 // Skip silence holds quiet audio back, so a pause is timed by the clock
-// rather than by the audio that arrives.
+// rather than by the audio that arrives. Voice with no utterance open begins
+// one.
 void RecordingSession::trackUtterance(const QByteArray &pcm)
 {
     if (m_phase == Phase::Stopping) {
         return;
     }
     if (isVoiced(rmsForPcm16(pcm), m_voiceThreshold)) {
+        if (!m_pauseTimer.isActive()) {
+            m_transcription->beginUtterance(pcm.size());
+        }
         m_pauseTimer.start();
     }
     if (!m_pauseTimer.isActive()) {
@@ -264,6 +280,15 @@ void RecordingSession::endUtterance()
     m_pauseTimer.stop();
     m_utteranceBytes = 0;
     m_transcription->endUtterance();
+}
+
+// While a stop waits, each utterance the provider answers gives it time for
+// the next, up to kLongestRecordingStopMs in all.
+void RecordingSession::extendStop()
+{
+    if (m_stopDeadline.isActive()) {
+        m_stopDeadline.start(int(std::min<qint64>(m_utteranceAnswerTimeoutMs, m_stopLimit.remainingTime())));
+    }
 }
 
 void RecordingSession::writeLine(const QString &text)
