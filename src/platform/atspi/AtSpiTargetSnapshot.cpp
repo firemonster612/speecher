@@ -294,37 +294,101 @@ bool isForeignPrivilegedProcess(qint64 processId)
     return match.hasMatch() && match.captured(1).toUInt() != uint(getuid());
 }
 
-AtspiAccessible *focusedObject(AtspiAccessible *object,
-                               int depth,
-                               int *visited,
-                               QHash<QString, AccessibleIdentity> *identities,
-                               const QDeadlineTimer &deadline)
+// Qt keeps FOCUSED on the current item of every combo box's popup list and
+// item view after focus moves on, and in Qt Creator over a thousand objects
+// come between the first of those and the focused editor. A text field
+// reports FOCUSED only while it holds keyboard focus, so another focused
+// object is kept only until the search finds a focused, showing text field.
+// Past it the search skips subtrees that are not showing, such as Qt
+// Creator's other modes, which bring its editor within about a hundred
+// objects. It looks at a bounded number of objects, and never spends the
+// second half of the capture's time.
+constexpr int maximumVisitsPastFocused = 1000;
+
+struct FocusSearch {
+    int visited = 0;
+    // The first focused object that is not the text field sought, the visit
+    // it was found on, and the first such object that is showing: the better
+    // guess at the real focus when no text field has it.
+    AccessibleHandle firstFocused;
+    int firstFocusedVisit = 0;
+    AccessibleHandle showingFocused;
+};
+
+bool searchDone(const FocusSearch &search, const QDeadlineTimer &deadline)
 {
-    if (!object || deadline.hasExpired()
-        || depth > maximumTreeDepth || ++(*visited) > maximumVisitedObjects
+    return deadline.hasExpired() || search.visited > maximumVisitedObjects
+        || (search.firstFocused
+            && (search.visited - search.firstFocusedVisit > maximumVisitsPastFocused
+                || deadline.remainingTime() < captureDeadlineMs / 2));
+}
+
+// The text field holding keyboard focus under object: focused, showing and
+// text, with the editable interface or state. nullptr when the search found
+// none; other focused objects are left in search. The interface is enough to
+// end the search, since VTE terminals and browser pages carry it while they
+// hold focus; whether the Target can be typed into is the state alone.
+AtspiAccessible *focusedTextField(AtspiAccessible *object,
+                                  int depth,
+                                  FocusSearch *search,
+                                  QHash<QString, AccessibleIdentity> *identities,
+                                  const QDeadlineTimer &deadline)
+{
+    ++search->visited;
+    if (!object || depth > maximumTreeDepth || searchDone(*search, deadline)
         || shouldSkipAccessible(object, identities)) {
         return nullptr;
     }
-    if (hasState(object, ATSPI_STATE_FOCUSED)) {
-        return ATSPI_ACCESSIBLE(g_object_ref(object));
+    AtspiStateSet *states = atspi_accessible_get_state_set(object);
+    const auto has = [states](AtspiStateType state) { return states && atspi_state_set_contains(states, state); };
+    const bool focused = has(ATSPI_STATE_FOCUSED);
+    const bool showing = has(ATSPI_STATE_SHOWING);
+    const bool editable = has(ATSPI_STATE_EDITABLE);
+    if (states) g_object_unref(states);
+    if (focused) {
+        if (showing && atspi_accessible_is_text(object)
+            && (editable || atspi_accessible_is_editable_text(object))) {
+            return ATSPI_ACCESSIBLE(g_object_ref(object));
+        }
+        if (!search->firstFocused) {
+            search->firstFocused = AccessibleHandle(ATSPI_ACCESSIBLE(g_object_ref(object)));
+            search->firstFocusedVisit = search->visited;
+        }
+        if (showing && !search->showingFocused) {
+            search->showingFocused = AccessibleHandle(ATSPI_ACCESSIBLE(g_object_ref(object)));
+        }
+    }
+    if (search->firstFocused && !showing) {
+        return nullptr;
     }
     GError *error = nullptr;
     const int childCount = atspi_accessible_get_child_count(object, &error);
     clearError(&error);
-    for (int index = 0; index < childCount; ++index) {
+    for (int index = 0; index < childCount && !searchDone(*search, deadline); ++index) {
         AtspiAccessible *child = atspi_accessible_get_child_at_index(object, index, &error);
         clearError(&error);
         if (!child) {
             continue;
         }
-        AtspiAccessible *focused = focusedObject(
-            child, depth + 1, visited, identities, deadline);
+        AtspiAccessible *field = focusedTextField(child, depth + 1, search, identities, deadline);
         g_object_unref(child);
-        if (focused) {
-            return focused;
+        if (field) {
+            return field;
         }
     }
     return nullptr;
+}
+
+AtspiAccessible *focusedObject(AtspiAccessible *root,
+                               QHash<QString, AccessibleIdentity> *identities,
+                               const QDeadlineTimer &deadline)
+{
+    FocusSearch search;
+    if (AtspiAccessible *field = focusedTextField(root, 0, &search, identities, deadline)) {
+        return field;
+    }
+    const AccessibleHandle &guess = search.showingFocused ? search.showingFocused : search.firstFocused;
+    return guess ? ATSPI_ACCESSIBLE(g_object_ref(guess.get())) : nullptr;
 }
 
 AtspiAccessible *focusedObjectInActiveWindow(
@@ -344,9 +408,7 @@ AtspiAccessible *focusedObjectInActiveWindow(
             continue;
         }
         if (hasState(application, ATSPI_STATE_ACTIVE)) {
-            int visited = 0;
-            AtspiAccessible *focused = focusedObject(
-                application, 0, &visited, identities, deadline);
+            AtspiAccessible *focused = focusedObject(application, identities, deadline);
             if (focused) {
                 if (fallbackWindow) g_object_unref(fallbackWindow);
                 if (fallbackApplication) g_object_unref(fallbackApplication);
@@ -365,9 +427,7 @@ AtspiAccessible *focusedObjectInActiveWindow(
                 continue;
             }
             if (hasState(window, ATSPI_STATE_ACTIVE)) {
-                int visited = 0;
-                AtspiAccessible *focused = focusedObject(
-                    window, 0, &visited, identities, deadline);
+                AtspiAccessible *focused = focusedObject(window, identities, deadline);
                 if (focused) {
                     if (fallbackWindow) g_object_unref(fallbackWindow);
                     if (fallbackApplication) g_object_unref(fallbackApplication);
