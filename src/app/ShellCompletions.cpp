@@ -213,10 +213,13 @@ QString bashValues(const Values &values)
         actions << QStringLiteral("COMPREPLY+=($(compgen -W '%1' -- \"$cur\"))")
                        .arg(values.words.join(QLatin1Char(' ')));
     }
+    // Not through compgen -W, which would expand a name from the settings
+    // and run what is in it; each is escaped as the command line reads it.
+    // The word typed may be escaped already, as a common prefix bash inserted.
     if (!values.listed.isEmpty()) {
-        actions << QStringLiteral(
-                       "COMPREPLY+=($(compgen -W \"$(\"${COMP_WORDS[0]}\" completions --list %1 2>/dev/null)\" -- "
-                       "\"$cur\"))")
+        actions << QStringLiteral("while IFS= read -r name; do printf -v quoted %q \"$name\"; "
+                                  "[[ $name == \"$cur\"* || $quoted == \"$cur\"* ]] && COMPREPLY+=(\"$quoted\"); "
+                                  "done < <(\"${COMP_WORDS[0]}\" completions --list %1 2>/dev/null)")
                        .arg(values.listed);
     }
     // Read a line each, so a file name with a space stays one.
@@ -234,7 +237,7 @@ QString bashScript(const QMap<QString, std::optional<Values>> &options, const QL
         QStringLiteral("# speecher's completions for bash, from `speecher completions bash`."),
         {},
         QStringLiteral("_speecher() {"),
-        QStringLiteral("  local cur=${COMP_WORDS[COMP_CWORD]} command= options="),
+        QStringLiteral("  local cur=${COMP_WORDS[COMP_CWORD]} command= options= name quoted"),
         QStringLiteral("  COMPREPLY=()"),
         QStringLiteral("  (( COMP_CWORD > 1 )) && command=${COMP_WORDS[1]}"),
         QStringLiteral("  case $command in"),

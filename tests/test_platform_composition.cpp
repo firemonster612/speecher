@@ -52,6 +52,7 @@
 #include <QList>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QScopeGuard>
 #include <QSettings>
 #include <QStringList>
@@ -434,6 +435,39 @@ QStringList appleScriptStrings(const QString &script, QString &rest)
     return inString ? QStringList() : strings;
 }
 #endif
+
+// What speecher prints on stdout for the arguments after its name.
+QString printedBy(const QStringList &arguments, int *exitCode = nullptr)
+{
+    std::ostringstream out;
+    std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
+    const auto restoreStdout = qScopeGuard([stdoutBuffer] { std::cout.rdbuf(stdoutBuffer); });
+    const int status = parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {}).exitCode;
+    if (exitCode) {
+        *exitCode = status;
+    }
+    return QString::fromStdString(out.str());
+}
+
+// What bash's completion function in script offers for words, the first the
+// command and the last the word being completed, run in dir.
+QStringList bashCompletions(const QString &script, const QStringList &words, const QString &dir = {})
+{
+    QProcess bash;
+    bash.setWorkingDirectory(dir);
+    bash.start(QStringLiteral("bash"),
+               QStringList{QStringLiteral("--norc"), QStringLiteral("--noprofile"), QStringLiteral("-c"),
+                           script
+                               + QStringLiteral("COMP_WORDS=(\"$@\"); COMP_CWORD=$(($# - 1)); _speecher; "
+                                                "printf '%s\\n' \"${COMPREPLY[@]}\""),
+                           QStringLiteral("bash")}
+                   + words);
+    if (!bash.waitForFinished() || bash.exitCode() != 0) {
+        qWarning().noquote() << "bash failed:" << bash.readAllStandardError();
+        return {QStringLiteral("<bash failed>")};
+    }
+    return QString::fromUtf8(bash.readAllStandardOutput()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+}
 
 } // namespace
 
@@ -1221,36 +1255,128 @@ private slots:
         QVERIFY(QString::fromStdString(usage.str()).startsWith(QStringLiteral("Unknown status option: --follow\n")));
     }
 
-    // Each shell's script offers every option --help documents; fish names
-    // an option without its dashes.
-    void completionsCoverEveryOptionInHelp()
+    // Each shell's script offers every command and subcommand --help
+    // documents where it is typed, and each command's options after it.
+    void completionsCoverEveryCommandInHelp()
     {
-        const auto printed = [](const QStringList &arguments, int *exitCode) {
-            std::ostringstream out;
-            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
-            const auto restoreStdout = qScopeGuard([stdoutBuffer] { std::cout.rdbuf(stdoutBuffer); });
-            *exitCode = parseCommandLine(QStringList{QStringLiteral("speecher")} + arguments, {}).exitCode;
-            return QString::fromStdString(out.str());
+        const QStringList dictation{QStringLiteral("--format"), QStringLiteral("--profile"),
+                                    QStringLiteral("--language")};
+        const QStringList shared{QStringLiteral("--model"),   QStringLiteral("--no-vocabulary"),
+                                 QStringLiteral("--vocab-file"), QStringLiteral("--refine"),
+                                 QStringLiteral("--cleanup"), QStringLiteral("--profile"),
+                                 QStringLiteral("--tone"),    QStringLiteral("--language"),
+                                 QStringLiteral("--raw"),     QStringLiteral("--json")};
+        // Read off --help by hand.
+        const QMap<QString, QStringList> documented{
+            {QString(), {QStringLiteral("--daemon"), QStringLiteral("--version"), QStringLiteral("--help")}},
+            {QStringLiteral("toggle"), dictation},
+            {QStringLiteral("start"), dictation},
+            {QStringLiteral("stop"), {}},
+            {QStringLiteral("cancel"), {}},
+            {QStringLiteral("status"), {QStringLiteral("--json"), QStringLiteral("--watch")}},
+            {QStringLiteral("last"), {}},
+            {QStringLiteral("vocabulary add"), {}},
+            {QStringLiteral("settings"), {}},
+            {QStringLiteral("setup"), {}},
+            {QStringLiteral("quit"), {}},
+            {QStringLiteral("transcribe"),
+             shared
+                 + QStringList{QStringLiteral("--headless"), QStringLiteral("--output"), QStringLiteral("--stdout"),
+                               QStringLiteral("--srt"), QStringLiteral("--vtt")}},
+            {QStringLiteral("listen"), shared + QStringList{QStringLiteral("--until-silence")}},
+            {QStringLiteral("providers"), {QStringLiteral("--json")}},
+            {QStringLiteral("record start"),
+             {QStringLiteral("--to"), QStringLiteral("--mic-only"), QStringLiteral("--vocab-file")}},
+            {QStringLiteral("record status"), {QStringLiteral("--json")}},
+            {QStringLiteral("record stop"), {}},
+            {QStringLiteral("completions bash"), {}},
+            {QStringLiteral("completions zsh"), {}},
+            {QStringLiteral("completions fish"), {}},
         };
+
+        // The table above has every command and option --help has: a command
+        // starts a line, after two spaces and maybe "speecher", and ends it or
+        // comes before its arguments or description, unlike a line of prose;
+        // words between | are alternatives.
         int exitCode = -1;
-        const QString help = printed({QStringLiteral("--help")}, &exitCode);
-        QStringList options;
+        const QString help = printedBy({QStringLiteral("--help")}, &exitCode);
+        QStringList helpCommands;
+        const QRegularExpression commandLine(
+            QStringLiteral("^  (?:speecher )?([a-z][a-z|]*(?: [a-z|]+)*)(?=  | [\\[<]|$)"),
+            QRegularExpression::MultilineOption);
+        for (const QRegularExpressionMatch &match : commandLine.globalMatch(help)) {
+            QStringList commands{QString()};
+            for (const QString &word :
+                 match.captured(1).replace(QStringLiteral(" | "), QStringLiteral("|")).split(QLatin1Char(' '))) {
+                QStringList longer;
+                for (const QString &command : std::as_const(commands)) {
+                    for (const QString &alternative : word.split(QLatin1Char('|'))) {
+                        longer << (command + QLatin1Char(' ') + alternative).trimmed();
+                    }
+                }
+                commands = longer;
+            }
+            helpCommands << commands;
+        }
+        helpCommands.removeDuplicates();
+        helpCommands.prepend(QString());
+        helpCommands.sort();
+        QCOMPARE(helpCommands, documented.keys());
+        QStringList documentedOptions;
+        for (const QStringList &options : documented) {
+            documentedOptions << options;
+        }
         for (const QRegularExpressionMatch &match :
              QRegularExpression(QStringLiteral("--[a-z][a-z-]*")).globalMatch(help)) {
-            options << match.captured();
+            QVERIFY2(documentedOptions.contains(match.captured()), qPrintable(match.captured()));
         }
-        options.removeDuplicates();
-        QVERIFY(options.contains(QStringLiteral("--until-silence")));
+
+        // What each script offers after a command: its options, when the word
+        // typed starts with -, or else its arguments. bash's is run; zsh's and
+        // fish's are read off the script.
+        const bool haveBash = !QStandardPaths::findExecutable(QStringLiteral("bash")).isEmpty();
+        const auto offered = [](const QString &shell, const QString &script, const QString &command, bool options) {
+            if (shell == QStringLiteral("bash")) {
+                return bashCompletions(script, QStringList{QStringLiteral("speecher")}
+                                                   + command.split(QLatin1Char(' '), Qt::SkipEmptyParts)
+                                                   + QStringList{options ? QStringLiteral("-") : QString()});
+            }
+            const QString escaped = QRegularExpression::escape(command);
+            const QString pattern = shell == QStringLiteral("zsh")
+                ? (options ? QStringLiteral("^    \\('%1'\\) options=\\(([^)]*)\\) ;;$")
+                           : QStringLiteral("^    \\('%1'\\) compadd -- ([^;]*)"))
+                : (options ? QStringLiteral("^complete -c speecher -n '__speecher_is%1' -l (\\S+)")
+                           : QStringLiteral("^complete -c speecher -n '__speecher_is%1' -a '([^']*)'"));
+            QStringList words;
+            const QRegularExpression found(
+                pattern.arg(shell == QStringLiteral("fish") && !command.isEmpty() ? QLatin1Char(' ') + escaped
+                                                                                   : escaped),
+                QRegularExpression::MultilineOption);
+            for (const QRegularExpressionMatch &match : found.globalMatch(script)) {
+                for (const QString &word : match.captured(1).split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+                    words << (shell == QStringLiteral("fish") && options ? QStringLiteral("--") + word : word);
+                }
+            }
+            return words;
+        };
         for (const QString &shell : {QStringLiteral("bash"), QStringLiteral("zsh"), QStringLiteral("fish")}) {
-            const QString script = printed({QStringLiteral("completions"), shell}, &exitCode);
+            if (shell == QStringLiteral("bash") && !haveBash) {
+                continue;
+            }
+            const QString script = printedBy({QStringLiteral("completions"), shell}, &exitCode);
             QCOMPARE(exitCode, 0);
-            for (const QString &option : std::as_const(options)) {
-                const QString written =
-                    shell == QStringLiteral("fish") ? QStringLiteral("-l ") + option.mid(2) : option;
-                // A whole word, so --tone does not count for --to.
-                const QRegularExpression word(QStringLiteral("(?<![\\w-])%1(?![\\w-])")
-                                                  .arg(QRegularExpression::escape(written)));
-                QVERIFY2(script.contains(word), qPrintable(shell + QStringLiteral(" lacks ") + option));
+            for (auto command = documented.cbegin(); command != documented.cend(); ++command) {
+                const QStringList given = offered(shell, script, command.key(), true);
+                for (const QString &option : command.value()) {
+                    QVERIFY2(given.contains(option),
+                             qPrintable(QStringLiteral("%1: speecher %2 %3").arg(shell, command.key(), option)));
+                }
+                if (command.key().isEmpty()) {
+                    continue;
+                }
+                const QString parent = command.key().section(QLatin1Char(' '), 0, -2);
+                QVERIFY2(offered(shell, script, parent, false).contains(command.key().section(QLatin1Char(' '), -1)),
+                         qPrintable(QStringLiteral("%1: speecher %2").arg(shell, command.key())));
             }
         }
 
@@ -1259,7 +1385,7 @@ private slots:
         const auto restoreStderr = qScopeGuard([stderrBuffer] { std::cerr.rdbuf(stderrBuffer); });
         for (const QStringList &mistake : {QStringList{}, QStringList{QStringLiteral("tcsh")},
                                            QStringList{QStringLiteral("--list"), QStringLiteral("files")}}) {
-            printed(QStringList{QStringLiteral("completions")} + mistake, &exitCode);
+            printedBy(QStringList{QStringLiteral("completions")} + mistake, &exitCode);
             QCOMPARE(exitCode, 2);
         }
     }
@@ -1279,12 +1405,8 @@ private slots:
                                                  QStringLiteral("balanced"), QString()}};
         settings.applySnapshot(draft);
         const auto listed = [](const QString &list) {
-            std::ostringstream out;
-            std::streambuf *const stdoutBuffer = std::cout.rdbuf(out.rdbuf());
-            const auto restoreStdout = qScopeGuard([stdoutBuffer] { std::cout.rdbuf(stdoutBuffer); });
-            parseCommandLine(
-                {QStringLiteral("speecher"), QStringLiteral("completions"), QStringLiteral("--list"), list}, {});
-            return QString::fromStdString(out.str()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+            return printedBy({QStringLiteral("completions"), QStringLiteral("--list"), list})
+                .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
         };
         QCOMPARE(listed(QStringLiteral("profiles")),
                  QStringList({QStringLiteral("Work"), QStringLiteral("Email"), QStringLiteral("Personal"),
@@ -1294,6 +1416,86 @@ private slots:
                  QStringList({QStringLiteral("none"), QStringLiteral("light"), QStringLiteral("medium"),
                               QStringLiteral("high"), QStringLiteral("notes")}));
         settings.raw().clear();
+    }
+
+    // Where two profiles share a command-line name, --profile takes it for
+    // neither, so each is offered by its id; a built-in, whose id is its
+    // name, is not offered at all. Every name offered picks its profile.
+    void completedProfileNamesPickTheirProfile()
+    {
+        SettingsStore settings;
+        settings.raw().clear();
+        const auto restoreSettings = qScopeGuard([&settings] { settings.raw().clear(); });
+        AppSettings draft = settings.snapshot();
+        for (const auto &[id, name] : {std::pair{QStringLiteral("custom_stand_up"), QStringLiteral("Stand up")},
+                                       std::pair{QStringLiteral("custom_standup"), QStringLiteral("Stand-up")},
+                                       std::pair{QStringLiteral("custom_work"), QStringLiteral("work")},
+                                       std::pair{QStringLiteral("custom_toms"), QStringLiteral("Tom's  notes")}}) {
+            draft.refinement.writingProfiles.append(
+                {id, QStringLiteral("balanced"), QStringLiteral("none"), QString(), name});
+        }
+        settings.applySnapshot(draft);
+
+        const QStringList names =
+            printedBy({QStringLiteral("completions"), QStringLiteral("--list"), QStringLiteral("profiles")})
+                .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        QCOMPARE(names, QStringList({QStringLiteral("Email"), QStringLiteral("Personal"), QStringLiteral("AI-coding"),
+                                     QStringLiteral("Other"), QStringLiteral("custom_stand_up"),
+                                     QStringLiteral("custom_standup"), QStringLiteral("custom_work"),
+                                     QStringLiteral("Tom's-notes")}));
+        const QStringList ids{QStringLiteral("email"),          QStringLiteral("personal"),
+                              QStringLiteral("ai_coding"),      QStringLiteral("other"),
+                              QStringLiteral("custom_stand_up"), QStringLiteral("custom_standup"),
+                              QStringLiteral("custom_work"),    QStringLiteral("custom_toms")};
+        for (qsizetype index = 0; index < names.size(); ++index) {
+            const CommandLineDecision decision = parseCommandLine(
+                {QStringLiteral("speecher"), QStringLiteral("toggle"), QStringLiteral("--profile"), names.at(index)},
+                {});
+            QCOMPARE(decision.sessionOverrides.writingProfile, std::optional(ids.at(index)));
+        }
+    }
+
+    // bash offers a listed name as it is, escaped for the command line,
+    // never running or expanding what is in it.
+    void bashCompletesListedNamesLiterally()
+    {
+#ifdef Q_OS_WIN
+        QSKIP("The fake speecher is a shell script");
+#endif
+        if (QStandardPaths::findExecutable(QStringLiteral("bash")).isEmpty()) {
+            QSKIP("bash is not installed");
+        }
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        // A glob would match these.
+        for (const QString &name : {QStringLiteral("globa"), QStringLiteral("x")}) {
+            QFile file(dir.filePath(name));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+        }
+        const QString speecher = dir.filePath(QStringLiteral("speecher"));
+        QFile fake(speecher);
+        QVERIFY(fake.open(QIODevice::WriteOnly));
+        fake.write("#!/bin/sh\ncat <<'EOF'\n"
+                   "Demo$(id>ran)\nDemo`id>ran2`\nTom's-notes\n$HOME\n~\n{a,b}\n*\nglob[ab]\n"
+                   "EOF\n");
+        fake.close();
+        QVERIFY(fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner));
+
+        const QString script = printedBy({QStringLiteral("completions"), QStringLiteral("bash")});
+        const auto offered = [&](const QString &typed) {
+            return bashCompletions(script, {speecher, QStringLiteral("transcribe"), QStringLiteral("--profile"), typed},
+                                   dir.path());
+        };
+        QCOMPARE(offered({}),
+                 QStringList({QStringLiteral("Demo\\$\\(id\\>ran\\)"), QStringLiteral("Demo\\`id\\>ran2\\`"),
+                              QStringLiteral("Tom\\'s-notes"), QStringLiteral("\\$HOME"), QStringLiteral("\\~"),
+                              QStringLiteral("\\{a\\,b\\}"), QStringLiteral("\\*"), QStringLiteral("glob\\[ab\\]")}));
+        QCOMPARE(offered(QStringLiteral("Tom")), QStringList{QStringLiteral("Tom\\'s-notes")});
+        QCOMPARE(offered(QStringLiteral("$")), QStringList{QStringLiteral("\\$HOME")});
+        QCOMPARE(offered(QStringLiteral("Demo\\")),
+                 QStringList({QStringLiteral("Demo\\$\\(id\\>ran\\)"), QStringLiteral("Demo\\`id\\>ran2\\`")}));
+        QVERIFY(!QFile::exists(dir.filePath(QStringLiteral("ran"))));
+        QVERIFY(!QFile::exists(dir.filePath(QStringLiteral("ran2"))));
     }
 
     // A custom tone or level is named by its id without custom_, with - for _.

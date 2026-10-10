@@ -284,7 +284,7 @@ A Custom Endpoint has no stream to connect, so `record start` prints the path at
 
 ### Shell completions
 
-`speecher completions bash|zsh|fish` prints a script that completes Speecher's commands, options and files in that shell. Writing Profile, tone and cleanup names are not written into the script: it runs `speecher completions --list profiles` (or `tones`, `cleanup`) each time it completes one, which reads your settings without starting Speecher, so a profile you add later is offered without reinstalling. A profile's name is offered with `-` between words, as `--profile` takes it.
+`speecher completions bash|zsh|fish` prints a script that completes Speecher's commands, options and files in that shell. Writing Profile, tone and cleanup names are not written into the script: it runs `speecher completions --list profiles` (or `tones`, `cleanup`) each time it completes one, which reads your settings without starting Speecher, so a profile you add later is offered without reinstalling. A profile's name is offered with `-` between words, as `--profile` takes it, or as the profile's id where two profiles share that name.
 
 ```sh
 # bash
@@ -294,6 +294,7 @@ speecher completions bash > ~/.local/share/bash-completion/completions/speecher
 mkdir -p ~/.zfunc
 speecher completions zsh > ~/.zfunc/_speecher
 # fish
+mkdir -p ~/.config/fish/completions
 speecher completions fish > ~/.config/fish/completions/speecher.fish
 ```
 

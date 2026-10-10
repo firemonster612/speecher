@@ -308,22 +308,36 @@ QString writingProfileNames(const QList<RowOption> &profiles)
     return names.join(QStringLiteral(", "));
 }
 
-// The id of the Writing Profile a command-line value names: a profile's
-// current name in any case, or that name with - between words. Failing that,
-// an exact id, which is how a command hands the profile to the daemon it
-// starts. Sets error when the value names no profile or more than one.
-std::optional<QString> writingProfileNamed(const QString &value, QString *error)
+// A profile's name as the command line gives it: its words joined by -, so
+// no shell splits it. --profile takes this or the name itself, in any case.
+QString writingProfileCliName(const QString &label)
 {
-    const QList<RowOption> profiles = writingProfiles();
+    return label.simplified().replace(QLatin1Char(' '), QLatin1Char('-'));
+}
+
+// The profiles a command-line value names by their current name, in any case,
+// or that name with - between words.
+QList<RowOption> writingProfilesNamed(const QList<RowOption> &profiles, const QString &value)
+{
     const QString wanted = value.trimmed().toLower();
     QList<RowOption> matches;
     for (const RowOption &profile : profiles) {
         const QString name = profile.label.simplified().toLower();
-        if (!name.isEmpty()
-            && (wanted == name || wanted == QString(name).replace(QLatin1Char(' '), QLatin1Char('-')))) {
+        if (!name.isEmpty() && (wanted == name || wanted == writingProfileCliName(name))) {
             matches << profile;
         }
     }
+    return matches;
+}
+
+// The id of the Writing Profile a command-line value names: a profile's name,
+// as writingProfilesNamed matches it. Failing that, an exact id, which is how
+// a command hands the profile to the daemon it starts. Sets error when the
+// value names no profile or more than one.
+std::optional<QString> writingProfileNamed(const QString &value, QString *error)
+{
+    const QList<RowOption> profiles = writingProfiles();
+    const QList<RowOption> matches = writingProfilesNamed(profiles, value);
     if (matches.size() == 1) {
         return matches.first().id;
     }
@@ -345,6 +359,27 @@ std::optional<QString> writingProfileNamed(const QString &value, QString *error)
     }
     *error = QStringLiteral("Unknown writing profile: %1 (expected %2)").arg(value, writingProfileNames(profiles));
     return std::nullopt;
+}
+
+// The name `completions --list profiles` offers for each profile, one that
+// --profile takes for it alone: its command-line name, or its id where
+// another profile has that name too.
+QStringList writingProfileCompletions()
+{
+    const QList<RowOption> profiles = writingProfiles();
+    QStringList names;
+    for (const RowOption &profile : profiles) {
+        const QString name = writingProfileCliName(profile.label);
+        if (name.isEmpty()) {
+            continue;
+        }
+        if (writingProfilesNamed(profiles, name).size() == 1) {
+            names << name;
+        } else if (writingProfilesNamed(profiles, profile.id).isEmpty()) {
+            names << profile.id;
+        }
+    }
+    return names;
 }
 
 // Lists the providers from the registry the app builds; registering creates
@@ -372,19 +407,11 @@ CompletionChoices completionChoices()
 }
 
 // The names `completions --list` prints for one of the lists a completion
-// script reads while completing, or nothing for another list. A profile's
-// name has - between words, which --profile takes, so no shell splits it.
+// script reads while completing, or nothing for another list.
 std::optional<QStringList> completionList(const QString &list)
 {
     if (list == kCompletionProfiles) {
-        QStringList names;
-        for (const RowOption &profile : writingProfiles()) {
-            const QString name = profile.label.simplified().replace(QLatin1Char(' '), QLatin1Char('-'));
-            if (!name.isEmpty()) {
-                names << name;
-            }
-        }
-        return names;
+        return writingProfileCompletions();
     }
     if (list == kCompletionTones) {
         return cliNames(toneNames());
