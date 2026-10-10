@@ -30,6 +30,13 @@ public:
 
     virtual QList<AudioInputDeviceInfo> availableAudioInputDevices() const = 0;
     virtual AudioInput *createAudioInput(SettingsStore *settings, QObject *parent) const = 0;
+    // What the speakers play, from the default output, as 16 kHz mono s16 like
+    // the microphone; none where Speecher cannot capture it.
+    virtual AudioInput *createSystemAudioInput(QObject *parent) const
+    {
+        Q_UNUSED(parent);
+        return nullptr;
+    }
     // Complete on the caller's thread, and never after context is destroyed.
     virtual void requestMicrophoneAccess(QObject *context, std::function<void(bool)> completed) const
     {

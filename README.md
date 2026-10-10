@@ -14,17 +14,20 @@ Sign in to at least one transcription service: Claude Code for Claude Voice, or 
 
 ```sh
 # Arch
-sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard at-spi2-core kglobalaccel kwidgetsaddons kcolorscheme
+sudo pacman -S cmake ninja gcc qt6-base qt6-multimedia qt6-websockets qt6-wayland layer-shell-qt qtkeychain-qt6 wl-clipboard at-spi2-core kglobalaccel kwidgetsaddons kcolorscheme libpulse
 
 # Debian
-sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard libatspi2.0-dev libkf6globalaccel-dev libkf6widgetsaddons-dev libkf6colorscheme-dev
+sudo apt install cmake ninja-build g++ qt6-base-dev qt6-multimedia-dev qt6-websockets-dev qt6-wayland liblayershellqtinterface-dev qtkeychain-qt6-dev wl-clipboard libatspi2.0-dev libkf6globalaccel-dev libkf6widgetsaddons-dev libkf6colorscheme-dev libpulse-dev
 
 # Fedora
-sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel kf6-kglobalaccel-devel kf6-kwidgetsaddons-devel kf6-kcolorscheme-devel
+sudo dnf install cmake ninja-build gcc-c++ qt6-qtbase-devel qt6-qtmultimedia-devel qt6-qtwebsockets-devel qt6-qtwayland layer-shell-qt-devel qtkeychain-qt6-devel wl-clipboard at-spi2-core-devel kf6-kglobalaccel-devel kf6-kwidgetsaddons-devel kf6-kcolorscheme-devel pulseaudio-libs-devel
 
 # macOS
 brew install cmake ninja pkgconf qt qtkeychain
 ```
+
+On Linux the libpulse development package enables system audio capture; a
+build without it leaves system audio out.
 
 On Windows 11, install the MSVC 2022 build tools and Qt 6.8.3, then follow
 [`docs/windows.md`](docs/windows.md). Windows release builds install from
