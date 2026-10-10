@@ -88,7 +88,7 @@ step "Bundling Qt into the app (the slow part)"
 # refuses to launch the copy a user drags out of the image.
 run_logged "Bundling Qt" "$MACDEPLOYQT" "$STAGING_DIR/speecher.app" -always-overwrite -codesign="$SIGN_IDENTITY"
 
-step "Verifying the bundled Qt plugins"
+step "Verifying the bundled libraries"
 SPEECHER_SYMBOLS="$WORK_DIR/speecher-symbols.txt"
 if ! nm -U "$STAGING_DIR/speecher.app/Contents/MacOS/speecher" \
   > "$SPEECHER_SYMBOLS" 2>> "$LOG"; then
@@ -104,6 +104,14 @@ fi
 # when the Mac is offline.
 if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqscnetworkreachability.dylib" ]]; then
   echo "macdeployqt did not bundle Qt's network reachability plugin." >&2
+  exit 1
+fi
+# macdeployqt also copies libraries from outside Qt, such as
+# webrtc-audio-processing, into Frameworks; Speecher must not still load one
+# from where the build found it.
+if otool -L "$STAGING_DIR/speecher.app/Contents/MacOS/speecher" | tail -n +2 | awk '{ print $1 }' \
+  | grep -v -e '^/System/' -e '^/usr/lib/' -e '^@'; then
+  echo "Speecher loads the libraries above from outside the bundle." >&2
   exit 1
 fi
 

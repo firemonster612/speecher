@@ -29,6 +29,16 @@ descriptions, so permission prompts work from a plain developer build. For a
 distributable app, `make dmg` runs `macdeployqt` on a staged copy of the bundle.
 Sign and notarize release builds as usual.
 
+Echo cancellation for recordings needs webrtc-audio-processing 1.3, which
+Homebrew does not package. Build it once into a prefix and point pkg-config at
+it; `make dmg` bundles the library and its notices into the app:
+
+```sh
+brew install meson
+packaging/macos/build-webrtc-audio-processing.sh ~/webrtc-audio-processing
+export PKG_CONFIG_PATH=~/webrtc-audio-processing/lib/pkgconfig
+```
+
 ## Permissions Speecher asks for
 
 | Permission | Why | When asked |
@@ -36,7 +46,7 @@ Sign and notarize release builds as usual.
 | Microphone | Recording dictation | Setup assistant, or first dictation |
 | Accessibility | Synthetic Cmd+V paste into the frontmost app, and reading the focused control for direct insertion | Setup assistant; grant needs an app restart to take effect |
 | Automation (Music, Spotify, TV) | Optional pause/resume of playing media during dictation | First time media pause runs |
-| Screen Recording | Optional target screenshots for refinement context | First capture; Speecher refuses to capture without it rather than sending a wallpaper-only image |
+| Screen Recording | Optional target screenshots for refinement context, and the other side of a call for `speecher record` | First capture; Speecher refuses to capture without it rather than sending a wallpaper-only image |
 
 ## After an update or rebuild
 

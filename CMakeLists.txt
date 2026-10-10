@@ -206,6 +206,14 @@ if(PkgConfig_FOUND AND NOT SPEECHER_RELEASE_BUILD)
   pkg_check_modules(WEBRTC_APM QUIET IMPORTED_TARGET webrtc-audio-processing-1)
   pkg_get_variable(WAYLAND_PROTOCOLS_DATA_DIR wayland-protocols pkgdatadir)
 endif()
+# The Linux release profile requires echo cancellation above; the macOS
+# release job, which has no profile, asks for it with this.
+option(SPEECHER_REQUIRE_WEBRTC_AEC "Fail without webrtc-audio-processing" OFF)
+if(SPEECHER_REQUIRE_WEBRTC_AEC AND NOT WEBRTC_APM_FOUND)
+  message(FATAL_ERROR
+    "SPEECHER_REQUIRE_WEBRTC_AEC needs webrtc-audio-processing-1 through pkg-config. "
+    "On macOS, build it with packaging/macos/build-webrtc-audio-processing.sh.")
+endif()
 if(SPEECHER_RELEASE_BUILD)
   find_package(Qt6 6.5 REQUIRED COMPONENTS WebSockets)
 else()
@@ -571,6 +579,7 @@ set(SPEECHER_APP_SOURCES
   src/app/CommandLine.cpp
   src/app/CommandLineTool.cpp
   src/app/CommandLineToolPresentation.cpp
+  src/app/CompositionEchoCanceller.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
   src/app/ManifestUpdater.cpp
@@ -603,6 +612,7 @@ set(SPEECHER_APP_HEADERS
   src/app/CommandLine.h
   src/app/CommandLineTool.h
   src/app/CommandLineToolPresentation.h
+  src/app/CompositionEchoCanceller.h
   src/app/CompositionSockets.h
   src/app/HeadlessTranscribe.h
   src/app/ManifestUpdater.h
@@ -1046,16 +1056,16 @@ if(UNIX AND NOT APPLE)
     target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_PULSE=1)
     target_link_libraries(speecher_platform PUBLIC PkgConfig::PULSE)
   endif()
-  # webrtc-audio-processing 1.x: echo cancellation, only where the dev files
-  # exist.
-  if(WEBRTC_APM_FOUND)
-    target_sources(speecher_platform PRIVATE
-      src/platform/audio/WebRtcEchoCanceller.cpp
-      src/platform/audio/WebRtcEchoCanceller.h
-    )
-    target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_WEBRTC_AEC=1)
-    target_link_libraries(speecher_platform PUBLIC PkgConfig::WEBRTC_APM)
-  endif()
+endif()
+# webrtc-audio-processing 1.x: echo cancellation on Linux and macOS, only
+# where the dev files exist.
+if(WEBRTC_APM_FOUND)
+  target_sources(speecher_platform PRIVATE
+    src/platform/audio/WebRtcEchoCanceller.cpp
+    src/platform/audio/WebRtcEchoCanceller.h
+  )
+  target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_WEBRTC_AEC=1)
+  target_link_libraries(speecher_platform PUBLIC PkgConfig::WEBRTC_APM)
 endif()
 if(APPLE)
   target_sources(speecher_platform PRIVATE
@@ -1363,6 +1373,13 @@ if(APPLE)
   )
   if(SPEECHER_WITH_LOCAL_SPEECH)
     list(APPEND SPEECHER_MACOS_RESOURCES "${SPEECHER_LOCAL_SPEECH_NOTICES}")
+  endif()
+  # build-webrtc-audio-processing.sh compiles Abseil into the library.
+  if(WEBRTC_APM_FOUND)
+    list(APPEND SPEECHER_MACOS_RESOURCES
+      packaging/webrtc-audio-processing-licenses.txt
+      packaging/macos/abseil-cpp-license.txt
+    )
   endif()
   target_sources(speecher PRIVATE ${SPEECHER_MACOS_RESOURCES})
   set_source_files_properties(${SPEECHER_MACOS_RESOURCES} PROPERTIES

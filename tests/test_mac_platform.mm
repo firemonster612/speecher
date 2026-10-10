@@ -1,5 +1,6 @@
 #include "common/test_suites.h"
 
+#include "app/PlatformComposition.h"
 #include "platform/mac/MacSystemAudioCapture.h"
 #include "platform/mac/MacSystemAudioInput.h"
 
@@ -142,6 +143,20 @@ class MacPlatformTests final : public QObject {
     Q_OBJECT
 
 private slots:
+    // A Recording takes system audio as "them" beside the microphone, and
+    // Speecher cancels its echo, as the system's own voice processing would
+    // turn the call down.
+    void aRecordingTakesSystemAudioWithSpeechersCanceller()
+    {
+        QVERIFY(platformComposition()->recordsSystemAudio());
+#ifndef SPEECHER_WITH_WEBRTC_AEC
+        QSKIP("Built without webrtc-audio-processing");
+#endif
+        QString warning;
+        QVERIFY(platformComposition()->createEchoCanceller(&warning));
+        QCOMPARE(warning, QString());
+    }
+
     void systemAudioInterleavesPlanarBuffers()
     {
         // ScreenCaptureKit's own layout: float, one buffer a channel.
