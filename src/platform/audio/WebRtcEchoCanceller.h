@@ -51,6 +51,9 @@ private:
     // realigns.
     qsizetype m_leastPairedLead;
     qsizetype m_microphoneSinceRealign;
+    // Whether the last reading left the pairing where it was; until one
+    // does, the pairing moves to the lead at once.
+    bool m_aligned = false;
     // Silence put before system audio each slide step; negative, system audio
     // dropped.
     qsizetype m_slideBytes = 0;

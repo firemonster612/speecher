@@ -31,15 +31,19 @@ namespace speecher {
 //   audio arrives, less however much later than the microphone's it arrives.
 //   AEC3 finds an echo from about 10 ms to 470 ms after its system audio, so
 //   the reading is kept near kLeadBytes, 250 ms: system audio arriving up to
-//   about 150 ms later than the microphone's still cancels.
+//   about 150 ms later than the microphone's still cancels. That leaves about
+//   200 ms for the speakers' output latency plus however much later than
+//   system audio the microphone's audio arrives; 300 ms cancels nothing.
 // - AEC3 follows a slowly sliding echo, as drift slides it, up to about 400
 //   ppm, but a sudden move costs it seconds, and a move toward less lead even
 //   a frame does. So once the reading strays kSlideAfterBytes from the lead,
 //   the pairing slides back a sample at a time at 312 ppm, which outpaces the
-//   drift between real devices. Only a stray beyond kMoveAfterBytes, a start
-//   offset or a stall, moves it at once.
-// - The pairing starts at the lead, for streams that start together, and the
-//   first reading realigns it.
+//   drift between real devices. Only a stray beyond kMoveAfterBytes, such as
+//   a stall longer than a second leaves, moves it at once.
+// - The pairing starts at the lead, for streams that start together. The
+//   first reading, and each after a move until one lands within
+//   kSlideAfterBytes, moves it to the lead at once: AEC3 has not found the
+//   echo yet or has just lost it, and a slide barely gains on drift.
 // - A microphone frame held kMaxMicrophoneHeldBytes goes in with silence, and
 //   the system audio it stood for is dropped when it comes, so a stall
 //   shorter than a second does not move the pairing.
@@ -137,14 +141,16 @@ qsizetype WebRtcEchoCanceller::pairedLead() const
 void WebRtcEchoCanceller::realign()
 {
     const qsizetype stray = m_leastPairedLead - kLeadBytes;
+    const qsizetype moveAfter = m_aligned ? kMoveAfterBytes : kSlideAfterBytes;
     m_slideBytes = 0;
-    if (stray < -kMoveAfterBytes) {
+    if (stray < -moveAfter) {
         dropReference(-stray / kFrameBytes * kFrameBytes);
-    } else if (stray > kMoveAfterBytes) {
+    } else if (stray > moveAfter) {
         padReference(stray / kFrameBytes * kFrameBytes);
     } else if (std::abs(stray) > kSlideAfterBytes) {
         m_slideBytes = stray < 0 ? -kSampleBytes : kSampleBytes;
     }
+    m_aligned = std::abs(stray) <= moveAfter;
     m_leastPairedLead = std::numeric_limits<qsizetype>::max();
     m_microphoneSinceRealign = 0;
 }

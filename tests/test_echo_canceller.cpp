@@ -85,6 +85,9 @@ struct Call {
     qsizetype referenceDelay = 0;
     // System audio chunks that arrive together, all when the last would.
     qsizetype referenceBurst = 1;
+    // System audio chunks due in between arrive together at the end.
+    qsizetype referenceStallFrom = 0;
+    qsizetype referenceStallTo = 0;
     bool userTalksOver = false;
 };
 
@@ -132,7 +135,11 @@ EchoRun runCall(EchoCanceller &canceller, const Call &call)
     }
     const auto referenceArrives = [&](qsizetype chunk) {
         const qsizetype last = (chunk / call.referenceBurst + 1) * call.referenceBurst;
-        return double(call.referenceStart + call.referenceDelay) + double(last * kReferenceChunk) / referenceRate;
+        const double due =
+            double(call.referenceStart + call.referenceDelay) + double(last * kReferenceChunk) / referenceRate;
+        return due >= double(call.referenceStallFrom) && due < double(call.referenceStallTo)
+            ? double(call.referenceStallTo)
+            : due;
     };
 
     QByteArray cancelled;
@@ -248,6 +255,11 @@ private slots:
         // echo moves out of its reach; after that the pairing has to slide.
         QTest::newRow("system audio clock fast") << Call{.seconds = 1000, .referencePpm = 300.0};
         QTest::newRow("system audio clock slow") << Call{.seconds = 1000, .referencePpm = -300.0};
+        QTest::newRow("system audio 150 ms late, clock fast")
+            << Call{.seconds = 180, .referencePpm = 300.0, .referenceDelay = 15 * kSecond / 100};
+        // While the far end is quiet; a misstep shows once it talks again.
+        QTest::newRow("system audio stalls 0.9 s")
+            << Call{.referenceStallFrom = 286 * kSecond / 10, .referenceStallTo = 295 * kSecond / 10};
     }
 
     void cancelsTheFarEndAndKeepsTheNearEnd()
@@ -280,7 +292,7 @@ private slots:
         const EchoRun run = runCall(*canceller, Call{.userTalksOver = true});
 
         // AEC3 turns the user down about 5 dB while the far end talks too; at
-        // 6 dB they would come out at half their loudness.
+        // 6 dB they would come out at half their amplitude.
         const Cancellation cancellation = measure(run);
         qInfo("user over the far end %.1f dB quieter", cancellation.overlapDrop);
         QVERIFY2(cancellation.overlapDrop < 6.0, qPrintable(QString::number(cancellation.overlapDrop)));
