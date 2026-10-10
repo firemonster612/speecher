@@ -35,7 +35,8 @@ cancellation, which takes system audio out of a recording's microphone. Debian
 Fedora 44 ship only 2.x, which Speecher does not use yet, so their builds
 record without echo cancellation. Homebrew has no formula for it; on macOS,
 `brew install meson` and run
-`packaging/macos/build-webrtc-audio-processing.sh ~/webrtc-audio-processing`,
+`packaging/macos/build-webrtc-audio-processing.sh ~/webrtc-audio-processing 15.0`
+(15.0 is Speecher's minimum macOS),
 then build with `PKG_CONFIG_PATH=~/webrtc-audio-processing/lib/pkgconfig`.
 
 On Windows 11, install the MSVC 2022 build tools and Qt 6.8.3, then follow
@@ -363,7 +364,7 @@ Refinement effort is configurable per provider. OpenAI effort maps to `reasoning
 
 Settings also includes output controls for choosing how Speecher delivers text, including setup for typing directly into focused text fields. When virtual-keyboard paste is enabled, Speecher can optionally restore the previous clipboard contents after delivery.
 
-Target context uses the focused application's accessibility data when it is available: app identity, control role, caret, selection, and a small amount of nearby text — AT-SPI on Linux, the Accessibility API on macOS. Screenshot context is a separate setting and is off by default. It keeps the image in memory only for the active dictation and sends it only through OpenAI or Anthropic's direct OAuth API path; on Plasma it uses the desktop screenshot portal, on macOS `screencapture` behind the Screen Recording grant. Claude Code session refinement stays text-only.
+Target context uses the focused application's accessibility data when it is available: app identity, control role, caret, selection, and a small amount of nearby text — AT-SPI on Linux, the Accessibility API on macOS. Screenshot context is a separate setting and is off by default. It keeps the image in memory only for the active dictation and sends it only through OpenAI or Anthropic's direct OAuth API path; on Plasma it uses the desktop screenshot portal, on macOS `screencapture` behind the Screen & System Audio Recording grant. Claude Code session refinement stays text-only.
 
 Refinement styles:
 

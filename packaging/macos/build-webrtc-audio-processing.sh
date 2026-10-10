@@ -7,11 +7,14 @@
 #
 # Needs meson, ninja and pkgconf (brew install meson ninja pkgconf). Then
 # configure Speecher with PKG_CONFIG_PATH=PREFIX/lib/pkgconfig.
+#
+# DEPLOYMENT_TARGET is Speecher's minimum macOS, CMAKE_OSX_DEPLOYMENT_TARGET
+# in CMakeLists.txt, so the linker takes the library for it.
 
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 PREFIX" >&2
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 PREFIX DEPLOYMENT_TARGET" >&2
   exit 1
 fi
 
@@ -20,13 +23,12 @@ SHA256=2365e93e778d7b61b5d6e02d21c47d97222e9c7deff9e1d0838ad6ec2e86f1b9
 mkdir -p "$1"
 PREFIX="$(cd "$1" && pwd)"
 LIBRARY="$PREFIX/lib/libwebrtc-audio-processing-1.3.dylib"
-# Speecher's own minimum, so the linker takes the library for it.
-export MACOSX_DEPLOYMENT_TARGET=15.0
+export MACOSX_DEPLOYMENT_TARGET="$2"
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/webrtc-audio-processing.XXXXXX")"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-curl -fsSL -o "$WORK_DIR/source.tar.xz" \
+curl -fsSL --retry 3 -o "$WORK_DIR/source.tar.xz" \
   "https://freedesktop.org/software/pulseaudio/webrtc-audio-processing/webrtc-audio-processing-$VERSION.tar.xz"
 echo "$SHA256  $WORK_DIR/source.tar.xz" | shasum -a 256 -c -
 tar -xf "$WORK_DIR/source.tar.xz" -C "$WORK_DIR"

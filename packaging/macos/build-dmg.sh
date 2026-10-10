@@ -107,11 +107,27 @@ if [[ ! -f "$STAGING_DIR/speecher.app/Contents/PlugIns/networkinformation/libqsc
   exit 1
 fi
 # macdeployqt also copies libraries from outside Qt, such as
-# webrtc-audio-processing, into Frameworks; Speecher must not still load one
-# from where the build found it.
-if otool -L "$STAGING_DIR/speecher.app/Contents/MacOS/speecher" | tail -n +2 | awk '{ print $1 }' \
-  | grep -v -e '^/System/' -e '^/usr/lib/' -e '^@'; then
-  echo "Speecher loads the libraries above from outside the bundle." >&2
+# webrtc-audio-processing, into Frameworks; neither Speecher nor a library or
+# plugin it bundles may still load one from where the build found it.
+# Prints what BINARY loads from outside the bundle and the system, leaving out
+# its own install name.
+libraries_outside_bundle() {
+  local install_name
+  install_name="$(otool -D "$1" | tail -n +2)"
+  otool -L "$1" | tail -n +2 | awk '{ print $1 }' | grep -v -x -F -e "$install_name" \
+    | grep -v -e '^/System/' -e '^/usr/lib/' -e '^@' || true
+}
+LOADS_OUTSIDE_BUNDLE=0
+while IFS= read -r -d '' binary; do
+  outside="$(libraries_outside_bundle "$binary")"
+  if [[ -n "$outside" ]]; then
+    printf '%s loads from outside the bundle:\n%s\n' "${binary#"$STAGING_DIR/"}" "$outside" >&2
+    LOADS_OUTSIDE_BUNDLE=1
+  fi
+done < <(printf '%s\0' "$STAGING_DIR/speecher.app/Contents/MacOS/speecher"
+  find "$STAGING_DIR/speecher.app/Contents/Frameworks" "$STAGING_DIR/speecher.app/Contents/PlugIns" \
+    -type f -name '*.dylib' -print0)
+if [[ "$LOADS_OUTSIDE_BUNDLE" -ne 0 ]]; then
   exit 1
 fi
 

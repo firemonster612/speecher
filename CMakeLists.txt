@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
+# The release job sets its own, MACOS_DEPLOYMENT_TARGET in
+# .github/workflows/release.yml, for both Speecher and webrtc-audio-processing;
+# keep the two in step.
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING
     "Minimum macOS version supported by Speecher")
@@ -1059,7 +1062,7 @@ if(UNIX AND NOT APPLE)
 endif()
 # webrtc-audio-processing 1.x: echo cancellation on Linux and macOS, only
 # where the dev files exist.
-if(WEBRTC_APM_FOUND)
+if(WEBRTC_APM_FOUND AND NOT WIN32)
   target_sources(speecher_platform PRIVATE
     src/platform/audio/WebRtcEchoCanceller.cpp
     src/platform/audio/WebRtcEchoCanceller.h
