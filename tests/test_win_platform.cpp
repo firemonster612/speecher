@@ -5,6 +5,8 @@
 #include "dictation/DictationPorts.h"
 #include "output/ClipboardDelivery.h"
 #include "output/TextDelivery.h"
+#include "platform/audio/QtAudioInput.h"
+#include "platform/win/WinCaptureInput.h"
 #include "platform/win/WinCommunicationsAudioInput.h"
 #include "platform/win/WinGlobalShortcutBinder.h"
 #include "platform/win/WinInjectedInput.h"
@@ -23,6 +25,9 @@
 #include <windows.h>
 #include <ks.h>
 #include <ksmedia.h>
+#include <wrl/client.h>
+
+#include <atomic>
 
 using namespace speecher;
 
@@ -59,6 +64,24 @@ bool interactiveWindowStation()
                                      &station, sizeof(station), nullptr)
         && (station.dwFlags & WSF_VISIBLE);
 }
+
+// Hands over one byte, the count of reads so far, at each read.
+class CountingCapture final : public WinCaptureStream {
+public:
+    explicit CountingCapture(std::atomic<int> *reads)
+        : m_reads(reads)
+    {
+    }
+    QString open() override { return {}; }
+    QString read(QList<QByteArray> *chunks) override
+    {
+        chunks->append(QByteArray(1, char(++*m_reads)));
+        return {};
+    }
+
+private:
+    std::atomic<int> *m_reads;
+};
 
 SchemaContext context()
 {
@@ -407,6 +430,72 @@ private slots:
         QCOMPARE(failed.count(), 0);
     }
 
+    // record stop ends the last utterance on what the microphone heard up to
+    // the stop and its post-roll.
+    void captureDeliversItsLastAudioBeforeStopReturns()
+    {
+        std::atomic<int> reads = 0;
+        QByteArray heard;
+        const auto counting = [&reads] { return std::make_unique<CountingCapture>(&reads); };
+
+        WinCaptureInput capture(QStringLiteral("Test"), counting, 0);
+        connect(&capture, &AudioInput::audioChunk, &capture, [&](const QByteArray &chunk) { heard += chunk; });
+        QVERIFY(capture.start());
+        // Stopped before its first poll, it still reads what the stream holds.
+        capture.stop();
+        QVERIFY(reads >= 1);
+        QCOMPARE(heard.size(), reads.load());
+        QCOMPARE(heard.back(), char(reads.load()));
+
+        reads = 0;
+        heard.clear();
+        WinCaptureInput rolling(QStringLiteral("Test"), counting, 250);
+        connect(&rolling, &AudioInput::audioChunk, &rolling, [&](const QByteArray &chunk) { heard += chunk; });
+        QVERIFY(rolling.start());
+        rolling.stop();
+        // The post-roll's polls and the last read.
+        QVERIFY2(reads >= 2, qPrintable(QString::number(reads)));
+        QCOMPARE(heard.size(), reads.load());
+        QCOMPARE(heard.back(), char(reads.load()));
+        QTest::qWait(250);
+        QCOMPARE(heard.size(), reads.load());
+    }
+
+    void defaultOutputWatcherTakesConsoleOutputChanges()
+    {
+        const auto watcher = Microsoft::WRL::Make<DefaultOutputWatcher>();
+        QVERIFY(watcher && watcher->changed());
+        QVERIFY(!watcher->takeChange());
+        watcher->OnDefaultDeviceChanged(eRender, eCommunications, nullptr);
+        watcher->OnDefaultDeviceChanged(eCapture, eConsole, nullptr);
+        QVERIFY(!watcher->takeChange());
+        watcher->OnDefaultDeviceChanged(eRender, eConsole, nullptr);
+        QVERIFY(watcher->takeChange());
+        QVERIFY(!watcher->takeChange());
+    }
+
+    void recordingMicrophoneFindsEachListedMicrophone()
+    {
+        const QList<AudioInputDeviceInfo> microphones = QtAudioInput::availableInputDevices();
+        if (microphones.isEmpty()) {
+            QSKIP("There is no microphone");
+        }
+        const HRESULT apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        const auto uninitialize = qScopeGuard([apartment] {
+            if (SUCCEEDED(apartment)) {
+                CoUninitialize();
+            }
+        });
+        Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
+        QVERIFY(SUCCEEDED(CoCreateInstance(
+            __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&enumerator))));
+        for (const AudioInputDeviceInfo &microphone : microphones) {
+            const std::wstring id = microphoneEndpointId(microphone.id).toStdWString();
+            Microsoft::WRL::ComPtr<IMMDevice> device;
+            QVERIFY2(SUCCEEDED(enumerator->GetDevice(id.c_str(), &device)), qPrintable(microphone.label));
+        }
+    }
+
     void communicationsWarningSaysWhyEchoIsNotCancelled()
     {
         const AUDIO_EFFECT noiseSuppression{AUDIO_EFFECT_TYPE_NOISE_SUPPRESSION, TRUE, AUDIO_EFFECT_STATE_ON};
@@ -430,7 +519,7 @@ private slots:
 
     void recordingMicrophoneStartsOrSaysWhy()
     {
-        WinCommunicationsAudioInput microphone(QString{});
+        WinCommunicationsAudioInput microphone(AudioCaptureSettings{});
         QByteArray pcm;
         connect(&microphone, &AudioInput::audioChunk, &microphone, [&](const QByteArray &chunk) { pcm += chunk; });
         QSignalSpy failed(&microphone, &AudioInput::failed);

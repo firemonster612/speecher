@@ -4,6 +4,7 @@
 #include "platform/win/WinSystemAudioInput.h"
 #include "recording/RecordingPresentation.h"
 
+#include <QDebug>
 #include <QScopeGuard>
 
 #include <ks.h>
@@ -18,44 +19,17 @@ namespace {
 
 using Microsoft::WRL::ComPtr;
 
-// A second of it, so a poll every 100 ms never lets it overflow.
-constexpr REFERENCE_TIME kBufferDuration = 10'000'000;
-
-// Windows has no text for the audio engine's own errors.
-QString audioErrorText(HRESULT result)
-{
-    switch (result) {
-    case E_ACCESSDENIED:
-        return QStringLiteral("Windows does not let apps use the microphone; allow it under Settings > Privacy & "
-                              "security > Microphone.");
-    case AUDCLNT_E_DEVICE_IN_USE:
-        return QStringLiteral("Another app is using the microphone exclusively.");
-    case AUDCLNT_E_DEVICE_INVALIDATED:
-        return QStringLiteral("The microphone was removed or changed.");
-    case AUDCLNT_E_SERVICE_NOT_RUNNING:
-        return QStringLiteral("The Windows Audio service is not running.");
-    case AUDCLNT_E_UNSUPPORTED_FORMAT:
-        return QStringLiteral("The microphone uses a format Speecher cannot read.");
-    default:
-        return qt_error_string(int(result));
-    }
-}
-
 QString openError(HRESULT result)
 {
-    return QStringLiteral("Could not open the microphone: %1").arg(audioErrorText(result));
+    return QStringLiteral("Could not open the microphone: %1").arg(audioErrorText(result, AudioEndpoint::Microphone));
 }
 
-// The audio settings name a microphone by its Qt id in base64url, and Qt's id
-// on Windows is the endpoint's. A microphone that is gone falls back to the
-// default one, Qt's default, as dictation's does.
+// A microphone that is gone falls back to the default one, Qt's default, as
+// dictation's does.
 HRESULT findMicrophone(IMMDeviceEnumerator *enumerator, const QString &deviceId, IMMDevice **device)
 {
     if (!deviceId.isEmpty()) {
-        const std::wstring id = QString::fromUtf8(QByteArray::fromBase64(
-                                                      deviceId.toLatin1(),
-                                                      QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals))
-                                    .toStdWString();
+        const std::wstring id = microphoneEndpointId(deviceId).toStdWString();
         ComPtr<IMMDevice> named;
         DWORD state = 0;
         if (SUCCEEDED(enumerator->GetDevice(id.c_str(), &named)) && SUCCEEDED(named->GetState(&state))
@@ -97,16 +71,17 @@ void keepOtherAudioLevel(IAudioClient *client)
 // Cancels what the default output plays, the output system audio captures,
 // where the echo canceller lets Speecher choose (Windows 11 22H2 and later);
 // elsewhere Windows chooses.
-void cancelEchoOfDefaultOutput(IMMDeviceEnumerator *enumerator, IAudioClient *client)
+void cancelEchoOfDefaultOutput(IMMDeviceEnumerator *enumerator, IAcousticEchoCancellationControl *control)
 {
-    ComPtr<IAcousticEchoCancellationControl> control;
     ComPtr<IMMDevice> output;
     LPWSTR id = nullptr;
-    if (FAILED(client->GetService(IID_PPV_ARGS(&control)))
-        || FAILED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &output)) || FAILED(output->GetId(&id))) {
+    if (FAILED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &output)) || FAILED(output->GetId(&id))) {
         return;
     }
-    control->SetEchoCancellationRenderEndpoint(id);
+    const HRESULT result = control->SetEchoCancellationRenderEndpoint(id);
+    qInfo().noquote() << QStringLiteral("recording microphone cancels the echo of output=\"%1\" result=0x%2")
+                             .arg(QString::fromWCharArray(id))
+                             .arg(quint32(result), 8, 16, QLatin1Char('0'));
     CoTaskMemFree(id);
 }
 
@@ -133,6 +108,9 @@ public:
     }
     ~MicrophoneCapture() override
     {
+        if (m_outputWatcher) {
+            m_enumerator->UnregisterEndpointNotificationCallback(m_outputWatcher.Get());
+        }
         if (m_client) {
             m_client->Stop();
         }
@@ -144,7 +122,14 @@ public:
     QString echoCancellationWarning() const override { return m_echoCancellationWarning; }
 
 private:
+    // Moves the echo canceller's reference to each new default output, as
+    // system audio moves to it.
+    void followDefaultOutput();
+
     QString m_deviceId;
+    ComPtr<IMMDeviceEnumerator> m_enumerator;
+    ComPtr<IAcousticEchoCancellationControl> m_echoControl;
+    ComPtr<DefaultOutputWatcher> m_outputWatcher;
     ComPtr<IAudioClient> m_client;
     ComPtr<IAudioCaptureClient> m_capture;
     int m_bytesPerFrame = 0;
@@ -168,8 +153,9 @@ QString MicrophoneCapture::open()
                                             CLSCTX_INPROC_SERVER,
                                             nullptr,
                                             reinterpret_cast<void **>(client.GetAddressOf())))) {
-        return result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND) ? QStringLiteral("No microphone was found.")
-                                                             : openError(result);
+        return result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND)
+            ? QStringLiteral("No microphone was found. Connect or enable an input device, then try again.")
+            : openError(result);
     }
     const HRESULT category = useCommunicationsCategory(client.Get());
     WAVEFORMATEX *mixFormat = nullptr;
@@ -182,12 +168,15 @@ QString MicrophoneCapture::open()
     if (!format.isValid()) {
         return openError(AUDCLNT_E_UNSUPPORTED_FORMAT);
     }
-    result = client->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, kBufferDuration, 0, mixFormat, nullptr);
+    result = client->Initialize(AUDCLNT_SHAREMODE_SHARED, 0, kCaptureBufferDuration, 0, mixFormat, nullptr);
     if (FAILED(result)) {
         return openError(result);
     }
     keepOtherAudioLevel(client.Get());
-    cancelEchoOfDefaultOutput(enumerator.Get(), client.Get());
+    m_enumerator = enumerator;
+    if (SUCCEEDED(client->GetService(IID_PPV_ARGS(&m_echoControl)))) {
+        followDefaultOutput();
+    }
     QList<AUDIO_EFFECT> effects;
     const HRESULT effectsQuery = streamEffects(client.Get(), &effects);
     ComPtr<IAudioCaptureClient> capture;
@@ -203,8 +192,22 @@ QString MicrophoneCapture::open()
     return {};
 }
 
+// Watches before it sets the reference, so a change in between sets it again.
+void MicrophoneCapture::followDefaultOutput()
+{
+    auto watcher = Microsoft::WRL::Make<DefaultOutputWatcher>();
+    if (watcher && watcher->changed()
+        && SUCCEEDED(m_enumerator->RegisterEndpointNotificationCallback(watcher.Get()))) {
+        m_outputWatcher = watcher;
+    }
+    cancelEchoOfDefaultOutput(m_enumerator.Get(), m_echoControl.Get());
+}
+
 QString MicrophoneCapture::read(QList<QByteArray> *chunks)
 {
+    if (m_outputWatcher && m_outputWatcher->takeChange()) {
+        cancelEchoOfDefaultOutput(m_enumerator.Get(), m_echoControl.Get());
+    }
     QByteArray pcm;
     UINT32 packetFrames = 0;
     HRESULT result;
@@ -230,10 +233,19 @@ QString MicrophoneCapture::read(QList<QByteArray> *chunks)
     if (!pcm.isEmpty()) {
         chunks->append(pcm);
     }
-    return FAILED(result) ? QStringLiteral("Microphone capture stopped: %1").arg(audioErrorText(result)) : QString();
+    if (FAILED(result)) {
+        return QStringLiteral("Microphone capture stopped: %1").arg(audioErrorText(result, AudioEndpoint::Microphone));
+    }
+    return {};
 }
 
 } // namespace
+
+QString microphoneEndpointId(const QString &deviceId)
+{
+    return QString::fromUtf8(
+        QByteArray::fromBase64(deviceId.toLatin1(), QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
+}
 
 QString communicationsEchoCancellationWarning(HRESULT category,
                                               HRESULT effectsQuery,
@@ -253,8 +265,12 @@ QString communicationsEchoCancellationWarning(HRESULT category,
     return echoCancellationNotOfferedText();
 }
 
-WinCommunicationsAudioInput::WinCommunicationsAudioInput(const QString &deviceId, QObject *parent)
-    : WinCaptureInput([deviceId] { return std::make_unique<MicrophoneCapture>(deviceId); }, parent)
+WinCommunicationsAudioInput::WinCommunicationsAudioInput(const AudioCaptureSettings &settings, QObject *parent)
+    : WinCaptureInput(
+          QStringLiteral("Microphone"),
+          [deviceId = settings.deviceId] { return std::make_unique<MicrophoneCapture>(deviceId); },
+          settings.postRollMs,
+          parent)
 {
 }
 

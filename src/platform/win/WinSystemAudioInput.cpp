@@ -5,41 +5,20 @@
 
 #include <QScopeGuard>
 
-#include <audioclient.h>
-#include <mmdeviceapi.h>
 #include <wrl/client.h>
-#include <wrl/implements.h>
 
 namespace speecher {
 namespace {
 
 using Microsoft::WRL::ComPtr;
 
-// A second of it, so a poll every 100 ms never lets it overflow.
-constexpr REFERENCE_TIME kBufferDuration = 10'000'000;
 // The unit of GetBuffer's performance counter positions and of interrupt time.
 constexpr UINT64 kHundredNsPerMs = 10'000;
 
-// Windows has no text for the audio engine's own errors.
-QString audioErrorText(HRESULT result)
-{
-    switch (result) {
-    case AUDCLNT_E_DEVICE_IN_USE:
-        return QStringLiteral("Another app is using the sound output exclusively.");
-    case AUDCLNT_E_DEVICE_INVALIDATED:
-        return QStringLiteral("The sound output was removed or changed.");
-    case AUDCLNT_E_SERVICE_NOT_RUNNING:
-        return QStringLiteral("The Windows Audio service is not running.");
-    case AUDCLNT_E_UNSUPPORTED_FORMAT:
-        return QStringLiteral("The sound output uses a format Speecher cannot read.");
-    default:
-        return qt_error_string(int(result));
-    }
-}
-
 QString captureError(HRESULT result)
 {
-    return QStringLiteral("Could not capture system audio: %1").arg(audioErrorText(result));
+    return QStringLiteral("Could not capture system audio: %1")
+        .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
 }
 
 // Two clocks: the timeline, and with it the reopen allowance, runs on
@@ -63,46 +42,6 @@ qint64 performanceCounterMs()
     // Split so the multiplication cannot overflow.
     return count.QuadPart / frequency.QuadPart * 1000 + count.QuadPart % frequency.QuadPart * 1000 / frequency.QuadPart;
 }
-
-// Signals an event when the default output changes. Windows calls it on a
-// thread of its own, so the watcher owns the event and keeps it for as long
-// as Windows holds a reference to it.
-class DefaultOutputWatcher final
-    : public Microsoft::WRL::RuntimeClass<Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
-                                          IMMNotificationClient> {
-public:
-    DefaultOutputWatcher()
-        : m_changed(CreateEventW(nullptr, FALSE, FALSE, nullptr))
-    {
-    }
-    ~DefaultOutputWatcher() override
-    {
-        if (m_changed) {
-            CloseHandle(m_changed);
-        }
-    }
-
-    // Null when the event could not be made. It resets itself when a wait
-    // takes it.
-    HANDLE changed() const { return m_changed; }
-
-    STDMETHODIMP OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR) override
-    {
-        // Windows reports a change once for each role; capture opens the
-        // console role's output.
-        if (flow == eRender && role == eConsole) {
-            SetEvent(m_changed);
-        }
-        return S_OK;
-    }
-    STDMETHODIMP OnDeviceAdded(LPCWSTR) override { return S_OK; }
-    STDMETHODIMP OnDeviceRemoved(LPCWSTR) override { return S_OK; }
-    STDMETHODIMP OnDeviceStateChanged(LPCWSTR, DWORD) override { return S_OK; }
-    STDMETHODIMP OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return S_OK; }
-
-private:
-    HANDLE m_changed;
-};
 
 class LoopbackCapture final : public WinCaptureStream {
 public:
@@ -129,7 +68,6 @@ private:
     HRESULT openDefaultOutput();
     QString reopenDefaultOutput(qint64 elapsedMs);
     void closeOutput();
-    bool takeDefaultOutputChange();
     HRESULT readPackets(QList<QByteArray> *chunks);
     qint64 elapsedMs() const { return unbiasedInterruptTimeMs() - m_startMs; }
 
@@ -161,7 +99,8 @@ QString LoopbackCapture::open()
     result = m_enumerator->RegisterEndpointNotificationCallback(m_watcher.Get());
     if (FAILED(result)) {
         m_watcher.Reset();
-        return QStringLiteral("Could not follow the default sound output: %1").arg(audioErrorText(result));
+        return QStringLiteral("Could not follow the default sound output: %1")
+            .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
     }
     result = openDefaultOutput();
     if (result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) {
@@ -196,8 +135,12 @@ HRESULT LoopbackCapture::openDefaultOutput()
         return AUDCLNT_E_UNSUPPORTED_FORMAT;
     }
     ComPtr<IAudioCaptureClient> capture;
-    if (FAILED(result = client->Initialize(
-                   AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, kBufferDuration, 0, mixFormat, nullptr))
+    if (FAILED(result = client->Initialize(AUDCLNT_SHAREMODE_SHARED,
+                                           AUDCLNT_STREAMFLAGS_LOOPBACK,
+                                           kCaptureBufferDuration,
+                                           0,
+                                           mixFormat,
+                                           nullptr))
         || FAILED(result = client->GetService(IID_PPV_ARGS(&capture)))
         || FAILED(result = client->Start())) {
         return result;
@@ -220,7 +163,8 @@ QString LoopbackCapture::reopenDefaultOutput(qint64 elapsedMs)
     if (m_reopen.retries(refusal, elapsedMs)) {
         return {};
     }
-    return QStringLiteral("System audio capture stopped: %1").arg(audioErrorText(result));
+    return QStringLiteral("System audio capture stopped: %1")
+        .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
 }
 
 QString LoopbackCapture::read(QList<QByteArray> *chunks)
@@ -231,13 +175,14 @@ QString LoopbackCapture::read(QList<QByteArray> *chunks)
         if (result == AUDCLNT_E_DEVICE_INVALIDATED) {
             closeOutput();
         } else if (FAILED(result)) {
-            return QStringLiteral("System audio capture stopped: %1").arg(audioErrorText(result));
+            return QStringLiteral("System audio capture stopped: %1")
+        .arg(audioErrorText(result, AudioEndpoint::SoundOutput));
         }
     }
     // The old default output's last audio is read before moving on, and the
     // change is taken before any reopen, so closing for it gives the new
     // default output an allowance of its own.
-    if (takeDefaultOutputChange()) {
+    if (m_watcher->takeChange()) {
         closeOutput();
     }
     const qint64 nowMs = elapsedMs();
@@ -260,11 +205,6 @@ void LoopbackCapture::closeOutput()
     m_capture.Reset();
     m_client.Reset();
     m_reopen.restart();
-}
-
-bool LoopbackCapture::takeDefaultOutputChange()
-{
-    return WaitForSingleObject(m_watcher->changed(), 0) == WAIT_OBJECT_0;
 }
 
 HRESULT LoopbackCapture::readPackets(QList<QByteArray> *chunks)
@@ -334,7 +274,7 @@ QAudioFormat audioFormatForWave(const WAVEFORMATEX &wave)
 }
 
 WinSystemAudioInput::WinSystemAudioInput(QObject *parent)
-    : WinCaptureInput([] { return std::make_unique<LoopbackCapture>(); }, parent)
+    : WinCaptureInput(QStringLiteral("System audio"), [] { return std::make_unique<LoopbackCapture>(); }, 0, parent)
 {
 }
 

@@ -96,7 +96,7 @@ AudioInput *WindowsComposition::createRecordingAudioInput(SettingsStore *setting
     if (AudioInput *stub = stubAudioInput(parent)) {
         return stub;
     }
-    return new WinCommunicationsAudioInput(settings->audioCaptureSettings().deviceId, parent);
+    return new WinCommunicationsAudioInput(settings->audioCaptureSettings(), parent);
 }
 
 AudioInput *WindowsComposition::createSystemAudioInput(QObject *parent) const
