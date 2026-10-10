@@ -68,6 +68,14 @@ bool interactiveWindowStation()
         && (station.dwFlags & WSF_VISIBLE);
 }
 
+// Errors worded as the bare reason, for inputs whose wording no test reads.
+QString bareReason(const QString &reason)
+{
+    return reason;
+}
+
+constexpr CaptureWording kBareWording{bareReason, bareReason};
+
 // Hands over one byte, the count of reads so far, at each read.
 class CountingCapture final : public WinCaptureStream {
 public:
@@ -519,7 +527,7 @@ private slots:
         QByteArray heard;
         const auto counting = [&reads] { return std::make_unique<CountingCapture>(&reads); };
 
-        WinCaptureInput capture(QStringLiteral("Test"), counting, 0);
+        WinCaptureInput capture(kBareWording, counting, 0);
         connect(&capture, &AudioInput::audioChunk, &capture, [&](const QByteArray &chunk) { heard += chunk; });
         QVERIFY(capture.start());
         // Stopped before its first poll, it still reads what the stream holds.
@@ -530,7 +538,7 @@ private slots:
 
         reads = 0;
         heard.clear();
-        WinCaptureInput rolling(QStringLiteral("Test"), counting, 250);
+        WinCaptureInput rolling(kBareWording, counting, 250);
         connect(&rolling, &AudioInput::audioChunk, &rolling, [&](const QByteArray &chunk) { heard += chunk; });
         QVERIFY(rolling.start());
         rolling.stop();
@@ -547,8 +555,7 @@ private slots:
     void captureStoppedFromItsAudioDeliversTheRestFirst()
     {
         std::atomic<char> captures = 0;
-        WinCaptureInput capture(
-            QStringLiteral("Test"), [&captures] { return std::make_unique<BatchCapture>(++captures); }, 0);
+        WinCaptureInput capture(kBareWording, [&captures] { return std::make_unique<BatchCapture>(++captures); }, 0);
         QList<QByteArray> heard;
         qsizetype heardBeforeRestart = 0;
         bool restarted = false;
