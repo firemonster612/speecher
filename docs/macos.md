@@ -99,6 +99,35 @@ distinguishes Apple tools, Apple-issued developer identities, and other
 signed code; a stable self-signed certificate alone does not stabilize the
 last category's partition.
 
+## The speecher command
+
+The CLI binary lives inside the bundle, at
+`speecher.app/Contents/MacOS/speecher`, which is not on the PATH. Choose
+**Install command line tool…** in the menu bar panel to write
+`/usr/local/bin/speecher`, a two-line script that runs the bundle's binary
+with your arguments. macOS asks for an administrator's password when
+`/usr/local/bin` is not writable; cancelling changes nothing. The script
+points at the app where it is now, so after moving the app, install it again.
+It refuses while Speecher runs from a read-only volume, such as a disk image
+or the temporary location Gatekeeper runs a downloaded app from until it is
+moved (App Translocation), since either path goes away; move the app to
+Applications and open it again first.
+
+The manual equivalent, for an app in `/Applications`:
+
+```sh
+sudo mkdir -p /usr/local/bin
+sudo rm -f /usr/local/bin/speecher
+sudo tee /usr/local/bin/speecher >/dev/null <<'EOF'
+#!/bin/sh
+exec '/Applications/speecher.app/Contents/MacOS/speecher' "$@"
+EOF
+sudo chmod 755 /usr/local/bin/speecher
+```
+
+A script rather than a symlink: the binary has to run from inside its bundle
+to find its frameworks and plugins.
+
 ## What works on macOS that Wayland cannot offer
 
 Linux/Wayland deliberately restricts global input and cross-window APIs

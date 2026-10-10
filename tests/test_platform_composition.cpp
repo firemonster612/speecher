@@ -5,6 +5,8 @@
 #include "app/AppFrontEnd.h"
 #include "app/ApplicationController.h"
 #include "app/CommandLine.h"
+#include "app/CommandLineTool.h"
+#include "app/CommandLineToolPresentation.h"
 #include "app/PlatformComposition.h"
 #include "app/ProviderAvailability.h"
 #include "app/ProvidersCommand.h"
@@ -44,6 +46,7 @@
 #include <QLocalSocket>
 #include <QPalette>
 #include <QPointer>
+#include <QProcess>
 #include <QLabel>
 #include <QLayout>
 #include <QList>
@@ -393,6 +396,44 @@ public:
 
     QStringList calls;
 };
+
+#ifdef Q_OS_UNIX
+// The strings in an AppleScript script, read the way AppleScript reads them:
+// \\ and \" are their escapes and a bare " ends one. The rest of the script,
+// with each string emptied to "", goes in rest. Empty when a string is not
+// well formed.
+QStringList appleScriptStrings(const QString &script, QString &rest)
+{
+    QStringList strings;
+    bool inString = false;
+    for (qsizetype i = 0; i < script.size(); ++i) {
+        QChar c = script.at(i);
+        if (c == QLatin1Char('"')) {
+            inString = !inString;
+            if (inString) {
+                strings.append(QString());
+            }
+            rest += c;
+            continue;
+        }
+        if (!inString) {
+            rest += c;
+            continue;
+        }
+        if (c == QLatin1Char('\\')) {
+            if (++i == script.size()) {
+                return {};
+            }
+            c = script.at(i);
+            if (c != QLatin1Char('\\') && c != QLatin1Char('"')) {
+                return {};
+            }
+        }
+        strings.last() += c;
+    }
+    return inString ? QStringList() : strings;
+}
+#endif
 
 } // namespace
 
@@ -1364,6 +1405,90 @@ private slots:
         QCOMPARE(requested.count(), 1);
     }
 
+#endif
+
+#ifdef Q_OS_UNIX
+    // What macOS's "Install command line tool…" writes: a two-line script
+    // that runs the binary from a path a shell would otherwise split, with
+    // every argument intact, and hands back its exit status. Installing again
+    // replaces it, and a symlink there is replaced rather than written through.
+    void commandLineToolExecsTheBinaryWithItsArguments()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString binary = directory.filePath(QStringLiteral("speecher it's \"$HOME\""));
+        QFile fake(binary);
+        QVERIFY(fake.open(QIODevice::WriteOnly));
+        fake.write("#!/bin/sh\nprintf '%s|' \"$@\"\nexit 3\n");
+        fake.close();
+        QVERIFY(fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner));
+        const QString tool = directory.filePath(QStringLiteral("bin/speecher"));
+        const auto install = [&] {
+            return QProcess::execute(QStringLiteral("/bin/sh"),
+                                     {QStringLiteral("-c"), commandLineToolInstallCommand(binary, tool)});
+        };
+
+        QCOMPARE(install(), 0);
+        QFile script(tool);
+        QVERIFY(script.open(QIODevice::ReadOnly));
+        const QByteArray contents = script.readAll();
+        QVERIFY(contents.startsWith("#!/bin/sh\n"));
+        QCOMPARE(contents.count('\n'), 2);
+        QProcess run;
+        run.start(tool, {QStringLiteral("a b"), QString(), QStringLiteral("*")});
+        QVERIFY(run.waitForFinished());
+        QCOMPARE(run.readAllStandardOutput(), QByteArray("a b||*|"));
+        QCOMPARE(run.exitCode(), 3);
+
+        const QString elsewhere = directory.filePath(QStringLiteral("elsewhere"));
+        QVERIFY(QFile(elsewhere).open(QIODevice::WriteOnly));
+        QVERIFY(QFile::remove(tool));
+        QVERIFY(QFile::link(elsewhere, tool));
+        QCOMPARE(install(), 0);
+        QVERIFY(!QFileInfo(tool).isSymLink());
+        QCOMPARE(QFileInfo(elsewhere).size(), 0);
+        QCOMPARE(QDir(QFileInfo(tool).path()).entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot),
+                 QStringList{QStringLiteral("speecher")});
+    }
+
+    // osascript reads the script's strings the way AppleScript does, so a
+    // path's backslashes and double quotes must reach sh as they were, and
+    // the password prompt must read as written.
+    void commandLineToolScriptKeepsTheBinaryPathIntact_data()
+    {
+        QTest::addColumn<QString>("name");
+        QTest::newRow("space") << QStringLiteral("speecher app");
+        QTest::newRow("backslash") << QStringLiteral("speecher\\app");
+        QTest::newRow("double quote") << QStringLiteral("speecher\"app");
+        QTest::newRow("single quote") << QStringLiteral("speecher'app");
+        QTest::newRow("dollar") << QStringLiteral("speecher$HOME");
+    }
+
+    void commandLineToolScriptKeepsTheBinaryPathIntact()
+    {
+        QFETCH(QString, name);
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString binary = directory.filePath(name);
+        QFile fake(binary);
+        QVERIFY(fake.open(QIODevice::WriteOnly));
+        fake.write("#!/bin/sh\nprintf '%s|' \"$@\"\n");
+        fake.close();
+        QVERIFY(fake.setPermissions(fake.permissions() | QFileDevice::ExeOwner));
+        const QString tool = directory.filePath(QStringLiteral("bin/speecher"));
+        const QString script = commandLineToolInstallScript(binary, tool, true);
+
+        QString rest;
+        const QStringList strings = appleScriptStrings(script, rest);
+        QCOMPARE(rest, QStringLiteral("do shell script \"\" with prompt \"\" with administrator privileges"));
+        QCOMPARE(strings.size(), 2);
+        QCOMPARE(strings.at(1), commandLineToolPasswordPrompt());
+        QCOMPARE(QProcess::execute(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), strings.at(0)}), 0);
+        QProcess run;
+        run.start(tool, {QStringLiteral("a b")});
+        QVERIFY(run.waitForFinished());
+        QCOMPARE(run.readAllStandardOutput(), QByteArray("a b|"));
+    }
 #endif
 
 #ifdef Q_OS_LINUX
