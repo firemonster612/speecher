@@ -1075,6 +1075,18 @@ typedef NS_ENUM(NSInteger, SpeecherModelRating) {
 // The menu bar item's accessible name (speecher::trayToolTip).
 - (NSString *)trayToolTip:(BOOL)listening recording:(BOOL)recording NS_SWIFT_NAME(trayToolTip(listening:recording:));
 @property (nonatomic, readonly, copy) NSString *trayQuitCaption;
+// The menu bar panel's "Install command line tool…": why the speecher
+// command can't point at this app yet, when it runs from a read-only volume
+// that goes away; the AppleScript that writes it for this process's binary,
+// asking for an administrator's password when its folder is not writable
+// (speecher::commandLineToolInstallScript); and the wording around it
+// (app/CommandLineToolPresentation.h).
+@property (class, nonatomic, readonly, copy, nullable) NSString *commandLineToolLocationProblem;
++ (NSString *)commandLineToolInstallScript;
+@property (class, nonatomic, readonly, copy) NSString *installCommandLineToolCaption;
+@property (class, nonatomic, readonly, copy) NSString *commandLineToolInstalledTitle;
+@property (class, nonatomic, readonly, copy) NSString *commandLineToolInstalledText;
+@property (class, nonatomic, readonly, copy) NSString *commandLineToolFailedTitle;
 // A level meter's accessible name, in the menu bar panel and setup.
 @property (nonatomic, readonly, copy) NSString *inputLevelLabel;
 @property (nonatomic, readonly, copy) NSString *copyTranscriptCaption;

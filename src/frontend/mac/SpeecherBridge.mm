@@ -6,6 +6,8 @@
 #include "app/PhoneTransfer.h"
 #include "app/PhoneTransferPresentation.h"
 #include "app/AccessibilityPresentation.h"
+#include "app/CommandLineTool.h"
+#include "app/CommandLineToolPresentation.h"
 #include "app/SetupSteps.h"
 #include "app/PlatformComposition.h"
 #include "app/UpdateBanner.h"
@@ -2867,6 +2869,51 @@ SpeecherInsightsModel *bridgedInsights(const speecher::InsightsSummary &summary,
 - (NSString *)trayQuitCaption
 {
     return speecher::trayQuitCaption().toNSString();
+}
+
++ (NSString *)commandLineToolLocationProblem
+{
+    // A disk image is ejected, and a translocated app's folder goes when it
+    // quits, so a command pointing into either stops working. Both are mounted
+    // read-only; an external drive or a second APFS volume is not.
+    NSURL *bundle = NSBundle.mainBundle.bundleURL;
+    NSNumber *readOnly = nil;
+    [bundle getResourceValue:&readOnly forKey:NSURLVolumeIsReadOnlyKey error:nil];
+    if (!readOnly.boolValue && ![bundle.path containsString:@"/AppTranslocation/"]) {
+        return nil;
+    }
+    return speecher::commandLineToolMoveAppText().toNSString();
+}
+
++ (NSString *)commandLineToolInstallScript
+{
+    const QString toolPath = QString::fromUtf8(speecher::kCommandLineToolPath);
+    // A missing folder is not writable either: creating it under /usr/local
+    // takes an administrator too.
+    const bool folderWritable = QFileInfo(QFileInfo(toolPath).path()).isWritable();
+    return speecher::commandLineToolInstallScript(QCoreApplication::applicationFilePath(), toolPath,
+                                                  !folderWritable)
+        .toNSString();
+}
+
++ (NSString *)installCommandLineToolCaption
+{
+    return speecher::installCommandLineToolCaption().toNSString();
+}
+
++ (NSString *)commandLineToolInstalledTitle
+{
+    return speecher::commandLineToolInstalledTitle().toNSString();
+}
+
++ (NSString *)commandLineToolInstalledText
+{
+    return speecher::commandLineToolInstalledText().toNSString();
+}
+
++ (NSString *)commandLineToolFailedTitle
+{
+    return speecher::commandLineToolFailedTitle().toNSString();
 }
 
 - (NSString *)inputLevelLabel

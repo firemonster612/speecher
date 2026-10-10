@@ -8,6 +8,7 @@
 #include "platform/win/WinGlobalShortcutBinder.h"
 #include "platform/win/WinInjectedInput.h"
 #include "platform/win/WinSingleKeyShortcutBinder.h"
+#include "platform/win/WinSystemAudioInput.h"
 #include "platform/win/WinTargetProvider.h"
 
 #include <QApplication>
@@ -349,6 +350,57 @@ private slots:
         QCOMPARE(restored->html(), QStringLiteral("<b>before</b>"));
         QCOMPARE(restored->data(QStringLiteral("application/x-speecher-test")),
                  QByteArrayLiteral("private"));
+    }
+
+    void systemAudioReadsMixFormats()
+    {
+        // The shared mix format Windows gives almost every output.
+        WAVEFORMATEXTENSIBLE floatStereo{};
+        floatStereo.Format = {WAVE_FORMAT_EXTENSIBLE, 2, 48000, 48000 * 8, 8, 32, 22};
+        floatStereo.Samples.wValidBitsPerSample = 32;
+        floatStereo.SubFormat = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+        QAudioFormat format = audioFormatForWave(floatStereo.Format);
+        QCOMPARE(format.sampleFormat(), QAudioFormat::Float);
+        QCOMPARE(format.sampleRate(), 48000);
+        QCOMPARE(format.channelCount(), 2);
+
+        // 24-bit samples left-justified in 32 bits read as 32-bit ones.
+        WAVEFORMATEXTENSIBLE paddedPcm = floatStereo;
+        paddedPcm.Samples.wValidBitsPerSample = 24;
+        paddedPcm.SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+        QCOMPARE(audioFormatForWave(paddedPcm.Format).sampleFormat(), QAudioFormat::Int32);
+
+        const WAVEFORMATEX pcm16{WAVE_FORMAT_PCM, 1, 44100, 44100 * 2, 2, 16, 0};
+        format = audioFormatForWave(pcm16);
+        QCOMPARE(format.sampleFormat(), QAudioFormat::Int16);
+        QCOMPARE(format.sampleRate(), 44100);
+        QCOMPARE(format.channelCount(), 1);
+
+        const WAVEFORMATEX packed24{WAVE_FORMAT_PCM, 2, 48000, 48000 * 6, 6, 24, 0};
+        QVERIFY(!audioFormatForWave(packed24).isValid());
+    }
+
+    void systemAudioStartsOrSaysWhy()
+    {
+        WinSystemAudioInput capture;
+        QByteArray pcm;
+        connect(&capture, &AudioInput::audioChunk, &capture, [&](const QByteArray &chunk) { pcm += chunk; });
+        QSignalSpy failed(&capture, &AudioInput::failed);
+        QString error;
+        if (capture.start(&error)) {
+            QVERIFY(capture.isActive());
+            // With or without anything playing, the stream keeps time.
+            QTRY_VERIFY(pcm.size() >= 16000 * 2 / 2);
+            capture.stop();
+        } else {
+            // Runners without a sound output end here.
+            qInfo().noquote() << "system audio did not start:" << error;
+            QVERIFY(!error.isEmpty());
+        }
+        QVERIFY(!capture.isActive());
+        // A failed start is reported once, by its return value.
+        QTest::qWait(300);
+        QCOMPARE(failed.count(), 0);
     }
 
     void schemaUsesWindowsCopyAndRows()

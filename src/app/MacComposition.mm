@@ -1,5 +1,6 @@
 #include "app/MacComposition.h"
 
+#include "app/CommandLineTool.h"
 #include "app/CompositionSockets.h"
 #include "core/SettingsStore.h"
 #include "output/TextDelivery.h"
@@ -38,13 +39,6 @@ namespace {
 
 constexpr auto accessibilityPaneUrl =
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
-
-QString shellQuote(QString value)
-{
-    return QStringLiteral("'")
-        + value.replace(QLatin1Char('\''), QStringLiteral("'\"'\"'"))
-        + QStringLiteral("'");
-}
 
 bool runsFromAppBundle()
 {

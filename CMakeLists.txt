@@ -416,6 +416,8 @@ set(SPEECHER_PLATFORM_SOURCES
   src/platform/ScreenshotImage.cpp
   src/platform/SingleKeyShortcutBinder.cpp
   src/platform/audio/AudioPcmConverter.cpp
+  src/platform/audio/LoopbackPcm.cpp
+  src/platform/audio/LoopbackReopen.cpp
   src/platform/audio/QtAudioInput.cpp
   src/platform/audio/WavFileAudioInput.cpp
   src/platform/FallbackPopupPositioner.cpp
@@ -439,6 +441,8 @@ set(SPEECHER_PLATFORM_HEADERS
   src/platform/SingleKeyShortcutBinder.h
   src/platform/audio/AudioPcmConverter.h
   src/platform/audio/E2EAudioInput.h
+  src/platform/audio/LoopbackPcm.h
+  src/platform/audio/LoopbackReopen.h
   src/platform/audio/QtAudioInput.h
   src/platform/audio/WavFileAudioInput.h
 )
@@ -531,6 +535,7 @@ set(SPEECHER_PLATFORM_WIN_SOURCES
   src/platform/win/WinRawKeyboard.cpp
   src/platform/win/WinScreenshotContextProvider.cpp
   src/platform/win/WinSingleKeyShortcutBinder.cpp
+  src/platform/win/WinSystemAudioInput.cpp
   src/platform/win/WinTargetProvider.cpp
 )
 set(SPEECHER_PLATFORM_WIN_HEADERS
@@ -543,6 +548,7 @@ set(SPEECHER_PLATFORM_WIN_HEADERS
   src/platform/win/WinRawKeyboard.h
   src/platform/win/WinScreenshotContextProvider.h
   src/platform/win/WinSingleKeyShortcutBinder.h
+  src/platform/win/WinSystemAudioInput.h
   src/platform/win/WinTargetProvider.h
 )
 
@@ -552,6 +558,8 @@ set(SPEECHER_APP_SOURCES
   src/app/NetworkReachability.cpp
   src/app/ProviderAvailability.cpp
   src/app/CommandLine.cpp
+  src/app/CommandLineTool.cpp
+  src/app/CommandLineToolPresentation.cpp
   src/app/CompositionSockets.cpp
   src/app/HeadlessTranscribe.cpp
   src/app/ManifestUpdater.cpp
@@ -581,6 +589,8 @@ set(SPEECHER_APP_HEADERS
   src/app/ProviderAvailability.h
   src/app/MicrophoneTest.h
   src/app/CommandLine.h
+  src/app/CommandLineTool.h
+  src/app/CommandLineToolPresentation.h
   src/app/CompositionSockets.h
   src/app/HeadlessTranscribe.h
   src/app/ManifestUpdater.h
