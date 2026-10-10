@@ -224,4 +224,10 @@ QString echoCancellationWithoutSystemAudioText()
     return withHeadphonesAdvice(QStringLiteral("Echo cancellation is off: system audio stopped."));
 }
 
+QString systemAudioPermissionText()
+{
+    return QStringLiteral("System audio recording is off. Allow Speecher under System Settings > Privacy & "
+                          "Security > Screen & System Audio Recording, then try again.");
+}
+
 } // namespace speecher

@@ -12,9 +12,11 @@
 #include "platform/mac/MacGlobalShortcutBinder.h"
 #include "platform/mac/MacMediaController.h"
 #include "platform/mac/MacSingleKeyShortcutBinder.h"
+#include "platform/mac/MacSystemAudioInput.h"
 #include "platform/mac/MacPopupPositioner.h"
 #include "platform/mac/MacScreenshotContextProvider.h"
 #include "platform/mac/MacTargetProvider.h"
+#include "recording/RecordingPresentation.h"
 
 #include <QCoreApplication>
 #include <QDesktopServices>
@@ -143,6 +145,11 @@ AudioInput *MacComposition::createAudioInput(SettingsStore *settings, QObject *p
                      input,
                      &QtAudioInput::applySettings);
     return input;
+}
+
+AudioInput *MacComposition::createSystemAudioInput(QObject *parent) const
+{
+    return new MacSystemAudioInput(systemAudioPermissionText(), parent);
 }
 
 void MacComposition::requestMicrophoneAccess(QObject *context, std::function<void(bool)> completed) const

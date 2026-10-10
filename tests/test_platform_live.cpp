@@ -11,6 +11,11 @@
 #include <cmath>
 #include <memory>
 
+#ifdef Q_OS_MACOS
+#include <QProcess>
+#include <QTemporaryFile>
+#endif
+
 #ifdef SPEECHER_WITH_PULSE
 #include <QProcess>
 
@@ -41,6 +46,21 @@ namespace {
 // output's volume, through output.
 bool playTone(const QAudioDevice &output)
 {
+#ifdef Q_OS_MACOS
+    // System audio leaves out Speecher's own sounds, so another process plays
+    // it, through the default output.
+    Q_UNUSED(output);
+    QByteArray tone;
+    for (int sample = 0; sample < 16000; ++sample) {
+        const auto value = qint16(0.5 * 32767 * std::sin(2 * M_PI * 440 * sample / 16000));
+        tone.append(reinterpret_cast<const char *>(&value), sizeof(value));
+    }
+    QTemporaryFile wav(QDir::temp().filePath(QStringLiteral("tone-XXXXXX.wav")));
+    if (!wav.open() || wav.write(wavFromPcm16Mono(tone, 16000)) < 0 || !wav.flush()) {
+        return false;
+    }
+    return QProcess::execute(QStringLiteral("/usr/bin/afplay"), {wav.fileName()}) == 0;
+#else
     // WASAPI takes only the output's own rate and channels, in float.
     QAudioFormat format = output.preferredFormat();
     format.setSampleFormat(QAudioFormat::Float);
@@ -59,6 +79,7 @@ bool playTone(const QAudioDevice &output)
     QAudioSink sink(output, format);
     sink.start(&toneBuffer);
     return QTest::qWaitFor([&] { return sink.state() == QAudio::IdleState; }, 5000);
+#endif
 }
 
 // The loudest 100 ms of 16 kHz PCM.

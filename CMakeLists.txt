@@ -510,6 +510,7 @@ set(SPEECHER_PLATFORM_MAC_SOURCES
   src/platform/mac/MacPopupPositioner.mm
   src/platform/mac/MacScreenshotContextProvider.mm
   src/platform/mac/MacSingleKeyShortcutBinder.mm
+  src/platform/mac/MacSystemAudioInput.mm
   src/platform/mac/MacTargetProvider.mm
 )
 
@@ -523,6 +524,7 @@ set(SPEECHER_PLATFORM_MAC_HEADERS
   src/platform/mac/MacPopupPositioner.h
   src/platform/mac/MacScreenshotContextProvider.h
   src/platform/mac/MacSingleKeyShortcutBinder.h
+  src/platform/mac/MacSystemAudioInput.h
   src/platform/mac/MacTargetProvider.h
 )
 
@@ -1056,10 +1058,17 @@ if(APPLE)
   # Public: TextDelivery's method order and backend set differ with the macOS
   # keyboard-paste backend compiled in.
   target_compile_definitions(speecher_platform PUBLIC SPEECHER_WITH_MAC=1)
+  # ARC: the system audio input holds ScreenCaptureKit objects in C++ members
+  # and hands blocks to its capture queue.
+  set_source_files_properties(src/platform/mac/MacSystemAudioInput.mm PROPERTIES
+    COMPILE_OPTIONS -fobjc-arc
+  )
   target_link_libraries(speecher_platform PUBLIC
     "-framework AppKit"
     "-framework Carbon"
     "-framework ApplicationServices"
+    "-framework CoreMedia"
+    "-framework ScreenCaptureKit"
   )
 endif()
 if(WIN32)
@@ -1668,6 +1677,10 @@ if(SPEECHER_BUILD_TESTS)
     target_sources(speecher_tests PRIVATE tests/test_win_platform.cpp)
   endif()
   if(APPLE)
+    target_sources(speecher_tests PRIVATE tests/test_mac_platform.mm)
+    set_source_files_properties(tests/test_mac_platform.mm PROPERTIES
+      COMPILE_OPTIONS -fobjc-arc
+    )
     qt_import_plugins(speecher_tests INCLUDE Qt6::QDarwinMicrophonePermissionPlugin)
   endif()
   if(NOT APPLE)
@@ -1751,6 +1764,9 @@ if(SPEECHER_BUILD_TESTS)
   endif()
   if(TARGET speecher_frontend_mac)
     list(APPEND SPEECHER_TEST_SUITES mac_front_end)
+  endif()
+  if(APPLE)
+    list(APPEND SPEECHER_TEST_SUITES mac_platform)
   endif()
   if(WIN32)
     list(APPEND SPEECHER_TEST_SUITES win_platform)
